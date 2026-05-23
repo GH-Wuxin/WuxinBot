@@ -59,7 +59,7 @@ npm run build      # 构建前端
 npm run sanity     # 运行基础集成测试
 npm run structure  # 检查模块结构
 ```
-
+Tips:本项目100％由AI编写
 ## 许可
 
 MIT
