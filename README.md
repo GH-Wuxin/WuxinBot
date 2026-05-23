@@ -5,7 +5,7 @@
 ## 快速开始
 
 1. 安装 [NapCat](https://github.com/NapNeko/NapCatQQ)，并登录你的机器人 QQ 小号。
-2. 下载 Wuxin-v0.1.0-portable.zip，解压，双击 启动Wuxin.bat
+2. 下载 Wuxin-v1.0.0，解压，双击 启动Wuxin.bat
 3. 在“模型”页选择接口供应商（默认DS，openai未经测试），输入api地址（Deepseek为api.deepseek.com），在API Key输入你获取的API
 4. 在「QQ连接」页输入你自己的qq号（owner）以及用作bot的小号，点击「自动检测」，然后保存并连接。
 
