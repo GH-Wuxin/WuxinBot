@@ -6,6 +6,9 @@ import { processIncoming } from '../server/bot.ts';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const rootDir = path.resolve(__dirname, '..');
 const dbPath = process.env.DATA_DIR || path.join(process.env.APPDATA || path.join(process.env.USERPROFILE || 'C:', 'AppData', 'Roaming'), 'Wuxin', 'db.json');
+const sanityOwnerQq = '10000001';
+const sanityBotQq = '10000002';
+const sanityNormalUserQq = '10000003';
 
 function readJson(file) {
   return JSON.parse(fs.readFileSync(file, 'utf8'));
@@ -25,7 +28,7 @@ function event(overrides) {
     type: 'group',
     messageId: `sanity-${Date.now()}-${Math.random().toString(16).slice(2)}`,
     groupId: '990001',
-    userId: '570341031',
+    userId: sanityOwnerQq,
     nickname: 'SanityOwner',
     text: '',
     atTargets: [],
@@ -44,8 +47,8 @@ async function main() {
 
   try {
     const db = structuredClone(original);
-    db.settings.ownerQq = db.settings.ownerQq || '570341031';
-    db.settings.selfQq = db.settings.selfQq || '3312171148';
+    db.settings.ownerQq = sanityOwnerQq;
+    db.settings.selfQq = sanityBotQq;
     db.settings.botNames = db.settings.botNames || 'Wuxin,小深,机器人,bot';
     db.settings.globalPaused = false;
     db.settings.onlyMentionMode = false;
@@ -77,8 +80,8 @@ async function main() {
 
     sent.length = 0;
     const pureAt = await processIncoming(event({
-      text: '[CQ:at,qq=3312171148]',
-      atTargets: ['3312171148']
+      text: `[CQ:at,qq=${sanityBotQq}]`,
+      atTargets: [sanityBotQq]
     }), sendMessage);
     assert(pureAt.replied === false, 'pure @ should not reply');
     assert(String(pureAt.reason || '').includes('@/媒体/卡片'), 'pure @ reason should explain placeholder-only message');
@@ -89,8 +92,8 @@ async function main() {
 
     sent.length = 0;
     const visualAsk = await processIncoming(event({
-      text: '[CQ:at,qq=3312171148] 看看这张图 [图片]',
-      atTargets: ['3312171148']
+      text: `[CQ:at,qq=${sanityBotQq}] 看看这张图 [图片]`,
+      atTargets: [sanityBotQq]
     }), sendMessage);
     assert(visualAsk.replied === true, 'explicit visual inspection request should get deterministic reply');
     assert(sent.some((text) => text.includes('看不到图片') || text.includes('只能读文字')), 'visual limitation reply should explain limitation');
@@ -98,7 +101,7 @@ async function main() {
     sent.length = 0;
     const deniedGroupAdd = await processIncoming(event({
       groupId: '990002',
-      userId: '123456789',
+      userId: sanityNormalUserQq,
       nickname: 'NormalUser',
       text: '/w group add 普通人测试群'
     }), sendMessage);

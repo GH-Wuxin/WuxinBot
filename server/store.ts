@@ -77,7 +77,7 @@ const initialDb = {
     oneBotAccessToken: '',
     ownerQq: '',
     selfQq: '',
-    adminPassword: process.env.ADMIN_PASSWORD || 'admin123',
+    adminPassword: process.env.ADMIN_PASSWORD || '',
     enableWebSearch: true,
     webSearchMode: 'balanced',
     enableAutoModel: true,

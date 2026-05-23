@@ -1,5 +1,5 @@
 param(
-  [string]$NapCatDir = "G:\My pack\NapCat.Shell.Windows.OneKey\NapCat.Shell",
+  [string]$NapCatDir = $env:NAPCAT_DIR,
   [string]$QQ = "",
   [int]$HttpPort = 3000,
   [int]$WsPort = 3001
@@ -7,18 +7,27 @@ param(
 
 $ErrorActionPreference = "Stop"
 
+if ([string]::IsNullOrWhiteSpace($NapCatDir)) {
+  $NapCatDir = Read-Host "Input NapCat Shell directory"
+}
+
 if ([string]::IsNullOrWhiteSpace($QQ)) {
   $QQ = Read-Host "Input target bot QQ number"
 }
 
+$configDir = Join-Path $NapCatDir "config"
 $configPath = Join-Path $NapCatDir "config\onebot11_$QQ.json"
 if (!(Test-Path -LiteralPath $configPath)) {
   Write-Host "Cannot find config for QQ: $QQ"
   Write-Host "Expected file: $configPath"
   Write-Host ""
   Write-Host "Available OneBot config files:"
-  Get-ChildItem -LiteralPath (Join-Path $NapCatDir "config") -Filter "onebot11_*.json" | ForEach-Object {
-    Write-Host " - $($_.Name)"
+  if (Test-Path -LiteralPath $configDir) {
+    Get-ChildItem -LiteralPath $configDir -Filter "onebot11_*.json" | ForEach-Object {
+      Write-Host " - $($_.Name)"
+    }
+  } else {
+    Write-Host " - config directory not found: $configDir"
   }
   Write-Host ""
   Write-Host "This usually means the target QQ has not logged into this NapCat instance yet."
