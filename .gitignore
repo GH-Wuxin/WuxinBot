@@ -1,0 +1,10 @@
+node_modules/
+dist/
+data/
+.env
+fix-*.mjs
+patch-*.mjs
+rebuild-*.mjs
+restore-*.mjs
+HANDOFF*.md
+.git-old-backup/

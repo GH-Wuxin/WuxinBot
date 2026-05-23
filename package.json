@@ -1,0 +1,35 @@
+{
+  "name": "qq-ai-chatbot",
+  "version": "1.0.0",
+  "description": "A friendly QQ group chat AI bot with a Chinese GUI control panel.",
+  "type": "module",
+  "main": "server/index.js",
+  "scripts": {
+    "dev": "concurrently \"npm run server\" \"npm run web\"",
+    "server": "tsx watch server/index.ts",
+    "web": "vite --host 127.0.0.1 --port 5173 --strictPort",
+    "build": "vite build",
+    "start": "tsx server/index.ts",
+    "sanity": "tsx tools/sanity.mjs",
+    "structure": "node tools/structure-report.mjs"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "@vitejs/plugin-react": "^4.7.0",
+    "concurrently": "^9.2.1",
+    "dotenv": "^17.4.2",
+    "express": "^5.2.1",
+    "lucide-react": "^1.16.0",
+    "openai": "^6.38.0",
+    "react": "^19.2.6",
+    "react-dom": "^19.2.6",
+    "typescript": "^6.0.3",
+    "vite": "^5.4.21",
+    "ws": "^8.20.1"
+  },
+  "devDependencies": {
+    "tsx": "^4.22.3"
+  }
+}
