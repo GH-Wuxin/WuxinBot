@@ -10,3 +10,4 @@ HANDOFF*.md
 .git-old-backup/
 src/*backup*.txt
 *.bak-*
+Wuxin-v0.1.0-portable.zip
