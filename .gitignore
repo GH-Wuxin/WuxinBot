@@ -8,3 +8,5 @@ rebuild-*.mjs
 restore-*.mjs
 HANDOFF*.md
 .git-old-backup/
+src/*backup*.txt
+*.bak-*
