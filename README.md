@@ -1,33 +1,34 @@
-# Wuxin — QQ Group Chat AI Bot
+# Wuxin — QQ 群聊 AI 机器人
 
-A local Windows QQ group-chat AI bot with a Chinese GUI, connected to QQ through NapCat OneBot.
+一个本地运行的 Windows QQ 群聊 AI 机器人，带中文控制台 GUI，通过 NapCat / OneBot 接入 QQ，可连接 DeepSeek 或其他 OpenAI 兼容 API。
 
-## Quick Start
+## 快速开始
 
-1. Install [NapCat](https://github.com/NapNeko/NapCatQQ) and log in your bot QQ account
-2. Clone this repo
-3. Copy `.env.example` to `.env` and fill in your API key
-4. `npm install && npm run dev`
-5. Open http://127.0.0.1:5173 — click "Auto Detect" on the QQ Connection page, then "Save & Connect"
+1. 安装 [NapCat](https://github.com/NapNeko/NapCatQQ)，并登录你的机器人 QQ 小号。
+2. 克隆本仓库。
+3.运行启动控制台.bat
+4.运行打开控制台.bat
+5.在“模型”页选择接口供应商（默认DS，openai未经测试），输入api地址（Deepseek为api.deepseek.com），在API Key输入你获取的API
+5. 在「QQ连接」页输入你自己的qq号（owner）以及用作bot的小号，点击「自动检测」，然后保存并连接。
 
-## Requirements
+## 运行要求
 
 - Node.js 20+
-- NapCat (or any OneBot v11 compatible client)
-- DeepSeek API key (or any OpenAI-compatible provider)
+- NapCat，或其他兼容 OneBot v11 的客户端
+- DeepSeek API Key，或其他 OpenAI 兼容供应商的 API Key
 
-## Features
+## 主要功能
 
-- **Multi-group support** with per-group reply modes (silent / @mention / light / natural)
-- **Per-member policies** — admin, trusted, muted, blocked, with custom prompts
-- **Long-term memory** — context-aware personal profiles, group atmosphere profiles, relationship profiles
-- **Auto model switching** — upgrades to V4 Pro for complex tasks
-- **Web search** — DeepSeek built-in search
-- **Scene presets** — one-click mode switching (class / away / sleep / active / debug)
-- **Backup system** — auto-backup every 8 hours, manual backup via GUI
-- **Decision sandbox** — test bot behavior without sending real QQ messages
+- **多群支持**：每个群可单独设置回复模式，包括静默、只在 @ 时回复、轻度参与、自然群友。
+- **成员策略**：支持管理员、信任成员、重点关注、少回应、黑名单、成员定制提示词等。
+- **长期记忆**：支持语境感知的个人画像、群聊氛围画像、群友关系画像。
+- **自动模型切换**：复杂任务可自动升级到更强模型。
+- **联网搜索**：支持 DeepSeek 内置搜索。
+- **场景预设**：一键切换上课、出门、睡觉、活跃、安静、调试等模式。
+- **备份系统**：支持每 8 小时自动备份，也可在 GUI 中手动备份和恢复。
+- **决策沙盒**：不用真的发 QQ 消息，也能测试机器人是否会回复、为什么回复。
 
-## Architecture
+## 架构
 
 ```
 NapCat QQ → OneBot WS → server/onebot.ts → server/bot.ts → LLM → OneBot HTTP → QQ
@@ -35,24 +36,30 @@ NapCat QQ → OneBot WS → server/onebot.ts → server/bot.ts → LLM → OneBo
 React GUI ← Vite :5173 ← Express :8787 ← server/store.ts → %APPDATA%/Wuxin/db.json
 ```
 
-## Commands
+## 指令
 
-All commands use `/w` prefix (or `/wuxin`). Use `/w help` to see available commands.
+所有指令都使用 `/w` 前缀，也支持 `/wuxin`。在 QQ 群里发送：
 
-## Configuration
-
-- **Data**: stored in `%APPDATA%\Wuxin\db.json` (customizable via `DATA_DIR` env var)
-- **API**: set `LLM_PROVIDER`, `LLM_API_KEY`, `LLM_API_BASE_URL` in `.env`
-- **OneBot**: HTTP/WSS URLs configured in GUI
-
-## Development
-
-```bash
-npm run build      # Build frontend
-npm run sanity     # Run integration tests
-npm run structure  # Check module structure
+```text
+/w help
 ```
 
-## License
+即可查看当前可用指令。
+
+## 配置
+
+- **数据位置**：默认存储在 `%APPDATA%\Wuxin\db.json`，也可以通过 `DATA_DIR` 环境变量自定义。
+- **API 设置**：在 `.env` 中设置 `LLM_PROVIDER`、`LLM_API_KEY`、`LLM_API_BASE_URL`。
+- **OneBot 设置**：在 GUI 的「QQ连接」页面配置 HTTP / WebSocket 地址。
+
+## 开发
+
+```bash
+npm run build      # 构建前端
+npm run sanity     # 运行基础集成测试
+npm run structure  # 检查模块结构
+```
+
+## 许可
 
 MIT
