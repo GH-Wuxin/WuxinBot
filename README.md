@@ -57,7 +57,7 @@ npm run build      # 构建前端
 npm run sanity     # 运行基础集成测试
 npm run structure  # 检查模块结构
 ```
-Tips:本项目100％由AI编写
+Tips:本项目代码主体 100% 由 AI 工具生成与修改，人工负责需求描述、运行测试、问题反馈与版本管理。
 ## 许可
 
 MIT
