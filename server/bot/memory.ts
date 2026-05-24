@@ -194,7 +194,7 @@ export function recordMemoryObservation(event, userPolicy) {
         enabled: true, importanceLevel: importance.level, importanceLabel: importance.label,
         messageCount: 0, profileMessageCount: 0, pendingCount: 0, groupsSeen: [],
         samples: [], summary: '', traits: '', speechStyle: '', behavior: '', preferences: '',
-        manualNotes: '', profilingRule: '', profileMeta: {}, createdAt: nowIso(), updatedAt: nowIso()
+        manualNotes: '', profilingRule: '', profileMeta: {}, recentDynamics: [], createdAt: nowIso(), updatedAt: nowIso()
       };
       draft.memories.push(memory);
     }
@@ -229,11 +229,55 @@ export function recordMemoryObservation(event, userPolicy) {
   return { shouldUpdate, reason: shouldUpdate ? '达到画像更新阈值' : (memoryImportance(readDb(), userPolicy).label) };
 }
 
+function clusterSamplesByTopic(samples) {
+  const clusters = [];
+  for (const s of samples) {
+    const text = String(s.content || '').toLowerCase();
+    let matched = false;
+    for (const c of clusters) {
+      const overlap = c.keywords.filter((kw) => text.includes(kw));
+      if (overlap.length >= 2 || (overlap.length >= 1 && text.length < 20 && c.keywords.some((kw) => kw.length > 3 && text.includes(kw)))) {
+        c.samples.push(s); matched = true; break;
+      }
+    }
+    if (!matched) {
+      const words = text.replace(/[，,。！？!?\s]+/g, ' ').split(' ').filter((w) => w.length >= 2 && !['这个','那个','什么','怎么','为什么','是不是','有没有','一个','可以','就是','不是'].includes(w));
+      clusters.push({ keywords: words.slice(0, 6), samples: [s] });
+    }
+  }
+  return clusters;
+}
+
+function computeTopicWeights(clusters) {
+  const weights = [];
+  for (const c of clusters) {
+    const sampleCount = c.samples.length;
+    const uniqueDays = new Set(c.samples.map((s) => (s.createdAt || '').slice(0, 10))).size;
+    const uniqueGroups = new Set(c.samples.map((s) => s.context?.groupId || 'unknown')).size;
+    const isCrossSession = uniqueDays >= 2 || uniqueGroups >= 2;
+    const weight = isCrossSession ? Math.min(1, sampleCount * 0.3) : Math.min(1, sampleCount * 0.08);
+    weights.push({ cluster: c, sampleCount, uniqueDays, uniqueGroups, isCrossSession, weight });
+  }
+  return weights;
+}
+
 export async function updateMemoryProfile(db, memory) {
   const allSamples = (memory.samples || []).slice(-30);
   const usedSamples = allSamples.filter((s) => s.usedForProfile && s.content);
   const weakSamples = allSamples.filter((s) => !s.usedForProfile && s.content && s.type === 'card');
   const cardText = weakSamples.slice(-8).map((s) => s.content).join('\n');
+
+  // Topic clustering for anti-recency pollution
+  const clusters = clusterSamplesByTopic(usedSamples);
+  const topicWeights = computeTopicWeights(clusters);
+  const recentDynamicsBlock = topicWeights.filter((tw) => !tw.isCrossSession && tw.sampleCount >= 2).map((tw) => {
+    const keywords = tw.cluster.keywords.slice(0, 4).join(',');
+    return `短期话题(${keywords}): ${tw.sampleCount}条/${tw.uniqueDays}天 · 权重${Math.round(tw.weight * 100)}% · 仅单场景，不应写入长期画像`;
+  }).join('\n');
+  const longTermBlock = topicWeights.filter((tw) => tw.isCrossSession).map((tw) => {
+    const keywords = tw.cluster.keywords.slice(0, 4).join(',');
+    return `长期候选(${keywords}): ${tw.sampleCount}条/${tw.uniqueDays}天/${tw.uniqueGroups}群`;
+  }).join('\n');
 
   // Format samples as context blocks instead of isolated lines
   const sampleBlocks = usedSamples.slice(-16).map((s, i) => {
@@ -270,27 +314,28 @@ export async function updateMemoryProfile(db, memory) {
   ].filter(Boolean).join('\n');
   const response = await completeChat(db, {
     messages: [
-      { role: 'system', content: `你是群友画像更新器。根据发言样本和上下文对话更新画像。
+      { role: 'system', content: `你是群友画像更新器。根据发言样本更新画像。输出 patch 模式 JSON，不要整份重写。
 
 输出格式（纯JSON，无markdown包裹）：
-{"summary":"...","traits":"...","speechStyle":"...","behavior":"...","preferences":"...","confidence":{"traits":0.5,"speechStyle":0.5,"behavior":0.5,"preferences":0.5}}
+{
+  "longTermUpdates": {"summary":"...","traits":"...","speechStyle":"...","behavior":"...","preferences":"..."},
+  "recentDynamicsUpdates": [{"topic":"...","summary":"...","confidence":0.5}],
+  "preserveExisting": ["summary","traits","speechStyle","behavior","preferences"],
+  "removeOrDowngrade": [{"field":"preferences","reason":"单场景高频，降为近期动态"}],
+  "confidence": {"traits":0.5,"speechStyle":0.5,"behavior":0.5,"preferences":0.5}
+}
 
-分析规则：
-- 每条样本都有上下文对话、@信息、风险等级。先判断这条消息是关于什么的，再决定是否写入画像。
-- 关于谁：self（说自己的）/ other（说别人的）/ bot（对Wuxin说的）/ topic（聊话题的）/ unclear
-- 对谁说：bot / owner / group / user / unclear
-- 什么类型：stable preference（稳定偏好）/ speech style（说话风格）/ behavior（互动习惯）/ temporary mood（临时情绪）/ one-off question（一次性提问）/ banter（玩笑反讽）/ quote（引用复读）/ relation（关系互动）/ high-risk（高风险）
-
-写入门槛：
-- 只写 subject=self 且类型为 preference/speechStyle/behavior 的、有多次证据支持的。
-- 对别人的评价、对bot的调侃、一次性问题、玩笑反讽一律不写入画像。
-- 话题参与和临时情绪显示活跃度，但不代表人格。
-- 第三方声明（"他是..."、"这个人..."）、敏感推断（身份/取向/心理）禁止写入。
-- 禁止侮辱性标签。需要描述时改成中性措辞。
-- 低权重背景（转发卡片）只有与真实文本多次一致时才参考。
-${isLegacyProfile ? '- 【旧画像降权】现有的已有画像是由旧版系统生成，缺乏上下文分析。新样本带有完整对话上下文，判断更准确。当新旧信息冲突时，优先信任基于上下文的新观察。旧画像中与上下文样本一致的可以保留，单薄或矛盾的应当覆盖。' : ''}
+规则：
+1. 长期画像(longTermUpdates)只写跨时间(>=2天)或跨群、多次独立证据支持的稳定特征。单日/单场景高频话题不能写入长期画像。
+2. 短期高频话题(昨晚多聊/今天多聊了某话题)只能写入 recentDynamicsUpdates，不能覆盖长期画像。
+3. preserveExisting 列出应保留的旧画像字段（默认全部保留，只删有冲突的）。
+4. removeOrDowngrade 列出应降级或移除的字段及原因。
+5. 绝对化措辞（极大兴趣/非常热爱/核心爱好）一律降级为中性表述，除非证据跨时间稳定。
+6. 同一晚、同一话题的多条消息合并计算，不能线性放大。
+7. 禁止侮辱性标签。禁止推断身份/取向/心理状态。
+${isLegacyProfile ? '- 旧版画像缺上下文，与上下文样本一致的保留，单薄矛盾的覆盖。' : ''}
 ${memory.profilingRule ? `- 【硬性约束】${memory.profilingRule}` : ''}` },
-      { role: 'user', content: `QQ号：${memory.userId}\n昵称：${memory.nickname || memory.userId}\n\n已有画像：\n${existing}\n\n样本与上下文：\n${sampleBlocks}\n\n低权重背景（仅供契合度判断）：\n${cardText}` }
+      { role: 'user', content: `QQ号：${memory.userId}\n昵称：${memory.nickname || memory.userId}\n\n已有长期画像：\n${existing}\n已有近期动态：\n${JSON.stringify((memory.recentDynamics || []).slice(-5).map((d) => d.topic + ': ' + d.summary))}\n\n话题聚类分析：\n${longTermBlock || '无跨场景长期候选'}\n${recentDynamicsBlock || '无短期高频话题'}\n\n样本与上下文：\n${sampleBlocks}\n\n低权重背景：\n${cardText}` }
     ],
     temperature: 0.2, maxTokens: 1000, label: '画像更新'
   });
@@ -356,12 +401,69 @@ function normalizeProfileValue(value, previous = '') {
 }
 
 export function applyProfileUpdate(target, profile) {
-  target.summary = normalizeProfileValue(profile.summary, target.summary) || '';
-  target.traits = normalizeProfileValue(profile.traits, target.traits) || '';
-  target.speechStyle = normalizeProfileValue(profile.speechStyle, target.speechStyle) || '';
-  target.behavior = normalizeProfileValue(profile.behavior, target.behavior) || '';
-  target.preferences = normalizeProfileValue(profile.preferences, target.preferences) || '';
-  // Save confidence and evidence counts
+  // Patch mode: merge longTermUpdates, add recentDynamics
+  const updates = profile.longTermUpdates || profile;
+  const preserve = profile.preserveExisting || [];
+  const remove = profile.removeOrDowngrade || [];
+  const recentUpdates = profile.recentDynamicsUpdates || [];
+
+  // Apply long-term updates (only for non-preserved fields, or if new value is meaningful)
+  const longFields = ['summary', 'traits', 'speechStyle', 'behavior', 'preferences'];
+  for (const field of longFields) {
+    const newVal = updates[field];
+    if (newVal && !preserve.includes(field)) {
+      const normalized = normalizeProfileValue(newVal, target[field] || '');
+      if (normalized && normalized !== target[field]) target[field] = normalized;
+    }
+  }
+
+  // Handle downgrades
+  for (const item of remove) {
+    if (item.field && longFields.includes(item.field)) {
+      // Move to recent dynamics instead of deleting
+      const oldVal = target[item.field];
+      if (oldVal && oldVal.length > 10) {
+        if (!target.recentDynamics) target.recentDynamics = [];
+        target.recentDynamics.push({
+          topic: item.reason || '降级内容',
+          summary: oldVal.slice(0, 200),
+          evidenceCount: 1, firstSeenAt: new Date().toISOString(), lastSeenAt: new Date().toISOString(),
+          groups: [], confidence: 0.3,
+        });
+      }
+      target[item.field] = '';
+    }
+  }
+
+  // Add/update recent dynamics
+  if (!target.recentDynamics) target.recentDynamics = [];
+  for (const rd of recentUpdates) {
+    if (!rd.topic || !rd.summary) continue;
+    const existing = target.recentDynamics.find((d) => d.topic === rd.topic);
+    if (existing) {
+      existing.summary = rd.summary.slice(0, 300);
+      existing.evidenceCount = (existing.evidenceCount || 1) + 1;
+      existing.lastSeenAt = new Date().toISOString();
+      existing.confidence = Math.min(1, (existing.confidence || 0.3) + 0.1);
+    } else {
+      target.recentDynamics.push({
+        topic: rd.topic, summary: rd.summary.slice(0, 300),
+        evidenceCount: 1, firstSeenAt: new Date().toISOString(), lastSeenAt: new Date().toISOString(),
+        groups: [], confidence: rd.confidence || 0.3,
+      });
+    }
+  }
+
+  // Decay old recent dynamics (older than 7 days -> reduce confidence, older than 14 -> remove)
+  const now = Date.now();
+  target.recentDynamics = (target.recentDynamics || []).filter((rd) => {
+    const age = now - new Date(rd.lastSeenAt || rd.firstSeenAt).getTime();
+    if (age > 14 * 86400000) return false;
+    if (age > 7 * 86400000) rd.confidence = Math.max(0.1, (rd.confidence || 0.3) * 0.5);
+    return true;
+  }).slice(-15);
+
+  // Save confidence
   const conf = profile.confidence || {};
   if (!target.profileMeta) target.profileMeta = {};
   const fields = ['traits', 'speechStyle', 'behavior', 'preferences'];

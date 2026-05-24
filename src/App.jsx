@@ -961,6 +961,19 @@ function Memory({ db, saveSettings, refresh }) {
             <Textarea label="互动习惯" rows={3} value={draft.behavior} onChange={(behavior) => updateDraft({ behavior })} />
             <Textarea label="偏好/雷点" rows={3} value={draft.preferences} onChange={(preferences) => updateDraft({ preferences })} />
             <Textarea label="人工备注" rows={4} value={draft.manualNotes} onChange={(manualNotes) => updateDraft({ manualNotes })} />
+            {draft.recentDynamics && draft.recentDynamics.length > 0 && (
+              <>
+                <h2 className="sectionTitle">近期动态</h2>
+                <div className="cards">
+                  {(draft.recentDynamics || []).slice(-5).reverse().map((rd, i) => (
+                    <div className="item" key={i} style={{ flexDirection: 'column', alignItems: 'stretch' }}>
+                      <strong>{rd.topic}</strong>
+                      <span style={{ fontSize: 12, color: '#8ca19c' }}>{rd.summary} · 置信{Math.round((rd.confidence || 0) * 100)}% · {rd.evidenceCount}条 · {rd.firstSeenAt ? new Date(rd.firstSeenAt).toLocaleDateString('zh-CN') : '?'}~{rd.lastSeenAt ? new Date(rd.lastSeenAt).toLocaleDateString('zh-CN') : '?'}</span>
+                    </div>
+                  ))}
+                </div>
+              </>
+            )}
             {draft.profileMeta && Object.keys(draft.profileMeta).length > 0 && (
               <div className="confidenceBar">
                 {Object.entries(draft.profileMeta).filter(([, v]) => v.confidence > 0 || v.evidenceCount > 0).map(([field, meta]) => {

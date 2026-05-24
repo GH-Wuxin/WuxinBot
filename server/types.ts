@@ -113,6 +113,7 @@ export interface MemoryEntry {
   manualNotes: string;
   profilingRule: string;
   profileMeta: Record<string, { confidence: number; evidenceCount: number; updatedAt: string }>;
+  recentDynamics: { topic: string; summary: string; evidenceCount: number; firstSeenAt: string; lastSeenAt: string; groups: string[]; confidence: number }[];
   lastProfiledAt?: string;
   createdAt: string;
   updatedAt: string;
