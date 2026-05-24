@@ -12,10 +12,7 @@ import {
 } from './bot/cleaning.js';
 import {
   callLLM,
-  completeChat,
-  llmProvider,
-  llmProviderName,
-  supportsProviderSearch
+  completeChat
 } from './bot/llm.js';
 import {
   commandRoleLevel,
@@ -56,7 +53,7 @@ import { recordMemoryObservation, maybeUpdateMemoryProfile, updateMemoryProfile,
 import { getGroupProfile, updateGroupProfile, clearGroupProfile, incrementGroupProfilePending } from './bot/groupProfile.js';
 import { getRelationshipProfile, updateRelationshipProfile, clearRelationshipProfile, incrementPairPending } from './bot/relationshipProfile.js';
 import { processTrustSignal, evaluateTrustScores, trustInteractionBonus, isTrustedMember } from './bot/trust.js';
-import { isSearchAvailable, searchWeb, formatSearchResults, getLastSearchStatus } from './bot/search.js';
+import { isSearchAvailable, searchWeb, formatSearchResults, getLastSearchStatus, extractSearchQuery } from './bot/search.js';
 import { setBotPaused, getRecalcProgress, startRecalc, tickRecalc, finishRecalc } from './health.js';
 
 // User policies are not hard permissions by themselves. They mainly bias the
@@ -348,30 +345,6 @@ export async function processIncoming(event, sendMessage) {
 
   if (!decision.shouldReply) return { replied: false, reason: decision.reason };
 
-  const explicitSearch = asksForExplicitSearch(event.text);
-  const realSearchAvailable = supportsProviderSearch(llmProvider(db));
-  if (explicitSearch && !realSearchAvailable) {
-    const replyText = db.settings.enableWebSearch === false
-      ? '联网搜索现在是关闭的，我不能可靠查询实时信息。'
-      : '当前还没有接入真实联网搜索源，我不能可靠查询实时信息，不能装作已经搜过。';
-    const segments = await sendReplySegments(sendMessage, event, replyText);
-    updateDb((draft) => {
-      draft.messages.push({
-        id: crypto.randomUUID(),
-        role: 'assistant',
-        type: event.type,
-        groupId: event.groupId,
-        userId: 'bot',
-        nickname: '机器人',
-        content: replyText,
-        inContext: true,
-        createdAt: nowIso()
-      });
-      draft.usage.replies += Math.max(1, segments.length);
-    });
-    return { replied: true, text: replyText, segments, reason: '显式搜索请求，但未配置真实搜索适配器' };
-  }
-
   if (decision.visualLimitation) {
     const replyText = visualLimitationReply(event);
     const segments = await sendReplySegments(sendMessage, event, replyText);
@@ -433,8 +406,9 @@ export async function processIncoming(event, sendMessage) {
 
     let searchBlock = '';
     if (explicitSearch && isSearchAvailable(liveDb)) {
-      if (sendMessage) await sendMessage(event, `正在搜索：${event.text.slice(0, 60)}…`);
-      const searchResult = await searchWeb(liveDb, event.text);
+      const searchQuery = extractSearchQuery(event.text);
+      if (sendMessage) await sendMessage(event, `正在搜索：${searchQuery.slice(0, 60)}…`);
+      const searchResult = await searchWeb(liveDb, searchQuery);
       if (searchResult.ok && searchResult.results.length > 0) {
         searchBlock = `【搜索结果】\n${formatSearchResults(searchResult.results)}\n\n请基于以上搜索结果回答，不确定就说没查到。`;
         messages[messages.length - 1].content += '\n\n' + searchBlock;
