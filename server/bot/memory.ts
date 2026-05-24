@@ -305,9 +305,12 @@ export async function updateMemoryProfile(db, memory) {
   const weakSamples = allSamples.filter((s) => !s.usedForProfile && s.content && s.type === 'card');
   const cardText = weakSamples.slice(-8).map((s) => s.content).join('\n');
 
-  // Topic clustering for anti-recency pollution
-  const clusters = clusterSamplesByTopic(usedSamples);
-  const topicWeights = computeTopicWeights(clusters);
+  // V2 anti-recency gating
+  const useV2 = db.settings.profileAntiRecencyV2 === true;
+
+  // Topic clustering for anti-recency pollution (V2 only)
+  const clusters = useV2 ? clusterSamplesByTopic(usedSamples) : [];
+  const topicWeights = useV2 ? computeTopicWeights(clusters) : [];
   const recentDynamicsBlock = topicWeights.filter((tw) => !tw.isCrossSession && tw.sampleCount >= 2).map((tw) => {
     const keywords = tw.cluster.keywords.slice(0, 4).join(',');
     return `短期话题(${keywords}): ${tw.sampleCount}条/${tw.uniqueDays}天 · 权重${Math.round(tw.weight * 100)}% · 仅单场景，不应写入长期画像`;
@@ -373,7 +376,7 @@ export async function updateMemoryProfile(db, memory) {
 7. 禁止侮辱性标签。禁止推断身份/取向/心理状态。
 ${isLegacyProfile ? '- 旧版画像缺上下文，与上下文样本一致的保留，单薄矛盾的覆盖。' : ''}
 ${memory.profilingRule ? `- 【硬性约束】${memory.profilingRule}` : ''}` },
-      { role: 'user', content: `QQ号：${memory.userId}\n昵称：${memory.nickname || memory.userId}\n\n已有长期画像：\n${existing}\n已有近期动态：\n${JSON.stringify((memory.recentDynamics || []).slice(-5).map((d) => d.topic + ': ' + d.summary))}\n\n话题聚类分析：\n${longTermBlock || '无跨场景长期候选'}\n${recentDynamicsBlock || '无短期高频话题'}\n\n样本与上下文：\n${sampleBlocks}\n\n低权重背景：\n${cardText}` }
+      { role: 'user', content: `QQ号：${memory.userId}\n昵称：${memory.nickname || memory.userId}\n\n已有长期画像：\n${existing}${useV2 ? `\n已有近期动态：\n${JSON.stringify((memory.recentDynamics || []).slice(-5).map((d) => d.topic + ': ' + d.summary))}\n\n话题聚类分析：\n${longTermBlock || '无跨场景长期候选'}\n${recentDynamicsBlock || '无短期高频话题'}` : ''}\n\n样本与上下文：\n${sampleBlocks}\n\n低权重背景：\n${cardText}` }
     ],
     temperature: 0.2, maxTokens: 1000, label: '画像更新'
   });
@@ -487,16 +490,23 @@ export function applyProfileUpdate(target, profile) {
   for (const rd of recentUpdates) {
     if (!rd.topic || !rd.summary) continue;
     const existing = target.recentDynamics.find((d) => d.topic === rd.topic);
+    // Extract groups: prefer LLM-provided rd.groups, else from sample context
+    let rdGroups = (rd.groups && rd.groups.length > 0) ? rd.groups : [];
+    if (rdGroups.length === 0) {
+      const allSamples = (target.samples || []).slice(-30);
+      rdGroups = [...new Set(allSamples.map((s) => s.context?.groupId).filter(Boolean))];
+    }
     if (existing) {
       existing.summary = rd.summary.slice(0, 300);
       existing.evidenceCount = (existing.evidenceCount || 1) + 1;
       existing.lastSeenAt = new Date().toISOString();
       existing.confidence = Math.min(1, (existing.confidence || 0.3) + 0.1);
+      if (rdGroups.length > 0) existing.groups = [...new Set([...(existing.groups || []), ...rdGroups])];
     } else {
       target.recentDynamics.push({
         topic: rd.topic, summary: rd.summary.slice(0, 300),
         evidenceCount: 1, firstSeenAt: new Date().toISOString(), lastSeenAt: new Date().toISOString(),
-        groups: [], confidence: rd.confidence || 0.3,
+        groups: rdGroups, confidence: rd.confidence || 0.3,
       });
     }
   }

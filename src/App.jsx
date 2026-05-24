@@ -678,7 +678,10 @@ function Model({ db, saveSettings }) {
           <Text label="慢请求延迟（毫秒）" value={String(draft.thinkingNoticeDelayMs || 3000)} onChange={(v) => setDraft({ ...draft, thinkingNoticeDelayMs: Math.max(500, Number(v) || 3000) })} />
         )}
         <label className="switch">
-          <input type="checkbox" checked={draft.ignoreSystemFacts === true} onChange={(e) => setDraft({ ...draft, ignoreSystemFacts: e.target.checked })} /> 纯人设模式（关闭后只注入人设，不注入 owner/模型名/上下文规则等底层信息）
+          <input type="checkbox" checked={draft.ignoreSystemFacts === true} onChange={(e) => setDraft({ ...draft, ignoreSystemFacts: e.target.checked })} /> 纯人设模式
+        </label>
+        <label className="switch">
+          <input type="checkbox" checked={draft.profileAntiRecencyV2 === true} onChange={(e) => setDraft({ ...draft, profileAntiRecencyV2: e.target.checked })} /> 画像V2防近因（长期画像/近期动态分层，实验性）
         </label>
         <button className="primary" onClick={() => saveSettings({ ...draft, model: draft.customModel?.trim() || draft.model, customModel: '' })}>保存模型设置</button>
       </div>
