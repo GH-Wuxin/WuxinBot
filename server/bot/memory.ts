@@ -229,26 +229,42 @@ export function recordMemoryObservation(event, userPolicy) {
   return { shouldUpdate, reason: shouldUpdate ? '达到画像更新阈值' : (memoryImportance(readDb(), userPolicy).label) };
 }
 
-function clusterSamplesByTopic(samples) {
+function tokenizeCJK(text) {
+  const tokens = [];
+  // Extract Latin/ASCII words
+  const latinWords = text.match(/[a-zA-Z0-9]+/g) || [];
+  tokens.push(...latinWords.map((w) => w.toLowerCase()));
+  // Extract CJK bigrams
+  const cjk = text.replace(/[a-zA-Z0-9\s,，。！？!?:：;；""''【】\[\]()（）\/\\@#\$%^&*+=~`|<>{}]+/g, '');
+  for (let i = 0; i < cjk.length - 1; i++) {
+    tokens.push(cjk.slice(i, i + 2));
+  }
+  return tokens.filter((t) => t.length >= 2 && !['这个','那个','什么','怎么','为什么','是不是','有没有','一个','可以','就是','不是','吗','吧','呢','啊'].includes(t));
+}
+
+export function clusterSamplesByTopic(samples) {
   const clusters = [];
   for (const s of samples) {
     const text = String(s.content || '').toLowerCase();
+    const tokens = tokenizeCJK(text);
     let matched = false;
     for (const c of clusters) {
-      const overlap = c.keywords.filter((kw) => text.includes(kw));
-      if (overlap.length >= 2 || (overlap.length >= 1 && text.length < 20 && c.keywords.some((kw) => kw.length > 3 && text.includes(kw)))) {
-        c.samples.push(s); matched = true; break;
+      const overlap = c.keywords.filter((kw) => tokens.includes(kw));
+      if (overlap.length >= 1) {
+        c.samples.push(s);
+        for (const t of tokens) { if (!c.keywords.includes(t)) c.keywords.push(t); }
+        c.keywords = c.keywords.slice(0, 12);
+        matched = true; break;
       }
     }
     if (!matched) {
-      const words = text.replace(/[，,。！？!?\s]+/g, ' ').split(' ').filter((w) => w.length >= 2 && !['这个','那个','什么','怎么','为什么','是不是','有没有','一个','可以','就是','不是'].includes(w));
-      clusters.push({ keywords: words.slice(0, 6), samples: [s] });
+      clusters.push({ keywords: [...new Set(tokens)].slice(0, 8), samples: [s] });
     }
   }
   return clusters;
 }
 
-function computeTopicWeights(clusters) {
+export function computeTopicWeights(clusters) {
   const weights = [];
   for (const c of clusters) {
     const sampleCount = c.samples.length;

@@ -1,8 +1,16 @@
 # Changelog
 
-## v1.0.0 (2026-05-23)
+## v1.0.0 (2026-05-23/24)
 
-### 新增
+### 新增（0524）
+- **画像分层**：长期画像 + 近期动态两层。单日/单场景高频话题只进入近期动态，不覆盖长期画像
+- topic cluster 降权：同一话题短窗口内合并计数，不按消息条数线性放大
+- LLM patch 模式：longTermUpdates/recentDynamicsUpdates/preserveExisting/removeOrDowngrade
+- 近期动态自然衰减：7天降权/14天移除
+- GUI + /w profile show 分层显示
+- CHANGELOG.md（给人看的更新日志）
+
+### 新增（0523）
 - 决策沙盒：POST /api/sandbox，不写DB，可选群/成员/策略覆盖/画像预览/LLM
 - 全局重算 + 进度条：/w refresh、/w recalc，GUI 进度条 + 停止按钮
 - 社交记忆层：信号抽取 + 自动信任分 + 群友关系画像
