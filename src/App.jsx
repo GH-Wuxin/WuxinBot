@@ -628,6 +628,28 @@ function Persona({ db, saveSettings }) {
 
 function Model({ db, saveSettings }) {
   const [draft, setDraft] = useState(db.settings);
+  const [testingLocal, setTestingLocal] = useState(false);
+  const [localSearchStatus, setLocalSearchStatus] = useState(null);
+  const [showAdvancedSearch, setShowAdvancedSearch] = useState(false);
+  const testLocalSearch = async () => {
+    setTestingLocal(true);
+    setLocalSearchStatus(null);
+    try {
+      const data = await api('/api/search/test-local', { method: 'POST' });
+      if (data.baseUrl) {
+        const patch = { enableWebSearch: true, searchProvider: 'searxng', searchBaseUrl: data.baseUrl };
+        setDraft((prev) => ({ ...prev, ...patch }));
+        await saveSettings(patch);
+        setLocalSearchStatus({ ok: true, message: '已检测到本地 SearXNG，并已保存配置。' });
+      } else {
+        setLocalSearchStatus({ ok: false, message: data.message || '未检测到本地搜索服务' });
+      }
+    } catch (e) {
+      setLocalSearchStatus({ ok: false, message: `检测失败：${e.message || '网络错误'}` });
+    } finally {
+      setTestingLocal(false);
+    }
+  };
   const changeProvider = (llmProvider) => {
     const next = { ...draft, llmProvider };
     if (llmProvider === 'deepseek' && !next.apiBaseUrl) next.apiBaseUrl = 'https://api.deepseek.com';
@@ -660,18 +682,33 @@ function Model({ db, saveSettings }) {
         </label>
         {draft.enableWebSearch === true && (
           <>
+            <div style={{ marginBottom: 12 }}>
+              <button onClick={testLocalSearch} disabled={testingLocal} style={{ marginRight: 10 }}>
+                {testingLocal ? '检测中…' : '检测本地搜索服务'}
+              </button>
+              {localSearchStatus && (
+                <span style={{ fontSize: 13, color: localSearchStatus.ok ? '#4caf50' : '#c09853' }}>
+                  {localSearchStatus.message}
+                </span>
+              )}
+            </div>
             <Select label="搜索模式" value={draft.webSearchMode || 'balanced'} onChange={(webSearchMode) => setDraft({ ...draft, webSearchMode })} options={{
               'fast': '快速（更快但可能不全）',
               'balanced': '平衡（推荐）',
               'deep': '深度（更全面但稍慢）'
             }} />
-            <Select label="真实搜索源" value={draft.searchProvider || 'disabled'} onChange={(searchProvider) => setDraft({ ...draft, searchProvider })} options={{
-              'disabled': '未接入（关闭）',
-              'searxng': 'SearXNG'
-            }} />
-            {draft.searchProvider === 'searxng' && (
-              <Text label="SearXNG 地址" value={draft.searchBaseUrl || ''} onChange={(searchBaseUrl) => setDraft({ ...draft, searchBaseUrl })} />
-            )}
+            <details open={showAdvancedSearch} onToggle={(e) => setShowAdvancedSearch(e.target.open)} style={{ marginBottom: 12 }}>
+              <summary style={{ cursor: 'pointer', fontSize: 13, color: '#888', userSelect: 'none' }}>高级设置</summary>
+              <div style={{ marginTop: 8 }}>
+                <Select label="真实搜索源" value={draft.searchProvider || 'disabled'} onChange={(searchProvider) => setDraft({ ...draft, searchProvider })} options={{
+                  'disabled': '未接入（关闭）',
+                  'searxng': 'SearXNG'
+                }} />
+                {draft.searchProvider === 'searxng' && (
+                  <Text label="SearXNG 地址" value={draft.searchBaseUrl || ''} onChange={(searchBaseUrl) => setDraft({ ...draft, searchBaseUrl })} />
+                )}
+              </div>
+            </details>
           </>
         )}
         <label className="switch">
@@ -698,7 +735,7 @@ function Model({ db, saveSettings }) {
         <h2>怎么选</h2>
         <p className="guide">默认供应商是 DeepSeek；如果以后接别家的 OpenAI 兼容 API，就切到兼容接口，填它自己的 API 地址和模型名。</p>
         <p className="guide">创造性越高越活泼，越低越稳。小群聊天可以从 0.85 开始。</p>
-        <p className="guide">DeepSeek 官方 Chat API 当前没有稳定内置搜索参数；未接入真实搜索适配器前，显式搜索请求会被拒绝，避免模型装作已经联网。</p>
+        <p className="guide">DeepSeek 官方 Chat API 没有内置搜索；点击"检测本地搜索服务"一键配置 SearXNG，或手动在高级设置中填写搜索源地址。未检测到真实搜索服务时，显式搜索请求会被拒绝，不会假装联网。</p>
       </div>
     </section>
   );
