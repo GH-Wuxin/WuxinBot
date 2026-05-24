@@ -1463,14 +1463,18 @@ ${knownModels.join('\n')}
         if (sendMessage) await sendMessage(event, reply);
         return { replied: Boolean(sendMessage), reason: reply };
       }
+      const recentDynamics = (mem.recentDynamics || []).slice(-5).filter((d) => d.confidence >= 0.2);
+      const dynamicsBlock = recentDynamics.length > 0 ? '\n—— 近期动态（可能临时）——\n' + recentDynamics.map((d) => `${d.topic}：${d.summary}（置信${Math.round(d.confidence * 100)}%）`).join('\n') : '';
       const profileText = [
+        '—— 长期画像 ——',
         mem.summary && `整体：${mem.summary}`,
         mem.traits && `性格：${mem.traits}`,
         mem.speechStyle && `说话：${mem.speechStyle}`,
         mem.behavior && `行为：${mem.behavior}`,
         mem.preferences && `偏好：${mem.preferences}`,
         mem.manualNotes && `备注：${mem.manualNotes}`,
-        `发言数：${mem.profileMessageCount || 0} | 最近更新：${mem.lastProfiledAt ? new Date(mem.lastProfiledAt).toLocaleString('zh-CN') : '从未'}`
+        dynamicsBlock,
+        `\n发言数：${mem.profileMessageCount || 0} | 最近更新：${mem.lastProfiledAt ? new Date(mem.lastProfiledAt).toLocaleString('zh-CN') : '从未'}`
       ].filter(Boolean).join('\n');
       if (sendMessage) await sendForwardText(sendMessage, event, `${mem.nickname || showTarget} 的画像`, profileText);
       return { replied: Boolean(sendMessage), reason: `查看 ${showTarget} 画像` };
