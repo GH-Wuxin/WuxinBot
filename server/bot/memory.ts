@@ -229,17 +229,31 @@ export function recordMemoryObservation(event, userPolicy) {
   return { shouldUpdate, reason: shouldUpdate ? '达到画像更新阈值' : (memoryImportance(readDb(), userPolicy).label) };
 }
 
+const STOP_BIGRAMS = new Set([
+  '今天','昨天','明天','刚刚','感觉','觉得','好像','应该','可能','已经','还是','不过',
+  '这个','那个','什么','怎么','为什么','是不是','有没有','一个','可以','就是','不是',
+  '吗','吧','呢','啊','了','的','我','你','他','她','它','们','这','那','很','都','也','就','才',
+  '一下','一点','有点','有点','不会','会对','会对','在吗','吗我','我了','了我',
+]);
+
+const SPECIAL_TERMS = /cs2|osu|owc|deepseek|v4|api|gpt|bot|npm|node|jsx|css|react|vite|onebot|napcat|qq/gi;
+
 function tokenizeCJK(text) {
   const tokens = [];
-  // Extract Latin/ASCII words
-  const latinWords = text.match(/[a-zA-Z0-9]+/g) || [];
-  tokens.push(...latinWords.map((w) => w.toLowerCase()));
-  // Extract CJK bigrams
-  const cjk = text.replace(/[a-zA-Z0-9\s,，。！？!?:：;；""''【】\[\]()（）\/\\@#\$%^&*+=~`|<>{}]+/g, '');
+  const lowered = text.toLowerCase();
+  // Extract special terms (game names, tech terms) — higher weight
+  const specials = lowered.match(SPECIAL_TERMS) || [];
+  tokens.push(...specials);
+  // Extract other Latin/ASCII words (skip if already captured as special)
+  const latinWords = lowered.match(/[a-zA-Z0-9]{2,}/g) || [];
+  for (const w of latinWords) { if (!specials.includes(w)) tokens.push(w); }
+  // Extract CJK bigrams, filter stop words
+  const cjk = lowered.replace(/[a-zA-Z0-9\s,，。！？!?:：;；""''【】\[\]()（）\/\\@#\$%^&*+=~`|<>{}0-9]+/g, '');
   for (let i = 0; i < cjk.length - 1; i++) {
-    tokens.push(cjk.slice(i, i + 2));
+    const bg = cjk.slice(i, i + 2);
+    if (!STOP_BIGRAMS.has(bg)) tokens.push(bg);
   }
-  return tokens.filter((t) => t.length >= 2 && !['这个','那个','什么','怎么','为什么','是不是','有没有','一个','可以','就是','不是','吗','吧','呢','啊'].includes(t));
+  return tokens;
 }
 
 export function clusterSamplesByTopic(samples) {
@@ -249,8 +263,14 @@ export function clusterSamplesByTopic(samples) {
     const tokens = tokenizeCJK(text);
     let matched = false;
     for (const c of clusters) {
-      const overlap = c.keywords.filter((kw) => tokens.includes(kw));
-      if (overlap.length >= 1) {
+      const tokenSet = new Set(tokens);
+      const clusterSet = new Set(c.keywords);
+      const intersection = [...tokenSet].filter((t) => clusterSet.has(t));
+      const union = new Set([...tokenSet, ...clusterSet]);
+      const jaccard = union.size > 0 ? intersection.length / union.size : 0;
+      const hasSpecial = intersection.some((t) => /cs2|osu|owc|deepseek|v4|api|gpt|bot/i.test(t));
+      // Match: 2+ tokens overlap OR special term match OR Jaccard >= 0.25
+      if (intersection.length >= 2 || hasSpecial || jaccard >= 0.25) {
         c.samples.push(s);
         for (const t of tokens) { if (!c.keywords.includes(t)) c.keywords.push(t); }
         c.keywords = c.keywords.slice(0, 12);
@@ -270,8 +290,10 @@ export function computeTopicWeights(clusters) {
     const sampleCount = c.samples.length;
     const uniqueDays = new Set(c.samples.map((s) => (s.createdAt || '').slice(0, 10))).size;
     const uniqueGroups = new Set(c.samples.map((s) => s.context?.groupId || 'unknown')).size;
-    const isCrossSession = uniqueDays >= 2 || uniqueGroups >= 2;
-    const weight = isCrossSession ? Math.min(1, sampleCount * 0.3) : Math.min(1, sampleCount * 0.08);
+    // Cross-day (>=2 days) = long-term candidate. Cross-group alone = bonus, not enough.
+    const isCrossSession = uniqueDays >= 2;
+    const crossGroupBonus = uniqueGroups >= 2 ? 0.15 : 0;
+    const weight = Math.min(1, (isCrossSession ? sampleCount * 0.3 : sampleCount * 0.08) + crossGroupBonus);
     weights.push({ cluster: c, sampleCount, uniqueDays, uniqueGroups, isCrossSession, weight });
   }
   return weights;
@@ -337,7 +359,7 @@ export async function updateMemoryProfile(db, memory) {
   "longTermUpdates": {"summary":"...","traits":"...","speechStyle":"...","behavior":"...","preferences":"..."},
   "recentDynamicsUpdates": [{"topic":"...","summary":"...","confidence":0.5}],
   "preserveExisting": ["summary","traits","speechStyle","behavior","preferences"],
-  "removeOrDowngrade": [{"field":"preferences","reason":"单场景高频，降为近期动态"}],
+  "removeOrDowngrade": [{"field":"preferences","topic":"CS2","phrase":"对CS2抱有极大兴趣","reason":"单场景高频，降为近期动态","groups":["群号"]}],
   "confidence": {"traits":0.5,"speechStyle":0.5,"behavior":0.5,"preferences":0.5}
 }
 
@@ -433,21 +455,30 @@ export function applyProfileUpdate(target, profile) {
     }
   }
 
-  // Handle downgrades
+  // Handle downgrades — phrase-level, not field-level wipe
   for (const item of remove) {
     if (item.field && longFields.includes(item.field)) {
-      // Move to recent dynamics instead of deleting
-      const oldVal = target[item.field];
-      if (oldVal && oldVal.length > 10) {
+      const oldVal = target[item.field] || '';
+      if (item.phrase && oldVal.includes(item.phrase)) {
+        // Remove only the specific phrase, keep rest
+        target[item.field] = oldVal.replace(new RegExp(item.phrase.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g'), '').replace(/[，,、；;]\s*[，,、；;]+/g, '；').replace(/^[，,、；;\s]+|[，,、；;\s]+$/g, '').trim();
         if (!target.recentDynamics) target.recentDynamics = [];
         target.recentDynamics.push({
-          topic: item.reason || '降级内容',
-          summary: oldVal.slice(0, 200),
+          topic: item.topic || item.reason || '降级内容',
+          summary: item.phrase.slice(0, 200),
           evidenceCount: 1, firstSeenAt: new Date().toISOString(), lastSeenAt: new Date().toISOString(),
-          groups: [], confidence: 0.3,
+          groups: item.groups || [], confidence: 0.3,
+        });
+      } else if (!item.phrase) {
+        // No phrase = log warning, don't wipe field, only add recent dynamics
+        if (!target.recentDynamics) target.recentDynamics = [];
+        target.recentDynamics.push({
+          topic: item.topic || item.reason || '降级警告(未指定短语,已保留长期画像)',
+          summary: (item.reason || '') + ' — 原内容已保留',
+          evidenceCount: 1, firstSeenAt: new Date().toISOString(), lastSeenAt: new Date().toISOString(),
+          groups: item.groups || [], confidence: 0.2,
         });
       }
-      target[item.field] = '';
     }
   }
 
