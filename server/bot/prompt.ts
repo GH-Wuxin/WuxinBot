@@ -219,6 +219,10 @@ export function buildPrompt(db, group, event, userPolicy) {
     ? `\n【owner 私聊上下文预算】\nowner 私聊会尽量多带历史，但本次只带入最近 ${ownerContext.selected} 条，较早的 ${ownerContext.total - ownerContext.selected} 条因上下文预算被省略。不要声称自己拥有完整无限历史；如果需要更早内容，可以自然说明需要对方补一句。`
     : '';
 
+  const selfQq = db.settings.selfQq || '';
+  const atSelf = selfQq && (event.atTargets || []).some((qq) => String(qq) === String(selfQq));
+  const anchorText = atSelf ? `\n【身份锚点】本条消息明确 @ 了你（QQ ${selfQq}），底层已判定你应该回复。不要再判断"@ 的是不是我"或"我该不该回"。禁止输出"没有回应/不该回应/at的不是自己/at的是其他群友/不是我的at/你at的是别人"等自我否定话术。` : '';
+
   const ignoreFacts = db.settings.ignoreSystemFacts === true;
 
   const facts = ignoreFacts ? '' : [
@@ -239,9 +243,16 @@ export function buildPrompt(db, group, event, userPolicy) {
     event.type === 'group' ? relationshipPromptBlock(db, event) : '',
   ].filter(Boolean).join('\n');
 
+  // Replace @self CQ code with "@你" in the user message, keep other @s as-is
+  let displayText = event.text;
+  if (selfQq) {
+    displayText = displayText.replace(new RegExp(`\\[CQ:at,qq=${selfQq.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\]`, 'g'), '@你');
+  }
+
+  const selfNegationBan = '【注意】一旦进入回复阶段就表示你应该回复。禁止说"没有回应/不该回应/at的不是自己/at的是别人"等自我否定的话。';
   const userContent = ignoreFacts
-    ? `${speakerIdentity}：${event.text}`
-    : `${facts}\n\n${speakerIdentity}：${event.text}`;
+    ? `${selfNegationBan}\n\n${speakerIdentity}：${displayText}`
+    : `${facts}\n\n${anchorText}\n\n${speakerIdentity}：${displayText}`;
 
   return [
     {
