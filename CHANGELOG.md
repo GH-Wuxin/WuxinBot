@@ -3,6 +3,7 @@
 ## v1.0.0 (2026-05-23/24)
 
 ### 新增（0524）
+- **思考状态提示可配置**：/w thinking off|simple|detail|slow [ms]|status，GUI下拉+延迟调整。默认 slow 3s。4种模式：关/简短/详细/仅慢请求。
 - **画像分层**：长期画像 + 近期动态两层。单日/单场景高频话题只进入近期动态，不覆盖长期画像
 - topic cluster 降权：同一话题短窗口内合并计数，不按消息条数线性放大
 - LLM patch 模式：longTermUpdates/recentDynamicsUpdates/preserveExisting/removeOrDowngrade
