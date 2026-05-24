@@ -93,7 +93,13 @@ export function isWeirdReply(text) {
     /收费|收钱|打钱|给钱|我要钱|伸手要钱/,
     /被淹没|爬出来|阴暗地|浮出水面|急了|破防/,
     /别骂|别在群里|不满意|我改|启动语气|没事爱唠嗑|主要工作是接梗/,
-    /又自我介绍|行吧|哎哟|啧|咳[，,]/
+    /又自我介绍|行吧|哎哟|啧|咳[，,]/,
+    // Identity self-negation: bot denying it was @mentioned
+    /(没有|没)回应.*(at|@).*(不是|不).*(自己|我)/,
+    /(at|@).*(不是|不).*(自己|我|本)/,
+    /刚才.*(at|@).*(不是|错)/,
+    /你.*(at|@).*(别人|其他)/,
+    /我.*(不该|不应该|不能).*(回复|回应|说话|插话)/,
   ];
   const manyParentheses = (value.match(/[（(]/g) || []).length >= 2;
   const tooLong = value.length > 180;

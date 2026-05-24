@@ -422,16 +422,17 @@ export async function processIncoming(event, sendMessage) {
       overrideModel: responseOptions.overrideModel
     });
 
-    // Cancel timer if LLM returned before delay
-    if (thinkingTimer) clearTimeout(thinkingTimer);
     let replyText = sanitizeReply(ai.text, liveDb.settings);
     if (!responseOptions.longForm && isWeirdReply(replyText)) {
       const rewrite = await rewriteNormalReply(liveDb, replyText, event);
       replyText = sanitizeReply(rewrite.text, liveDb.settings);
-      // Fold rewrite usage into the same event so /d usage counts everything
       ai.usage.total_tokens = (ai.usage.total_tokens || 0) + (rewrite.usage.total_tokens || 0);
       ai.usage.prompt_tokens = (ai.usage.prompt_tokens || 0) + (rewrite.usage.prompt_tokens || 0);
       ai.usage.completion_tokens = (ai.usage.completion_tokens || 0) + (rewrite.usage.completion_tokens || 0);
+      // Identity confusion fallback: if rewrite still contains self-negation
+      if (isWeirdReply(replyText) && /(没有|没)回应.*(at|@)|(at|@).*不是.*自己|不该.*回复|不该.*回应/.test(replyText)) {
+        replyText = '我在，刚才识别有点乱。你刚刚是在叫我，对吧？';
+      }
     }
     if (!replyText) throw new Error('模型返回了空内容。');
 
@@ -494,6 +495,7 @@ export async function processIncoming(event, sendMessage) {
     });
     return { replied: false, error: error.message, reason: decision.reason };
   } finally {
+    if (thinkingTimer) clearTimeout(thinkingTimer);
     activeReplyGroups.delete(replyLockKey);
   }
 }
@@ -655,6 +657,7 @@ async function runOwnerCommand(event, sendMessage, permissions = { isOwner: true
     { key: 'modelShow', group: '模型与搜索', line: '/w model show/list · 查看模型' },
     { key: 'modelSet', group: '模型与搜索', line: '/w model 模型名 · 切换模型' },
     { key: 'search', group: '模型与搜索', line: '/w search on/off/status/fast/balanced/deep · 搜索' },
+    { key: 'thinking', group: '模型与搜索', line: '/w thinking off|simple|detail|slow [ms]|status · 思考提示' },
     { key: 'search', group: '模型与搜索', line: '/w sysfacts on/off · 纯人设模式' },
     { key: 'summarize', group: '模型与搜索', line: '/w summarize 条数 · 总结群聊' },
     { key: 'preset', group: '系统', line: '/w preset class|away|sleep|active|silent|debug · 场景预设' },
