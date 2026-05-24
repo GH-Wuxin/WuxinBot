@@ -186,6 +186,13 @@ export function memoryPromptBlock(db, userId) {
     parts.push(`${prefix}：${value}`);
   }
   if (memory.manualNotes) parts.push(`人工备注：${memory.manualNotes}`);
+
+  const dynamics = memory.recentDynamics || [];
+  if (dynamics.length > 0) {
+    const recent = dynamics.slice(-5).filter((d) => d.confidence >= 0.2).map((d) => `近期：${d.topic} — ${d.summary}`);
+    if (recent.length > 0) parts.push('【近期动态，可能临时】\n' + recent.join('\n') + '\n近期动态不代表长期设定，仅作语境参考。');
+  }
+
   if (!parts.length) return '';
   const maxChars = Number(db.settings.memoryMaxChars || 900);
   return parts.join('\n').slice(0, maxChars);
