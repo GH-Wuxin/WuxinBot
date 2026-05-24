@@ -1,5 +1,16 @@
 # Changelog
 
+## v1.0.1 (2026-05-24)
+
+### 修复
+- 搜索补丁：isSearchAvailable 尊重 enableWebSearch 开关
+- extractSearchQuery 清洗查询词（去 CQ at/图片占位/触发词）
+- 移除旧 supportsProviderSearch 拦截（之前把真的 SearXNG 也挡了）
+- SearXNG 请求 finally clearTimeout 防泄漏
+- 无搜索结果正确返回 ok=false + 写搜索日志
+
+---
+
 ## v1.0.0 (2026-05-23/24)
 
 ### 新增（0524）
