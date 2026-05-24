@@ -81,6 +81,7 @@ const commandLabels = {
   modelShow: '查看模型 /w model show/list',
   modelSet: '切换模型 /w model · 纯人设 /w sysfacts',
   search: '联网搜索 /w search',
+  thinking: '思考提示 /w thinking',
   pause: '暂停/恢复 /w pause resume',
   profile: '画像管理 /w profile',
   profileRetry: '画像定向重算 /w profile retry',
@@ -667,6 +668,15 @@ function Model({ db, saveSettings }) {
         <label className="switch">
           <input type="checkbox" checked={draft.enableAutoModel !== false} onChange={(e) => setDraft({ ...draft, enableAutoModel: e.target.checked })} /> 自动选择模型（复杂任务自动升级到 V4 Pro）
         </label>
+        <Select label="思考状态提示" value={draft.thinkingNoticeMode || 'slow'} onChange={(thinkingNoticeMode) => setDraft({ ...draft, thinkingNoticeMode })} options={{
+          'off': '关闭',
+          'simple': '简短：正在思考…',
+          'detail': '详细：深度思考中（模型名）',
+          'slow': '仅慢请求显示（默认3秒延迟）'
+        }} />
+        {draft.thinkingNoticeMode === 'slow' && (
+          <Text label="慢请求延迟（毫秒）" value={String(draft.thinkingNoticeDelayMs || 3000)} onChange={(v) => setDraft({ ...draft, thinkingNoticeDelayMs: Math.max(500, Number(v) || 3000) })} />
+        )}
         <label className="switch">
           <input type="checkbox" checked={draft.ignoreSystemFacts === true} onChange={(e) => setDraft({ ...draft, ignoreSystemFacts: e.target.checked })} /> 纯人设模式（关闭后只注入人设，不注入 owner/模型名/上下文规则等底层信息）
         </label>

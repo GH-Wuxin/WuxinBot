@@ -393,20 +393,37 @@ export async function processIncoming(event, sendMessage) {
     const responseOptions = responseOptionsFor(event, liveDb, liveUserPolicy);
     const searchMode = responseOptions.searchMode;
 
-    // When @mentioned, show a brief thinking indicator so the user knows the
-    // bot received the question. Auto-model info is shown when the model is
-    // being upgraded for a complex task.
-    if (mentioned && sendMessage) {
+    // Thinking notice — configurable per thinkingNoticeMode
+    const thinkingMode = liveDb.settings.thinkingNoticeMode || 'slow';
+    const thinkingDelay = Number(liveDb.settings.thinkingNoticeDelayMs || 3000);
+    let thinkingSent = false;
+    let thinkingTimer = null;
+
+    const sendThinking = async (text) => {
+      if (thinkingSent || !sendMessage) return;
+      thinkingSent = true;
+      await sendMessage(event, text);
+    };
+
+    if (thinkingMode === 'simple') {
+      await sendThinking('正在思考…');
+    } else if (thinkingMode === 'detail') {
       const modelHint = responseOptions.overrideModel && responseOptions.overrideModel !== liveDb.settings.model
-        ? `（${describeModel(responseOptions.overrideModel)}）`
-        : '';
-      await sendMessage(event, `正在进行思考…${modelHint}`);
+        ? describeModel(responseOptions.overrideModel)
+        : describeModel(liveDb.settings.model);
+      await sendThinking(`深度思考中（${modelHint}）…`);
+    } else if (thinkingMode === 'slow') {
+      thinkingTimer = setTimeout(() => sendThinking('正在进行思考…'), thinkingDelay);
     }
+    // 'off' — never send
 
     const ai = await callLLM(liveDb, messages, searchMode, {
       maxTokens: responseOptions.maxTokens,
       overrideModel: responseOptions.overrideModel
     });
+
+    // Cancel timer if LLM returned before delay
+    if (thinkingTimer) clearTimeout(thinkingTimer);
     let replyText = sanitizeReply(ai.text, liveDb.settings);
     if (!responseOptions.longForm && isWeirdReply(replyText)) {
       const rewrite = await rewriteNormalReply(liveDb, replyText, event);
@@ -606,6 +623,7 @@ async function runOwnerCommand(event, sendMessage, permissions = { isOwner: true
 /w search on|off · 开关搜索
 /w search status · 搜索状态
 /w search fast|balanced|deep · 搜索模式
+/w thinking off|simple|detail|slow [ms]|status · 思考提示
 /w sysfacts on|off · 纯人设模式
 /w summarize 条数 · 总结群聊
 
@@ -1268,6 +1286,38 @@ ${knownModels.join('\n')}
     }
 
     const reply = '用法：/w search on|off|status|fast|balanced|deep';
+    if (sendMessage) await sendMessage(event, reply);
+    return { replied: Boolean(sendMessage), reason: reply };
+  }
+
+  if (command === '/thinking' && isWuxinCommand) {
+    if (!(await requireCommand('thinking'))) return { replied: Boolean(sendMessage), reason: commandDeniedReply(commandDb, 'thinking') };
+    const arg = (parts[2] || '').toLowerCase();
+    if (arg === 'off' || arg === 'simple' || arg === 'detail') {
+      updateDb((draft) => { draft.settings.thinkingNoticeMode = arg; });
+      const labels = { off: '已关闭思考提示', simple: '已设为简短提示（正在思考…）', detail: '已设为详细提示（含模型名）' };
+      const reply = labels[arg] || `已设为 ${arg} 模式`;
+      if (sendMessage) await sendMessage(event, reply);
+      return { replied: Boolean(sendMessage), reason: reply };
+    }
+    if (arg === 'slow') {
+      const delayMs = parseInt(parts[3], 10);
+      const delay = Number.isFinite(delayMs) && delayMs >= 500 ? delayMs : 3000;
+      updateDb((draft) => { draft.settings.thinkingNoticeMode = 'slow'; draft.settings.thinkingNoticeDelayMs = delay; });
+      const reply = `已设为慢请求提示模式，${delay}ms 内未回复才提示"正在思考…"。`;
+      if (sendMessage) await sendMessage(event, reply);
+      return { replied: Boolean(sendMessage), reason: reply };
+    }
+    if (arg === 'status') {
+      const db = readDb();
+      const mode = db.settings.thinkingNoticeMode || 'slow';
+      const delay = db.settings.thinkingNoticeDelayMs || 3000;
+      const labels = { off: '关闭', simple: '简短提示', detail: '详细提示（含模型名）', slow: `慢请求提示（${delay}ms 延迟）` };
+      const reply = `思考提示：${labels[mode] || mode}`;
+      if (sendMessage) await sendMessage(event, reply);
+      return { replied: Boolean(sendMessage), reason: reply };
+    }
+    const reply = '用法：/w thinking off|simple|detail|slow [毫秒]|status。默认 slow 3000ms。例如 /w thinking slow 5000';
     if (sendMessage) await sendMessage(event, reply);
     return { replied: Boolean(sendMessage), reason: reply };
   }
