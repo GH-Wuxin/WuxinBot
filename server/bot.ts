@@ -383,6 +383,7 @@ export async function processIncoming(event, sendMessage) {
   }
   activeReplyGroups.add(replyLockKey);
 
+  let thinkingTimer = null;
   try {
     const liveDb = readDb();
     const liveGroup = getGroup(liveDb, event.groupId) || { groupId: event.groupId, name: '私聊' };
@@ -407,14 +408,51 @@ export async function processIncoming(event, sendMessage) {
     let searchBlock = '';
     if (explicitSearch && isSearchAvailable(liveDb)) {
       const searchQuery = extractSearchQuery(event.text);
+      if (!searchQuery || searchQuery.length < 2) {
+        const replyText = '你想让我搜什么？给我一个关键词或问题就行。';
+        if (sendMessage) await sendMessage(event, replyText);
+        updateDb((draft) => {
+          draft.messages.push({
+            id: crypto.randomUUID(),
+            role: 'assistant',
+            type: event.type,
+            groupId: event.groupId,
+            userId: 'bot',
+            nickname: '机器人',
+            content: replyText,
+            inContext: true,
+            createdAt: nowIso()
+          });
+          draft.usage.replies += 1;
+        });
+        activeReplyGroups.delete(replyLockKey);
+        return { replied: true, text: replyText, reason: '搜索请求缺少关键词' };
+      }
       if (sendMessage) await sendMessage(event, `正在搜索：${searchQuery.slice(0, 60)}…`);
       const searchResult = await searchWeb(liveDb, searchQuery);
       if (searchResult.ok && searchResult.results.length > 0) {
         searchBlock = `【搜索结果】\n${formatSearchResults(searchResult.results)}\n\n请基于以上搜索结果回答，不确定就说没查到。`;
         messages[messages.length - 1].content += '\n\n' + searchBlock;
       } else {
-        searchBlock = '【搜索结果】搜索失败或无结果，不要编造信息。';
-        messages[messages.length - 1].content += '\n\n' + searchBlock;
+        const detail = searchResult.error ? `原因：${searchResult.error}` : '没有拿到可用结果';
+        const replyText = `我这次没有搜到可靠结果，先不硬编。${detail}`;
+        if (sendMessage) await sendMessage(event, replyText);
+        updateDb((draft) => {
+          draft.messages.push({
+            id: crypto.randomUUID(),
+            role: 'assistant',
+            type: event.type,
+            groupId: event.groupId,
+            userId: 'bot',
+            nickname: '机器人',
+            content: replyText,
+            inContext: true,
+            createdAt: nowIso()
+          });
+          draft.usage.replies += 1;
+        });
+        activeReplyGroups.delete(replyLockKey);
+        return { replied: true, text: replyText, reason: '搜索失败或无结果' };
       }
     }
     const searchMode = responseOptions.searchMode;
@@ -423,7 +461,6 @@ export async function processIncoming(event, sendMessage) {
     const thinkingMode = liveDb.settings.thinkingNoticeMode || 'slow';
     const thinkingDelay = Number(liveDb.settings.thinkingNoticeDelayMs || 3000);
     let thinkingSent = false;
-    let thinkingTimer = null;
 
     const sendThinking = async (text) => {
       if (thinkingSent || !sendMessage) return;
