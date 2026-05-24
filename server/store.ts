@@ -85,6 +85,7 @@ const initialDb = {
     memoryEnabled: true,
     memoryMinMessages: 5,
     memoryUpdateEvery: 5,
+    profileAntiRecencyV2: false,
     groupProfileAutoUpdate: true,
     groupProfileThreshold: 80,
     memoryMaxChars: 900,
