@@ -80,6 +80,34 @@ app.post('/api/settings', (req, res) => {
   res.json(ok({ db: publicDb() }));
 });
 
+app.post('/api/search/test-local', async (_req, res) => {
+  const testUrl = 'http://127.0.0.1:8080/search?q=test&format=json';
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), 5000);
+  try {
+    const resp = await fetch(testUrl, {
+      signal: ctrl.signal,
+      headers: { Accept: 'application/json' }
+    });
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+    const data = await resp.json();
+    if (!data || (!data.results && !data.query && data.results === undefined)) {
+      throw new Error('响应格式不符合 SearXNG');
+    }
+    res.json(ok({ baseUrl: 'http://127.0.0.1:8080' }));
+  } catch (e) {
+    const reason = e.name === 'AbortError'
+      ? '连接超时，本地搜索服务未响应'
+      : `未检测到本地搜索服务（${e.message || String(e)}）`;
+    res.json(ok({
+      baseUrl: null,
+      message: `${reason}。如果你没有安装本地搜索服务，聊天功能不受影响，只是无法联网搜索。`
+    }));
+  } finally {
+    clearTimeout(timer);
+  }
+});
+
 app.post('/api/groups', (req, res) => {
   updateDb((db) => {
     upsertBy(db.groups, 'groupId', {
