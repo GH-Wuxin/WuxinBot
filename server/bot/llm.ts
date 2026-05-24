@@ -22,10 +22,11 @@ export function llmProviderName(provider) {
 }
 
 export function supportsProviderSearch(provider) {
-  // DeepSeek exposes enable_search/search_mode as top-level request params.
-  // Other OpenAI-compatible providers should not receive those fields unless a
-  // future adapter explicitly opts in.
-  return provider === 'deepseek';
+  // DeepSeek's official chat-completion API is OpenAI-compatible but does not
+  // currently document a built-in web-search parameter. Keep this false until a
+  // real search adapter (SearXNG/Brave/Bing/etc.) is wired in; otherwise the bot
+  // may look like it searched while the model is only guessing.
+  return false;
 }
 
 export function mergeUsage(...items) {

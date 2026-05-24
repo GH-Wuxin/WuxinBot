@@ -246,12 +246,13 @@ export function buildPrompt(db, group, event, userPolicy) {
   // Replace @self CQ code with "@你" in the user message, keep other @s as-is
   let displayText = event.text;
   if (selfQq) {
-    displayText = displayText.replace(new RegExp(`\\[CQ:at,qq=${selfQq.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\]`, 'g'), '@你');
+    const escapedSelfQq = selfQq.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    displayText = displayText.replace(new RegExp(`\\[CQ:at,qq=${escapedSelfQq}(?:,[^\\]]*)?\\]`, 'g'), '@你');
   }
 
   const selfNegationBan = '【注意】一旦进入回复阶段就表示你应该回复。禁止说"没有回应/不该回应/at的不是自己/at的是别人"等自我否定的话。';
   const userContent = ignoreFacts
-    ? `${selfNegationBan}\n\n${speakerIdentity}：${displayText}`
+    ? `${selfNegationBan}${anchorText}\n\n${speakerIdentity}：${displayText}`
     : `${facts}\n\n${anchorText}\n\n${speakerIdentity}：${displayText}`;
 
   return [
