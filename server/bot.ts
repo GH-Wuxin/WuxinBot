@@ -56,6 +56,7 @@ import { recordMemoryObservation, maybeUpdateMemoryProfile, updateMemoryProfile,
 import { getGroupProfile, updateGroupProfile, clearGroupProfile, incrementGroupProfilePending } from './bot/groupProfile.js';
 import { getRelationshipProfile, updateRelationshipProfile, clearRelationshipProfile, incrementPairPending } from './bot/relationshipProfile.js';
 import { processTrustSignal, evaluateTrustScores, trustInteractionBonus, isTrustedMember } from './bot/trust.js';
+import { isSearchAvailable, searchWeb, formatSearchResults, getLastSearchStatus } from './bot/search.js';
 import { setBotPaused, getRecalcProgress, startRecalc, tickRecalc, finishRecalc } from './health.js';
 
 // User policies are not hard permissions by themselves. They mainly bias the
@@ -347,6 +348,30 @@ export async function processIncoming(event, sendMessage) {
 
   if (!decision.shouldReply) return { replied: false, reason: decision.reason };
 
+  const explicitSearch = asksForExplicitSearch(event.text);
+  const realSearchAvailable = supportsProviderSearch(llmProvider(db));
+  if (explicitSearch && !realSearchAvailable) {
+    const replyText = db.settings.enableWebSearch === false
+      ? '联网搜索现在是关闭的，我不能可靠查询实时信息。'
+      : '当前还没有接入真实联网搜索源，我不能可靠查询实时信息，不能装作已经搜过。';
+    const segments = await sendReplySegments(sendMessage, event, replyText);
+    updateDb((draft) => {
+      draft.messages.push({
+        id: crypto.randomUUID(),
+        role: 'assistant',
+        type: event.type,
+        groupId: event.groupId,
+        userId: 'bot',
+        nickname: '机器人',
+        content: replyText,
+        inContext: true,
+        createdAt: nowIso()
+      });
+      draft.usage.replies += Math.max(1, segments.length);
+    });
+    return { replied: true, text: replyText, segments, reason: '显式搜索请求，但未配置真实搜索适配器' };
+  }
+
   if (decision.visualLimitation) {
     const replyText = visualLimitationReply(event);
     const segments = await sendReplySegments(sendMessage, event, replyText);
@@ -391,6 +416,33 @@ export async function processIncoming(event, sendMessage) {
     const liveUserPolicy = getUserPolicy(liveDb, event.groupId, event.userId);
     const messages = buildPrompt(liveDb, liveGroup, event, liveUserPolicy);
     const responseOptions = responseOptionsFor(event, liveDb, liveUserPolicy);
+    const explicitSearch = asksForExplicitSearch(event.text);
+
+    // Real search: if explicitly requested, run searchWeb and inject results
+    if (explicitSearch && !isSearchAvailable(liveDb)) {
+      // Search requested but no real provider configured — don't let LLM fake it
+      const replyText = '当前还没有接入真实联网搜索源。可以在控制台「模型」页配置 SearXNG 或其他搜索服务。';
+      if (sendMessage) await sendMessage(event, replyText);
+      updateDb((draft) => {
+        draft.messages.push({ id: crypto.randomUUID(), role: 'assistant', type: event.type, groupId: event.groupId, userId: 'bot', nickname: '机器人', content: replyText, inContext: true, createdAt: nowIso() });
+        draft.usage.replies += 1;
+      });
+      activeReplyGroups.delete(replyLockKey);
+      return { replied: true, text: replyText, reason: '搜索请求但未接入真实搜索源' };
+    }
+
+    let searchBlock = '';
+    if (explicitSearch && isSearchAvailable(liveDb)) {
+      if (sendMessage) await sendMessage(event, `正在搜索：${event.text.slice(0, 60)}…`);
+      const searchResult = await searchWeb(liveDb, event.text);
+      if (searchResult.ok && searchResult.results.length > 0) {
+        searchBlock = `【搜索结果】\n${formatSearchResults(searchResult.results)}\n\n请基于以上搜索结果回答，不确定就说没查到。`;
+        messages[messages.length - 1].content += '\n\n' + searchBlock;
+      } else {
+        searchBlock = '【搜索结果】搜索失败或无结果，不要编造信息。';
+        messages[messages.length - 1].content += '\n\n' + searchBlock;
+      }
+    }
     const searchMode = responseOptions.searchMode;
 
     // Thinking notice — configurable per thinkingNoticeMode
@@ -430,7 +482,7 @@ export async function processIncoming(event, sendMessage) {
       ai.usage.prompt_tokens = (ai.usage.prompt_tokens || 0) + (rewrite.usage.prompt_tokens || 0);
       ai.usage.completion_tokens = (ai.usage.completion_tokens || 0) + (rewrite.usage.completion_tokens || 0);
       // Identity confusion fallback: if rewrite still contains self-negation
-      if (isWeirdReply(replyText) && /(没有|没)回应.*(at|@)|(at|@).*不是.*自己|不该.*回复|不该.*回应/.test(replyText)) {
+      if (isWeirdReply(replyText) && /(没有|没)回应.*(at|@)|(at|@).*(不是.*自己|其他|别人|群友)|不该.*回复|不该.*回应/.test(replyText)) {
         replyText = '我在，刚才识别有点乱。你刚刚是在叫我，对吧？';
       }
     }
@@ -1264,7 +1316,15 @@ ${knownModels.join('\n')}
     if (arg === 'status') {
       const db = readDb();
       const statusLine = db.settings.enableWebSearch ? '已开启' : '已关闭';
-      const reply = `联网搜索：${statusLine}，模式：${db.settings.webSearchMode || 'balanced'}，当前模型：${db.settings.model || '未设置'}。`;
+      const searchAvailable = isSearchAvailable(db);
+      const lastSearch = getLastSearchStatus(db);
+      const searchInfo = searchAvailable
+        ? `真实搜索源：${db.settings.searchProvider} (${db.settings.searchBaseUrl})`
+        : '未接入真实搜索源，显式搜索会拒绝（避免瞎编）';
+      const lastLine = lastSearch
+        ? `最近搜索：${lastSearch.query?.slice(0, 30)} · ${lastSearch.resultCount}条结果 · ${lastSearch.latencyMs}ms${lastSearch.error ? ' · 错误：' + lastSearch.error : ''}`
+        : '暂无搜索记录';
+      const reply = `联网搜索：${statusLine}，模式：${db.settings.webSearchMode || 'balanced'}。${searchInfo}。${lastLine}。`;
       if (sendMessage) await sendMessage(event, reply);
       return { replied: Boolean(sendMessage), reason: reply };
     }

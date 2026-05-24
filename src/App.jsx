@@ -659,11 +659,20 @@ function Model({ db, saveSettings }) {
           <input type="checkbox" checked={draft.enableWebSearch === true} onChange={(e) => setDraft({ ...draft, enableWebSearch: e.target.checked })} /> 启用联网搜索（模型自动判断是否搜索）
         </label>
         {draft.enableWebSearch === true && (
-          <Select label="搜索模式" value={draft.webSearchMode || 'balanced'} onChange={(webSearchMode) => setDraft({ ...draft, webSearchMode })} options={{
-            'fast': '快速（更快但可能不全）',
-            'balanced': '平衡（推荐）',
-            'deep': '深度（更全面但稍慢）'
-          }} />
+          <>
+            <Select label="搜索模式" value={draft.webSearchMode || 'balanced'} onChange={(webSearchMode) => setDraft({ ...draft, webSearchMode })} options={{
+              'fast': '快速（更快但可能不全）',
+              'balanced': '平衡（推荐）',
+              'deep': '深度（更全面但稍慢）'
+            }} />
+            <Select label="真实搜索源" value={draft.searchProvider || 'disabled'} onChange={(searchProvider) => setDraft({ ...draft, searchProvider })} options={{
+              'disabled': '未接入（关闭）',
+              'searxng': 'SearXNG'
+            }} />
+            {draft.searchProvider === 'searxng' && (
+              <Text label="SearXNG 地址" value={draft.searchBaseUrl || ''} onChange={(searchBaseUrl) => setDraft({ ...draft, searchBaseUrl })} />
+            )}
+          </>
         )}
         <label className="switch">
           <input type="checkbox" checked={draft.enableAutoModel !== false} onChange={(e) => setDraft({ ...draft, enableAutoModel: e.target.checked })} /> 自动选择模型（复杂任务自动升级到 V4 Pro）
@@ -689,7 +698,7 @@ function Model({ db, saveSettings }) {
         <h2>怎么选</h2>
         <p className="guide">默认供应商是 DeepSeek；如果以后接别家的 OpenAI 兼容 API，就切到兼容接口，填它自己的 API 地址和模型名。</p>
         <p className="guide">创造性越高越活泼，越低越稳。小群聊天可以从 0.85 开始。</p>
-        <p className="guide">联网搜索目前只会在 DeepSeek 供应商下附加 enable_search 参数；其它兼容接口不会收到 DeepSeek 专属参数。自动模型只会在 DeepSeek 下切换 Flash / Pro。</p>
+        <p className="guide">DeepSeek 官方 Chat API 当前没有稳定内置搜索参数；未接入真实搜索适配器前，显式搜索请求会被拒绝，避免模型装作已经联网。</p>
       </div>
     </section>
   );
