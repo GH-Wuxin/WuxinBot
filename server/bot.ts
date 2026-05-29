@@ -56,6 +56,7 @@ import { recordMemoryObservation, maybeUpdateMemoryProfile, maybeRecordImageMemo
 import { getGroupProfile, updateGroupProfile, clearGroupProfile, incrementGroupProfilePending } from './bot/groupProfile.js';
 import { getRelationshipProfile, updateRelationshipProfile, clearRelationshipProfile, incrementPairPending } from './bot/relationshipProfile.js';
 import { processTrustSignal, evaluateTrustScores, trustInteractionBonus, isTrustedMember } from './bot/trust.js';
+import { processXpGain, getExperience, getXpBonus, formatXpBar, getUnlockedFeatures, getLevelInfo, getNextLevelInfo, LEVELS, decayInactiveUsers } from './bot/experience.js';
 import { isSearchAvailable, searchWeb, formatSearchResults, getLastSearchStatus, extractSearchQuery } from './bot/search.js';
 import { setBotPaused, getRecalcProgress, startRecalc, tickRecalc, finishRecalc } from './health.js';
 
@@ -108,6 +109,11 @@ async function drainReplyQueue(key) {
   } catch {
     // Errors are already handled inside processIncoming
   }
+}
+
+function extractAtQq(text) {
+  const match = String(text || '').match(/\[CQ:at,qq=([^\],\]]+)\]/);
+  return match ? String(match[1]) : null;
 }
 
 function getGroup(db, groupId) {
@@ -323,6 +329,7 @@ export function oneBotToInternal(event) {
     text,
     images,
     replyMessageId,
+    senderRole: event.sender?.role || 'member',
     atTargets: extractAtTargets(event.message || event.raw_message),
     raw: event
   };
@@ -350,10 +357,13 @@ export async function processIncoming(event, sendMessage, queuedDecision, isFrom
   const groupUserPolicy = getUserPolicy(db, event.groupId, event.userId);
   const adminRoleLevel = commandRoleLevel(db, 'admin');
   const groupCommandRoleLevel = commandRoleLevel(db, userCommandRoleId(db, groupUserPolicy, { isOwner: isGroupOwner, isAdmin: false }));
+  // Group admin: manually set OR auto-detected from OneBot sender.role
   const isGroupAdmin = event.type === 'group' && (
     groupUserPolicy.policy === 'admin' ||
     groupUserPolicy.allowCommands ||
-    groupCommandRoleLevel >= adminRoleLevel
+    groupCommandRoleLevel >= adminRoleLevel ||
+    event.senderRole === 'owner' ||
+    event.senderRole === 'admin'
   );
 
   // All /w and /wuxin commands should be handled as commands even when the
@@ -410,7 +420,7 @@ export async function processIncoming(event, sendMessage, queuedDecision, isFrom
   // Group profile auto-update: increment pending counter, trigger if threshold reached
   if (event.type === 'group' && event.groupId && event.groupId !== 'private') {
     incrementGroupProfilePending(db, event.groupId, event.text);
-    processTrustSignal(event, db);
+    processXpGain(event, db);
     incrementPairPending(db, event.groupId, event.userId);
   }
 
@@ -813,6 +823,11 @@ async function runOwnerCommand(event, sendMessage, permissions = { isOwner: true
 具体权限以控制台”权限”页为准。`;
 
   const helpDefs = [
+    { key: 'lv', group: '等级', line: '/w lv (@某人) · 查看等级经验' },
+    { key: 'top', group: '等级', line: '/w top · 群内排行榜' },
+    { key: 'nick', group: '等级', line: '/w nick 称呼 / nick @某人 称呼 · 自定义称呼' },
+    { key: 'style', group: '等级', line: '/w style 内容 / style @某人 内容 · 个人交互风格' },
+    { key: 'me', group: '等级', line: '/w me · 查看 bot 对你的画像' },
     { key: 'memberPolicy', group: '成员管理', line: '/w op/deop/ban/unban/trust/focus/quiet/normal @某人 · 成员权限' },
     { key: 'note', group: '备注与画像', line: '/w note @某人 内容/show/clear · 成员备注' },
     { key: 'profile', group: '备注与画像', line: '/w profile (@某人) show/samples/retry/rule/clear · 画像管理' },
@@ -890,6 +905,221 @@ async function runOwnerCommand(event, sendMessage, permissions = { isOwner: true
     if (denied.length > 0) { lines.push('\n—— 无权限 ——'); for (const p of denied) lines.push('  ' + p.line + '（需更高权限）'); }
     if (sendMessage) await sendForwardText(sendMessage, event, '我的权限', lines.join('\n'));
     return { replied: Boolean(sendMessage), reason: `显示 ${event.userId} 权限` };
+  }
+
+  // ── /w lv — experience level ──
+  if (command === '/lv' && isWuxinCommand) {
+    const db = readDb();
+    const targetQq = extractAtQq(subCommand || parts[2] || '') || event.userId;
+    const exp = getExperience(db, targetQq);
+    const targetUser = (db.users || []).find((u) => String(u.userId) === targetQq);
+    const nickname = targetUser?.nickname || targetQq;
+    const isSelf = String(targetQq) === String(event.userId);
+    const bar = formatXpBar(exp);
+    const features = getUnlockedFeatures(exp.level);
+    const lines = [bar];
+    if (features.length) lines.push('已解锁: ' + features.join(' · '));
+    if (exp.level >= 2) {
+      const user = (db.users || []).find((u) => String(u.userId) === targetQq);
+      if (user?.customName) lines.push(`称呼: ${user.customName}`);
+    }
+    const title = isSelf ? '我的等级' : `${nickname} 的等级`;
+    if (sendMessage) await sendMessage(event, lines.join('\n'));
+    return { replied: Boolean(sendMessage), reason: title };
+  }
+
+  // ── /w top — group leaderboard ──
+  if (command === '/top' && isWuxinCommand) {
+    const db = readDb();
+    const groupId = String(event.groupId);
+    // Collect all users who have experience in this group
+    const groupEntries = Object.entries(db.groupExperience || {})
+      .filter(([key]) => key.startsWith(groupId + ':'))
+      .map(([, v]) => v)
+      .sort((a, b) => (b.xpInGroup || 0) - (a.xpInGroup || 0))
+      .slice(0, 10);
+    if (groupEntries.length === 0) {
+      if (sendMessage) await sendMessage(event, '还没有人在本群获得经验。');
+      return { replied: Boolean(sendMessage), reason: '排行榜为空' };
+    }
+    const lines = ['🏆 群经验排行'];
+    for (let i = 0; i < groupEntries.length; i++) {
+      const ge = groupEntries[i];
+      const exp = getExperience(db, ge.userId);
+      const info = getLevelInfo(exp.level);
+      const user = (db.users || []).find((u) => String(u.userId) === ge.userId);
+      const name = user?.customName || user?.nickname || ge.userId;
+      const current = LEVELS.find((l) => l.level === exp.level) || LEVELS[0];
+      const next = LEVELS.find((l) => l.level === exp.level + 1);
+      const progress = next ? Math.round(((exp.xp - current.xp) / (next.xp - current.xp)) * 10) : 10;
+      const bar = '█'.repeat(progress) + '░'.repeat(10 - progress);
+      lines.push(`${i + 1}. ${info.emoji} ${name}  ${exp.xp} XP ${bar}`);
+    }
+    if (sendMessage) await sendForwardText(sendMessage, event, '群经验排行', lines.join('\n'));
+    return { replied: Boolean(sendMessage), reason: '显示排行榜' };
+  }
+
+  // ── /w nick — custom name ──
+  if (command === '/nick' && isWuxinCommand) {
+    const db = readDb();
+    const targetQq = extractAtQq(subCommand || '');
+    const isTargetOther = targetQq && String(targetQq) !== String(event.userId);
+
+    if (isTargetOther && !permissions.isOwner && !permissions.isAdmin) {
+      if (sendMessage) await sendMessage(event, '只有管理员可以设置他人的称呼。');
+      return { replied: Boolean(sendMessage), reason: '权限不足' };
+    }
+
+    const realTarget = targetQq || event.userId;
+    const exp = getExperience(db, realTarget);
+    if (!isTargetOther && exp.level < 2 && !permissions.isOwner && !permissions.isAdmin) {
+      if (sendMessage) await sendMessage(event, `设置称呼需要达到 Lv.2 🎯 活跃群友。你当前是 Lv.${exp.level}。`);
+      return { replied: Boolean(sendMessage), reason: '等级不足' };
+    }
+
+    // Extract the name (after @mention or after /nick)
+    let name = '';
+    if (targetQq) {
+      const atPattern = new RegExp(`\\[CQ:at,qq=${targetQq}\\]\\s*`);
+      name = (subCommand || '').replace(atPattern, '').trim();
+    } else {
+      name = (subCommand || parts.slice(2).join(' ')).trim();
+    }
+
+    if (name === 'clear' || name === '清除') {
+      updateDb((draft) => {
+        const u = (draft.users || []).find((u) => String(u.userId) === realTarget && String(u.groupId) === String(event.groupId));
+        if (u) { u.customName = ''; u.updatedAt = nowIso(); }
+      });
+      if (sendMessage) await sendMessage(event, '称呼已清除。');
+      return { replied: Boolean(sendMessage), reason: '清除称呼' };
+    }
+
+    if (!name) {
+      const user = (db.users || []).find((u) => String(u.userId) === realTarget);
+      const current = user?.customName;
+      if (sendMessage) await sendMessage(event, current ? `当前称呼：${current}` : '还未设置称呼。用 /w nick 称呼 来设置。');
+      return { replied: Boolean(sendMessage), reason: '查看称呼' };
+    }
+
+    // Content filter: basic safety
+    if (name.length > 20 || name.length < 1) {
+      if (sendMessage) await sendMessage(event, '称呼长度需要 1-20 个字符。');
+      return { replied: Boolean(sendMessage), reason: '称呼长度不合规' };
+    }
+
+    updateDb((draft) => {
+      if (!draft.users) draft.users = [];
+      let u = draft.users.find((u) => String(u.userId) === realTarget && String(u.groupId) === String(event.groupId));
+      if (!u) {
+        u = { groupId: String(event.groupId), userId: String(realTarget), nickname: '', policy: 'normal', attentionLevel: 3, allowCommands: false, customName: name, createdAt: nowIso(), updatedAt: nowIso() };
+        draft.users.push(u);
+      } else {
+        u.customName = name;
+        u.updatedAt = nowIso();
+      }
+    });
+    if (sendMessage) await sendMessage(event, `称呼已设置为：${name}`);
+    return { replied: Boolean(sendMessage), reason: '设置称呼' };
+  }
+
+  // ── /w style — personal interaction style ──
+  if (command === '/style' && isWuxinCommand) {
+    const db = readDb();
+    const targetQq = extractAtQq(subCommand || '');
+    const isTargetOther = targetQq && String(targetQq) !== String(event.userId);
+
+    if (isTargetOther && !permissions.isOwner && !permissions.isAdmin) {
+      if (sendMessage) await sendMessage(event, '只有管理员可以设置他人的交互风格。');
+      return { replied: Boolean(sendMessage), reason: '权限不足' };
+    }
+
+    const realTarget = targetQq || event.userId;
+    const exp = getExperience(db, realTarget);
+    if (!isTargetOther && exp.level < 3 && !permissions.isOwner && !permissions.isAdmin) {
+      if (sendMessage) await sendMessage(event, `设置个人风格需要达到 Lv.3 ⭐ 老熟人。你当前是 Lv.${exp.level}。`);
+      return { replied: Boolean(sendMessage), reason: '等级不足' };
+    }
+
+    let content = '';
+    if (targetQq) {
+      const atPattern = new RegExp(`\\[CQ:at,qq=${targetQq}\\]\\s*`);
+      content = (subCommand || '').replace(atPattern, '').trim();
+    } else {
+      content = (subCommand || parts.slice(2).join(' ')).trim();
+    }
+
+    if (content === 'clear' || content === '清除') {
+      updateDb((draft) => {
+        const u = (draft.users || []).find((u) => String(u.userId) === realTarget && String(u.groupId) === String(event.groupId));
+        if (u) { u.customStyle = ''; u.updatedAt = nowIso(); }
+      });
+      if (sendMessage) await sendMessage(event, '个人风格已清除。');
+      return { replied: Boolean(sendMessage), reason: '清除风格' };
+    }
+
+    if (!content) {
+      const user = (db.users || []).find((u) => String(u.userId) === realTarget);
+      const current = user?.customStyle;
+      if (sendMessage) await sendMessage(event, current ? `当前个人风格：${current}` : '还未设置个人风格。用 /w style 内容 来设置。');
+      return { replied: Boolean(sendMessage), reason: '查看风格' };
+    }
+
+    // Content filter: basic safety
+    if (content.length > 200) {
+      if (sendMessage) await sendMessage(event, '个人风格长度上限 200 字。');
+      return { replied: Boolean(sendMessage), reason: '风格内容过长' };
+    }
+
+    updateDb((draft) => {
+      if (!draft.users) draft.users = [];
+      let u = draft.users.find((u) => String(u.userId) === realTarget && String(u.groupId) === String(event.groupId));
+      if (!u) {
+        u = { groupId: String(event.groupId), userId: String(realTarget), nickname: '', policy: 'normal', attentionLevel: 3, allowCommands: false, customStyle: content, createdAt: nowIso(), updatedAt: nowIso() };
+        draft.users.push(u);
+      } else {
+        u.customStyle = content;
+        u.updatedAt = nowIso();
+      }
+    });
+    if (sendMessage) await sendMessage(event, '个人风格已设置。Bot 回复你时会参考这个风格。');
+    return { replied: Boolean(sendMessage), reason: '设置风格' };
+  }
+
+  // ── /w me — view own profile (Lv.3+) ──
+  if (command === '/me' && isWuxinCommand) {
+    const db = readDb();
+    const exp = getExperience(db, event.userId);
+    if (exp.level < 3 && !permissions.isOwner && !permissions.isAdmin) {
+      if (sendMessage) await sendMessage(event, `查看画像需要达到 Lv.3 ⭐ 老熟人。你当前是 Lv.${exp.level}。`);
+      return { replied: Boolean(sendMessage), reason: '等级不足' };
+    }
+    const mem = (db.memories || []).find((m) => String(m.userId) === String(event.userId));
+    if (!mem) {
+      if (sendMessage) await sendMessage(event, '还没有关于你的画像数据。多聊聊天就有了。');
+      return { replied: Boolean(sendMessage), reason: '无画像' };
+    }
+    const info = getLevelInfo(exp.level);
+    const lines = [
+      `📋 Wuxin 眼中的你`,
+      `───────────────`,
+      mem.summary && `整体：${mem.summary}`,
+      mem.traits && `性格：${mem.traits}`,
+      mem.speechStyle && `说话：${mem.speechStyle}`,
+      mem.behavior && `行为：${mem.behavior}`,
+      mem.preferences && `偏好：${mem.preferences}`,
+      mem.manualNotes && `备注：${mem.manualNotes}`,
+      `───────────────`,
+      `${info.emoji} ${info.title} · ${exp.xp} XP · 活跃 ${exp.activeDays} 天`,
+    ].filter(Boolean);
+    if (sendMessage) await sendForwardText(sendMessage, event, '我的画像', lines.join('\n'));
+    return { replied: Boolean(sendMessage), reason: '查看画像' };
+  }
+
+  // ── /w op — only bot owner can op ──
+  if (command === '/op' && isWuxinCommand && !permissions.isOwner) {
+    if (sendMessage) await sendMessage(event, '只有 bot 所有者可以使用 /w op。');
+    return { replied: Boolean(sendMessage), reason: 'op 权限限制' };
   }
 
   if (command === '/help' && !isWuxinCommand) {
