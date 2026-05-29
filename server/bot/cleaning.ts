@@ -109,10 +109,43 @@ function summarizeCqCard(kind, raw) {
   return cardPlaceholder(params.title || params.name, params.summary || params.content || params.id);
 }
 
+function compactImageInput(data = {}) {
+  const url = String(data.url || data.file_url || data.src || data.download_url || '').trim();
+  const file = String(data.file || data.file_id || data.path || data.name || '').trim();
+  if (!url && !file) return null;
+  return { type: 'image', url, file };
+}
+
+export function extractImageInputs(message) {
+  const images = [];
+  const seen = new Set();
+  const add = (input) => {
+    const item = compactImageInput(input);
+    if (!item) return;
+    const key = item.url || item.file;
+    if (seen.has(key)) return;
+    seen.add(key);
+    images.push(item);
+  };
+
+  if (Array.isArray(message)) {
+    for (const part of message) {
+      if (part?.type === 'image') add(part.data || {});
+    }
+    return images;
+  }
+
+  const raw = String(message || '');
+  for (const match of raw.matchAll(/\[CQ:image[^\]]*\]/g)) {
+    add(parseCqParams(match[0]));
+  }
+  return images;
+}
+
 export function normalizeMessage(message) {
-  // DeepSeek is used as a text model here, so visual/media segments are reduced
-  // to explicit placeholders. This prevents the bot from pretending it can see
-  // images or stickers.
+  // Visual/media segments are reduced to explicit placeholders at the cleaning
+  // layer. Vision-capable providers still need a later transport step that
+  // passes actual image URLs/files to the model.
   if (Array.isArray(message)) {
     return message
       .map((part) => {

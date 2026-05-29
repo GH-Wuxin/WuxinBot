@@ -1,12 +1,142 @@
 // Long-term memory: sample collection, classification, profile updates.
 // Extracted from bot.ts.
 import { readDb, updateDb, nowIso } from '../store.js';
+import { recordDecisionError } from '../health.js';
 import { hasVisualPlaceholder, textWithoutControlPlaceholders } from './cleaning.js';
-import { completeChat } from './llm.js';
+import { completeChat, llmProvider, mergeUsage } from './llm.js';
 import { trustInteractionBonus } from './trust.js';
+
+const PROFILE_FIELDS = ['summary', 'traits', 'speechStyle', 'behavior', 'preferences'];
+const EMPTY_PROFILE_EXACT = new Set([
+  '暂无', '无', '未知', '不明', '没有足够信息', '无法判断', '暂时无法判断', '暂无明显信息',
+  '暂无有效信息', '证据不足', '样本不足', '信息不足'
+]);
 
 function getGroup(db, groupId) {
   return db.groups.find((group) => String(group.groupId) === String(groupId));
+}
+
+function meaningfulProfileText(value) {
+  const text = String(value || '').replace(/\s+/g, ' ').trim();
+  return Boolean(text && !isEmptyProfileText(text));
+}
+
+export function isEmptyProfileText(value) {
+  const text = String(value || '').replace(/\s+/g, ' ').trim().replace(/[。.]$/, '');
+  if (!text) return true;
+  if (EMPTY_PROFILE_EXACT.has(text)) return true;
+  if (/^暂无.*?(稳定)?(特征|信息|结论)([，,；;。.\s]|$)/.test(text)) return true;
+  if (/^没有.*?(足够|稳定|明显|有效).*(特征|信息|结论|证据)([，,；;。.\s]|$)/.test(text)) return true;
+  if (/^(证据|样本|信息)不足([，,；;。.\s]|$)/.test(text)) return true;
+  return false;
+}
+
+export function hasProfileContent(memory) {
+  return Boolean(memory && PROFILE_FIELDS.some((field) => meaningfulProfileText(memory[field])));
+}
+
+function profileSnapshot(memory) {
+  return PROFILE_FIELDS.map((field) => `${field}:${String(memory?.[field] || '')}`).join('\n');
+}
+
+function sampleTime(sample) {
+  const time = new Date(sample?.createdAt || 0).getTime();
+  return Number.isFinite(time) ? time : 0;
+}
+
+function sampleKey(sample) {
+  const messageId = sample?.context?.messageId;
+  if (messageId) return `msg:${messageId}`;
+  return `text:${sample?.createdAt || ''}:${sample?.content || ''}`;
+}
+
+function sampleLooseKey(sample) {
+  const groupId = sample?.context?.groupId || '';
+  const day = String(sample?.createdAt || '').slice(0, 10);
+  return `${groupId}:${day}:${String(sample?.content || '').slice(0, 180)}`;
+}
+
+function hasRecentProfileAttempt(memory, minutes = 30) {
+  const value = memory?.lastProfileAttemptAt || memory?.lastProfiledAt || '';
+  const time = new Date(value).getTime();
+  return Number.isFinite(time) && Date.now() - time < minutes * 60_000;
+}
+
+function historicalSamplesFromMessages(db, memory) {
+  const userId = String(memory.userId);
+  return (db.messages || [])
+    .filter((message) => message.role === 'user' && String(message.userId) === userId)
+    .map((message) => {
+      const sample = classifyMemorySample(message.content);
+      if (!sample.content) return null;
+      return {
+        content: sample.content,
+        type: sample.type,
+        usedForProfile: sample.usedForProfile,
+        riskLevel: sample.riskLevel || 'normal',
+        reason: sample.reason,
+        context: {
+          groupId: String(message.groupId || ''),
+          messageId: message.id,
+          mentionedBot: false,
+          atTargets: [],
+          speakerName: message.nickname || userId,
+          nearby: [],
+        },
+        createdAt: message.createdAt || nowIso(),
+        historical: true,
+      };
+    })
+    .filter(Boolean);
+}
+
+function collectProfileSamples(db, memory) {
+  const samples = [...historicalSamplesFromMessages(db, memory), ...((memory.samples || []))];
+  const byKey = new Map();
+  const looseToKey = new Map();
+  for (const sample of samples) {
+    if (!sample?.content) continue;
+    const key = sampleKey(sample);
+    const looseKey = sampleLooseKey(sample);
+    const existingKey = looseToKey.get(looseKey) || key;
+    const existing = byKey.get(existingKey);
+    const existingContext = existing?.context?.nearby?.length || 0;
+    const nextContext = sample?.context?.nearby?.length || 0;
+    if (!existing || nextContext > existingContext) {
+      if (existingKey !== key) byKey.delete(existingKey);
+      byKey.set(key, sample);
+      looseToKey.set(looseKey, key);
+    }
+  }
+  return [...byKey.values()].sort((a, b) => sampleTime(a) - sampleTime(b));
+}
+
+function selectDiverseSamples(samples, maxCount) {
+  const sorted = samples.filter(Boolean).sort((a, b) => sampleTime(a) - sampleTime(b));
+  if (sorted.length <= maxCount) return sorted;
+
+  const selected = new Map();
+  const byDay = new Map();
+  for (const sample of sorted) {
+    const day = String(sample.createdAt || '').slice(0, 10) || 'unknown';
+    if (!byDay.has(day)) byDay.set(day, []);
+    byDay.get(day).push(sample);
+  }
+
+  for (const day of [...byDay.keys()].sort()) {
+    for (const sample of byDay.get(day).slice(-3)) {
+      selected.set(sampleKey(sample), sample);
+      if (selected.size >= maxCount) break;
+    }
+    if (selected.size >= maxCount) break;
+  }
+
+  for (const sample of [...sorted].reverse()) {
+    selected.set(sampleKey(sample), sample);
+    if (selected.size >= maxCount) break;
+  }
+
+  return [...selected.values()].sort((a, b) => sampleTime(a) - sampleTime(b)).slice(-maxCount);
 }
 
 function commandRoleLevel(db, roleId) {
@@ -119,6 +249,18 @@ export function classifyMemorySample(text) {
   if (!realText) {
     return { type: 'media', content: compactMemorySample(raw), usedForProfile: false, riskLevel: 'normal', reason: '没有可用于画像的真实文本' };
   }
+  if (hasVisualPlaceholder(raw)) {
+    const selfDisclosureWithImage = /我.{0,12}(喜欢|不喜欢|讨厌|习惯|经常|一般|通常|希望|想要|需要|偏好|雷点|画|做|拍|录|剪|收藏|保存|发这个|发图)|这是我|我的/.test(realText);
+    if (!selfDisclosureWithImage && realText.length <= 100) {
+      return {
+        type: 'media',
+        content: compactMemorySample(raw),
+        usedForProfile: false,
+        riskLevel: 'low-confidence',
+        reason: '图片配文不直接进入画像，等待多模态图片摘要低权重处理'
+      };
+    }
+  }
   if (looksLikeMachineOutput(realText)) {
     return { type: 'bot-output', content: compactMemorySample(realText), usedForProfile: false, riskLevel: 'normal', reason: '疑似超长机器生成内容，不进入画像' };
   }
@@ -216,17 +358,162 @@ export function recordMemoryObservation(event, userPolicy) {
     const context = captureContext(draft, event);
     memory.samples.push({
       content: sample.content, type: sample.type, usedForProfile: sample.usedForProfile,
+      media: event.images?.length ? { images: compactMemoryImages(event.images) } : undefined,
       riskLevel: sample.riskLevel || 'normal', reason: sample.reason, context, createdAt: nowIso()
     });
-    memory.samples = memory.samples.slice(-thresholds.maxSamples);
+    const sampleRetention = Math.max(thresholds.maxSamples, Number(draft.settings.memorySampleRetain || 120));
+    memory.samples = memory.samples.slice(-sampleRetention);
     if (!memory.groupsSeen) memory.groupsSeen = [];
     if (!memory.groupsSeen.includes(String(event.groupId))) memory.groupsSeen.push(String(event.groupId));
     memory.updatedAt = nowIso();
-    if (memory.profileMessageCount >= thresholds.minMessages && memory.pendingCount >= thresholds.updateEvery) {
+    const needsInitialProfile = !hasProfileContent(memory) && memory.profileMessageCount >= thresholds.minMessages;
+    const bootstrapReady = needsInitialProfile
+      && memory.pendingCount >= 1
+      && !hasRecentProfileAttempt(memory, 30);
+    if (memory.profileMessageCount >= thresholds.minMessages && (memory.pendingCount >= thresholds.updateEvery || bootstrapReady)) {
       shouldUpdate = true;
     }
   });
   return { shouldUpdate, reason: shouldUpdate ? '达到画像更新阈值' : (memoryImportance(readDb(), userPolicy).label) };
+}
+
+function cleanImageSummary(text) {
+  return String(text || '')
+    .replace(/\s+/g, ' ')
+    .replace(/^图片摘要[:：]\s*/i, '')
+    .trim()
+    .slice(0, 260);
+}
+
+export async function maybeRecordImageMemorySummary(event, userPolicy) {
+  const db = readDb();
+  if (db.settings.memoryEnabled === false) return { ok: false, reason: '长期记忆已关闭' };
+  if (!event.images?.length) return { ok: false, reason: '没有图片' };
+  if (!canUseVisionForMemory(db)) return { ok: false, reason: '当前模型/供应商不支持视觉记忆' };
+  if (event.type === 'group' && !getGroup(db, event.groupId)?.enabled) {
+    return { ok: false, reason: '未启用群不进入长期记忆' };
+  }
+  const importance = memoryImportance(db, userPolicy);
+  if (!importance.remember) return { ok: false, reason: importance.label };
+  const caption = textWithoutControlPlaceholders(event.text).slice(0, 240);
+  const mentionedBot = db.settings.selfQq && (event.atTargets || []).some((qq) => String(qq) === String(db.settings.selfQq));
+  const pureImagePolicy = String(db.settings.visionMemoryPureImagePolicy || 'important');
+  if (!caption && !mentionedBot && pureImagePolicy === 'off') {
+    return { ok: false, reason: '无配文图片摘要已关闭' };
+  }
+  if (!caption && !mentionedBot && pureImagePolicy !== 'all' && importance.level < 3) {
+    return { ok: false, reason: '普通群友无配文图片不自动做视觉摘要，避免成本和画像污染' };
+  }
+
+  let response;
+  try {
+    response = await completeChat(db, {
+      messages: [
+        {
+          role: 'system',
+          content: `你是图片记忆摘要器。基于用户本轮发送的图片，输出一段中文短摘要。
+要求：
+1. 只描述图片本身和用户配文能直接支持的内容。
+2. 不要推断用户性格、身份、心理状态、取向、疾病、现实关系。
+3. 不要把梗图/截图/转发内容当成用户本人观点。
+4. 输出 1 句，最多 80 字，不要 markdown。`
+        },
+        {
+          role: 'user',
+          content: `发言者：${event.nickname || event.userId}（QQ:${event.userId}）\n用户配文：${caption || '无'}\n请总结图片可见内容，供长期记忆低权重参考。`
+        }
+      ],
+      visionImages: event.images,
+      temperature: 0.2,
+      maxTokens: 260,
+      label: '图片记忆摘要'
+    });
+  } catch (error) {
+    recordDecisionError(`图片记忆摘要失败：${error.message || String(error)}`);
+    updateDb((draft) => {
+      if (!draft.usage) draft.usage = { totalTokens: 0, promptTokens: 0, completionTokens: 0, requests: 0, replies: 0, errors: 0 };
+      draft.usage.errors = Number(draft.usage.errors || 0) + 1;
+    });
+    return { ok: false, reason: error.message || String(error) };
+  }
+
+  const summary = cleanImageSummary(response.text);
+  if (!summary || /无法|不能|看不到|未收到|没有图片|图片不可读|传输失败/.test(summary)) {
+    return { ok: false, reason: '图片摘要为空或不可用' };
+  }
+
+  let shouldUpdate = false;
+  updateDb((draft) => {
+    if (!draft.memories) draft.memories = [];
+    let memory = draft.memories.find((entry) => String(entry.userId) === String(event.userId));
+    if (!memory) {
+      memory = {
+        id: crypto.randomUUID(), userId: event.userId, nickname: event.nickname || event.userId,
+        enabled: true, importanceLevel: importance.level, importanceLabel: importance.label,
+        messageCount: 0, profileMessageCount: 0, pendingCount: 0, groupsSeen: [],
+        samples: [], summary: '', traits: '', speechStyle: '', behavior: '', preferences: '',
+        manualNotes: '', profilingRule: '', profileMeta: {}, recentDynamics: [], createdAt: nowIso(), updatedAt: nowIso()
+      };
+      draft.memories.push(memory);
+    }
+    if ((memory.samples || []).some((sample) => sample.type === 'image-summary' && sample.context?.messageId === event.messageId)) return;
+
+    const thresholds = memoryThresholds(draft, importance);
+    const trustMul = trustInteractionBonus(draft, event.userId).memoryThresholdMul;
+    thresholds.minMessages = Math.max(2, Math.round(thresholds.minMessages * trustMul));
+    thresholds.updateEvery = Math.max(2, Math.round(thresholds.updateEvery * trustMul));
+    const context = captureContext(draft, event);
+    const content = caption
+      ? `图片摘要：${summary}；用户配文：${caption}`
+      : `图片摘要：${summary}`;
+
+    memory.nickname = event.nickname || memory.nickname || event.userId;
+    memory.enabled = memory.enabled !== false;
+    memory.importanceLevel = Math.max(Number(memory.importanceLevel || 0), importance.level);
+    memory.importanceLabel = importance.label;
+    memory.profileMessageCount = Number(memory.profileMessageCount || 0) + 1;
+    memory.pendingCount = Number(memory.pendingCount || 0) + 1;
+    if (!memory.samples) memory.samples = [];
+    memory.samples.push({
+      content,
+      type: 'image-summary',
+      media: { images: compactMemoryImages(event.images) },
+      usedForProfile: true,
+      riskLevel: 'low-confidence',
+      reason: '图片摘要低权重进入画像；必须结合文字或多次稳定主题，不能单独推断人格',
+      context,
+      createdAt: nowIso()
+    });
+    const sampleRetention = Math.max(thresholds.maxSamples, Number(draft.settings.memorySampleRetain || 120));
+    memory.samples = memory.samples.slice(-sampleRetention);
+    if (!memory.groupsSeen) memory.groupsSeen = [];
+    if (!memory.groupsSeen.includes(String(event.groupId))) memory.groupsSeen.push(String(event.groupId));
+    memory.updatedAt = nowIso();
+
+    if (!draft.usage) draft.usage = { totalTokens: 0, promptTokens: 0, completionTokens: 0, requests: 0, errors: 0 };
+    const usage = response.usage || {};
+    draft.usage.requests += 1;
+    draft.usage.totalTokens += usage.total_tokens || 0;
+    draft.usage.promptTokens += usage.prompt_tokens || 0;
+    draft.usage.completionTokens += usage.completion_tokens || 0;
+    if (!draft.usageEvents) draft.usageEvents = [];
+    draft.usageEvents.push({
+      id: crypto.randomUUID(), groupId: event.groupId, userId: event.userId,
+      model: response.model || draft.settings.model, kind: 'image-memory-summary',
+      totalTokens: usage.total_tokens || 0,
+      promptTokens: usage.prompt_tokens || 0,
+      completionTokens: usage.completion_tokens || 0,
+      createdAt: nowIso()
+    });
+    draft.usageEvents = draft.usageEvents.slice(-5000);
+
+    const needsInitialProfile = !hasProfileContent(memory) && memory.profileMessageCount >= thresholds.minMessages;
+    const bootstrapReady = needsInitialProfile && memory.pendingCount >= 1 && !hasRecentProfileAttempt(memory, 30);
+    shouldUpdate = memory.profileMessageCount >= thresholds.minMessages && (memory.pendingCount >= thresholds.updateEvery || bootstrapReady);
+  });
+
+  if (shouldUpdate) void maybeUpdateMemoryProfile(event);
+  return { ok: true, shouldUpdate, summary };
 }
 
 const STOP_BIGRAMS = new Set([
@@ -300,10 +587,12 @@ export function computeTopicWeights(clusters) {
 }
 
 export async function updateMemoryProfile(db, memory) {
-  const allSamples = (memory.samples || []).slice(-30);
-  const usedSamples = allSamples.filter((s) => s.usedForProfile && s.content);
-  const weakSamples = allSamples.filter((s) => !s.usedForProfile && s.content && s.type === 'card');
+  const sourceSamples = collectProfileSamples(db, memory);
+  const usedSamples = selectDiverseSamples(sourceSamples.filter((s) => s.usedForProfile && s.content), 48);
+  const weakSamples = selectDiverseSamples(sourceSamples.filter((s) => !s.usedForProfile && s.content && s.type === 'card'), 8);
   const cardText = weakSamples.slice(-8).map((s) => s.content).join('\n');
+  const sampleDayCount = new Set(usedSamples.map((s) => String(s.createdAt || '').slice(0, 10)).filter(Boolean)).size;
+  const sampleGroupCount = new Set(usedSamples.map((s) => s.context?.groupId).filter(Boolean)).size;
 
   // V2 anti-recency gating
   const useV2 = db.settings.profileAntiRecencyV2 === true;
@@ -321,9 +610,11 @@ export async function updateMemoryProfile(db, memory) {
   }).join('\n');
 
   // Format samples as context blocks instead of isolated lines
-  const sampleBlocks = usedSamples.slice(-16).map((s, i) => {
+  const promptSamples = selectDiverseSamples(usedSamples, 24);
+  const sampleBlocks = promptSamples.map((s, i) => {
     const ctx = s.context;
     let block = `[样本 #${i + 1}]\n发言者：${memory.nickname || memory.userId}\n内容：${s.content}`;
+    block += `\n样本类型：${s.type || 'text'}`;
     if (ctx && ctx.nearby && ctx.nearby.length > 0) {
       block += '\n上下文对话：';
       for (const m of ctx.nearby.slice(-5)) {
@@ -368,40 +659,117 @@ export async function updateMemoryProfile(db, memory) {
 
 规则：
 1. 长期画像(longTermUpdates)只写跨时间(>=2天)或跨群、多次独立证据支持的稳定特征。单日/单场景高频话题不能写入长期画像。
+1.1 如果已有长期画像为空，且样本统计显示真实文本跨越>=2天或>=12条，请至少给出中性、保守的 summary/behavior/speechStyle；不要只返回空对象或 preserveExisting。
 2. 短期高频话题(昨晚多聊/今天多聊了某话题)只能写入 recentDynamicsUpdates，不能覆盖长期画像。
 3. preserveExisting 列出应保留的旧画像字段（默认全部保留，只删有冲突的）。
 4. removeOrDowngrade 列出应降级或移除的字段及原因。
 5. 绝对化措辞（极大兴趣/非常热爱/核心爱好）一律降级为中性表述，除非证据跨时间稳定。
 6. 同一晚、同一话题的多条消息合并计算，不能线性放大。
 7. 禁止侮辱性标签。禁止推断身份/取向/心理状态。
+8. image-summary 是用户发图后的视觉摘要，只能作为低权重兴趣/话题背景；不能单独据此推断性格、身份、心理状态或现实关系。只有图片摘要与用户真实文本或跨天多图主题互相支持时，才能写入长期画像。
 ${isLegacyProfile ? '- 旧版画像缺上下文，与上下文样本一致的保留，单薄矛盾的覆盖。' : ''}
 ${memory.profilingRule ? `- 【硬性约束】${memory.profilingRule}` : ''}` },
-      { role: 'user', content: `QQ号：${memory.userId}\n昵称：${memory.nickname || memory.userId}\n\n已有长期画像：\n${existing}${useV2 ? `\n已有近期动态：\n${JSON.stringify((memory.recentDynamics || []).slice(-5).map((d) => d.topic + ': ' + d.summary))}\n\n话题聚类分析：\n${longTermBlock || '无跨场景长期候选'}\n${recentDynamicsBlock || '无短期高频话题'}` : ''}\n\n样本与上下文：\n${sampleBlocks}\n\n低权重背景：\n${cardText}` }
+      { role: 'user', content: `QQ号：${memory.userId}\n昵称：${memory.nickname || memory.userId}\n\n样本统计：真实文本 ${usedSamples.length} 条，覆盖 ${sampleDayCount} 天 / ${sampleGroupCount} 个群。提示：统计来自长期历史与最近上下文混合取样，不只是最近几十条。\n\n已有长期画像：\n${existing}${useV2 ? `\n已有近期动态：\n${JSON.stringify((memory.recentDynamics || []).slice(-5).map((d) => d.topic + ': ' + d.summary))}\n\n话题聚类分析：\n${longTermBlock || '无跨场景长期候选'}\n${recentDynamicsBlock || '无短期高频话题'}` : ''}\n\n样本与上下文：\n${sampleBlocks}\n\n低权重背景：\n${cardText}` }
     ],
     temperature: 0.2, maxTokens: 1000, label: '画像更新'
   });
-  const raw = response.text || '{}';
-  let jsonText = raw.replace(/^```json\s*/i, '').replace(/^```\s*/i, '').replace(/```$/i, '').trim();
-  // Repair common LLM JSON mistakes.
-  try { JSON.parse(jsonText); } catch (_) {
-    // 1. Trim to last closing brace
-    const lastBrace = jsonText.lastIndexOf('}');
-    if (lastBrace >= 0) jsonText = jsonText.slice(0, lastBrace + 1);
-    // 2. Remove trailing commas before braces/brackets
-    jsonText = jsonText.replace(/,\s*}/g, '}').replace(/,\s*]/g, ']');
-    // 3. Fix unclosed final string value: find the last "key": "value  and close it
-    jsonText = jsonText.replace(/(:\s*"[^"]*)$/gm, '$1"');
-    // 4. If braces mismatch, close the object
-    const opens = (jsonText.match(/{/g) || []).length;
-    const closes = (jsonText.match(/}/g) || []).length;
-    if (opens > closes) jsonText = jsonText + '}';
-    // 5. Last resort: extract first {...} block
-    try { JSON.parse(jsonText); } catch (_2) {
-      const match = jsonText.match(/\{[\s\S]*\}/);
-      if (match) jsonText = match[0];
+  try {
+    return { profile: parseProfileJson(response.text || '{}'), usage: response.usage || {} };
+  } catch (firstError) {
+    const retry = await completeChat(db, {
+      messages: [
+        { role: 'system', content: `你是 JSON 修复器。只把输入修复为合法 JSON，不新增画像结论，不输出 markdown。
+必须输出对象，结构：
+{"longTermUpdates":{},"recentDynamicsUpdates":[],"preserveExisting":[],"removeOrDowngrade":[],"confidence":{}}
+如果原文无法修复，输出上述空对象。` },
+        { role: 'user', content: `上一轮画像 JSON 解析失败：${firstError.message}\n\n原始输出：\n${String(response.text || '').slice(0, 6000)}` }
+      ],
+      temperature: 0,
+      maxTokens: 1200,
+      label: '画像JSON修复'
+    });
+    return {
+      profile: parseProfileJson(retry.text || '{}'),
+      usage: mergeUsage(response.usage || {}, retry.usage || {})
+    };
+  }
+}
+
+function canUseVisionForMemory(db) {
+  if (db.settings.visionMemoryEnabled === false) return false;
+  const provider = llmProvider(db);
+  const apiBase = String(db.settings.apiBaseUrl || '').toLowerCase();
+  if (provider === 'deepseek' || apiBase.includes('api.deepseek.com')) return false;
+  const mode = String(db.settings.visionMode || 'auto').toLowerCase();
+  if (mode === 'off') return false;
+  if (mode === 'on') return true;
+  const probe = [
+    db.settings.llmProvider,
+    db.settings.apiBaseUrl,
+    db.settings.model,
+    db.settings.customModel
+  ].filter(Boolean).join(' ').toLowerCase();
+  return /(mimo|vision|visual|multimodal|multi-modal|omni|gpt-4o|qwen[-_\s]?.*vl|glm[-_\s]?.*4v|yi[-_\s]?.*vision|(?:^|[-_\s])vl(?:$|[-_\s]))/i.test(probe);
+}
+
+function compactMemoryImages(images = []) {
+  return images.slice(0, 4).map((image) => ({
+    type: 'image',
+    url: String(image.url || '').startsWith('data:') ? '' : String(image.url || '').slice(0, 600),
+    file: String(image.file || '').slice(0, 600)
+  })).filter((image) => image.url || image.file);
+}
+
+function stripJsonFence(raw) {
+  return String(raw || '')
+    .replace(/^\s*```json\s*/i, '')
+    .replace(/^\s*```\s*/i, '')
+    .replace(/```\s*$/i, '')
+    .trim();
+}
+
+function extractJsonObject(text) {
+  const value = stripJsonFence(text);
+  const start = value.indexOf('{');
+  const end = value.lastIndexOf('}');
+  if (start >= 0 && end > start) return value.slice(start, end + 1);
+  return value;
+}
+
+function repairJsonText(text) {
+  let value = extractJsonObject(text);
+  value = value
+    .replace(/,\s*}/g, '}')
+    .replace(/,\s*]/g, ']')
+    .replace(/[“”]/g, '"')
+    .replace(/[‘’]/g, "'");
+
+  const bracketOpens = (value.match(/\[/g) || []).length;
+  const bracketCloses = (value.match(/]/g) || []).length;
+  if (bracketOpens > bracketCloses) value += ']'.repeat(bracketOpens - bracketCloses);
+
+  const opens = (value.match(/{/g) || []).length;
+  const closes = (value.match(/}/g) || []).length;
+  if (opens > closes) value += '}'.repeat(opens - closes);
+  return value;
+}
+
+function parseProfileJson(raw) {
+  const attempts = [
+    stripJsonFence(raw),
+    extractJsonObject(raw),
+    repairJsonText(raw),
+  ];
+  let lastError = null;
+  for (const attempt of attempts) {
+    try {
+      const parsed = JSON.parse(attempt);
+      return parsed && typeof parsed === 'object' ? parsed : {};
+    } catch (error) {
+      lastError = error;
     }
   }
-  return { profile: JSON.parse(jsonText), usage: response.usage || {} };
+  throw lastError || new Error('画像 JSON 解析失败');
 }
 
 function flattenProfileValue(value) {
@@ -417,7 +785,7 @@ function flattenProfileValue(value) {
 function normalizeProfileValue(value, previous = '') {
   let text = flattenProfileValue(value).replace(/\s+/g, ' ').trim();
   if (!text) return previous || '';
-  if (/^(暂无|无|未知|不明|没有足够信息|无法判断|暂无明显信息)[。.]?$/.test(text)) return previous || '';
+  if (isEmptyProfileText(text)) return meaningfulProfileText(previous) ? previous : '';
 
   const originalText = text;
   const severeTerms = /傻逼|弱智|脑残|废物|垃圾|恶心|有病|神经病|变态|低素质|畜生|出生|不正常|病态/i;
@@ -447,12 +815,18 @@ export function applyProfileUpdate(target, profile) {
   const preserve = profile.preserveExisting || [];
   const remove = profile.removeOrDowngrade || [];
   const recentUpdates = profile.recentDynamicsUpdates || [];
+  const before = profileSnapshot(target);
+  let recentChanged = false;
+
+  for (const field of PROFILE_FIELDS) {
+    if (isEmptyProfileText(target[field])) target[field] = '';
+  }
 
   // Apply long-term updates (only for non-preserved fields, or if new value is meaningful)
-  const longFields = ['summary', 'traits', 'speechStyle', 'behavior', 'preferences'];
+  const longFields = PROFILE_FIELDS;
   for (const field of longFields) {
     const newVal = updates[field];
-    if (newVal && !preserve.includes(field)) {
+    if (newVal && (!preserve.includes(field) || !meaningfulProfileText(target[field]))) {
       const normalized = normalizeProfileValue(newVal, target[field] || '');
       if (normalized && normalized !== target[field]) target[field] = normalized;
     }
@@ -472,6 +846,7 @@ export function applyProfileUpdate(target, profile) {
           evidenceCount: 1, firstSeenAt: new Date().toISOString(), lastSeenAt: new Date().toISOString(),
           groups: item.groups || [], confidence: 0.3,
         });
+        recentChanged = true;
       } else if (!item.phrase) {
         // No phrase = log warning, don't wipe field, only add recent dynamics
         if (!target.recentDynamics) target.recentDynamics = [];
@@ -481,6 +856,7 @@ export function applyProfileUpdate(target, profile) {
           evidenceCount: 1, firstSeenAt: new Date().toISOString(), lastSeenAt: new Date().toISOString(),
           groups: item.groups || [], confidence: 0.2,
         });
+        recentChanged = true;
       }
     }
   }
@@ -502,12 +878,14 @@ export function applyProfileUpdate(target, profile) {
       existing.lastSeenAt = new Date().toISOString();
       existing.confidence = Math.min(1, (existing.confidence || 0.3) + 0.1);
       if (rdGroups.length > 0) existing.groups = [...new Set([...(existing.groups || []), ...rdGroups])];
+      recentChanged = true;
     } else {
       target.recentDynamics.push({
         topic: rd.topic, summary: rd.summary.slice(0, 300),
         evidenceCount: 1, firstSeenAt: new Date().toISOString(), lastSeenAt: new Date().toISOString(),
         groups: rdGroups, confidence: rd.confidence || 0.3,
       });
+      recentChanged = true;
     }
   }
 
@@ -533,6 +911,59 @@ export function applyProfileUpdate(target, profile) {
       updatedAt: new Date().toISOString(),
     };
   }
+  return {
+    changed: before !== profileSnapshot(target) || recentChanged,
+    hasLongTerm: hasProfileContent(target),
+    hasRecent: recentChanged,
+  };
+}
+
+export function commitMemoryProfileResult(userId, result, options = {}) {
+  const stamp = nowIso();
+  let outcome = { ok: false, changed: false, hasProfile: false, reason: '没有找到记忆对象' };
+  updateDb((draft) => {
+    const target = (draft.memories || []).find((entry) => String(entry.userId) === String(userId));
+    if (!target) return;
+
+    target.lastProfileAttemptAt = stamp;
+    const applyResult = applyProfileUpdate(target, result?.profile || {});
+    const hasProfile = hasProfileContent(target);
+    if (hasProfile) {
+      target.pendingCount = 0;
+      target.lastProfiledAt = stamp;
+      target.lastProfileError = '';
+      target.lastProfileStatus = applyResult.changed ? 'updated' : 'checked';
+      outcome = { ok: true, changed: applyResult.changed, hasProfile: true, reason: applyResult.changed ? '画像已更新' : '画像已检查，暂无变化' };
+    } else {
+      target.lastProfileStatus = applyResult.hasRecent ? 'recent-only' : 'empty';
+      target.lastProfileError = applyResult.hasRecent
+        ? '仅产生近期动态，长期画像仍为空；保留待更新计数'
+        : '模型未产出可保存的长期画像；保留待更新计数';
+      outcome = { ok: true, changed: applyResult.changed, hasProfile: false, reason: target.lastProfileError };
+    }
+    target.updatedAt = stamp;
+
+    if (!draft.usage) draft.usage = { totalTokens: 0, promptTokens: 0, completionTokens: 0, requests: 0, errors: 0 };
+    const usage = result?.usage || {};
+    draft.usage.requests += 1;
+    draft.usage.totalTokens += usage.total_tokens || 0;
+    draft.usage.promptTokens += usage.prompt_tokens || 0;
+    draft.usage.completionTokens += usage.completion_tokens || 0;
+    if (!draft.usageEvents) draft.usageEvents = [];
+    draft.usageEvents.push({
+      id: crypto.randomUUID(),
+      groupId: options.groupId || '',
+      userId: String(userId),
+      model: options.model || draft.settings.model,
+      kind: options.kind || 'memory',
+      totalTokens: usage.total_tokens || 0,
+      promptTokens: usage.prompt_tokens || 0,
+      completionTokens: usage.completion_tokens || 0,
+      createdAt: stamp,
+    });
+    draft.usageEvents = draft.usageEvents.slice(-5000);
+  });
+  return outcome;
 }
 
 function countEvidenceByField(samples) {
@@ -555,28 +986,16 @@ export async function maybeUpdateMemoryProfile(event) {
   try {
     const result = await updateMemoryProfile(db, memory);
     if (!result) return;
-    updateDb((draft) => {
-      const target = (draft.memories || []).find((entry) => String(entry.userId) === String(event.userId));
-      if (!target) return;
-      applyProfileUpdate(target, result.profile || {});
-      target.pendingCount = 0;
-      target.lastProfiledAt = nowIso();
-      target.updatedAt = nowIso();
-      draft.usage.requests += 1;
-      draft.usage.totalTokens += result.usage.total_tokens || 0;
-      draft.usage.promptTokens += result.usage.prompt_tokens || 0;
-      draft.usage.completionTokens += result.usage.completion_tokens || 0;
-      if (!draft.usageEvents) draft.usageEvents = [];
-      draft.usageEvents.push({
-        id: crypto.randomUUID(), groupId: event.groupId, userId: event.userId,
-        model: db.settings.model, kind: 'memory',
-        totalTokens: result.usage.total_tokens || 0, promptTokens: result.usage.prompt_tokens || 0,
-        completionTokens: result.usage.completion_tokens || 0, createdAt: nowIso()
-      });
-      draft.usageEvents = draft.usageEvents.slice(-5000);
-    });
+    commitMemoryProfileResult(event.userId, result, { groupId: event.groupId, model: db.settings.model, kind: 'memory' });
   } catch (error) {
     updateDb((draft) => {
+      const target = (draft.memories || []).find((entry) => String(entry.userId) === String(event.userId));
+      if (target) {
+        target.lastProfileAttemptAt = nowIso();
+        target.lastProfileStatus = 'error';
+        target.lastProfileError = error.message || String(error);
+        target.updatedAt = nowIso();
+      }
       draft.decisions.push({
         id: crypto.randomUUID(), messageId: event.messageId, groupId: event.groupId,
         userId: event.userId, shouldReply: false,
