@@ -4,6 +4,7 @@
 
 ### 新增
 - **回复排队系统**：bot 正在生成回复时，新的 @bot 消息不再丢弃，而是加入 FIFO 队列（上限 10 条/群）。当前回复完成后自动处理队列中下一条。指令（/w）不受队列阻塞。队列状态通过 `/api/health` 暴露。
+- **图片查看增强**：引用含图消息并 @bot 时自动提取被引用消息的图片；"看上文图片/看看上面的图" 等自然语言请求不再被误判为视觉限制，vision-capable 模型会从近期上下文搜索图片并发送给 LLM。
 
 ### 修复
 - **V2 聚类 hasSpecial 正则不一致**：`clusterSamplesByTopic` 中 `hasSpecial` 正则缺少 react/vite/onebot/napcat/qq/npm/node/jsx/css 等技术术语，与 `SPECIAL_TERMS` 不一致。改用 `SPECIAL_TERMS_NG`（非 global 版）避免 `.lastIndex` 副作用。

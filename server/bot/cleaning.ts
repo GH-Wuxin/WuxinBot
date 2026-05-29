@@ -177,6 +177,16 @@ export function normalizeMessage(message) {
     .trim();
 }
 
+export function extractReplyMessageId(message) {
+  if (Array.isArray(message)) {
+    const reply = message.find((part) => part.type === 'reply');
+    return reply?.data?.id ? String(reply.data.id) : null;
+  }
+  const raw = String(message || '');
+  const match = raw.match(/\[CQ:reply,id=([^\],\]]+)/);
+  return match ? String(match[1]) : null;
+}
+
 export function extractAtTargets(message) {
   if (Array.isArray(message)) {
     return message
@@ -211,8 +221,13 @@ export function hasVisualPlaceholder(text) {
 export function asksToInspectVisual(text) {
   // Pure [图片]/[表情包] messages should be ignored. Only explain the visual
   // limitation when the user adds real text asking the bot to inspect it.
+  const raw = String(text || '');
+  // Pattern 2: "看上文图片/看上面的图/看看之前的图" — no [图片] placeholder but
+  // user explicitly asks to look at images in context or quoted messages.
+  if (/看(上文|上面|之前|前面|刚才|刚才发|群里发|聊天记录).{0,6}(图|照片|图片|截图|表情)/.test(raw)) return true;
+  if (/(看下|看看|帮我看看|帮我看|看一下).{0,4}(这个|那张|上面|上文|之前|前面).{0,4}(图|照片|图片|截图)/.test(raw)) return true;
   if (!hasVisualPlaceholder(text)) return false;
-  const wordsOnly = String(text)
+  const wordsOnly = raw
     .replace(/\[(图片|表情|表情包|视频|文件|语音)\]/g, ' ')
     .trim();
   if (!wordsOnly) return false;
