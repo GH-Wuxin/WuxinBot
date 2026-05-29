@@ -3,6 +3,7 @@ import {
   normalizeMessage,
   extractImageInputs,
   extractAtTargets,
+  extractReplyMessageId,
   mentionsBot,
   isQuestion,
   hasVisualPlaceholder,
@@ -297,7 +298,21 @@ export function oneBotToInternal(event) {
   // Internal event shape used by the bot engine. Keep fields stringified because
   // QQ ids can exceed safe integer habits and are easier to compare as strings.
   const text = normalizeMessage(event.raw_message || event.message);
-  const images = extractImageInputs(event.message || event.raw_message);
+  let images = extractImageInputs(event.message || event.raw_message);
+  const replyMessageId = extractReplyMessageId(event.message || event.raw_message);
+
+  // If the user quoted a message, try to include images from the quoted message.
+  // This handles: user replies to an image message and @bots.
+  if (replyMessageId && images.length === 0) {
+    try {
+      const db = readDb();
+      const quoted = db.messages.find((m) => String(m.id) === replyMessageId);
+      if (quoted?.media?.images?.length) {
+        images = quoted.media.images;
+      }
+    } catch { /* DB read failure is non-fatal */ }
+  }
+
   return {
     source: 'onebot',
     type: event.message_type || 'group',
@@ -307,6 +322,7 @@ export function oneBotToInternal(event) {
     nickname: event.sender?.card || event.sender?.nickname || String(event.user_id || ''),
     text,
     images,
+    replyMessageId,
     atTargets: extractAtTargets(event.message || event.raw_message),
     raw: event
   };
@@ -552,10 +568,27 @@ export async function processIncoming(event, sendMessage, queuedDecision, isFrom
     }
     // 'off' — never send
 
+    // If user asks to look at images but none attached, search recent context
+    let visionImages = modelSupportsVision(liveDb) ? (event.images || []) : [];
+    if (visionImages.length === 0 && modelSupportsVision(liveDb) && asksToInspectVisual(event.text)) {
+      // Search recent messages in this group for images (most recent first)
+      const contextImages = (liveDb.messages || [])
+        .filter((m) =>
+          String(m.groupId) === String(event.groupId) &&
+          m.media?.images?.length &&
+          String(m.id) !== String(event.messageId)
+        )
+        .slice(-20)
+        .reverse();
+      if (contextImages.length > 0) {
+        visionImages = contextImages[0].media.images;
+      }
+    }
+
     const ai = await callLLM(liveDb, messages, searchMode, {
       maxTokens: responseOptions.maxTokens,
       overrideModel: responseOptions.overrideModel,
-      visionImages: modelSupportsVision(liveDb) ? (event.images || []) : []
+      visionImages
     });
 
     let replyText = sanitizeReply(ai.text, liveDb.settings);
