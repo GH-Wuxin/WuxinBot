@@ -61,7 +61,8 @@ export const defaultCommandPermissions = {
   profileRetry: 'admin',
   recalc: 'guest',
   groupAdd: 'owner',
-  memberPolicy: 'owner'
+  memberPolicy: 'owner',
+  exp: 'owner'
 };
 
 const initialDb = {
