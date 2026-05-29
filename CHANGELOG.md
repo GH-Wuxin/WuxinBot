@@ -6,6 +6,7 @@
 - **回复排队系统**：bot 正在生成回复时，新的 @bot 消息不再丢弃，而是加入 FIFO 队列（上限 10 条/群）。当前回复完成后自动处理队列中下一条。指令（/w）不受队列阻塞。队列状态通过 `/api/health` 暴露。
 
 ### 修复
+- **V2 聚类 hasSpecial 正则不一致**：`clusterSamplesByTopic` 中 `hasSpecial` 正则缺少 react/vite/onebot/napcat/qq/npm/node/jsx/css 等技术术语，与 `SPECIAL_TERMS` 不一致。改用 `SPECIAL_TERMS_NG`（非 global 版）避免 `.lastIndex` 副作用。
 - **个人画像空跑**：自动画像、手动画像、GUI/QQ 全局重算现在都会把画像结果写回数据库；空画像/仅近期动态不再清空 `pendingCount`
 - **长期证据取样**：画像更新不再只看最近几十条样本，会从历史消息补充长期文本，并按天/群做多样化取样
 - **空画像识别**：`暂无跨时间跨群稳定特征` 这类占位文案不再算作有效画像
@@ -15,8 +16,6 @@
 - **画像 JSON 容错**：画像更新遇到 LLM 输出非法 JSON 时，会低温重试一次“只修 JSON”，减少格式错误导致的记忆更新失败
 - **视觉限制提示改为能力感知**：不再每轮固定注入“不能看图”；DeepSeek 强制纯文字，Mimo/OpenAI 兼容多模态按视觉能力处理
 - **/w refresh 关系计数**：修复关系画像重算成功后计数变量错误
-
-### 新增
 - **记忆样本保留数**：默认每人保留 120 条样本，GUI 记忆页可调
 - **画像尝试状态**：记录最近画像尝试时间、状态和失败/空结果原因，GUI 可见
 - **真实图片输入链路**：OneBot 图片 segment/CQ 码会提取 `url/file`；多模态请求按 OpenAI-compatible `image_url` 格式附带图片，内网/本地图片可转 data URL
