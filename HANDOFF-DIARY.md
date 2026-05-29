@@ -1261,3 +1261,10 @@ Follow-up improvements, if someone continues this area:
 - GUI 成员页（等级 emoji + 进度条）
 - GUI 设置页（升级恭喜开关）
 - 文档更新
+
+### 补充完成（commit 18e280a）
+
+- **buildPrompt 注入**: `prompt.ts` 新增 `buildUserInfoLines()` — 注入用户等级信息、customName（称呼联动）、customStyle（个人交互风格）。LLM 回复时自然适配用户偏好。
+- **升级恭喜**: `bot.ts` 在 `processXpGain` 返回 `levelUp=true` 时，调用 LLM 生成个性化恭喜语（基于画像+等级），fire-and-forget 不阻塞主回复。群内开关 `levelUpNotifyEnabled`（默认开）。
+- **GUI 成员页**: `App.jsx` badges 改为显示等级 emoji + 等级名（如"⭐ Lv.3 老熟人"），替代旧的信任分 badge。
+- **GUI 设置页**: 新增"升级恭喜通知"开关。
