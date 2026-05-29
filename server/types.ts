@@ -15,6 +15,7 @@ export interface BotEvent {
   text: string;            // normalized by cleaning.ts
   atTargets: string[];
   images?: { type: 'image'; url?: string; file?: string }[];
+  replyMessageId?: string;
   raw?: Record<string, unknown>;
 }
 

@@ -1211,3 +1211,14 @@ Follow-up improvements, if someone continues this area:
 - 画像空跑修复 + 多模态图片链路 + 画像容错 (commit a21c0cf): 11 files, +842/-118。详见 CHANGELOG.md Unreleased 段。
 - HANDOFF.md 更新：清理旧备份引用、去重已完成表格、更新时间线。
 - CHANGELOG.md 更新：新增回复排队系统条目。
+
+### 图片查看增强
+
+- **问题**: 只有当前消息附带 `[CQ:image]` 时 bot 才能看图。引用含图消息或说"看上文图片"时 bot 说"看不到图片"。
+- **修复**:
+  - `cleaning.ts`: 新增 `extractReplyMessageId()` — 从 `[CQ:reply,id=xxx]` 或 array segment 提取引用消息 ID
+  - `cleaning.ts`: `asksToInspectVisual()` 扩展匹配"看上文图片/看看上面的图/看一下前面发的图"等自然语言模式（不再强制要求 `[图片]` 占位符）
+  - `bot.ts` `oneBotToInternal`: 提取 `replyMessageId`，当当前消息无图时从 DB 查找被引用消息的图片
+  - `bot.ts` `processIncoming`: 当 `asksToInspectVisual` 为 true 但无附图时，从群内最近 20 条消息搜索图片发送给 LLM
+  - `types.ts`: `BotEvent` 接口新增 `replyMessageId` 字段
+- **验证**: `tools/vision-verify.mjs` — 4 项测试（extractReplyMessageId、asksToInspectVisual 扩展、decideReply 视觉场景、extractImageInputs），3 次运行全过
