@@ -10,6 +10,7 @@ import { getHealth, getRecalcProgress, startRecalc, tickRecalc, stopRecalc, fini
 import { getGroupProfile, updateGroupProfile, clearGroupProfile } from './bot/groupProfile.js';
 import { commitMemoryProfileResult } from './bot/memory.js';
 import { evaluateTrustScores } from './bot/trust.js';
+import { decayInactiveUsers } from './bot/experience.js';
 
 ensureStore();
 
@@ -422,8 +423,10 @@ app.delete('/api/backups/:name', (req, res) => {
 pruneAutoBackups();
 setInterval(() => { createBackup('auto'); pruneAutoBackups(); }, 8 * 60 * 60 * 1000);
 
-// Auto-evaluate trust scores every 4 hours
+// Auto-evaluate trust scores every 4 hours (legacy compat)
 setInterval(() => { evaluateTrustScores(); }, 4 * 60 * 60 * 1000);
+// Decay XP for inactive users every 6 hours
+setInterval(() => { decayInactiveUsers(); }, 6 * 60 * 60 * 1000);
 
 const port = Number(process.env.PORT || 8787);
 // Recalc progress
