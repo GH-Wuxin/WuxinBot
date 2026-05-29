@@ -14,6 +14,7 @@ export interface BotEvent {
   nickname: string;
   text: string;            // normalized by cleaning.ts
   atTargets: string[];
+  images?: { type: 'image'; url?: string; file?: string }[];
   raw?: Record<string, unknown>;
 }
 
@@ -34,6 +35,13 @@ export interface DbSettings {
   apiKey: string;
   apiBaseUrl: string;
   model: string;
+  visionMode?: 'auto' | 'on' | 'off';
+  visionImageTransport?: 'auto' | 'url' | 'data';
+  visionMaxImages?: number;
+  visionMaxImageBytes?: number;
+  visionImageTimeoutMs?: number;
+  visionMemoryEnabled?: boolean;
+  visionMemoryPureImagePolicy?: 'off' | 'important' | 'all';
   temperature: number;
   maxTokens: number;
   contextLimit: number;
@@ -55,6 +63,7 @@ export interface DbSettings {
   memoryMinMessages: number;
   memoryUpdateEvery: number;
   memoryMaxChars: number;
+  memorySampleRetain?: number;
   commandRoles: CommandRole[];
   commandPermissions: Record<string, string>;
   [key: string]: unknown;   // permits customModel and future fields
@@ -114,6 +123,9 @@ export interface MemoryEntry {
   profilingRule: string;
   profileMeta: Record<string, { confidence: number; evidenceCount: number; updatedAt: string }>;
   recentDynamics: { topic: string; summary: string; evidenceCount: number; firstSeenAt: string; lastSeenAt: string; groups: string[]; confidence: number }[];
+  lastProfileAttemptAt?: string;
+  lastProfileStatus?: 'updated' | 'checked' | 'recent-only' | 'empty' | 'error';
+  lastProfileError?: string;
   lastProfiledAt?: string;
   createdAt: string;
   updatedAt: string;
@@ -121,11 +133,13 @@ export interface MemoryEntry {
 
 export interface MemorySample {
   content: string;
-  type: 'text' | 'card' | 'media' | 'command' | 'bot-output';
+  type: 'text' | 'card' | 'media' | 'image-summary' | 'command' | 'bot-output';
+  media?: { images?: { type: 'image'; url?: string; file?: string }[] };
   usedForProfile: boolean;
   riskLevel: 'normal' | 'low-confidence' | 'high-risk';
   reason: string;
   createdAt: string;
+  historical?: boolean;
   context?: {
     groupId: string;
     messageId: string;
@@ -152,6 +166,7 @@ export interface MessageRecord {
   userId: string;
   nickname: string;
   content: string;
+  media?: { images?: { type: 'image'; url?: string; file?: string }[] };
   inContext: boolean;
   createdAt: string;
 }

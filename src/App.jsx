@@ -101,6 +101,7 @@ const sampleTypeLabels = {
   text: '真实文本',
   card: '分享卡片',
   media: '媒体',
+  'image-summary': '图片摘要',
   command: '指令',
   'bot-output': '机器长文'
 };
@@ -656,6 +657,22 @@ function Model({ db, saveSettings }) {
     if (llmProvider !== 'deepseek' && next.apiBaseUrl === 'https://api.deepseek.com') next.apiBaseUrl = '';
     setDraft(next);
   };
+  const modelOptions = {
+    'deepseek-chat': 'DeepSeek Chat（日常聊天）',
+    'deepseek-reasoner': 'DeepSeek Reasoner（更慢更会想）',
+    'deepseek-v4-flash': 'DeepSeek V4 Flash',
+    'deepseek-v4-pro': 'DeepSeek V4 Pro',
+    ...(String(draft.apiBaseUrl || '').includes('mimo') || draft.llmProvider === 'openai-compatible' ? {
+      'mimo-v2.5-pro': 'MiMo-V2.5-Pro（多模态）',
+      'mimo-v2.5': 'MiMo-V2.5',
+      'mimo-v2-omni': 'MiMo-V2-Omni（视觉理解）',
+      'mimo-v2-pro': 'MiMo-V2-Pro'
+    } : {})
+  };
+  const currentModel = draft.model || 'deepseek-v4-flash';
+  if (currentModel && !modelOptions[currentModel]) {
+    modelOptions[currentModel] = `当前自定义：${currentModel}`;
+  }
   return (
     <section className="grid two">
       <div className="panel">
@@ -666,13 +683,20 @@ function Model({ db, saveSettings }) {
         }} />
         <Password label="API Key" value={draft.apiKey} onChange={(apiKey) => setDraft({ ...draft, apiKey })} />
         <Text label="API 地址" value={draft.apiBaseUrl} onChange={(apiBaseUrl) => setDraft({ ...draft, apiBaseUrl })} />
-        <Select label="模型" value={draft.model} onChange={(model) => setDraft({ ...draft, model })} options={{
-          'deepseek-chat': 'DeepSeek Chat（日常聊天）',
-          'deepseek-reasoner': 'DeepSeek Reasoner（更慢更会想）',
-          'deepseek-v4-flash': 'DeepSeek V4 Flash',
-          'deepseek-v4-pro': 'DeepSeek V4 Pro'
-        }} />
+        <Select label="模型" value={currentModel} onChange={(model) => setDraft({ ...draft, model })} options={modelOptions} />
         <Text label="自定义模型名，留空则使用上面的选择" value={draft.customModel || ''} onChange={(customModel) => setDraft({ ...draft, customModel })} />
+        <Select label="视觉能力" value={draft.visionMode || 'auto'} onChange={(visionMode) => setDraft({ ...draft, visionMode })} options={{
+          'auto': '自动识别（推荐）',
+          'on': '按多模态模型处理',
+          'off': '按纯文字模型处理'
+        }} />
+        <Select label="图片传输方式" value={draft.visionImageTransport || 'auto'} onChange={(visionImageTransport) => setDraft({ ...draft, visionImageTransport })} options={{
+          'auto': '自动（本地转data，公网走URL）',
+          'url': '只传URL',
+          'data': '转成data URL'
+        }} />
+        <Slider label="单次最多传入图片数" min={1} max={6} value={draft.visionMaxImages || 3} onChange={(visionMaxImages) => setDraft({ ...draft, visionMaxImages })} />
+        <p className="hint">DeepSeek 官方接口会强制按纯文字处理。Mimo 等 OpenAI 兼容多模态接口可传图片；本地/内网图片会自动转成 data URL。</p>
         <Slider label="创造性" min={0} max={1.5} step={0.05} value={draft.temperature} onChange={(temperature) => setDraft({ ...draft, temperature })} />
         <Slider label="单次回复长度" min={80} max={1200} step={20} value={draft.maxTokens} onChange={(maxTokens) => setDraft({ ...draft, maxTokens })} />
         <Slider label="带入最近消息数" min={5} max={80} value={draft.contextLimit} onChange={(contextLimit) => setDraft({ ...draft, contextLimit })} />
@@ -961,7 +985,10 @@ function Memory({ db, saveSettings, refresh }) {
       memoryEnabled: settingsDraft.memoryEnabled !== false,
       memoryMinMessages: settingsDraft.memoryMinMessages,
       memoryUpdateEvery: settingsDraft.memoryUpdateEvery,
-      memoryMaxChars: settingsDraft.memoryMaxChars
+      memoryMaxChars: settingsDraft.memoryMaxChars,
+      memorySampleRetain: settingsDraft.memorySampleRetain,
+      visionMemoryEnabled: settingsDraft.visionMemoryEnabled !== false,
+      visionMemoryPureImagePolicy: settingsDraft.visionMemoryPureImagePolicy || 'important'
     });
     setSettingsDirty(false);
     refresh();
@@ -977,7 +1004,17 @@ function Memory({ db, saveSettings, refresh }) {
         </label>
         <Slider label="开始画像所需消息数" min={3} max={40} value={settingsDraft.memoryMinMessages || 8} onChange={(memoryMinMessages) => updateSettingsDraft({ memoryMinMessages })} />
         <Slider label="每隔多少条更新画像" min={3} max={40} value={settingsDraft.memoryUpdateEvery || 8} onChange={(memoryUpdateEvery) => updateSettingsDraft({ memoryUpdateEvery })} />
+        <Slider label="每人保留样本数" min={30} max={300} step={10} value={settingsDraft.memorySampleRetain || 120} onChange={(memorySampleRetain) => updateSettingsDraft({ memorySampleRetain })} />
         <Slider label="注入提示词最大字数" min={200} max={1600} step={100} value={settingsDraft.memoryMaxChars || 900} onChange={(memoryMaxChars) => updateSettingsDraft({ memoryMaxChars })} />
+        <label className="switch">
+          <input type="checkbox" checked={settingsDraft.visionMemoryEnabled !== false} onChange={(e) => updateSettingsDraft({ visionMemoryEnabled: e.target.checked })} />
+          图片摘要进入长期记忆（仅多模态模型）
+        </label>
+        <Select label="无配文图片摘要" value={settingsDraft.visionMemoryPureImagePolicy || 'important'} onChange={(visionMemoryPureImagePolicy) => updateSettingsDraft({ visionMemoryPureImagePolicy })} options={{
+          'important': '只处理重点/信任/管理员',
+          'all': '所有人都处理',
+          'off': '不处理'
+        }} />
         <button className="primary wide" onClick={saveMemorySettings}>保存记忆设置</button>
         <p className="hint">Owner 不做自动画像。管理员、重点关注、白名单会更快沉淀记忆；普通群友会慢一些。</p>
         <h2 className="sectionTitle">已记录对象 ({memories.length})</h2>
@@ -1008,6 +1045,8 @@ function Memory({ db, saveSettings, refresh }) {
             <Row label="QQ号" value={draft.userId} />
             <Row label="出现过的群" value={(draft.groupsSeen || []).join(', ') || '暂无'} />
             <Row label="画像文本样本" value={draft.profileMessageCount || 0} />
+            <Row label="最近画像尝试" value={draft.lastProfileAttemptAt ? `${new Date(draft.lastProfileAttemptAt).toLocaleString()} · ${draft.lastProfileStatus || 'unknown'}` : '尚未尝试'} />
+            {draft.lastProfileError && <Row label="画像生成状态" value={draft.lastProfileError} />}
             <Row label="最近画像时间" value={draft.lastProfiledAt ? new Date(draft.lastProfiledAt).toLocaleString() : '尚未自动画像'} />
             <Text label="昵称" value={draft.nickname} onChange={(nickname) => updateDraft({ nickname })} />
             <label className="switch">

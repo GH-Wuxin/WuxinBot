@@ -8,6 +8,7 @@ import { buildPrompt } from './bot/prompt.js';
 import { callLLM } from './bot/llm.js';
 import { getHealth, getRecalcProgress, startRecalc, tickRecalc, stopRecalc, finishRecalc } from './health.js';
 import { getGroupProfile, updateGroupProfile, clearGroupProfile } from './bot/groupProfile.js';
+import { commitMemoryProfileResult } from './bot/memory.js';
 import { evaluateTrustScores } from './bot/trust.js';
 
 ensureStore();
@@ -442,7 +443,11 @@ app.post('/api/recalc', (_req, res) => {
     const { updateRelationshipProfile } = await import('./bot/relationshipProfile.js');
     for (const mem of mems) {
       if (getRecalcProgress().stopped) break;
-      try { await updateMemoryProfile(db, mem); } catch { /* skip */ }
+      try {
+        const latestDb = readDb();
+        const result = await updateMemoryProfile(latestDb, mem);
+        commitMemoryProfileResult(mem.userId, result, { model: latestDb.settings.model, kind: 'memory-recalc' });
+      } catch { /* skip */ }
       tickRecalc();
     }
     for (const g of gps) {
