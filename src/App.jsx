@@ -1064,8 +1064,18 @@ function Memory({ db, saveSettings, refresh }) {
                 setSelectedId(memory.userId);
               }}
             >
-              <strong>{memory.nickname || memory.userId}</strong>
-              <span>{memory.userId} | Lv.{memory.importanceLevel || 0} | {memory.messageCount || 0} 条消息</span>
+              <strong>{(() => {
+                const exp = (db.experience || {})[String(memory.userId)];
+                const levelEmojis = ['🌱', '💬', '🎯', '⭐', '👑'];
+                const emoji = exp ? (levelEmojis[exp.level || 0] || '🌱') : '';
+                return emoji + ' ' + (memory.nickname || memory.userId);
+              })()}</strong>
+              <span>{memory.userId} | 记忆Lv.{memory.importanceLevel || 0} | {memory.messageCount || 0}条 | {(() => {
+                const exp = (db.experience || {})[String(memory.userId)];
+                if (!exp) return '无经验';
+                const levelNames = ['新人', '群友', '活跃群友', '老熟人', '核心群友'];
+                return `${levelNames[exp.level || 0]} ${exp.xp}XP`;
+              })()}</span>
             </button>
           ))}
           {!memories.length && <p className="empty">还没有长期记忆。有人多聊几句后会自动出现。</p>}
