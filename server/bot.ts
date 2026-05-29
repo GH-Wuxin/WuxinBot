@@ -71,7 +71,43 @@ const policyWeight = {
   owner: 60
 };
 
-const activeReplyGroups = new Set();
+// Reply queue: when a reply is being generated for a group, new @bot messages
+// are queued instead of dropped. After the current reply finishes, the next
+// queued message is processed automatically (FIFO).
+const REPLY_QUEUE_LIMIT = 10;
+const replyQueues = new Map(); // key → { locked: boolean, queue: [{event, sendMessage, decision}] }
+
+function getQueueState(key) {
+  if (!replyQueues.has(key)) replyQueues.set(key, { locked: false, queue: [] });
+  return replyQueues.get(key);
+}
+
+export function getReplyQueueStats() {
+  const stats = {};
+  for (const [key, state] of replyQueues) {
+    if (state.locked || state.queue.length > 0) {
+      stats[key] = { locked: state.locked, queued: state.queue.length };
+    }
+  }
+  return stats;
+}
+
+async function drainReplyQueue(key) {
+  const state = replyQueues.get(key);
+  if (!state || state.queue.length === 0) {
+    if (state) state.locked = false;
+    replyQueues.delete(key);
+    return;
+  }
+  // Process next queued message. Lock stays held — pass isFromDrain=true
+  // so processIncoming skips the lock check and doesn't re-queue.
+  const next = state.queue.shift();
+  try {
+    await processIncoming(next.event, next.sendMessage, next.decision, true);
+  } catch {
+    // Errors are already handled inside processIncoming
+  }
+}
 
 function getGroup(db, groupId) {
   return db.groups.find((group) => String(group.groupId) === String(groupId));
@@ -276,7 +312,7 @@ export function oneBotToInternal(event) {
   };
 }
 
-export async function processIncoming(event, sendMessage) {
+export async function processIncoming(event, sendMessage, queuedDecision, isFromDrain) {
   // High-level pipeline:
   // 1. Ignore self messages and route slash commands.
   // 2. Log the incoming message and decide whether to reply.
@@ -385,8 +421,24 @@ export async function processIncoming(event, sendMessage) {
   }
 
   const replyLockKey = event.type === 'group' ? `group:${event.groupId}` : `private:${event.userId}`;
-  if (activeReplyGroups.has(replyLockKey)) {
-    const reason = '已有回复正在生成，跳过本次自动接话';
+  const queueState = getQueueState(replyLockKey);
+  if (!isFromDrain && queueState.locked) {
+    if (queueState.queue.length >= REPLY_QUEUE_LIMIT) {
+      const reason = `回复队列已满(${REPLY_QUEUE_LIMIT})，丢弃`;
+      updateDb((draft) => {
+        draft.decisions.push({
+          id: crypto.randomUUID(),
+          messageId: event.messageId,
+          groupId: event.groupId,
+          userId: event.userId,
+          shouldReply: false,
+          reason,
+          createdAt: nowIso()
+        });
+      });
+      return { replied: false, reason };
+    }
+    const reason = '已有回复正在生成，加入队列等待';
     updateDb((draft) => {
       draft.decisions.push({
         id: crypto.randomUUID(),
@@ -398,9 +450,10 @@ export async function processIncoming(event, sendMessage) {
         createdAt: nowIso()
       });
     });
-    return { replied: false, reason };
+    queueState.queue.push({ event, sendMessage, decision });
+    return { replied: false, reason, queued: true, queuePosition: queueState.queue.length };
   }
-  activeReplyGroups.add(replyLockKey);
+  queueState.locked = true;
 
   let thinkingTimer = null;
   try {
@@ -420,7 +473,7 @@ export async function processIncoming(event, sendMessage) {
         draft.messages.push({ id: crypto.randomUUID(), role: 'assistant', type: event.type, groupId: event.groupId, userId: 'bot', nickname: '机器人', content: replyText, inContext: true, createdAt: nowIso() });
         draft.usage.replies += 1;
       });
-      activeReplyGroups.delete(replyLockKey);
+      await drainReplyQueue(replyLockKey);
       return { replied: true, text: replyText, reason: '搜索请求但未接入真实搜索源' };
     }
 
@@ -444,7 +497,7 @@ export async function processIncoming(event, sendMessage) {
           });
           draft.usage.replies += 1;
         });
-        activeReplyGroups.delete(replyLockKey);
+        await drainReplyQueue(replyLockKey);
         return { replied: true, text: replyText, reason: '搜索请求缺少关键词' };
       }
       if (sendMessage) await sendMessage(event, `正在搜索：${searchQuery.slice(0, 60)}…`);
@@ -470,7 +523,7 @@ export async function processIncoming(event, sendMessage) {
           });
           draft.usage.replies += 1;
         });
-        activeReplyGroups.delete(replyLockKey);
+        await drainReplyQueue(replyLockKey);
         return { replied: true, text: replyText, reason: '搜索失败或无结果' };
       }
     }
@@ -579,7 +632,7 @@ export async function processIncoming(event, sendMessage) {
     return { replied: false, error: error.message, reason: decision.reason };
   } finally {
     if (thinkingTimer) clearTimeout(thinkingTimer);
-    activeReplyGroups.delete(replyLockKey);
+    void drainReplyQueue(replyLockKey);
   }
 }
 
