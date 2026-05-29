@@ -1,6 +1,7 @@
 import { defaultPrompt, readDb, updateDb, nowIso } from './store.js';
 import {
   normalizeMessage,
+  extractImageInputs,
   extractAtTargets,
   mentionsBot,
   isQuestion,
@@ -37,6 +38,7 @@ import {
   ownerPrivateContextStats,
   promptContextMessages,
   memoryPromptBlock,
+  modelSupportsVision,
   sumUsageSince,
   startOfLocalDayTime
 } from './bot/prompt.js';
@@ -49,7 +51,7 @@ import {
   sendForwardText,
   splitReplySegments
 } from './bot/reply.js';
-import { recordMemoryObservation, maybeUpdateMemoryProfile, updateMemoryProfile, applyProfileUpdate } from './bot/memory.js';
+import { recordMemoryObservation, maybeUpdateMemoryProfile, maybeRecordImageMemorySummary, updateMemoryProfile, commitMemoryProfileResult } from './bot/memory.js';
 import { getGroupProfile, updateGroupProfile, clearGroupProfile, incrementGroupProfilePending } from './bot/groupProfile.js';
 import { getRelationshipProfile, updateRelationshipProfile, clearRelationshipProfile, incrementPairPending } from './bot/relationshipProfile.js';
 import { processTrustSignal, evaluateTrustScores, trustInteractionBonus, isTrustedMember } from './bot/trust.js';
@@ -178,7 +180,7 @@ function recentBotConversation(db, groupId, seconds = 120) {
   return { active: ageMs <= seconds * 1000, last };
 }
 
-export function decideReply({ db, group, userPolicy, text, mentioned, userId }) {
+export function decideReply({ db, group, userPolicy, text, mentioned, userId, images = [] }) {
   // This is the main "should the bot speak?" gate. Keep cheap deterministic
   // checks first; only call the configured LLM after this returns shouldReply=true.
   if (db.settings.globalPaused) return { shouldReply: false, reason: '机器人处于全局暂停状态' };
@@ -186,10 +188,21 @@ export function decideReply({ db, group, userPolicy, text, mentioned, userId }) 
   if (userPolicy.policy === 'blocked') return { shouldReply: false, reason: '该用户在黑名单中', inContext: false };
   if (group.mode === 'silent') return { shouldReply: false, reason: '当前群是静默模式' };
   if (db.settings.onlyMentionMode && !mentioned) return { shouldReply: false, reason: '全局设置为只在 @ 时回复' };
+  const visionCapable = modelSupportsVision(db);
+  const hasVisionImages = visionCapable && Array.isArray(images) && images.length > 0;
   if (text.length < 1) return { shouldReply: false, reason: '空消息或无法识别的消息' };
-  if (!textWithoutControlPlaceholders(text)) return { shouldReply: false, reason: '只有 @/媒体/卡片占位，没有可回复的文字', inContext: false };
-  if (onlyVisualMessage(text)) return { shouldReply: false, reason: '图片或表情包消息，当前默认忽略', inContext: false };
-  if (asksToInspectVisual(text)) return { shouldReply: true, reason: '用户要求看图或识别表情包，需要解释当前不支持视觉识别', visualLimitation: true };
+  if (!textWithoutControlPlaceholders(text)) {
+    if (hasVisionImages && mentioned) return { shouldReply: true, reason: '用户 @ 机器人并发送图片，交给视觉模型回答' };
+    return { shouldReply: false, reason: '只有 @/媒体/卡片占位，没有可回复的文字', inContext: false };
+  }
+  if (onlyVisualMessage(text)) {
+    if (hasVisionImages && mentioned) return { shouldReply: true, reason: '用户 @ 机器人并发送纯图片，交给视觉模型回答' };
+    return { shouldReply: false, reason: visionCapable ? '纯图片或表情包消息，默认不抢话' : '图片或表情包消息，当前默认忽略', inContext: false };
+  }
+  if (asksToInspectVisual(text)) {
+    if (visionCapable) return { shouldReply: true, reason: '用户要求看图，交给模型按当前视觉能力回答' };
+    return { shouldReply: true, reason: '用户要求看图或识别表情包，需要解释当前不支持视觉识别', visualLimitation: true };
+  }
 
   const privilegedMention =
     mentioned &&
@@ -248,6 +261,7 @@ export function oneBotToInternal(event) {
   // Internal event shape used by the bot engine. Keep fields stringified because
   // QQ ids can exceed safe integer habits and are easier to compare as strings.
   const text = normalizeMessage(event.raw_message || event.message);
+  const images = extractImageInputs(event.message || event.raw_message);
   return {
     source: 'onebot',
     type: event.message_type || 'group',
@@ -256,6 +270,7 @@ export function oneBotToInternal(event) {
     userId: String(event.user_id || ''),
     nickname: event.sender?.card || event.sender?.nickname || String(event.user_id || ''),
     text,
+    images,
     atTargets: extractAtTargets(event.message || event.raw_message),
     raw: event
   };
@@ -306,7 +321,7 @@ export async function processIncoming(event, sendMessage) {
   const mentioned = mentionsBot(event.text, settings);
   const decision = event.type === 'private'
     ? { shouldReply: String(event.userId) === String(settings.ownerQq || event.userId), reason: '私聊消息' }
-    : decideReply({ db, group, userPolicy, text: event.text, mentioned, userId: event.userId });
+    : decideReply({ db, group, userPolicy, text: event.text, mentioned, userId: event.userId, images: event.images || [] });
 
   updateDb((draft) => {
     draft.messages.push({
@@ -317,6 +332,7 @@ export async function processIncoming(event, sendMessage) {
       userId: event.userId,
       nickname: event.nickname,
       content: event.text,
+      media: event.images?.length ? { images: event.images } : undefined,
       inContext: decision.inContext !== false,
       createdAt: nowIso()
     });
@@ -334,6 +350,9 @@ export async function processIncoming(event, sendMessage) {
   const memoryRecord = recordMemoryObservation(event, userPolicy);
   if (memoryRecord.shouldUpdate) {
     void maybeUpdateMemoryProfile(event);
+  }
+  if (event.images?.length) {
+    void maybeRecordImageMemorySummary(event, userPolicy);
   }
 
   // Group profile auto-update: increment pending counter, trigger if threshold reached
@@ -482,7 +501,8 @@ export async function processIncoming(event, sendMessage) {
 
     const ai = await callLLM(liveDb, messages, searchMode, {
       maxTokens: responseOptions.maxTokens,
-      overrideModel: responseOptions.overrideModel
+      overrideModel: responseOptions.overrideModel,
+      visionImages: modelSupportsVision(liveDb) ? (event.images || []) : []
     });
 
     let replyText = sanitizeReply(ai.text, liveDb.settings);
@@ -1186,7 +1206,11 @@ async function runOwnerCommand(event, sendMessage, permissions = { isOwner: true
     let pCount = 0, gCount = 0, rCount = 0;
     for (const mem of mems) {
       if (getRecalcProgress().stopped) break;
-      try { await updateMemoryProfile(db, mem); pCount++; } catch { /* skip */ }
+      try {
+        const result = await updateMemoryProfile(readDb(), mem);
+        commitMemoryProfileResult(mem.userId, result, { groupId: event.groupId, model: readDb().settings.model, kind: 'memory-recalc' });
+        pCount++;
+      } catch { /* skip */ }
       tickRecalc();
     }
     for (const g of gps) {
@@ -1196,7 +1220,10 @@ async function runOwnerCommand(event, sendMessage, permissions = { isOwner: true
     }
     for (const rp of rels) {
       if (getRecalcProgress().stopped) break;
-      try { await updateRelationshipProfile(readDb(), rp.groupId, rp.userA, rp.userB); if (r.ok) rCount++; } catch { /* skip */ }
+      try {
+        const r = await updateRelationshipProfile(readDb(), rp.groupId, rp.userA, rp.userB);
+        if (r?.ok !== false) rCount++;
+      } catch { /* skip */ }
       tickRecalc();
     }
     finishRecalc(getRecalcProgress().stopped ? 'QQ端已停止' : 'QQ端全部重算完成');
@@ -1741,24 +1768,12 @@ ${knownModels.join('\n')}
       if (sendMessage) await sendMessage(event, `正在按「${guidance || '默认方向'}」重算 ${mem.nickname || retryTarget} 的画像…`);
       try {
         const result = await updateMemoryProfile(db, mem);
+        const outcome = commitMemoryProfileResult(retryTarget, result, { groupId: event.groupId, model: db.settings.model, kind: 'memory' });
         updateDb((draft) => {
           const target = (draft.memories || []).find((m) => String(m.userId) === String(retryTarget));
-          if (!target) return;
-          applyProfileUpdate(target, result.profile || {});
-          target.profilingRule = savedRule;
-          target.pendingCount = 0;
-          target.lastProfiledAt = nowIso();
-          target.updatedAt = nowIso();
-          draft.usage.requests += 1;
-          draft.usage.totalTokens += result.usage.total_tokens || 0;
-          draft.usage.promptTokens += result.usage.prompt_tokens || 0;
-          draft.usage.completionTokens += result.usage.completion_tokens || 0;
-          if (!draft.usageEvents) draft.usageEvents = [];
-          draft.usageEvents.push({ id: crypto.randomUUID(), groupId: event.groupId, userId: retryTarget, model: db.settings.model, kind: 'memory', totalTokens: result.usage.total_tokens || 0, promptTokens: result.usage.prompt_tokens || 0, completionTokens: result.usage.completion_tokens || 0, createdAt: nowIso() });
-          draft.usageEvents = draft.usageEvents.slice(-5000);
+          if (target) target.profilingRule = savedRule;
         });
-        const summary = (result.profile || {}).summary || '已重算';
-        if (sendMessage) await sendMessage(event, `${mem.nickname || retryTarget} 画像已重算：${summary}`);
+        if (sendMessage) await sendMessage(event, `${mem.nickname || retryTarget} 画像重算完成：${outcome.reason}`);
         return { replied: Boolean(sendMessage), reason: `定向重算 ${retryTarget} 画像` };
       } catch (error) {
         updateDb((draft) => { const t = (draft.memories || []).find((m) => String(m.userId) === String(retryTarget)); if (t) t.profilingRule = savedRule; });
@@ -1807,30 +1822,8 @@ ${knownModels.join('\n')}
     if (sendMessage) await sendMessage(event, `正在更新 ${memory.nickname || targetUser} 的画像…`);
     try {
       const result = await updateMemoryProfile(db, memory);
-      updateDb((draft) => {
-        const target = (draft.memories || []).find((m) => String(m.userId) === String(targetUser));
-        if (!target) return;
-        applyProfileUpdate(target, result.profile || {});
-        target.pendingCount = 0;
-        target.lastProfiledAt = nowIso();
-        target.updatedAt = nowIso();
-        draft.usage.requests += 1;
-        draft.usage.totalTokens += result.usage.total_tokens || 0;
-        draft.usage.promptTokens += result.usage.prompt_tokens || 0;
-        draft.usage.completionTokens += result.usage.completion_tokens || 0;
-        if (!draft.usageEvents) draft.usageEvents = [];
-        draft.usageEvents.push({
-          id: crypto.randomUUID(), groupId: event.groupId, userId: targetUser,
-          model: db.settings.model, kind: 'memory',
-          totalTokens: result.usage.total_tokens || 0,
-          promptTokens: result.usage.prompt_tokens || 0,
-          completionTokens: result.usage.completion_tokens || 0,
-          createdAt: nowIso()
-        });
-        draft.usageEvents = draft.usageEvents.slice(-5000);
-      });
-      const summary = (result.profile || {}).summary || '已更新';
-      if (sendMessage) await sendMessage(event, `${memory.nickname || targetUser} 画像已更新：${summary}`);
+      const outcome = commitMemoryProfileResult(targetUser, result, { groupId: event.groupId, model: db.settings.model, kind: 'memory' });
+      if (sendMessage) await sendMessage(event, `${memory.nickname || targetUser} 画像更新完成：${outcome.reason}`);
       return { replied: Boolean(sendMessage), reason: `手动更新 ${targetUser} 画像` };
     } catch (error) {
       const reply = `画像更新失败：${error.message}`;

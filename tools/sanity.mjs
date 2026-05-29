@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { processIncoming } from '../server/bot.ts';
+import { decideReply, processIncoming } from '../server/bot.ts';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const rootDir = path.resolve(__dirname, '..');
@@ -52,6 +52,10 @@ async function main() {
     db.settings.botNames = db.settings.botNames || 'Wuxin,小深,机器人,bot';
     db.settings.globalPaused = false;
     db.settings.onlyMentionMode = false;
+    db.settings.llmProvider = 'deepseek';
+    db.settings.apiBaseUrl = 'https://api.deepseek.com';
+    db.settings.model = 'deepseek-v4-flash';
+    db.settings.visionMode = 'auto';
     db.groups = [
       ...(db.groups || []).filter((group) => !['990001', '990002', '990003'].includes(String(group.groupId))),
       {
@@ -97,6 +101,27 @@ async function main() {
     }), sendMessage);
     assert(visualAsk.replied === true, 'explicit visual inspection request should get deterministic reply');
     assert(sent.some((text) => text.includes('看不到图片') || text.includes('只能读文字')), 'visual limitation reply should explain limitation');
+
+    const mimoDecision = decideReply({
+      db: {
+        ...db,
+        settings: {
+          ...db.settings,
+          llmProvider: 'openai-compatible',
+          apiBaseUrl: 'https://api.mimo-v2.com/v1',
+          model: 'mimo-v2-omni',
+          visionMode: 'auto'
+        },
+        messages: []
+      },
+      group: db.groups.find((group) => group.groupId === '990001'),
+      userPolicy: { policy: 'normal', attentionLevel: 3, allowCommands: false },
+      text: `[CQ:at,qq=${sanityBotQq}] 看看这张图 [图片]`,
+      mentioned: true,
+      userId: sanityNormalUserQq,
+      images: [{ type: 'image', url: 'https://example.com/a.jpg' }]
+    });
+    assert(mimoDecision.shouldReply === true && !mimoDecision.visualLimitation, 'mimo visual request should enter vision path');
 
     sent.length = 0;
     const deniedGroupAdd = await processIncoming(event({
