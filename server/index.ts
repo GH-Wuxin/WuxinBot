@@ -3,7 +3,7 @@ import express from 'express';
 import { ensureStore, publicDb, readDb, updateDb, upsertBy, nowIso, saveConfigSnapshot, listConfigSnapshots, restoreConfigSnapshot } from './store.js';
 import { createBackup, listBackups, restoreBackup, deleteBackup, pruneAutoBackups } from './backup.js';
 import { connectOneBot, getOneBotStatus, sendOneBotMessage } from './onebot.js';
-import { oneBotToInternal, processIncoming, decideReply } from './bot.js';
+import { oneBotToInternal, processIncoming, decideReply, getReplyQueueStats } from './bot.js';
 import { buildPrompt } from './bot/prompt.js';
 import { callLLM } from './bot/llm.js';
 import { getHealth, getRecalcProgress, startRecalc, tickRecalc, stopRecalc, finishRecalc } from './health.js';
@@ -351,7 +351,9 @@ app.post('/api/clear-context', (_req, res) => {
 
 // Health
 app.get('/api/health', (_req, res) => {
-  res.json(getHealth());
+  const health = getHealth();
+  health.replyQueues = getReplyQueueStats();
+  res.json(health);
 });
 
 // Group profiles
