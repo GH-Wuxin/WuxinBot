@@ -31,6 +31,11 @@ export const defaultCommandPermissions = {
   my: 'guest',
   ping: 'guest',
   why: 'guest',
+  lv: 'guest',
+  top: 'guest',
+  me: 'trusted',
+  nick: 'trusted',
+  style: 'trusted',
   profile: 'admin',
   summarize: 'guest',
   summarizeLarge: 'admin',
@@ -104,6 +109,7 @@ const initialDb = {
     groupProfileThreshold: 80,
     memoryMaxChars: 900,
     memorySampleRetain: 120,
+    levelUpNotifyEnabled: true,
     commandRoles: defaultCommandRoles,
     commandPermissions: defaultCommandPermissions
   },
@@ -113,6 +119,8 @@ const initialDb = {
   groupProfiles: [],
   relationshipProfiles: [],
   trustScores: {},
+  experience: {},
+  groupExperience: {},
   messages: [],
   decisions: [],
   commandLogs: [],
@@ -159,6 +167,8 @@ function normalizeDb(db) {
   db.groupProfiles ||= [];
   db.relationshipProfiles ||= [];
   db.trustScores ||= {};
+  db.experience ||= {};
+  db.groupExperience ||= {};
   db.messages ||= [];
   db.decisions ||= [];
   db.commandLogs ||= [];

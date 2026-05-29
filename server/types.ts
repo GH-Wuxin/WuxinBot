@@ -16,6 +16,7 @@ export interface BotEvent {
   atTargets: string[];
   images?: { type: 'image'; url?: string; file?: string }[];
   replyMessageId?: string;
+  senderRole?: 'owner' | 'admin' | 'member';
   raw?: Record<string, unknown>;
 }
 
