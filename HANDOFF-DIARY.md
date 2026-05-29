@@ -1222,3 +1222,42 @@ Follow-up improvements, if someone continues this area:
   - `bot.ts` `processIncoming`: 当 `asksToInspectVisual` 为 true 但无附图时，从群内最近 20 条消息搜索图片发送给 LLM
   - `types.ts`: `BotEvent` 接口新增 `replyMessageId` 字段
 - **验证**: `tools/vision-verify.mjs` — 4 项测试（extractReplyMessageId、asksToInspectVisual 扩展、decideReply 视觉场景、extractImageInputs），3 次运行全过
+
+---
+
+## 2026-05-29 — 经验等级系统 + 群管自动识别 (commit 2c1ab98)
+
+### 经验等级系统
+
+- **5 级系统**: 🌱新人(0) → 💬群友(50) → 🎯活跃群友(150) → ⭐老熟人(350) → 👑核心群友(700)
+- **XP 全局累计**: 按 QQ 号为主键，不按群独立清零。两层结构：`db.experience[qq]`（全局等级）+ `db.groupExperience[groupId:qq]`（群内排行）
+- **每日上限 30 XP**: 有效消息 +1（日限15）、活跃天里程碑 +5（每3天）、多人互动 +3（日限1）、@他人 +2（日限6）
+- **连续活跃加成**: 3天×1.2、7天×1.5、14天×2.0
+- **降级**: 30天不活跃 → 每7天扣10% XP，降到上一级门槛时降级
+- **新指令**: `/w lv`（等级查询）、`/w top`（群排行榜）、`/w nick`（自定义称呼，Lv.2）、`/w style`（个人交互风格，Lv.3）、`/w me`（查看画像，Lv.3）
+- **nick/style 管理**: 管理员可用 `/w nick @某人 称呼` 和 `/w style @某人 内容` 操作他人
+- **文件**: `server/bot/experience.ts`（新）、`server/bot/trust.ts`（改为读取 experience level）
+
+### 群管自动识别
+
+- **自动识别**: `oneBotToInternal` 提取 `sender.role`，`isGroupAdmin` 判定加入 `event.senderRole === 'owner'/'admin'`
+- **权限范围**: 群管自动获得 admin 级别，仅限本群，不能 `/w op`（只有 bot owner 能 op）
+- **兼容**: 手动 `/w op` 仍然有效，群管识别是额外叠加
+
+### 冲突分析（已完成）
+
+- `store.ts`: defaultCommandPermissions 新增 lv/top/nick/style/me 权限键
+- `bot.ts` helpDefs: 新增等级分组
+- `trust.ts`: 改为读取 experience level，保留旧函数签名兼容
+- `index.ts`: 新增 XP 降级检测定时器（6小时）
+- `types.ts`: BotEvent 新增 senderRole
+
+### 待完成（TODO.md）
+
+- 内容过滤（LLM 判定 nick/style）
+- 升级恭喜（LLM 生成 + 群内开关）
+- Bot 称呼联动（Lv.2+ 在回复中偶尔用头衔称呼）
+- buildPrompt 注入（用户等级 + customName + customStyle）
+- GUI 成员页（等级 emoji + 进度条）
+- GUI 设置页（升级恭喜开关）
+- 文档更新
