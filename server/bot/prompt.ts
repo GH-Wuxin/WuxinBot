@@ -6,6 +6,7 @@ import { llmProvider, llmProviderName, supportsProviderSearch } from './llm.js';
 import { groupProfilePromptBlock } from './groupProfile.js';
 import { relationshipPromptBlock } from './relationshipProfile.js';
 import { isEmptyProfileText } from './memory.js';
+import { getExperience, getLevelInfo } from './experience.js';
 
 export function describePolicy(policy) {
   const labels = {
@@ -234,6 +235,26 @@ export function memoryPromptBlock(db, userId) {
   return parts.join('\n').slice(0, maxChars);
 }
 
+function buildUserInfoLines(db, event) {
+  const lines = [];
+  const userId = String(event.userId);
+  const exp = getExperience(db, userId);
+  if (exp.level >= 1) {
+    const info = getLevelInfo(exp.level);
+    lines.push(`当前发言者等级：${info.emoji} ${info.title}（Lv.${info.level}）。`);
+  }
+  // Custom name (what the bot should call this user)
+  const user = (db.users || []).find((u) => String(u.userId) === userId && String(u.groupId) === String(event.groupId));
+  if (user?.customName) {
+    lines.push(`称呼当前发言者为"${user.customName}"，不要用 QQ 昵称。`);
+  }
+  // Custom style (how the bot should interact with this user)
+  if (user?.customStyle) {
+    lines.push(`与当前发言者交互时参考：${user.customStyle}`);
+  }
+  return lines;
+}
+
 export function buildPrompt(db, group, event, userPolicy) {
   const context = promptContextMessages(db, group, event);
   const ownerContext = ownerPrivateContextStats(db, event);
@@ -274,6 +295,7 @@ export function buildPrompt(db, group, event, userPolicy) {
     ownerContextNotice,
     '每条消息有 [HH:MM] 标记。时间相隔大的消息不要强行串联。可以参与话题，但不要把 A 对 B 说的话当成对你说的。',
     userPolicy.customPrompt ? `对当前发言者的特别要求：${userPolicy.customPrompt}` : '',
+    ...buildUserInfoLines(db, event),
     memoryBlock ? `关于当前发言者的长期记忆：${memoryBlock}\n自然使用，不要生硬复述；与当前消息冲突时以当前消息为准。` : '',
     event.type === 'group' ? groupProfilePromptBlock(db, event.groupId) : '',
     event.type === 'group' ? relationshipPromptBlock(db, event) : '',
