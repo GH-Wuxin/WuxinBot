@@ -524,6 +524,7 @@ const STOP_BIGRAMS = new Set([
 ]);
 
 const SPECIAL_TERMS = /cs2|osu|owc|deepseek|v4|api|gpt|bot|npm|node|jsx|css|react|vite|onebot|napcat|qq/gi;
+const SPECIAL_TERMS_NG = /cs2|osu|owc|deepseek|v4|api|gpt|bot|npm|node|jsx|css|react|vite|onebot|napcat|qq/i;
 
 function tokenizeCJK(text) {
   const tokens = [];
@@ -555,7 +556,7 @@ export function clusterSamplesByTopic(samples) {
       const intersection = [...tokenSet].filter((t) => clusterSet.has(t));
       const union = new Set([...tokenSet, ...clusterSet]);
       const jaccard = union.size > 0 ? intersection.length / union.size : 0;
-      const hasSpecial = intersection.some((t) => /cs2|osu|owc|deepseek|v4|api|gpt|bot/i.test(t));
+      const hasSpecial = intersection.some((t) => SPECIAL_TERMS_NG.test(t));
       // Match: 2+ tokens overlap OR special term match OR Jaccard >= 0.25
       if (intersection.length >= 2 || hasSpecial || jaccard >= 0.25) {
         c.samples.push(s);
