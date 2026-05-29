@@ -420,8 +420,25 @@ export async function processIncoming(event, sendMessage, queuedDecision, isFrom
   // Group profile auto-update: increment pending counter, trigger if threshold reached
   if (event.type === 'group' && event.groupId && event.groupId !== 'private') {
     incrementGroupProfilePending(db, event.groupId, event.text);
-    processXpGain(event, db);
+    const xpResult = processXpGain(event, db);
     incrementPairPending(db, event.groupId, event.userId);
+
+    // Level-up congratulations
+    if (xpResult.levelUp && sendMessage && db.settings.levelUpNotifyEnabled !== false) {
+      const newInfo = getLevelInfo(xpResult.newLevel);
+      const features = getUnlockedFeatures(xpResult.newLevel);
+      const featureText = features.length ? `解锁：${features[features.length - 1]}` : '';
+      // Fire-and-forget: don't block the main reply
+      void (async () => {
+        try {
+          const congratsPrompt = `用户 ${event.nickname} 从 Lv.${xpResult.oldLevel} 升级到 ${newInfo.emoji} ${newInfo.title}（Lv.${newInfo.level}）。${featureText}。写一句简短的群内恭喜，15字以内，轻松活泼，不要重复。`;
+          const { completeChat } = await import('./bot/llm.js');
+          const resp = await completeChat(readDb(), { messages: [{ role: 'user', content: congratsPrompt }], temperature: 0.8, maxTokens: 50, label: '升级恭喜' });
+          const congratsText = resp.text?.trim() || `🎉 恭喜 ${event.nickname} 升级为 ${newInfo.emoji} ${newInfo.title}！`;
+          await sendMessage(event, congratsText);
+        } catch { /* non-fatal */ }
+      })();
+    }
   }
 
   if (!decision.shouldReply) return { replied: false, reason: decision.reason };
