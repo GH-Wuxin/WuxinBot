@@ -223,6 +223,15 @@ function Overview({ db, oneBot, saveSettings, refresh }) {
         <Stat label="今日消息" value={todayMessages.length} />
         <Stat label="累计回复" value={db.usage.replies} />
         <Stat label="累计 Token" value={db.usage.totalTokens} />
+        {(() => {
+          const exp = db.experience || {};
+          const levels = [0, 0, 0, 0, 0];
+          const levelEmojis = ['🌱', '💬', '🎯', '⭐', '👑'];
+          for (const e of Object.values(exp)) levels[e.level || 0]++;
+          const total = Object.keys(exp).length;
+          if (!total) return null;
+          return <Stat label="经验成员" value={`${total} 人 · ${levels.map((c, i) => c ? `${levelEmojis[i]}${c}` : '').filter(Boolean).join(' ')}`} />;
+        })()}
       </section>
       <section className="panel actions">
         <button onClick={() => saveSettings({ onlyMentionMode: !db.settings.onlyMentionMode })}>
@@ -543,6 +552,24 @@ function Groups({ db, refresh, saveSettings }) {
                     <div className="badges">{groupTags(group).map((tag) => <span key={tag.label} className={tag.cls}>{tag.label}</span>)}</div>
                     <span>{modeLabels[group.mode] || group.mode} · 每小时 {group.maxPerHour || 0} 次 · 冷却 {group.cooldownSec || 0} 秒</span>
                     <span>已设成员 {memberCount} · 有记忆成员 {memoryCount}</span>
+                    {/* Group member experience levels */}
+                    {(() => {
+                      const groupExp = Object.entries(db.groupExperience || {})
+                        .filter(([key]) => key.startsWith(group.groupId + ':'))
+                        .map(([, v]) => v)
+                        .sort((a, b) => (b.xpInGroup || 0) - (a.xpInGroup || 0))
+                        .slice(0, 5);
+                      if (!groupExp.length) return null;
+                      const levelEmojis = ['🌱', '💬', '🎯', '⭐', '👑'];
+                      return (
+                        <span className="signal">成员等级：{groupExp.map((ge) => {
+                          const exp = (db.experience || {})[ge.userId] || {};
+                          const user = db.users?.find((u) => String(u.userId) === ge.userId);
+                          const name = user?.customName || user?.nickname || ge.userId;
+                          return `${levelEmojis[exp.level || 0] || '🌱'}${name}`;
+                        }).join(' · ')}</span>
+                      );
+                    })()}
                     {names.length > 0 && <span className="signal">自动辨认: 最近活跃 {names.join('、')}</span>}
                     {signal && <span className="signal">{signal}</span>}
                   </div>
