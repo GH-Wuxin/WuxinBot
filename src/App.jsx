@@ -753,6 +753,9 @@ function Model({ db, saveSettings }) {
         <label className="switch">
           <input type="checkbox" checked={draft.profileAntiRecencyV2 === true} onChange={(e) => setDraft({ ...draft, profileAntiRecencyV2: e.target.checked })} /> 画像V2防近因（长期画像/近期动态分层，实验性）
         </label>
+        <label className="switch">
+          <input type="checkbox" checked={draft.levelUpNotifyEnabled !== false} onChange={(e) => setDraft({ ...draft, levelUpNotifyEnabled: e.target.checked })} /> 升级恭喜通知（群内自动祝贺）
+        </label>
         <button className="primary" onClick={() => saveSettings({ ...draft, model: draft.customModel?.trim() || draft.model, customModel: '' })}>保存模型设置</button>
       </div>
       <div className="panel">
@@ -771,6 +774,7 @@ function Members({ db, refresh }) {
   const roleOptions = Object.fromEntries((db.settings.commandRoles || []).map((role) => [role.id, role.name + ' Lv.' + role.level]));
   const memories = db.memories || [];
   const trustScores = db.trustScores || {};
+  const experience = db.experience || {};
   const messages = db.messages || [];
   const [form, setForm] = useState({ groupId: firstGroup, userId: '', nickname: '', policy: 'normal', attentionLevel: 3, allowCommands: false, commandRoleId: '', note: '', customPrompt: '' });
   const [search, setSearch] = useState('');
@@ -826,9 +830,13 @@ function Members({ db, refresh }) {
     if (memories.some((m) => String(m.userId) === String(user.userId) && m.enabled !== false && (m.summary || m.traits))) {
       tags.push({ label: '记忆', cls: 'badge-memory' });
     }
-    const trust = trustScores[String(user.userId)];
-    if (trust && trust.level === 'trusted') tags.push({ label: '信任', cls: 'badge-priority' });
-    if (trust && trust.level === 'candidate') tags.push({ label: '候选', cls: 'badge-cmd' });
+    const exp = experience[String(user.userId)];
+    if (exp) {
+      const levelEmojis = ['🌱', '💬', '🎯', '⭐', '👑'];
+      const levelNames = ['新人', '群友', '活跃群友', '老熟人', '核心群友'];
+      const lv = exp.level || 0;
+      tags.push({ label: `${levelEmojis[lv] || '🌱'} Lv.${lv} ${levelNames[lv] || ''}`, cls: lv >= 3 ? 'badge-priority' : lv >= 1 ? 'badge-cmd' : '' });
+    }
     return tags;
   };
 

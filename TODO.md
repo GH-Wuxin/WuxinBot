@@ -101,12 +101,12 @@
 - [x] 12. 指令 /w style — 设置/查看/清除个人风格，管理员可 @他人
 - [ ] 13. 内容过滤 — LLM 判定 nick/style 是否不当（当前有基本长度限制，待加 LLM 审核）
 - [x] 14. /w me — Lv.3 解锁查看画像
-- [ ] 15. 升级恭喜 — LLM 生成 + 群内开关
-- [ ] 16. Bot 称呼联动 — Lv.2+ 在回复中偶尔用头衔称呼
-- [ ] 17. buildPrompt 注入 — 用户等级 + customName + customStyle
+- [x] 15. 升级恭喜 — LLM 生成 + 群内开关（levelUpNotifyEnabled）
+- [x] 16. Bot 称呼联动 — buildPrompt 注入 customName，LLM 自然使用
+- [x] 17. buildPrompt 注入 — 用户等级 + customName + customStyle
 - [x] 18. helpDefs 更新 — 新增等级分组
-- [ ] 19. GUI 成员页 — 等级 emoji + 进度条
-- [ ] 20. GUI 设置页 — 升级恭喜开关
+- [x] 19. GUI 成员页 — 等级 emoji + 等级名 badge
+- [x] 20. GUI 设置页 — 升级恭喜开关
 - [x] 21. 验证测试 — tools/experience-verify.mjs（3 次全过）
 - [ ] 22. 文档更新 — CHANGELOG / HANDOFF / HANDOFF-DIARY
 
