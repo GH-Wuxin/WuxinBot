@@ -872,6 +872,7 @@ async function runOwnerCommand(event, sendMessage, permissions = { isOwner: true
 
   const helpDefs = [
     { key: 'lv', group: '等级', line: '/w lv (@某人) · 查看等级经验' },
+    { key: 'exp', group: '等级', line: '/w exp @某人 add/set/reset · 管理经验(仅owner)' },
     { key: 'top', group: '等级', line: '/w top · 群内排行榜' },
     { key: 'nick', group: '等级', line: '/w nick 称呼 / nick @某人 称呼 · 自定义称呼' },
     { key: 'style', group: '等级', line: '/w style 内容 / style @某人 内容 · 个人交互风格' },
@@ -1176,6 +1177,99 @@ async function runOwnerCommand(event, sendMessage, permissions = { isOwner: true
     ].filter(Boolean);
     if (sendMessage) await sendForwardText(sendMessage, event, '我的画像', lines.join('\n'));
     return { replied: Boolean(sendMessage), reason: '查看画像' };
+  }
+
+  // ── /w exp — experience control (owner only) ──
+  if (command === '/exp' && isWuxinCommand) {
+    if (!permissions.isOwner) {
+      if (sendMessage) await sendMessage(event, '只有 bot 所有者可以使用 /w exp。');
+      return { replied: Boolean(sendMessage), reason: 'exp 权限限制' };
+    }
+    const db = readDb();
+    const targetQq = extractAtQq(subCommand || '');
+    if (!targetQq) {
+      // Show usage
+      const usage = '用法：\n/w exp @某人 · 查看经验详情\n/w exp @某人 add <XP> · 增加XP\n/w exp @某人 set <XP> · 设置XP\n/w exp @某人 reset · 重置为0';
+      if (sendMessage) await sendMessage(event, usage);
+      return { replied: Boolean(sendMessage), reason: 'exp 用法' };
+    }
+    const exp = getExperience(db, targetQq);
+    const info = getLevelInfo(exp.level);
+    const user = (db.users || []).find((u) => String(u.userId) === targetQq);
+    const nickname = user?.nickname || user?.customName || targetQq;
+
+    // Parse subcommand after @mention
+    const atPattern = new RegExp(`\\[CQ:at,qq=${targetQq}\\]\\s*`);
+    const action = (subCommand || '').replace(atPattern, '').trim().toLowerCase();
+    const actionParts = action.split(/\s+/);
+    const verb = actionParts[0];
+    const amount = Number(actionParts[1]);
+
+    if (verb === 'add' && Number.isFinite(amount) && amount > 0) {
+      updateDb((draft) => {
+        if (!draft.experience) draft.experience = {};
+        let e = draft.experience[targetQq];
+        if (!e) {
+          e = { xp: 0, level: 0, dailyXp: 0, dailyDate: '', activeDays: 0, streakDays: 0, lastMsgDate: '', lastLevelUpAt: '', lastDecayCheck: '' };
+          draft.experience[targetQq] = e;
+        }
+        e.xp += amount;
+        // Re-evaluate level
+        let newLevel = 0;
+        for (let i = LEVELS.length - 1; i >= 0; i--) {
+          if (e.xp >= LEVELS[i].xp) { newLevel = LEVELS[i].level; break; }
+        }
+        if (newLevel > e.level) { e.level = newLevel; e.lastLevelUpAt = nowIso(); }
+      });
+      const newExp = getExperience(readDb(), targetQq);
+      const newInfo = getLevelInfo(newExp.level);
+      if (sendMessage) await sendMessage(event, `已给 ${nickname} 增加 ${amount} XP → ${newExp.xp} XP ${newInfo.emoji} ${newInfo.title} Lv.${newInfo.level}`);
+      return { replied: Boolean(sendMessage), reason: 'exp add' };
+    }
+
+    if (verb === 'set' && Number.isFinite(amount) && amount >= 0) {
+      updateDb((draft) => {
+        if (!draft.experience) draft.experience = {};
+        let e = draft.experience[targetQq];
+        if (!e) {
+          e = { xp: 0, level: 0, dailyXp: 0, dailyDate: '', activeDays: 0, streakDays: 0, lastMsgDate: '', lastLevelUpAt: '', lastDecayCheck: '' };
+          draft.experience[targetQq] = e;
+        }
+        e.xp = amount;
+        let newLevel = 0;
+        for (let i = LEVELS.length - 1; i >= 0; i--) {
+          if (e.xp >= LEVELS[i].xp) { newLevel = LEVELS[i].level; break; }
+        }
+        e.level = newLevel;
+      });
+      const newExp = getExperience(readDb(), targetQq);
+      const newInfo = getLevelInfo(newExp.level);
+      if (sendMessage) await sendMessage(event, `已将 ${nickname} 的 XP 设为 ${amount} → ${newInfo.emoji} ${newInfo.title} Lv.${newInfo.level}`);
+      return { replied: Boolean(sendMessage), reason: 'exp set' };
+    }
+
+    if (verb === 'reset') {
+      updateDb((draft) => {
+        if (draft.experience) delete draft.experience[targetQq];
+        if (draft.groupExperience) {
+          for (const key of Object.keys(draft.groupExperience)) {
+            if (key.endsWith(':' + targetQq)) delete draft.groupExperience[key];
+          }
+        }
+      });
+      if (sendMessage) await sendMessage(event, `已重置 ${nickname} 的全部经验数据。`);
+      return { replied: Boolean(sendMessage), reason: 'exp reset' };
+    }
+
+    // Default: show info
+    const bar = formatXpBar(exp);
+    const features = getUnlockedFeatures(exp.level);
+    const lines = [bar];
+    if (features.length) lines.push('已解锁: ' + features.join(' · '));
+    if (user?.customName) lines.push(`称呼: ${user.customName}`);
+    if (user?.customStyle) lines.push(`风格: ${user.customStyle.slice(0, 50)}`);
+    if (sendMessage) await sendMessage(event, lines.join('\n'));
+    return { replied: Boolean(sendMessage), reason: 'exp 查看' };
   }
 
   // ── /w op — only bot owner can op ──
