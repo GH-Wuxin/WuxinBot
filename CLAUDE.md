@@ -90,11 +90,18 @@ tools/
 - Owner 来自 `db.settings.ownerQq`, 全局生效
 - 长输出用合并转发 (`sendForwardText`) 不刷屏
 
+### 回复队列 (bot.ts)
+- 当回复正在生成时, 新消息入队而非丢弃 (FIFO, 上限 10 条/群)
+- `replyQueues` Map: key → `{ locked, queue: [{event, sendMessage, decision}] }`
+- `drainReplyQueue(key)` 在 finally 块中调用, 处理完当前回复后自动处理队列中下一条
+- drain 调用 `processIncoming(event, sm, decision, true)` — 第 4 参数 `isFromDrain=true` 跳过锁检查
+- 指令 (`/w`) 在锁检查前处理, 不受队列阻塞
+- 队列状态通过 `/api/health` 的 `replyQueues` 字段暴露
+
 ### 回复决策 (decideReply)
 - 权重系统: policyWeight + attentionLevel + mentioned + isQuestion + ...
 - 群模式: silent/mention/light/natural
 - 全局暂停/只@模式 覆盖一切
-- 并发锁: `activeReplyGroups` 防同群同时回复
 
 ## Key Constraints
 
