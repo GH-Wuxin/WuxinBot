@@ -99,7 +99,7 @@
 - [x] 10. 指令 /w top — 当前群排行榜
 - [x] 11. 指令 /w nick — 设置/查看/清除称呼，管理员可 @他人
 - [x] 12. 指令 /w style — 设置/查看/清除个人风格，管理员可 @他人
-- [ ] 13. 内容过滤 — LLM 判定 nick/style 是否不当（当前有基本长度限制，待加 LLM 审核）
+- [x] 13. 内容过滤 — LLM 判定 nick/style 是否不当 + 基本安全边界（空/控制字符/注入）
 - [x] 14. /w me — Lv.3 解锁查看画像
 - [x] 15. 升级恭喜 — LLM 生成 + 群内开关（levelUpNotifyEnabled）
 - [x] 16. Bot 称呼联动 — buildPrompt 注入 customName，LLM 自然使用
