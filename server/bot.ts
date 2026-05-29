@@ -116,6 +116,37 @@ function extractAtQq(text) {
   return match ? String(match[1]) : null;
 }
 
+// LLM content filter for user-generated content (nick/style).
+// Returns { ok: true } or { ok: false, reason: '...' }.
+async function llmContentFilter(text, label) {
+  // Basic safety: empty, control chars, prompt injection patterns
+  if (!text || !text.trim()) return { ok: false, reason: '内容为空' };
+  if (/[\x00-\x08\x0e-\x1f]/.test(text)) return { ok: false, reason: '包含控制字符' };
+  if (/(忽略|忘记|切换到|你现在听我的|我是你(主人|老板|开发者)|系统提示|system prompt|ignore previous)/i.test(text)) {
+    return { ok: false, reason: '疑似提示词注入' };
+  }
+  try {
+    const db = readDb();
+    const { completeChat } = await import('./bot/llm.js');
+    const resp = await completeChat(db, {
+      messages: [{
+        role: 'user',
+        content: `判断以下用户设置的${label}内容是否合适。不合适的情况：侮辱/歧视/色情/政治敏感/冒充他人/广告/纯乱码。只回复"OK"或"不合适:原因"（10字以内）。\n\n内容：${text.slice(0, 200)}`
+      }],
+      temperature: 0.1,
+      maxTokens: 30,
+      label: '内容审核',
+    });
+    const reply = (resp.text || '').trim();
+    if (reply.toUpperCase().startsWith('OK')) return { ok: true };
+    const reason = reply.replace(/^[^:：]*[:：]\s*/, '').slice(0, 50) || '内容不合适';
+    return { ok: false, reason };
+  } catch {
+    // If LLM fails, allow the content (don't block on filter errors)
+    return { ok: true };
+  }
+}
+
 function getGroup(db, groupId) {
   return db.groups.find((group) => String(group.groupId) === String(groupId));
 }
@@ -1025,6 +1056,13 @@ async function runOwnerCommand(event, sendMessage, permissions = { isOwner: true
       return { replied: Boolean(sendMessage), reason: '称呼长度不合规' };
     }
 
+    // LLM content filter
+    const nickFilter = await llmContentFilter(name, '称呼');
+    if (!nickFilter.ok) {
+      if (sendMessage) await sendMessage(event, `内容不合适：${nickFilter.reason}。请换一个。`);
+      return { replied: Boolean(sendMessage), reason: '称呼内容被过滤' };
+    }
+
     updateDb((draft) => {
       if (!draft.users) draft.users = [];
       let u = draft.users.find((u) => String(u.userId) === realTarget && String(u.groupId) === String(event.groupId));
@@ -1086,6 +1124,13 @@ async function runOwnerCommand(event, sendMessage, permissions = { isOwner: true
     if (content.length > 200) {
       if (sendMessage) await sendMessage(event, '个人风格长度上限 200 字。');
       return { replied: Boolean(sendMessage), reason: '风格内容过长' };
+    }
+
+    // LLM content filter
+    const styleFilter = await llmContentFilter(content, '交互风格');
+    if (!styleFilter.ok) {
+      if (sendMessage) await sendMessage(event, `内容不合适：${styleFilter.reason}。请修改。`);
+      return { replied: Boolean(sendMessage), reason: '风格内容被过滤' };
     }
 
     updateDb((draft) => {
