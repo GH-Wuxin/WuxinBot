@@ -1,5 +1,27 @@
 # Wuxin AI ChatBot · HANDOFF
 
+## 2026-05-30 Bug 审查记录
+
+- **备份**：本轮修改前已备份到 `G:\QQ-AI-ChatBot-backup-audit-20260530-171319`。
+- **已修复 P1：关系画像 pending 计数跨群污染**。旧逻辑用 `A:B` 作为计数 key，同一对 QQ 在不同群会共用计数；已改为 `groupId:A:B`，并在遇到旧 key 时自动清理。新增 `tools/relationship-verify.mjs` 验证。
+- **已修复 P2：重算进度重复 tick**。`/api/recalc` 中群画像更新失败时原来可能一轮计两次进度；已改为每个群固定只 tick 一次。
+- **已补齐结构**：`pendingPairCounts` 已写入 `initialDb`、`normalizeDb` 和 `Db` 类型，避免后续继续依赖隐式字段。
+- **验证结果**：`npm run build`、`npm run structure`、`npm run sanity`、`tools/experience-verify.mjs`、`tools/group-profile-verify.mjs`、`tools/relationship-verify.mjs`、`tools/vision-verify.mjs`、`tools/v2-verify.mjs`、`tools/queue-verify.mjs`、`tools/content-filter-verify.mjs` 全部通过。
+- **仍需留意**：`npm run structure` 仍提示 `server/bot/commandHandlers.ts` 没接入主运行路径，这是旧架构风险，不是本轮新增 bug。后续如果继续拆命令，应该一次性把 `runOwnerCommand()` 迁移到该模块，避免“双份命令表”长期并存。
+
+## 趣味功能后续方案
+
+优先原则：默认低打扰、可关、可限频、所有新指令进权限页，尽量不用 LLM 或只在明确触发时用 LLM。
+
+1. **轻量随机系**：`/w roll 1d100`、`/w coin`、`/w pick A B C`、每日运势。纯本地逻辑，成本为零，适合第一批做。
+2. **群语录本**：`/w quote add`、`/w quote random`、`/w quote del`。只允许 owner/admin 或高信任成员添加，避免乱收隐私和刷屏。
+3. **临时称号/周报称号**：按经验、近期互动和群画像生成“本周称号”，只做娱乐展示，不写进长期人格画像。
+4. **群氛围播报**：`/w vibe` 基于最近聊天和群画像生成一句短评；必须加冷却，避免变成高频总结机。
+5. **小游戏对决**：`/w duel @某人`、猜数字、抽卡式小游戏。结果只随机，不根据画像给负面标签。
+6. **每日话题/破冰**：`/w topic` 生成一句适合当前群氛围的话题；默认手动触发，后续再考虑定时。
+7. **Bingo/梗词收集**：群内自定义 bingo 词条，出现时计数；需要 opt-in，避免把普通发言过度游戏化。
+8. **节日/纪念日彩蛋**：按群配置生日、纪念日、开服日等，触发短句祝福；数据要能导出/删除。
+
 ## 最新提醒：经验等级与开发协作模型（2026-05-29）
 
 - **当前开发协作主力模型**：暂时使用 `Mimo V2.5 Pro` 帮忙写代码/审查/总结。DeepSeek 因余额/成本问题先暂停。注意：这不是 bot 运行时使用的模型配置。
@@ -106,6 +128,8 @@
 | buildPrompt 注入 | 用户等级 + customName（称呼联动）+ customStyle（个人风格） | commit 18e280a |
 | 升级恭喜 | LLM 生成个性化祝贺语，群内开关 levelUpNotifyEnabled | commit 18e280a |
 | GUI 经验展示 | 总览页经验统计、群聊页成员等级、记忆页等级 badge、设置页开关 | commit 74ba4f8+ |
+| /w exp 参数修复 | 完整解析 @目标 后面的 add/set/reset；支持 QQ号 add/set/reset；nick/style 同类尾部参数解析同步修复 | 0530 |
+| 群画像空壳防护 | LLM 六字段全空时不算成功，不覆盖旧画像；自动更新失败记录原因并保留部分 pending；GUI/指令显示为待生成 | 0530 |
 | 回复排队系统 | @bot 消息不再丢弃，FIFO 队列（10 条/群），drain 自动处理下一条 | commit d65cfae |
 | 图片查看增强 | 引用消息图片 + 上下文图片搜索 + 自然语言看图请求 | commit 4ee6fe4 |
 | V2 聚类修复 | hasSpecial 正则与 SPECIAL_TERMS 不一致 | commit ec3a57b |
@@ -126,6 +150,10 @@
 ## 变更时间线
 
 ```
+0530 群画像空壳防护：updateGroupProfile 校验六字段有效内容；全空 LLM 结果不算成功且不覆盖旧画像；
+     自动更新失败记录 lastUpdateStatus/lastUpdateError，并保留部分 pending 进度；GUI 和 /w group profile show 显示待生成。
+0530 /w exp 参数修复：runOwnerCommand 增加完整 commandArgs 解析和 parseTargetAndRest；/w exp @某人 add/set/reset
+     不再丢失 @ 后面的动作参数；/w nick、/w style 的 @目标+尾部文本解析同步修复。
 0529 回复排队系统：@bot消息不再丢弃，FIFO队列(10条/群)，drain自动处理下一条，
      指令(/w)不受阻塞，isFromDrain参数跳过锁检查避免死循环，健康API暴露队列状态。
      V2聚类hasSpecial正则修复：hasSpecial缺少react/vite/onebot等技术术语，改用SPECIAL_TERMS_NG。

@@ -119,6 +119,7 @@ const initialDb = {
   memories: [],
   groupProfiles: [],
   relationshipProfiles: [],
+  pendingPairCounts: {},
   trustScores: {},
   experience: {},
   groupExperience: {},
@@ -167,6 +168,7 @@ function normalizeDb(db) {
   db.memories ||= [];
   db.groupProfiles ||= [];
   db.relationshipProfiles ||= [];
+  db.pendingPairCounts ||= {};
   db.trustScores ||= {};
   db.experience ||= {};
   db.groupExperience ||= {};

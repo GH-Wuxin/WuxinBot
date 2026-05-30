@@ -1,5 +1,15 @@
 # QQ AI ChatBot Handoff
 
+## 2026-05-30 · Bug 审查与趣味功能规划
+
+- 本轮备份：`G:\QQ-AI-ChatBot-backup-audit-20260530-171319`。
+- 修复关系画像 pending 计数跨群污染：`pendingPairCounts` key 从 `A:B` 改为 `groupId:A:B`，同一对 QQ 在不同群不会互相推高自动更新计数；旧 key 会在下一次计数时被清理。
+- 补齐关系画像计数字段：`server/store.ts` 的 `initialDb`/`normalizeDb` 和 `server/types.ts` 的 `Db` 接口加入 `pendingPairCounts`。
+- 修复 `/api/recalc` 群画像重算进度重复 tick：群画像更新失败时不再一轮计两次进度。
+- 新增 `tools/relationship-verify.mjs`，验证跨群 pair 计数隔离和旧 key 清理。
+- 本轮验证通过：`npm run build`、`npm run structure`、`npm run sanity`、`experience/group-profile/relationship/vision/v2/queue/content-filter` 全部 verify 脚本。
+- 后续趣味功能建议已写入 `HANDOFF.md` 顶部，优先做低成本、低打扰、可限频的指令：随机、语录、称号、群氛围播报、小游戏、每日话题、Bingo、纪念日彩蛋。
+
 This document is a handoff note for another assistant/model taking over the project.
 The project is a local Windows QQ group-chat AI bot named Wuxin, controlled by a Chinese GUI and connected to QQ through NapCat OneBot. Data lives in %APPDATA%\Wuxin, not in the project directory.
 
@@ -1046,6 +1056,22 @@ Follow-up improvements, if someone continues this area:
 - 前端 GUI ✅ 所有页面不再白屏
 - **GUI 中文全部恢复**：`restore-chinese.mjs` 脚本通过 205 组精确映射，将所有英文占位符替换回正确中文文本，涵盖 9 个标签页的全部 UI 字符串。构建通过，零乱码残留。
 - 清理 `MemoryText` 未定义组件导致的记忆页白屏崩溃。
+
+## 2026-05-30 — 群画像空壳防护
+
+- **问题**: `updateGroupProfile()` 只要 LLM 返回合法 JSON 就写入数据库，即使 `atmosphere/topics/humorStyle/pace/boundaries/botStrategy` 六个字段全空也会返回 `ok: true`。自动更新还会先清空 `pendingMessageCount`，导致空壳记录看起来像一次成功更新。
+- **修复**: `server/bot/groupProfile.ts` 新增 `hasGroupProfileContent()` 和规范化函数。六字段全空时返回失败，不覆盖旧画像，但仍记录本次 LLM usage。自动更新失败会写入 `lastUpdateStatus='failed'` / `lastUpdateError`，并把 pending 保留到阈值以下，避免每条消息都触发重试。
+- **展示**: `/w group profile show` 和 GUI 群聊页会把空壳记录显示为“待生成/已累计 N 条”，不再当成有效群画像。决策沙盒也不再注入空壳群画像。
+- **验证**: 新增 `tools/group-profile-verify.mjs`，覆盖全空结果拒绝、有效结果写入、自动更新失败保留 pending。已通过 `npm run build`、`npm run sanity`、`npm run structure`、`npx tsx tools/group-profile-verify.mjs`。
+- **备份**: 修改前备份到 `G:\QQ-AI-ChatBot-backup-group-profile-empty-20260530-113618`。
+
+## 2026-05-30 — /w exp 参数解析修复
+
+- **问题**: `runOwnerCommand()` 的 `subCommand` 只取 `parts[2]`。`/w exp @某人 add 1200` 被解析成只含 `@某人`，`add 1200` 丢失，所以落入默认“查看经验”分支。`/w nick @某人 ...` 和 `/w style @某人 ...` 也有同类尾部参数风险。
+- **修复**: `server/bot.ts` 新增 `commandArgs`、`parseTargetAndRest()`、`stripAtQq()`。`/w exp` 现在完整解析 `@某人 add/set/reset`，并额外支持 `QQ号 add/set/reset`；`nick/style` 也改为读取完整尾部文本，但禁用数字目标解析，避免纯数字昵称被误判为 QQ。
+- **验证**: `tools/experience-verify.mjs` 新增 Test 9，覆盖 `/w exp [CQ:at] add 1200`、`/w exp QQ号 set 60`、`/w exp [CQ:at] reset`。已通过 `npm run build`、`npm run structure`、`npx tsx tools/experience-verify.mjs`、`npm run sanity`、`npx tsx tools/group-profile-verify.mjs`。
+- **备份**: 修改前备份到 `G:\QQ-AI-ChatBot-backup-exp-command-20260530-115456`。
+
 - **残留英文**：`modeLabels` 和 `policyLabels` 的中文本就完好无损。仅 Password 组件和 `api()` 中的 `'Request failed'` 保留英文（无对应中文占位需求）。
 - **后续修复**：Connect 页面错误行 `'鏃?'` 乱码修复为 `'无'`，状态和事件行的 `'Connected'/'Disconnected'/'None'` 恢复为 `'已连接'/'未连接'/'暂无'`（commit `9be96a3`）。
 
