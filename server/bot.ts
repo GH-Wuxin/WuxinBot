@@ -112,7 +112,7 @@ async function drainReplyQueue(key) {
 }
 
 function extractAtQq(text) {
-  const match = String(text || '').match(/\[CQ:at,qq=([^\],\]]+)\]/);
+  const match = String(text || '').match(/\[CQ:at,qq=([^\],\]]+)\]/i);
   return match ? String(match[1]) : null;
 }
 
@@ -1029,7 +1029,7 @@ async function runOwnerCommand(event, sendMessage, permissions = { isOwner: true
     // Extract the name (after @mention or after /nick)
     let name = '';
     if (targetQq) {
-      const atPattern = new RegExp(`\\[CQ:at,qq=${targetQq}\\]\\s*`);
+      const atPattern = new RegExp(`\\[CQ:at,qq=${targetQq}\\]\\s*`, 'i');
       name = (subCommand || '').replace(atPattern, '').trim();
     } else {
       name = (subCommand || parts.slice(2).join(' ')).trim();
@@ -1099,7 +1099,7 @@ async function runOwnerCommand(event, sendMessage, permissions = { isOwner: true
 
     let content = '';
     if (targetQq) {
-      const atPattern = new RegExp(`\\[CQ:at,qq=${targetQq}\\]\\s*`);
+      const atPattern = new RegExp(`\\[CQ:at,qq=${targetQq}\\]\\s*`, 'i');
       content = (subCommand || '').replace(atPattern, '').trim();
     } else {
       content = (subCommand || parts.slice(2).join(' ')).trim();
