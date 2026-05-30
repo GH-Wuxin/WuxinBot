@@ -1268,3 +1268,41 @@ Follow-up improvements, if someone continues this area:
 - **升级恭喜**: `bot.ts` 在 `processXpGain` 返回 `levelUp=true` 时，调用 LLM 生成个性化恭喜语（基于画像+等级），fire-and-forget 不阻塞主回复。群内开关 `levelUpNotifyEnabled`（默认开）。
 - **GUI 成员页**: `App.jsx` badges 改为显示等级 emoji + 等级名（如"⭐ Lv.3 老熟人"），替代旧的信任分 badge。
 - **GUI 设置页**: 新增"升级恭喜通知"开关。
+
+---
+
+## 2026-05-29 — LLM 内容过滤 + GUI 优化 + /w exp + CQ 大小写修复
+
+### LLM 内容过滤 (commit 41efae6)
+
+- `llmContentFilter()`: 基本安全检查（空/控制字符/提示词注入）+ LLM 语义审核
+- 调用 `completeChat`，temperature=0.1，maxTokens=30，快速判定
+- LLM 失败时 fail-open（不阻塞用户）
+- nick/style 保存前调用，不合适则拒绝并提示原因
+
+### GUI 优化 (commit 74ba4f8, bfdff75)
+
+- **总览页**: 新增经验成员统计（总人数 + 各等级分布 emoji）
+- **群聊页**: 每张群卡片下显示该群前 5 名成员的等级 emoji + 名称
+- **记忆页**: 每张记忆卡片显示等级 emoji（昵称前）+ 等级名 + XP（详情行）
+- **成员页**: 已有等级 badge（之前的提交）
+
+### /w exp 指令 (commit f382b2c)
+
+- **owner 专用**: 查看/增加/设置/重置用户经验
+- `/w exp @某人` — 查看详情（等级、XP、称呼、风格）
+- `/w exp @某人 add 50` — 增加 XP
+- `/w exp @某人 set 200` — 设置 XP
+- `/w exp @某人 reset` — 重置全部经验数据（含群内数据）
+- 自动重算等级
+
+### CQ 码大小写修复 (commit 1dd88d0)
+
+- **问题**: `subCommand` 被 `.toLowerCase()` 转为小写，但 `extractAtQq` 正则要求大写 `[CQ:at,qq=...]`。导致所有带 @某人 参数的指令（/w exp /w nick /w style）解析失败，只显示用法。
+- **修复**: `extractAtQq` 正则改为 `/i` 大小写不敏感。所有 `atPattern` 匹配也同步修复。
+
+### 群聊画像状态
+
+- DB 中 5 个群画像均存在（groupProfiles 5 条）
+- 其中 3 个（花开之夜、CS2、NakanoOoOo's MC）的 atmosphere 为空，可能是 LLM 更新未生成有效内容
+- 待后续处理

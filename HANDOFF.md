@@ -1,8 +1,18 @@
 # Wuxin AI ChatBot · HANDOFF
 
+## 最新提醒：经验等级与开发协作模型（2026-05-29）
+
+- **当前开发协作主力模型**：暂时使用 `Mimo V2.5 Pro` 帮忙写代码/审查/总结。DeepSeek 因余额/成本问题先暂停。注意：这不是 bot 运行时使用的模型配置。
+- **bot 运行模型**：以控制台“模型”页面和 `%APPDATA%\Wuxin\db.json` / `DATA_DIR` 里的实际配置为准，不要从 HANDOFF 的开发协作模型推断。
+- **经验等级必须绑定个人 QQ 号**：经验值不是按群独立清零。QQ 群 bot 的经验体系应以用户 QQ 为主键，全局累计；在不同群里仍然是同一个人的等级。可以额外记录“此人在某群的活跃度/群内表现”，但等级与总 XP 不应换群消失。
+- **群内维度只做辅助**：`/w top` 可以按当前群统计贡献排行，但用户总等级仍来自全局 XP。实现时建议拆成 `userExperience[qq]` 与 `groupExperience[groupId][qq]` 两层，前者决定等级，后者用于群内排行和群聊氛围分析。
+- **昵称/风格审核不要做死**：允许 LLM 做语义判断，避免硬编码过多规则。仍建议保留最基本的安全边界，例如空内容、明显超长内容、控制字符、prompt 注入式内容不要入库。目标是“别死板”，不是“完全无防护”。
+- **升级祝贺不需要冷却**：升级本身低频，不必为此额外做复杂冷却逻辑。只需避免同一次升级事件重复触发即可。
+- **群管理员自动识别仍按当前群作用域处理**：OneBot `sender.role=owner/admin` 可以自动获得当前群的管理指令权限，但不能变成全局 bot 管理员，也不能操作 bot owner。
+
 ## 速览
 - **项目路径**: `G:\QQ-AI-ChatBot` | **数据**: `%APPDATA%\Wuxin\db.json` (或 `DATA_DIR`)
-- **Bot QQ**: 3312171148 | **Owner**: 570341031 | **默认模型**: deepseek-v4-flash
+- **Bot QQ**: 3312171148 | **Owner**: 570341031 | **bot 运行模型**: 以控制台/DB 实际配置为准
 - **GUI**: http://127.0.0.1:5173 | **API**: http://127.0.0.1:8787 | **OneBot**: :3000/:3001
 - **NapCat**: `G:\My pack\NapCat.Shell.Windows.OneKey\NapCat.Shell`
 - **启动脚本**:
@@ -71,28 +81,36 @@
 ### Git 状态
 
 工作区干净。最近提交：
+- `1dd88d0` CQ码大小写修复
+- `f382b2c` /w exp 指令
+- `bfdff75` GUI记忆页等级显示
+- `74ba4f8` GUI总览页+群聊页等级显示
+- `41efae6` LLM内容过滤
+- `18e280a` buildPrompt注入+升级恭喜+GUI
+- `2c1ab98` 经验等级系统核心+群管自动识别
 - `d65cfae` 回复排队系统
-- `aa02cad` CLAUDE.md
-- `ec3a57b` V2聚类hasSpecial正则补全
-- `a21c0cf` 画像空跑修复 + 多模态图片链路 + 画像容错
+- `4ee6fe4` 图片查看增强
+- `ec3a57b` V2聚类hasSpecial修复
+- `a21c0cf` 画像空跑修复+多模态图片链路
 
-备份：`G:\QQ-AI-ChatBot-backup-multimodal-20260529-144532`、`G:\QQ-AI-ChatBot-backup-pre-queue-20260529-163915`
-验证：`npm run build` + `npm run sanity` + `npm run structure` + `tools/queue-verify.mjs`（5 项全过）
+备份：`G:\QQ-AI-ChatBot-backup-multimodal-20260529-144532`、`G:\QQ-AI-ChatBot-backup-pre-queue-20260529-163915`、`G:\QQ-AI-ChatBot-backup-pre-experience-*`
+验证：`npm run build` + `npm run sanity` + `npm run structure` + 所有 verify 测试 3 次全过
 
 ### 已完成（详见 CHANGELOG.md / HANDOFF-DIARY.md）
 
 | 项目 | 说明 | 参考 |
 |------|------|------|
-| 回复排队系统 | @bot 消息不再丢弃，FIFO 队列（10 条/群），drain 自动处理下一条，指令不受阻塞，健康 API 暴露队列状态 | commit d65cfae |
-| V2 聚类 hasSpecial 修复 | `hasSpecial` 正则与 `SPECIAL_TERMS` 不一致，缺少 react/vite/onebot 等技术术语。改用 `SPECIAL_TERMS_NG`（非 global 版）。新增 `tools/v2-verify.mjs` 5 项验证 | commit ec3a57b |
-| CLAUDE.md | 项目文档：架构、模块、关键约束、常用任务、验证清单 | commit aa02cad |
-| 画像空跑修复 | 画像更新结果统一 commit，空画像/仅近期动态不清 pending；历史消息补样本；默认每人保留 120 条样本；GUI 显示画像尝试状态 | commit a21c0cf |
-| 画像 JSON/占位容错 | `暂无长期稳定特征，仅...` 不算有效画像；LLM 输出非法 JSON 时低温重试一次 JSON 修复 | commit a21c0cf |
-| 多模态图片链路 | `cleaning.ts` 提取图片 `url/file`；`llm.ts` 将图片转为 OpenAI-compatible `image_url`；DeepSeek 路线强制不传图 | commit a21c0cf |
-| 图片摘要记忆 | `maybeRecordImageMemorySummary()` 用多模态模型生成图片短摘要，作为 `image-summary` 低权重样本进入长期记忆 | commit a21c0cf |
-| Mimo 模型下拉 | 模型页加入 Mimo 常用模型 ID，避免 select value 不在 options 时视觉回退到 DeepSeek Chat | commit a21c0cf |
-| LLM 连接诊断 | OpenAI SDK 的 `Connection error` 会包装成带 baseURL 的错误 | commit a21c0cf |
-| v1.0.2 搜索修复 | 搜索失败直接返回 + 空搜索词提示 + thinkingTimer 修复 + 本地搜索检测 | commit dbfede6 |
+| 经验等级系统 | 5 级系统，XP 全局累计，每日上限 30，连续活跃加成，30 天不活跃降级。新指令 /w lv /w top /w nick /w style /w me /w exp | commit 2c1ab98+ |
+| 群管自动识别 | sender.role=owner/admin 自动获得该群 admin 权限，仅限本群 | commit 2c1ab98 |
+| LLM 内容过滤 | nick/style 设置时 LLM 审核 + 基本安全边界（注入/控制字符） | commit 41efae6 |
+| buildPrompt 注入 | 用户等级 + customName（称呼联动）+ customStyle（个人风格） | commit 18e280a |
+| 升级恭喜 | LLM 生成个性化祝贺语，群内开关 levelUpNotifyEnabled | commit 18e280a |
+| GUI 经验展示 | 总览页经验统计、群聊页成员等级、记忆页等级 badge、设置页开关 | commit 74ba4f8+ |
+| 回复排队系统 | @bot 消息不再丢弃，FIFO 队列（10 条/群），drain 自动处理下一条 | commit d65cfae |
+| 图片查看增强 | 引用消息图片 + 上下文图片搜索 + 自然语言看图请求 | commit 4ee6fe4 |
+| V2 聚类修复 | hasSpecial 正则与 SPECIAL_TERMS 不一致 | commit ec3a57b |
+| 画像空跑修复 | 画像更新结果统一 commit，空画像/占位容错 | commit a21c0cf |
+| 多模态图片链路 | cleaning.ts 提取图片，llm.ts 转 image_url，图片摘要记忆 | commit a21c0cf |
 | P0 身份锚点 | @self 锚点注入 + 自否定禁令 + isWeirdReply 拦截 + 兜底 | commit 0878238 |
 | P0 真实搜索 | search.ts + SearXNG 适配器 + 搜索注入 prompt | tag v1.0.1 |
 | P1 画像分层 | 长期画像/近期动态两层 + Jaccard 聚类 + phrase 降级 + groups 提取 | commit 2c83e40 |
