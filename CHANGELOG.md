@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+### 2026-05-30 审查修复
+- **关系画像 pending 计数按群隔离**：`pendingPairCounts` 从 `A:B` 改为 `groupId:A:B`，避免同一对 QQ 在不同群的互动被混算，导致错误触发关系画像更新。旧的 pair-only key 会在下一次计数时清理。
+- **关系画像 DB 结构补齐**：`initialDb`、`normalizeDb`、`Db` 类型正式加入 `pendingPairCounts`，避免运行时隐式字段继续扩大维护风险。
+- **全局重算进度修复**：`/api/recalc` 的群画像重算失败路径不再重复 `tickRecalc()`，避免进度条提前走完或统计不准。
+- **新增验证**：`tools/relationship-verify.mjs` 覆盖跨群同 QQ pair 计数隔离和旧 key 清理。
+
 ### 新增
 - **经验等级系统**：5 级系统（🌱新人→💬群友→🎯活跃群友→⭐老熟人→👑核心群友），XP 全局累计按 QQ 号，每日上限 30，连续活跃加成（×1.2/×1.5/×2.0），30 天不活跃自动降级。
 - **经验指令**：`/w lv`（等级查询）、`/w top`（群排行榜）、`/w nick`（自定义称呼，Lv.2）、`/w style`（个人交互风格，Lv.3）、`/w me`（查看画像，Lv.3）、`/w exp`（owner 管理经验：add/set/reset）。
@@ -12,6 +18,8 @@
 - **图片查看增强**：引用含图消息并 @bot 时自动提取被引用消息的图片；"看上文图片/看看上面的图" 等自然语言请求不再被误判为视觉限制，vision-capable 模型会从近期上下文搜索图片并发送给 LLM。
 
 ### 修复
+- **/w exp 参数解析**：修复 `/w exp @某人 add 1200` 只显示当前经验的问题。经验指令现在读取完整参数尾部，支持 `@某人 add/set/reset` 和 `QQ号 add/set/reset`。同类的 `/w nick @某人 ...`、`/w style @某人 ...` 也改为读取完整尾部参数。
+- **群聊画像空壳防护**：群画像 LLM 返回六字段全空时不再算成功，也不会覆盖旧画像；自动更新失败会记录失败状态并保留部分 pending 进度，避免下次每条消息都重试。GUI 和 `/w group profile show` 会把空壳记录显示为“待生成”，不再当作有效画像。
 - **V2 聚类 hasSpecial 正则不一致**：`clusterSamplesByTopic` 中 `hasSpecial` 正则缺少 react/vite/onebot/napcat/qq/npm/node/jsx/css 等技术术语，与 `SPECIAL_TERMS` 不一致。改用 `SPECIAL_TERMS_NG`（非 global 版）避免 `.lastIndex` 副作用。
 - **个人画像空跑**：自动画像、手动画像、GUI/QQ 全局重算现在都会把画像结果写回数据库；空画像/仅近期动态不再清空 `pendingCount`
 - **长期证据取样**：画像更新不再只看最近几十条样本，会从历史消息补充长期文本，并按天/群做多样化取样

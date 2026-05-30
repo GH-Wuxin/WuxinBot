@@ -16,7 +16,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { readDb, writeDb, updateDb } from '../server/store.ts';
 import { processXpGain, getExperience, getXpBonus, formatXpBar, getLevelInfo, LEVELS, decayInactiveUsers, getStreakMultiplier } from '../server/bot/experience.ts';
-import { decideReply } from '../server/bot.ts';
+import { decideReply, processIncoming } from '../server/bot.ts';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const dbPath = process.env.DATA_DIR || path.join(process.env.APPDATA || path.join(process.env.USERPROFILE || 'C:', 'AppData', 'Roaming'), 'Wuxin', 'db.json');
@@ -216,6 +216,49 @@ async function main() {
     assert(gExp8b, 'should have group 2 experience');
 
     console.log('PASS: Test 8 — two-layer data structure');
+
+    // ============================================================
+    // Test 9: /w exp owner command parses @ target + trailing action
+    // ============================================================
+    console.log('Test 9: /w exp command parsing');
+    setupDb(original);
+    const sent9 = [];
+    const send9 = async (_evt, text) => { sent9.push(String(text || '')); };
+
+    await processIncoming(event({
+      userId: TEST_OWNER,
+      nickname: 'Owner',
+      text: `/w exp [CQ:at,qq=${TEST_USER}] add 1200`,
+      atTargets: [TEST_USER],
+      messageId: 't9-add',
+    }), send9);
+    const exp9add = getExperience(readDb(), TEST_USER);
+    assert(exp9add.xp === 1200, `add should set XP to 1200, got ${exp9add.xp}`);
+    assert(exp9add.level === 4, `1200 XP should be level 4, got ${exp9add.level}`);
+    assert(sent9.some((s) => s.includes('增加 1200 XP')), 'add reply should confirm increase');
+
+    await processIncoming(event({
+      userId: TEST_OWNER,
+      nickname: 'Owner',
+      text: `/w exp ${TEST_USER} set 60`,
+      atTargets: [],
+      messageId: 't9-set',
+    }), send9);
+    const exp9set = getExperience(readDb(), TEST_USER);
+    assert(exp9set.xp === 60, `set should set XP to 60, got ${exp9set.xp}`);
+    assert(exp9set.level === 1, `60 XP should be level 1, got ${exp9set.level}`);
+
+    await processIncoming(event({
+      userId: TEST_OWNER,
+      nickname: 'Owner',
+      text: `/w exp [CQ:at,qq=${TEST_USER}] reset`,
+      atTargets: [TEST_USER],
+      messageId: 't9-reset',
+    }), send9);
+    const exp9reset = getExperience(readDb(), TEST_USER);
+    assert(exp9reset.xp === 0 && exp9reset.level === 0, `reset should clear XP, got ${JSON.stringify(exp9reset)}`);
+
+    console.log('PASS: Test 9 — /w exp add/set/reset parses full command tail');
 
     // ============================================================
     console.log('\nAll experience verification tests PASSED.');

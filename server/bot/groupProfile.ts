@@ -5,6 +5,27 @@ import { readDb, updateDb, nowIso } from '../store.js';
 import { completeChat } from './llm.js';
 import { textWithoutControlPlaceholders } from './cleaning.js';
 
+const PROFILE_FIELDS = ['atmosphere', 'topics', 'humorStyle', 'pace', 'boundaries', 'botStrategy'];
+
+function trimProfileField(value, maxLength) {
+  return String(value || '').trim().replace(/\s+/g, ' ').slice(0, maxLength);
+}
+
+export function hasGroupProfileContent(profile) {
+  return PROFILE_FIELDS.some((field) => String(profile?.[field] || '').trim());
+}
+
+function normalizeGroupProfilePayload(profile) {
+  return {
+    atmosphere: trimProfileField(profile.atmosphere, 300),
+    topics: trimProfileField(profile.topics, 300),
+    humorStyle: trimProfileField(profile.humorStyle, 300),
+    pace: trimProfileField(profile.pace, 200),
+    boundaries: trimProfileField(profile.boundaries, 300),
+    botStrategy: trimProfileField(profile.botStrategy, 400),
+  };
+}
+
 export function getGroupProfile(db, groupId) {
   return (db.groupProfiles || []).find((p) => String(p.groupId) === String(groupId));
 }
@@ -64,6 +85,7 @@ export async function updateGroupProfile(db, groupId) {
       if (opens > closes) jsonText += '}';
     }
     const profile = JSON.parse(jsonText);
+    const normalized = normalizeGroupProfilePayload(profile);
 
     // Track usage
     updateDb((draft) => {
@@ -83,6 +105,14 @@ export async function updateGroupProfile(db, groupId) {
       draft.usageEvents = draft.usageEvents.slice(-5000);
     });
 
+    if (!hasGroupProfileContent(normalized)) {
+      return {
+        ok: false,
+        error: 'LLM 没有生成有效群聊画像内容，已保留原画像。可以等更多真实聊天后重试。',
+        sampleCount: samples.length
+      };
+    }
+
     updateDb((draft) => {
       if (!draft.groupProfiles) draft.groupProfiles = [];
       const existing = draft.groupProfiles.findIndex((p) => String(p.groupId) === String(groupId));
@@ -90,16 +120,13 @@ export async function updateGroupProfile(db, groupId) {
       const entry = {
         groupId: String(groupId),
         enabled: prevEnabled !== false,
-        atmosphere: String(profile.atmosphere || '').slice(0, 300),
-        topics: String(profile.topics || '').slice(0, 300),
-        humorStyle: String(profile.humorStyle || '').slice(0, 300),
-        pace: String(profile.pace || '').slice(0, 200),
-        boundaries: String(profile.boundaries || '').slice(0, 300),
-        botStrategy: String(profile.botStrategy || '').slice(0, 400),
+        ...normalized,
         confidence: Number.isFinite(profile.confidence) ? Math.round(profile.confidence * 100) / 100 : 0.5,
         evidenceCount: samples.length,
         pendingMessageCount: 0,
         lastAutoUpdateAt: nowIso(),
+        lastUpdateStatus: 'success',
+        lastUpdateError: '',
         createdAt: nowIso(),
         updatedAt: nowIso(),
       };
@@ -162,14 +189,38 @@ export async function maybeAutoUpdateGroupProfile(groupId) {
   if (!gp || gp.enabled === false) return;
   const threshold = Number(db.settings.groupProfileThreshold || 80);
   if (gp.pendingMessageCount < threshold) return;
+  const pendingBeforeUpdate = gp.pendingMessageCount || threshold;
   // Reset counter immediately to prevent duplicate triggers
   updateDb((draft) => {
     const p = (draft.groupProfiles || []).find((x) => String(x.groupId) === String(groupId));
-    if (p) p.pendingMessageCount = 0;
+    if (p) {
+      p.pendingMessageCount = 0;
+      p.lastUpdateStatus = 'running';
+      p.lastUpdateError = '';
+    }
   });
   try {
-    await updateGroupProfile(db, groupId);
-  } catch { /* silent fail */ }
+    const result = await updateGroupProfile(db, groupId);
+    if (!result.ok) {
+      updateDb((draft) => {
+        const p = (draft.groupProfiles || []).find((x) => String(x.groupId) === String(groupId));
+        if (!p) return;
+        p.pendingMessageCount = Math.max(1, Math.min(threshold - 1, Math.floor(pendingBeforeUpdate * 0.75)));
+        p.lastUpdateStatus = 'failed';
+        p.lastUpdateError = String(result.error || '群聊画像自动更新失败').slice(0, 240);
+        p.updatedAt = nowIso();
+      });
+    }
+  } catch (error) {
+    updateDb((draft) => {
+      const p = (draft.groupProfiles || []).find((x) => String(x.groupId) === String(groupId));
+      if (!p) return;
+      p.pendingMessageCount = Math.max(1, Math.min(threshold - 1, Math.floor(pendingBeforeUpdate * 0.75)));
+      p.lastUpdateStatus = 'failed';
+      p.lastUpdateError = String(error?.message || '群聊画像自动更新失败').slice(0, 240);
+      p.updatedAt = nowIso();
+    });
+  }
 }
 
 export function groupProfilePromptBlock(db, groupId) {

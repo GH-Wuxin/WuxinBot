@@ -9,11 +9,22 @@ import { textWithoutControlPlaceholders } from './cleaning.js';
 
 let autoUpdateLock = new Set();
 
+function relationshipPendingKey(groupId, userA, userB) {
+  const [a, b] = [String(userA), String(userB)].sort();
+  return `${String(groupId)}:${a}:${b}`;
+}
+
+function parseRelationshipPendingKey(key) {
+  const parts = String(key || '').split(':');
+  if (parts.length !== 3) return null;
+  return { groupId: parts[0], userA: parts[1], userB: parts[2] };
+}
+
 export function incrementPairPending(db, groupId, userId) {
   const pairs = findRecentInteractionPairs(db.messages || [], groupId, 30);
   for (const pair of pairs) {
     if (pair.userA === String(userId) || pair.userB === String(userId)) {
-      const pairKey = [pair.userA, pair.userB].sort().join(':');
+      const pairKey = relationshipPendingKey(groupId, pair.userA, pair.userB);
       updateDb((draft) => {
         if (!draft.pendingPairCounts) draft.pendingPairCounts = {};
         draft.pendingPairCounts[pairKey] = (draft.pendingPairCounts[pairKey] || 0) + 1;
@@ -24,11 +35,17 @@ export function incrementPairPending(db, groupId, userId) {
   const updated = readDb();
   const counts = updated.pendingPairCounts || {};
   for (const [pKey, count] of Object.entries(counts)) {
+    const parsed = parseRelationshipPendingKey(pKey);
+    if (!parsed) {
+      updateDb((draft) => { if (draft.pendingPairCounts) delete draft.pendingPairCounts[pKey]; });
+      continue;
+    }
     if (count >= 25 && !autoUpdateLock.has(pKey)) {
       autoUpdateLock.add(pKey);
-      const [a, b] = pKey.split(':');
-      void updateRelationshipProfile(updated, groupId, a, b).then(() => {
-        updateDb((draft) => { if (draft.pendingPairCounts) draft.pendingPairCounts[pKey] = 0; });
+      void updateRelationshipProfile(updated, parsed.groupId, parsed.userA, parsed.userB).then((result) => {
+        if (result.ok) {
+          updateDb((draft) => { if (draft.pendingPairCounts) draft.pendingPairCounts[pKey] = 0; });
+        }
         autoUpdateLock.delete(pKey);
       }).catch(() => { autoUpdateLock.delete(pKey); });
     }

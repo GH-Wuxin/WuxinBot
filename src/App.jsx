@@ -106,6 +106,9 @@ const sampleTypeLabels = {
   'bot-output': '机器长文'
 };
 
+const groupProfileFields = ['atmosphere', 'topics', 'humorStyle', 'pace', 'boundaries', 'botStrategy'];
+const hasGroupProfileContent = (profile) => groupProfileFields.some((field) => String(profile?.[field] || '').trim());
+
 function App() {
   const [tab, setTab] = useState('overview');
   const [state, setState] = useState(null);
@@ -464,7 +467,7 @@ function Groups({ db, refresh, saveSettings }) {
     if (group.mode === 'silent') tags.push({ label: '静默', cls: 'badge-blocked' });
     if (hasManualGroupName(group)) tags.push({ label: '备注', cls: 'badge-custom' });
     const gp = groupProfiles.find((p) => String(p.groupId) === String(group.groupId));
-    if (gp && gp.enabled !== false && gp.atmosphere) tags.push({ label: '画像', cls: 'badge-memory' });
+    if (gp && gp.enabled !== false && hasGroupProfileContent(gp)) tags.push({ label: '画像', cls: 'badge-memory' });
     return tags;
   };
   const fillAutoName = () => {
@@ -533,6 +536,7 @@ function Groups({ db, refresh, saveSettings }) {
             const memoryCount = memoryMembers(group.groupId).length;
             const signal = groupSignal(group);
             const gp = groupProfiles.find((p) => String(p.groupId) === String(group.groupId));
+            const gpHasContent = hasGroupProfileContent(gp);
             const showProfile = expandedProfiles[group.groupId] || false;
             const toggleProfile = () => setExpandedProfiles({ ...expandedProfiles, [group.groupId]: !showProfile });
             const editing = editingProfiles[group.groupId] || false;
@@ -583,7 +587,7 @@ function Groups({ db, refresh, saveSettings }) {
                   <div style={{ marginTop: 8, padding: '8px 0', borderTop: '1px solid #ece9df' }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
                       <span style={{ fontSize: 13, fontWeight: 600, cursor: 'pointer' }} onClick={toggleProfile}>
-                        {showProfile ? '▾' : '▸'} 群聊画像 · 置信{Math.round(gp.confidence * 100)}% · {gp.evidenceCount}条依据
+                        {showProfile ? '▾' : '▸'} {gpHasContent ? `群聊画像 · 置信${Math.round((gp.confidence || 0) * 100)}% · ${gp.evidenceCount || 0}条依据` : `群聊画像待生成 · 已累计${gp.pendingMessageCount || 0}条`}
                       </span>
                       <div style={{ display: 'flex', gap: 6 }}>
                         <button onClick={() => gpToggle(!gp.enabled)} style={{ fontSize: 12, padding: '4px 8px' }}>{gp.enabled !== false ? '停用注入' : '启用注入'}</button>
@@ -614,6 +618,8 @@ function Groups({ db, refresh, saveSettings }) {
                         </div>
                       ) : (
                         <div style={{ fontSize: 13, lineHeight: 1.8, color: '#52605a' }}>
+                          {!gpHasContent && <div>还没有有效群聊画像。自动更新会继续累计真实聊天；也可以点 LLM更新 手动重试。</div>}
+                          {gp.lastUpdateStatus === 'failed' && gp.lastUpdateError && <div>上次更新失败：{gp.lastUpdateError}</div>}
                           {gp.atmosphere && <div>氛围：{gp.atmosphere}</div>}
                           {gp.topics && <div>话题：{gp.topics}</div>}
                           {gp.humorStyle && <div>玩笑：{gp.humorStyle}</div>}
