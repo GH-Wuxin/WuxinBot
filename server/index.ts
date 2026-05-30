@@ -7,7 +7,7 @@ import { oneBotToInternal, processIncoming, decideReply, getReplyQueueStats } fr
 import { buildPrompt } from './bot/prompt.js';
 import { callLLM } from './bot/llm.js';
 import { getHealth, getRecalcProgress, startRecalc, tickRecalc, stopRecalc, finishRecalc } from './health.js';
-import { getGroupProfile, updateGroupProfile, clearGroupProfile } from './bot/groupProfile.js';
+import { getGroupProfile, updateGroupProfile, clearGroupProfile, hasGroupProfileContent } from './bot/groupProfile.js';
 import { commitMemoryProfileResult } from './bot/memory.js';
 import { evaluateTrustScores } from './bot/trust.js';
 import { decayInactiveUsers } from './bot/experience.js';
@@ -301,7 +301,8 @@ app.post('/api/sandbox', async (req, res) => {
 
   // Profile previews
   const memory = useMemory ? (db.memories || []).find((m) => String(m.userId) === userId) : null;
-  const gp = useGroupProfile ? (db.groupProfiles || []).find((p) => String(p.groupId) === groupId) : null;
+  const rawGroupProfile = useGroupProfile ? (db.groupProfiles || []).find((p) => String(p.groupId) === groupId) : null;
+  const gp = rawGroupProfile && hasGroupProfileContent(rawGroupProfile) ? rawGroupProfile : null;
   const rels = useRelationship ? (db.relationshipProfiles || []).filter((p) => String(p.groupId) === groupId && (p.userA === userId || p.userB === userId)) : [];
 
   // Optional LLM call
@@ -457,7 +458,7 @@ app.post('/api/recalc', (_req, res) => {
     }
     for (const g of gps) {
       if (getRecalcProgress().stopped) break;
-      try { const r = await updateGroupProfile(readDb(), g.groupId); if (!r.ok) tickRecalc(); } catch { /* skip */ }
+      try { await updateGroupProfile(readDb(), g.groupId); } catch { /* skip */ }
       tickRecalc();
     }
     for (const rp of rels) {
