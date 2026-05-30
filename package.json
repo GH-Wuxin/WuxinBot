@@ -1,6 +1,6 @@
 {
   "name": "qq-ai-chatbot",
-  "version": "1.0.0",
+  "version": "1.0.3",
   "description": "A friendly QQ group chat AI bot with a Chinese GUI control panel.",
   "type": "module",
   "main": "server/index.js",
