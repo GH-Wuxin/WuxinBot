@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## v1.0.3 (2026-05-30)
+
 ### 2026-05-30 审查修复
 - **关系画像 pending 计数按群隔离**：`pendingPairCounts` 从 `A:B` 改为 `groupId:A:B`，避免同一对 QQ 在不同群的互动被混算，导致错误触发关系画像更新。旧的 pair-only key 会在下一次计数时清理。
 - **关系画像 DB 结构补齐**：`initialDb`、`normalizeDb`、`Db` 类型正式加入 `pendingPairCounts`，避免运行时隐式字段继续扩大维护风险。
