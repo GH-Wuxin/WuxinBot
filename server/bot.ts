@@ -53,7 +53,7 @@ import {
   splitReplySegments
 } from './bot/reply.js';
 import { recordMemoryObservation, maybeUpdateMemoryProfile, maybeRecordImageMemorySummary, updateMemoryProfile, commitMemoryProfileResult } from './bot/memory.js';
-import { getGroupProfile, updateGroupProfile, clearGroupProfile, incrementGroupProfilePending } from './bot/groupProfile.js';
+import { getGroupProfile, updateGroupProfile, clearGroupProfile, incrementGroupProfilePending, hasGroupProfileContent } from './bot/groupProfile.js';
 import { getRelationshipProfile, updateRelationshipProfile, clearRelationshipProfile, incrementPairPending } from './bot/relationshipProfile.js';
 import { processTrustSignal, evaluateTrustScores, trustInteractionBonus, isTrustedMember } from './bot/trust.js';
 import { processXpGain, getExperience, getXpBonus, formatXpBar, getUnlockedFeatures, getLevelInfo, getNextLevelInfo, LEVELS, decayInactiveUsers } from './bot/experience.js';
@@ -114,6 +114,33 @@ async function drainReplyQueue(key) {
 function extractAtQq(text) {
   const match = String(text || '').match(/\[CQ:at,qq=([^\],\]]+)\]/i);
   return match ? String(match[1]) : null;
+}
+
+function escapeRegExp(text) {
+  return String(text || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function stripAtQq(text, qq) {
+  if (!qq) return String(text || '').trim();
+  return String(text || '').replace(new RegExp(`\\[CQ:at,qq=${escapeRegExp(qq)}(?:,[^\\]]*)?\\]\\s*`, 'i'), '').trim();
+}
+
+function parseTargetAndRest(text, event, options = {}) {
+  const raw = String(text || '').trim();
+  const cqTarget = extractAtQq(raw);
+  if (cqTarget) return { targetQq: cqTarget, rest: stripAtQq(raw, cqTarget) };
+
+  if (options.allowNumeric !== false) {
+    const numeric = raw.match(/^(\d{5,12})(?:\s+|$)/);
+    if (numeric) return { targetQq: numeric[1], rest: raw.slice(numeric[0].length).trim() };
+  }
+
+  const atTarget = event?.atTargets?.[0] ? String(event.atTargets[0]) : null;
+  if (atTarget && raw.startsWith('@')) {
+    return { targetQq: atTarget, rest: raw.replace(/^@\S+\s*/, '').trim() };
+  }
+
+  return { targetQq: null, rest: raw };
 }
 
 // LLM content filter for user-generated content (nick/style).
@@ -785,6 +812,7 @@ async function runOwnerCommand(event, sendMessage, permissions = { isOwner: true
   const isWuxinCommand = prefix === '/wuxin' || prefix === '/w';
   const command = isWuxinCommand ? `/${(parts[1] || '').toLowerCase()}` : prefix;
   const subCommand = isWuxinCommand ? (parts[2] || '').toLowerCase() : '';
+  const commandArgs = isWuxinCommand ? parts.slice(2).join(' ') : parts.slice(1).join(' ');
   const target = (event.atTargets && event.atTargets[0]) || (isWuxinCommand ? parts[2] : parts[1]);
   const groupId = (isWuxinCommand ? parts[3] : parts[2]) || event.groupId;
   const policyMap = {
@@ -1011,7 +1039,8 @@ async function runOwnerCommand(event, sendMessage, permissions = { isOwner: true
   // ── /w nick — custom name ──
   if (command === '/nick' && isWuxinCommand) {
     const db = readDb();
-    const targetQq = extractAtQq(subCommand || '');
+    const parsedTarget = parseTargetAndRest(commandArgs, event, { allowNumeric: false });
+    const targetQq = parsedTarget.targetQq;
     const isTargetOther = targetQq && String(targetQq) !== String(event.userId);
 
     if (isTargetOther && !permissions.isOwner && !permissions.isAdmin) {
@@ -1029,10 +1058,9 @@ async function runOwnerCommand(event, sendMessage, permissions = { isOwner: true
     // Extract the name (after @mention or after /nick)
     let name = '';
     if (targetQq) {
-      const atPattern = new RegExp(`\\[CQ:at,qq=${targetQq}\\]\\s*`, 'i');
-      name = (subCommand || '').replace(atPattern, '').trim();
+      name = parsedTarget.rest;
     } else {
-      name = (subCommand || parts.slice(2).join(' ')).trim();
+      name = commandArgs.trim();
     }
 
     if (name === 'clear' || name === '清除') {
@@ -1082,7 +1110,8 @@ async function runOwnerCommand(event, sendMessage, permissions = { isOwner: true
   // ── /w style — personal interaction style ──
   if (command === '/style' && isWuxinCommand) {
     const db = readDb();
-    const targetQq = extractAtQq(subCommand || '');
+    const parsedTarget = parseTargetAndRest(commandArgs, event, { allowNumeric: false });
+    const targetQq = parsedTarget.targetQq;
     const isTargetOther = targetQq && String(targetQq) !== String(event.userId);
 
     if (isTargetOther && !permissions.isOwner && !permissions.isAdmin) {
@@ -1099,10 +1128,9 @@ async function runOwnerCommand(event, sendMessage, permissions = { isOwner: true
 
     let content = '';
     if (targetQq) {
-      const atPattern = new RegExp(`\\[CQ:at,qq=${targetQq}\\]\\s*`, 'i');
-      content = (subCommand || '').replace(atPattern, '').trim();
+      content = parsedTarget.rest;
     } else {
-      content = (subCommand || parts.slice(2).join(' ')).trim();
+      content = commandArgs.trim();
     }
 
     if (content === 'clear' || content === '清除') {
@@ -1186,7 +1214,8 @@ async function runOwnerCommand(event, sendMessage, permissions = { isOwner: true
       return { replied: Boolean(sendMessage), reason: 'exp 权限限制' };
     }
     const db = readDb();
-    const targetQq = extractAtQq(subCommand || '');
+    const parsedTarget = parseTargetAndRest(commandArgs, event);
+    const targetQq = parsedTarget.targetQq;
     if (!targetQq) {
       // Show usage
       const usage = '用法：\n/w exp @某人 · 查看经验详情\n/w exp @某人 add <XP> · 增加XP\n/w exp @某人 set <XP> · 设置XP\n/w exp @某人 reset · 重置为0';
@@ -1199,8 +1228,7 @@ async function runOwnerCommand(event, sendMessage, permissions = { isOwner: true
     const nickname = user?.nickname || user?.customName || targetQq;
 
     // Parse subcommand after @mention
-    const atPattern = new RegExp(`\\[CQ:at,qq=${targetQq}\\]\\s*`);
-    const action = (subCommand || '').replace(atPattern, '').trim().toLowerCase();
+    const action = parsedTarget.rest.trim().toLowerCase();
     const actionParts = action.split(/\s+/);
     const verb = actionParts[0];
     const amount = Number(actionParts[1]);
@@ -1486,6 +1514,13 @@ async function runOwnerCommand(event, sendMessage, permissions = { isOwner: true
         if (!(await requireCommand('groupProfileShow'))) return { replied: Boolean(sendMessage), reason: commandDeniedReply(commandDb, 'groupProfileShow') };
         const gp = getGroupProfile(db, event.groupId);
         if (!gp) { const reply = '这个群还没有群聊画像。用 /w group profile update 生成。'; if (sendMessage) await sendMessage(event, reply); return { replied: Boolean(sendMessage), reason: reply }; }
+        if (!hasGroupProfileContent(gp)) {
+          const pending = Number(gp.pendingMessageCount || 0);
+          const failed = gp.lastUpdateStatus === 'failed' && gp.lastUpdateError ? `\n上次自动更新失败：${gp.lastUpdateError}` : '';
+          const reply = `这个群还没有有效群聊画像。已累计 ${pending} 条候选消息，可以用 /w group profile update 手动生成。${failed}`;
+          if (sendMessage) await sendMessage(event, reply);
+          return { replied: Boolean(sendMessage), reason: reply };
+        }
         const text = `启用：${gp.enabled ? '是' : '否'}\n氛围：${gp.atmosphere || '无'}\n话题：${gp.topics || '无'}\n玩笑：${gp.humorStyle || '无'}\n节奏：${gp.pace || '无'}\n边界：${gp.boundaries || '无'}\n策略：${gp.botStrategy || '无'}\n置信：${Math.round(gp.confidence * 100)}% · ${gp.evidenceCount}条依据\n更新：${gp.updatedAt ? new Date(gp.updatedAt).toLocaleString('zh-CN') : '未知'}`;
         if (sendMessage) await sendForwardText(sendMessage, event, '群聊画像', text);
         return { replied: Boolean(sendMessage), reason: '显示群聊画像' };

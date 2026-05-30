@@ -230,6 +230,8 @@ export interface GroupProfile {
   evidenceCount: number;
   pendingMessageCount: number;
   lastAutoUpdateAt: string;
+  lastUpdateStatus?: 'success' | 'running' | 'failed';
+  lastUpdateError?: string;
   createdAt: string;
   updatedAt: string;
 }
@@ -241,6 +243,7 @@ export interface Db {
   memories: MemoryEntry[];
   groupProfiles: GroupProfile[];
   relationshipProfiles: Record<string, unknown>[];
+  pendingPairCounts: Record<string, number>;
   trustScores: Record<string, unknown>;
   messages: MessageRecord[];
   decisions: DecisionRecord[];
