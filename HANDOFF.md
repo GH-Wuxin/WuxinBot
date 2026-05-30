@@ -1,5 +1,12 @@
 # Wuxin AI ChatBot · HANDOFF
 
+## 2026-05-30 Release v1.0.3
+
+- **版本准备**：`package.json` / `package-lock.json` 已更新到 `1.0.3`，`CHANGELOG.md` 已将本轮修复固化为 `v1.0.3 (2026-05-30)`。
+- **发布内容**：本版重点是稳定性修复：`/w exp` 参数解析、群聊画像空壳防护、关系画像 pending 计数按群隔离、全局重算进度修正，并补充对应 verify 脚本。
+- **验证清单**：发布前已通过 `npm run build`、`npm run structure`、`npm run sanity`、`experience/group-profile/relationship/vision/v2/queue/content-filter` 全部 verify。
+- **打包规则**：release 包继续排除 `data/`、`.env`、`.git`、`HANDOFF*`、`TODO.md`、`CLAUDE.md`；lite 包需要用户自备 Node.js 20+，full 包内置 `portable-node`。
+
 ## 2026-05-30 Bug 审查记录
 
 - **备份**：本轮修改前已备份到 `G:\QQ-AI-ChatBot-backup-audit-20260530-171319`。
