@@ -6,6 +6,7 @@ import { hasVisualPlaceholder, textWithoutControlPlaceholders } from './cleaning
 import { completeChat, llmProvider, mergeUsage } from './llm.js';
 import { trustInteractionBonus } from './trust.js';
 import { writeProfileLog, newRunId } from './profileLog.js';
+import { extractEvidenceFromSample, addEvidence } from './profileV3.js';
 
 const PROFILE_FIELDS = ['summary', 'traits', 'speechStyle', 'behavior', 'preferences'];
 const MEMORY_SWEEP_INTERVAL_MS = 90_000;
@@ -415,6 +416,17 @@ export function recordMemoryObservation(event, userPolicy) {
     if (!memory.groupsSeen) memory.groupsSeen = [];
     if (!memory.groupsSeen.includes(String(event.groupId))) memory.groupsSeen.push(String(event.groupId));
     memory.updatedAt = nowIso();
+
+    // V3 evidence extraction
+    if (sample.usedForProfile && sample.content) {
+      const isSelf = String(event.userId) === String(draft.settings.ownerQq);
+      const evidenceClaim = extractEvidenceFromSample(sample.content, String(event.userId), String(event.groupId), event.messageId, isSelf);
+      if (evidenceClaim) {
+        const day = String(event.createdAt || nowIso()).slice(0, 10);
+        addEvidence(String(event.userId), evidenceClaim, String(event.groupId), event.messageId, day);
+      }
+    }
+
     const needsInitialProfile = !hasProfileContent(memory) && memory.profileMessageCount >= thresholds.minMessages;
     const bootstrapReady = needsInitialProfile
       && memory.pendingCount >= 1
