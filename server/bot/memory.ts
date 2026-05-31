@@ -5,8 +5,12 @@ import { recordDecisionError } from '../health.js';
 import { hasVisualPlaceholder, textWithoutControlPlaceholders } from './cleaning.js';
 import { completeChat, llmProvider, mergeUsage } from './llm.js';
 import { trustInteractionBonus } from './trust.js';
+import { writeProfileLog, newRunId } from './profileLog.js';
 
 const PROFILE_FIELDS = ['summary', 'traits', 'speechStyle', 'behavior', 'preferences'];
+const MEMORY_SWEEP_INTERVAL_MS = 90_000;
+const memoryUpdateInFlight = new Set();
+let lastMemorySweepAt = 0;
 const EMPTY_PROFILE_EXACT = new Set([
   '暂无', '无', '未知', '不明', '没有足够信息', '无法判断', '暂时无法判断', '暂无明显信息',
   '暂无有效信息', '证据不足', '样本不足', '信息不足'
@@ -60,6 +64,47 @@ function hasRecentProfileAttempt(memory, minutes = 30) {
   const value = memory?.lastProfileAttemptAt || memory?.lastProfiledAt || '';
   const time = new Date(value).getTime();
   return Number.isFinite(time) && Date.now() - time < minutes * 60_000;
+}
+
+function thresholdsForMemory(db, memory) {
+  const thresholds = memoryThresholds(db, { level: Number(memory?.importanceLevel || 2) });
+  const trustMul = trustInteractionBonus(db, memory?.userId).memoryThresholdMul;
+  thresholds.minMessages = Math.max(2, Math.round(thresholds.minMessages * trustMul));
+  thresholds.updateEvery = Math.max(2, Math.round(thresholds.updateEvery * trustMul));
+  return thresholds;
+}
+
+export function memoryIsDueForProfile(db, memory) {
+  if (!memory || memory.enabled === false) return false;
+  if (String(memory.userId) === String(db.settings.ownerQq || '')) return false;
+  if (String(memory.userId) === String(db.settings.selfQq || '')) return false;
+  if (hasRecentProfileAttempt(memory, 30)) return false;
+  const thresholds = thresholdsForMemory(db, memory);
+  const profileMessages = Number(memory.profileMessageCount || 0);
+  const pending = Number(memory.pendingCount || 0);
+  if (profileMessages < thresholds.minMessages) return false;
+  if (!hasProfileContent(memory)) return pending >= 1;
+  return pending >= thresholds.updateEvery;
+}
+
+export function findDueMemoryProfileTarget(db) {
+  const candidates = (db.memories || [])
+    .filter((memory) => memoryIsDueForProfile(db, memory))
+    .map((memory) => {
+      const thresholds = thresholdsForMemory(db, memory);
+      const pending = Number(memory.pendingCount || 0);
+      return {
+        memory,
+        thresholds,
+        score:
+          (hasProfileContent(memory) ? 0 : 1000)
+          + pending * 20
+          + Number(memory.importanceLevel || 0) * 10
+          + Math.min(50, Number(memory.profileMessageCount || 0))
+      };
+    })
+    .sort((a, b) => b.score - a.score);
+  return candidates[0] || null;
 }
 
 function historicalSamplesFromMessages(db, memory) {
@@ -325,7 +370,11 @@ export function recordMemoryObservation(event, userPolicy) {
   const importance = memoryImportance(db, userPolicy);
   if (!importance.remember) return { shouldUpdate: false, reason: importance.label };
   const sample = classifyMemorySample(event.text);
-  if (!sample.content && sample.type === 'text') return { shouldUpdate: false, reason: '空消息不进入长期记忆' };
+  if (!sample.content && sample.type === 'text') {
+    writeProfileLog({ runId: '', event: 'sample.rejected', userId: String(event.userId), nickname: event.nickname, groupId: String(event.groupId), detail: '空消息不进入长期记忆', meta: { type: sample.type } });
+    return { shouldUpdate: false, reason: '空消息不进入长期记忆' };
+  }
+  writeProfileLog({ runId: '', event: sample.usedForProfile ? 'sample.accepted' : 'sample.rejected', userId: String(event.userId), nickname: event.nickname, groupId: String(event.groupId), detail: sample.reason, meta: { type: sample.type, riskLevel: sample.riskLevel, usedForProfile: sample.usedForProfile, contentPreview: (sample.content || '').slice(0, 80) } });
   let shouldUpdate = false;
   updateDb((draft) => {
     if (!draft.memories) draft.memories = [];
@@ -588,8 +637,10 @@ export function computeTopicWeights(clusters) {
 }
 
 export async function updateMemoryProfile(db, memory) {
+  const runId = newRunId();
   const sourceSamples = collectProfileSamples(db, memory);
   const usedSamples = selectDiverseSamples(sourceSamples.filter((s) => s.usedForProfile && s.content), 48);
+  writeProfileLog({ runId, event: 'profile.run_started', userId: String(memory.userId), nickname: memory.nickname, detail: `样本 ${usedSamples.length} 条，源 ${sourceSamples.length} 条`, meta: { sampleCount: usedSamples.length, sourceCount: sourceSamples.length } });
   const weakSamples = selectDiverseSamples(sourceSamples.filter((s) => !s.usedForProfile && s.content && s.type === 'card'), 8);
   const cardText = weakSamples.slice(-8).map((s) => s.content).join('\n');
   const sampleDayCount = new Set(usedSamples.map((s) => String(s.createdAt || '').slice(0, 10)).filter(Boolean)).size;
@@ -674,6 +725,7 @@ ${memory.profilingRule ? `- 【硬性约束】${memory.profilingRule}` : ''}` },
     ],
     temperature: 0.2, maxTokens: 1000, label: '画像更新'
   });
+  writeProfileLog({ runId, event: 'profile.llm_result', userId: String(memory.userId), nickname: memory.nickname, detail: `tokens ${response.usage?.total_tokens || 0}`, meta: { usage: response.usage, outputPreview: (response.text || '').slice(0, 200) } });
   try {
     return { profile: parseProfileJson(response.text || '{}'), usage: response.usage || {} };
   } catch (firstError) {
@@ -935,12 +987,14 @@ export function commitMemoryProfileResult(userId, result, options = {}) {
       target.lastProfileError = '';
       target.lastProfileStatus = applyResult.changed ? 'updated' : 'checked';
       outcome = { ok: true, changed: applyResult.changed, hasProfile: true, reason: applyResult.changed ? '画像已更新' : '画像已检查，暂无变化' };
+      writeProfileLog({ runId: '', event: applyResult.changed ? 'profile.patch_applied' : 'profile.no_change', userId: String(userId), detail: outcome.reason, meta: { changed: applyResult.changed, hasRecent: applyResult.hasRecent } });
     } else {
       target.lastProfileStatus = applyResult.hasRecent ? 'recent-only' : 'empty';
       target.lastProfileError = applyResult.hasRecent
         ? '仅产生近期动态，长期画像仍为空；保留待更新计数'
         : '模型未产出可保存的长期画像；保留待更新计数';
       outcome = { ok: true, changed: applyResult.changed, hasProfile: false, reason: target.lastProfileError };
+      writeProfileLog({ runId: '', event: 'profile.no_change', userId: String(userId), detail: target.lastProfileError, meta: { changed: applyResult.changed, hasRecent: applyResult.hasRecent } });
     }
     target.updatedAt = stamp;
 
@@ -981,16 +1035,24 @@ function countEvidenceByField(samples) {
 }
 
 export async function maybeUpdateMemoryProfile(event) {
+  const userId = String(event.userId || '');
+  if (!userId) return;
+  if (memoryUpdateInFlight.has(userId)) return;
+  memoryUpdateInFlight.add(userId);
   const db = readDb();
-  const memory = (db.memories || []).find((entry) => String(entry.userId) === String(event.userId));
-  if (!memory || memory.enabled === false) return;
+  const memory = (db.memories || []).find((entry) => String(entry.userId) === userId);
+  if (!memory || memory.enabled === false) {
+    memoryUpdateInFlight.delete(userId);
+    return;
+  }
   try {
     const result = await updateMemoryProfile(db, memory);
     if (!result) return;
-    commitMemoryProfileResult(event.userId, result, { groupId: event.groupId, model: db.settings.model, kind: 'memory' });
+    commitMemoryProfileResult(userId, result, { groupId: event.groupId, model: db.settings.model, kind: 'memory' });
   } catch (error) {
+    writeProfileLog({ runId: '', event: 'profile.error', userId: String(userId), detail: error.message || String(error), meta: {} });
     updateDb((draft) => {
-      const target = (draft.memories || []).find((entry) => String(entry.userId) === String(event.userId));
+      const target = (draft.memories || []).find((entry) => String(entry.userId) === userId);
       if (target) {
         target.lastProfileAttemptAt = nowIso();
         target.lastProfileStatus = 'error';
@@ -999,9 +1061,48 @@ export async function maybeUpdateMemoryProfile(event) {
       }
       draft.decisions.push({
         id: crypto.randomUUID(), messageId: event.messageId, groupId: event.groupId,
-        userId: event.userId, shouldReply: false,
+        userId, shouldReply: false,
         reason: `长期记忆更新失败：${error.message}`, createdAt: nowIso()
       });
     });
+  } finally {
+    memoryUpdateInFlight.delete(userId);
   }
+}
+
+export function maybeSweepDueMemoryProfiles(event) {
+  const now = Date.now();
+  if (now - lastMemorySweepAt < MEMORY_SWEEP_INTERVAL_MS) return { started: false, reason: '画像补偿队列冷却中' };
+  const db = readDb();
+  if (db.settings.memoryEnabled === false) return { started: false, reason: '长期记忆已关闭' };
+  if (db.settings.memoryAutoSweepEnabled === false) return { started: false, reason: '画像后台补偿已关闭' };
+  const target = findDueMemoryProfileTarget(db);
+  if (!target) return { started: false, reason: '没有达到补偿更新阈值的画像' };
+
+  const memory = target.memory;
+  const userId = String(memory.userId);
+  if (memoryUpdateInFlight.has(userId)) return { started: false, reason: '目标画像正在更新中' };
+  lastMemorySweepAt = now;
+  const groupId = event.groupId || (memory.groupsSeen || []).slice(-1)[0] || '';
+  const sweepEvent = {
+    ...event,
+    userId,
+    nickname: memory.nickname || userId,
+    groupId,
+    messageId: `${event.messageId || 'memory-sweep'}:${userId}`,
+  };
+  updateDb((draft) => {
+    if (!draft.decisions) draft.decisions = [];
+    draft.decisions.push({
+      id: crypto.randomUUID(),
+      messageId: sweepEvent.messageId,
+      groupId,
+      userId,
+      shouldReply: false,
+      reason: `长期记忆后台补偿更新：pending ${memory.pendingCount || 0}/${target.thresholds.updateEvery}`,
+      createdAt: nowIso()
+    });
+  });
+  void maybeUpdateMemoryProfile(sweepEvent);
+  return { started: true, reason: '已启动画像后台补偿更新', userId };
 }

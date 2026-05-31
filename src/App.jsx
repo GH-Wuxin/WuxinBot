@@ -6,6 +6,7 @@ import {
   Bot,
   Brain,
   Cable,
+  FileText,
   GitBranch,
   KeyRound,
   MessageCircle,
@@ -39,6 +40,7 @@ const tabs = [
   { id: 'members', label: '成员', icon: UserCog },
   { id: 'memory', label: '记忆', icon: BookOpen },
   { id: 'relationships', label: '关系', icon: GitBranch },
+  { id: 'profileLogs', label: '画像日志', icon: FileText },
   { id: 'permissions', label: '权限', icon: KeyRound },
   { id: 'connect', label: 'QQ连接', icon: Cable },
   { id: 'logs', label: '日志', icon: Shield }
@@ -197,6 +199,7 @@ function App() {
         {tab === 'members' && <Members db={db} refresh={refresh} />}
         {tab === 'memory' && <Memory db={db} saveSettings={saveSettings} refresh={refresh} />}
         {tab === 'relationships' && <Relationships db={db} refresh={refresh} />}
+        {tab === 'profileLogs' && <ProfileLogs />}
         {tab === 'permissions' && <Permissions db={db} saveSettings={saveSettings} refresh={refresh} />}
         {tab === 'connect' && <Connect db={db} oneBot={state.oneBot} saveSettings={saveSettings} refresh={refresh} />}
         {tab === 'logs' && <Logs db={db} />}
@@ -1165,6 +1168,90 @@ function Memory({ db, saveSettings, refresh }) {
         )}
       </div>
     </section>
+  );
+}
+
+function ProfileLogs() {
+  const [logs, setLogs] = useState([]);
+  const [stats, setStats] = useState(null);
+  const [filterUser, setFilterUser] = useState('');
+  const [filterEvent, setFilterEvent] = useState('');
+  const [filterRunId, setFilterRunId] = useState('');
+  const [expanded, setExpanded] = useState({});
+
+  const loadLogs = () => {
+    const params = new URLSearchParams();
+    if (filterUser) params.set('userId', filterUser);
+    if (filterEvent) params.set('event', filterEvent);
+    if (filterRunId) params.set('runId', filterRunId);
+    params.set('limit', '200');
+    api(`/api/profile-logs?${params}`).then((d) => { setLogs(d.logs || []); setStats(d.stats || {}); }).catch(() => {});
+  };
+
+  useEffect(() => { loadLogs(); }, [filterUser, filterEvent, filterRunId]);
+
+  const eventLabels = {
+    'sample.accepted': { label: '样本采纳', cls: 'badge-priority' },
+    'sample.rejected': { label: '样本拒绝', cls: 'badge-note' },
+    'evidence.created': { label: '证据创建', cls: 'badge-memory' },
+    'evidence.rejected': { label: '证据拒绝', cls: 'badge-note' },
+    'profile.threshold_check': { label: '阈值检查', cls: 'badge-cmd' },
+    'profile.run_started': { label: '画像启动', cls: 'badge-priority' },
+    'profile.llm_result': { label: 'LLM 返回', cls: 'badge-memory' },
+    'profile.patch_applied': { label: '已更新', cls: 'badge-priority' },
+    'profile.no_change': { label: '无变化', cls: 'badge-note' },
+    'profile.error': { label: '错误', cls: 'badge-blocked' },
+  };
+
+  const eventTypes = Object.keys(eventLabels);
+
+  return (
+    <>
+      {stats && (
+        <section className="stats">
+          <Stat label="总日志" value={stats.total} />
+          <Stat label="今日画像任务" value={stats.recentRuns} />
+          <Stat label="今日错误" value={stats.recentErrors} />
+        </section>
+      )}
+      <section className="panel">
+        <div style={{ display: 'flex', gap: 8, marginBottom: 12, flexWrap: 'wrap', alignItems: 'center' }}>
+          <input placeholder="用户 QQ..." value={filterUser} onChange={(e) => setFilterUser(e.target.value)} style={{ width: 120 }} />
+          <input placeholder="Run ID..." value={filterRunId} onChange={(e) => setFilterRunId(e.target.value)} style={{ width: 160 }} />
+          <select value={filterEvent} onChange={(e) => setFilterEvent(e.target.value)}>
+            <option value="">全部事件</option>
+            {eventTypes.map((et) => <option key={et} value={et}>{eventLabels[et]?.label || et}</option>)}
+          </select>
+          <button onClick={loadLogs}>刷新</button>
+        </div>
+        <div className="cards" style={{ maxHeight: 'calc(100vh - 260px)', overflow: 'auto' }}>
+          {logs.map((log) => {
+            const ev = eventLabels[log.event] || { label: log.event, cls: '' };
+            const isExpanded = expanded[log.id];
+            return (
+              <div className="item" key={log.id} style={{ flexDirection: 'column', alignItems: 'stretch', cursor: 'pointer' }} onClick={() => setExpanded({ ...expanded, [log.id]: !isExpanded })}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                    <span className={ev.cls} style={{ fontSize: 12, padding: '2px 6px', borderRadius: 4 }}>{ev.label}</span>
+                    <strong>{log.nickname || log.userId}</strong>
+                    {log.groupId && <span style={{ fontSize: 12, color: '#66716c' }}>群 {log.groupId}</span>}
+                  </div>
+                  <span style={{ fontSize: 12, color: '#999' }}>{log.createdAt ? new Date(log.createdAt).toLocaleString('zh-CN') : ''}</span>
+                </div>
+                <span style={{ fontSize: 13, color: '#52605a', marginTop: 4 }}>{log.detail}</span>
+                {isExpanded && (
+                  <div style={{ fontSize: 12, color: '#999', marginTop: 4, fontFamily: 'monospace', whiteSpace: 'pre-wrap', wordBreak: 'break-all' }}>
+                    <div>runId: {log.runId || '(无)'}</div>
+                    {log.meta && <div>meta: {JSON.stringify(log.meta, null, 2).slice(0, 500)}</div>}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+          {!logs.length && <p className="empty">暂无画像日志。</p>}
+        </div>
+      </section>
+    </>
   );
 }
 
