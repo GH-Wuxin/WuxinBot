@@ -6,6 +6,7 @@ import {
   Bot,
   Brain,
   Cable,
+  GitBranch,
   KeyRound,
   MessageCircle,
   Pause,
@@ -37,6 +38,7 @@ const tabs = [
   { id: 'model', label: '模型', icon: SlidersHorizontal },
   { id: 'members', label: '成员', icon: UserCog },
   { id: 'memory', label: '记忆', icon: BookOpen },
+  { id: 'relationships', label: '关系', icon: GitBranch },
   { id: 'permissions', label: '权限', icon: KeyRound },
   { id: 'connect', label: 'QQ连接', icon: Cable },
   { id: 'logs', label: '日志', icon: Shield }
@@ -194,6 +196,7 @@ function App() {
         {tab === 'model' && <Model db={db} saveSettings={saveSettings} />}
         {tab === 'members' && <Members db={db} refresh={refresh} />}
         {tab === 'memory' && <Memory db={db} saveSettings={saveSettings} refresh={refresh} />}
+        {tab === 'relationships' && <Relationships db={db} refresh={refresh} />}
         {tab === 'permissions' && <Permissions db={db} saveSettings={saveSettings} refresh={refresh} />}
         {tab === 'connect' && <Connect db={db} oneBot={state.oneBot} saveSettings={saveSettings} refresh={refresh} />}
         {tab === 'logs' && <Logs db={db} />}
@@ -1162,6 +1165,198 @@ function Memory({ db, saveSettings, refresh }) {
         )}
       </div>
     </section>
+  );
+}
+
+function Relationships({ db, refresh }) {
+  const groupOptions = Object.fromEntries((db.groups || []).map((g) => [String(g.groupId), g.name || g.groupId]));
+  const profiles = db.relationshipProfiles || [];
+  const pendingPairCounts = db.pendingPairCounts || {};
+  const [search, setSearch] = useState('');
+  const [groupFilter, setGroupFilter] = useState('all');
+  const [form, setForm] = useState({ groupId: db.groups?.[0]?.groupId || '', userA: '', userB: '' });
+  const [expanded, setExpanded] = useState({});
+  const [editing, setEditing] = useState({});
+  const [drafts, setDrafts] = useState({});
+  const [loadingKey, setLoadingKey] = useState('');
+
+  const userName = (userId, groupId) => {
+    const u = db.users?.find((x) => String(x.userId) === String(userId) && String(x.groupId) === String(groupId));
+    if (u?.customName) return u.customName;
+    if (u?.nickname) return u.nickname;
+    const mem = db.memories?.find((m) => String(m.userId) === String(userId));
+    if (mem?.nickname) return mem.nickname;
+    const recent = [...(db.messages || [])].reverse().find((m) => String(m.userId) === String(userId) && m.nickname);
+    return recent?.nickname || String(userId);
+  };
+
+  const filtered = profiles.filter((p) => {
+    if (groupFilter !== 'all' && String(p.groupId) !== groupFilter) return false;
+    if (!search.trim()) return true;
+    const q = search.trim().toLowerCase();
+    const nameA = userName(p.userA, p.groupId).toLowerCase();
+    const nameB = userName(p.userB, p.groupId).toLowerCase();
+    return nameA.includes(q) || nameB.includes(q) || String(p.userA).includes(q) || String(p.userB).includes(q)
+      || (p.interactionStyle || '').toLowerCase().includes(q) || (p.commonTopics || '').toLowerCase().includes(q);
+  });
+
+  const candidates = Object.entries(pendingPairCounts)
+    .map(([key, count]) => {
+      const parts = String(key).split(':');
+      if (parts.length !== 3 || count <= 0) return null;
+      const [groupId, userA, userB] = parts;
+      const pairKey = [String(userA), String(userB)].sort().join(':');
+      if (profiles.some((p) => String(p.groupId) === groupId && p.pairKey === pairKey)) return null;
+      if (groupFilter !== 'all' && groupId !== groupFilter) return null;
+      return { groupId, userA, userB, pairKey, count: Number(count) };
+    })
+    .filter(Boolean)
+    .sort((a, b) => b.count - a.count);
+
+  const doUpdate = async (groupId, userA, userB) => {
+    const key = `${groupId}:${userA}:${userB}`;
+    setLoadingKey(key);
+    try {
+      await api('/api/relationship-profiles/update', { method: 'POST', body: { groupId, userA, userB } });
+      refresh();
+    } catch (e) { alert('更新失败：' + e.message); }
+    finally { setLoadingKey(''); }
+  };
+
+  const doPatch = async (p, patch) => {
+    await api(`/api/relationship-profiles/${p.groupId}/${p.userA}/${p.userB}`, { method: 'PATCH', body: patch });
+    refresh();
+  };
+
+  const doDelete = async (p) => {
+    if (!window.confirm(`删除 ${userName(p.userA, p.groupId)} ↔ ${userName(p.userB, p.groupId)} 的关系画像？`)) return;
+    await api(`/api/relationship-profiles/${p.groupId}/${p.userA}/${p.userB}`, { method: 'DELETE' });
+    refresh();
+  };
+
+  const startEdit = (p) => {
+    setEditing({ ...editing, [p.pairKey + p.groupId]: true });
+    setDrafts({ ...drafts, [p.pairKey + p.groupId]: { ...p } });
+  };
+
+  const saveEdit = async (p) => {
+    const d = drafts[p.pairKey + p.groupId] || p;
+    await doPatch(p, {
+      interactionStyle: d.interactionStyle, commonTopics: d.commonTopics,
+      tone: d.tone, botStrategy: d.botStrategy, boundaries: d.boundaries,
+    });
+    setEditing({ ...editing, [p.pairKey + p.groupId]: false });
+  };
+
+  return (
+    <>
+      <section className="panel" style={{ marginBottom: 16, display: 'flex', gap: 16, alignItems: 'center', flexWrap: 'wrap' }}>
+        <span style={{ fontWeight: 600 }}>关系画像</span>
+        <span style={{ fontSize: 14, color: '#66716c' }}>已生成 {profiles.length} · 候选 {candidates.length}</span>
+      </section>
+      <section className="grid two">
+        <div className="panel">
+          <h2>生成/更新关系画像</h2>
+          <Select label="群" value={form.groupId} onChange={(v) => setForm({ ...form, groupId: v })} options={groupOptions} />
+          <Text label="用户A QQ" value={form.userA} onChange={(v) => setForm({ ...form, userA: v })} />
+          <Text label="用户B QQ" value={form.userB} onChange={(v) => setForm({ ...form, userB: v })} />
+          <button className="primary wide" disabled={loadingKey !== ''} onClick={() => doUpdate(form.groupId, form.userA, form.userB)}>
+            {loadingKey ? '生成中...' : 'LLM 更新'}
+          </button>
+          {candidates.length > 0 && (
+            <div style={{ marginTop: 16 }}>
+              <h2>候选关系对 ({candidates.length})</h2>
+              <div className="cards" style={{ maxHeight: 240, overflow: 'auto' }}>
+                {candidates.slice(0, 20).map((c) => (
+                  <div className="item" key={c.pairKey + c.groupId} style={{ justifyContent: 'space-between' }}>
+                    <div>
+                      <strong>{userName(c.userA, c.groupId)} ↔ {userName(c.userB, c.groupId)}</strong>
+                      <span>{groupOptions[c.groupId] || c.groupId} · 互动 {c.count} 次</span>
+                    </div>
+                    <button disabled={loadingKey !== ''} onClick={() => doUpdate(c.groupId, c.userA, c.userB)}>
+                      {loadingKey === `${c.groupId}:${c.userA}:${c.userB}` ? '...' : '生成'}
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+        <div className="panel">
+          <h2>已生成 ({filtered.length})</h2>
+          <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
+            <input placeholder="搜索昵称/QQ/话题..." value={search} onChange={(e) => setSearch(e.target.value)} style={{ flex: 1, minWidth: 120 }} />
+            <select value={groupFilter} onChange={(e) => setGroupFilter(e.target.value)}>
+              <option value="all">全部群</option>
+              {Object.entries(groupOptions).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+            </select>
+          </div>
+          <div className="cards" style={{ maxHeight: 'calc(100vh - 280px)', overflow: 'auto' }}>
+            {filtered.map((p) => {
+              const key = p.pairKey + p.groupId;
+              const isExpanded = expanded[key];
+              const isEditing = editing[key];
+              const d = drafts[key] || p;
+              return (
+                <article className="item" key={key} style={{ flexDirection: 'column', alignItems: 'stretch' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <div>
+                      <strong>{userName(p.userA, p.groupId)} ↔ {userName(p.userB, p.groupId)}</strong>
+                      <div className="badges">
+                        {p.enabled !== false ? <span className="badge-priority">启用</span> : <span className="badge-note">停用</span>}
+                        <span className="badge-cmd">证据 {p.evidenceCount || 0}</span>
+                        <span className="badge-memory">置信 {Math.round((p.confidence || 0) * 100)}%</span>
+                      </div>
+                      <span style={{ fontSize: 12, color: '#66716c' }}>{groupOptions[p.groupId] || p.groupId} · 更新于 {p.updatedAt ? new Date(p.updatedAt).toLocaleString('zh-CN') : '未知'}</span>
+                    </div>
+                    <div className="itemActions">
+                      <button onClick={() => setExpanded({ ...expanded, [key]: !isExpanded })}>{isExpanded ? '收起' : '展开'}</button>
+                      <button disabled={loadingKey !== ''} onClick={() => doUpdate(p.groupId, p.userA, p.userB)}>
+                        {loadingKey === `${p.groupId}:${p.userA}:${p.userB}` ? '...' : 'LLM更新'}
+                      </button>
+                      <button onClick={() => doPatch(p, { enabled: p.enabled === false })}>{p.enabled !== false ? '停用' : '启用'}</button>
+                      <button onClick={() => doDelete(p)}>删除</button>
+                    </div>
+                  </div>
+                  {isExpanded && (
+                    isEditing ? (
+                      <div style={{ display: 'grid', gap: 8, marginTop: 8 }}>
+                        {[
+                          { field: 'interactionStyle', label: '互动方式' },
+                          { field: 'commonTopics', label: '共同话题' },
+                          { field: 'tone', label: '语气' },
+                          { field: 'botStrategy', label: 'Bot 插话策略' },
+                          { field: 'boundaries', label: '边界' },
+                        ].map(({ field, label }) => (
+                          <label key={field} className="field" style={{ marginBottom: 0 }}>
+                            <span>{label}</span>
+                            <textarea rows={2} value={d[field] || ''} onChange={(e) => setDrafts({ ...drafts, [key]: { ...d, [field]: e.target.value } })} />
+                          </label>
+                        ))}
+                        <div style={{ display: 'flex', gap: 8 }}>
+                          <button className="primary" onClick={() => saveEdit(p)}>保存</button>
+                          <button onClick={() => setEditing({ ...editing, [key]: false })}>取消</button>
+                        </div>
+                      </div>
+                    ) : (
+                      <div style={{ fontSize: 13, lineHeight: 1.8, color: '#52605a', marginTop: 8 }}>
+                        {p.interactionStyle && <div>互动：{p.interactionStyle}</div>}
+                        {p.commonTopics && <div>话题：{p.commonTopics}</div>}
+                        {p.tone && <div>语气：{p.tone}</div>}
+                        {p.botStrategy && <div>策略：{p.botStrategy}</div>}
+                        {p.boundaries && <div>边界：{p.boundaries}</div>}
+                        <button style={{ marginTop: 4 }} onClick={() => startEdit(p)}>手动编辑</button>
+                      </div>
+                    )
+                  )}
+                </article>
+              );
+            })}
+            {!filtered.length && <p className="empty">还没有关系画像。在左侧生成或等待自动积累。</p>}
+          </div>
+        </div>
+      </section>
+    </>
   );
 }
 
