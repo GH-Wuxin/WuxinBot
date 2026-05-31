@@ -8,6 +8,7 @@ import { buildPrompt } from './bot/prompt.js';
 import { callLLM } from './bot/llm.js';
 import { getHealth, getRecalcProgress, startRecalc, tickRecalc, stopRecalc, finishRecalc } from './health.js';
 import { getGroupProfile, updateGroupProfile, clearGroupProfile, hasGroupProfileContent } from './bot/groupProfile.js';
+import { getRelationshipProfile, updateRelationshipProfile, clearRelationshipProfile } from './bot/relationshipProfile.js';
 import { commitMemoryProfileResult } from './bot/memory.js';
 import { evaluateTrustScores } from './bot/trust.js';
 import { decayInactiveUsers } from './bot/experience.js';
@@ -394,6 +395,86 @@ app.patch('/api/group-profiles/:groupId', (req, res) => {
 
 app.delete('/api/group-profiles/:groupId', (req, res) => {
   const result = clearGroupProfile(req.params.groupId);
+  res.json(ok({ deleted: result.ok }));
+});
+
+// Relationship profile routes
+function relationshipPairKey(userA, userB) {
+  return [String(userA), String(userB)].sort().join(':');
+}
+
+function displayNameForUser(db, groupId, userId) {
+  const u = (db.users || []).find((x) => String(x.userId) === String(userId) && String(x.groupId) === String(groupId));
+  if (u?.customName) return u.customName;
+  if (u?.nickname) return u.nickname;
+  const mem = (db.memories || []).find((m) => String(m.userId) === String(userId));
+  if (mem?.nickname) return mem.nickname;
+  const recent = [...(db.messages || [])].reverse().find((m) => String(m.userId) === String(userId) && m.nickname);
+  if (recent?.nickname) return recent.nickname;
+  return String(userId);
+}
+
+app.get('/api/relationship-profiles', (_req, res) => {
+  const db = readDb();
+  const profiles = (db.relationshipProfiles || []).map((p) => ({
+    ...p,
+    groupName: db.groups?.find((g) => String(g.groupId) === String(p.groupId))?.name || p.groupId,
+    userAName: displayNameForUser(db, p.groupId, p.userA),
+    userBName: displayNameForUser(db, p.groupId, p.userB),
+  }));
+  const pendingPairCounts = db.pendingPairCounts || {};
+  const candidates = Object.entries(pendingPairCounts)
+    .map(([key, count]) => {
+      const parts = String(key).split(':');
+      if (parts.length !== 3 || count <= 0) return null;
+      const [groupId, userA, userB] = parts;
+      const pairKey = relationshipPairKey(userA, userB);
+      if (profiles.some((p) => String(p.groupId) === groupId && p.pairKey === pairKey)) return null;
+      return {
+        groupId, userA, userB, pairKey, count: Number(count),
+        groupName: db.groups?.find((g) => String(g.groupId) === groupId)?.name || groupId,
+        userAName: displayNameForUser(db, groupId, userA),
+        userBName: displayNameForUser(db, groupId, userB),
+      };
+    })
+    .filter(Boolean)
+    .sort((a, b) => b.count - a.count);
+  res.json(ok({ profiles, candidates }));
+});
+
+app.post('/api/relationship-profiles/update', async (req, res) => {
+  const { groupId, userA, userB } = req.body || {};
+  if (!groupId || !userA || !userB) return res.status(400).json({ ok: false, error: '缺少 groupId/userA/userB' });
+  const result = await updateRelationshipProfile(readDb(), groupId, userA, userB);
+  if (!result.ok) return res.status(400).json({ ok: false, error: result.error });
+  const profile = getRelationshipProfile(readDb(), groupId, userA, userB);
+  res.json(ok({ profile, sampleCount: result.sampleCount }));
+});
+
+app.patch('/api/relationship-profiles/:groupId/:userA/:userB', (req, res) => {
+  const { groupId, userA, userB } = req.params;
+  const pairKey = relationshipPairKey(userA, userB);
+  const body = req.body || {};
+  const allowed = ['enabled', 'interactionStyle', 'commonTopics', 'tone', 'botStrategy', 'boundaries'];
+  updateDb((draft) => {
+    if (!draft.relationshipProfiles) return;
+    const existing = draft.relationshipProfiles.find((p) => String(p.groupId) === String(groupId) && p.pairKey === pairKey);
+    if (!existing) return;
+    for (const key of allowed) {
+      if (body[key] !== undefined) {
+        existing[key] = key === 'enabled' ? Boolean(body[key]) : String(body[key]).slice(0, 400);
+      }
+    }
+    existing.updatedAt = nowIso();
+  });
+  const profile = getRelationshipProfile(readDb(), groupId, userA, userB);
+  if (!profile) return res.status(404).json({ ok: false, error: '未找到关系画像' });
+  res.json(ok({ profile }));
+});
+
+app.delete('/api/relationship-profiles/:groupId/:userA/:userB', (req, res) => {
+  const { groupId, userA, userB } = req.params;
+  const result = clearRelationshipProfile(groupId, userA, userB);
   res.json(ok({ deleted: result.ok }));
 });
 
