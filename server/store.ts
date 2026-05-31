@@ -124,6 +124,7 @@ const initialDb = {
   experience: {},
   groupExperience: {},
   profileLogs: [],
+  profileV3: {},
   messages: [],
   decisions: [],
   commandLogs: [],
@@ -174,6 +175,7 @@ function normalizeDb(db) {
   db.experience ||= {};
   db.groupExperience ||= {};
   db.profileLogs ||= [];
+  db.profileV3 ||= {};
   db.messages ||= [];
   db.decisions ||= [];
   db.commandLogs ||= [];
