@@ -12,6 +12,7 @@ import { getRelationshipProfile, updateRelationshipProfile, clearRelationshipPro
 import { commitMemoryProfileResult } from './bot/memory.js';
 import { evaluateTrustScores } from './bot/trust.js';
 import { decayInactiveUsers } from './bot/experience.js';
+import { queryProfileLogs, getProfileLogStats } from './bot/profileLog.js';
 
 ensureStore();
 
@@ -476,6 +477,20 @@ app.delete('/api/relationship-profiles/:groupId/:userA/:userB', (req, res) => {
   const { groupId, userA, userB } = req.params;
   const result = clearRelationshipProfile(groupId, userA, userB);
   res.json(ok({ deleted: result.ok }));
+});
+
+// Profile log routes
+app.get('/api/profile-logs', (req, res) => {
+  const { userId, runId, event, limit, offset } = req.query;
+  const logs = queryProfileLogs({
+    userId: userId || undefined,
+    runId: runId || undefined,
+    event: event || undefined,
+    limit: limit ? Number(limit) : 100,
+    offset: offset ? Number(offset) : 0,
+  });
+  const stats = getProfileLogStats();
+  res.json(ok({ logs, stats }));
 });
 
 // Backup routes
