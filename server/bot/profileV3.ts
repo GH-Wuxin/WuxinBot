@@ -119,6 +119,7 @@ export function addEvidence(
   sampleId: string,
   day: string,
 ): void {
+  let shouldLog = false;
   updateDb((draft) => {
     if (!draft.profileV3) draft.profileV3 = {};
     let profile = draft.profileV3[userId];
@@ -165,7 +166,9 @@ export function addEvidence(
     }
 
     profile.lastEvidenceAt = nowIso();
-
+    shouldLog = true;
+  });
+  if (shouldLog) {
     writeProfileLog({
       runId: '',
       event: 'evidence.created',
@@ -174,7 +177,7 @@ export function addEvidence(
       detail: `[${newClaim.source}/${newClaim.strength}] ${newClaim.claim.slice(0, 80)}`,
       meta: { source: newClaim.source, strength: newClaim.strength },
     });
-  });
+  }
 }
 
 // Get strong/moderate evidence for aggregation

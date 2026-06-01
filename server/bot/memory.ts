@@ -10,8 +10,10 @@ import { extractEvidenceFromSample, addEvidence } from './profileV3.js';
 
 const PROFILE_FIELDS = ['summary', 'traits', 'speechStyle', 'behavior', 'preferences'];
 const MEMORY_SWEEP_INTERVAL_MS = 90_000;
+const PROFILE_LLM_CIRCUIT_MS = 10 * 60_000;
 const memoryUpdateInFlight = new Set();
 let lastMemorySweepAt = 0;
+let profileLlmCircuit = { until: 0, fingerprint: '', reason: '' };
 const EMPTY_PROFILE_EXACT = new Set([
   '暂无', '无', '未知', '不明', '没有足够信息', '无法判断', '暂时无法判断', '暂无明显信息',
   '暂无有效信息', '证据不足', '样本不足', '信息不足'
@@ -65,6 +67,36 @@ function hasRecentProfileAttempt(memory, minutes = 30) {
   const value = memory?.lastProfileAttemptAt || memory?.lastProfiledAt || '';
   const time = new Date(value).getTime();
   return Number.isFinite(time) && Date.now() - time < minutes * 60_000;
+}
+
+function profileLlmFingerprint(db) {
+  const key = String(db.settings.apiKey || '');
+  return [
+    db.settings.llmProvider || '',
+    db.settings.apiBaseUrl || '',
+    db.settings.model || '',
+    key ? key.slice(-6) : ''
+  ].join('|');
+}
+
+function isProfileAuthError(error) {
+  const status = Number(error?.status || error?.code || 0);
+  const message = String(error?.message || error || '');
+  return status === 401 || status === 403 || /(401|403|authentication|unauthorized|api key|invalid key|key.*invalid)/i.test(message);
+}
+
+function profileLlmCircuitReason(db) {
+  if (Date.now() >= profileLlmCircuit.until) return '';
+  if (profileLlmCircuit.fingerprint !== profileLlmFingerprint(db)) return '';
+  return profileLlmCircuit.reason;
+}
+
+function tripProfileLlmCircuit(db, error) {
+  profileLlmCircuit = {
+    until: Date.now() + PROFILE_LLM_CIRCUIT_MS,
+    fingerprint: profileLlmFingerprint(db),
+    reason: String(error?.message || error || '').slice(0, 300)
+  };
 }
 
 function thresholdsForMemory(db, memory) {
@@ -377,6 +409,11 @@ export function recordMemoryObservation(event, userPolicy) {
   }
   writeProfileLog({ runId: '', event: sample.usedForProfile ? 'sample.accepted' : 'sample.rejected', userId: String(event.userId), nickname: event.nickname, groupId: String(event.groupId), detail: sample.reason, meta: { type: sample.type, riskLevel: sample.riskLevel, usedForProfile: sample.usedForProfile, contentPreview: (sample.content || '').slice(0, 80) } });
   let shouldUpdate = false;
+  let thresholdLog = null;
+  const evidenceClaim = sample.usedForProfile && sample.content
+    ? extractEvidenceFromSample(sample.content, String(event.userId), String(event.groupId), event.messageId, true)
+    : null;
+  const evidenceDay = String(event.createdAt || nowIso()).slice(0, 10);
   updateDb((draft) => {
     if (!draft.memories) draft.memories = [];
     let memory = draft.memories.find((entry) => String(entry.userId) === String(event.userId));
@@ -417,16 +454,6 @@ export function recordMemoryObservation(event, userPolicy) {
     if (!memory.groupsSeen.includes(String(event.groupId))) memory.groupsSeen.push(String(event.groupId));
     memory.updatedAt = nowIso();
 
-    // V3 evidence extraction
-    if (sample.usedForProfile && sample.content) {
-      const isSelf = String(event.userId) === String(draft.settings.ownerQq);
-      const evidenceClaim = extractEvidenceFromSample(sample.content, String(event.userId), String(event.groupId), event.messageId, isSelf);
-      if (evidenceClaim) {
-        const day = String(event.createdAt || nowIso()).slice(0, 10);
-        addEvidence(String(event.userId), evidenceClaim, String(event.groupId), event.messageId, day);
-      }
-    }
-
     const needsInitialProfile = !hasProfileContent(memory) && memory.profileMessageCount >= thresholds.minMessages;
     const bootstrapReady = needsInitialProfile
       && memory.pendingCount >= 1
@@ -434,7 +461,32 @@ export function recordMemoryObservation(event, userPolicy) {
     if (memory.profileMessageCount >= thresholds.minMessages && (memory.pendingCount >= thresholds.updateEvery || bootstrapReady)) {
       shouldUpdate = true;
     }
+    thresholdLog = {
+      minMessages: thresholds.minMessages,
+      updateEvery: thresholds.updateEvery,
+      profileMessageCount: memory.profileMessageCount,
+      pendingCount: memory.pendingCount,
+      needsInitialProfile,
+      bootstrapReady,
+      shouldUpdate
+    };
   });
+  if (evidenceClaim) {
+    addEvidence(String(event.userId), evidenceClaim, String(event.groupId), event.messageId, evidenceDay);
+  }
+  if (thresholdLog) {
+    writeProfileLog({
+      runId: '',
+      event: 'profile.threshold_check',
+      userId: String(event.userId),
+      nickname: event.nickname,
+      groupId: String(event.groupId),
+      detail: shouldUpdate
+        ? `达到画像更新阈值：${thresholdLog.pendingCount}/${thresholdLog.updateEvery}`
+        : `未达到画像更新阈值：消息 ${thresholdLog.profileMessageCount}/${thresholdLog.minMessages}，待更新 ${thresholdLog.pendingCount}/${thresholdLog.updateEvery}`,
+      meta: thresholdLog
+    });
+  }
   return { shouldUpdate, reason: shouldUpdate ? '达到画像更新阈值' : (memoryImportance(readDb(), userPolicy).label) };
 }
 
@@ -444,6 +496,33 @@ function cleanImageSummary(text) {
     .replace(/^图片摘要[:：]\s*/i, '')
     .trim()
     .slice(0, 260);
+}
+
+function autoImageMemoryBudget(db, event, policy) {
+  const now = Date.now();
+  const strict = policy !== 'all';
+  const cooldownMs = (strict ? 30 : 10) * 60_000;
+  const dailyLimit = strict ? 3 : 8;
+  const sameUserImageSummaries = (db.usageEvents || []).filter((item) =>
+    item.kind === 'image-memory-summary' &&
+    String(item.groupId) === String(event.groupId) &&
+    String(item.userId) === String(event.userId)
+  );
+  const last = sameUserImageSummaries
+    .map((item) => new Date(item.createdAt || 0).getTime())
+    .filter(Number.isFinite)
+    .sort((a, b) => b - a)[0] || 0;
+  if (last && now - last < cooldownMs) {
+    return { ok: false, reason: `纯图片自动摘要冷却中，避免每张图片都调用视觉模型` };
+  }
+  const day = new Date(now).toISOString().slice(0, 10);
+  const todayCount = sameUserImageSummaries.filter((item) =>
+    String(item.createdAt || '').slice(0, 10) === day
+  ).length;
+  if (todayCount >= dailyLimit) {
+    return { ok: false, reason: `今日纯图片自动摘要已达上限 ${dailyLimit} 次` };
+  }
+  return { ok: true, reason: '' };
 }
 
 export async function maybeRecordImageMemorySummary(event, userPolicy) {
@@ -459,11 +538,16 @@ export async function maybeRecordImageMemorySummary(event, userPolicy) {
   const caption = textWithoutControlPlaceholders(event.text).slice(0, 240);
   const mentionedBot = db.settings.selfQq && (event.atTargets || []).some((qq) => String(qq) === String(db.settings.selfQq));
   const pureImagePolicy = String(db.settings.visionMemoryPureImagePolicy || 'important');
-  if (!caption && !mentionedBot && pureImagePolicy === 'off') {
+  const pureAutoImage = !caption && !mentionedBot;
+  if (pureAutoImage && pureImagePolicy === 'off') {
     return { ok: false, reason: '无配文图片摘要已关闭' };
   }
-  if (!caption && !mentionedBot && pureImagePolicy !== 'all' && importance.level < 3) {
+  if (pureAutoImage && pureImagePolicy !== 'all' && importance.level < 3) {
     return { ok: false, reason: '普通群友无配文图片不自动做视觉摘要，避免成本和画像污染' };
+  }
+  if (pureAutoImage) {
+    const budget = autoImageMemoryBudget(db, event, pureImagePolicy);
+    if (!budget.ok) return budget;
   }
 
   let response;
@@ -708,9 +792,11 @@ export async function updateMemoryProfile(db, memory) {
     memory.preferences && `偏好：${memory.preferences}`,
     memory.manualNotes && `备注：${memory.manualNotes}`
   ].filter(Boolean).join('\n');
-  const response = await completeChat(db, {
-    messages: [
-      { role: 'system', content: `你是群友画像更新器。根据发言样本更新画像。输出 patch 模式 JSON，不要整份重写。
+  let response;
+  try {
+    response = await completeChat(db, {
+      messages: [
+        { role: 'system', content: `你是群友画像更新器。根据发言样本更新画像。输出 patch 模式 JSON，不要整份重写。
 
 输出格式（纯JSON，无markdown包裹）：
 {
@@ -733,30 +819,40 @@ export async function updateMemoryProfile(db, memory) {
 8. image-summary 是用户发图后的视觉摘要，只能作为低权重兴趣/话题背景；不能单独据此推断性格、身份、心理状态或现实关系。只有图片摘要与用户真实文本或跨天多图主题互相支持时，才能写入长期画像。
 ${isLegacyProfile ? '- 旧版画像缺上下文，与上下文样本一致的保留，单薄矛盾的覆盖。' : ''}
 ${memory.profilingRule ? `- 【硬性约束】${memory.profilingRule}` : ''}` },
-      { role: 'user', content: `QQ号：${memory.userId}\n昵称：${memory.nickname || memory.userId}\n\n样本统计：真实文本 ${usedSamples.length} 条，覆盖 ${sampleDayCount} 天 / ${sampleGroupCount} 个群。提示：统计来自长期历史与最近上下文混合取样，不只是最近几十条。\n\n已有长期画像：\n${existing}${useV2 ? `\n已有近期动态：\n${JSON.stringify((memory.recentDynamics || []).slice(-5).map((d) => d.topic + ': ' + d.summary))}\n\n话题聚类分析：\n${longTermBlock || '无跨场景长期候选'}\n${recentDynamicsBlock || '无短期高频话题'}` : ''}\n\n样本与上下文：\n${sampleBlocks}\n\n低权重背景：\n${cardText}` }
-    ],
-    temperature: 0.2, maxTokens: 1000, label: '画像更新'
-  });
+        { role: 'user', content: `QQ号：${memory.userId}\n昵称：${memory.nickname || memory.userId}\n\n样本统计：真实文本 ${usedSamples.length} 条，覆盖 ${sampleDayCount} 天 / ${sampleGroupCount} 个群。提示：统计来自长期历史与最近上下文混合取样，不只是最近几十条。\n\n已有长期画像：\n${existing}${useV2 ? `\n已有近期动态：\n${JSON.stringify((memory.recentDynamics || []).slice(-5).map((d) => d.topic + ': ' + d.summary))}\n\n话题聚类分析：\n${longTermBlock || '无跨场景长期候选'}\n${recentDynamicsBlock || '无短期高频话题'}` : ''}\n\n样本与上下文：\n${sampleBlocks}\n\n低权重背景：\n${cardText}` }
+      ],
+      temperature: 0.2, maxTokens: 1000, label: '画像更新'
+    });
+  } catch (error) {
+    error.profileRunId = runId;
+    throw error;
+  }
   writeProfileLog({ runId, event: 'profile.llm_result', userId: String(memory.userId), nickname: memory.nickname, detail: `tokens ${response.usage?.total_tokens || 0}`, meta: { usage: response.usage, outputPreview: (response.text || '').slice(0, 200) } });
   try {
-    return { profile: parseProfileJson(response.text || '{}'), usage: response.usage || {} };
+    return { profile: parseProfileJson(response.text || '{}'), usage: response.usage || {}, runId };
   } catch (firstError) {
-    const retry = await completeChat(db, {
-      messages: [
-        { role: 'system', content: `你是 JSON 修复器。只把输入修复为合法 JSON，不新增画像结论，不输出 markdown。
+    try {
+      const retry = await completeChat(db, {
+        messages: [
+          { role: 'system', content: `你是 JSON 修复器。只把输入修复为合法 JSON，不新增画像结论，不输出 markdown。
 必须输出对象，结构：
 {"longTermUpdates":{},"recentDynamicsUpdates":[],"preserveExisting":[],"removeOrDowngrade":[],"confidence":{}}
 如果原文无法修复，输出上述空对象。` },
-        { role: 'user', content: `上一轮画像 JSON 解析失败：${firstError.message}\n\n原始输出：\n${String(response.text || '').slice(0, 6000)}` }
-      ],
-      temperature: 0,
-      maxTokens: 1200,
-      label: '画像JSON修复'
-    });
-    return {
-      profile: parseProfileJson(retry.text || '{}'),
-      usage: mergeUsage(response.usage || {}, retry.usage || {})
-    };
+          { role: 'user', content: `上一轮画像 JSON 解析失败：${firstError.message}\n\n原始输出：\n${String(response.text || '').slice(0, 6000)}` }
+        ],
+        temperature: 0,
+        maxTokens: 1200,
+        label: '画像JSON修复'
+      });
+      return {
+        profile: parseProfileJson(retry.text || '{}'),
+        usage: mergeUsage(response.usage || {}, retry.usage || {}),
+        runId
+      };
+    } catch (error) {
+      error.profileRunId = runId;
+      throw error;
+    }
   }
 }
 
@@ -986,6 +1082,7 @@ export function applyProfileUpdate(target, profile) {
 export function commitMemoryProfileResult(userId, result, options = {}) {
   const stamp = nowIso();
   let outcome = { ok: false, changed: false, hasProfile: false, reason: '没有找到记忆对象' };
+  let profileLogEntry = null;
   updateDb((draft) => {
     const target = (draft.memories || []).find((entry) => String(entry.userId) === String(userId));
     if (!target) return;
@@ -999,14 +1096,14 @@ export function commitMemoryProfileResult(userId, result, options = {}) {
       target.lastProfileError = '';
       target.lastProfileStatus = applyResult.changed ? 'updated' : 'checked';
       outcome = { ok: true, changed: applyResult.changed, hasProfile: true, reason: applyResult.changed ? '画像已更新' : '画像已检查，暂无变化' };
-      writeProfileLog({ runId: '', event: applyResult.changed ? 'profile.patch_applied' : 'profile.no_change', userId: String(userId), detail: outcome.reason, meta: { changed: applyResult.changed, hasRecent: applyResult.hasRecent } });
+      profileLogEntry = { runId: result?.runId || '', event: applyResult.changed ? 'profile.patch_applied' : 'profile.no_change', userId: String(userId), detail: outcome.reason, meta: { changed: applyResult.changed, hasRecent: applyResult.hasRecent } };
     } else {
       target.lastProfileStatus = applyResult.hasRecent ? 'recent-only' : 'empty';
       target.lastProfileError = applyResult.hasRecent
         ? '仅产生近期动态，长期画像仍为空；保留待更新计数'
         : '模型未产出可保存的长期画像；保留待更新计数';
       outcome = { ok: true, changed: applyResult.changed, hasProfile: false, reason: target.lastProfileError };
-      writeProfileLog({ runId: '', event: 'profile.no_change', userId: String(userId), detail: target.lastProfileError, meta: { changed: applyResult.changed, hasRecent: applyResult.hasRecent } });
+      profileLogEntry = { runId: result?.runId || '', event: 'profile.no_change', userId: String(userId), detail: target.lastProfileError, meta: { changed: applyResult.changed, hasRecent: applyResult.hasRecent } };
     }
     target.updatedAt = stamp;
 
@@ -1030,6 +1127,7 @@ export function commitMemoryProfileResult(userId, result, options = {}) {
     });
     draft.usageEvents = draft.usageEvents.slice(-5000);
   });
+  if (profileLogEntry) writeProfileLog(profileLogEntry);
   return outcome;
 }
 
@@ -1057,12 +1155,31 @@ export async function maybeUpdateMemoryProfile(event) {
     memoryUpdateInFlight.delete(userId);
     return;
   }
+  const circuitReason = profileLlmCircuitReason(db);
+  if (circuitReason) {
+    memoryUpdateInFlight.delete(userId);
+    return;
+  }
   try {
     const result = await updateMemoryProfile(db, memory);
     if (!result) return;
     commitMemoryProfileResult(userId, result, { groupId: event.groupId, model: db.settings.model, kind: 'memory' });
   } catch (error) {
-    writeProfileLog({ runId: '', event: 'profile.error', userId: String(userId), detail: error.message || String(error), meta: {} });
+    if (isProfileAuthError(error)) tripProfileLlmCircuit(db, error);
+    writeProfileLog({
+      runId: error.profileRunId || '',
+      event: 'profile.error',
+      userId: String(userId),
+      nickname: memory.nickname,
+      groupId: event.groupId,
+      detail: error.message || String(error),
+      meta: {
+        provider: db.settings.llmProvider,
+        apiBaseUrl: db.settings.apiBaseUrl,
+        model: db.settings.model,
+        circuitUntil: isProfileAuthError(error) ? new Date(profileLlmCircuit.until).toISOString() : ''
+      }
+    });
     updateDb((draft) => {
       const target = (draft.memories || []).find((entry) => String(entry.userId) === userId);
       if (target) {

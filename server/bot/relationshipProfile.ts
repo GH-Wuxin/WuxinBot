@@ -9,6 +9,41 @@ import { textWithoutControlPlaceholders } from './cleaning.js';
 
 let autoUpdateLock = new Set();
 
+const EMPTY_RELATION_PATTERNS = [
+  /无明显/,
+  /没有明显/,
+  /暂无/,
+  /信息不足/,
+  /证据不足/,
+  /样本不足/,
+  /无法判断/,
+  /不确定/,
+  /未体现/,
+  /看不出/,
+  /无固定/,
+  /无特定/,
+  /无可总结/,
+  /没有可观察/
+];
+
+const WEAK_RELATION_PATTERNS = [
+  /单方面输出/,
+  /单向输出/,
+  /单方/,
+  /用户[AＢB]未参与/,
+  /未参与回应/,
+  /偶尔简短/,
+  /互动稀疏/,
+  /互动密度低/,
+  /仅为一次/,
+  /只是路过/,
+  /各说各的/,
+  /缺少直接互动/,
+  /没有直接互动/,
+  /没有形成互动/,
+  /不构成稳定互动/
+];
+
 function relationshipPendingKey(groupId, userA, userB) {
   const [a, b] = [String(userA), String(userB)].sort();
   return `${String(groupId)}:${a}:${b}`;
@@ -54,29 +89,114 @@ export function incrementPairPending(db, groupId, userId) {
 
 export function getRelationshipProfile(db, groupId, userA, userB) {
   const pairKey = [String(userA), String(userB)].sort().join(':');
-  return (db.relationshipProfiles || []).find((p) => String(p.groupId) === String(groupId) && p.pairKey === pairKey);
+  const profile = (db.relationshipProfiles || []).find((p) => String(p.groupId) === String(groupId) && p.pairKey === pairKey);
+  return isSubstantiveRelationshipProfile(profile) ? profile : null;
+}
+
+function mentionsUser(content, userId) {
+  return new RegExp(`\\[CQ:at,qq=${String(userId).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\]`).test(String(content || ''));
+}
+
+function messageTime(message) {
+  const time = new Date(message?.createdAt || 0).getTime();
+  return Number.isFinite(time) ? time : 0;
+}
+
+function closeInTime(a, b, minutes = 5) {
+  const ta = messageTime(a);
+  const tb = messageTime(b);
+  return Boolean(ta && tb && Math.abs(ta - tb) <= minutes * 60_000);
+}
+
+function cleanPairMessage(message) {
+  const clean = textWithoutControlPlaceholders(message.content);
+  if (!clean || clean.length < 3) return '';
+  if (/^\//.test(clean)) return '';
+  if (/^\[(图片|表情|表情包|视频|文件|语音)\]/.test(clean)) return '';
+  return clean.slice(0, 200);
 }
 
 function collectPairSamples(db, groupId, userA, userB, limit = 40) {
   const a = String(userA), b = String(userB);
-  return (db.messages || [])
-    .filter((m) => String(m.groupId) === String(groupId) && m.role === 'user' && m.inContext !== false && (String(m.userId) === a || String(m.userId) === b))
-    .slice(-limit * 2)
-    .map((m) => {
-      const clean = textWithoutControlPlaceholders(m.content);
-      if (!clean || clean.length < 3) return null;
-      if (/^\//.test(clean)) return null;
-      return { userId: String(m.userId), nickname: m.nickname || m.userId, content: clean.slice(0, 200), createdAt: m.createdAt };
-    })
-    .filter(Boolean);
+  const groupMessages = (db.messages || [])
+    .filter((m) => String(m.groupId) === String(groupId) && m.role === 'user' && m.inContext !== false)
+    .slice(-limit * 6);
+  const samples = [];
+  for (let i = 0; i < groupMessages.length; i++) {
+    const message = groupMessages[i];
+    const userId = String(message.userId);
+    if (userId !== a && userId !== b) continue;
+    const other = userId === a ? b : a;
+    const clean = cleanPairMessage(message);
+    if (!clean) continue;
+    const prev = groupMessages[i - 1];
+    const next = groupMessages[i + 1];
+    const directlyMentionsOther = mentionsUser(message.content, other);
+    const closePrevOther = prev && String(prev.userId) === other && closeInTime(prev, message);
+    const closeNextOther = next && String(next.userId) === other && closeInTime(message, next);
+    if (!directlyMentionsOther && !closePrevOther && !closeNextOther) continue;
+    samples.push({
+      userId,
+      nickname: message.nickname || message.userId,
+      content: clean,
+      createdAt: message.createdAt,
+      signal: directlyMentionsOther ? 'at' : 'nearby-turn'
+    });
+  }
+  return samples.slice(-limit);
+}
+
+function cleanRelationshipField(val) {
+  return String(val || '')
+    .replace(/情侣|夫妻|男女朋友|男朋友|女朋友|老公|老婆|丈夫|妻子|父子|母子|父女|母女|兄弟|姐妹|兄妹|姐弟|暧昧|暗恋|喜欢他|喜欢她|CP|在一起/gi, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, 300);
+}
+
+function looksEmptyRelationText(text) {
+  const value = String(text || '').trim();
+  if (!value) return true;
+  if (value.length <= 2) return true;
+  return EMPTY_RELATION_PATTERNS.some((pattern) => pattern.test(value));
+}
+
+function looksWeakRelationshipProfile(profile) {
+  const combined = [
+    profile?.interactionStyle,
+    profile?.commonTopics,
+    profile?.tone,
+    profile?.botStrategy,
+    profile?.boundaries
+  ].map(cleanRelationshipField).join(' ');
+  return WEAK_RELATION_PATTERNS.some((pattern) => pattern.test(combined));
+}
+
+export function isSubstantiveRelationshipProfile(profile) {
+  if (!profile) return false;
+  if (looksWeakRelationshipProfile(profile)) return false;
+  const fields = [
+    profile.interactionStyle,
+    profile.commonTopics,
+    profile.tone,
+    profile.botStrategy,
+    profile.boundaries
+  ].map(cleanRelationshipField).filter(Boolean);
+  if (!fields.length) return false;
+  const strongFields = fields.filter((field) => !looksEmptyRelationText(field));
+  const confidence = Number(profile.confidence || 0);
+  const evidenceCount = Number(profile.evidenceCount || profile.signalCount || 0);
+  return strongFields.length >= 2 && evidenceCount >= 6 && confidence >= 0.35;
 }
 
 export async function updateRelationshipProfile(db, groupId, userA, userB) {
   const pairKey = [String(userA), String(userB)].sort().join(':');
   const samples = collectPairSamples(db, groupId, userA, userB, 40);
-  if (!samples || samples.length < 6) return { ok: false, error: '两人互动太少（至少需要 6 条往来消息）' };
+  if (!samples || samples.length < 6) {
+    return { ok: true, skipped: true, reason: '两人真实互动太少，未保存关系画像', sampleCount: samples.length };
+  }
 
-  const sampleText = samples.map((s) => `[${new Date(s.createdAt).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })}] ${s.nickname}(${s.userId})：${s.content}`).join('\n');
+  const sampleText = samples.map((s) => `[${new Date(s.createdAt).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })}] ${s.nickname}(${s.userId}) [${s.signal}]：${s.content}`).join('\n');
   const group = (db.groups || []).find((g) => String(g.groupId) === String(groupId));
 
   try {
@@ -85,10 +205,11 @@ export async function updateRelationshipProfile(db, groupId, userA, userB) {
         { role: 'system', content: `你是群友互动观察器。根据两人对话记录，描述他们的可观察互动模式。
 
 输出纯JSON：
-{"interactionStyle":"互相接话/熟人调侃/认真讨论/偶尔争执等","commonTopics":"共同参与的话题","tone":"轻松/嘴贫/认真/容易误会等","botStrategy":"机器人遇到两人互动时如何插话或避开","boundaries":"不要起哄/不要站队/不要放大冲突等"}
+{"shouldSave":true或false,"reason":"保存或跳过原因","interactionStyle":"互相接话/熟人调侃/认真讨论/偶尔争执等","commonTopics":"共同参与的话题","tone":"轻松/嘴贫/认真/容易误会等","botStrategy":"机器人遇到两人互动时如何插话或避开","boundaries":"不要起哄/不要站队/不要放大冲突等","confidence":0到1}
 
 硬性约束：
 - 只描述可观察的群聊互动模式，不推断任何现实关系。
+- 如果样本里看不出稳定互动模式，输出 shouldSave:false，并把其他字段留空。不要写"无明显关系/无明显模式/信息不足"来凑字段。
 - 禁止写入：情侣/夫妻/父子/母子/兄弟/姐妹 等任何现实亲密或血缘关系。
 - 即使样本中出现亲密称呼，也只能写成"避免起哄现实关系/避免调侃亲密关系"等边界，不能写成关系结论。
 - 不要把调侃性称呼（"叫爸爸""你是我儿子"）当真。
@@ -109,8 +230,25 @@ export async function updateRelationshipProfile(db, groupId, userA, userB) {
     }
     const profile = JSON.parse(jsonText);
 
-    // Post-process: strip any accidental relation conclusions
-    const cleanField = (val) => String(val || '').replace(/情侣|夫妻|男女朋友|男朋友|女朋友|老公|老婆|丈夫|妻子|父子|母子|父女|母女|兄弟|姐妹|兄妹|姐弟|暧昧|暗恋|喜欢他|喜欢她|CP|在一起/gi, '').replace(/\s+/g, ' ').trim().slice(0, 300);
+    const cleaned = {
+      interactionStyle: cleanRelationshipField(profile.interactionStyle),
+      commonTopics: cleanRelationshipField(profile.commonTopics),
+      tone: cleanRelationshipField(profile.tone),
+      botStrategy: cleanRelationshipField(profile.botStrategy),
+      boundaries: cleanRelationshipField(profile.boundaries),
+      confidence: Number.isFinite(profile.confidence) ? Math.round(Number(profile.confidence) * 100) / 100 : 0.4
+    };
+    const draftProfile = { ...cleaned, evidenceCount: samples.length, signalCount: samples.length };
+    const shouldSave = profile.shouldSave !== false && isSubstantiveRelationshipProfile(draftProfile);
+
+    if (!shouldSave) {
+      return {
+        ok: true,
+        skipped: true,
+        reason: cleanRelationshipField(profile.reason) || '没有稳定可观察互动模式，未保存关系画像',
+        sampleCount: samples.length
+      };
+    }
 
     updateDb((draft) => {
       if (!draft.relationshipProfiles) draft.relationshipProfiles = [];
@@ -118,12 +256,12 @@ export async function updateRelationshipProfile(db, groupId, userA, userB) {
       const entry = {
         groupId: String(groupId), pairKey, userA: [String(userA), String(userB)].sort()[0], userB: [String(userA), String(userB)].sort()[1],
         enabled: existing >= 0 ? draft.relationshipProfiles[existing].enabled : true,
-        interactionStyle: cleanField(profile.interactionStyle) || '无明显模式',
-        commonTopics: cleanField(profile.commonTopics) || '',
-        tone: cleanField(profile.tone) || '',
-        botStrategy: cleanField(profile.botStrategy) || '',
-        boundaries: cleanField(profile.boundaries) || '',
-        confidence: Number.isFinite(profile.confidence) ? Math.round(profile.confidence * 100) / 100 : 0.4,
+        interactionStyle: cleaned.interactionStyle,
+        commonTopics: cleaned.commonTopics,
+        tone: cleaned.tone,
+        botStrategy: cleaned.botStrategy,
+        boundaries: cleaned.boundaries,
+        confidence: cleaned.confidence,
         evidenceCount: samples.length,
         signalCount: samples.length,
         lastInteractionAt: samples[samples.length - 1]?.createdAt || nowIso(),
@@ -142,7 +280,7 @@ export async function updateRelationshipProfile(db, groupId, userA, userB) {
       draft.usageEvents = draft.usageEvents.slice(-5000);
     });
 
-    return { ok: true, profile: cleanField(profile.interactionStyle), sampleCount: samples.length };
+    return { ok: true, profile: cleaned.interactionStyle, sampleCount: samples.length };
   } catch (error) {
     return { ok: false, error: error.message };
   }
@@ -160,7 +298,7 @@ export function clearRelationshipProfile(groupId, userA, userB) {
 export function relationshipPromptBlock(db, event) {
   if (event.type !== 'group') return '';
   const atTargets = event.atTargets || [];
-  const profiles = (db.relationshipProfiles || []).filter((p) => String(p.groupId) === String(event.groupId) && p.enabled !== false);
+  const profiles = (db.relationshipProfiles || []).filter((p) => String(p.groupId) === String(event.groupId) && p.enabled !== false && isSubstantiveRelationshipProfile(p));
   if (!profiles.length) return '';
   // Only inject pairs where current message directly involves the other person
   const relevant = profiles.filter((p) => {
