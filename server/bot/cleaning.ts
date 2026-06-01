@@ -221,17 +221,30 @@ export function hasVisualPlaceholder(text) {
 export function asksToInspectVisual(text) {
   // Pure [图片]/[表情包] messages should be ignored. Only explain the visual
   // limitation when the user adds real text asking the bot to inspect it.
-  const raw = String(text || '');
+  const raw = String(text || '').replace(/\[CQ:(?:at|reply)[^\]]+\]/g, ' ');
   // Pattern 2: "看上文图片/看上面的图/看看之前的图" — no [图片] placeholder but
   // user explicitly asks to look at images in context or quoted messages.
   if (/看(上文|上面|之前|前面|刚才|刚才发|群里发|聊天记录).{0,6}(图|照片|图片|截图|表情)/.test(raw)) return true;
-  if (/(看下|看看|帮我看看|帮我看|看一下).{0,4}(这个|那张|上面|上文|之前|前面).{0,4}(图|照片|图片|截图)/.test(raw)) return true;
+  if (/(看下|看看|查看|帮我看看|帮我看|看一下).{0,6}(这个|这张|那张|上面|上文|之前|前面).{0,6}(图|照片|图片|截图|表情)/.test(raw)) return true;
+  if (/(这个|这张|那张|上面|上文|之前|前面).{0,6}(图|照片|图片|截图|表情).{0,6}(看看|看下|看一下|查看|识别|分析|评价|解释|啥意思|什么意思)/.test(raw)) return true;
+  if (/(识别|分析|评价|解释).{0,6}(图|照片|图片|截图|表情|这个|这张|那张)/.test(raw)) return true;
   if (!hasVisualPlaceholder(text)) return false;
   const wordsOnly = raw
     .replace(/\[(图片|表情|表情包|视频|文件|语音)\]/g, ' ')
     .trim();
   if (!wordsOnly) return false;
   return /看一下|看看|帮.*看|识别|认一下|截图|这是什么|啥意思|什么意思|评价|分析|解释|猜一下|能看见|看得到/.test(wordsOnly);
+}
+
+export function looksLikeVisualFollowup(text) {
+  const raw = String(text || '')
+    .replace(/\[CQ:(?:at|reply)[^\]]+\]/g, ' ')
+    .replace(/\[(图片|表情|表情包|视频|文件|语音)\]/g, ' ')
+    .trim();
+  if (!raw) return false;
+  if (asksToInspectVisual(text)) return true;
+  return /^(现在看|再看|重新看|看这个|看看这个|这个不是吗|这个呢|这张呢|那张呢|问你话呢)$/.test(raw) ||
+    /让你看(图|图片|照片|截图|表情)?|能看[得的]?(出来|出|到|见)|看[得的](出来|出|到|见)|看得到|看得见|刚才那(个|张)|上面那(个|张)|我刚发的/.test(raw);
 }
 
 export function onlyVisualMessage(text) {

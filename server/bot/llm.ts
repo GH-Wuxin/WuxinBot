@@ -7,7 +7,10 @@ import OpenAI from 'openai';
 import { recordLlmSuccess, recordLlmError } from '../health.js';
 
 export function llmProvider(db) {
-  return String(db.settings.llmProvider || 'deepseek').trim() || 'deepseek';
+  const provider = String(db.settings.llmProvider || 'deepseek').trim() || 'deepseek';
+  const baseUrl = String(db.settings.apiBaseUrl || '').trim();
+  if (provider === 'deepseek' && looksLikeMimoEndpoint(baseUrl)) return 'openai-compatible';
+  return provider;
 }
 
 export function defaultBaseUrlForProvider(provider) {
@@ -29,6 +32,42 @@ export function supportsProviderSearch(provider) {
   // real search adapter (SearXNG/Brave/Bing/etc.) is wired in; otherwise the bot
   // may look like it searched while the model is only guessing.
   return false;
+}
+
+export function looksLikeMimoEndpoint(value) {
+  return /(mimo|xiaomimimo|token-plan-cn)/i.test(String(value || ''));
+}
+
+export function looksLikeMimoApiKey(value) {
+  return /^tp-/i.test(String(value || '').trim());
+}
+
+function rawLlmProvider(db) {
+  return String(db.settings.llmProvider || 'deepseek').trim() || 'deepseek';
+}
+
+function assertLlmConfigCompatible(db, provider, baseURL, apiKey) {
+  const rawProvider = rawLlmProvider(db);
+  const base = String(baseURL || '').trim();
+  const key = String(apiKey || '').trim();
+  if (rawProvider === 'deepseek' && !looksLikeMimoEndpoint(base) && looksLikeMimoApiKey(key)) {
+    throw new Error('LLM 配置错配：当前供应商/地址是 DeepSeek，但 API Key 看起来是 Mimo 的 tp- 开头密钥。请在模型设置里把供应商切到 OpenAI 兼容接口，并填写 Mimo API 地址。');
+  }
+  if (provider === 'deepseek' && looksLikeMimoEndpoint(base)) {
+    throw new Error('LLM 配置错配：API 地址是 Mimo，但供应商仍是 DeepSeek。请保存为 OpenAI 兼容接口。');
+  }
+}
+
+function requestModelForProvider(db, provider, baseURL, options = {}) {
+  const fallback = provider === 'deepseek' ? 'deepseek-chat' : 'mimo-v2.5';
+  const model = String(options.model || options.overrideModel || db.settings.model || fallback).trim() || fallback;
+  if (provider === 'openai-compatible' && looksLikeMimoEndpoint(baseURL) && /^deepseek-/i.test(model)) {
+    throw new Error(`LLM 配置错配：Mimo API 地址不能使用 DeepSeek 模型名 ${model}。请把模型切到 mimo-v2.5 或 mimo-v2.5-pro。`);
+  }
+  if (provider === 'deepseek' && /^mimo-/i.test(model)) {
+    throw new Error(`LLM 配置错配：DeepSeek 供应商不能使用 Mimo 模型名 ${model}。请切换供应商或模型。`);
+  }
+  return model;
 }
 
 export function mergeUsage(...items) {
@@ -175,6 +214,7 @@ export function createLLMClient(db) {
     throw new Error(`${llmProviderName(provider)} API Key 还没有填写，请先在 GUI 的“模型设置”里填写。`);
   }
   const baseURL = db.settings.apiBaseUrl || defaultBaseUrlForProvider(provider);
+  assertLlmConfigCompatible(db, provider, baseURL, apiKey);
   return {
     provider,
     baseURL,
@@ -191,7 +231,7 @@ export async function completeChat(db, options = {}) {
   const searchMode = options.searchMode;
   const messages = await attachVisionImages(db, options.messages || [], options.visionImages || [], options);
   const params = {
-    model: options.model || options.overrideModel || db.settings.model || 'deepseek-chat',
+    model: requestModelForProvider(db, provider, baseURL, options),
     messages,
     temperature: Number(options.temperature ?? db.settings.temperature ?? 0.85),
     max_tokens: Number(options.maxTokens || db.settings.maxTokens || 420)

@@ -8,6 +8,7 @@ import {
   isQuestion,
   hasVisualPlaceholder,
   asksToInspectVisual,
+  looksLikeVisualFollowup,
   onlyVisualMessage,
   textWithoutControlPlaceholders,
   cardPlaceholder
@@ -52,7 +53,7 @@ import {
   sendForwardText,
   splitReplySegments
 } from './bot/reply.js';
-import { recordMemoryObservation, maybeUpdateMemoryProfile, maybeRecordImageMemorySummary, updateMemoryProfile, commitMemoryProfileResult } from './bot/memory.js';
+import { recordMemoryObservation, maybeUpdateMemoryProfile, maybeRecordImageMemorySummary, updateMemoryProfile, commitMemoryProfileResult, maybeSweepDueMemoryProfiles } from './bot/memory.js';
 import { getGroupProfile, updateGroupProfile, clearGroupProfile, incrementGroupProfilePending, hasGroupProfileContent } from './bot/groupProfile.js';
 import { getRelationshipProfile, updateRelationshipProfile, clearRelationshipProfile, incrementPairPending } from './bot/relationshipProfile.js';
 import { processTrustSignal, evaluateTrustScores, trustInteractionBonus, isTrustedMember } from './bot/trust.js';
@@ -281,6 +282,33 @@ function recentBotConversation(db, groupId, seconds = 120) {
   return { active: ageMs <= seconds * 1000, last };
 }
 
+function recentVisionImageMessages(db, event, minutes = 10) {
+  const cutoff = Date.now() - minutes * 60_000;
+  const currentId = String(event.messageId || '');
+  const sameGroupImages = (db.messages || [])
+    .filter((message) => {
+      if (String(message.groupId) !== String(event.groupId)) return false;
+      if (!message.media?.images?.length) return false;
+      if (currentId && String(message.id) === currentId) return false;
+      const time = new Date(message.createdAt || 0).getTime();
+      return Number.isFinite(time) && time >= cutoff;
+    })
+    .slice(-30)
+    .reverse();
+  const sameUser = sameGroupImages.find((message) => String(message.userId) === String(event.userId));
+  return sameUser ? [sameUser, ...sameGroupImages.filter((message) => message !== sameUser)] : sameGroupImages;
+}
+
+function shouldUseRecentVisionImage(db, event) {
+  if (!modelSupportsVision(db) || event.images?.length) return false;
+  const text = event.text || '';
+  if (asksToInspectVisual(text)) return true;
+  if (!looksLikeVisualFollowup(text)) return false;
+  const mentioned = mentionsBot(text, db.settings);
+  const botConversation = recentBotConversation(db, event.groupId, 180);
+  return mentioned || botConversation.active;
+}
+
 export function decideReply({ db, group, userPolicy, text, mentioned, userId, images = [] }) {
   // This is the main "should the bot speak?" gate. Keep cheap deterministic
   // checks first; only call the configured LLM after this returns shouldReply=true.
@@ -470,6 +498,8 @@ export async function processIncoming(event, sendMessage, queuedDecision, isFrom
   const memoryRecord = recordMemoryObservation(event, userPolicy);
   if (memoryRecord.shouldUpdate) {
     void maybeUpdateMemoryProfile(event);
+  } else {
+    maybeSweepDueMemoryProfiles(event);
   }
   if (event.images?.length) {
     void maybeRecordImageMemorySummary(event, userPolicy);
@@ -653,20 +683,14 @@ export async function processIncoming(event, sendMessage, queuedDecision, isFrom
     }
     // 'off' — never send
 
-    // If user asks to look at images but none attached, search recent context
+    // If user asks to look at images but none attached, attach only the most
+    // recent relevant image. This keeps vision on-demand and avoids paying for
+    // every image posted in an active group.
     let visionImages = modelSupportsVision(liveDb) ? (event.images || []) : [];
-    if (visionImages.length === 0 && modelSupportsVision(liveDb) && asksToInspectVisual(event.text)) {
-      // Search recent messages in this group for images (most recent first)
-      const contextImages = (liveDb.messages || [])
-        .filter((m) =>
-          String(m.groupId) === String(event.groupId) &&
-          m.media?.images?.length &&
-          String(m.id) !== String(event.messageId)
-        )
-        .slice(-20)
-        .reverse();
+    if (visionImages.length === 0 && shouldUseRecentVisionImage(liveDb, event)) {
+      const contextImages = recentVisionImageMessages(liveDb, event, 10);
       if (contextImages.length > 0) {
-        visionImages = contextImages[0].media.images;
+        visionImages = contextImages[0].media.images.slice(0, 1);
       }
     }
 
@@ -1491,6 +1515,11 @@ async function runOwnerCommand(event, sendMessage, permissions = { isOwner: true
       const db = readDb();
       const result = await updateRelationshipProfile(db, event.groupId, targetA, targetB);
       if (!result.ok) { const reply = `生成失败：${result.error}`; if (sendMessage) await sendMessage(event, reply); return { replied: Boolean(sendMessage), error: result.error, reason: reply }; }
+      if (result.skipped) {
+        const reply = `关系画像未保存：${result.reason || '互动证据不足'}（${result.sampleCount || 0}条有效互动）。`;
+        if (sendMessage) await sendMessage(event, reply);
+        return { replied: Boolean(sendMessage), reason: reply };
+      }
       if (sendMessage) await sendMessage(event, `关系画像已更新（${result.sampleCount}条互动）。`);
       return { replied: Boolean(sendMessage), reason: '关系画像已更新' };
     }
@@ -1729,7 +1758,7 @@ async function runOwnerCommand(event, sendMessage, permissions = { isOwner: true
       if (getRecalcProgress().stopped) break;
       try {
         const r = await updateRelationshipProfile(readDb(), rp.groupId, rp.userA, rp.userB);
-        if (r?.ok !== false) rCount++;
+        if (r?.ok !== false && !r?.skipped) rCount++;
       } catch { /* skip */ }
       tickRecalc();
     }

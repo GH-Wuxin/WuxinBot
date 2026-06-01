@@ -671,6 +671,24 @@ function Model({ db, saveSettings }) {
   const [testingLocal, setTestingLocal] = useState(false);
   const [localSearchStatus, setLocalSearchStatus] = useState(null);
   const [showAdvancedSearch, setShowAdvancedSearch] = useState(false);
+  const looksLikeMimoEndpoint = (value) => /(mimo|xiaomimimo|token-plan-cn)/i.test(String(value || ''));
+  const isDeepSeekModel = (value) => /^deepseek-/i.test(String(value || ''));
+  const isMimoModel = (value) => /^mimo-/i.test(String(value || ''));
+  const withProviderDefaults = (patch) => {
+    const next = { ...draft, ...patch };
+    if (looksLikeMimoEndpoint(next.apiBaseUrl)) {
+      next.llmProvider = 'openai-compatible';
+      if (isDeepSeekModel(next.model)) next.model = 'mimo-v2.5';
+    }
+    if (next.llmProvider === 'deepseek') {
+      next.apiBaseUrl = next.apiBaseUrl || 'https://api.deepseek.com';
+      if (isMimoModel(next.model)) next.model = 'deepseek-v4-flash';
+    }
+    if (next.llmProvider !== 'deepseek' && next.apiBaseUrl === 'https://api.deepseek.com') {
+      next.apiBaseUrl = '';
+    }
+    return next;
+  };
   const testLocalSearch = async () => {
     setTestingLocal(true);
     setLocalSearchStatus(null);
@@ -691,10 +709,7 @@ function Model({ db, saveSettings }) {
     }
   };
   const changeProvider = (llmProvider) => {
-    const next = { ...draft, llmProvider };
-    if (llmProvider === 'deepseek' && !next.apiBaseUrl) next.apiBaseUrl = 'https://api.deepseek.com';
-    if (llmProvider !== 'deepseek' && next.apiBaseUrl === 'https://api.deepseek.com') next.apiBaseUrl = '';
-    setDraft(next);
+    setDraft(withProviderDefaults({ llmProvider }));
   };
   const modelOptions = {
     'deepseek-chat': 'DeepSeek Chat（日常聊天）',
@@ -721,8 +736,8 @@ function Model({ db, saveSettings }) {
           'openai-compatible': 'OpenAI 兼容接口'
         }} />
         <Password label="API Key" value={draft.apiKey} onChange={(apiKey) => setDraft({ ...draft, apiKey })} />
-        <Text label="API 地址" value={draft.apiBaseUrl} onChange={(apiBaseUrl) => setDraft({ ...draft, apiBaseUrl })} />
-        <Select label="模型" value={currentModel} onChange={(model) => setDraft({ ...draft, model })} options={modelOptions} />
+        <Text label="API 地址" value={draft.apiBaseUrl} onChange={(apiBaseUrl) => setDraft(withProviderDefaults({ apiBaseUrl }))} />
+        <Select label="模型" value={currentModel} onChange={(model) => setDraft(withProviderDefaults({ model }))} options={modelOptions} />
         <Text label="自定义模型名，留空则使用上面的选择" value={draft.customModel || ''} onChange={(customModel) => setDraft({ ...draft, customModel })} />
         <Select label="视觉能力" value={draft.visionMode || 'auto'} onChange={(visionMode) => setDraft({ ...draft, visionMode })} options={{
           'auto': '自动识别（推荐）',
@@ -795,7 +810,7 @@ function Model({ db, saveSettings }) {
         <label className="switch">
           <input type="checkbox" checked={draft.levelUpNotifyEnabled !== false} onChange={(e) => setDraft({ ...draft, levelUpNotifyEnabled: e.target.checked })} /> 升级恭喜通知（群内自动祝贺）
         </label>
-        <button className="primary" onClick={() => saveSettings({ ...draft, model: draft.customModel?.trim() || draft.model, customModel: '' })}>保存模型设置</button>
+        <button className="primary" onClick={() => saveSettings(withProviderDefaults({ model: draft.customModel?.trim() || draft.model, customModel: '' }))}>保存模型设置</button>
       </div>
       <div className="panel">
         <h2>怎么选</h2>
@@ -988,6 +1003,7 @@ function Memory({ db, saveSettings, refresh }) {
   const [settingsDraft, setSettingsDraft] = useState(db.settings);
   const [profileDirty, setProfileDirty] = useState(false);
   const [settingsDirty, setSettingsDirty] = useState(false);
+  const [recalcUserId, setRecalcUserId] = useState('');
 
   useEffect(() => {
     if (profileDirty) return;
@@ -1025,6 +1041,33 @@ function Memory({ db, saveSettings, refresh }) {
     setSelectedId('');
     setProfileDirty(false);
     refresh();
+  };
+
+  const recalcMemory = async () => {
+    if (!draft.userId || recalcUserId) return;
+    if (profileDirty) {
+      const ok = window.confirm('当前画像编辑区有未保存修改。继续重算会先使用数据库里的现有画像和样本，不包含未保存编辑。继续？');
+      if (!ok) return;
+    }
+    setRecalcUserId(String(draft.userId));
+    try {
+      const result = await api(`/api/memories/${draft.userId}/recalculate`, { method: 'POST' });
+      if (result.db) {
+        setProfileDirty(false);
+        await refresh();
+        const next = (result.db.memories || []).find((memory) => String(memory.userId) === String(draft.userId));
+        if (next) setDraft(next);
+      } else {
+        await refresh();
+      }
+      const outcome = result.outcome || {};
+      alert(`${draft.nickname || draft.userId} 画像重算完成：${outcome.reason || '已完成'}`);
+    } catch (e) {
+      await refresh();
+      alert('画像重算失败：' + e.message);
+    } finally {
+      setRecalcUserId('');
+    }
   };
 
   const saveMemorySettings = async () => {
@@ -1161,6 +1204,9 @@ function Memory({ db, saveSettings, refresh }) {
               {!(draft.samples || []).length && <p className="empty">还没有样本。</p>}
             </div>
             <div className="actions inlineActions">
+              <button onClick={recalcMemory} disabled={Boolean(recalcUserId)}>
+                {recalcUserId === String(draft.userId) ? '重算中...' : '重算画像'}
+              </button>
               <button className="primary" onClick={saveMemory}>保存画像</button>
               <button onClick={deleteMemory}>删除记忆</button>
             </div>
@@ -1257,8 +1303,6 @@ function ProfileLogs() {
 
 function Relationships({ db, refresh }) {
   const groupOptions = Object.fromEntries((db.groups || []).map((g) => [String(g.groupId), g.name || g.groupId]));
-  const profiles = db.relationshipProfiles || [];
-  const pendingPairCounts = db.pendingPairCounts || {};
   const [search, setSearch] = useState('');
   const [groupFilter, setGroupFilter] = useState('all');
   const [form, setForm] = useState({ groupId: db.groups?.[0]?.groupId || '', userA: '', userB: '' });
@@ -1266,6 +1310,33 @@ function Relationships({ db, refresh }) {
   const [editing, setEditing] = useState({});
   const [drafts, setDrafts] = useState({});
   const [loadingKey, setLoadingKey] = useState('');
+  const [relationshipData, setRelationshipData] = useState({ profiles: [], candidates: [], loading: true, error: '' });
+
+  const rawProfileStamp = (db.relationshipProfiles || []).map((p) => `${p.groupId}:${p.pairKey}:${p.updatedAt}:${p.enabled}`).join('|');
+  const pendingStamp = Object.entries(db.pendingPairCounts || {}).map(([k, v]) => `${k}:${v}`).join('|');
+
+  const loadRelationships = async () => {
+    try {
+      const data = await api('/api/relationship-profiles');
+      setRelationshipData({ profiles: data.profiles || [], candidates: data.candidates || [], loading: false, error: '' });
+    } catch (e) {
+      setRelationshipData((old) => ({ ...old, loading: false, error: e.message }));
+    }
+  };
+
+  useEffect(() => {
+    let cancelled = false;
+    api('/api/relationship-profiles')
+      .then((data) => {
+        if (!cancelled) setRelationshipData({ profiles: data.profiles || [], candidates: data.candidates || [], loading: false, error: '' });
+      })
+      .catch((e) => {
+        if (!cancelled) setRelationshipData((old) => ({ ...old, loading: false, error: e.message }));
+      });
+    return () => { cancelled = true; };
+  }, [rawProfileStamp, pendingStamp]);
+
+  const profiles = relationshipData.profiles || [];
 
   const userName = (userId, groupId) => {
     const u = db.users?.find((x) => String(x.userId) === String(userId) && String(x.groupId) === String(groupId));
@@ -1281,44 +1352,38 @@ function Relationships({ db, refresh }) {
     if (groupFilter !== 'all' && String(p.groupId) !== groupFilter) return false;
     if (!search.trim()) return true;
     const q = search.trim().toLowerCase();
-    const nameA = userName(p.userA, p.groupId).toLowerCase();
-    const nameB = userName(p.userB, p.groupId).toLowerCase();
+    const nameA = String(p.userAName || userName(p.userA, p.groupId)).toLowerCase();
+    const nameB = String(p.userBName || userName(p.userB, p.groupId)).toLowerCase();
     return nameA.includes(q) || nameB.includes(q) || String(p.userA).includes(q) || String(p.userB).includes(q)
       || (p.interactionStyle || '').toLowerCase().includes(q) || (p.commonTopics || '').toLowerCase().includes(q);
   });
 
-  const candidates = Object.entries(pendingPairCounts)
-    .map(([key, count]) => {
-      const parts = String(key).split(':');
-      if (parts.length !== 3 || count <= 0) return null;
-      const [groupId, userA, userB] = parts;
-      const pairKey = [String(userA), String(userB)].sort().join(':');
-      if (profiles.some((p) => String(p.groupId) === groupId && p.pairKey === pairKey)) return null;
-      if (groupFilter !== 'all' && groupId !== groupFilter) return null;
-      return { groupId, userA, userB, pairKey, count: Number(count) };
-    })
-    .filter(Boolean)
-    .sort((a, b) => b.count - a.count);
+  const candidates = (relationshipData.candidates || [])
+    .filter((c) => groupFilter === 'all' || String(c.groupId) === groupFilter);
 
   const doUpdate = async (groupId, userA, userB) => {
     const key = `${groupId}:${userA}:${userB}`;
     setLoadingKey(key);
     try {
-      await api('/api/relationship-profiles/update', { method: 'POST', body: { groupId, userA, userB } });
-      refresh();
+      const result = await api('/api/relationship-profiles/update', { method: 'POST', body: { groupId, userA, userB } });
+      if (result.skipped) alert('未保存关系画像：' + (result.reason || '互动证据不足'));
+      await refresh();
+      await loadRelationships();
     } catch (e) { alert('更新失败：' + e.message); }
     finally { setLoadingKey(''); }
   };
 
   const doPatch = async (p, patch) => {
     await api(`/api/relationship-profiles/${p.groupId}/${p.userA}/${p.userB}`, { method: 'PATCH', body: patch });
-    refresh();
+    await refresh();
+    await loadRelationships();
   };
 
   const doDelete = async (p) => {
-    if (!window.confirm(`删除 ${userName(p.userA, p.groupId)} ↔ ${userName(p.userB, p.groupId)} 的关系画像？`)) return;
+    if (!window.confirm(`删除 ${p.userAName || userName(p.userA, p.groupId)} ↔ ${p.userBName || userName(p.userB, p.groupId)} 的关系画像？`)) return;
     await api(`/api/relationship-profiles/${p.groupId}/${p.userA}/${p.userB}`, { method: 'DELETE' });
-    refresh();
+    await refresh();
+    await loadRelationships();
   };
 
   const startEdit = (p) => {
@@ -1340,6 +1405,8 @@ function Relationships({ db, refresh }) {
       <section className="panel" style={{ marginBottom: 16, display: 'flex', gap: 16, alignItems: 'center', flexWrap: 'wrap' }}>
         <span style={{ fontWeight: 600 }}>关系画像</span>
         <span style={{ fontSize: 14, color: '#66716c' }}>已生成 {profiles.length} · 候选 {candidates.length}</span>
+        {relationshipData.loading && <span style={{ fontSize: 14, color: '#66716c' }}>正在读取过滤后的关系画像...</span>}
+        {relationshipData.error && <span style={{ fontSize: 14, color: '#b2443a' }}>读取失败：{relationshipData.error}</span>}
       </section>
       <section className="grid two">
         <div className="panel">
@@ -1357,8 +1424,8 @@ function Relationships({ db, refresh }) {
                 {candidates.slice(0, 20).map((c) => (
                   <div className="item" key={c.pairKey + c.groupId} style={{ justifyContent: 'space-between' }}>
                     <div>
-                      <strong>{userName(c.userA, c.groupId)} ↔ {userName(c.userB, c.groupId)}</strong>
-                      <span>{groupOptions[c.groupId] || c.groupId} · 互动 {c.count} 次</span>
+                      <strong>{c.userAName || userName(c.userA, c.groupId)} ↔ {c.userBName || userName(c.userB, c.groupId)}</strong>
+                      <span>{c.groupName || groupOptions[c.groupId] || c.groupId} · 互动 {c.count} 次</span>
                     </div>
                     <button disabled={loadingKey !== ''} onClick={() => doUpdate(c.groupId, c.userA, c.userB)}>
                       {loadingKey === `${c.groupId}:${c.userA}:${c.userB}` ? '...' : '生成'}
@@ -1388,7 +1455,7 @@ function Relationships({ db, refresh }) {
                 <article className="item" key={key} style={{ flexDirection: 'column', alignItems: 'stretch' }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                     <div>
-                      <strong>{userName(p.userA, p.groupId)} ↔ {userName(p.userB, p.groupId)}</strong>
+                      <strong>{p.userAName || userName(p.userA, p.groupId)} ↔ {p.userBName || userName(p.userB, p.groupId)}</strong>
                       <div className="badges">
                         {p.enabled !== false ? <span className="badge-priority">启用</span> : <span className="badge-note">停用</span>}
                         <span className="badge-cmd">证据 {p.evidenceCount || 0}</span>

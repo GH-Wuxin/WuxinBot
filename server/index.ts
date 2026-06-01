@@ -5,11 +5,11 @@ import { createBackup, listBackups, restoreBackup, deleteBackup, pruneAutoBackup
 import { connectOneBot, getOneBotStatus, sendOneBotMessage } from './onebot.js';
 import { oneBotToInternal, processIncoming, decideReply, getReplyQueueStats } from './bot.js';
 import { buildPrompt } from './bot/prompt.js';
-import { callLLM } from './bot/llm.js';
+import { callLLM, looksLikeMimoEndpoint } from './bot/llm.js';
 import { getHealth, getRecalcProgress, startRecalc, tickRecalc, stopRecalc, finishRecalc } from './health.js';
 import { getGroupProfile, updateGroupProfile, clearGroupProfile, hasGroupProfileContent } from './bot/groupProfile.js';
-import { getRelationshipProfile, updateRelationshipProfile, clearRelationshipProfile } from './bot/relationshipProfile.js';
-import { commitMemoryProfileResult } from './bot/memory.js';
+import { getRelationshipProfile, updateRelationshipProfile, clearRelationshipProfile, isSubstantiveRelationshipProfile } from './bot/relationshipProfile.js';
+import { commitMemoryProfileResult, updateMemoryProfile } from './bot/memory.js';
 import { evaluateTrustScores } from './bot/trust.js';
 import { decayInactiveUsers } from './bot/experience.js';
 import { queryProfileLogs, getProfileLogStats } from './bot/profileLog.js';
@@ -69,6 +69,14 @@ app.post('/api/settings', (req, res) => {
       oneBotAccessToken: keepSecret('oneBotAccessToken') ? db.settings.oneBotAccessToken : incoming.oneBotAccessToken,
       adminPassword: keepSecret('adminPassword') ? db.settings.adminPassword : incoming.adminPassword
     };
+    if (looksLikeMimoEndpoint(db.settings.apiBaseUrl)) {
+      db.settings.llmProvider = 'openai-compatible';
+      if (/^deepseek-/i.test(String(db.settings.model || ''))) db.settings.model = 'mimo-v2.5';
+    }
+    if (db.settings.llmProvider === 'deepseek') {
+      db.settings.apiBaseUrl = db.settings.apiBaseUrl || 'https://api.deepseek.com';
+      if (/^mimo-/i.test(String(db.settings.model || ''))) db.settings.model = 'deepseek-v4-flash';
+    }
     if (Array.isArray(db.settings.commandRoles)) {
       const validRoleIds = new Set(db.settings.commandRoles.map((role) => String(role.id)));
       db.settings.commandPermissions = Object.fromEntries(
@@ -198,6 +206,39 @@ app.post('/api/memories/:userId', (req, res) => {
     else db.memories.push({ ...entry, id: crypto.randomUUID(), messageCount: 0, pendingCount: 0, groupsSeen: [], samples: [], createdAt: nowIso() });
   });
   res.json(ok({ db: publicDb() }));
+});
+
+app.post('/api/memories/:userId/recalculate', async (req, res) => {
+  const userId = String(req.params.userId || '').trim();
+  const db = readDb();
+  const memory = (db.memories || []).find((entry) => String(entry.userId) === userId);
+  if (!memory) return res.status(404).json({ ok: false, error: '没有找到这个用户的长期记忆' });
+  const storedUsableSamples = (memory.samples || []).filter((sample) => sample?.usedForProfile && sample?.content).length;
+  const historicalMessages = (db.messages || []).filter((message) => message.role === 'user' && String(message.userId) === userId).length;
+  if (storedUsableSamples < 3 && historicalMessages < 3) {
+    return res.status(400).json({ ok: false, error: `可用画像样本不足：样本 ${storedUsableSamples} 条，历史消息 ${historicalMessages} 条` });
+  }
+  try {
+    const result = await updateMemoryProfile(db, memory);
+    const outcome = commitMemoryProfileResult(userId, result, {
+      model: db.settings.model,
+      kind: 'memory-manual-recalc'
+    });
+    res.json(ok({ outcome, runId: result.runId, usage: result.usage || {}, db: publicDb() }));
+  } catch (error) {
+    updateDb((draft) => {
+      const target = (draft.memories || []).find((entry) => String(entry.userId) === userId);
+      if (target) {
+        target.lastProfileAttemptAt = nowIso();
+        target.lastProfileStatus = 'error';
+        target.lastProfileError = error.message || String(error);
+        target.updatedAt = nowIso();
+      }
+      if (!draft.usage) draft.usage = { totalTokens: 0, promptTokens: 0, completionTokens: 0, requests: 0, replies: 0, errors: 0 };
+      draft.usage.errors = Number(draft.usage.errors || 0) + 1;
+    });
+    res.status(400).json({ ok: false, error: error.message || String(error), db: publicDb() });
+  }
 });
 
 app.delete('/api/memories/:userId', (req, res) => {
@@ -417,12 +458,14 @@ function displayNameForUser(db, groupId, userId) {
 
 app.get('/api/relationship-profiles', (_req, res) => {
   const db = readDb();
-  const profiles = (db.relationshipProfiles || []).map((p) => ({
-    ...p,
-    groupName: db.groups?.find((g) => String(g.groupId) === String(p.groupId))?.name || p.groupId,
-    userAName: displayNameForUser(db, p.groupId, p.userA),
-    userBName: displayNameForUser(db, p.groupId, p.userB),
-  }));
+  const profiles = (db.relationshipProfiles || [])
+    .filter(isSubstantiveRelationshipProfile)
+    .map((p) => ({
+      ...p,
+      groupName: db.groups?.find((g) => String(g.groupId) === String(p.groupId))?.name || p.groupId,
+      userAName: displayNameForUser(db, p.groupId, p.userA),
+      userBName: displayNameForUser(db, p.groupId, p.userB),
+    }));
   const pendingPairCounts = db.pendingPairCounts || {};
   const candidates = Object.entries(pendingPairCounts)
     .map(([key, count]) => {
@@ -448,6 +491,7 @@ app.post('/api/relationship-profiles/update', async (req, res) => {
   if (!groupId || !userA || !userB) return res.status(400).json({ ok: false, error: '缺少 groupId/userA/userB' });
   const result = await updateRelationshipProfile(readDb(), groupId, userA, userB);
   if (!result.ok) return res.status(400).json({ ok: false, error: result.error });
+  if (result.skipped) return res.json(ok({ skipped: true, reason: result.reason, sampleCount: result.sampleCount }));
   const profile = getRelationshipProfile(readDb(), groupId, userA, userB);
   res.json(ok({ profile, sampleCount: result.sampleCount }));
 });
