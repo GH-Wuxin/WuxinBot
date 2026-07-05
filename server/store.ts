@@ -7,6 +7,18 @@ const rootDir = path.resolve(__dirname, '..');
 const dataDir = process.env.DATA_DIR || path.join(process.env.APPDATA || path.join(process.env.USERPROFILE || 'C:', 'AppData', 'Roaming'), 'Wuxin');
 const dbPath = path.join(dataDir, 'db.json');
 
+function writeJsonAtomic(filePath, value) {
+  const tempPath = `${filePath}.${process.pid}.${Date.now()}.tmp`;
+  const payload = JSON.stringify(value, null, 2);
+  try {
+    fs.writeFileSync(tempPath, payload, 'utf8');
+    fs.renameSync(tempPath, filePath);
+  } catch (error) {
+    try { if (fs.existsSync(tempPath)) fs.unlinkSync(tempPath); } catch { /* ignore cleanup failure */ }
+    throw error;
+  }
+}
+
 // This is only the factory-default prompt used when data/db.json does not exist,
 // or when no saved reset baseline exists. The real live prompt is stored in
 // db.settings.personalityPrompt and can be changed from the GUI or /w prompt.
@@ -91,6 +103,7 @@ const initialDb = {
     oneBotAccessToken: '',
     ownerQq: '',
     selfQq: '',
+    externalBotQqs: '',
     adminPassword: process.env.ADMIN_PASSWORD || '',
     enableWebSearch: true,
     webSearchMode: 'balanced',
@@ -195,7 +208,7 @@ function normalizeDb(db) {
 export function ensureStore() {
   fs.mkdirSync(dataDir, { recursive: true });
   if (!fs.existsSync(dbPath)) {
-    fs.writeFileSync(dbPath, JSON.stringify(initialDb, null, 2), 'utf8');
+    writeJsonAtomic(dbPath, initialDb);
   }
 }
 
@@ -207,7 +220,7 @@ export function readDb() {
 
 export function writeDb(db) {
   ensureStore();
-  fs.writeFileSync(dbPath, JSON.stringify(db, null, 2), 'utf8');
+  writeJsonAtomic(dbPath, db);
 }
 
 export function updateDb(mutator) {
@@ -218,8 +231,22 @@ export function updateDb(mutator) {
 }
 
 export function publicDb(db = readDb()) {
+  const now = new Date();
+  const localDayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+  const messages = (db.messages || []).slice(-500);
+  const decisions = (db.decisions || []).slice(-300);
+  const commandLogs = (db.commandLogs || []).slice(-300);
+  const memories = (db.memories || []).map((memory) => ({
+    ...memory,
+    samples: (memory.samples || []).slice(-10).map((sample) => ({
+      ...sample,
+      context: sample.context
+        ? { ...sample.context, nearby: (sample.context.nearby || []).slice(-2) }
+        : sample.context
+    }))
+  }));
+
   return {
-    ...db,
     settings: {
       ...db.settings,
       // Never send secrets back to the browser in plaintext. The GUI uses these
@@ -227,6 +254,29 @@ export function publicDb(db = readDb()) {
       apiKey: db.settings.apiKey ? '已填写' : '',
       oneBotAccessToken: db.settings.oneBotAccessToken ? '已填写' : '',
       adminPassword: db.settings.adminPassword ? '已设置' : ''
+    },
+    groups: db.groups || [],
+    users: db.users || [],
+    memories,
+    groupProfiles: db.groupProfiles || [],
+    relationshipProfiles: db.relationshipProfiles || [],
+    pendingPairCounts: db.pendingPairCounts || {},
+    trustScores: db.trustScores || {},
+    experience: db.experience || {},
+    groupExperience: db.groupExperience || {},
+    messages,
+    decisions,
+    commandLogs,
+    usage: db.usage || initialDb.usage,
+    stateStats: {
+      totalMessages: (db.messages || []).length,
+      todayMessages: (db.messages || []).filter((message) => {
+        const time = new Date(message.createdAt || 0).getTime();
+        return Number.isFinite(time) && time >= localDayStart;
+      }).length,
+      returnedMessages: messages.length,
+      returnedDecisions: decisions.length,
+      returnedCommandLogs: commandLogs.length
     }
   };
 }
