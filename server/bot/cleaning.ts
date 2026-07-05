@@ -207,7 +207,15 @@ export function mentionsBot(text, settings) {
     .map((name) => name.trim())
     .filter(Boolean);
   if (settings.selfQq && text.includes(`[CQ:at,qq=${settings.selfQq}]`)) return true;
-  return names.some((name) => text.toLowerCase().includes(name.toLowerCase()));
+  const lower = String(text || '').toLowerCase();
+  return names.some((name) => {
+    const alias = name.toLowerCase();
+    if (alias.length <= 3 || /^(bot|ai)$/i.test(alias)) {
+      const escaped = alias.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      return new RegExp(`(^|[\\s@：:,，。.!！?？])${escaped}($|[\\s：:,，。.!！?？])`, 'i').test(lower);
+    }
+    return lower.includes(alias);
+  });
 }
 
 export function isQuestion(text) {

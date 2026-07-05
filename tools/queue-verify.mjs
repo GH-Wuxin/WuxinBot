@@ -13,13 +13,16 @@
 
 import http from 'node:http';
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
-import { readDb, writeDb } from '../server/store.ts';
-import { processIncoming, getReplyQueueStats } from '../server/bot.ts';
 
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const dbPath = process.env.DATA_DIR || path.join(process.env.APPDATA || path.join(process.env.USERPROFILE || 'C:', 'AppData', 'Roaming'), 'Wuxin', 'db.json');
+const testDataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'wuxin-queue-'));
+process.env.DATA_DIR = testDataDir;
+const dbPath = path.join(testDataDir, 'db.json');
+let readDb;
+let writeDb;
+let processIncoming;
+let getReplyQueueStats;
 
 const TEST_OWNER = '20000001';
 const TEST_BOT = '20000002';
@@ -123,6 +126,12 @@ function setupDb(original) {
 }
 
 async function main() {
+  const store = await import('../server/store.ts');
+  const bot = await import('../server/bot.ts');
+  ({ readDb, writeDb } = store);
+  ({ processIncoming, getReplyQueueStats } = bot);
+  store.ensureStore();
+
   const originalRaw = fs.readFileSync(dbPath, 'utf8').replace(/^﻿/, '');
   const original = JSON.parse(originalRaw);
   let server;
@@ -270,7 +279,7 @@ async function main() {
     console.log('\nAll queue verification tests PASSED.');
   } finally {
     if (server) server.close();
-    fs.writeFileSync(dbPath, originalRaw, 'utf8');
+    fs.rmSync(testDataDir, { recursive: true, force: true });
   }
 }
 

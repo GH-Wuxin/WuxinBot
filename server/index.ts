@@ -56,8 +56,8 @@ app.get('/api/diagnostics', (_req, res) => {
 });
 
 app.post('/api/settings', (req, res) => {
-  updateDb((db) => { saveConfigSnapshot(db); }); // Snapshot before change
   updateDb((db) => {
+    saveConfigSnapshot(db);
     const incoming = req.body || {};
     // Empty/placeholder secret fields mean "keep the current value". Without
     // this, opening the GUI and saving a page would wipe API keys/tokens.
@@ -643,4 +643,5 @@ app.use((err, _req, res, _next) => {
 
 app.listen(port, '127.0.0.1', () => {
   console.log(`QQ AI ChatBot server running at http://127.0.0.1:${port}`);
+  connectOneBot();
 });
