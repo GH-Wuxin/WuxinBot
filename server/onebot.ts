@@ -4,6 +4,8 @@ import { oneBotToInternal, processIncoming } from './bot.js';
 import { setOneBotConnected, setOneBotEvent, setOneBotError, recordSendSuccess, recordSendError } from './health.js';
 
 let ws;
+let reconnectTimer = null;
+let reconnectEnabled = false;
 let status = {
   connected: false,
   lastError: '',
@@ -16,6 +18,55 @@ let status = {
 // The AI/chat logic deliberately lives in bot.ts, not here.
 export function getOneBotStatus() {
   return status;
+}
+
+function scheduleReconnect() {
+  if (!reconnectEnabled || reconnectTimer) return;
+  reconnectTimer = setTimeout(() => {
+    reconnectTimer = null;
+    connectOneBot();
+  }, 5000);
+}
+
+async function fetchWithTimeout(url, options, timeoutMs = 12_000) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await fetch(url, { ...options, signal: controller.signal });
+  } catch (error) {
+    if (error?.name === 'AbortError') throw new Error(`OneBot HTTP 请求超时 ${Math.round(timeoutMs / 1000)} 秒`);
+    throw error;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+async function assertOneBotSuccess(response, label) {
+  const body = await response.text();
+  if (!response.ok) {
+    recordSendError(`${label}：HTTP ${response.status}`);
+    throw new Error(`${label}：HTTP ${response.status} ${body}`);
+  }
+
+  let payload = null;
+  if (body.trim()) {
+    try {
+      payload = JSON.parse(body);
+    } catch {
+      recordSendError(`${label}：返回了无效 JSON`);
+      throw new Error(`${label}：OneBot 返回了无效 JSON`);
+    }
+  }
+
+  const retcode = Number(payload?.retcode ?? 0);
+  if (payload?.status === 'failed' || retcode !== 0) {
+    const detail = payload?.message || payload?.wording || payload?.msg || body;
+    recordSendError(`${label}：retcode ${retcode}`);
+    throw new Error(`${label}：retcode ${retcode} ${String(detail || '').slice(0, 500)}`);
+  }
+
+  recordSendSuccess();
+  return payload;
 }
 
 export async function sendOneBotMessage(event, text, options = {}) {
@@ -33,17 +84,12 @@ export async function sendOneBotMessage(event, text, options = {}) {
       ? { user_id: Number(event.userId), messages: options.forwardNodes }
       : { group_id: Number(event.groupId), messages: options.forwardNodes };
 
-    const response = await fetch(`${baseUrl.replace(/\/$/, '')}${endpoint}`, {
+    const response = await fetchWithTimeout(`${baseUrl.replace(/\/$/, '')}${endpoint}`, {
       method: 'POST',
       headers,
       body: JSON.stringify(body)
     });
-    if (!response.ok) {
-      const message = await response.text();
-      recordSendError(`合并转发失败：${response.status}`);
-      throw new Error(`发送 QQ 合并转发失败：${response.status} ${message}`);
-    }
-    recordSendSuccess();
+    await assertOneBotSuccess(response, '发送 QQ 合并转发失败');
     return;
   }
 
@@ -52,20 +98,20 @@ export async function sendOneBotMessage(event, text, options = {}) {
     ? { user_id: Number(event.userId), message: text }
     : { group_id: Number(event.groupId), message: text };
 
-  const response = await fetch(`${baseUrl.replace(/\/$/, '')}${endpoint}`, {
+  const response = await fetchWithTimeout(`${baseUrl.replace(/\/$/, '')}${endpoint}`, {
     method: 'POST',
     headers,
     body: JSON.stringify(body)
   });
-  if (!response.ok) {
-    const message = await response.text();
-    recordSendError(`消息发送失败：${response.status}`);
-    throw new Error(`发送 QQ 消息失败：${response.status} ${message}`);
-  }
-  recordSendSuccess();
+  await assertOneBotSuccess(response, '发送 QQ 消息失败');
 }
 
 export function connectOneBot() {
+  reconnectEnabled = true;
+  if (reconnectTimer) {
+    clearTimeout(reconnectTimer);
+    reconnectTimer = null;
+  }
   const db = readDb();
   const url = db.settings.oneBotWsUrl;
   if (!url) {
@@ -75,7 +121,10 @@ export function connectOneBot() {
     return;
   }
 
-  if (ws) ws.close();
+  if (ws) {
+    ws.removeAllListeners();
+    ws.close();
+  }
   ws = new WebSocket(url, db.settings.oneBotAccessToken ? { headers: { Authorization: `Bearer ${db.settings.oneBotAccessToken}` } } : undefined);
 
   ws.on('open', () => {
@@ -104,6 +153,7 @@ export function connectOneBot() {
   ws.on('close', () => {
     setOneBotConnected(false);
     status.connected = false;
+    scheduleReconnect();
   });
 
   ws.on('error', (error) => {
@@ -111,5 +161,6 @@ export function connectOneBot() {
     status.lastError = error.message;
     setOneBotConnected(false);
     setOneBotError(error.message);
+    scheduleReconnect();
   });
 }

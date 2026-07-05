@@ -18,7 +18,7 @@
   "license": "ISC",
   "dependencies": {
     "@vitejs/plugin-react": "^4.7.0",
-    "concurrently": "^9.2.1",
+    "concurrently": "^9.2.3",
     "dotenv": "^17.4.2",
     "express": "^5.2.1",
     "lucide-react": "^1.16.0",
@@ -26,8 +26,8 @@
     "react": "^19.2.6",
     "react-dom": "^19.2.6",
     "typescript": "^6.0.3",
-    "vite": "^5.4.21",
-    "ws": "^8.20.1"
+    "vite": "^6.4.3",
+    "ws": "^8.21.0"
   },
   "devDependencies": {
     "tsx": "^4.22.3"

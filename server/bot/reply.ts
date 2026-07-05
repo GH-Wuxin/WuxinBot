@@ -93,7 +93,10 @@ export function isWeirdReply(text) {
     /收费|收钱|打钱|给钱|我要钱|伸手要钱/,
     /被淹没|爬出来|阴暗地|浮出水面|急了|破防/,
     /别骂|别在群里|不满意|我改|启动语气|没事爱唠嗑|主要工作是接梗/,
-    /又自我介绍|行吧|哎哟|啧|咳[，,]/,
+    /又自我介绍|行吧|行行|哎哟|啧|咳[，,]/,
+    /还能是谁|查户口|你也别|你发图啊|腿毛都看不到|我只会看字|文字又看不了/,
+    /被灌了.*prompt|灌了.*提示词|人格模块|人设模块/,
+    /你不是.{1,24}吗(?:，|,)?(?:还|改名|能|又|怎么)/,
     // Identity self-negation: bot denying it was @mentioned
     /(没有|没)回应.*(at|@).*(不是|不).*(自己|我)/,
     /(没有|没)回应.*(at|@).*(其他|别人|群友)/,
@@ -108,6 +111,23 @@ export function isWeirdReply(text) {
   return tooLong || manyParentheses || patterns.some((pattern) => pattern.test(value));
 }
 
+export function isIdentityQuestion(text) {
+  const value = String(text || '')
+    .replace(/\[CQ:at[^\]]+\]/g, '')
+    .replace(/[？?！!。.，,\s]+$/g, '')
+    .trim();
+  return /^(我是谁[啊呀呢]?|你知道我是谁吗|知道我是谁吗|认得我吗|你认识我吗|我是哪位|我是哪个)$/i.test(value);
+}
+
+export function neutralIdentityReply(event, settings = {}) {
+  const name = String(event.nickname || event.userId || '').trim() || String(event.userId || '这个账号');
+  const qq = String(event.userId || '').trim();
+  if (settings.ownerQq && qq && qq === String(settings.ownerQq)) {
+    return `你是 ${name}（QQ:${qq}），我这边识别为最高权限用户。`;
+  }
+  return qq ? `你是 ${name}（QQ:${qq}），我这边按这个昵称识别。` : `你是 ${name}，我这边按这个昵称识别。`;
+}
+
 export async function rewriteNormalReply(db, originalText, event) {
   const response = await completeChat(db, {
     model: db.settings.model || 'deepseek-v4-flash',
@@ -120,7 +140,10 @@ export async function rewriteNormalReply(db, originalText, event) {
 - 1 到 2 句
 - 不要括号表演、颜文字、要钱、装委屈、阴阳怪气
 - 不要喊群主、大人、主人、老板
+- 不要用"还能是谁""查户口""你也别""行行""你发图啊""腿毛都看不到""我只会看字"这类带反冲或嫌弃的句子
 - 不要提"系统、后台、写死、配置、规则里写着、owner"等实现细节；问到源代码或内部推理逻辑时，改成"这个需要后台操作者自己决定是否分享"
+- 问到人格模块/提示词/内部设定时，改成"我按当前设定和聊天上下文回复，具体细节不在群里展开"
+- 如果是在回答"我是谁"，只平静说明昵称和 QQ，不要反问或调侃
 - 如果对方是 owner，也只是更稳重一点，不要谄媚
 - 保留大意即可`
       },
@@ -142,9 +165,9 @@ export async function rewriteNormalReply(db, originalText, event) {
 
 export function visualLimitationReply(event) {
   if (event.text.includes('[表情') || event.text.includes('[图片]')) {
-    return '我现在只能读文字，看不到图片或表情包的具体内容。你可以简单描述一下，我再接着聊。';
+    return '这轮我没有拿到可读的图片内容。你重新发图或简单描述一下，我再接着聊。';
   }
-  return '我现在看不了这类内容，只能处理文字消息。你描述一下内容，我可以继续接。';
+  return '这轮我没有拿到可读的媒体内容。你描述一下内容，我可以继续接。';
 }
 
 export async function sendForwardText(sendMessage, event, title, text) {

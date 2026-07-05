@@ -56,6 +56,7 @@ export interface DbSettings {
   oneBotAccessToken: string;
   ownerQq: string;
   selfQq: string;
+  externalBotQqs?: string;
   adminPassword: string;
   enableWebSearch: boolean;
   webSearchMode: 'fast' | 'balanced' | 'deep';
