@@ -7,6 +7,8 @@ patch-*.mjs
 rebuild-*.mjs
 restore-*.mjs
 HANDOFF*.md
+TODO.md
+CLAUDE.md
 .git-old-backup/
 src/*backup*.txt
 *.bak-*

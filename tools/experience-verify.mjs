@@ -12,14 +12,23 @@
  */
 
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
-import { readDb, writeDb, updateDb } from '../server/store.ts';
-import { processXpGain, getExperience, getXpBonus, formatXpBar, getLevelInfo, LEVELS, decayInactiveUsers, getStreakMultiplier } from '../server/bot/experience.ts';
-import { decideReply, processIncoming } from '../server/bot.ts';
 
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const dbPath = process.env.DATA_DIR || path.join(process.env.APPDATA || path.join(process.env.USERPROFILE || 'C:', 'AppData', 'Roaming'), 'Wuxin', 'db.json');
+const testDataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'wuxin-experience-'));
+process.env.DATA_DIR = testDataDir;
+const dbPath = path.join(testDataDir, 'db.json');
+let readDb;
+let writeDb;
+let updateDb;
+let processXpGain;
+let getExperience;
+let getXpBonus;
+let formatXpBar;
+let decayInactiveUsers;
+let getStreakMultiplier;
+let decideReply;
+let processIncoming;
 
 const TEST_OWNER = '30000001';
 const TEST_BOT = '30000002';
@@ -60,6 +69,14 @@ function setupDb(original) {
 }
 
 async function main() {
+  const store = await import('../server/store.ts');
+  const experience = await import('../server/bot/experience.ts');
+  const bot = await import('../server/bot.ts');
+  ({ readDb, writeDb, updateDb } = store);
+  ({ processXpGain, getExperience, getXpBonus, formatXpBar, decayInactiveUsers, getStreakMultiplier } = experience);
+  ({ decideReply, processIncoming } = bot);
+  store.ensureStore();
+
   const originalRaw = fs.readFileSync(dbPath, 'utf8').replace(/^﻿/, '');
   const original = JSON.parse(originalRaw);
 
@@ -263,7 +280,7 @@ async function main() {
     // ============================================================
     console.log('\nAll experience verification tests PASSED.');
   } finally {
-    fs.writeFileSync(dbPath, originalRaw, 'utf8');
+    fs.rmSync(testDataDir, { recursive: true, force: true });
   }
 }
 

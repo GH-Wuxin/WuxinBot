@@ -1,11 +1,10 @@
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
-import { decideReply, processIncoming } from '../server/bot.ts';
 
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const rootDir = path.resolve(__dirname, '..');
-const dbPath = process.env.DATA_DIR || path.join(process.env.APPDATA || path.join(process.env.USERPROFILE || 'C:', 'AppData', 'Roaming'), 'Wuxin', 'db.json');
+const sanityDataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'wuxin-sanity-'));
+process.env.DATA_DIR = sanityDataDir;
+const dbPath = path.join(sanityDataDir, 'db.json');
 const sanityOwnerQq = '10000001';
 const sanityBotQq = '10000002';
 const sanityNormalUserQq = '10000003';
@@ -38,6 +37,11 @@ function event(overrides) {
 }
 
 async function main() {
+  const { ensureStore, publicDb } = await import('../server/store.ts');
+  const { decideReply, processIncoming } = await import('../server/bot.ts');
+  const { mentionsBot } = await import('../server/bot/cleaning.ts');
+  ensureStore();
+
   const originalRaw = fs.readFileSync(dbPath, 'utf8').replace(/^﻿/, '');
   const original = JSON.parse(originalRaw);
   const sent = [];
@@ -55,6 +59,7 @@ async function main() {
     db.settings.llmProvider = 'deepseek';
     db.settings.apiBaseUrl = 'https://api.deepseek.com';
     db.settings.model = 'deepseek-v4-flash';
+    db.settings.apiKey = 'sanity-secret';
     db.settings.visionMode = 'auto';
     db.groups = [
       ...(db.groups || []).filter((group) => !['990001', '990002', '990003'].includes(String(group.groupId))),
@@ -70,7 +75,18 @@ async function main() {
       }
     ];
     db.commandLogs = [];
+    db.configSnapshots = [{
+      at: new Date().toISOString(),
+      settings: { apiKey: 'sanity-secret', oneBotAccessToken: 'sanity-token', adminPassword: 'sanity-password' }
+    }];
     writeJson(dbPath, db);
+
+    const browserState = publicDb(readJson(dbPath));
+    assert(!('configSnapshots' in browserState), 'public state must not expose config snapshots');
+    assert(browserState.settings.apiKey === '已填写', 'public state should mask the API key');
+
+    assert(!mentionsBot('这bot疯了', db.settings), 'generic bot alias should not match inside a sentence');
+    assert(mentionsBot('bot 在吗', db.settings), 'generic bot alias should still match at word boundary');
 
     sent.length = 0;
     const ping = await processIncoming(event({ text: '/w ping' }), sendMessage);
@@ -100,7 +116,45 @@ async function main() {
       atTargets: [sanityBotQq]
     }), sendMessage);
     assert(visualAsk.replied === true, 'explicit visual inspection request should get deterministic reply');
-    assert(sent.some((text) => text.includes('看不到图片') || text.includes('只能读文字')), 'visual limitation reply should explain limitation');
+    assert(sent.some((text) => text.includes('看不到图片') || text.includes('只能读文字') || text.includes('没有拿到可读')), 'visual limitation reply should explain limitation');
+
+    sent.length = 0;
+    const externalBot = await processIncoming(event({
+      userId: '10000009',
+      nickname: '串串bot',
+      senderRole: 'admin',
+      text: 'fetch failed？这bot是不是疯了'
+    }), sendMessage);
+    const afterExternalBot = readJson(dbPath);
+    const loggedExternalBot = afterExternalBot.messages.at(-1);
+    assert(externalBot.replied === false, 'external bot-like sender should be ignored');
+    assert(String(externalBot.reason || '').includes('其他机器人'), 'external bot ignore reason should be explicit');
+    assert(loggedExternalBot?.inContext === false, 'external bot-like sender should not enter context');
+
+    sent.length = 0;
+    const humanWithAiName = await processIncoming(event({
+      userId: '10000010',
+      nickname: 'AI绘画爱好者',
+      text: '普通聊天消息'
+    }), sendMessage);
+    const loggedHumanWithAiName = readJson(dbPath).messages.at(-1);
+    assert(!String(humanWithAiName.reason || '').includes('其他机器人'), 'human nickname containing AI should not be treated as a bot');
+    assert(loggedHumanWithAiName?.inContext !== false, 'human nickname containing AI should remain in context');
+
+    sent.length = 0;
+    const nakedSlash = await processIncoming(event({
+      userId: sanityNormalUserQq,
+      nickname: 'GroupAdmin',
+      senderRole: 'admin',
+      text: '/reset'
+    }), sendMessage);
+    assert(nakedSlash.replied === false, 'naked slash command should be ignored in group even for QQ admins');
+    assert(sent.length === 0, 'naked slash command should not send Wuxin help');
+
+    sent.length = 0;
+    const typoCommand = await processIncoming(event({ text: '/w usgae' }), sendMessage);
+    assert(typoCommand.replied === true, 'unknown /w command should reply briefly');
+    assert(sent.length === 1 && sent[0].includes('未知 Wuxin 指令'), 'unknown /w command should not send full help');
 
     const mimoDecision = decideReply({
       db: {
@@ -163,7 +217,7 @@ async function main() {
 
     console.log('sanity ok');
   } finally {
-    fs.writeFileSync(dbPath, originalRaw, 'utf8');
+    fs.rmSync(sanityDataDir, { recursive: true, force: true });
   }
 }
 

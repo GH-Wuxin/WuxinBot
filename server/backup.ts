@@ -1,5 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import { writeDb } from './store.js';
 
 const dataDir = process.env.DATA_DIR || path.join(process.env.APPDATA || path.join(process.env.USERPROFILE || 'C:', 'AppData', 'Roaming'), 'Wuxin');
 const dbPath = path.join(dataDir, 'db.json');
@@ -64,7 +65,7 @@ export function restoreBackup(name) {
   // Auto-backup current DB before restore (pre-restore safety)
   createBackup('pre-restore');
   // Write restored data
-  fs.writeFileSync(dbPath, JSON.stringify(json, null, 2), 'utf8');
+  writeDb(json);
   return { ok: true, name };
 }
 

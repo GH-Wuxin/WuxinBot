@@ -51,7 +51,9 @@ import {
   rewriteNormalReply,
   visualLimitationReply,
   sendForwardText,
-  splitReplySegments
+  splitReplySegments,
+  isIdentityQuestion,
+  neutralIdentityReply
 } from './bot/reply.js';
 import { recordMemoryObservation, maybeUpdateMemoryProfile, maybeRecordImageMemorySummary, updateMemoryProfile, commitMemoryProfileResult, maybeSweepDueMemoryProfiles } from './bot/memory.js';
 import { getGroupProfile, updateGroupProfile, clearGroupProfile, incrementGroupProfilePending, hasGroupProfileContent } from './bot/groupProfile.js';
@@ -78,6 +80,7 @@ const policyWeight = {
 // are queued instead of dropped. After the current reply finishes, the next
 // queued message is processed automatically (FIFO).
 const REPLY_QUEUE_LIMIT = 10;
+const REPLY_QUEUE_TTL_MS = 90_000;
 const replyQueues = new Map(); // key → { locked: boolean, queue: [{event, sendMessage, decision}] }
 
 function getQueueState(key) {
@@ -97,6 +100,28 @@ export function getReplyQueueStats() {
 
 async function drainReplyQueue(key) {
   const state = replyQueues.get(key);
+  if (state?.queue?.length) {
+    const now = Date.now();
+    const fresh = [];
+    for (const item of state.queue) {
+      if (!item.enqueuedAt || now - item.enqueuedAt <= REPLY_QUEUE_TTL_MS) {
+        fresh.push(item);
+        continue;
+      }
+      updateDb((draft) => {
+        draft.decisions.push({
+          id: crypto.randomUUID(),
+          messageId: item.event.messageId,
+          groupId: item.event.groupId,
+          userId: item.event.userId,
+          shouldReply: false,
+          reason: '回复队列等待超时，丢弃旧消息',
+          createdAt: nowIso()
+        });
+      });
+    }
+    state.queue = fresh;
+  }
   if (!state || state.queue.length === 0) {
     if (state) state.locked = false;
     replyQueues.delete(key);
@@ -110,6 +135,19 @@ async function drainReplyQueue(key) {
   } catch {
     // Errors are already handled inside processIncoming
   }
+}
+
+function looksLikeExternalBotSender(event, settings = {}) {
+  if (settings.selfQq && String(event.userId) === String(settings.selfQq)) return false;
+  const explicitBotQqs = String(settings.externalBotQqs || '')
+    .split(/[,\s]+/)
+    .map((qq) => qq.trim())
+    .filter(Boolean);
+  if (explicitBotQqs.includes(String(event.userId))) return true;
+  const nick = String(event.nickname || '').trim();
+  if (!nick) return false;
+  return /(^|[\s._-])(bot|ai)([\s._-]|$)|(?:机器人|助手|bot)$/i.test(nick)
+    || /^(ChatGPT|Claude|DeepSeek|Mimo)(?:[\s._-]|$)/i.test(nick);
 }
 
 function extractAtQq(text) {
@@ -456,11 +494,35 @@ export async function processIncoming(event, sendMessage, queuedDecision, isFrom
   // sender has no permission. Otherwise a denied command could fall through
   // into normal chat and be answered by the model.
   const isWuxinCommandText = /^\/w(uxin)?(?:\s|$)/i.test(event.text);
-  if (event.type === 'group' && isWuxinCommandText) {
-    return handleOwnerCommand(event, sendMessage, { isOwner: isGroupOwner, isAdmin: isGroupAdmin });
+  if (event.type === 'group' && looksLikeExternalBotSender(event, settings) && !isGroupOwner) {
+    const reason = '忽略疑似其他机器人账号的消息';
+    updateDb((draft) => {
+      draft.messages.push({
+        id: crypto.randomUUID(),
+        role: 'user',
+        type: event.type,
+        groupId: event.groupId,
+        userId: event.userId,
+        nickname: event.nickname,
+        content: event.text,
+        media: event.images?.length ? { images: event.images } : undefined,
+        inContext: false,
+        createdAt: nowIso()
+      });
+      draft.decisions.push({
+        id: crypto.randomUUID(),
+        messageId: event.messageId,
+        groupId: event.groupId,
+        userId: event.userId,
+        shouldReply: false,
+        reason,
+        createdAt: nowIso()
+      });
+    });
+    return { replied: false, reason };
   }
 
-  if ((isGroupOwner || isGroupAdmin) && event.text.startsWith('/')) {
+  if (event.type === 'group' && isWuxinCommandText) {
     return handleOwnerCommand(event, sendMessage, { isOwner: isGroupOwner, isAdmin: isGroupAdmin });
   }
 
@@ -581,7 +643,7 @@ export async function processIncoming(event, sendMessage, queuedDecision, isFrom
         createdAt: nowIso()
       });
     });
-    queueState.queue.push({ event, sendMessage, decision });
+    queueState.queue.push({ event, sendMessage, decision, enqueuedAt: Date.now() });
     return { replied: false, reason, queued: true, queuePosition: queueState.queue.length };
   }
   queueState.locked = true;
@@ -702,14 +764,18 @@ export async function processIncoming(event, sendMessage, queuedDecision, isFrom
 
     let replyText = sanitizeReply(ai.text, liveDb.settings);
     if (!responseOptions.longForm && isWeirdReply(replyText)) {
-      const rewrite = await rewriteNormalReply(liveDb, replyText, event);
-      replyText = sanitizeReply(rewrite.text, liveDb.settings);
-      ai.usage.total_tokens = (ai.usage.total_tokens || 0) + (rewrite.usage.total_tokens || 0);
-      ai.usage.prompt_tokens = (ai.usage.prompt_tokens || 0) + (rewrite.usage.prompt_tokens || 0);
-      ai.usage.completion_tokens = (ai.usage.completion_tokens || 0) + (rewrite.usage.completion_tokens || 0);
-      // Identity confusion fallback: if rewrite still contains self-negation
-      if (isWeirdReply(replyText) && /(没有|没)回应.*(at|@)|(at|@).*(不是.*自己|其他|别人|群友)|不该.*回复|不该.*回应/.test(replyText)) {
-        replyText = '我在，刚才识别有点乱。你刚刚是在叫我，对吧？';
+      if (isIdentityQuestion(event.text)) {
+        replyText = neutralIdentityReply(event, liveDb.settings);
+      } else {
+        const rewrite = await rewriteNormalReply(liveDb, replyText, event);
+        replyText = sanitizeReply(rewrite.text, liveDb.settings);
+        ai.usage.total_tokens = (ai.usage.total_tokens || 0) + (rewrite.usage.total_tokens || 0);
+        ai.usage.prompt_tokens = (ai.usage.prompt_tokens || 0) + (rewrite.usage.prompt_tokens || 0);
+        ai.usage.completion_tokens = (ai.usage.completion_tokens || 0) + (rewrite.usage.completion_tokens || 0);
+        // Identity confusion fallback: if rewrite still contains self-negation
+        if (isWeirdReply(replyText) && /(没有|没)回应.*(at|@)|(at|@).*(不是.*自己|其他|别人|群友)|不该.*回复|不该.*回应/.test(replyText)) {
+          replyText = '我在，刚才识别有点乱。你刚刚是在叫我，对吧？';
+        }
       }
     }
     if (!replyText) throw new Error('模型返回了空内容。');
@@ -2368,9 +2434,22 @@ ${knownModels.join('\n')}
     }
   }
 
-  if (!policyMap[command] || !target) {
-    if (sendMessage) await sendForwardText(sendMessage, event, 'Wuxin 指令帮助', help);
-    return { replied: Boolean(sendMessage), reason: help };
+  if (!isWuxinCommand) {
+    return { replied: false, reason: '忽略非 Wuxin 裸斜杠指令，避免和其他 bot 冲突' };
+  }
+
+  if (!policyMap[command]) {
+    const reply = command === '/'
+      ? '用 /w help 查看 Wuxin 指令。'
+      : `未知 Wuxin 指令：${command}。用 /w help 查看帮助。`;
+    if (sendMessage) await sendMessage(event, reply);
+    return { replied: Boolean(sendMessage), reason: reply };
+  }
+
+  if (!target) {
+    const reply = `用法：/w ${command.slice(1)} @某人`;
+    if (sendMessage) await sendMessage(event, reply);
+    return { replied: Boolean(sendMessage), reason: reply };
   }
 
   if (!(await requireCommand('memberPolicy'))) return { replied: Boolean(sendMessage), reason: commandDeniedReply(commandDb, 'memberPolicy') };

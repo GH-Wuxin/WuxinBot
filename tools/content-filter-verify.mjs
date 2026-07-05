@@ -7,21 +7,12 @@
  * 3. LLM 过滤集成 — 过滤失败时不阻塞（fail-open）
  */
 
-import fs from 'node:fs';
-import path from 'node:path';
-import { fileURLToPath } from 'node:url';
-
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const dbPath = process.env.DATA_DIR || path.join(process.env.APPDATA || path.join(process.env.USERPROFILE || 'C:', 'AppData', 'Roaming'), 'Wuxin', 'db.json');
-
 function assert(cond, msg) {
   if (!cond) throw new Error(`FAIL: ${msg}`);
 }
 
 async function main() {
-  const originalRaw = fs.readFileSync(dbPath, 'utf8').replace(/^﻿/, '');
-
-  try {
+  {
     // Test 1: Basic safety checks (inline, no LLM needed)
     console.log('Test 1: Basic safety checks');
 
@@ -84,8 +75,6 @@ async function main() {
 
     // ============================================================
     console.log('\nAll content filter verification tests PASSED.');
-  } finally {
-    // DB not modified, no restore needed
   }
 }
 

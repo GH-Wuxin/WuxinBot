@@ -125,7 +125,7 @@ function App() {
 
   useEffect(() => {
     refresh();
-    const timer = setInterval(refresh, 5000);
+    const timer = setInterval(refresh, 10000);
     return () => clearInterval(timer);
   }, []);
 
@@ -209,8 +209,6 @@ function App() {
 }
 
 function Overview({ db, oneBot, saveSettings, refresh }) {
-  const today = new Date().toISOString().slice(0, 10);
-  const todayMessages = db.messages.filter((m) => m.createdAt?.startsWith(today));
   const [health, setHealth] = useState(null);
   useEffect(() => { api('/api/health').then(setHealth).catch(() => {}); const t = setInterval(() => { api('/api/health').then(setHealth).catch(() => {}); }, 5000); return () => clearInterval(t); }, []);
   const statusLevel = health?.status?.level || 'unknown';
@@ -229,7 +227,7 @@ function Overview({ db, oneBot, saveSettings, refresh }) {
       )}
       <section className="stats">
         <Stat label="启用群" value={db.groups.filter((g) => g.enabled).length} />
-        <Stat label="今日消息" value={todayMessages.length} />
+        <Stat label="今日消息" value={db.stateStats?.todayMessages ?? db.messages.length} />
         <Stat label="累计回复" value={db.usage.replies} />
         <Stat label="累计 Token" value={db.usage.totalTokens} />
         {(() => {
@@ -1651,6 +1649,7 @@ function Connect({ db, oneBot, saveSettings, refresh }) {
         <Password label="Access Token，没有就留空" value={draft.oneBotAccessToken} onChange={(oneBotAccessToken) => setDraft({ ...draft, oneBotAccessToken })} />
         <Text label="机器人自己的 QQ号" value={draft.selfQq} onChange={(selfQq) => setDraft({ ...draft, selfQq })} />
         <Text label="你的 QQ号（Owner）" value={draft.ownerQq} onChange={(ownerQq) => setDraft({ ...draft, ownerQq })} />
+        <Text label="其他 Bot QQ（逗号分隔，可选）" value={draft.externalBotQqs || ''} onChange={(externalBotQqs) => setDraft({ ...draft, externalBotQqs })} />
         <button className="primary" onClick={connect}>保存并连接 QQ</button>
       </div>
       <div className="panel">

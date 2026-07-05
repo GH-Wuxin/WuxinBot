@@ -10,18 +10,21 @@
  */
 
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
-import { readDb, writeDb } from '../server/store.ts';
 
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const dbPath = process.env.DATA_DIR || path.join(process.env.APPDATA || path.join(process.env.USERPROFILE || 'C:', 'AppData', 'Roaming'), 'Wuxin', 'db.json');
+const testDataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'wuxin-relationship-gui-'));
+process.env.DATA_DIR = testDataDir;
+const dbPath = path.join(testDataDir, 'db.json');
 
 function assert(cond, msg) {
   if (!cond) throw new Error(`FAIL: ${msg}`);
 }
 
 async function main() {
+  const { ensureStore, readDb, writeDb } = await import('../server/store.ts');
+  ensureStore();
+
   const originalRaw = fs.readFileSync(dbPath, 'utf8').replace(/^﻿/, '');
   const original = JSON.parse(originalRaw);
 
@@ -103,7 +106,7 @@ async function main() {
 
     console.log('\nAll relationship verification tests PASSED.');
   } finally {
-    fs.writeFileSync(dbPath, originalRaw, 'utf8');
+    fs.rmSync(testDataDir, { recursive: true, force: true });
   }
 }
 
