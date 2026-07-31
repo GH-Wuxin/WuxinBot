@@ -180,8 +180,6 @@ const HYDRANT: QuickCommandDef[] = [
   { id: 'self_profile', source: 'hydrant', aliases: ['~'], kind: 'osu', handler: 'self_profile', implemented: true, bridge: true },
   { id: 'at_profile', source: 'hydrant', aliases: ['查'], kind: 'osu', handler: 'at_profile', implemented: true, bridge: true },
   { id: 'where', source: 'hydrant', aliases: ['where'], kind: 'osu', handler: 'where', implemented: true, bridge: true },
-  { id: 'pp_self', source: 'hydrant', aliases: ['++'], kind: 'osu', handler: 'pp_self', implemented: true },
-  { id: 'pp_user', source: 'hydrant', aliases: ['+'], kind: 'osu', handler: 'pp_user', implemented: true },
   { id: 'recommend', source: 'hydrant', aliases: ['荐图'], kind: 'osu', implemented: false },
   { id: 'pptth', source: 'hydrant', aliases: ['pptth'], kind: 'osu', implemented: false },
   { id: 'highlight', source: 'hydrant', aliases: ['今日高光'], kind: 'osu', implemented: false },
@@ -295,12 +293,6 @@ export function matchQuickCommand(event: { text: string; atTargets?: string[] })
       extraMode: '',
     };
   }
-  // `+<username>` — hydrant PP+ lookup.
-  if (/^\+[^\s+]\S*$/.test(raw) && raw.length >= 3) {
-    const def = HYDRANT.find((d) => d.handler === 'pp_user')!;
-    return { def, cmdText: raw, args: raw.slice(1).trim(), prefix: 'none', atTargets, extraMode: '' };
-  }
-
   return null;
 }
 
@@ -384,8 +376,6 @@ function buildBridgeCommand(match: QuickMatch): string {
     return qq ? `查[CQ:at,qq=${qq}]` : '查';
   }
   if (def.handler === 'where') return `where ${args}`.trim();
-  if (def.handler === 'pp_self') return '++';
-  if (def.handler === 'pp_user') return `+${args}`.trim();
   if (prefix === '!') return `!${cmdText}`;
   if (prefix === '/') return `/${cmdText}`;
   return cmdText;
@@ -652,26 +642,6 @@ export async function handleQuickCommand(
     log('where', query);
     return { handled: true, replied: true, reason: 'where' };
   }
-  if (def.handler === 'pp_self' || def.handler === 'pp_user') {
-    const username = def.handler === 'pp_user' ? String(args || '').trim() : '';
-    let result: Awaited<ReturnType<typeof executeInternalBotCommand>>;
-    try {
-      result = await executeInternalBotCommand('hydrant', 'pplus', username, {
-        db, userId: String(event.userId), groupId: event.groupId,
-      });
-    } catch (error: any) {
-      if (sendMessage) await sendMessage(event, String(error?.message || error));
-      return { handled: true, replied: true, reason: 'pplus_error' };
-    }
-    try {
-      if (sendMessage) await sendMessage(event, quickPayload(result));
-    } catch (deliveryError: any) {
-      console.error(`[quick] ${def.id} 发送失败（面板可能已发出）:`, deliveryError?.message || deliveryError);
-    }
-    log('pplus', username || '(self)');
-    return { handled: true, replied: true, reason: 'pplus' };
-  }
-
   // ── Internal engine capabilities ──
   if (def.capability) {
     const parsed = parseOsuArgs(def, args);
