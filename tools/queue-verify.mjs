@@ -129,8 +129,10 @@ function setupDb(original) {
 async function main() {
   const store = await import('../server/store.ts');
   const bot = await import('../server/bot.ts');
+  const queue = await import('../server/bot/queue.ts');
   ({ readDb, writeDb } = store);
-  ({ processIncoming, getReplyQueueStats } = bot);
+  ({ processIncoming } = bot);
+  ({ getReplyQueueStats } = queue);
   store.ensureStore();
 
   const originalRaw = fs.readFileSync(dbPath, 'utf8').replace(/^﻿/, '');
