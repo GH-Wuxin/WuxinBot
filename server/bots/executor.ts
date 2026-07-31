@@ -953,7 +953,7 @@ export function resolveInternalPlayerTarget(
   return legacyUsername ? { kind: 'username', value: legacyUsername } : null;
 }
 
-async function loadInternalOsuUser(target: InternalPlayerTarget): Promise<OsuUser> {
+export async function loadInternalOsuUser(target: InternalPlayerTarget): Promise<OsuUser> {
   const { getUser, getUserById } = await import('../osu/api.js');
   return target.kind === 'id'
     ? getUserById(Number(target.value), 'osu')

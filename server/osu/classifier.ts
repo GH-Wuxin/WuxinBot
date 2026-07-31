@@ -20,6 +20,9 @@ export async function classifyBeatmaps(beatmapIds: (string | number)[]): Promise
   if (ids.length === 0) {
     return { distribution: {}, details: {}, totalClassified: 0, errors: [] };
   }
+  if (process.env.OSU_ORACLE_DISABLED === '1') {
+    return { distribution: {}, details: {}, totalClassified: 0, errors: ['osu_oracle 已禁用（测试环境）'] };
+  }
 
   return new Promise((resolve) => {
     const python = spawn('python', [SCRIPT, '--json'], {
