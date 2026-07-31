@@ -927,19 +927,24 @@ export async function processIncoming(event, sendMessage = undefined, queuedDeci
     const namedBotRequest = detectNamedBotRequest(event.text, registryHere.bots || []);
     const bpTypeAnalysis = detectBpTypeAnalysisIntent(event.text);
 
-    // ── BP type analysis guard ──
-    // "分析我的bp类型" needs real beatmap classification (osu!oracle on Top100),
-    // which is not wired into natural language yet. Reply honestly instead of
-    // letting the LLM fabricate proportions from PP+ dimensions.
+    // ── BP type analysis ──
+    // "分析我的bp类型" gets a deterministic osu!oracle classification of the
+    // player's Top100. No LLM is involved, so proportions can never be made up.
     if (bpTypeAnalysis && !osuDataIntent) {
-      const replyText = 'BP 谱面类型分析需要 osu!oracle 对 Top100 的真实分类，这项自然语言分析能力还没接入。可以用 /w osu analyze 生成带真实分类的完整分析。';
+      const { runBpTypeAnalysis } = await import('./bots/bpTypeAnalysis.js');
+      let replyText: string;
+      try {
+        replyText = await runBpTypeAnalysis(liveDb, String(event.userId), '');
+      } catch (error) {
+        replyText = `BP 谱面类型分析暂时不可用：${String((error as Error)?.message || error)}`;
+      }
       if (sendMessage) await sendMessage(event, replyText);
       updateDb((draft) => {
         draft.messages.push({ id: crypto.randomUUID(), role: 'assistant', type: event.type, groupId: event.groupId, userId: 'bot', nickname: '机器人', content: replyText, inContext: true, createdAt: nowIso() });
         draft.usage.replies += 1;
       });
       await drainReplyQueue(replyLockKey);
-      return { replied: true, text: replyText, reason: 'bp_type_analysis_not_integrated' };
+      return { replied: true, text: replyText, reason: 'bp_type_analysis' };
     }
 
     // ── Named-bot invocation guard ──
@@ -1086,7 +1091,7 @@ export async function processIncoming(event, sendMessage = undefined, queuedDeci
       const tools = buildBotToolSchemas(registry);
       // Add tool availability note to system prompt
       if (messages[0]?.role === 'system') {
-        messages[0].content += '\n\n【可用工具】你可以调用 query_osu 获取真实 osu! 数据（BP、最近成绩、玩家信息、PP+ 等）。数据来自 osu! API v2 和 PP+ 服务，不是你凭记忆编造的。涉及 osu! 数据时必须调用工具，不准用聊天记录或上下文中的旧数据。当玩家问"我是谁"等身份问题时也必须调工具查绑定。日常闲聊不需要使用工具。如果玩家问的是分析/判断类问题（为什么偏科、怎么提升），也需要先查数据再做分析。涉及 BP 谱面类型或占比（串图/跳图比例、bp 类型）的分析，在拿到真实分类数据之前不得给出比例或确定性结论——要直接说明该能力尚未接入。注意：雨沐/猫猫/消防栓/LazyBot 是 QQ 群里的独立机器人，不是你可以调用的工具——你应该用 query_osu 获取数据。';
+        messages[0].content += '\n\n【可用工具】你可以调用 query_osu 获取真实 osu! 数据（BP、最近成绩、玩家信息、PP+ 等）。数据来自 osu! API v2 和 PP+ 服务，不是你凭记忆编造的。涉及 osu! 数据时必须调用工具，不准用聊天记录或上下文中的旧数据。当玩家问"我是谁"等身份问题时也必须调工具查绑定。日常闲聊不需要使用工具。如果玩家问的是分析/判断类问题（为什么偏科、怎么提升），也需要先查数据再做分析。涉及 BP 谱面类型或占比（串图/跳图比例、bp 类型）的分析，在拿到真实分类数据之前不得给出比例或确定性结论——系统会自动生成真实分类；你不需要也不准自己编造比例。注意：雨沐/猫猫/消防栓/LazyBot 是 QQ 群里的独立机器人，不是你可以调用的工具——你应该用 query_osu 获取数据。';
       }
 
       // ── Deterministic osu! data routing ──
