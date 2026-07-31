@@ -1084,7 +1084,11 @@ function validateAnalysisContent(
     reasons.push(`分析对象 ${narrative.playerName || '该玩家'} 的性别未知，不能擅自使用“他/她”`);
   }
   if (/pippi\s*的(?:判断|总结)|作为\s*pippi/i.test(value)) reasons.push('包含固定署名或自我介绍');
-  if (/人工智能|AI|助手|编辑器|分析工具/i.test(value)) reasons.push('把 pippi 写成了工具或助手');
+  // Only positive self-identification as an AI/assistant is a violation.
+  // "我不是助手" style denials or ordinary words like "分析工具" must pass.
+  if (/我(?:就)?是(?:一个)?(?:人工智能|AI|助手|编辑器|分析工具)|作为(?:一个)?(?:人工智能|AI|助手)|本(?:人)?(?:人工智能|AI|助手)/i.test(value)) {
+    reasons.push('把 pippi 写成了工具或助手');
+  }
   if (/作为旁观者|玩家画像|自我定位|我认可这份|我尊重这种|数据告诉我/.test(value)) {
     reasons.push('包含冷淡报告腔或未经证据支持的文学化推断');
   }
