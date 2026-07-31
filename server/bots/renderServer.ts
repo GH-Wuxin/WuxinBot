@@ -4,6 +4,7 @@
 import { randomUUID } from 'node:crypto';
 import { EventEmitter } from 'node:events';
 import { WebSocket, WebSocketServer, type RawData } from 'ws';
+import { recordRenderFailure } from '../health.js';
 
 const RENDER_TIMEOUT_MS = 45_000;
 const AUTH_TIMEOUT_MS = 10_000;
@@ -201,14 +202,19 @@ export class RenderServer extends EventEmitter {
     return this.boundPort;
   }
 
+  private rejectRenderTask(message: string): Promise<never> {
+    recordRenderFailure();
+    return Promise.reject(new Error(message));
+  }
+
   renderPanel(path: string, payload: unknown): Promise<Buffer> {
     if (!this.wss) {
-      return Promise.reject(new Error('yumu-image 渲染服务不可用（服务端未启动）'));
+      return this.rejectRenderTask('yumu-image 渲染服务不可用（服务端未启动）');
     }
 
     const connected = [...this.clients.keys()].filter((ws) => ws.readyState === WebSocket.OPEN);
     if (connected.length === 0) {
-      return Promise.reject(new Error('yumu-image 渲染服务不可用（没有已认证的渲染客户端）'));
+      return this.rejectRenderTask('yumu-image 渲染服务不可用（没有已认证的渲染客户端）');
     }
     const pendingByClient = new Map<WebSocket, number>();
     for (const task of this.pending.values()) {
@@ -216,12 +222,12 @@ export class RenderServer extends EventEmitter {
     }
     const available = connected.filter((ws) => (pendingByClient.get(ws) || 0) < MAX_PENDING_PER_CLIENT);
     if (available.length === 0) {
-      return Promise.reject(new Error('yumu-image 渲染队列已满，请稍后再试'));
+      return this.rejectRenderTask('yumu-image 渲染队列已满，请稍后再试');
     }
 
     const normalizedPath = String(path || '').trim();
     if (!/^[A-Za-z0-9_/-]{1,80}$/.test(normalizedPath)) {
-      return Promise.reject(new Error('yumu-image 面板路径格式无效'));
+      return this.rejectRenderTask('yumu-image 面板路径格式无效');
     }
 
     const index = (this.roundRobinCounter++ & 0x7fffffff) % available.length;
@@ -231,15 +237,15 @@ export class RenderServer extends EventEmitter {
     try {
       json = JSON.stringify({ path: normalizedPath, messageId, payload });
     } catch {
-      return Promise.reject(new Error('yumu-image 渲染参数无法序列化'));
+      return this.rejectRenderTask('yumu-image 渲染参数无法序列化');
     }
     if (Buffer.byteLength(json, 'utf8') > MAX_TEXT_BYTES) {
-      return Promise.reject(new Error(`yumu-image 渲染参数超过 ${MAX_TEXT_BYTES / 1024} KiB 限制`));
+      return this.rejectRenderTask(`yumu-image 渲染参数超过 ${MAX_TEXT_BYTES / 1024} KiB 限制`);
     }
     if (ws.bufferedAmount > MAX_SEND_BUFFER_BYTES) {
       ws.terminate();
       this.removeConnection(ws, new Error('yumu-image 渲染客户端发送缓冲区过载'));
-      return Promise.reject(new Error('yumu-image 渲染客户端发送缓冲区过载'));
+      return this.rejectRenderTask('yumu-image 渲染客户端发送缓冲区过载');
     }
 
     return new Promise<Buffer>((resolve, reject) => {
@@ -376,7 +382,10 @@ export class RenderServer extends EventEmitter {
     if (this.pending.get(task.messageId) !== task) return;
     clearTimeout(task.timer);
     this.pending.delete(task.messageId);
-    if (error) task.reject(error);
+    if (error) {
+      recordRenderFailure();
+      task.reject(error);
+    }
     else task.resolve(image!);
   }
 

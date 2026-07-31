@@ -5,6 +5,7 @@ const state = {
   sendMessage: { lastSuccessAt: '', lastError: '', recentFailures: 0 },
   llm: { lastSuccessAt: '', lastError: '', recentFailures: 0, totalLatencyMs: 0, callCount: 0 },
   bot: { globalPaused: false, lastDecisionError: '' },
+  osu: { api429Count: 0, renderFailures: 0 },
   requestCount: 0,
 };
 
@@ -19,6 +20,7 @@ export function getHealth() {
       avgLatencyMs: avgLatency,
     },
     bot: { ...state.bot },
+    osu: { ...state.osu },
     requestCount: state.requestCount,
     status: statusSummary(),
   };
@@ -84,6 +86,16 @@ export function setBotPaused(paused) {
 
 export function recordDecisionError(error) {
   state.bot.lastDecisionError = new Date().toISOString() + ' ' + (error || '');
+}
+
+// ------ osu! / renderer updates ------
+
+export function recordOsuApi429() {
+  state.osu.api429Count += 1;
+}
+
+export function recordRenderFailure() {
+  state.osu.renderFailures += 1;
 }
 
 // Recalc progress state
