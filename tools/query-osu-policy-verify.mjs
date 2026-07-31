@@ -45,6 +45,7 @@ console.log('=== query_osu must be allowed (readonly) ===');
 
 expectOk('query_osu-recent', { type: 'query_osu', params: { capability: 'recent' } });
 expectOk('query_osu-bp-rank', { type: 'query_osu', params: { capability: 'bp', bp_rank: 1 } });
+expectOk('query_osu-bp_type', { type: 'query_osu', params: { capability: 'bp_type', username: '[SHK]Wuxin' } });
 expectOk('query_osu-bp-range', { type: 'query_osu', params: { capability: 'bp', bp_start: 1, bp_end: 10 } });
 expectOk('query_osu-bp-range-20', { type: 'query_osu', params: { capability: 'bp', bp_start: 1, bp_end: 20 } });
 expectOk('query_osu-bp-range-100', { type: 'query_osu', params: { capability: 'bp', bp_start: 1, bp_end: 100 } });
