@@ -1,18 +1,82 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { activateModelProfile, DEEPSEEK_BASE_URL, looksLikeMimoEndpoint, MIMO_BASE_URL, recoverProviderProfiles } from './modelConfig.js';
+import { DEFAULT_BOTS } from './bots/registry.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const rootDir = path.resolve(__dirname, '..');
 const dataDir = process.env.DATA_DIR || path.join(process.env.APPDATA || path.join(process.env.USERPROFILE || 'C:', 'AppData', 'Roaming'), 'Wuxin');
 const dbPath = path.join(dataDir, 'db.json');
+const dbLockPath = path.join(dataDir, 'db.lock');
+
+function sleepSync(ms) {
+  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
+}
+
+function lockOwnerIsAlive() {
+  try {
+    const pid = Number(fs.readFileSync(dbLockPath, 'utf8').trim());
+    if (!Number.isInteger(pid) || pid <= 0) return false;
+    process.kill(pid, 0);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function withDbLock(callback) {
+  fs.mkdirSync(dataDir, { recursive: true });
+  let handle;
+  for (let attempt = 0; attempt < 200; attempt += 1) {
+    try {
+      handle = fs.openSync(dbLockPath, 'wx');
+      fs.writeFileSync(handle, String(process.pid), 'utf8');
+      break;
+    } catch (error) {
+      const lockExists = fs.existsSync(dbLockPath);
+      if (!['EEXIST', 'EPERM', 'EACCES'].includes(error?.code)) throw error;
+      if (!lockExists) {
+        sleepSync(10);
+        continue;
+      }
+      let stale = false;
+      try {
+        const ageMs = Date.now() - fs.statSync(dbLockPath).mtimeMs;
+        stale = ageMs > 30_000 || (ageMs > 2_000 && !lockOwnerIsAlive());
+      } catch {
+        stale = false;
+      }
+      if (stale) {
+        try { fs.unlinkSync(dbLockPath); } catch { /* another process may own cleanup */ }
+      } else {
+        sleepSync(25);
+      }
+    }
+  }
+  if (handle === undefined) throw new Error('数据库写入锁等待超时，请检查是否重复启动了多个 Wuxin 后端。');
+  try {
+    return callback();
+  } finally {
+    try { fs.closeSync(handle); } catch { /* ignore close failure */ }
+    try { fs.unlinkSync(dbLockPath); } catch { /* ignore cleanup race */ }
+  }
+}
 
 function writeJsonAtomic(filePath, value) {
   const tempPath = `${filePath}.${process.pid}.${Date.now()}.tmp`;
   const payload = JSON.stringify(value, null, 2);
   try {
     fs.writeFileSync(tempPath, payload, 'utf8');
-    fs.renameSync(tempPath, filePath);
+    for (let attempt = 0; ; attempt += 1) {
+      try {
+        fs.renameSync(tempPath, filePath);
+        break;
+      } catch (error) {
+        if (!['EPERM', 'EBUSY', 'EACCES'].includes(error?.code) || attempt >= 20) throw error;
+        sleepSync(25 * (attempt + 1));
+      }
+    }
   } catch (error) {
     try { if (fs.existsSync(tempPath)) fs.unlinkSync(tempPath); } catch { /* ignore cleanup failure */ }
     throw error;
@@ -22,14 +86,11 @@ function writeJsonAtomic(filePath, value) {
 // This is only the factory-default prompt used when data/db.json does not exist,
 // or when no saved reset baseline exists. The real live prompt is stored in
 // db.settings.personalityPrompt and can be changed from the GUI or /w prompt.
-export const defaultPrompt = `你是 Wuxin，一个只在内部 QQ 小群里聊天的 AI 群友。
-你不是客服，不是群管，也不是工作助手。
-你的目标是像群友一样自然接话：简短、轻松、有分寸。
-除非别人认真问问题，否则不要长篇大论。
-不要每次强调自己是 AI。
-不要刷屏，不要连续抢话。
-如果群里大家正在快速聊天，你可以少说一点。
-管理员策略必须服从：黑名单不回应，重点关注的人更优先回应。`;
+export const defaultPrompt = `日常交流保持自然、简短、有分寸，像熟悉的群友，不使用客服、主持人、管家或刻意的二次元表演语气。
+普通闲聊通常一到两句；对方明确要求解释、方案、总结或长文时再完整展开。
+可以幽默，但不要用力搞笑、阴阳怪气、括号表演或编造关系。
+不要无条件安慰、教育、总结或给建议。被指出错误时直接承认，不狡辩。
+不要使用古怪敬语，也不要因为对方是管理者就谄媚；保持自然、认真和不卑不亢。`;
 
 export const defaultCommandRoles = [
   { id: 'guest', name: '普通群员', level: 0, locked: true },
@@ -74,7 +135,12 @@ export const defaultCommandPermissions = {
   recalc: 'guest',
   groupAdd: 'owner',
   memberPolicy: 'owner',
-  exp: 'owner'
+  exp: 'owner',
+  osuBind: 'guest',
+  osuAnalyze: 'guest',
+  osuRecent: 'guest',
+  osuClearCache: 'admin',
+  osuHelp: 'guest'
 };
 
 const initialDb = {
@@ -83,8 +149,16 @@ const initialDb = {
     onlyMentionMode: false,
     llmProvider: process.env.LLM_PROVIDER || 'deepseek',
     apiKey: process.env.LLM_API_KEY || process.env.DEEPSEEK_API_KEY || '',
-    apiBaseUrl: process.env.LLM_API_BASE_URL || 'https://api.deepseek.com',
-    model: 'deepseek-v4-flash',
+    apiBaseUrl: process.env.LLM_API_BASE_URL || DEEPSEEK_BASE_URL,
+    deepseekApiKey: process.env.DEEPSEEK_API_KEY || '',
+    deepseekApiBaseUrl: DEEPSEEK_BASE_URL,
+    mimoApiKey: process.env.MIMO_API_KEY || '',
+    mimoApiBaseUrl: process.env.MIMO_API_BASE_URL || MIMO_BASE_URL,
+    model: process.env.LLM_MODEL || (
+      looksLikeMimoEndpoint(process.env.LLM_API_BASE_URL) || process.env.LLM_PROVIDER === 'openai-compatible'
+        ? 'mimo-v2.5'
+        : 'deepseek-v4-flash'
+    ),
     visionMode: 'auto',
     visionImageTransport: 'auto',
     visionMaxImages: 3,
@@ -112,6 +186,9 @@ const initialDb = {
     searchMaxResults: 5,
     searchTimeoutMs: 8000,
     enableAutoModel: true,
+    llmReplyGateMaxPerHour: 0,
+    llmReplyGateNaturalThreshold: 45,
+    llmReplyGateLightThreshold: 70,
     ignoreSystemFacts: false,
     memoryEnabled: true,
     memoryMinMessages: 5,
@@ -124,9 +201,19 @@ const initialDb = {
     memoryMaxChars: 900,
     memorySampleRetain: 120,
     levelUpNotifyEnabled: true,
+    osuClientId: process.env.OSU_CLIENT_ID || '',
+    osuClientSecret: process.env.OSU_CLIENT_SECRET || '',
+    pplusClientId: 0,
+    pplusClientSecret: '',
+    pplusBaseUrl: 'http://127.0.0.1:9001',
+    pplusReferences: [] as (string | number)[],
     commandRoles: defaultCommandRoles,
-    commandPermissions: defaultCommandPermissions
+    commandPermissions: defaultCommandPermissions,
+    botRegistry: undefined // populated by normalizeDb from defaults
   },
+  botRegistry: undefined,
+  skillStore: { records: [], updatedAt: '' },
+  groupBotConfig: {}, // { groupId: { yumu: true, kanon: true, hydrant: true, lazybot: true } }
   groups: [],
   users: [],
   memories: [],
@@ -168,7 +255,7 @@ function normalizeDb(db) {
     });
   }
 
-  db.settings = {
+  db.settings = activateModelProfile({
     ...initialDb.settings,
     ...settings,
     commandRoles: [...roleMap.values()].sort((a, b) => a.level - b.level),
@@ -176,10 +263,35 @@ function normalizeDb(db) {
       ...defaultCommandPermissions,
       ...(settings.commandPermissions || {})
     }
-  };
+  }, settings.model || initialDb.settings.model);
+  db.settings = recoverProviderProfiles(db.settings, db.configSnapshots || []);
 
   db.groups ||= [];
   db.users ||= [];
+  // Bot registry: merge saved bots with defaults (add new default bots, keep user changes)
+  if (!db.settings.botRegistry) {
+    db.settings.botRegistry = { bots: DEFAULT_BOTS, updatedAt: new Date().toISOString() };
+  } else {
+    const saved = db.settings.botRegistry || { bots: [] };
+    const merged = DEFAULT_BOTS.map((def) => {
+      const existing = (saved.bots || []).find((b) => b.id === def.id);
+      return existing ? { ...def, ...existing, commands: existing.commands?.length ? existing.commands : def.commands } : def;
+    });
+    // Add any user-created bots not in defaults
+    for (const b of saved.bots || []) {
+      if (!merged.find((m) => m.id === b.id)) merged.push(b);
+    }
+    db.settings.botRegistry = { bots: merged, updatedAt: saved.updatedAt || new Date().toISOString() };
+  }
+  db.botRegistry = db.settings.botRegistry;
+  db.skillStore ||= { records: [], updatedAt: '' };
+  db.groupBotConfig ||= {};
+  // Ensure all known groups have a default bot config entry
+  for (const group of db.groups || []) {
+    if (!db.groupBotConfig[group.groupId]) {
+      db.groupBotConfig[group.groupId] = { yumu: true, kanon: true, hydrant: true, lazybot: true };
+    }
+  }
   db.memories ||= [];
   db.groupProfiles ||= [];
   db.relationshipProfiles ||= [];
@@ -208,31 +320,89 @@ function normalizeDb(db) {
 export function ensureStore() {
   fs.mkdirSync(dataDir, { recursive: true });
   if (!fs.existsSync(dbPath)) {
-    writeJsonAtomic(dbPath, initialDb);
+    withDbLock(() => {
+      if (!fs.existsSync(dbPath)) writeJsonAtomic(dbPath, initialDb);
+    });
   }
 }
 
-export function readDb() {
-  ensureStore();
+function readDbUnlocked() {
   const raw = fs.readFileSync(dbPath, 'utf8').replace(/^﻿/, '');
   return normalizeDb(JSON.parse(raw));
 }
 
+export function readDb() {
+  ensureStore();
+  return readDbUnlocked();
+}
+
 export function writeDb(db) {
   ensureStore();
-  writeJsonAtomic(dbPath, db);
+  return withDbLock(() => writeJsonAtomic(dbPath, db));
 }
 
 export function updateDb(mutator) {
-  const db = readDb();
-  const result = mutator(db);
-  writeDb(db);
-  return result ?? db;
+  ensureStore();
+  return withDbLock(() => {
+    const db = readDbUnlocked();
+    const result = mutator(db);
+    writeJsonAtomic(dbPath, db);
+    return result ?? db;
+  });
 }
 
 export function publicDb(db = readDb()) {
   const now = new Date();
   const localDayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+  const currentHourStart = new Date(now.getFullYear(), now.getMonth(), now.getDate(), now.getHours()).getTime();
+  const hourlyUsage = Array.from({ length: 24 }, (_, index) => {
+    const start = currentHourStart - (23 - index) * 60 * 60 * 1000;
+    const date = new Date(start);
+    return {
+      start,
+      label: `${String(date.getHours()).padStart(2, '0')}:00`,
+      totalTokens: 0,
+      promptTokens: 0,
+      completionTokens: 0,
+      requests: 0
+    };
+  });
+  const dailyUsage = Array.from({ length: 7 }, (_, index) => {
+    const date = new Date(now.getFullYear(), now.getMonth(), now.getDate() - (6 - index));
+    return {
+      start: date.getTime(),
+      label: `${date.getMonth() + 1}/${date.getDate()}`,
+      totalTokens: 0,
+      promptTokens: 0,
+      completionTokens: 0,
+      requests: 0
+    };
+  });
+  const hourlyByStart = new Map(hourlyUsage.map((bucket) => [bucket.start, bucket]));
+  const dailyByStart = new Map(dailyUsage.map((bucket) => [bucket.start, bucket]));
+  const todayUsage = { totalTokens: 0, promptTokens: 0, completionTokens: 0, requests: 0 };
+  for (const event of db.usageEvents || []) {
+    const time = new Date(event.createdAt || 0);
+    const timestamp = time.getTime();
+    if (!Number.isFinite(timestamp)) continue;
+    const values = {
+      totalTokens: Number(event.totalTokens || 0),
+      promptTokens: Number(event.promptTokens || 0),
+      completionTokens: Number(event.completionTokens || 0)
+    };
+    const add = (bucket) => {
+      if (!bucket) return;
+      bucket.totalTokens += values.totalTokens;
+      bucket.promptTokens += values.promptTokens;
+      bucket.completionTokens += values.completionTokens;
+      bucket.requests += 1;
+    };
+    if (timestamp >= localDayStart) add(todayUsage);
+    const hourStart = new Date(time.getFullYear(), time.getMonth(), time.getDate(), time.getHours()).getTime();
+    const dayStart = new Date(time.getFullYear(), time.getMonth(), time.getDate()).getTime();
+    add(hourlyByStart.get(hourStart));
+    add(dailyByStart.get(dayStart));
+  }
   const messages = (db.messages || []).slice(-500);
   const decisions = (db.decisions || []).slice(-300);
   const commandLogs = (db.commandLogs || []).slice(-300);
@@ -252,14 +422,21 @@ export function publicDb(db = readDb()) {
       // Never send secrets back to the browser in plaintext. The GUI uses these
       // placeholders to show that a secret is present without exposing it.
       apiKey: db.settings.apiKey ? '已填写' : '',
+      deepseekApiKey: db.settings.deepseekApiKey ? '已填写' : '',
+      mimoApiKey: db.settings.mimoApiKey ? '已填写' : '',
       oneBotAccessToken: db.settings.oneBotAccessToken ? '已填写' : '',
-      adminPassword: db.settings.adminPassword ? '已设置' : ''
+      adminPassword: db.settings.adminPassword ? '已设置' : '',
+      osuClientSecret: db.settings.osuClientSecret ? '已填写' : '',
+      pplusClientSecret: db.settings.pplusClientSecret ? '已填写' : ''
     },
     groups: db.groups || [],
     users: db.users || [],
     memories,
     groupProfiles: db.groupProfiles || [],
     relationshipProfiles: db.relationshipProfiles || [],
+    botRegistry: db.botRegistry || db.settings?.botRegistry || { bots: [], updatedAt: '' },
+    skillStore: db.skillStore || { records: [], updatedAt: '' },
+    groupBotConfig: db.groupBotConfig || {},
     pendingPairCounts: db.pendingPairCounts || {},
     trustScores: db.trustScores || {},
     experience: db.experience || {},
@@ -268,6 +445,11 @@ export function publicDb(db = readDb()) {
     decisions,
     commandLogs,
     usage: db.usage || initialDb.usage,
+    usageStats: {
+      today: todayUsage,
+      hourly24: hourlyUsage,
+      daily7: dailyUsage
+    },
     stateStats: {
       totalMessages: (db.messages || []).length,
       todayMessages: (db.messages || []).filter((message) => {

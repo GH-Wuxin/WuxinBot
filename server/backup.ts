@@ -5,6 +5,7 @@ import { writeDb } from './store.js';
 const dataDir = process.env.DATA_DIR || path.join(process.env.APPDATA || path.join(process.env.USERPROFILE || 'C:', 'AppData', 'Roaming'), 'Wuxin');
 const dbPath = path.join(dataDir, 'db.json');
 const backupDir = path.join(dataDir, 'backups');
+const BACKUP_TYPES = new Set(['manual', 'auto', 'pre-restore']);
 
 function ensureBackupDir() {
   fs.mkdirSync(backupDir, { recursive: true });
@@ -23,12 +24,19 @@ function safeBackupName(name) {
 export function createBackup(type = 'manual') {
   ensureBackupDir();
   if (!fs.existsSync(dbPath)) return null;
+  const safeType = String(type || '').trim();
+  if (!BACKUP_TYPES.has(safeType)) {
+    throw new Error(`不支持的备份类型: ${safeType || '(空)'}`);
+  }
   const ts = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
-  const name = `${type}-${ts}.json`;
-  const dest = path.join(backupDir, name);
+  const name = `${safeType}-${ts}.json`;
+  const dest = path.resolve(backupDir, name);
+  if (!dest.startsWith(path.resolve(backupDir) + path.sep)) {
+    throw new Error('备份路径越界');
+  }
   fs.copyFileSync(dbPath, dest);
   // Write a tiny meta file
-  const meta = { type, name, createdAt: new Date().toISOString(), size: fs.statSync(dest).size };
+  const meta = { type: safeType, name, createdAt: new Date().toISOString(), size: fs.statSync(dest).size };
   fs.writeFileSync(dest + '.meta.json', JSON.stringify(meta, null, 2), 'utf8');
   return meta;
 }

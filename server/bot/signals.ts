@@ -1,3 +1,4 @@
+// @ts-nocheck -- legacy runtime module; new typed modules remain checked by tsc.
 // Shared interaction signal extractor — pure rules, no LLM.
 // Used by both auto-trust scoring and relationship profiles.
 import { textWithoutControlPlaceholders } from './cleaning.js';

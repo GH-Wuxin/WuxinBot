@@ -178,6 +178,114 @@ h2 {
   padding: 20px;
 }
 
+.usagePanel {
+  margin-bottom: 16px;
+}
+
+.usageHeader,
+.usageLegend {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.usageHeader h2 {
+  margin-bottom: 4px;
+}
+
+.usageHeader .hint {
+  margin: 0;
+}
+
+.usagePeriods {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(86px, 1fr));
+  gap: 6px;
+}
+
+.usagePeriods button {
+  justify-content: center;
+}
+
+.usagePeriods button.selected {
+  background: #20342f;
+  border-color: #20342f;
+  color: #fff;
+}
+
+.usageChart {
+  overflow-x: auto;
+  margin-top: 18px;
+  padding-bottom: 4px;
+}
+
+.usageBars {
+  display: grid;
+  grid-template-columns: repeat(24, minmax(28px, 1fr));
+  gap: 6px;
+  min-width: 720px;
+  height: 220px;
+  border-bottom: 1px solid #d9d7ce;
+}
+
+.usageChart.daily7 .usageBars {
+  grid-template-columns: repeat(7, minmax(54px, 1fr));
+  min-width: 480px;
+}
+
+.usageColumn {
+  display: grid;
+  grid-template-rows: 24px minmax(0, 1fr) 24px;
+  min-width: 0;
+  text-align: center;
+}
+
+.usageValue,
+.usageColumn > span {
+  color: #68736e;
+  font-size: 11px;
+  line-height: 20px;
+  white-space: nowrap;
+}
+
+.usageTrack {
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  min-height: 0;
+}
+
+.usageBar {
+  width: min(24px, 72%);
+  background: #2f8872;
+  border-radius: 4px 4px 0 0;
+  transition: background 120ms ease;
+}
+
+.usageColumn:hover .usageBar {
+  background: #1f6958;
+}
+
+.usageLegend {
+  margin-top: 12px;
+  color: #68736e;
+  font-size: 12px;
+}
+
+.usageLegend span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.usageSwatch {
+  width: 10px;
+  height: 10px;
+  background: #2f8872;
+  border-radius: 2px;
+}
+
 .grid {
   display: grid;
   gap: 16px;
@@ -640,6 +748,8 @@ input[type="range"] {
   .topbar,
   .actions,
   .modelSwitch,
+  .usageHeader,
+  .usageLegend,
   .item,
   .permissionRow {
     align-items: stretch;

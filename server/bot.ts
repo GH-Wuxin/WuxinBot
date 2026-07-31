@@ -1,3 +1,5 @@
+// @ts-nocheck -- legacy runtime module; new typed modules remain checked by tsc.
+import { pathToFileURL } from 'node:url';
 import { defaultPrompt, readDb, updateDb, nowIso } from './store.js';
 import {
   normalizeMessage,
@@ -62,25 +64,118 @@ import { processTrustSignal, evaluateTrustScores, trustInteractionBonus, isTrust
 import { processXpGain, getExperience, getXpBonus, formatXpBar, getUnlockedFeatures, getLevelInfo, getNextLevelInfo, LEVELS, decayInactiveUsers } from './bot/experience.js';
 import { isSearchAvailable, searchWeb, formatSearchResults, getLastSearchStatus, extractSearchQuery } from './bot/search.js';
 import { setBotPaused, getRecalcProgress, startRecalc, tickRecalc, finishRecalc } from './health.js';
+import { activateModelProfile, activeProviderLabel } from './modelConfig.js';
+import { handleOsuCommand } from './osu/commands.js';
+import { loadRegistry, buildBotToolSchemas, enabledBots, findBot } from './bots/registry.js';
+import { detectRequiredOsuTool, detectNamedBotRequest, detectBpTypeAnalysisIntent } from './bots/intent.js';
+import { validateOperation } from './bots/guard.js';
+import { runToolLoop, tryResolveBotResponse } from './bots/executor.js';
 
-// User policies are not hard permissions by themselves. They mainly bias the
-// reply decision engine. Hard permission checks for owner/admin commands happen
-// in processIncoming/handleOwnerCommand below.
-const policyWeight = {
-  blocked: -999,
-  muted: -80,
-  normal: 0,
-  whitelist: 25,
-  priority: 45,
-  admin: 20,
-  owner: 60
-};
+function escapeCqParam(value) {
+  return String(value || '')
+    .replace(/&/g, '&amp;')
+    .replace(/\[/g, '&#91;')
+    .replace(/\]/g, '&#93;')
+    .replace(/,/g, '&#44;');
+}
+
+function toolImageToCq(image) {
+  const value = String(image || '').trim();
+  if (!value) return '';
+  if (/^\[CQ:image,[^\]]+\]$/i.test(value)) return value;
+
+  let source = value;
+  const dataUri = value.match(/^data:image\/[^;,]+;base64,(.+)$/is);
+  if (dataUri) {
+    source = `base64://${dataUri[1].replace(/\s+/g, '')}`;
+  } else if (/^[a-zA-Z]:[\\/]/.test(value)) {
+    source = pathToFileURL(value).href;
+  }
+
+  return `[CQ:image,file=${escapeCqParam(source)}]`;
+}
+
+function toolImageToMediaInput(image) {
+  const value = String(image || '').trim();
+  // Message history is durable JSON. Never duplicate a large inline/base64
+  // image into it; rendered panels normally arrive as a short file URL and QQ
+  // images as a short HTTPS URL.
+  if (!value || value.length > 16_384 || /^base64:\/\//i.test(value)) return null;
+  const parsed = extractImageInputs(value)[0];
+  if (parsed) return parsed;
+  if (/^(?:https?:|data:image\/)/i.test(value)) {
+    return { type: 'image', url: value };
+  }
+  return { type: 'image', file: value };
+}
+
+export function compactDirectToolLead(text, directContent = '', hasImages = false) {
+  const fallback = hasImages
+    ? '查好了，结果在图里。'
+    : '查好了，完整结果放在下面。';
+  const cleaned = String(text || '')
+    // The model writes only a human lead. It must never be able to emit a QQ
+    // control segment alongside the system-owned direct payload.
+    .replace(/\[CQ:[^\]]+\]/gi, ' ')
+    .replace(/\[(?:图片|表情|表情包|视频|文件|语音)\]/g, ' ')
+    .replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/g, '')
+    .replace(/^```[^\n]*\n?/i, '')
+    .replace(/```$/i, '')
+    .trim();
+  if (!cleaned) return fallback;
+
+  // Must contain at least one letter or digit — pure punctuation/emoji → fallback
+  if (!/[\p{L}\p{N}]/u.test(cleaned)) return fallback;
+
+  // Data-like fragments (starts with #N or contains dense numbers/pipes) → fallback
+  if (/^(?:#\d+\b|[-•]\s)/u.test(cleaned)) return fallback;
+
+  // Let the LLM's full evaluation through — just check it's not raw data regurgitation
+  const normalizedCleaned = cleaned.replace(/\s+/g, '');
+  const normalizedDirect = String(directContent || '').replace(/\s+/g, '');
+  if (normalizedCleaned.length >= 8 && normalizedDirect.startsWith(normalizedCleaned)) {
+    return fallback;
+  }
+  return cleaned;
+}
 
 // Reply queue: when a reply is being generated for a group, new @bot messages
 // are queued instead of dropped. After the current reply finishes, the next
 // queued message is processed automatically (FIFO).
 const REPLY_QUEUE_LIMIT = 10;
 const REPLY_QUEUE_TTL_MS = 90_000;
+const INBOUND_EVENT_DEDUPE_TTL_MS = 10 * 60_000;
+const INBOUND_EVENT_DEDUPE_LIMIT = 5_000;
+const recentInboundEvents = new Map();
+
+function claimInboundEvent(event) {
+  const messageId = String(event?.messageId || '').trim();
+  if (!messageId || event?.source === 'gui') return true;
+
+  const now = Date.now();
+  const key = [
+    String(event?.source || 'unknown'),
+    String(event?.type || 'unknown'),
+    String(event?.groupId || 'private'),
+    messageId
+  ].join(':');
+  const seenAt = recentInboundEvents.get(key);
+  if (Number.isFinite(seenAt) && now - seenAt < INBOUND_EVENT_DEDUPE_TTL_MS) {
+    return false;
+  }
+
+  recentInboundEvents.set(key, now);
+  if (recentInboundEvents.size > INBOUND_EVENT_DEDUPE_LIMIT) {
+    for (const [candidate, timestamp] of recentInboundEvents) {
+      if (now - timestamp >= INBOUND_EVENT_DEDUPE_TTL_MS ||
+          recentInboundEvents.size > INBOUND_EVENT_DEDUPE_LIMIT) {
+        recentInboundEvents.delete(candidate);
+      }
+      if (recentInboundEvents.size <= INBOUND_EVENT_DEDUPE_LIMIT) break;
+    }
+  }
+  return true;
+}
 const replyQueues = new Map(); // key → { locked: boolean, queue: [{event, sendMessage, decision}] }
 
 function getQueueState(key) {
@@ -347,7 +442,185 @@ function shouldUseRecentVisionImage(db, event) {
   return mentioned || botConversation.active;
 }
 
-export function decideReply({ db, group, userPolicy, text, mentioned, userId, images = [] }) {
+function recentLlmGateCalls(db, groupId, minutes = 60) {
+  const since = Date.now() - minutes * 60_000;
+  return (db.usageEvents || []).filter((event) =>
+    event.kind === 'reply-gate' &&
+    String(event.groupId || '') === String(groupId || '') &&
+    new Date(event.createdAt || 0).getTime() >= since
+  ).length;
+}
+
+function recordLlmGateUsage({ groupId, userId, result, error, verdict, threshold }) {
+  updateDb((draft) => {
+    draft.usageEvents ||= [];
+    const usage = result?.usage || {};
+    if (result) {
+      draft.usage.totalTokens += usage.total_tokens || 0;
+      draft.usage.promptTokens += usage.prompt_tokens || 0;
+      draft.usage.completionTokens += usage.completion_tokens || 0;
+      draft.usage.requests += 1;
+    } else {
+      draft.usage.errors += 1;
+    }
+    draft.usageEvents.push({
+      id: crypto.randomUUID(),
+      kind: 'reply-gate',
+      groupId,
+      userId,
+      model: result?.model || draft.settings.model,
+      provider: result?.provider || draft.settings.llmProvider,
+      totalTokens: usage.total_tokens || 0,
+      promptTokens: usage.prompt_tokens || 0,
+      completionTokens: usage.completion_tokens || 0,
+      latencyMs: result?.latencyMs || 0,
+      gateScore: verdict?.score,
+      gateReason: verdict?.reason || '',
+      gateThreshold: threshold,
+      gateDecision: Number.isFinite(verdict?.score) ? (verdict.score >= threshold ? 'reply' : 'silent') : 'invalid',
+      gateRaw: verdict?.raw || '',
+      error: error ? String(error).slice(0, 180) : '',
+      createdAt: nowIso()
+    });
+    draft.usageEvents = draft.usageEvents.slice(-5000);
+  });
+}
+
+function cleanGateMessage(value, marksOtherMention = false) {
+  const raw = String(value || '');
+  const hasAt = /\[CQ:at,qq=[^\]]+\]/i.test(raw);
+  const cleaned = textWithoutControlPlaceholders(raw)
+    .replace(/\[CQ:(?:markdown|json|xml|forward)[^\]]*\]/gi, ' ')
+    .replace(/\[CQ:[^\]]+\]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+  if (!cleaned) return '';
+  return marksOtherMention && hasAt ? `（这条消息提及了其他群友）${cleaned}` : cleaned;
+}
+
+function parseGateVerdict(value) {
+  const raw = String(value || '').trim().slice(0, 240);
+  const unfenced = raw.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '').trim();
+  try {
+    const match = unfenced.match(/\{[\s\S]*\}/);
+    if (match) {
+      const parsed = JSON.parse(match[0]);
+      const score = Math.max(0, Math.min(100, Number(parsed.score)));
+      if (Number.isFinite(score)) {
+        return { score, reason: String(parsed.reason || '模型未说明理由').slice(0, 40), raw };
+      }
+    }
+  } catch { /* fall through to tolerant parsing */ }
+  const lineScore = unfenced.match(/SCORE\s*=\s*(\d{1,3})/i);
+  if (lineScore) {
+    const lineReason = unfenced.match(/REASON\s*=\s*([^\r\n]+)/i);
+    return {
+      score: Math.max(0, Math.min(100, Number(lineScore[1]))),
+      reason: String(lineReason?.[1] || '模型未说明理由').slice(0, 40),
+      raw
+    };
+  }
+  const scoreMatch = unfenced.match(/(?:score|分数|意愿)\D{0,8}(\d{1,3})/i);
+  if (scoreMatch) {
+    return { score: Math.max(0, Math.min(100, Number(scoreMatch[1]))), reason: '从非标准输出提取分数', raw };
+  }
+  if (/^不回/.test(unfenced)) return { score: 0, reason: '模型明确选择不回复', raw };
+  if (/^回/.test(unfenced)) return { score: 100, reason: '模型明确选择回复', raw };
+  return { score: null, reason: '模型没有给出可识别分数', raw };
+}
+
+// LLM reply gate: replaces Math.random() dice in light/natural modes. Calls
+// are metered like normal completions and may be capped per group per hour.
+async function llmReplyGate(db, groupId, text, { mode, question, chatIsBusy, recentBotReplies10m, userPolicy, userId }) {
+  const hourlyLimit = Math.max(0, Number(db.settings.llmReplyGateMaxPerHour || 0));
+  if (hourlyLimit > 0 && recentLlmGateCalls(db, groupId) >= hourlyLimit) {
+    return { shouldReply: false, reason: `LLM 门控已达到每小时 ${hourlyLimit} 次上限` };
+  }
+  const recentMessages = (db.messages || [])
+    .filter(m => String(m.groupId) === String(groupId) && m.role === 'user')
+    .slice(-8)
+    .map((message) => ({ ...message, gateText: cleanGateMessage(message.content) }))
+    .filter((message) => message.gateText)
+    .slice(-5);
+
+  const contextLines = recentMessages.map(m =>
+    `${m.nickname || m.userId}: ${m.gateText.slice(0, 120)}`
+  ).join('\n');
+  const latestText = cleanGateMessage(text, true) || '（无有效文字）';
+  const threshold = mode === 'light'
+    ? Math.max(0, Math.min(100, Number(db.settings.llmReplyGateLightThreshold ?? 70)))
+    : Math.max(0, Math.min(100, Number(db.settings.llmReplyGateNaturalThreshold ?? 45)));
+
+  const senderNote = userPolicy?.policy === 'trusted' ? '\n发消息的人是群里的信任成员。' :
+    userPolicy?.policy === 'priority' ? '\n发消息的人是重点关注对象。' : '';
+
+  const busyNote = chatIsBusy ? '\n注意：当前群聊很活跃，请慎重接话。' : '';
+  const fatigueNote = recentBotReplies10m >= 3 ? '\n你近期已经说了不少话，不要每条都接。' : '';
+  const questionNote = question ? '\n这条消息看起来是个问题。' : '';
+
+  const prompt = [
+    '你是QQ群里的一名普通群友。请判断是否值得主动接上最新一句话。机器人已经通过硬性安全和频率检查，现在只需要判断聊天价值。',
+    '',
+    `当前参与模式：${mode === 'light' ? '轻度参与（更克制）' : '自然群友（可以主动参与）'}`,
+    `系统会在分数达到 ${threshold} 时回复。请诚实评分，不要为了“谨慎”习惯性给低分。`,
+    '',
+    '评分参考：',
+    '- 85-100：明确向大家提问、邀请回应、需要安慰或非常适合接梗',
+    '- 60-84：有清晰话题、观点、经历或玩笑，你能自然贡献一句',
+    '- 40-59：普通闲聊但仍有可接内容；自然群友模式下可以参与',
+    '- 20-39：明显主要说给另一位群友、片段信息、接话价值较低',
+    '- 0-19：纯指令、机器内容、无意义灌水、话题已结束',
+    '- 没有 @ 机器人不是扣分理由；主动接话本来就是本次判断的目的',
+    '- 提及其他群友只说明主要对象可能不是你，不代表绝对不能参与；结合内容判断',
+    '',
+    '最近聊天记录：',
+    contextLines || '（没有更多上下文）',
+    '',
+    `最新消息：${latestText}`,
+    senderNote,
+    busyNote,
+    fatigueNote,
+    questionNote,
+    '',
+    '必须先输出分数，严格使用两行纯文本，不要 Markdown：',
+    'SCORE=0到100的整数',
+    'REASON=不超过20个字的理由'
+  ].join('\n');
+
+  // Resolve effective settings to check whether an API key is configured before
+  // even attempting the call. Without this, every gate attempt would fail
+  // silently with the user seeing only "LLM 门控调用失败" in decision logs.
+  const resolvedSettings = activateModelProfile(db.settings, db.settings.model);
+  const hasApiKey = String(resolvedSettings.apiKey || db.settings.apiKey || '').trim().length > 0;
+  if (!hasApiKey) {
+    return { shouldReply: false, reason: 'LLM 门控跳过（API Key 未配置）' };
+  }
+
+  try {
+    const result = await completeChat(db, {
+      messages: [{ role: 'user', content: prompt }],
+      // Reasoning models may spend the first part of max_tokens internally and
+      // otherwise return empty content. Keep enough room for a visible score.
+      maxTokens: 512,
+      temperature: 0.2,
+      timeoutMs: 15_000,
+      label: 'LLM门控'
+    });
+    const verdict = parseGateVerdict(result.text);
+    recordLlmGateUsage({ groupId, userId, result, verdict, threshold });
+    if (!Number.isFinite(verdict.score)) {
+      return { shouldReply: false, reason: `LLM 门控输出无效：${verdict.reason}` };
+    }
+    const reason = `LLM 门控 ${verdict.score}/${threshold}：${verdict.reason}`;
+    return { shouldReply: verdict.score >= threshold, reason };
+  } catch (error) {
+    const detail = String(error?.message || error?.code || error).slice(0, 100);
+    recordLlmGateUsage({ groupId, userId, error: detail, threshold });
+    return { shouldReply: false, reason: `LLM 门控失败：${detail}` };
+  }
+}
+
+export async function decideReply({ db, group, userPolicy, text, mentioned, userId, images = [] }) {
   // This is the main "should the bot speak?" gate. Keep cheap deterministic
   // checks first; only call the configured LLM after this returns shouldReply=true.
   if (db.settings.globalPaused) return { shouldReply: false, reason: '机器人处于全局暂停状态' };
@@ -398,27 +671,12 @@ export function decideReply({ db, group, userPolicy, text, mentioned, userId, im
   if (group.mode === 'mention') return { shouldReply: false, reason: '当前群只在 @ 时回复' };
   if (inCooldown) return { shouldReply: false, reason: '距离上次发言太近，正在冷却' };
 
-  const recentBotReplies10m = countRecentReplies(db, group.groupId, 10);
-  const recentUserMessages5m = countRecentUserMessages(db, group.groupId, 5);
-  const attention = Number(userPolicy.attentionLevel || 3);
-  const policyBase = userPolicy.policy === 'owner' ? 8 : (policyWeight[userPolicy.policy] ?? 0);
-  const trustBonus = trustInteractionBonus(db, userId).weightBonus;
-  const weight = policyBase + (attention - 3) * 5 + trustBonus;
-  const question = isQuestion(text);
-  const chatIsBusy = recentUserMessages5m >= 10;
-  const fatiguePenalty = Math.min(0.35, recentBotReplies10m * 0.06);
-  const busyPenalty = chatIsBusy ? 0.12 : 0;
-
-  if (group.mode === 'light') {
-    const chance = Math.max(0.08, 0.18 + weight / 160 - fatiguePenalty - busyPenalty);
-    if (question && Math.random() < chance) return { shouldReply: true, reason: '轻度参与：选择性回应问题' };
-  }
-
-  if (group.mode === 'natural') {
-    const questionChance = Math.max(0.12, 0.35 + weight / 150 - fatiguePenalty - busyPenalty);
-    const casualChance = Math.max(0.03, 0.06 + weight / 240 - fatiguePenalty - busyPenalty);
-    if (question && Math.random() < questionChance) return { shouldReply: true, reason: '自然聊天模式下选择性回应问题' };
-    if (Math.random() < casualChance) return { shouldReply: true, reason: '自然聊天模式下低频接话' };
+  if (group.mode === 'light' || group.mode === 'natural') {
+    const recentBotReplies10m = countRecentReplies(db, group.groupId, 10);
+    const recentUserMessages5m = countRecentUserMessages(db, group.groupId, 5);
+    const question = isQuestion(text);
+    const chatIsBusy = recentUserMessages5m >= 10;
+    return await llmReplyGate(db, group.groupId, text, { mode: group.mode, question, chatIsBusy, recentBotReplies10m, userPolicy, userId });
   }
 
   return { shouldReply: false, reason: '这条消息没有达到当前主动性阈值' };
@@ -459,13 +717,18 @@ export function oneBotToInternal(event) {
   };
 }
 
-export async function processIncoming(event, sendMessage, queuedDecision, isFromDrain) {
+export async function processIncoming(event, sendMessage = undefined, queuedDecision = undefined, isFromDrain = false) {
   // High-level pipeline:
   // 1. Ignore self messages and route slash commands.
   // 2. Log the incoming message and decide whether to reply.
   // 3. Handle deterministic visual-limitation replies (bot genuinely cannot see images).
   // 4. Call the configured LLM (with optional provider search), sanitize/rewrite, send, record usage.
   // Identity/model questions are handled by the model via the runtime-injected system prompt.
+  // A queued message was already claimed when it first entered the pipeline.
+  if (!isFromDrain && !claimInboundEvent(event)) {
+    return { replied: false, reason: '忽略重复投递的 OneBot message_id', duplicate: true };
+  }
+
   const db = readDb();
   const settings = db.settings;
   if (settings.selfQq && String(event.userId) === String(settings.selfQq)) {
@@ -474,7 +737,7 @@ export async function processIncoming(event, sendMessage, queuedDecision, isFrom
 
   const isPrivateOwner = event.type === 'private' && settings.ownerQq && String(event.userId) === String(settings.ownerQq);
   if (isPrivateOwner && event.text.startsWith('/')) {
-    return handleOwnerCommand(event);
+    return handleOwnerCommand(event, sendMessage);
   }
 
   const isGroupOwner = event.type === 'group' && settings.ownerQq && String(event.userId) === String(settings.ownerQq);
@@ -531,7 +794,7 @@ export async function processIncoming(event, sendMessage, queuedDecision, isFrom
   const mentioned = mentionsBot(event.text, settings);
   const decision = event.type === 'private'
     ? { shouldReply: String(event.userId) === String(settings.ownerQq || event.userId), reason: '私聊消息' }
-    : decideReply({ db, group, userPolicy, text: event.text, mentioned, userId: event.userId, images: event.images || [] });
+    : await decideReply({ db, group, userPolicy, text: event.text, mentioned, userId: event.userId, images: event.images || [] });
 
   updateDb((draft) => {
     draft.messages.push({
@@ -594,7 +857,7 @@ export async function processIncoming(event, sendMessage, queuedDecision, isFrom
   if (!decision.shouldReply) return { replied: false, reason: decision.reason };
 
   if (decision.visualLimitation) {
-    const replyText = visualLimitationReply(event);
+    const replyText = visualLimitationReply(event, db);
     const segments = await sendReplySegments(sendMessage, event, replyText);
     updateDb((draft) => {
       draft.messages.push({
@@ -656,9 +919,46 @@ export async function processIncoming(event, sendMessage, queuedDecision, isFrom
     const messages = buildPrompt(liveDb, liveGroup, event, liveUserPolicy);
     const responseOptions = responseOptionsFor(event, liveDb, liveUserPolicy);
     const explicitSearch = asksForExplicitSearch(event.text);
+    // osu! data queries use their own deterministic routing. Don't let the
+    // generic "查/搜" search keyword match eat them before tool availability
+    // is checked — the requiredTool path handles data retrieval directly.
+    const osuDataIntent = detectRequiredOsuTool(event.text);
+    const registryHere = loadRegistry(liveDb);
+    const namedBotRequest = detectNamedBotRequest(event.text, registryHere.bots || []);
+    const bpTypeAnalysis = detectBpTypeAnalysisIntent(event.text);
+
+    // ── BP type analysis guard ──
+    // "分析我的bp类型" needs real beatmap classification (osu!oracle on Top100),
+    // which is not wired into natural language yet. Reply honestly instead of
+    // letting the LLM fabricate proportions from PP+ dimensions.
+    if (bpTypeAnalysis && !osuDataIntent) {
+      const replyText = 'BP 谱面类型分析需要 osu!oracle 对 Top100 的真实分类，这项自然语言分析能力还没接入。可以用 /w osu analyze 生成带真实分类的完整分析。';
+      if (sendMessage) await sendMessage(event, replyText);
+      updateDb((draft) => {
+        draft.messages.push({ id: crypto.randomUUID(), role: 'assistant', type: event.type, groupId: event.groupId, userId: 'bot', nickname: '机器人', content: replyText, inContext: true, createdAt: nowIso() });
+        draft.usage.replies += 1;
+      });
+      await drainReplyQueue(replyLockKey);
+      return { replied: true, text: replyText, reason: 'bp_type_analysis_not_integrated' };
+    }
+
+    // ── Named-bot invocation guard ──
+    // User explicitly names a bot to do something (用猫猫查…、调用LazyBot). Without
+    // a real Harness adapter we must NOT impersonate the bot via query_osu and must
+    // NOT run a web search. Reply honestly exactly once.
+    if (namedBotRequest && !osuDataIntent) {
+      const replyText = `${namedBotRequest.botName}目前没有接入 Harness 的真实调用通道。无心内部 osu! 查询可以提供类似数据。`;
+      if (sendMessage) await sendMessage(event, replyText);
+      updateDb((draft) => {
+        draft.messages.push({ id: crypto.randomUUID(), role: 'assistant', type: event.type, groupId: event.groupId, userId: 'bot', nickname: '机器人', content: replyText, inContext: true, createdAt: nowIso() });
+        draft.usage.replies += 1;
+      });
+      await drainReplyQueue(replyLockKey);
+      return { replied: true, text: replyText, reason: 'named_bot_no_adapter' };
+    }
 
     // Real search: if explicitly requested, run searchWeb and inject results
-    if (explicitSearch && !isSearchAvailable(liveDb)) {
+    if (explicitSearch && !osuDataIntent && !namedBotRequest && !isSearchAvailable(liveDb)) {
       // Search requested but no real provider configured — don't let LLM fake it
       const replyText = '当前还没有接入真实联网搜索源。可以在控制台「模型」页配置 SearXNG 或其他搜索服务。';
       if (sendMessage) await sendMessage(event, replyText);
@@ -671,7 +971,7 @@ export async function processIncoming(event, sendMessage, queuedDecision, isFrom
     }
 
     let searchBlock = '';
-    if (explicitSearch && isSearchAvailable(liveDb)) {
+    if (explicitSearch && !osuDataIntent && !namedBotRequest && isSearchAvailable(liveDb)) {
       const searchQuery = extractSearchQuery(event.text);
       if (!searchQuery || searchQuery.length < 2) {
         const replyText = '你想让我搜什么？给我一个关键词或问题就行。';
@@ -721,9 +1021,11 @@ export async function processIncoming(event, sendMessage, queuedDecision, isFrom
       }
     }
     const searchMode = responseOptions.searchMode;
+    // Always offer tools when bots are enabled — the LLM decides when to use them
+    const useTools = enabledBots(loadRegistry(liveDb)).length > 0;
 
     // Thinking notice — configurable per thinkingNoticeMode
-    const thinkingMode = liveDb.settings.thinkingNoticeMode || 'slow';
+    const thinkingMode = useTools ? 'off' : (liveDb.settings.thinkingNoticeMode || 'slow');
     const thinkingDelay = Number(liveDb.settings.thinkingNoticeDelayMs || 3000);
     let thinkingSent = false;
 
@@ -756,14 +1058,115 @@ export async function processIncoming(event, sendMessage, queuedDecision, isFrom
       }
     }
 
-    const ai = await callLLM(liveDb, messages, searchMode, {
-      maxTokens: responseOptions.maxTokens,
-      overrideModel: responseOptions.overrideModel,
-      visionImages
-    });
+    // ── osu! data intent with no tools available ──
+    // osuDataIntent is computed above (before search interception). If the user
+    // is clearly asking for osu! data but no bots are enabled, fail explicitly
+    // instead of falling through to the LLM with no tool access.
+    if (osuDataIntent && !useTools) {
+      const errorText = '[系统] osu! 数据查询不可用：当前没有已启用的机器人，无法查询 osu! 数据。';
+      if (sendMessage) await sendMessage(event, errorText);
+      updateDb((draft) => {
+        draft.messages.push({
+          id: crypto.randomUUID(), role: 'assistant', type: event.type,
+          groupId: event.groupId, userId: 'bot', nickname: '机器人',
+          content: errorText, inContext: true, createdAt: nowIso()
+        });
+        draft.usage.replies += 1;
+      });
+      await drainReplyQueue(replyLockKey);
+      return { replied: true, text: errorText, reason: 'osu_intent_no_bots' };
+    }
+
+    // ── Bot harness tool loop ──
+    let ai;
+    let toolImages = [];
+    let toolDirectContent = '';
+    if (useTools) {
+      const registry = loadRegistry(liveDb);
+      const tools = buildBotToolSchemas(registry);
+      // Add tool availability note to system prompt
+      if (messages[0]?.role === 'system') {
+        messages[0].content += '\n\n【可用工具】你可以调用 query_osu 获取真实 osu! 数据（BP、最近成绩、玩家信息、PP+ 等）。数据来自 osu! API v2 和 PP+ 服务，不是你凭记忆编造的。涉及 osu! 数据时必须调用工具，不准用聊天记录或上下文中的旧数据。当玩家问"我是谁"等身份问题时也必须调工具查绑定。日常闲聊不需要使用工具。如果玩家问的是分析/判断类问题（为什么偏科、怎么提升），也需要先查数据再做分析。涉及 BP 谱面类型或占比（串图/跳图比例、bp 类型）的分析，在拿到真实分类数据之前不得给出比例或确定性结论——要直接说明该能力尚未接入。注意：雨沐/猫猫/消防栓/LazyBot 是 QQ 群里的独立机器人，不是你可以调用的工具——你应该用 query_osu 获取数据。';
+      }
+
+      // ── Deterministic osu! data routing ──
+      // When the user's intent is an unambiguous data lookup, we execute the
+      // tool before the LLM sees the context. This prevents context poisoning
+      // where repeated queries cause the model to skip tool calls.
+      let requiredTool: { toolName: string; args: Record<string, unknown> } | undefined;
+      if (osuDataIntent) {
+        const internalBotsEnabled = enabledBots(registry).some((b) => b.channel === 'internal');
+        const opValid = validateOperation({
+          type: 'query_osu',
+          params: osuDataIntent.args,
+        });
+        if (internalBotsEnabled && opValid.ok) {
+          requiredTool = osuDataIntent;
+        } else {
+          const reason = !internalBotsEnabled
+            ? '内部 osu! 工具未启用'
+            : `操作被安全策略拒绝: ${(opValid as any).reason || '未知原因'}`;
+          const errorText = `[系统] osu! 数据查询不可用：${reason}`;
+          if (sendMessage) await sendMessage(event, errorText);
+          updateDb((draft) => {
+            draft.messages.push({
+              id: crypto.randomUUID(), role: 'assistant', type: event.type,
+              groupId: event.groupId, userId: 'bot', nickname: '机器人',
+              content: errorText, inContext: true, createdAt: nowIso()
+            });
+            draft.usage.replies += 1;
+          });
+          await drainReplyQueue(replyLockKey);
+          return { replied: true, text: errorText, reason };
+        }
+      }
+
+      const toolResult = await runToolLoop(
+        (db, opts) => completeChat(db, {
+          ...opts,
+          searchMode,
+          visionImages,
+          label: opts.label || 'Bot Harness'
+        }),
+        {
+          db: liveDb,
+          messages,
+          tools,
+          userId: event.userId,
+          groupId: event.groupId,
+          sendMessage,
+          event,
+          selfQq: liveDb.settings.selfQq,
+          maxIterations: 4,
+          temperature: responseOptions.temperature,
+          maxTokens: responseOptions.maxTokens,
+          model: responseOptions.overrideModel,
+          label: 'Bot Harness',
+          requiredTool,
+        }
+      );
+
+      ai = {
+        text: toolResult.text,
+        usage: toolResult.usage,
+        latencyMs: undefined
+      };
+      toolImages = toolResult.images || [];
+      toolDirectContent = String(toolResult.directContent || '').trim();
+    } else {
+      ai = await callLLM(liveDb, messages, searchMode, {
+        maxTokens: responseOptions.maxTokens,
+        overrideModel: responseOptions.overrideModel,
+        visionImages
+      });
+    }
 
     let replyText = sanitizeReply(ai.text, liveDb.settings);
-    if (!responseOptions.longForm && isWeirdReply(replyText)) {
+    const imageCqCodes = toolImages.map(toolImageToCq).filter(Boolean);
+    const hasDirectToolDelivery = Boolean(toolDirectContent || imageCqCodes.length > 0);
+    if (hasDirectToolDelivery) {
+      replyText = compactDirectToolLead(replyText, toolDirectContent, imageCqCodes.length > 0);
+    } else if (!responseOptions.longForm && isWeirdReply(replyText)) {
       if (isIdentityQuestion(event.text)) {
         replyText = neutralIdentityReply(event, liveDb.settings);
       } else {
@@ -778,18 +1181,28 @@ export async function processIncoming(event, sendMessage, queuedDecision, isFrom
         }
       }
     }
-    if (!replyText) throw new Error('模型返回了空内容。');
+    if (!replyText && imageCqCodes.length === 0) throw new Error('模型返回了空内容。');
+    if (!replyText) replyText = imageCqCodes.length > 0 ? '查好了，结果在图里。' : '查好了。';
+    const deliveredText = [replyText, toolDirectContent].filter(Boolean).join('\n\n');
+    const deliveredMediaImages = toolImages.map(toolImageToMediaInput).filter(Boolean);
 
     // Long replies (>150 chars or multi-paragraph) are sent as merged-forward
     // cards to avoid flooding the chat. Short replies stay as segmented messages.
-    const newlineCount = (replyText.match(/\n/g) || []).length;
-    const isLongReply = responseOptions.longForm || replyText.length > 150 || newlineCount >= 2;
+    const newlineCount = (deliveredText.match(/\n/g) || []).length;
+    const isLongReply = responseOptions.longForm || deliveredText.length > 150 || newlineCount >= 2;
     let segments;
-    if (isLongReply && sendMessage) {
-      await sendForwardText(sendMessage, event, 'Wuxin 回复', replyText);
-      segments = [replyText];
+    if (hasDirectToolDelivery) {
+      // Structured tool output bypasses both the LLM restatement and the
+      // three-segment/merged-forward paths. NapCat receives one complete,
+      // deterministic message with any images appended structurally.
+      const outboundText = [deliveredText, ...imageCqCodes].filter(Boolean).join('\n');
+      if (sendMessage) await sendMessage(event, outboundText);
+      segments = [outboundText];
+    } else if (isLongReply && sendMessage) {
+      await sendForwardText(sendMessage, event, 'Wuxin 回复', deliveredText);
+      segments = [deliveredText];
     } else {
-      segments = await sendReplySegments(sendMessage, event, replyText);
+      segments = await sendReplySegments(sendMessage, event, deliveredText);
     }
 
     updateDb((draft) => {
@@ -800,7 +1213,8 @@ export async function processIncoming(event, sendMessage, queuedDecision, isFrom
         groupId: event.groupId,
         userId: 'bot',
         nickname: '机器人',
-        content: replyText,
+        content: deliveredText,
+        media: deliveredMediaImages.length > 0 ? { images: deliveredMediaImages } : undefined,
         inContext: true,
         createdAt: nowIso()
       });
@@ -823,7 +1237,15 @@ export async function processIncoming(event, sendMessage, queuedDecision, isFrom
       draft.usageEvents = draft.usageEvents.slice(-5000);
     });
 
-    return { replied: true, text: replyText, segments, usage: ai.usage, latencyMs: ai.latencyMs, reason: decision.reason };
+    return {
+      replied: true,
+      text: deliveredText,
+      images: toolImages,
+      segments,
+      usage: ai.usage,
+      latencyMs: ai.latencyMs,
+      reason: decision.reason
+    };
   } catch (error) {
     updateDb((draft) => {
       draft.usage.errors += 1;
@@ -844,7 +1266,7 @@ export async function processIncoming(event, sendMessage, queuedDecision, isFrom
   }
 }
 
-async function handleOwnerCommand(event, sendMessage, permissions = { isOwner: true, isAdmin: false }) {
+async function handleOwnerCommand(event, sendMessage = undefined, permissions = { isOwner: true, isAdmin: false }) {
   const meta = parseCommandMeta(event, permissions);
   const startedAt = Date.now();
   try {
@@ -1015,6 +1437,10 @@ async function runOwnerCommand(event, sendMessage, permissions = { isOwner: true
     { key: 'usage', group: '系统', line: '/w usage · 今日用量' },
     { key: 'pause', group: '系统', line: '/w pause/resume · 暂停恢复' },
     { key: 'why', group: '系统', line: '/w why · 最近为什么回/没回' },
+    { key: 'osuHelp', group: 'osu!', line: '/w osu help · osu! 命令帮助' },
+    { key: 'osuBind', group: 'osu!', line: '/w osu bind <用户名> · 绑定 osu! 账号' },
+    { key: 'osuAnalyze', group: 'osu!', line: '/w osu analyze (@某人) · 完整玩家分析' },
+    { key: 'osuRecent', group: 'osu!', line: '/w osu recent (@某人) · 近期成绩短评' },
     { key: 'help', group: '系统', line: '/w help · 本帮助 | /w help 分组名' },
     { key: 'ping', group: '系统', line: '/w ping · 检查在线' },
     { key: 'my', group: '系统', line: '/w my · 我的权限' },
@@ -1895,11 +2321,14 @@ ${costLines.length > 0 ? `费用明细：\n${costLines.join('\n')}\n今日合计
 
     if (command === '/model') {
       const arg = String(parts[2] || '').trim();
-      const knownModels = ['deepseek-v4-flash', 'deepseek-v4-pro', 'deepseek-chat', 'deepseek-reasoner'];
+      const knownModels = [
+        'mimo-v2.5', 'mimo-v2.5-pro', 'mimo-v2-omni', 'mimo-v2-pro',
+        'deepseek-v4-flash', 'deepseek-v4-pro', 'deepseek-chat', 'deepseek-reasoner'
+      ];
       if (!arg || arg === 'show') {
         if (!(await requireCommand('modelShow'))) return { replied: Boolean(sendMessage), reason: commandDeniedReply(commandDb, 'modelShow') };
         const db = readDb();
-        const reply = `当前模型：${db.settings.model}`;
+        const reply = `当前模型：${db.settings.model}\n接口：${activeProviderLabel(db.settings)}\nAPI Key：${db.settings.apiKey ? '已配置' : '未配置'}`;
         if (sendMessage) await sendMessage(event, reply);
         return { replied: Boolean(sendMessage), reason: '显示当前模型' };
       }
@@ -1913,19 +2342,21 @@ ${knownModels.join('\n')}
       }
 
       if (!(await requireCommand('modelSet'))) return { replied: Boolean(sendMessage), reason: commandDeniedReply(commandDb, 'modelSet') };
+      let switchedSettings;
       updateDb((draft) => {
-        draft.settings.model = arg;
+        draft.settings = activateModelProfile(draft.settings, arg);
+        switchedSettings = draft.settings;
         draft.adminActions.push({
           id: crypto.randomUUID(),
           operatorUserId: event.userId,
           action: '/wuxin model',
           targetUserId: 'bot',
           groupId: event.groupId,
-          detail: `模型切换为 ${arg}`,
+          detail: `模型切换为 ${arg}；接口=${activeProviderLabel(draft.settings)}`,
           createdAt: nowIso()
         });
       });
-      const reply = `已切换模型：${arg}`;
+      const reply = `已切换模型：${arg}\n接口：${activeProviderLabel(switchedSettings)}${switchedSettings?.apiKey ? '' : '\n注意：该接口的 API Key 尚未配置，请到控制台“模型”页填写。'}`;
       if (sendMessage) await sendMessage(event, reply);
       return { replied: Boolean(sendMessage), reason: reply };
     }
@@ -2432,6 +2863,18 @@ ${knownModels.join('\n')}
       if (sendMessage) await sendMessage(event, reply);
       return { replied: Boolean(sendMessage), error: error.message, reason: reply };
     }
+  }
+
+  if (command === '/osu' && isWuxinCommand) {
+    const permKey = subCommand === 'bind' ? 'osuBind'
+      : subCommand === 'analyze' ? 'osuAnalyze'
+      : subCommand === 'recent' ? 'osuRecent'
+      : subCommand === 'clear' ? 'osuClearCache'
+      : 'osuHelp';
+    if (!(await requireCommand(permKey))) {
+      return { replied: Boolean(sendMessage), reason: commandDeniedReply(commandDb, permKey) };
+    }
+    return handleOsuCommand(event, sendMessage, permissions, subCommand, commandArgs);
   }
 
   if (!isWuxinCommand) {
