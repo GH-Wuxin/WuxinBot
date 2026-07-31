@@ -139,9 +139,10 @@ export function compactDirectToolLead(text, directContent = '', hasImages = fals
   return cleaned;
 }
 
-// Reply queue: when a reply is being generated for a group, new @bot messages
-// are queued instead of dropped. After the current reply finishes, the next
-// queued message is processed automatically (FIFO).
+// Reply queue: each group+user pair keeps its own FIFO, so different members
+// never block each other. While a reply is being generated, that member's new
+// messages are queued; after the current reply finishes, queued messages from
+// the same member are merged into one reply and processed automatically.
 const REPLY_QUEUE_LIMIT = 20;
 const REPLY_QUEUE_TTL_MS = 180_000;
 const INBOUND_EVENT_DEDUPE_TTL_MS = 10 * 60_000;
@@ -222,14 +223,31 @@ async function drainReplyQueue(key) {
     replyQueues.delete(key);
     return;
   }
-  // Process next queued message. Lock stays held — pass isFromDrain=true
-  // so processIncoming skips the lock check and doesn't re-queue.
-  const next = state.queue.shift();
+  // Take ALL queued messages (same member by key design) and merge them into
+  // a single reply so a burst of messages costs one LLM turn, not N.
+  const items = state.queue.splice(0, state.queue.length);
+  const next = mergeQueuedReplyItems(items);
   try {
     await processIncoming(next.event, next.sendMessage, next.decision, true);
   } catch {
     // Errors are already handled inside processIncoming
   }
+}
+
+function mergeQueuedReplyItems(items) {
+  const last = items[items.length - 1];
+  const texts = items
+    .map((item) => String(item.event?.text || '').trim())
+    .filter(Boolean);
+  const event = { ...last.event };
+  if (texts.length > 1) {
+    event.text = texts.join('\n') + '\n（以上是同一成员连续发送的消息，请综合这些内容回复一次）';
+  }
+  return {
+    event,
+    sendMessage: last.sendMessage,
+    decision: last.decision,
+  };
 }
 
 function looksLikeExternalBotSender(event, settings = {}) {
@@ -792,65 +810,70 @@ export async function processIncoming(event, sendMessage = undefined, queuedDeci
   const group = getGroup(db, event.groupId);
   const userPolicy = getUserPolicy(db, event.groupId, event.userId);
   const mentioned = mentionsBot(event.text, settings);
-  const decision = event.type === 'private'
+  // On the first pass the message + decision are recorded and side effects
+  // (memory, XP, pair/profile pending) run exactly once. Drained replays use
+  // the stored decision and must NOT duplicate history or side effects.
+  const decision = queuedDecision || (event.type === 'private'
     ? { shouldReply: String(event.userId) === String(settings.ownerQq || event.userId), reason: '私聊消息' }
-    : await decideReply({ db, group, userPolicy, text: event.text, mentioned, userId: event.userId, images: event.images || [] });
+    : await decideReply({ db, group, userPolicy, text: event.text, mentioned, userId: event.userId, images: event.images || [] }));
 
-  updateDb((draft) => {
-    draft.messages.push({
-      id: crypto.randomUUID(),
-      role: 'user',
-      type: event.type,
-      groupId: event.groupId,
-      userId: event.userId,
-      nickname: event.nickname,
-      content: event.text,
-      media: event.images?.length ? { images: event.images } : undefined,
-      inContext: decision.inContext !== false,
-      createdAt: nowIso()
+  if (!isFromDrain) {
+    updateDb((draft) => {
+      draft.messages.push({
+        id: crypto.randomUUID(),
+        role: 'user',
+        type: event.type,
+        groupId: event.groupId,
+        userId: event.userId,
+        nickname: event.nickname,
+        content: event.text,
+        media: event.images?.length ? { images: event.images } : undefined,
+        inContext: decision.inContext !== false,
+        createdAt: nowIso()
+      });
+      draft.decisions.push({
+        id: crypto.randomUUID(),
+        messageId: event.messageId,
+        groupId: event.groupId,
+        userId: event.userId,
+        shouldReply: decision.shouldReply,
+        reason: decision.reason,
+        createdAt: nowIso()
+      });
     });
-    draft.decisions.push({
-      id: crypto.randomUUID(),
-      messageId: event.messageId,
-      groupId: event.groupId,
-      userId: event.userId,
-      shouldReply: decision.shouldReply,
-      reason: decision.reason,
-      createdAt: nowIso()
-    });
-  });
 
-  const memoryRecord = recordMemoryObservation(event, userPolicy);
-  if (memoryRecord.shouldUpdate) {
-    void maybeUpdateMemoryProfile(event);
-  } else {
-    maybeSweepDueMemoryProfiles(event);
-  }
-  if (event.images?.length) {
-    void maybeRecordImageMemorySummary(event, userPolicy);
-  }
+    const memoryRecord = recordMemoryObservation(event, userPolicy);
+    if (memoryRecord.shouldUpdate) {
+      void maybeUpdateMemoryProfile(event);
+    } else {
+      maybeSweepDueMemoryProfiles(event);
+    }
+    if (event.images?.length) {
+      void maybeRecordImageMemorySummary(event, userPolicy);
+    }
 
-  // Group profile auto-update: increment pending counter, trigger if threshold reached
-  if (event.type === 'group' && event.groupId && event.groupId !== 'private') {
-    incrementGroupProfilePending(db, event.groupId, event.text);
-    const xpResult = processXpGain(event, db);
-    incrementPairPending(db, event.groupId, event.userId);
+    // Group profile auto-update: increment pending counter, trigger if threshold reached
+    if (event.type === 'group' && event.groupId && event.groupId !== 'private') {
+      incrementGroupProfilePending(db, event.groupId, event.text);
+      const xpResult = processXpGain(event, db);
+      incrementPairPending(db, event.groupId, event.userId);
 
-    // Level-up congratulations
-    if (xpResult.levelUp && sendMessage && db.settings.levelUpNotifyEnabled !== false) {
-      const newInfo = getLevelInfo(xpResult.newLevel);
-      const features = getUnlockedFeatures(xpResult.newLevel);
-      const featureText = features.length ? `解锁：${features[features.length - 1]}` : '';
-      // Fire-and-forget: don't block the main reply
-      void (async () => {
-        try {
-          const congratsPrompt = `用户 ${event.nickname} 从 Lv.${xpResult.oldLevel} 升级到 ${newInfo.emoji} ${newInfo.title}（Lv.${newInfo.level}）。${featureText}。写一句简短的群内恭喜，15字以内，轻松活泼，不要重复。`;
-          const { completeChat } = await import('./bot/llm.js');
-          const resp = await completeChat(readDb(), { messages: [{ role: 'user', content: congratsPrompt }], temperature: 0.8, maxTokens: 50, label: '升级恭喜' });
-          const congratsText = resp.text?.trim() || `🎉 恭喜 ${event.nickname} 升级为 ${newInfo.emoji} ${newInfo.title}！`;
-          await sendMessage(event, congratsText);
-        } catch { /* non-fatal */ }
-      })();
+      // Level-up congratulations
+      if (xpResult.levelUp && sendMessage && db.settings.levelUpNotifyEnabled !== false) {
+        const newInfo = getLevelInfo(xpResult.newLevel);
+        const features = getUnlockedFeatures(xpResult.newLevel);
+        const featureText = features.length ? `解锁：${features[features.length - 1]}` : '';
+        // Fire-and-forget: don't block the main reply
+        void (async () => {
+          try {
+            const congratsPrompt = `用户 ${event.nickname} 从 Lv.${xpResult.oldLevel} 升级到 ${newInfo.emoji} ${newInfo.title}（Lv.${newInfo.level}）。${featureText}。写一句简短的群内恭喜，15字以内，轻松活泼，不要重复。`;
+            const { completeChat } = await import('./bot/llm.js');
+            const resp = await completeChat(readDb(), { messages: [{ role: 'user', content: congratsPrompt }], temperature: 0.8, maxTokens: 50, label: '升级恭喜' });
+            const congratsText = resp.text?.trim() || `🎉 恭喜 ${event.nickname} 升级为 ${newInfo.emoji} ${newInfo.title}！`;
+            await sendMessage(event, congratsText);
+          } catch { /* non-fatal */ }
+        })();
+      }
     }
   }
 
@@ -876,7 +899,11 @@ export async function processIncoming(event, sendMessage = undefined, queuedDeci
     return { replied: true, text: replyText, segments, reason: decision.reason };
   }
 
-  const replyLockKey = event.type === 'group' ? `group:${event.groupId}` : `private:${event.userId}`;
+  // Per-member FIFO: members of the same group reply in parallel, while each
+  // member's own rapid messages stay ordered (and get merged on drain).
+  const replyLockKey = event.type === 'group'
+    ? `group:${event.groupId}:${event.userId}`
+    : `private:${event.userId}`;
   const queueState = getQueueState(replyLockKey);
   if (!isFromDrain && queueState.locked) {
     if (queueState.queue.length >= REPLY_QUEUE_LIMIT) {
