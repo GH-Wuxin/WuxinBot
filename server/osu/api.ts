@@ -3,6 +3,7 @@
 
 import { getToken, refreshTokenOn401 } from './auth.js';
 import { cacheGet, cacheSet } from './cache.js';
+import { recordOsuApi429 } from '../health.js';
 import type { OsuUser, OsuScore, OsuBeatmap, OsuMode } from './types.js';
 
 const API_BASE = 'https://osu.ppy.sh/api/v2';
@@ -24,10 +25,12 @@ async function osuFetch<T>(path: string, options: RequestInit = {}): Promise<T> 
   const token = await getToken();
   const headers = { ...(options.headers || {}), Authorization: `Bearer ${token}` } as Record<string, string>;
   const response = await fetchWithTimeout(url, { ...options, headers });
+  if (response.status === 429) recordOsuApi429();
   if (response.status === 401) {
     const newToken = await refreshTokenOn401();
     const retryHeaders = { ...(options.headers || {}), Authorization: `Bearer ${newToken}` } as Record<string, string>;
     const retryResponse = await fetchWithTimeout(url, { ...options, headers: retryHeaders });
+    if (retryResponse.status === 429) recordOsuApi429();
     if (!retryResponse.ok) throw new Error(`osu! API ${retryResponse.status} ${path}`);
     return retryResponse.json() as Promise<T>;
   }
