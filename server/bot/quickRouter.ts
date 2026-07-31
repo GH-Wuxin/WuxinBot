@@ -540,8 +540,12 @@ export async function handleQuickCommand(
     if (def.handler === 'self_profile') {
       const user = bindingUser(db, String(event.userId));
       if (!user) {
-        if (sendMessage) await sendMessage(event, UNBOUND_SELF_PROMPT);
         log('unbound', 'self');
+        try {
+          if (sendMessage) await sendMessage(event, UNBOUND_SELF_PROMPT);
+        } catch (deliveryError: any) {
+          console.error('[quick] 未绑定提示发送失败:', deliveryError?.message || deliveryError);
+        }
         return { handled: true, replied: true, reason: 'unbound_self' };
       }
       bridgeCommand = `where ${user}`;
@@ -549,8 +553,12 @@ export async function handleQuickCommand(
       const target = String(atTargets?.[0] || '');
       const user = bindingUser(db, target);
       if (!user) {
-        if (sendMessage) await sendMessage(event, UNBOUND_TARGET_PROMPT);
         log('unbound', `at:${target}`);
+        try {
+          if (sendMessage) await sendMessage(event, UNBOUND_TARGET_PROMPT);
+        } catch (deliveryError: any) {
+          console.error('[quick] 未绑定提示发送失败:', deliveryError?.message || deliveryError);
+        }
         return { handled: true, replied: true, reason: 'unbound_target' };
       }
       bridgeCommand = `where ${user}`;
@@ -559,8 +567,12 @@ export async function handleQuickCommand(
       if (qqMatch) {
         const user = bindingUser(db, qqMatch[1]);
         if (!user) {
-          if (sendMessage) await sendMessage(event, UNBOUND_QQ_PROMPT);
           log('unbound', `qq:${qqMatch[1]}`);
+          try {
+            if (sendMessage) await sendMessage(event, UNBOUND_QQ_PROMPT);
+          } catch (deliveryError: any) {
+            console.error('[quick] 未绑定提示发送失败:', deliveryError?.message || deliveryError);
+          }
           return { handled: true, replied: true, reason: 'unbound_qq' };
         }
         bridgeCommand = `where ${user}`;
@@ -572,8 +584,12 @@ export async function handleQuickCommand(
         const target = usesAt ? String(atTargets[0]) : String(event.userId);
         const user = bindingUser(db, target);
         if (!user) {
-          if (sendMessage) await sendMessage(event, usesAt ? UNBOUND_TARGET_PROMPT : UNBOUND_SELF_PROMPT);
           log('unbound', usesAt ? `at:${target}` : 'self');
+          try {
+            if (sendMessage) await sendMessage(event, usesAt ? UNBOUND_TARGET_PROMPT : UNBOUND_SELF_PROMPT);
+          } catch (deliveryError: any) {
+            console.error('[quick] 未绑定提示发送失败:', deliveryError?.message || deliveryError);
+          }
           return { handled: true, replied: true, reason: usesAt ? 'unbound_target' : 'unbound_self' };
         }
         // Rebuild with the injected user before any BP range.
@@ -624,8 +640,12 @@ export async function handleQuickCommand(
     return { handled: true, replied: true, reason: 'dice' };
   }
   if (def.handler === 'bind' || def.handler === 'unbind') {
-    if (sendMessage) await sendMessage(event, BIND_HINT);
     log(def.handler);
+    try {
+      if (sendMessage) await sendMessage(event, BIND_HINT);
+    } catch (deliveryError: any) {
+      console.error('[quick] 绑定提示发送失败:', deliveryError?.message || deliveryError);
+    }
     return { handled: true, replied: true, reason: 'bind_hint' };
   }
 
@@ -701,14 +721,22 @@ export async function handleQuickCommand(
       const target = String(atTargets[0]);
       username = bindingUser(db, target);
       if (!username) {
-        if (sendMessage) await sendMessage(event, UNBOUND_TARGET_PROMPT);
         log('unbound', `at:${target}`);
+        try {
+          if (sendMessage) await sendMessage(event, UNBOUND_TARGET_PROMPT);
+        } catch (deliveryError: any) {
+          console.error('[quick] 未绑定提示发送失败:', deliveryError?.message || deliveryError);
+        }
         return { handled: true, replied: true, reason: 'unbound_target' };
       }
     }
     if (!username && !bindingUser(db, String(event.userId))) {
-      if (sendMessage) await sendMessage(event, UNBOUND_SELF_PROMPT);
       log('unbound', 'self');
+      try {
+        if (sendMessage) await sendMessage(event, UNBOUND_SELF_PROMPT);
+      } catch (deliveryError: any) {
+        console.error('[quick] 未绑定提示发送失败:', deliveryError?.message || deliveryError);
+      }
       return { handled: true, replied: true, reason: 'unbound_self' };
     }
     const botId = def.source === 'kanon' ? 'kanon' : def.source === 'lazybot' ? 'lazybot' : 'yumu';
