@@ -1,8 +1,6 @@
-// bp-type-analysis-guard-verify.mjs — regression for natural-language BP type
-// analysis. The bot must NOT fabricate proportions from PP+ dimensions: these
-// intents get a deterministic osu!oracle reply (or binding guidance when the
-// player is unbound) and never reach the LLM. Exit 0 / non-zero.
-
+// bp-type-analysis-guard-verify.mjs — osu!oracle is now an LLM-judged tool.
+// The hardcoded intent interception is gone; the bot exposes bp_type via
+// query_osu, and the tool result stays deterministic (no fabricated ratios).
 import http from 'node:http';
 import { createTestDataDir, assertNotProduction, productionDbSnapshot, verifyProductionDbUnchanged, cleanupTestDir } from './test-isolation.mjs';
 
@@ -17,6 +15,8 @@ console.log('[isolation] production db snapshot: ' + (prodBefore ? prodBefore.sh
 const { ensureStore, updateDb } = await import('../server/store.ts');
 const { processIncoming } = await import('../server/bot.ts');
 const { detectBpTypeAnalysisIntent, detectRequiredOsuTool } = await import('../server/bots/intent.ts');
+const { buildBotToolSchemas } = await import('../server/bots/registry.ts');
+const { validateOperation } = await import('../server/bots/guard.ts');
 const { formatClassifierBlock } = await import('../server/osu/classifier.ts');
 
 ensureStore();
@@ -39,23 +39,46 @@ function fail(label, msg) {
 }
 
 // ── Mock LLM server ──
-
+// First call returns a query_osu/bp_type tool call; later calls return text.
 let llmCalls = 0;
+let respondWithTool = true;
 const llmServer = http.createServer((req, res) => {
   let raw = '';
-  req.on('data', c => raw += c);
+  req.on('data', (c) => raw += c);
   req.on('end', () => {
     llmCalls++;
     res.writeHead(200, { 'Content-Type': 'application/json' });
-    res.end(JSON.stringify({
-      id: 'c' + llmCalls, object: 'chat.completion', created: Date.now(),
-      model: 'deepseek-v4-pro',
-      choices: [{ index: 0, message: { role: 'assistant', content: '好的。' }, finish_reason: 'stop' }],
-      usage: { prompt_tokens: 10, completion_tokens: 3, total_tokens: 13 }
-    }));
+    if (respondWithTool && raw.includes('"tools"') && llmCalls === 1) {
+      res.end(JSON.stringify({
+        id: 'c' + llmCalls, object: 'chat.completion', created: Date.now(),
+        model: 'mock',
+        choices: [{
+          index: 0,
+          message: {
+            role: 'assistant', content: null,
+            tool_calls: [{
+              id: 'tc1', type: 'function',
+              function: { name: 'query_osu', arguments: JSON.stringify({ capability: 'bp_type' }) }
+            }]
+          },
+          finish_reason: 'tool_calls'
+        }],
+        usage: { prompt_tokens: 10, completion_tokens: 5, total_tokens: 15 }
+      }));
+    } else {
+      const relay = raw.includes('无法确定要查询的 osu! 用户名')
+        ? '需要绑定：无法确定要查询的 osu! 用户名，请先使用 /w osu bind 绑定账号。'
+        : '好的。';
+      res.end(JSON.stringify({
+        id: 'c' + llmCalls, object: 'chat.completion', created: Date.now(),
+        model: 'mock',
+        choices: [{ index: 0, message: { role: 'assistant', content: relay }, finish_reason: 'stop' }],
+        usage: { prompt_tokens: 10, completion_tokens: 3, total_tokens: 13 }
+      }));
+    }
   });
 });
-await new Promise(r => llmServer.listen(0, '127.0.0.1', r));
+await new Promise((r) => llmServer.listen(0, '127.0.0.1', r));
 const llmPort = llmServer.address().port;
 
 function setupFixture() {
@@ -70,6 +93,7 @@ function setupFixture() {
     db.settings.enableAutoModel = false;
     db.settings.thinkingNoticeMode = 'off';
     db.settings.memoryEnabled = false;
+    db.settings.enableWebSearch = false;
     db.settings.botRegistry = {
       updatedAt: new Date().toISOString(),
       bots: [{
@@ -84,7 +108,9 @@ function setupFixture() {
     };
     db.osuBindings = db.osuBindings || {};
     db.osuBindings['REDACTED_QQ_001'] = 1234567;
-    db.groupBotConfig = db.groupBotConfig || {};
+    db.messages = [];
+    db.decisions = [];
+    db.commandLogs = [];
     db.groups = [{
       groupId: 'test-group', name: '测试群', enabled: true,
       mode: 'normal', maxPerHour: 50, cooldownSec: 0,
@@ -129,6 +155,34 @@ for (const t of analysisFalse) {
 }
 
 // ═══════════════════════════════════════════════════════
+// Unit: bp_type is exposed as an LLM tool; external bot tool stays closed
+// ═══════════════════════════════════════════════════════
+
+console.log('\n=== Unit: tool schema exposes bp_type, not query_external_bot ===');
+
+{
+  const schemas = buildBotToolSchemas({
+    bots: [{
+      id: 'yumu', name: '雨沐', description: 'osu! data',
+      qq: '', channel: 'internal', enabled: true,
+      commands: [{ name: 'bp', trigger: '/bp', description: 'best plays', params: [], returns: 'image' }],
+    }],
+    updatedAt: '',
+  });
+  const queryOsu = schemas.find((tool) => tool.function.name === 'query_osu');
+  assert(queryOsu, 'query_osu must be exposed to the LLM');
+  const capabilities = queryOsu.function.parameters.properties.capability?.enum || [];
+  assert(capabilities.includes('bp_type'), 'query_osu must expose the bp_type capability');
+  assert(
+    !schemas.some((tool) => tool.function.name === 'query_external_bot'),
+    'query_external_bot must NOT be offered to the LLM',
+  );
+  const op = validateOperation({ type: 'query_osu', params: { capability: 'bp_type', username: '[SHK]Wuxin' } });
+  assert(op.ok, 'bp_type operation must pass the security guard');
+  pass('tool-schema-bp_type');
+}
+
+// ═══════════════════════════════════════════════════════
 // Unit: formatClassifierBlock renders real distributions without LLM
 // ═══════════════════════════════════════════════════════
 
@@ -149,12 +203,10 @@ console.log('\n=== Unit: formatClassifierBlock ===');
 }
 
 // ═══════════════════════════════════════════════════════
-// E2E: analysis intents get a deterministic reply, never LLM-fabricated
+// E2E: LLM judges whether to call bp_type; tool result stays deterministic
 // ═══════════════════════════════════════════════════════
 
-console.log('\n=== E2E: BP type analysis is intercepted, no fabricated proportions ===');
-
-const FABRICATED_RE = /占比|六七成|一两张|百分之|典型\s*flow|典型flow|主要是(串|跳)/;
+console.log('\n=== E2E: bp_type is LLM-judged, result deterministic ===');
 
 for (const [label, text] of [
   ['e2e-bptype-1', '分析我的bp类型'],
@@ -162,20 +214,21 @@ for (const [label, text] of [
   ['e2e-bptype-3', '跳图有多少'],
   ['e2e-bptype-4', '我的BP是什么类型'],
 ]) {
+  respondWithTool = true;
   const r = await send(text, 'unbound-user');
-  if (r.reason !== 'bp_type_analysis') {
-    fail(label, `expected bp_type_analysis, got ${r.reason}`);
+  if (r.replied !== true) {
+    fail(label, `expected a reply, got ${JSON.stringify(r)}`);
     continue;
   }
-  if (llmCalls !== 0) {
-    fail(label, `must NOT call LLM, got ${llmCalls}`);
+  if (llmCalls < 1) {
+    fail(label, `LLM must be involved (tool + lead), got ${llmCalls} calls`);
     continue;
   }
-  if (!(r.text || '').includes('绑定')) {
-    fail(label, `unbound player must get binding guidance: ${r.text}`);
+  if (!(r.text || '').includes('无法确定要查询的 osu! 用户名')) {
+    fail(label, `deterministic tool error must reach the reply: ${r.text}`);
     continue;
   }
-  if (FABRICATED_RE.test(r.text || '')) {
+  if (/占比|百分之|典型(串|跳)|主要(串|跳)/.test(r.text || '')) {
     fail(label, `reply contains fabricated proportions: ${r.text}`);
     continue;
   }
@@ -183,7 +236,23 @@ for (const [label, text] of [
 }
 
 // ═══════════════════════════════════════════════════════
-// E2E: normal data queries are NOT swallowed by the analysis guard
+// E2E: without a tool call, the LLM answer passes through (no hardcoded reply)
+// ═══════════════════════════════════════════════════════
+
+console.log('\n=== E2E: LLM text passes through when no tool is called ===');
+
+{
+  respondWithTool = false;
+  const r = await send('分析一下我的bp构成', 'unbound-user');
+  if (!(r.text || '').includes('好的。')) {
+    fail('e2e-llm-pass-through', `expected LLM text to pass through: ${r.text}`);
+  } else {
+    pass('e2e-llm-pass-through');
+  }
+}
+
+// ═══════════════════════════════════════════════════════
+// E2E: normal data queries still route to query_osu
 // ═══════════════════════════════════════════════════════
 
 console.log('\n=== E2E: data queries still route to query_osu ===');
