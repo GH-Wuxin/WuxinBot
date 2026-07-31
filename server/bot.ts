@@ -142,8 +142,8 @@ export function compactDirectToolLead(text, directContent = '', hasImages = fals
 // Reply queue: when a reply is being generated for a group, new @bot messages
 // are queued instead of dropped. After the current reply finishes, the next
 // queued message is processed automatically (FIFO).
-const REPLY_QUEUE_LIMIT = 10;
-const REPLY_QUEUE_TTL_MS = 90_000;
+const REPLY_QUEUE_LIMIT = 20;
+const REPLY_QUEUE_TTL_MS = 180_000;
 const INBOUND_EVENT_DEDUPE_TTL_MS = 10 * 60_000;
 const INBOUND_EVENT_DEDUPE_LIMIT = 5_000;
 const recentInboundEvents = new Map();

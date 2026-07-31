@@ -289,6 +289,14 @@ export async function completeChat(db, options = {}) {
     max_tokens: Number(options.maxTokens || settings.maxTokens || 420)
   };
 
+  // deepseek-v4-flash defaults to thinking on this API and can burn the whole
+  // token budget on reasoning_content (returning empty chat content), which
+  // doubled latency via retries and produced silent empty replies. Chat
+  // replies do not need hidden reasoning; disable it explicitly.
+  if (provider === 'deepseek') {
+    params.thinking = { type: 'disabled' };
+  }
+
   // Tool calling support (OpenAI function-calling format)
   if (options.tools?.length) {
     params.tools = options.tools;
