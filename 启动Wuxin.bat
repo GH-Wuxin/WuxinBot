@@ -31,9 +31,13 @@ if not exist "%~dp0dist" (
     call %NPM% run build
 )
 
-:: clean ports
-echo [*] Cleaning ports...
-powershell -NoProfile -ExecutionPolicy Bypass -Command "$ports=5173..5179 + 8787; foreach($p in $ports){ Get-NetTCPConnection -LocalPort $p -ErrorAction SilentlyContinue | Select-Object -ExpandProperty OwningProcess -Unique | ForEach-Object { Stop-Process -Id $_ -Force -ErrorAction SilentlyContinue } }"
+:: single-instance guard
+powershell -NoProfile -ExecutionPolicy Bypass -Command "$root=[IO.Path]::GetFullPath('%~dp0').TrimEnd('\'); $running=Get-CimInstance Win32_Process -ErrorAction SilentlyContinue | Where-Object { $_.Name -eq 'node.exe' -and $_.CommandLine -and $_.CommandLine.IndexOf($root, [StringComparison]::OrdinalIgnoreCase) -ge 0 } | Select-Object -First 1; if($running){ exit 10 }"
+if errorlevel 10 (
+    echo [i] Wuxin is already running. No second instance was started.
+    start "" http://127.0.0.1:5173
+    exit /b 0
+)
 
 :: start
 title Wuxin
