@@ -48,6 +48,7 @@ export const OSU_ANALYSIS_MODEL = 'deepseek-v4-pro';
 let queue: QueueEntry[] = [];
 let running = false;
 let currentEntry: QueueEntry | null = null;
+const MAX_ANALYZE_QUEUE = 8;
 
 function resolveUsername(db: any, event: any, args?: string): string | number | null {
   const provided = String(args || '').trim();
@@ -405,7 +406,16 @@ async function runAnalysis(
   target: string | number, mode: OsuMode
 ): Promise<string> {
   const db = readDb();
-  const result = await collectPlayerData(target, mode);
+  const result = await (async () => {
+    try {
+      return await collectPlayerData(target, mode);
+    } catch (error) {
+      // Transient network/API failures are common under load; retry once
+      // before declaring the whole analysis dead.
+      await new Promise((resolve) => setTimeout(resolve, 1500));
+      return collectPlayerData(target, mode);
+    }
+  })();
   const topSnapshot = buildScoreSnapshot(result.bestScores);
   const recentSnapshot = buildScoreSnapshot(result.recentScores);
   const analysis = analyzeData({
@@ -713,6 +723,10 @@ export async function handleOsuCommand(event: any, sendMessage: any, _permission
     if (queue.some(isSameUser)) {
       if (sendMessage) await sendAsReply(event, sendMessage, '你已在分析队列中，请等待。');
       return { replied: true, reason: 'osu analyze 重复提交（已在队列）' };
+    }
+    if (queue.length >= MAX_ANALYZE_QUEUE) {
+      if (sendMessage) await sendAsReply(event, sendMessage, `分析队列已满（正在运行 1 个，排队最多 ${MAX_ANALYZE_QUEUE} 个），请稍后再试。`);
+      return { replied: true, reason: `osu analyze 队列已满（${queue.length}/${MAX_ANALYZE_QUEUE}）` };
     }
 
     // Enqueue

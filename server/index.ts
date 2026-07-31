@@ -1,5 +1,6 @@
 import 'dotenv/config';
 import crypto from 'node:crypto';
+import net from 'node:net';
 import express from 'express';
 import { ensureStore, publicDb, readDb, updateDb, upsertBy, nowIso, saveConfigSnapshot, listConfigSnapshots, restoreConfigSnapshot } from './store.js';
 import { createBackup, listBackups, restoreBackup, deleteBackup, pruneAutoBackups } from './backup.js';
@@ -16,6 +17,15 @@ import { decayInactiveUsers } from './bot/experience.js';
 import { queryProfileLogs, getProfileLogStats } from './bot/profileLog.js';
 import { updateProviderSettings } from './modelConfig.js';
 import { startRenderServer } from './bots/renderServer.js';
+
+// Node 20.11.1 crashes with ERR_INTERNAL_ASSERTION in internalConnectMultiple
+// when many outbound sockets race IPv4/IPv6 auto-selection (happy eyeballs).
+// Disable the parallel family selection so concurrent API calls are safe.
+try {
+  (net as any).setDefaultAutoSelectFamily?.(false);
+} catch {
+  // Older/other runtimes simply keep the default.
+}
 
 ensureStore();
 
