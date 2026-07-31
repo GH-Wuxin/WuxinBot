@@ -10,12 +10,28 @@
 
 import { extractReplyMessageId, asksToInspectVisual, extractImageInputs } from '../server/bot/cleaning.ts';
 import { decideReply } from '../server/bot.ts';
+import { buildPrompt } from '../server/bot/prompt.ts';
 
 function assert(cond, msg) {
   if (!cond) throw new Error(`FAIL: ${msg}`);
 }
 
 async function main() {
+  const textOnlyHistoryDb = {
+    settings: {
+      llmProvider: 'deepseek', apiBaseUrl: 'https://api.deepseek.com', model: 'deepseek-chat',
+      visionMode: 'auto', ownerQq: 'owner1', selfQq: 'bot1', contextLimit: 30,
+      personalityPrompt: '测试', botNames: '小深', ignoreSystemFacts: true
+    },
+    messages: [{ role: 'user', type: 'group', groupId: 'g1', userId: 'u1', nickname: '用户', content: '[图片]', createdAt: new Date().toISOString() }],
+    users: [], memories: [], groupProfiles: [], relationshipProfiles: []
+  };
+  const textOnlyPrompt = buildPrompt(textOnlyHistoryDb, { groupId: 'g1', name: '测试群' }, {
+    type: 'group', groupId: 'g1', userId: 'u2', nickname: '当前用户', text: '继续聊', atTargets: []
+  }, { policy: 'normal' });
+  const historyText = textOnlyPrompt.slice(1, -1).map((message) => String(message.content || '')).join('\n');
+  assert(!historyText.includes('[图片]'), 'text-only model history must not retain pure image placeholders');
+
   // ============================================================
   // Test 1: extractReplyMessageId
   // ============================================================
@@ -79,7 +95,7 @@ async function main() {
   const ownerPolicy = { policy: 'owner', attentionLevel: 5, allowCommands: true };
 
   // Case A: vision capable + ask to inspect + no images → should reply
-  const d3a = decideReply({
+  const d3a = await decideReply({
     db: visionDb, group, userPolicy: ownerPolicy,
     text: '小深 看上文图片', mentioned: true, userId: 'owner1', images: []
   });
@@ -87,7 +103,7 @@ async function main() {
   assert(d3a.visualLimitation !== true, 'should NOT be visual limitation');
 
   // Case B: vision capable + ask to inspect + has images → should reply
-  const d3b = decideReply({
+  const d3b = await decideReply({
     db: visionDb, group, userPolicy: ownerPolicy,
     text: '小深 看看这张[图片]', mentioned: true, userId: 'owner1',
     images: [{ type: 'image', url: 'http://example.com/a.jpg' }]
@@ -102,7 +118,7 @@ async function main() {
     },
     messages: [],
   };
-  const d3c = decideReply({
+  const d3c = await decideReply({
     db: noVisionDb, group, userPolicy: ownerPolicy,
     text: '小深 看上文图片', mentioned: true, userId: 'owner1', images: []
   });
