@@ -4,9 +4,10 @@
  * 使用内置 mock LLM 服务器模拟慢响应，确保锁在测试期间保持。
  *
  * 测试场景:
- * 1. 基本排队 — 锁被持时时新消息返回 queued=true
+ * 1. 基本排队 — 同一成员被锁定时新消息返回 queued=true
+ * 1b. 异用户并行 — 其他成员的消息不被阻塞，立即回复
  * 2. 队列排空 — 第一条回复完成后自动处理队列中下一条
- * 3. 队列上限 — 超过10条时丢弃新消息
+ * 3. 队列上限+合并 — 同成员超过20条时丢弃；排队消息合并为一次回复
  * 4. 指令绕过 — /w 指令不受队列阻塞
  * 5. 队列统计 — getReplyQueueStats 返回正确数据
  */
@@ -28,7 +29,7 @@ const TEST_OWNER = '20000001';
 const TEST_BOT = '20000002';
 const TEST_USER = '20000003';
 const TEST_GROUP = '880001';
-const GROUP_KEY = `group:${TEST_GROUP}`;
+const GROUP_KEY = `group:${TEST_GROUP}:${TEST_OWNER}`;
 const MOCK_PORT = 19876;
 const MOCK_DELAY_MS = 1500;
 
@@ -153,10 +154,10 @@ async function main() {
     // Wait a bit for the first message to acquire the lock (reaches LLM call)
     await new Promise((r) => setTimeout(r, 200));
 
-    // Fire second message — should be queued because lock is held
+    // Fire second message from the SAME member — should be queued
     const sm2 = instantSM();
     const r2 = await processIncoming(
-      event({ text: '小深 第二条消息', messageId: 't1-m2', userId: TEST_USER, nickname: 'TestUser', atTargets: [TEST_BOT] }),
+      event({ text: '小深 第二条消息', messageId: 't1-m2', userId: TEST_OWNER, nickname: 'Owner', atTargets: [TEST_BOT] }),
       sm2.fn
     );
     assert(r2.replied === false, 'second message should not reply');
@@ -184,6 +185,28 @@ async function main() {
     console.log('PASS: Test 2 — queued message processed after drain');
 
     // ============================================================
+    // Test 1b: Different member is NOT blocked by the lock
+    // ============================================================
+    console.log('Test 1b: Different member replies in parallel (not queued)');
+    setupDb(original);
+
+    const p1b = processIncoming(event({ text: '小深 持有锁', messageId: 't1b-lock' }), instantSM().fn);
+    await new Promise((r) => setTimeout(r, 200));
+
+    const sm1b = instantSM();
+    const r1b = await processIncoming(
+      event({ text: '小深 另一位成员的消息', messageId: 't1b-other', userId: TEST_USER, nickname: 'TestUser', atTargets: [TEST_BOT] }),
+      sm1b.fn
+    );
+    assert(r1b.replied === true, `different member must reply immediately, got ${JSON.stringify(r1b)}`);
+    assert(sm1b.sent.length >= 1, 'different member must receive a reply');
+
+    await p1b;
+    await waitForDrain();
+
+    console.log('PASS: Test 1b — different member replies in parallel');
+
+    // ============================================================
     // Test 3: Queue limit — 11th message is dropped
     // ============================================================
     console.log('Test 3: Queue limit — overflow drops message');
@@ -193,30 +216,32 @@ async function main() {
     const p3 = processIncoming(event({ text: '小深 持有锁', messageId: 't3-lock' }), instantSM().fn);
     await new Promise((r) => setTimeout(r, 200));
 
-    // Enqueue 10 messages
-    for (let i = 1; i <= 10; i++) {
+    const smQ = instantSM();
+    // Enqueue 20 messages from the SAME member (owner holds the lock)
+    for (let i = 1; i <= 20; i++) {
       const r = await processIncoming(
-        event({ text: `小深 排队${i}`, messageId: `t3-q${i}`, userId: `${TEST_USER}-${i}`, nickname: `U${i}`, atTargets: [TEST_BOT] }),
-        instantSM().fn
+        event({ text: `小深 排队${i}`, messageId: `t3-q${i}`, userId: TEST_OWNER, nickname: 'Owner', atTargets: [TEST_BOT] }),
+        smQ.fn
       );
       assert(r.queued === true, `msg ${i} should be queued`);
     }
 
-    // 11th should be dropped
+    // 21st (from the same member) should be dropped
     const r3over = await processIncoming(
-      event({ text: '小深 溢出', messageId: 't3-over', userId: `${TEST_USER}-11`, nickname: 'U11', atTargets: [TEST_BOT] }),
-      instantSM().fn
+      event({ text: '小深 溢出', messageId: 't3-over', userId: TEST_OWNER, nickname: 'Owner', atTargets: [TEST_BOT] }),
+      smQ.fn
     );
     assert(r3over.replied === false, 'overflow should not reply');
     assert(r3over.queued !== true, 'overflow should NOT be queued');
 
     const stats3 = getReplyQueueStats();
-    assert(stats3[GROUP_KEY]?.queued === 10, `should have 10 queued, got ${stats3[GROUP_KEY]?.queued}`);
+    assert(stats3[GROUP_KEY]?.queued === 20, `should have 20 queued, got ${stats3[GROUP_KEY]?.queued}`);
 
     await p3;
-    await waitForDrain(60000); // 10 queued messages take ~15s to drain
+    await waitForDrain(60000);
+    assert(smQ.sent.length === 1, `20 queued messages must merge into ONE reply, got ${smQ.sent.length}`);
 
-    console.log('PASS: Test 3 — queue limit (10) enforced, 11th dropped');
+    console.log('PASS: Test 3 — queue limit enforced, queued messages merged into one reply');
 
     // ============================================================
     // Test 4: Commands bypass queue — /w ping works when locked
@@ -258,7 +283,7 @@ async function main() {
 
     for (let i = 1; i <= 3; i++) {
       await processIncoming(
-        event({ text: `小深 消息${i}`, messageId: `t5-q${i}`, userId: `${TEST_USER}-${i}`, nickname: `U${i}`, atTargets: [TEST_BOT] }),
+        event({ text: `小深 消息${i}`, messageId: `t5-q${i}`, userId: TEST_OWNER, nickname: 'Owner', atTargets: [TEST_BOT] }),
         instantSM().fn
       );
     }
