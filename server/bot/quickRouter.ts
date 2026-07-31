@@ -13,6 +13,7 @@ import {
   parseEmbeddedBpCommand,
   type BpQuerySelection,
 } from '../bots/executor.js';
+import { callLocalBot, hasLocalEndpoint } from '../bots/localBridge.js';
 
 export type QuickSource = 'common' | 'yumu' | 'kanon' | 'hydrant' | 'lazybot';
 
@@ -31,6 +32,8 @@ export interface QuickCommandDef {
   implemented?: boolean;
   /** For `bp` family: parse a trailing BP rank/range (`1-100`, `#5`). */
   bpArgs?: boolean;
+  /** Prefer direct invocation of the original local bot (original rendering). */
+  bridge?: boolean;
 }
 
 interface QuickMatch {
@@ -58,12 +61,12 @@ const COMMON: QuickCommandDef[] = [
 ];
 
 const YUMU: QuickCommandDef[] = [
-  { id: 'recent', source: 'yumu', aliases: ['p', 'pass', '通过成绩', 'pr', 're', 'recent', 'r', '最近成绩', 'ps', 'passes', 'rs', 'recents', 'pw', 'rw', 'pass show', 'recent show'], kind: 'osu', capability: 'recent', implemented: true },
+  { id: 'recent', source: 'yumu', aliases: ['p', 'pass', '通过成绩', 'pr', 're', 'recent', 'r', '最近成绩', 'ps', 'passes', 'rs', 'recents', 'pw', 'rw', 'pass show', 'recent show'], kind: 'osu', capability: 'recent', implemented: true, bridge: true },
   { id: 'rbs', source: 'yumu', aliases: ['rbs', 'recents bests', '优秀成绩'], kind: 'osu', implemented: false },
   { id: 'prcard', source: 'yumu', aliases: ['pc', 'rc', 'passcard', 'recentcard', '通过卡片', '最近卡片'], kind: 'osu', implemented: false },
   { id: 'score', source: 'yumu', aliases: ['s', 'score', '成绩', 'sw', 'show score', 'ss', 'scores', '多成绩'], kind: 'osu', implemented: false },
-  { id: 'bp', source: 'yumu', aliases: ['bp', 'b', 'best', 'bestperformance', '最成绩', '最佳成绩', 'bpw', 'best show'], kind: 'osu', capability: 'bp', bpArgs: true, implemented: true },
-  { id: 'bs', source: 'yumu', aliases: ['bs', 'bps', 'bests'], kind: 'osu', capability: 'bp', bpArgs: true, implemented: true },
+  { id: 'bp', source: 'yumu', aliases: ['bp', 'b', 'best', 'bestperformance', '最成绩', '最佳成绩', 'bpw', 'best show'], kind: 'osu', capability: 'bp', bpArgs: true, implemented: true, bridge: true },
+  { id: 'bs', source: 'yumu', aliases: ['bs', 'bps', 'bests'], kind: 'osu', capability: 'bp', bpArgs: true, implemented: true, bridge: true },
   { id: 'todaybp', source: 'yumu', aliases: ['todaybp', 'tbp', 'tdp', 't', '今日成绩', '今日最佳成绩'], kind: 'osu', implemented: false },
   { id: 'bpf', source: 'yumu', aliases: ['bpf', 'bf', 'bp fix', 'best fix', '修复成绩', '修复最佳成绩'], kind: 'osu', implemented: false },
   { id: 'ba', source: 'yumu', aliases: ['ba', 'bpa', 'bp analysis', 'best analysis', '分析成绩', '分析最佳成绩'], kind: 'osu', implemented: false },
@@ -124,21 +127,21 @@ const KANON: QuickCommandDef[] = [
 ];
 
 const LAZYBOT: QuickCommandDef[] = [
-  { id: 'pplus', source: 'lazybot', aliases: ['plus', 'ppp'], kind: 'osu', capability: 'pplus', implemented: true },
-  { id: 'bp', source: 'lazybot', aliases: ['bp', 'best', 'pbp', 'b', 'bsm'], kind: 'osu', capability: 'bp', bpArgs: true, implemented: true },
-  { id: 'bplist', source: 'lazybot', aliases: ['bplist'], kind: 'osu', capability: 'bplist', bpArgs: true, implemented: true },
+  { id: 'pplus', source: 'lazybot', aliases: ['plus', 'ppp'], kind: 'osu', capability: 'pplus', implemented: true, bridge: true },
+  { id: 'bp', source: 'lazybot', aliases: ['bp', 'best', 'pbp', 'b', 'bsm'], kind: 'osu', capability: 'bp', bpArgs: true, implemented: true, bridge: true },
+  { id: 'bplist', source: 'lazybot', aliases: ['bplist'], kind: 'osu', capability: 'bplist', bpArgs: true, implemented: true, bridge: true },
   { id: 'bpcard', source: 'lazybot', aliases: ['bpcard', 'pbpcard', 'pb', 'pbplist'], kind: 'osu', implemented: false },
   { id: 'bpif', source: 'lazybot', aliases: ['bpif'], kind: 'osu', implemented: false },
   { id: 'bps', source: 'lazybot', aliases: ['bps', 'bs', 'bssm'], kind: 'osu', implemented: false },
   { id: 'bpvs', source: 'lazybot', aliases: ['bpvs'], kind: 'osu', implemented: false },
-  { id: 'recent', source: 'lazybot', aliases: ['pr', 'rp', 'playrecent', 're', 'recent', 'p', 'r', 'ppr', 'pre'], kind: 'osu', capability: 'recent', implemented: true },
+  { id: 'recent', source: 'lazybot', aliases: ['pr', 'rp', 'playrecent', 're', 'recent', 'p', 'r', 'ppr', 'pre'], kind: 'osu', capability: 'recent', implemented: true, bridge: true },
   { id: 'prs', source: 'lazybot', aliases: ['prs', 'rps', 'rs', 'res', 'ps'], kind: 'osu', implemented: false },
   { id: 'score', source: 'lazybot', aliases: ['score', 's', 'pscore'], kind: 'osu', implemented: false },
   { id: 'allscore', source: 'lazybot', aliases: ['allscore', 'as', 'allscores', 'ass'], kind: 'osu', implemented: false },
   { id: 'topscores', source: 'lazybot', aliases: ['topscores', 'ts'], kind: 'osu', implemented: false },
   { id: 'todaybp', source: 'lazybot', aliases: ['todaybp', 'tbp'], kind: 'osu', implemented: false },
-  { id: 'profile', source: 'lazybot', aliases: ['profile', 'info'], kind: 'osu', capability: 'info', implemented: true },
-  { id: 'card', source: 'lazybot', aliases: ['card'], kind: 'osu', capability: 'card', implemented: true },
+  { id: 'profile', source: 'lazybot', aliases: ['profile', 'info'], kind: 'osu', capability: 'info', implemented: true, bridge: true },
+  { id: 'card', source: 'lazybot', aliases: ['card'], kind: 'osu', capability: 'card', implemented: true, bridge: true },
   { id: 'pstats', source: 'lazybot', aliases: ['pstats'], kind: 'osu', implemented: false },
   { id: 'ppmap', source: 'lazybot', aliases: ['ppmap'], kind: 'osu', implemented: false },
   { id: 'pptest', source: 'lazybot', aliases: ['pptest'], kind: 'osu', implemented: false },
@@ -371,6 +374,19 @@ export function parseOsuArgs(def: QuickCommandDef, args: string): ParsedOsuArgs 
   return { username: String(args || '').trim() };
 }
 
+/** Rebuild the original bot command text for bridge invocation. */
+function buildBridgeCommand(match: QuickMatch): string {
+  const { def, cmdText, args, prefix } = match;
+  if (def.handler === 'self_profile') return '~';
+  if (def.handler === 'at_profile') return '查';
+  if (def.handler === 'where') return `where ${args}`.trim();
+  if (def.handler === 'pp_self') return '++';
+  if (def.handler === 'pp_user') return `+${args}`.trim();
+  if (prefix === '!') return `!${cmdText}`;
+  if (prefix === '/') return `/${cmdText}`;
+  return cmdText;
+}
+
 // ── Execution ──
 
 const HELP_TEXT = [
@@ -476,6 +492,45 @@ export async function handleQuickCommand(
       }, { outcome, detail, source: def.source, implemented: Boolean(def.implemented) });
     } catch { /* logging is non-fatal */ }
   };
+
+  // Hydrant std-only guard runs before bridging `~` / `查@`.
+  if (def.handler === 'self_profile' || def.handler === 'at_profile') {
+    const modeNote = stdOnlyNote((match as any).extraMode || '');
+    if (modeNote) {
+      if (sendMessage) await sendMessage(event, modeNote);
+      return { handled: true, replied: true, reason: '非 std 模式' };
+    }
+  }
+
+  // ── Local bot bridge: direct invocation of the original bot ──
+  // Original rendering (雨沐 E5/A4 面板、消防栓文字卡等) beats the internal
+  // engine; on any bridge failure we fall through to the internal handler.
+  if (def.bridge && hasLocalEndpoint(def.source)) {
+    const bridgeCommand = buildBridgeCommand(match);
+    const bridgeContext = {
+      groupId: event.type === 'private' ? '770001' : String(event.groupId || ''),
+      userId: String(event.userId || ''),
+      nickname: String(event.nickname || ''),
+      atTargets,
+    };
+    try {
+      const bridgeTimeout = def.source === 'yumu' ? 60_000 : 25_000;
+      const reply = await callLocalBot(def.source, bridgeCommand, bridgeContext, bridgeTimeout);
+      const payload = reply.images.length > 0 ? reply.images.join('\n') : reply.text;
+      if (payload) {
+        try {
+          if (sendMessage) await sendMessage(event, payload);
+        } catch (deliveryError: any) {
+          console.error(`[quick] bridge ${def.source} 发送失败（面板可能已发出）:`, deliveryError?.message || deliveryError);
+        }
+        log('bridge', `${def.source}:${bridgeCommand}`);
+        return { handled: true, replied: true, reason: `bridge:${def.source}` };
+      }
+      console.error(`[quick] bridge ${def.source} 返回空回复，回退内部引擎`);
+    } catch (error: any) {
+      console.error(`[quick] bridge ${def.source} 失败，回退内部引擎:`, error?.message || error);
+    }
+  }
 
   // ── Local handlers ──
   if (def.handler === 'help') {
