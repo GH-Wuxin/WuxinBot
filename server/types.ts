@@ -36,6 +36,10 @@ export interface DbSettings {
   onlyMentionMode: boolean;
   apiKey: string;
   apiBaseUrl: string;
+  deepseekApiKey?: string;
+  deepseekApiBaseUrl?: string;
+  mimoApiKey?: string;
+  mimoApiBaseUrl?: string;
   model: string;
   visionMode?: 'auto' | 'on' | 'off';
   visionImageTransport?: 'auto' | 'url' | 'data';
@@ -61,6 +65,9 @@ export interface DbSettings {
   enableWebSearch: boolean;
   webSearchMode: 'fast' | 'balanced' | 'deep';
   enableAutoModel: boolean;
+  llmReplyGateMaxPerHour?: number;
+  llmReplyGateNaturalThreshold?: number;
+  llmReplyGateLightThreshold?: number;
   ignoreSystemFacts: boolean;
   memoryEnabled: boolean;
   memoryMinMessages: number;

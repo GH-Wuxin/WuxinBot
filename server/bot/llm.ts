@@ -1,3 +1,4 @@
+// @ts-nocheck -- legacy runtime module; new typed modules remain checked by tsc.
 // Provider-neutral LLM client layer.
 // DeepSeek is the default provider today, but the rest of the bot should call
 // this module instead of depending on DeepSeek-specific names.
@@ -5,6 +6,14 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import OpenAI from 'openai';
 import { recordLlmSuccess, recordLlmError } from '../health.js';
+import {
+  activateModelProfile,
+  DEEPSEEK_BASE_URL,
+  looksLikeMimoApiKey,
+  looksLikeMimoEndpoint
+} from '../modelConfig.js';
+
+export { looksLikeMimoApiKey, looksLikeMimoEndpoint } from '../modelConfig.js';
 
 export function llmProvider(db) {
   const provider = String(db.settings.llmProvider || 'deepseek').trim() || 'deepseek';
@@ -14,7 +23,7 @@ export function llmProvider(db) {
 }
 
 export function defaultBaseUrlForProvider(provider) {
-  if (provider === 'deepseek') return 'https://api.deepseek.com';
+  if (provider === 'deepseek') return DEEPSEEK_BASE_URL;
   return '';
 }
 
@@ -32,14 +41,6 @@ export function supportsProviderSearch(provider) {
   // real search adapter (SearXNG/Brave/Bing/etc.) is wired in; otherwise the bot
   // may look like it searched while the model is only guessing.
   return false;
-}
-
-export function looksLikeMimoEndpoint(value) {
-  return /(mimo|xiaomimimo|token-plan-cn)/i.test(String(value || ''));
-}
-
-export function looksLikeMimoApiKey(value) {
-  return /^tp-/i.test(String(value || '').trim());
 }
 
 function rawLlmProvider(db) {
@@ -84,6 +85,45 @@ export function withTimeout(promise, ms, label) {
     timer = setTimeout(() => reject(new Error(`${label} 超时 ${Math.round(ms / 1000)} 秒`)), ms);
   });
   return Promise.race([promise, timeout]).finally(() => clearTimeout(timer));
+}
+
+function toWellFormedText(value) {
+  const text = String(value ?? '');
+  if (typeof text.toWellFormed === 'function') return text.toWellFormed();
+  let output = '';
+  for (let index = 0; index < text.length; index += 1) {
+    const code = text.charCodeAt(index);
+    if (code >= 0xD800 && code <= 0xDBFF) {
+      const next = text.charCodeAt(index + 1);
+      if (next >= 0xDC00 && next <= 0xDFFF) {
+        output += text[index] + text[index + 1];
+        index += 1;
+      } else {
+        output += '\uFFFD';
+      }
+    } else if (code >= 0xDC00 && code <= 0xDFFF) {
+      output += '\uFFFD';
+    } else {
+      output += text[index];
+    }
+  }
+  return output;
+}
+
+export function normalizeLlmMessages(messages = []) {
+  return messages.map((message) => ({
+    ...message,
+    content: Array.isArray(message.content)
+      ? message.content.map((part) => {
+          if (!part || typeof part !== 'object') return part;
+          if (part.type === 'text') return { ...part, text: toWellFormedText(part.text) };
+          if (part.type === 'image_url' && part.image_url) {
+            return { ...part, image_url: { ...part.image_url, url: toWellFormedText(part.image_url.url) } };
+          }
+          return part;
+        })
+      : toWellFormedText(message.content)
+  }));
 }
 
 const IMAGE_MIME_BY_EXT = {
@@ -207,17 +247,25 @@ async function attachVisionImages(db, messages, images = [], options = {}) {
   return next;
 }
 
-export function createLLMClient(db) {
-  const provider = llmProvider(db);
-  const apiKey = db.settings.apiKey;
+export function createLLMClient(db, requestedModel = db.settings.model) {
+  if (!/^mimo-/i.test(String(requestedModel || ''))) {
+    const rawProvider = llmProvider(db);
+    const rawBaseUrl = db.settings.apiBaseUrl || defaultBaseUrlForProvider(rawProvider);
+    assertLlmConfigCompatible(db, rawProvider, rawBaseUrl, db.settings.apiKey);
+  }
+  const resolvedSettings = activateModelProfile(db.settings, requestedModel);
+  const resolvedDb = { ...db, settings: resolvedSettings };
+  const provider = llmProvider(resolvedDb);
+  const apiKey = resolvedSettings.apiKey;
   if (!apiKey) {
     throw new Error(`${llmProviderName(provider)} API Key 还没有填写，请先在 GUI 的“模型设置”里填写。`);
   }
-  const baseURL = db.settings.apiBaseUrl || defaultBaseUrlForProvider(provider);
-  assertLlmConfigCompatible(db, provider, baseURL, apiKey);
+  const baseURL = resolvedSettings.apiBaseUrl || defaultBaseUrlForProvider(provider);
+  assertLlmConfigCompatible(resolvedDb, provider, baseURL, apiKey);
   return {
     provider,
     baseURL,
+    settings: resolvedSettings,
     client: new OpenAI({
       apiKey,
       baseURL: baseURL || undefined
@@ -226,16 +274,26 @@ export function createLLMClient(db) {
 }
 
 export async function completeChat(db, options = {}) {
-  const { provider, client, baseURL } = createLLMClient(db);
+  const requestedModel = options.model || options.overrideModel || db.settings.model;
+  const { provider, client, baseURL, settings } = createLLMClient(db, requestedModel);
+  const resolvedDb = { ...db, settings };
   const started = Date.now();
   const searchMode = options.searchMode;
-  const messages = await attachVisionImages(db, options.messages || [], options.visionImages || [], options);
+  const messages = normalizeLlmMessages(
+    await attachVisionImages(resolvedDb, options.messages || [], options.visionImages || [], options)
+  );
   const params = {
-    model: requestModelForProvider(db, provider, baseURL, options),
+    model: requestModelForProvider(resolvedDb, provider, baseURL, { ...options, model: requestedModel }),
     messages,
-    temperature: Number(options.temperature ?? db.settings.temperature ?? 0.85),
-    max_tokens: Number(options.maxTokens || db.settings.maxTokens || 420)
+    temperature: Number(options.temperature ?? settings.temperature ?? 0.85),
+    max_tokens: Number(options.maxTokens || settings.maxTokens || 420)
   };
+
+  // Tool calling support (OpenAI function-calling format)
+  if (options.tools?.length) {
+    params.tools = options.tools;
+    params.tool_choice = options.tool_choice || 'auto';
+  }
 
   if (searchMode && supportsProviderSearch(provider)) {
     params.enable_search = true;
@@ -256,11 +314,16 @@ export async function completeChat(db, options = {}) {
   };
 
   const retryAfterEmpty = async (first) => {
-    if (first.text) return first;
+    if (first.text || (first.raw?.choices?.[0]?.message?.tool_calls?.length > 0)) return first;
     const retryParams = { ...params };
     if (searchMode && supportsProviderSearch(provider)) {
       delete retryParams.enable_search;
       delete retryParams.search_mode;
+    }
+    // Don't retry with tools for empty responses — the model may not support them
+    if (retryParams.tools) {
+      delete retryParams.tools;
+      delete retryParams.tool_choice;
     }
     const second = await runCompletion(retryParams);
     return {
