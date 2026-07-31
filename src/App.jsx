@@ -29,7 +29,7 @@ function OsuCookie({ size = 18 }) {
     <svg width={size} height={size} viewBox="0 0 24 24" aria-hidden="true" style={{ display: 'block', flexShrink: 0 }}>
       <mask id="osu-cookie-mask">
         <rect width="24" height="24" fill="white" />
-        <text x="12" y="14.3" textAnchor="middle" fontSize="7.6" fontWeight="800" letterSpacing="-0.2" fontFamily="'Segoe UI', Arial, sans-serif" fill="black">osu!</text>
+        <text x="12" y="14.3" textAnchor="middle" fontSize="7.6" fontWeight="800" letterSpacing="-0.2" fontFamily="'Segoe UI', Arial, sans-serif" fill="black">osu</text>
       </mask>
       <path
         fillRule="evenodd"
