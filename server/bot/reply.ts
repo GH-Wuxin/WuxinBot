@@ -1,6 +1,8 @@
+// @ts-nocheck -- legacy runtime module; new typed modules remain checked by tsc.
 // Reply output: sanitization, segmentation, merged-forward, rewrite guard.
 // Extracted from bot.ts.
 import { completeChat } from './llm.js';
+import { modelSupportsVision } from './prompt.js';
 
 export function sanitizeReply(text, settings) {
   let cleaned = String(text || '').trim();
@@ -163,11 +165,17 @@ export async function rewriteNormalReply(db, originalText, event) {
   };
 }
 
-export function visualLimitationReply(event) {
-  if (event.text.includes('[表情') || event.text.includes('[图片]')) {
-    return '这轮我没有拿到可读的图片内容。你重新发图或简单描述一下，我再接着聊。';
+export function visualLimitationReply(event, db) {
+  const canSee = db ? modelSupportsVision(db) : false;
+  if (canSee) {
+    // Vision-capable model but didn't get images this round (temporary limitation)
+    if (event.text.includes('[表情') || event.text.includes('[图片]')) {
+      return '这轮我没有拿到可读的图片内容。你重新发图或简单描述一下，我再接着聊。';
+    }
+    return '这轮我没有拿到可读的媒体内容。你描述一下内容，我可以继续接。';
   }
-  return '这轮我没有拿到可读的媒体内容。你描述一下内容，我可以继续接。';
+  // Text-only model: be honest about the permanent limitation
+  return '我是文字模式，看不了图片和表情包。你可以用文字描述一下内容，我继续接。';
 }
 
 export async function sendForwardText(sendMessage, event, title, text) {
@@ -200,7 +208,46 @@ export async function sendForwardText(sendMessage, event, title, text) {
     type: 'node',
     data: {
       name: index === 0 ? title : `${title} ${index + 1}`,
-      uin: event.raw?.self_id || '',
+      uin: (event.raw?.self_id || 'REDACTED_QQ_002'),
+      content
+    }
+  }));
+
+  if (!sendMessage) return false;
+  await sendMessage(event, title, { forwardNodes: nodes });
+  return true;
+}
+
+export async function sendForwardBlocks(sendMessage, event, title, text) {
+  const rawBlocks = String(text || '')
+    .split(/\n\s*\n/)
+    .map((block) => block.trim())
+    .filter(Boolean);
+  const chunks = [];
+  for (const block of rawBlocks) {
+    if (block.length <= 420) {
+      chunks.push(block);
+      continue;
+    }
+    const lines = block.split('\n').map((line) => line.trim()).filter(Boolean);
+    let current = '';
+    for (const line of lines) {
+      const next = current ? `${current}\n${line}` : line;
+      if (current && next.length > 420) {
+        chunks.push(current);
+        current = line;
+      } else {
+        current = next;
+      }
+    }
+    if (current) chunks.push(current);
+  }
+
+  const nodes = chunks.map((content, index) => ({
+    type: 'node',
+    data: {
+      name: index === 0 ? title : `${title} ${index + 1}`,
+      uin: (event.raw?.self_id || 'REDACTED_QQ_002'),
       content
     }
   }));

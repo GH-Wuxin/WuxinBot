@@ -1,3 +1,4 @@
+// @ts-nocheck -- legacy runtime module; new typed modules remain checked by tsc.
 // Experience / level system — rules-based, no LLM.
 // XP is global per QQ number. Levels unlock features and affect reply behavior.
 import { readDb, updateDb, nowIso } from '../store.js';

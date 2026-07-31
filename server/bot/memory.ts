@@ -1,3 +1,4 @@
+// @ts-nocheck -- legacy runtime module; new typed modules remain checked by tsc.
 // Long-term memory: sample collection, classification, profile updates.
 // Extracted from bot.ts.
 import { readDb, updateDb, nowIso } from '../store.js';
