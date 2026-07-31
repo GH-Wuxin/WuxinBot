@@ -29,7 +29,8 @@ function Test-PortListen([int]$port) {
 }
 
 $loaderUrl = 'file:///' + (($root -replace '\\', '/') + '/node_modules/tsx/dist/loader.mjs')
-$nodeExe = 'C:\Program Files\nodejs\node.exe'
+$portableNode = Join-Path $root 'portable-node\node.exe'
+$nodeExe = if (Test-Path $portableNode) { $portableNode } else { 'C:\Program Files\nodejs\node.exe' }
 $yumuNode = 'G:\My pack\Agent Work\codex_work\napcat-local-bots\runtime\node-v22.23.1-win-x64\node-v22.23.1-win-x64\node.exe'
 $yumuDir = 'G:\My pack\Agent Work\codex_work\napcat-local-bots\sources\yumu-image'
 
