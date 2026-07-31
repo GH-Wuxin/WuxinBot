@@ -57,6 +57,10 @@ React GUI ← Vite :5173 ← Express :8787 ← server/store.ts → %APPDATA%/Wux
 
 ## 开发
 
+推荐使用项目自带的 `portable-node`（Node 22）运行；`启动Wuxin.bat` 与
+`tools/restart-wuxin.ps1` 都会自动优先使用它。请勿用系统 Node 20 手动启动，
+否则可能出现并发连接崩溃（Node 20.11 的 happy-eyeballs 缺陷）。
+
 ```bash
 npm run build      # 构建前端
 npm run typecheck  # 检查已类型化的服务端模块
