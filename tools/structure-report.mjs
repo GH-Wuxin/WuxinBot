@@ -57,14 +57,11 @@ function main() {
         file: relativePath,
         functions: declaredFunctions(source),
         importedByMain,
-        note: name === 'commandHandlers.ts' ? 'currently not imported by server/bot.ts' : ''
+        note: ''
       };
     });
 
-  const risks = [
-    'server/bot/commandHandlers.ts is not imported by the runtime path.',
-    'When changing behavior, verify processIncoming() and run npm run sanity.'
-  ];
+  const risks = ['When changing behavior, verify processIncoming() and run npm run sanity.'];
   if (duplicateImports.length) {
     risks.unshift('server/bot.ts still contains local functions with the same names as imported helper modules.');
   }

@@ -39,7 +39,7 @@ function event(overrides) {
 async function main() {
   const { ensureStore, publicDb } = await import('../server/store.ts');
   const { decideReply, processIncoming } = await import('../server/bot.ts');
-  const { mentionsBot } = await import('../server/bot/cleaning.ts');
+  const { mentionsBot, normalizeMessage } = await import('../server/bot/cleaning.ts');
   ensureStore();
 
   const originalRaw = fs.readFileSync(dbPath, 'utf8').replace(/^﻿/, '');
@@ -87,6 +87,14 @@ async function main() {
 
     assert(!mentionsBot('这bot疯了', db.settings), 'generic bot alias should not match inside a sentence');
     assert(mentionsBot('bot 在吗', db.settings), 'generic bot alias should still match at word boundary');
+    assert(
+      normalizeMessage('/w osu analyze &#91;SHK&#93;Wuxin') === '/w osu analyze [SHK]Wuxin',
+      'raw_message should decode CQ-escaped brackets in osu! usernames'
+    );
+    assert(
+      normalizeMessage([{ type: 'text', data: { text: '&#91;SHK&#93;Wuxin' } }]) === '[SHK]Wuxin',
+      'array text segments should decode CQ-escaped brackets'
+    );
 
     sent.length = 0;
     const ping = await processIncoming(event({ text: '/w ping' }), sendMessage);
@@ -116,7 +124,7 @@ async function main() {
       atTargets: [sanityBotQq]
     }), sendMessage);
     assert(visualAsk.replied === true, 'explicit visual inspection request should get deterministic reply');
-    assert(sent.some((text) => text.includes('看不到图片') || text.includes('只能读文字') || text.includes('没有拿到可读')), 'visual limitation reply should explain limitation');
+    assert(sent.some((text) => text.includes('看不了') || text.includes('看不到图片') || text.includes('只能读文字') || text.includes('没有拿到可读')), 'visual limitation reply should explain limitation');
 
     sent.length = 0;
     const externalBot = await processIncoming(event({
@@ -156,7 +164,7 @@ async function main() {
     assert(typoCommand.replied === true, 'unknown /w command should reply briefly');
     assert(sent.length === 1 && sent[0].includes('未知 Wuxin 指令'), 'unknown /w command should not send full help');
 
-    const mimoDecision = decideReply({
+    const mimoDecision = await decideReply({
       db: {
         ...db,
         settings: {
