@@ -1,6 +1,8 @@
 node_modules/
 dist/
 data/
+logs/
+incidents/
 .env
 fix-*.mjs
 patch-*.mjs
@@ -12,6 +14,7 @@ CLAUDE.md
 .git-old-backup/
 src/*backup*.txt
 *.bak-*
+*.stackdump
 Wuxin-v0.1.0-portable.zip
 release/
 portable-node/
