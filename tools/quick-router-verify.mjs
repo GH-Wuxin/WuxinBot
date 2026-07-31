@@ -107,8 +107,6 @@ console.log('=== Unit: matchQuickCommand ===');
     ['查', 'at_profile', '', { atTargets: ['123'] }],
     ['where qq=123', 'where', 'qq=123', {}],
     ['where Cookiezi', 'where', 'Cookiezi', {}],
-    ['++', 'pp_self', '', {}],
-    ['+abc', 'pp_user', 'abc', {}],
     ['今日高光', 'highlight', '', {}],
     ['我的年度osu!', 'annual', '', {}],
     // Cut / removed / non-command messages must not match:
@@ -123,6 +121,8 @@ console.log('=== Unit: matchQuickCommand ===');
     ['/check', null, null, {}],
     ['/年度总结', null, null, {}],
     ['/badge', null, null, {}],
+    ['++', null, null, {}],
+    ['+abc', null, null, {}],
     ['今天天气不错', null, null, {}],
     ['@pippi 帮我看看 bp1', null, null, {}],
   ];
