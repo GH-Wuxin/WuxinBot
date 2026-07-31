@@ -895,7 +895,7 @@ export interface InternalPlayerTarget {
   value: number | string;
 }
 
-interface InternalBotCommandResult {
+export interface InternalBotCommandResult {
   content: string;
   images?: string[];
 }
@@ -1065,7 +1065,7 @@ export function formatInternalInfoText(user: OsuUser, ppPlusNote = ''): string {
   ].filter(Boolean).join('\n');
 }
 
-async function executeInternalBotCommand(
+export async function executeInternalBotCommand(
   botId: string,
   commandName: string,
   username: string,

@@ -92,6 +92,9 @@ function setupFixture() {
     db.settings.enableAutoModel = false;
     db.settings.thinkingNoticeMode = 'off';
     db.settings.memoryEnabled = false;
+    // M1: literal quick commands (`!bs 1-100`) route deterministically; the
+    // Chinese natural-language cases below still go through the LLM tool path.
+    db.settings.quickRouterEnabled = true;
     db.settings.botRegistry = {
       updatedAt: new Date().toISOString(),
       bots: [{
@@ -111,7 +114,7 @@ function setupFixture() {
   });
 }
 
-async function runRangeE2E(label, userText, expectedArgs) {
+async function runRangeE2E(label, userText, expectedArgs, expectQuick = false) {
   setupFixture();
   llmCalls = 0;
   llmReceivedTools = null;
@@ -124,6 +127,22 @@ async function runRangeE2E(label, userText, expectedArgs) {
     text: userText,
     atTargets: [], images: [], raw: {}
   }, async () => {});
+
+  // M1 quick-command router: literal `!bs 1-100` is now handled deterministically
+  // without any LLM call (the Chinese natural-language cases below still go
+  // through the requiredTool path).
+  if (expectQuick) {
+    if (llmCalls !== 0) {
+      fail(label, `quick route must not call the LLM, got ${llmCalls} calls`);
+      return;
+    }
+    if (!result?.replied) {
+      fail(label, `quick route must reply, got ${JSON.stringify(result)}`);
+      return;
+    }
+    pass(label + ` → quick route (${result.reason})`);
+    return;
+  }
 
   // 1. No security-policy rejection
   if (result.reason && result.reason.includes('操作被安全策略拒绝')) {
@@ -224,7 +243,7 @@ console.log('\n=== E2E: "查一下我的bp1到bp10" through processIncoming ==='
 
 await runRangeE2E('bp-range', '查一下我的bp1到bp10', { capability: 'bp', bp_start: 1, bp_end: 10 });
 await runRangeE2E('bp-range-short', '查一下bp1到bp10', { capability: 'bp', bp_start: 1, bp_end: 10 });
-await runRangeE2E('bp-range-100', '!bs 1-100', { capability: 'bp', bp_start: 1, bp_end: 100, compact: true });
+await runRangeE2E('bp-range-100', '!bs 1-100', { capability: 'bp', bp_start: 1, bp_end: 100, compact: true }, true);
 await runRangeE2E('bp-rank1', '查一下我的bp1', { capability: 'bp', bp_rank: 1 });
 await runRangeE2E('bp-no-range', '查一下我的bp', { capability: 'bp' });
 
