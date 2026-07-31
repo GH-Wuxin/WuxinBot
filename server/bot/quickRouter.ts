@@ -191,14 +191,11 @@ const HYDRANT: QuickCommandDef[] = [
 
 const ALL_DEFS: QuickCommandDef[] = [...COMMON, ...YUMU, ...KANON, ...LAZYBOT, ...HYDRANT];
 
-// Prefix tables, longest alias first. `!` precedence follows real usage:
-// 猫猫 owns !pr/!re/!bp/!bplist/!info, 雨沐 owns !p/!r/!b/!bs/!s/!t/!i.
-const EXCLAMATION_DEFS = [...COMMON, ...KANON, ...YUMU].sort((a, b) => longestAlias(b) - longestAlias(a));
-const SLASH_DEFS = [...LAZYBOT].sort((a, b) => longestAlias(b) - longestAlias(a));
-
-function longestAlias(def: QuickCommandDef): number {
-  return def.aliases.reduce((max, alias) => Math.max(max, alias.length), 0);
-}
+// Prefix tables. `!` precedence follows real usage: 猫猫 owns !pr/!re/!bp/
+// !bplist/!info, 雨沐 owns !p/!r/!b/!bs/!s/!t/!i. Matching picks the longest
+// actual alias, with ties resolved by registry order (kanon before yumu).
+const EXCLAMATION_DEFS = [...COMMON, ...KANON, ...YUMU];
+const SLASH_DEFS = [...LAZYBOT];
 
 function normalizeAlias(value: string): string {
   return String(value || '').trim().toLowerCase().replace(/[！]/g, '!').replace(/[～∼]/g, '~').replace(/[，]/g, ',').replace(/[ \t]+/g, ' ');
@@ -206,15 +203,18 @@ function normalizeAlias(value: string): string {
 
 function matchAlias(defs: QuickCommandDef[], rest: string): { def: QuickCommandDef; alias: string } | null {
   const normalized = normalizeAlias(rest);
+  let best: { def: QuickCommandDef; alias: string; length: number } | null = null;
   for (const def of defs) {
     for (const alias of def.aliases) {
       const key = normalizeAlias(alias);
       if (normalized === key || normalized.startsWith(key + ' ')) {
-        return { def, alias: key };
+        if (!best || key.length > best.length) {
+          best = { def, alias: key, length: key.length };
+        }
       }
     }
   }
-  return null;
+  return best ? { def: best.def, alias: best.alias } : null;
 }
 
 /** Rebuild raw args after a matched alias, preserving original casing. */

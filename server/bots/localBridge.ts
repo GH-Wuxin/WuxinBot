@@ -260,7 +260,10 @@ export function callLocalBot(
         const parsed = JSON.parse(frame);
         if (parsed && typeof parsed === 'object' && parsed.action && parsed.echo !== undefined) {
           if (ws.readyState === WebSocket.OPEN) {
-            ws.send(JSON.stringify({ status: 'ok', retcode: 0, data: null, echo: parsed.echo }));
+            // data must look like a successful API result (e.g. a message id);
+            // data:null makes WudiLib treat the send as failed and hydrant
+            // falls back to its screenshot-to-image path (black image).
+            ws.send(JSON.stringify({ status: 'ok', retcode: 0, data: { message_id: 0 }, echo: parsed.echo }));
           }
         }
       } catch { /* non-JSON frames are ignored */ }
