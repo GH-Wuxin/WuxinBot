@@ -983,7 +983,7 @@ export async function enrichInternalScoreStarRatings(
   }
 
   const { mapLimit } = await import('./render.js');
-  const taskResults = await mapLimit([...unique.entries()], 6, async ([key, entry]) => {
+  const taskResults = await mapLimit([...unique.entries()], 10, async ([key, entry]) => {
     try {
       const result = await attributeFetcher(entry.beatmapId, mode, entry.mods);
       const stars = Number(result.attributes?.star_rating || 0);
