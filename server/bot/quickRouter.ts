@@ -40,6 +40,8 @@ interface QuickMatch {
   def: QuickCommandDef;
   /** The full normalized command text without the prefix. */
   cmdText: string;
+  /** The matched alias (normalized), used to rebuild injected commands. */
+  alias: string;
   /** Raw arguments after the matched alias. */
   args: string;
   prefix: '!' | '/' | 'none';
@@ -245,6 +247,7 @@ export function matchQuickCommand(event: { text: string; atTargets?: string[] })
     return {
       def: matched.def,
       cmdText: rest,
+      alias: matched.alias,
       args: argsAfterAlias(rest, matched.alias),
       prefix: '!',
       atTargets,
@@ -259,6 +262,7 @@ export function matchQuickCommand(event: { text: string; atTargets?: string[] })
     return {
       def: matched.def,
       cmdText: rest,
+      alias: matched.alias,
       args: argsAfterAlias(rest, matched.alias),
       prefix: '/',
       atTargets,
@@ -270,13 +274,13 @@ export function matchQuickCommand(event: { text: string; atTargets?: string[] })
   if (/^~/.test(hydrant)) {
     const { mode, rest } = modeSuffix(hydrant.slice(1).trim());
     const def = HYDRANT.find((d) => d.handler === 'self_profile')!;
-    return { def, cmdText: hydrant, args: rest, prefix: 'none', atTargets, extraMode: mode };
+    return { def, cmdText: hydrant, alias: '~', args: rest, prefix: 'none', atTargets, extraMode: mode };
   }
   if (/^查/.test(raw)) {
     const { mode, rest } = modeSuffix(raw.slice(1).trim());
     if (atTargets.length > 0) {
       const def = HYDRANT.find((d) => d.handler === 'at_profile')!;
-      return { def, cmdText: raw, args: rest, prefix: 'none', atTargets, extraMode: mode };
+      return { def, cmdText: raw, alias: '查', args: rest, prefix: 'none', atTargets, extraMode: mode };
     }
     return null;
   }
@@ -287,6 +291,7 @@ export function matchQuickCommand(event: { text: string; atTargets?: string[] })
     return {
       def,
       cmdText: raw,
+      alias: prefixFree.alias,
       args: argsAfterAlias(raw, prefixFree.alias),
       prefix: 'none',
       atTargets,
@@ -388,8 +393,31 @@ const HELP_TEXT = [
   '成绩：!p / !r / !pr / !re（最近）、!bp / !b / !bs（BP）、!i / !info（玩家信息）、!pp / !plus（PP+）、!k（技能）',
   'LazyBot 风格：/plus /ppp（PP+）、/bp /bplist、/pr /recent、/profile /info',
   '消防栓风格：~（自己信息卡）、查+@（查他人）、where 名字、++（PP+）',
-  '绑定：!bind <osu用户名>；解绑：!unbind',
+  '绑定（唯一入口）：/w osu bind <osu用户名>；解绑：/w osu clear bind',
 ].join('\n');
+
+const UNBOUND_SELF_PROMPT = '你还没绑定 osu! 账号。先发送 /w osu bind <osu用户名> 绑定一次，之后 !p/!r/!pr/!bp/!bs/!i/~ 这些指令都能直接用。';
+const UNBOUND_TARGET_PROMPT = '对方还没绑定 osu! 账号。';
+const UNBOUND_QQ_PROMPT = '该 QQ 还没绑定 osu! 账号。';
+const BIND_HINT = '绑定请使用 /w osu bind <osu用户名>；解绑请使用 /w osu clear bind。';
+
+/**
+ * Resolve a QQ to its Wuxin binding as an injectable user token (username or
+ * osu id). Returns '' when the QQ has no binding.
+ */
+function bindingUser(db: any, qq: string | undefined): string {
+  const binding = db?.osuBindings?.[String(qq ?? '')];
+  if (!binding) return '';
+  if (typeof binding === 'number' && Number.isFinite(binding) && binding > 0) return String(binding);
+  if (typeof binding === 'string' && binding.trim()) return binding.trim();
+  if (binding && typeof binding === 'object') {
+    const id = Number(binding.osuUserId ?? binding.userId ?? binding.id ?? 0);
+    if (Number.isFinite(id) && id > 0) return String(id);
+    const username = String(binding.osuUsername ?? binding.username ?? '').trim();
+    if (username) return username;
+  }
+  return '';
+}
 
 /**
  * Quick commands mirror the original bots: when a panel image exists, the
@@ -500,13 +528,58 @@ export async function handleQuickCommand(
   // Original rendering (雨沐 E5/A4 面板、消防栓文字卡等) beats the internal
   // engine; on any bridge failure we fall through to the internal handler.
   if (def.bridge && hasLocalEndpoint(def.source)) {
-    const bridgeCommand = buildBridgeCommand(match);
+    let bridgeCommand = buildBridgeCommand(match);
     const bridgeContext = {
       groupId: event.type === 'private' ? '770001' : String(event.groupId || ''),
       userId: String(event.userId || ''),
       nickname: String(event.nickname || ''),
       atTargets,
     };
+    // M2: unified binding — commands that need "me"/"him" resolve the user from
+    // Wuxin's osuBindings and inject it into the original bot's command.
+    if (def.handler === 'self_profile') {
+      const user = bindingUser(db, String(event.userId));
+      if (!user) {
+        if (sendMessage) await sendMessage(event, UNBOUND_SELF_PROMPT);
+        log('unbound', 'self');
+        return { handled: true, replied: true, reason: 'unbound_self' };
+      }
+      bridgeCommand = `where ${user}`;
+    } else if (def.handler === 'at_profile') {
+      const target = String(atTargets?.[0] || '');
+      const user = bindingUser(db, target);
+      if (!user) {
+        if (sendMessage) await sendMessage(event, UNBOUND_TARGET_PROMPT);
+        log('unbound', `at:${target}`);
+        return { handled: true, replied: true, reason: 'unbound_target' };
+      }
+      bridgeCommand = `where ${user}`;
+    } else if (def.handler === 'where') {
+      const qqMatch = /^qq\s*=\s*(\d+)$/i.exec(String(args || '').trim());
+      if (qqMatch) {
+        const user = bindingUser(db, qqMatch[1]);
+        if (!user) {
+          if (sendMessage) await sendMessage(event, UNBOUND_QQ_PROMPT);
+          log('unbound', `qq:${qqMatch[1]}`);
+          return { handled: true, replied: true, reason: 'unbound_qq' };
+        }
+        bridgeCommand = `where ${user}`;
+      }
+    } else if (def.capability) {
+      const parsed = parseOsuArgs(def, args);
+      if (!parsed.username) {
+        const usesAt = atTargets.length > 0;
+        const target = usesAt ? String(atTargets[0]) : String(event.userId);
+        const user = bindingUser(db, target);
+        if (!user) {
+          if (sendMessage) await sendMessage(event, usesAt ? UNBOUND_TARGET_PROMPT : UNBOUND_SELF_PROMPT);
+          log('unbound', usesAt ? `at:${target}` : 'self');
+          return { handled: true, replied: true, reason: usesAt ? 'unbound_target' : 'unbound_self' };
+        }
+        // Rebuild with the injected user before any BP range.
+        bridgeCommand = `${match.prefix}${match.alias} ${user}${args ? ' ' + args : ''}`;
+      }
+    }
     try {
       const bridgeTimeout = def.source === 'lazybot' ? 30_000 : 60_000;
       const reply = await callLocalBot(def.source, bridgeCommand, bridgeContext, bridgeTimeout);
@@ -550,36 +623,10 @@ export async function handleQuickCommand(
     log('dice', String(sides));
     return { handled: true, replied: true, reason: 'dice' };
   }
-  if (def.handler === 'bind') {
-    const username = String(args || '').trim();
-    if (!username) {
-      if (sendMessage) await sendMessage(event, '用法：!bind <osu用户名>（例如 !bind Cookiezi）');
-      return { handled: true, replied: true, reason: 'bind 缺用户名' };
-    }
-    let userId: number;
-    try {
-      const { getUser } = await import('../osu/api.js');
-      const user = await getUser(username);
-      userId = user.id;
-    } catch {
-      if (sendMessage) await sendMessage(event, `osu! 用户 "${username}" 查不到。`);
-      return { handled: true, replied: true, reason: 'bind 用户不存在' };
-    }
-    updateDb((draft) => {
-      draft.osuBindings = draft.osuBindings || {};
-      draft.osuBindings[String(event.userId)] = { id: userId, username };
-    });
-    if (sendMessage) await sendMessage(event, `已将 QQ 绑定到 osu! ${username}（ID: ${userId}）。`);
-    log('bind', username);
-    return { handled: true, replied: true, reason: 'bind' };
-  }
-  if (def.handler === 'unbind') {
-    updateDb((draft) => {
-      if (draft.osuBindings) delete draft.osuBindings[String(event.userId)];
-    });
-    if (sendMessage) await sendMessage(event, '已解除 osu! 绑定。');
-    log('unbind');
-    return { handled: true, replied: true, reason: 'unbind' };
+  if (def.handler === 'bind' || def.handler === 'unbind') {
+    if (sendMessage) await sendMessage(event, BIND_HINT);
+    log(def.handler);
+    return { handled: true, replied: true, reason: 'bind_hint' };
   }
 
   // ── Hydrant profile/PP+ handlers ──
@@ -650,7 +697,20 @@ export async function handleQuickCommand(
       return { handled: true, replied: true, reason: '参数错误' };
     }
     let username = parsed.username;
-    if (!username && atTargets.length > 0) username = resolveAtBinding(db, atTargets);
+    if (!username && atTargets.length > 0) {
+      const target = String(atTargets[0]);
+      username = bindingUser(db, target);
+      if (!username) {
+        if (sendMessage) await sendMessage(event, UNBOUND_TARGET_PROMPT);
+        log('unbound', `at:${target}`);
+        return { handled: true, replied: true, reason: 'unbound_target' };
+      }
+    }
+    if (!username && !bindingUser(db, String(event.userId))) {
+      if (sendMessage) await sendMessage(event, UNBOUND_SELF_PROMPT);
+      log('unbound', 'self');
+      return { handled: true, replied: true, reason: 'unbound_self' };
+    }
     const botId = def.source === 'kanon' ? 'kanon' : def.source === 'lazybot' ? 'lazybot' : 'yumu';
     let result: Awaited<ReturnType<typeof executeInternalBotCommand>>;
     try {
