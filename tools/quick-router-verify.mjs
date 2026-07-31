@@ -215,11 +215,23 @@ console.log('\n=== Unit: local handlers ===');
   ok('handler-dice', diceResult.handled && diceResult.replied && sent.some((t) => /^🎲 \d+（1~6）$/.test(t)), JSON.stringify(diceResult) + ' ' + JSON.stringify(sent));
   sent.length = 0;
 
-  // Unbind removes the binding.
+  // Bind/unbind are hints to /w osu bind (single binding entry).
   updateDb((db) => { db.osuBindings['10001'] = { id: 1, username: 'x' }; });
+  const bindHintMatch = matchQuickCommand({ text: '!bind Cookiezi', atTargets: [] });
+  const bindHintResult = await handleQuickCommand(groupEvent('!bind Cookiezi'), send, readDb(), bindHintMatch, { isOwner: false, isAdmin: false });
+  ok('handler-bind-hint', bindHintResult.handled && bindHintResult.replied && sent.some((t) => t.includes('/w osu bind')), JSON.stringify(bindHintResult) + ' ' + JSON.stringify(sent));
+  sent.length = 0;
+
   const unbindMatch = matchQuickCommand({ text: '!unbind', atTargets: [] });
   const unbindResult = await handleQuickCommand(groupEvent('!unbind'), send, readDb(), unbindMatch, { isOwner: false, isAdmin: false });
-  ok('handler-unbind', unbindResult.handled && !readDb().osuBindings?.['10001'], JSON.stringify(unbindResult));
+  ok('handler-unbind-hint', unbindResult.handled && readDb().osuBindings?.['10001'], JSON.stringify(unbindResult));
+  updateDb((db) => { delete db.osuBindings['10001']; });
+  sent.length = 0;
+
+  // Unbound user gets Wuxin's own prompt, never the original bot's message.
+  const unboundMatch = matchQuickCommand({ text: '!r', atTargets: [] });
+  const unboundResult = await handleQuickCommand(groupEvent('!r'), send, readDb(), unboundMatch, { isOwner: false, isAdmin: false });
+  ok('handler-unbound-self', unboundResult.handled && unboundResult.replied && sent.some((t) => t.includes('/w osu bind')), JSON.stringify(unboundResult) + ' ' + JSON.stringify(sent));
   sent.length = 0;
 
   // Registered but not implemented → falls through to the LLM pipeline.
@@ -272,6 +284,16 @@ console.log('\n=== E2E: processIncoming quick-command path ===');
 
   const stdOnly = await processIncoming(groupEvent('~,mania'), send);
   ok('e2e-std-only', stdOnly.replied === true && sent.some((t) => t.includes('osu!std')), JSON.stringify(stdOnly) + ' ' + JSON.stringify(sent));
+  sent.length = 0;
+
+  // Unbound quick command replies with the Wuxin prompt (no LLM, no bridge).
+  const unbound = await processIncoming(groupEvent('!r'), send);
+  ok('e2e-unbound-prompt', unbound.replied === true && sent.some((t) => t.includes('/w osu bind')), JSON.stringify(unbound) + ' ' + JSON.stringify(sent));
+  sent.length = 0;
+
+  // !bind routes to the /w osu bind hint.
+  const bindHint = await processIncoming(groupEvent('!bind Cookiezi'), send);
+  ok('e2e-bind-hint', bindHint.replied === true && sent.some((t) => t.includes('/w osu bind')), JSON.stringify(bindHint) + ' ' + JSON.stringify(sent));
   sent.length = 0;
 
   // A `查` without @ is not a quick command and (unmentioned) gets no reply.
