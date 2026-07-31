@@ -862,6 +862,7 @@ export async function handleOsuCommand(event: any, sendMessage: any, _permission
       updateDb((draft) => {
         draft.osuAnalyses = [];
         draft.osuRecentAnalyses = [];
+        draft.osuTypeAnalyses = [];
       });
       if (sendMessage) await sendMessage(event, '已清除所有分析缓存。');
       return { replied: true, reason: 'osu clear cache' };
