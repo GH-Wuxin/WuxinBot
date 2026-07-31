@@ -104,6 +104,7 @@ import {
   llmReplyGate
 } from './bot/gate.js';
 import { handleOwnerCommand } from './bot/ownerCommands.js';
+import { matchQuickCommand, handleQuickCommand, quickRouterEnabled } from './bot/quickRouter.js';
 
 function escapeCqParam(value) {
   return String(value || '')
@@ -344,6 +345,19 @@ export async function processIncoming(event, sendMessage = undefined, queuedDeci
 
   if (event.type === 'group' && isWuxinCommandText) {
     return handleOwnerCommand(event, sendMessage, { isOwner: isGroupOwner, isAdmin: isGroupAdmin });
+  }
+
+  // ── Legacy quick-command router (M1 of four-bot merge) ──
+  // Deterministic `!p`/`!bs`/`/plus`/`~`/`查@` … commands bypass the LLM.
+  const quickMatch = matchQuickCommand(event);
+  if (quickMatch && quickRouterEnabled(db, event)) {
+    const quickResult = await handleQuickCommand(event, sendMessage, db, quickMatch, {
+      isOwner: isGroupOwner || isPrivateOwner,
+      isAdmin: isGroupAdmin,
+    });
+    if (quickResult?.handled) {
+      return quickResult;
+    }
   }
 
   const group = getGroup(db, event.groupId);
