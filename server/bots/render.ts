@@ -5,6 +5,7 @@ import {
   existsSync,
   mkdirSync,
   readdirSync,
+  readFileSync,
   statSync,
   unlinkSync,
   writeFileSync
@@ -17,6 +18,10 @@ import { detectRenderedImageType, getRenderServer, renderPanel } from './renderS
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const RENDER_OUTPUT_DIR = path.resolve(__dirname, '..', '..', 'data', 'yumu-renders');
+// Rendered BP lists are cached per score signature so repeated "!bs 1-100"
+// style queries answer instantly without re-running enrichment/rendering.
+const RENDER_CACHE_TTL_MS = 30 * 60_000;
+const renderedPanelCache = new Map<string, { at: number; cqCode: string }>();
 const MAX_SAVED_RENDERS = 512;
 const MAX_SAVED_RENDER_BYTES = 512 * 1024 * 1024;
 const MAX_RENDER_AGE_MS = 7 * 24 * 3600_000;
@@ -411,7 +416,7 @@ export async function buildYumuBestScoresPayload(
     throw new Error('BP 列表为空，无法渲染 panel_A4');
   }
 
-  const scores = await mapLimit(sourceScores, 6, (score) => buildYumuScore(score, apiUser));
+  const scores = await mapLimit(sourceScores, 8, (score) => buildYumuScore(score, apiUser));
   const startRank = Math.max(1, Math.trunc(finiteNumber(options.startRank, 1)));
   const ranks = scores.map((_, index) => {
     const explicit = Number(options.ranks?.[index]);
@@ -600,12 +605,49 @@ export async function renderBestScoresList(
 ): Promise<{ buffer: Buffer; cqCode: string } | null> {
   if (!getRenderServer().hasClients()) return null;
 
+  const cacheKey = bpListCacheKey(apiUser, apiScores, options);
+  const cached = renderedPanelCache.get(cacheKey);
+  if (cached && Date.now() - cached.at < RENDER_CACHE_TTL_MS) {
+    const cachedFile = cqCodeToFilePath(cached.cqCode);
+    if (cachedFile && existsSync(cachedFile)) {
+      return { buffer: readFileSync(cachedFile), cqCode: cached.cqCode };
+    }
+    renderedPanelCache.delete(cacheKey);
+  }
+
   try {
     const payload = await buildYumuBestScoresPayload(apiUser, apiScores, options);
     const buffer = await renderPanel('panel_A4', payload);
-    return { buffer, cqCode: saveAndGetCqCode(buffer, 'bp') };
+    const cqCode = saveAndGetCqCode(buffer, 'bp');
+    renderedPanelCache.set(cacheKey, { at: Date.now(), cqCode });
+    return { buffer, cqCode };
   } catch (err) {
     console.error('[render] panel_A4 failed:', (err as Error).message);
+    return null;
+  }
+}
+
+function bpListCacheKey(
+  apiUser: any,
+  apiScores: any[],
+  options: YumuBestScoresOptions
+): string {
+  const ranks = (options.ranks || []).join(',') || String(options.startRank || 1);
+  const scores = (Array.isArray(apiScores) ? apiScores : []).map((score) => {
+    const mods = Array.isArray(score?.mods)
+      ? score.mods.map((mod: any) => (typeof mod === 'string' ? mod : mod?.acronym || '')).join('')
+      : '';
+    return `${score?.id || score?.best_id || 0}:${mods}:${score?.pp || 0}:${score?.ended_at || score?.created_at || ''}:${score?.rank || ''}`;
+  }).join('|');
+  return `a4:${apiUser?.id || 0}:${ranks}:${options.compact ? 'c' : 'n'}:${scores}`;
+}
+
+function cqCodeToFilePath(cqCode: string): string | null {
+  const match = /\[CQ:image,file=(file:\/\/[^\]]+)\]/.exec(cqCode || '');
+  if (!match) return null;
+  try {
+    return fileURLToPath(match[1]);
+  } catch {
     return null;
   }
 }
