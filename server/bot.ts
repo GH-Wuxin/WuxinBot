@@ -295,7 +295,14 @@ export async function processIncoming(event, sendMessage = undefined, queuedDeci
 
   const isPrivateOwner = event.type === 'private' && settings.ownerQq && String(event.userId) === String(settings.ownerQq);
   if (isPrivateOwner && event.text.startsWith('/')) {
-    return handleOwnerCommand(event, sendMessage);
+    // Bare slash commands that belong to the LazyBot quick table are routed
+    // below (when the quick router is enabled); Wuxin's own `/help` and other
+    // owner slash commands keep their existing behavior.
+    const privateQuick = matchQuickCommand(event);
+    const isLazyQuick = privateQuick?.def.source === 'lazybot' && privateQuick.def.id !== 'help';
+    if (!(isLazyQuick && quickRouterEnabled(db, event))) {
+      return handleOwnerCommand(event, sendMessage);
+    }
   }
 
   const isGroupOwner = event.type === 'group' && settings.ownerQq && String(event.userId) === String(settings.ownerQq);
