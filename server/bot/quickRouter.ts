@@ -577,7 +577,10 @@ export async function handleQuickCommand(
   if (def.bridge && hasLocalEndpoint(def.source)) {
     let bridgeCommand = buildBridgeCommand(match);
     const bridgeContext = {
-      groupId: event.type === 'private' ? '770001' : String(event.groupId || ''),
+      // Bridge traffic always uses the dedicated virtual group 770099, whose
+      // shared config keeps all four bots enabled. Using the real group id
+      // would make the bots' own group-disable check silence bridge calls.
+      groupId: '770099',
       userId: String(event.userId || ''),
       nickname: String(event.nickname || ''),
       atTargets,

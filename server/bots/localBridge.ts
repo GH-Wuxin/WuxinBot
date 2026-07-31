@@ -158,7 +158,7 @@ function buildEvent(
     sub_type: 'normal',
     // Bots parse message_id as int32; keep it small and unique per call.
     message_id: (Date.now() % 1_500_000_000) + Math.floor(Math.random() * 900),
-    group_id: Number(context.groupId) || 770001,
+    group_id: Number(context.groupId) || 770099,
     user_id: userId,
     anonymous: null,
     font: 0,
