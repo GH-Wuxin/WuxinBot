@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { createLLMClient, llmProvider } from '../server/bot/llm.ts';
+import { createLLMClient, llmProvider, normalizeLlmMessages } from '../server/bot/llm.ts';
 
 const baseSettings = {
   apiKey: 'sk-test',
@@ -32,5 +32,12 @@ assert.doesNotThrow(
   }),
   'Mimo OpenAI-compatible config should pass'
 );
+
+const normalized = normalizeLlmMessages([
+  { role: 'user', content: `正常文本${String.fromCharCode(0xD800)}尾部` },
+  { role: 'user', content: [{ type: 'text', text: String.fromCharCode(0xDC00) }] }
+]);
+assert.equal(normalized[0].content, '正常文本�尾部', 'unpaired high surrogate must be replaced');
+assert.equal(normalized[1].content[0].text, '�', 'unpaired low surrogate in multimodal text must be replaced');
 
 console.log('PASS: LLM provider/key guard verification');

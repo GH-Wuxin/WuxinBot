@@ -201,7 +201,7 @@ async function main() {
     setupDb(original);
 
     // Owner message should reply in natural mode
-    const d7 = decideReply({
+    const d7 = await decideReply({
       db: readDb(),
       group: readDb().groups.find((g) => g.groupId === TEST_GROUP),
       userPolicy: { policy: 'normal', attentionLevel: 3, allowCommands: false },
