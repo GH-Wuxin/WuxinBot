@@ -67,7 +67,7 @@ import { setBotPaused, getRecalcProgress, startRecalc, tickRecalc, finishRecalc 
 import { activateModelProfile, activeProviderLabel } from './modelConfig.js';
 import { handleOsuCommand } from './osu/commands.js';
 import { loadRegistry, buildBotToolSchemas, enabledBots, findBot } from './bots/registry.js';
-import { detectRequiredOsuTool, detectNamedBotRequest, detectBpTypeAnalysisIntent } from './bots/intent.js';
+import { detectRequiredOsuTool, detectNamedBotRequest } from './bots/intent.js';
 import { validateOperation } from './bots/guard.js';
 import { runToolLoop, tryResolveBotResponse } from './bots/executor.js';
 
@@ -952,27 +952,6 @@ export async function processIncoming(event, sendMessage = undefined, queuedDeci
     const osuDataIntent = detectRequiredOsuTool(event.text);
     const registryHere = loadRegistry(liveDb);
     const namedBotRequest = detectNamedBotRequest(event.text, registryHere.bots || []);
-    const bpTypeAnalysis = detectBpTypeAnalysisIntent(event.text);
-
-    // ── BP type analysis ──
-    // "分析我的bp类型" gets a deterministic osu!oracle classification of the
-    // player's Top100. No LLM is involved, so proportions can never be made up.
-    if (bpTypeAnalysis && !osuDataIntent) {
-      const { runBpTypeAnalysis } = await import('./bots/bpTypeAnalysis.js');
-      let replyText: string;
-      try {
-        replyText = await runBpTypeAnalysis(liveDb, String(event.userId), '');
-      } catch (error) {
-        replyText = `BP 谱面类型分析暂时不可用：${String((error as Error)?.message || error)}`;
-      }
-      if (sendMessage) await sendMessage(event, replyText);
-      updateDb((draft) => {
-        draft.messages.push({ id: crypto.randomUUID(), role: 'assistant', type: event.type, groupId: event.groupId, userId: 'bot', nickname: '机器人', content: replyText, inContext: true, createdAt: nowIso() });
-        draft.usage.replies += 1;
-      });
-      await drainReplyQueue(replyLockKey);
-      return { replied: true, text: replyText, reason: 'bp_type_analysis' };
-    }
 
     // ── Named-bot invocation guard ──
     // User explicitly names a bot to do something (用猫猫查…、调用LazyBot). Without
@@ -1118,7 +1097,7 @@ export async function processIncoming(event, sendMessage = undefined, queuedDeci
       const tools = buildBotToolSchemas(registry);
       // Add tool availability note to system prompt
       if (messages[0]?.role === 'system') {
-        messages[0].content += '\n\n【可用工具】你可以调用 query_osu 获取真实 osu! 数据（BP、最近成绩、玩家信息、PP+ 等）。数据来自 osu! API v2 和 PP+ 服务，不是你凭记忆编造的。涉及 osu! 数据时必须调用工具，不准用聊天记录或上下文中的旧数据。当玩家问"我是谁"等身份问题时也必须调工具查绑定。日常闲聊不需要使用工具。如果玩家问的是分析/判断类问题（为什么偏科、怎么提升），也需要先查数据再做分析。涉及 BP 谱面类型或占比（串图/跳图比例、bp 类型）的分析，在拿到真实分类数据之前不得给出比例或确定性结论——系统会自动生成真实分类；你不需要也不准自己编造比例。注意：雨沐/猫猫/消防栓/LazyBot 是 QQ 群里的独立机器人，不是你可以调用的工具——你应该用 query_osu 获取数据。';
+        messages[0].content += '\n\n【可用工具】你可以调用 query_osu 获取真实 osu! 数据（BP、最近成绩、玩家信息、PP+ 等）。数据来自 osu! API v2 和 PP+ 服务，不是你凭记忆编造的。涉及 osu! 数据时必须调用工具，不准用聊天记录或上下文中的旧数据。当玩家问"我是谁"等身份问题时也必须调工具查绑定。日常闲聊不需要使用工具。如果玩家问的是分析/判断类问题（为什么偏科、怎么提升），也需要先查数据再做分析。涉及 BP 谱面类型或占比（串图/跳图比例、bp 类型）的分析必须调用 query_osu 的 bp_type 能力（osu!oracle 真实分类，仅支持 osu!std 的 aim/alt/tech/stream 四类）；未调用工具前不得给出任何比例。本 bot 只支持 osu!std 查询，用户问 taiko/catch/mania 时如实说明暂不支持，禁止拿 std 数据冒充。注意：雨沐/猫猫/消防栓/LazyBot 是 QQ 群里的独立机器人，不是你可以调用的工具——你应该用 query_osu 获取数据。';
       }
 
       // ── Deterministic osu! data routing ──
