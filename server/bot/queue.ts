@@ -1,6 +1,5 @@
-// @ts-nocheck -- legacy runtime module split from server/bot.ts; new code should live in typed modules.
-import { pathToFileURL } from 'node:url';
-import { defaultPrompt, readDb, updateDb, nowIso } from '../store.js';
+// Reply queue + inbound dedupe. Type-checked module.
+import { updateDb, nowIso } from '../store.js';
 import {
   normalizeMessage,
   extractImageInputs,
@@ -57,19 +56,6 @@ import {
   isIdentityQuestion,
   neutralIdentityReply
 } from './reply.js';
-import { recordMemoryObservation, maybeUpdateMemoryProfile, maybeRecordImageMemorySummary, updateMemoryProfile, commitMemoryProfileResult, maybeSweepDueMemoryProfiles } from './memory.js';
-import { getGroupProfile, updateGroupProfile, clearGroupProfile, incrementGroupProfilePending, hasGroupProfileContent } from './groupProfile.js';
-import { getRelationshipProfile, updateRelationshipProfile, clearRelationshipProfile, incrementPairPending } from './relationshipProfile.js';
-import { processTrustSignal, evaluateTrustScores, trustInteractionBonus, isTrustedMember } from './trust.js';
-import { processXpGain, getExperience, getXpBonus, formatXpBar, getUnlockedFeatures, getLevelInfo, getNextLevelInfo, LEVELS, decayInactiveUsers } from './experience.js';
-import { isSearchAvailable, searchWeb, formatSearchResults, getLastSearchStatus, extractSearchQuery } from './search.js';
-import { setBotPaused, getRecalcProgress, startRecalc, tickRecalc, finishRecalc } from '../health.js';
-import { activateModelProfile, activeProviderLabel } from '../modelConfig.js';
-import { handleOsuCommand } from '../osu/commands.js';
-import { loadRegistry, buildBotToolSchemas, enabledBots, findBot } from '../bots/registry.js';
-import { detectRequiredOsuTool, detectNamedBotRequest } from '../bots/intent.js';
-import { validateOperation } from '../bots/guard.js';
-import { runToolLoop, tryResolveBotResponse } from '../bots/executor.js';
 
 export const REPLY_QUEUE_LIMIT = 20;
 const REPLY_QUEUE_TTL_MS = 180_000;
