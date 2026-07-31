@@ -170,7 +170,7 @@ const initialDb = {
     maxTokens: 300,
     contextLimit: 30,
     ownerPrivateContextCharBudget: 24000,
-    botNames: '小深,机器人,bot',
+        botNames: '小深,机器人,bot,pippi',
     personalityPrompt: defaultPrompt,
     oneBotHttpUrl: 'http://127.0.0.1:3000',
     oneBotWsUrl: 'ws://127.0.0.1:3001',

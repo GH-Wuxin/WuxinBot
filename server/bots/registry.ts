@@ -103,6 +103,7 @@ export function findBot(registry: BotRegistry, botId: string): BotDefinition | u
 // bots (yumu/kanon/hydrant/lazybot) all share this single implementation.
 export const INTERNAL_CAPABILITIES = [
   { name: 'bp', description: '最佳成绩（支持单张 #N 或范围 N-M，最多 100 张，一张图）' },
+  { name: 'bp_type', description: 'BP 谱面类型分析（osu!oracle 对 Top100 分类：aim/alt/tech/stream，仅 osu!std，训练范围约 5★-9★）' },
   { name: 'recent', description: '最近一次 osu! 成绩（含图片）' },
   { name: 'info', description: '玩家信息卡（含图片）' },
   { name: 'profile', description: '玩家资料文本' },
