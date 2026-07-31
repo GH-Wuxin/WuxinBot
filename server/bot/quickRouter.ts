@@ -191,8 +191,9 @@ const HYDRANT: QuickCommandDef[] = [
 
 const ALL_DEFS: QuickCommandDef[] = [...COMMON, ...YUMU, ...KANON, ...LAZYBOT, ...HYDRANT];
 
-// Prefix tables, longest alias first.
-const EXCLAMATION_DEFS = [...COMMON, ...YUMU, ...KANON].sort((a, b) => longestAlias(b) - longestAlias(a));
+// Prefix tables, longest alias first. `!` precedence follows real usage:
+// 猫猫 owns !pr/!re/!bp/!bplist/!info, 雨沐 owns !p/!r/!b/!bs/!s/!t/!i.
+const EXCLAMATION_DEFS = [...COMMON, ...KANON, ...YUMU].sort((a, b) => longestAlias(b) - longestAlias(a));
 const SLASH_DEFS = [...LAZYBOT].sort((a, b) => longestAlias(b) - longestAlias(a));
 
 function longestAlias(def: QuickCommandDef): number {
@@ -378,7 +379,10 @@ export function parseOsuArgs(def: QuickCommandDef, args: string): ParsedOsuArgs 
 function buildBridgeCommand(match: QuickMatch): string {
   const { def, cmdText, args, prefix } = match;
   if (def.handler === 'self_profile') return '~';
-  if (def.handler === 'at_profile') return '查';
+  if (def.handler === 'at_profile') {
+    const qq = match.atTargets?.[0] || '';
+    return qq ? `查[CQ:at,qq=${qq}]` : '查';
+  }
   if (def.handler === 'where') return `where ${args}`.trim();
   if (def.handler === 'pp_self') return '++';
   if (def.handler === 'pp_user') return `+${args}`.trim();
@@ -514,7 +518,7 @@ export async function handleQuickCommand(
       atTargets,
     };
     try {
-      const bridgeTimeout = def.source === 'yumu' || def.source === 'hydrant' ? 60_000 : 30_000;
+      const bridgeTimeout = def.source === 'lazybot' ? 30_000 : 60_000;
       const reply = await callLocalBot(def.source, bridgeCommand, bridgeContext, bridgeTimeout);
       // Bridge replies are the original bot's own output: keep text and images
       // exactly as produced (the internal engine is the one that needed the
