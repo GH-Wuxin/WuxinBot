@@ -14,7 +14,8 @@
     "start": "tsx server/index.ts",
     "sanity": "tsx tools/sanity.mjs",
     "security": "tsx tools/security-verify.mjs",
-    "structure": "node tools/structure-report.mjs"
+    "structure": "node tools/structure-report.mjs",
+    "verify-all": "node tools/run-all-verifies.mjs"
   },
   "keywords": [],
   "author": "",
