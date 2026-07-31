@@ -538,17 +538,24 @@ export async function handleQuickCommand(
       return { handled: true, replied: true, reason: '非 std 模式' };
     }
     const username = def.handler === 'at_profile' ? resolveAtBinding(db, atTargets) : '';
+    let result: Awaited<ReturnType<typeof executeInternalBotCommand>>;
     try {
-      const result = await executeInternalBotCommand('hydrant', 'profile', username, {
+      result = await executeInternalBotCommand('hydrant', 'profile', username, {
         db, userId: String(event.userId), groupId: event.groupId,
       });
-      if (sendMessage) await sendMessage(event, quickPayload(result));
-      log('profile', username || '(self)');
-      return { handled: true, replied: true, reason: 'profile' };
     } catch (error: any) {
       if (sendMessage) await sendMessage(event, String(error?.message || error));
       return { handled: true, replied: true, reason: 'profile_error' };
     }
+    // Delivery failure after a successful command must not trigger a second,
+    // confusing error message (panel may already have been sent).
+    try {
+      if (sendMessage) await sendMessage(event, quickPayload(result));
+    } catch (deliveryError: any) {
+      console.error(`[quick] ${def.id} 发送失败（面板可能已发出）:`, deliveryError?.message || deliveryError);
+    }
+    log('profile', username || '(self)');
+    return { handled: true, replied: true, reason: 'profile' };
   }
   if (def.handler === 'where') {
     const query = String(args || '').trim();
@@ -566,31 +573,41 @@ export async function handleQuickCommand(
       if (sendMessage) await sendMessage(event, '用法：where <osu用户名> 或 where qq=<QQ号>');
       return { handled: true, replied: true, reason: 'where 缺参数' };
     }
+    let result: Awaited<ReturnType<typeof executeInternalBotCommand>>;
     try {
-      const result = await executeInternalBotCommand('hydrant', 'profile', query, {
+      result = await executeInternalBotCommand('hydrant', 'profile', query, {
         db, userId: String(event.userId), groupId: event.groupId,
       });
-      if (sendMessage) await sendMessage(event, quickPayload(result));
-      log('where', query);
-      return { handled: true, replied: true, reason: 'where' };
     } catch (error: any) {
       if (sendMessage) await sendMessage(event, String(error?.message || error));
       return { handled: true, replied: true, reason: 'where_error' };
     }
+    try {
+      if (sendMessage) await sendMessage(event, quickPayload(result));
+    } catch (deliveryError: any) {
+      console.error(`[quick] ${def.id} 发送失败（面板可能已发出）:`, deliveryError?.message || deliveryError);
+    }
+    log('where', query);
+    return { handled: true, replied: true, reason: 'where' };
   }
   if (def.handler === 'pp_self' || def.handler === 'pp_user') {
     const username = def.handler === 'pp_user' ? String(args || '').trim() : '';
+    let result: Awaited<ReturnType<typeof executeInternalBotCommand>>;
     try {
-      const result = await executeInternalBotCommand('hydrant', 'pplus', username, {
+      result = await executeInternalBotCommand('hydrant', 'pplus', username, {
         db, userId: String(event.userId), groupId: event.groupId,
       });
-      if (sendMessage) await sendMessage(event, quickPayload(result));
-      log('pplus', username || '(self)');
-      return { handled: true, replied: true, reason: 'pplus' };
     } catch (error: any) {
       if (sendMessage) await sendMessage(event, String(error?.message || error));
       return { handled: true, replied: true, reason: 'pplus_error' };
     }
+    try {
+      if (sendMessage) await sendMessage(event, quickPayload(result));
+    } catch (deliveryError: any) {
+      console.error(`[quick] ${def.id} 发送失败（面板可能已发出）:`, deliveryError?.message || deliveryError);
+    }
+    log('pplus', username || '(self)');
+    return { handled: true, replied: true, reason: 'pplus' };
   }
 
   // ── Internal engine capabilities ──
@@ -603,21 +620,26 @@ export async function handleQuickCommand(
     let username = parsed.username;
     if (!username && atTargets.length > 0) username = resolveAtBinding(db, atTargets);
     const botId = def.source === 'kanon' ? 'kanon' : def.source === 'lazybot' ? 'lazybot' : 'yumu';
+    let result: Awaited<ReturnType<typeof executeInternalBotCommand>>;
     try {
-      const result = await executeInternalBotCommand(
+      result = await executeInternalBotCommand(
         botId,
         def.capability,
         username,
         { db, userId: String(event.userId), groupId: event.groupId },
         parsed.bpSelection,
       );
-      if (sendMessage) await sendMessage(event, quickPayload(result));
-      log(def.capability, username || '(self)');
-      return { handled: true, replied: true, reason: def.capability };
     } catch (error: any) {
       if (sendMessage) await sendMessage(event, String(error?.message || error));
       return { handled: true, replied: true, reason: `${def.capability}_error` };
     }
+    try {
+      if (sendMessage) await sendMessage(event, quickPayload(result));
+    } catch (deliveryError: any) {
+      console.error(`[quick] ${def.id} 发送失败（面板可能已发出）:`, deliveryError?.message || deliveryError);
+    }
+    log(def.capability, username || '(self)');
+    return { handled: true, replied: true, reason: def.capability };
   }
 
   // Registered but not yet ported: keep the LLM pipeline as the fallback so
