@@ -241,7 +241,9 @@ export function callLocalBot(
 
     const armSettle = () => {
       if (settleTimer) clearTimeout(settleTimer);
-      settleTimer = setTimeout(() => finish(), 800);
+      // Kanon sends its reply then may emit follow-up frames; closing too
+      // early makes its next send throw NRE and leaves its dedup lock stuck.
+      settleTimer = setTimeout(() => finish(), 3000);
     };
 
     const overallTimer = setTimeout(() => finish(new Error(`${botId} 调用超时（${Math.round(timeoutMs / 1000)}s）`)), timeoutMs);
