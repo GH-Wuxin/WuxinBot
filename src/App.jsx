@@ -23,15 +23,20 @@ const ADMIN_PASSWORD_KEY = 'wuxinAdminPassword';
 let authPromptActive = false;
 let authPromptCancelled = false;
 
-// osu! 粉饼图标（扁平风，契合控制台配色）
+// osu! 官方 logo 单色版：白圈咬口 + "osu!" 文字（文字用蒙版镂空，随文字颜色变化）
 function OsuCookie({ size = 18 }) {
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" aria-hidden="true" style={{ display: 'block', flexShrink: 0 }}>
-      <circle cx="12" cy="12" r="10" fill="#ff77aa" />
-      <circle cx="17.7" cy="6.9" r="3.2" fill="#e0559a" />
-      <circle cx="8.7" cy="10.9" r="1.1" fill="#fff" />
-      <circle cx="15.3" cy="10.9" r="1.1" fill="#fff" />
-      <path d="M8.5 14.6c1 .9 6 .9 7 0" stroke="#fff" strokeWidth="1.05" strokeLinecap="round" fill="none" />
+      <mask id="osu-cookie-mask">
+        <rect width="24" height="24" fill="white" />
+        <text x="12" y="14.6" textAnchor="middle" fontSize="9" fontWeight="800" fontFamily="'Segoe UI', Arial, sans-serif" fill="black">osu!</text>
+      </mask>
+      <path
+        fillRule="evenodd"
+        d="M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20zM17 8.6a3 3 0 1 0 6 0 3 3 0 1 0-6 0z"
+        fill="currentColor"
+        mask="url(#osu-cookie-mask)"
+      />
     </svg>
   );
 }
