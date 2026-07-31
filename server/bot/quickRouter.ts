@@ -408,13 +408,60 @@ const BIND_HINT = '绑定请使用 /w osu bind <osu用户名>；解绑请使用 
 function bindingUser(db: any, qq: string | undefined): string {
   const binding = db?.osuBindings?.[String(qq ?? '')];
   if (!binding) return '';
-  if (typeof binding === 'number' && Number.isFinite(binding) && binding > 0) return String(binding);
-  if (typeof binding === 'string' && binding.trim()) return binding.trim();
+  return bindingParts(binding).username || String(bindingParts(binding).id || '');
+}
+
+function bindingParts(binding: any): { id: number; username: string } {
+  if (typeof binding === 'number' && Number.isFinite(binding) && binding > 0) {
+    return { id: binding, username: '' };
+  }
+  if (typeof binding === 'string' && binding.trim()) {
+    const value = binding.trim();
+    return /^\d+$/.test(value)
+      ? { id: Number(value), username: '' }
+      : { id: 0, username: value };
+  }
   if (binding && typeof binding === 'object') {
     const id = Number(binding.osuUserId ?? binding.userId ?? binding.id ?? 0);
-    if (Number.isFinite(id) && id > 0) return String(id);
-    const username = String(binding.osuUsername ?? binding.username ?? '').trim();
-    if (username) return username;
+    return {
+      id: Number.isFinite(id) && id > 0 ? id : 0,
+      username: String(binding.osuUsername ?? binding.username ?? '').trim(),
+    };
+  }
+  return { id: 0, username: '' };
+}
+
+/**
+ * Resolve a QQ to an injectable osu! USERNAME. Original bots resolve numeric
+ * inputs inconsistently (雨沐 treats them as QQ, 消防栓 `where` only accepts
+ * names), so numeric bindings are resolved via the osu API and the username
+ * is persisted back into the binding for future calls.
+ */
+async function resolveInjectionUser(db: any, qq: string | undefined): Promise<string> {
+  const binding = db?.osuBindings?.[String(qq ?? '')];
+  if (!binding) return '';
+  const { id, username } = bindingParts(binding);
+  if (username) return username;
+  if (id > 0) {
+    try {
+      const { getUserById } = await import('../osu/api.js');
+      const user = await getUserById(id);
+      const resolved = String(user?.username || '').trim();
+      if (resolved) {
+        try {
+          updateDb((draft) => {
+            const target = draft.osuBindings?.[String(qq)];
+            if (target && typeof target === 'object') {
+              target.username = resolved;
+            } else {
+              draft.osuBindings[String(qq)] = { id, username: resolved };
+            }
+          });
+        } catch { /* caching is non-fatal */ }
+        return resolved;
+      }
+    } catch { /* fall back to the id below */ }
+    return String(id);
   }
   return '';
 }
@@ -538,7 +585,7 @@ export async function handleQuickCommand(
     // M2: unified binding — commands that need "me"/"him" resolve the user from
     // Wuxin's osuBindings and inject it into the original bot's command.
     if (def.handler === 'self_profile') {
-      const user = bindingUser(db, String(event.userId));
+      const user = await resolveInjectionUser(db, String(event.userId));
       if (!user) {
         log('unbound', 'self');
         try {
@@ -551,7 +598,7 @@ export async function handleQuickCommand(
       bridgeCommand = `where ${user}`;
     } else if (def.handler === 'at_profile') {
       const target = String(atTargets?.[0] || '');
-      const user = bindingUser(db, target);
+      const user = await resolveInjectionUser(db, target);
       if (!user) {
         log('unbound', `at:${target}`);
         try {
@@ -565,7 +612,7 @@ export async function handleQuickCommand(
     } else if (def.handler === 'where') {
       const qqMatch = /^qq\s*=\s*(\d+)$/i.exec(String(args || '').trim());
       if (qqMatch) {
-        const user = bindingUser(db, qqMatch[1]);
+        const user = await resolveInjectionUser(db, qqMatch[1]);
         if (!user) {
           log('unbound', `qq:${qqMatch[1]}`);
           try {
@@ -582,7 +629,7 @@ export async function handleQuickCommand(
       if (!parsed.username) {
         const usesAt = atTargets.length > 0;
         const target = usesAt ? String(atTargets[0]) : String(event.userId);
-        const user = bindingUser(db, target);
+        const user = await resolveInjectionUser(db, target);
         if (!user) {
           log('unbound', usesAt ? `at:${target}` : 'self');
           try {
