@@ -4,7 +4,8 @@ import { validateOperation, sanitizeToolResult, isSafeToolResult } from './guard
 import { loadRegistry, enabledBots, findBot, findCommand, availableCommands, internalCapabilitySupported, INTERNAL_CAPABILITIES } from './registry.js';
 import { lookupSkill, lookupSkillByQQ } from './skills.js';
 import { getRenderServer } from './renderServer.js';
-import { normalizedScoreMods, scoreStarRating } from '../osu/scoreMetrics.js';
+import { scoreStarRating } from '../osu/scoreMetrics.js';
+import { enrichScoreStarRatings } from '../osu/starRating.js';
 import type { OsuMode, OsuScore, OsuUser } from '../osu/types.js';
 
 // ── Pending bot responses (correlationId → resolver) ──
@@ -899,12 +900,6 @@ interface InternalBotCommandResult {
   images?: string[];
 }
 
-type BeatmapAttributeFetcher = (
-  beatmapId: number,
-  mode: OsuMode,
-  mods: string[]
-) => Promise<{ attributes?: { star_rating?: number } }>;
-
 function scoreModAcronyms(score: OsuScore): string[] {
   const rawMods: unknown[] = Array.isArray((score as any).mods) ? (score as any).mods : [];
   const acronyms = rawMods.map((mod): string => {
@@ -915,10 +910,6 @@ function scoreModAcronyms(score: OsuScore): string[] {
     return '';
   }).map((mod) => mod.toUpperCase()).filter((mod) => mod && mod !== 'NM');
   return [...new Set<string>(acronyms)];
-}
-
-function scoreMods(score: OsuScore): string[] {
-  return normalizedScoreMods({ mods: scoreModAcronyms(score) } as Pick<OsuScore, 'mods'>);
 }
 
 export function resolveInternalPlayerTarget(
@@ -959,63 +950,6 @@ export async function loadInternalOsuUser(target: InternalPlayerTarget): Promise
   return target.kind === 'id'
     ? getUserById(Number(target.value), 'osu')
     : getUser(String(target.value), 'osu');
-}
-
-/**
- * Enrich score stars with osu!'s official beatmap-attributes endpoint. A
- * Modded score whose attributes request fails is marked unavailable so its
- * base difficulty can never masquerade as the played difficulty.
- */
-export async function enrichInternalScoreStarRatings(
-  scores: OsuScore[],
-  mode: OsuMode = 'osu',
-  fetchAttributes?: BeatmapAttributeFetcher
-): Promise<OsuScore[]> {
-  const attributeFetcher = fetchAttributes ||
-    (await import('../osu/api.js')).getBeatmapAttributes;
-  const unique = new Map<string, { beatmapId: number; mods: string[] }>();
-  for (const score of scores) {
-    const mods = scoreMods(score);
-    if (mods.length === 0) continue;
-    const beatmapId = Number(score.beatmap?.id || 0);
-    if (beatmapId <= 0) continue;
-    const key = `${beatmapId}:${mode}:${mods.join(',')}`;
-    if (!unique.has(key)) unique.set(key, { beatmapId, mods });
-  }
-
-  const { mapLimit } = await import('./render.js');
-  const taskResults = await mapLimit([...unique.entries()], 10, async ([key, entry]) => {
-    try {
-      const result = await attributeFetcher(entry.beatmapId, mode, entry.mods);
-      const stars = Number(result.attributes?.star_rating || 0);
-      return [key, stars > 0 ? stars : null] as const;
-    } catch {
-      return [key, null] as const;
-    }
-  });
-  const tasks = new Map<string, number | null>(taskResults);
-
-  return Promise.all(scores.map(async (score) => {
-    const mods = scoreMods(score);
-    if (mods.length === 0) {
-      return { ...score, star_rating_source: 'base' as const };
-    }
-    const beatmapId = Number(score.beatmap?.id || 0);
-    const key = `${beatmapId}:${mode}:${mods.join(',')}`;
-    const stars = beatmapId > 0 && tasks.has(key) ? tasks.get(key)! : null;
-    if (!stars) {
-      return {
-        ...score,
-        modded_star_rating: undefined,
-        star_rating_source: 'unavailable' as const,
-      };
-    }
-    return {
-      ...score,
-      modded_star_rating: stars,
-      star_rating_source: 'modded' as const,
-    };
-  }));
 }
 
 function scoreTitle(score: OsuScore): string {
@@ -1162,7 +1096,7 @@ async function executeInternalBotCommand(
         return `${user.username} 最近没有 osu! 成绩记录。`;
       }
 
-      const [score] = await enrichInternalScoreStarRatings(rawScores, 'osu');
+      const [score] = (await enrichScoreStarRatings(rawScores, 'osu')).scores;
       const scoreLine = formatInternalScoreLine(score, { includeCombo: true });
 
       // Try to render a score image via yumu-image
@@ -1248,10 +1182,10 @@ async function executeInternalBotCommand(
         return `${user.username} 没有 BP${selection.startRank} 的成绩记录。`;
       }
 
-      const scores = await enrichInternalScoreStarRatings(
+      const scores = (await enrichScoreStarRatings(
         selectedScores.map((entry) => entry.score),
         'osu',
-      );
+      )).scores;
       const rankedScores = scores.map((score, index) => ({
         rank: selectedScores[index].rank,
         score,

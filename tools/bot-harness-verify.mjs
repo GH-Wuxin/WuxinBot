@@ -1,5 +1,4 @@
 import {
-  enrichInternalScoreStarRatings,
   executeToolCall,
   formatInternalInfoText,
   formatInternalProfileText,
@@ -10,6 +9,7 @@ import {
   tryResolveBotResponse,
 } from '../server/bots/executor.ts';
 import { validateOperation } from '../server/bots/guard.ts';
+import { enrichScoreStarRatings } from '../server/osu/starRating.ts';
 import {
   DEFAULT_BOTS,
   availableCommands,
@@ -175,14 +175,14 @@ const scoreFixture = {
   weight: { pp: 500.0 },
 };
 let requestedAttributes = null;
-const [enrichedScore] = await enrichInternalScoreStarRatings(
+const [enrichedScore] = (await enrichScoreStarRatings(
   [scoreFixture],
   'osu',
   async (beatmapId, mode, mods) => {
     requestedAttributes = { beatmapId, mode, mods };
     return { attributes: { star_rating: 7.48 } };
   },
-);
+)).scores;
 assert(requestedAttributes?.beatmapId === 1002, 'attributes request must use the score beatmap ID');
 assert(requestedAttributes?.mode === 'osu', 'attributes request must use the score ruleset');
 assert(requestedAttributes?.mods.join(',') === 'DT,HD', 'attributes request must include the complete normalized Mod set');
@@ -193,11 +193,11 @@ assert(scoreLine.includes('7.48★') && !scoreLine.includes('4.90★'), 'score l
 assert(scoreLine.includes('98.15%') && !scoreLine.includes('0.98%'), 'score accuracy must be converted from API ratio to percent');
 assert(scoreLine.includes('HDDT'), 'display must preserve the score Mod order');
 
-const [failedStarScore] = await enrichInternalScoreStarRatings(
+const [failedStarScore] = (await enrichScoreStarRatings(
   [scoreFixture],
   'osu',
   async () => { throw new Error('fixture failure'); },
-);
+)).scores;
 const failedStarLine = formatInternalScoreLine(failedStarScore);
 assert(failedStarScore.star_rating_source === 'unavailable', 'failed attributes lookup must be marked unavailable');
 assert(failedStarLine.includes('星数暂不可用'), 'failed attributes lookup must not fall back to base stars');
