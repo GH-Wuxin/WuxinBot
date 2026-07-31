@@ -23,6 +23,19 @@ const ADMIN_PASSWORD_KEY = 'wuxinAdminPassword';
 let authPromptActive = false;
 let authPromptCancelled = false;
 
+// osu! 粉饼图标（扁平风，契合控制台配色）
+function OsuCookie({ size = 18 }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" aria-hidden="true" style={{ display: 'block', flexShrink: 0 }}>
+      <circle cx="12" cy="12" r="10" fill="#ff77aa" />
+      <circle cx="17.7" cy="6.9" r="3.2" fill="#e0559a" />
+      <circle cx="8.7" cy="10.9" r="1.1" fill="#fff" />
+      <circle cx="15.3" cy="10.9" r="1.1" fill="#fff" />
+      <path d="M8.5 14.6c1 .9 6 .9 7 0" stroke="#fff" strokeWidth="1.05" strokeLinecap="round" fill="none" />
+    </svg>
+  );
+}
+
 async function api(path, options = {}, allowAuthRetry = true) {
   const savedPassword = window.sessionStorage.getItem(ADMIN_PASSWORD_KEY) || '';
   const res = await fetch(path, {
@@ -54,6 +67,7 @@ async function api(path, options = {}, allowAuthRetry = true) {
 const tabs = [
   { id: 'overview', label: '总览', icon: Activity },
   { id: 'groups', label: '群聊', icon: MessageCircle },
+  { id: 'osu', label: 'osu!', icon: OsuCookie },
   { id: 'persona', label: '人设', icon: Brain },
   { id: 'model', label: '模型', icon: SlidersHorizontal },
   { id: 'members', label: '成员', icon: UserCog },
@@ -229,6 +243,7 @@ function App() {
 
         {tab === 'overview' && <Overview db={db} oneBot={state.oneBot} saveSettings={saveSettings} refresh={refresh} />}
         {tab === 'groups' && <Groups db={db} refresh={refresh} saveSettings={saveSettings} />}
+        {tab === 'osu' && <Osu db={db} refresh={refresh} />}
         {tab === 'persona' && <Persona db={db} saveSettings={saveSettings} />}
         {tab === 'model' && <Model db={db} saveSettings={saveSettings} />}
         {tab === 'members' && <Members db={db} refresh={refresh} />}
@@ -240,6 +255,178 @@ function App() {
         {tab === 'logs' && <Logs db={db} />}
       </main>
     </div>
+  );
+}
+
+const botLabels = { yumu: '雨沐', kanon: '猫猫', hydrant: '消防栓', lazybot: 'LazyBot' };
+
+function Osu({ db, refresh }) {
+  const [status, setStatus] = useState(null);
+  const [qq, setQq] = useState('');
+  const [name, setName] = useState('');
+  const [busy, setBusy] = useState(false);
+
+  const load = async () => {
+    try {
+      const data = await api('/api/osu/status');
+      setStatus(data);
+    } catch { /* keep last status */ }
+  };
+
+  useEffect(() => {
+    load();
+    const timer = setInterval(load, 10000);
+    return () => clearInterval(timer);
+  }, []);
+
+  const addBinding = async () => {
+    if (!qq.trim() || !name.trim()) return;
+    setBusy(true);
+    try {
+      await api('/api/osu/bindings', { method: 'POST', body: { action: 'add', qq, username: name } });
+      setQq('');
+      setName('');
+      await load();
+      await refresh();
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const removeBinding = async (targetQq) => {
+    if (!window.confirm(`确定解除 QQ ${targetQq} 的 osu! 绑定？`)) return;
+    await api('/api/osu/bindings', { method: 'POST', body: { action: 'remove', qq: targetQq } });
+    await load();
+    await refresh();
+  };
+
+  const toggleGroupQuick = async (groupId, enabled) => {
+    await api('/api/osu/quick', { method: 'POST', body: { groupId, enabled } });
+    await load();
+  };
+
+  const toggleGlobal = async (enabled) => {
+    await api('/api/osu/quick', { method: 'POST', body: { global: enabled } });
+    await load();
+  };
+
+  const byCommand = Object.entries(status?.stats?.byCommand || {}).slice(0, 10);
+  const bySource = Object.entries(status?.stats?.bySource || {});
+
+  return (
+    <>
+      <section className="stats">
+        <Stat label="绑定账号" value={status?.bindings?.length ?? '…'} />
+        <Stat label="快捷指令调用" value={status?.stats?.quickTotal ?? '…'} />
+        <Stat label="/w osu analyze" value={status?.stats?.analyzeCount ?? '…'} />
+        <Stat label="/w osu bind" value={status?.stats?.bindCount ?? '…'} />
+        <Stat label="osu API 429" value={status?.health?.api429Count ?? '…'} />
+        <Stat label="渲染失败" value={status?.health?.renderFailures ?? '…'} />
+      </section>
+
+      <section className="panel actions" style={{ marginBottom: 16 }}>
+        <strong>原 bot 服务</strong>
+        <span className="hint" style={{ flex: 1 }}>快捷指令通过本地桥接直连原 bot，端口探测状态如下。</span>
+        {(status?.bots || []).map((bot) => (
+          <span key={bot.id} className="pill" style={bot.up ? { background: '#e3f2ea', color: '#1f6e52' } : { background: '#fde8e8', color: '#b34444' }}>
+            {botLabels[bot.id] || bot.id} · {bot.port} {bot.up ? '在线' : '离线'}
+          </span>
+        ))}
+      </section>
+
+      <section className="grid two">
+        <div className="panel">
+          <h2>绑定管理</h2>
+          <p className="hint">唯一的绑定入口是 /w osu bind；这里供管理员直接维护（QQ → osu 用户名，自动解析 ID）。</p>
+          <div className="row" style={{ gap: 8, marginBottom: 12 }}>
+            <input placeholder="QQ 号" value={qq} onChange={(e) => setQq(e.target.value)} style={{ flex: 1 }} />
+            <input placeholder="osu 用户名" value={name} onChange={(e) => setName(e.target.value)} style={{ flex: 1.4 }} />
+            <button className="primary" onClick={addBinding} disabled={busy || !qq.trim() || !name.trim()}>添加</button>
+          </div>
+          <div style={{ overflow: 'auto', maxHeight: 420 }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+              <thead>
+                <tr style={{ textAlign: 'left', color: '#66716c' }}>
+                  <th style={{ padding: '6px 8px' }}>QQ</th>
+                  <th style={{ padding: '6px 8px' }}>osu ID</th>
+                  <th style={{ padding: '6px 8px' }}>用户名</th>
+                  <th style={{ padding: '6px 8px' }}></th>
+                </tr>
+              </thead>
+              <tbody>
+                {(status?.bindings || []).map((b) => (
+                  <tr key={b.qq} style={{ borderTop: '1px solid #eee' }}>
+                    <td style={{ padding: '6px 8px' }}>{b.qq}</td>
+                    <td style={{ padding: '6px 8px' }}>{b.id || '-'}</td>
+                    <td style={{ padding: '6px 8px' }}>{b.username || '-'}</td>
+                    <td style={{ padding: '6px 8px', textAlign: 'right' }}>
+                      <button style={{ fontSize: 12, padding: '3px 10px' }} onClick={() => removeBinding(b.qq)}>解绑</button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <div className="panel">
+          <h2>快捷路由开关</h2>
+          <p className="hint">快捷指令默认按群关闭（避免和原 bot 双回复）；原 bot 停服后可以全局开启。</p>
+          <label className="switch">
+            <input type="checkbox" checked={Boolean(status?.quickRouterEnabled)} onChange={(e) => toggleGlobal(e.target.checked)} />
+            全局开启快捷路由
+          </label>
+          <div style={{ marginTop: 12, display: 'grid', gap: 8 }}>
+            {(status?.groups || []).map((g) => (
+              <label className="switch" key={g.groupId} style={{ margin: 0 }}>
+                <input
+                  type="checkbox"
+                  checked={Boolean(g.quick)}
+                  disabled={!g.enabled}
+                  onChange={(e) => toggleGroupQuick(g.groupId, e.target.checked)}
+                />
+                {g.name || g.groupId}（{g.groupId}）{!g.enabled && <span className="hint"> · 群未启用</span>}
+              </label>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      <section className="grid two" style={{ marginTop: 16 }}>
+        <div className="panel">
+          <h2>快捷指令统计</h2>
+          <p className="hint">按指令与来源统计（commandLogs 中的 quick:* 记录）。</p>
+          <div className="cards">
+            {byCommand.length === 0 && <p className="hint">还没有快捷指令记录。</p>}
+            {byCommand.map(([command, count]) => (
+              <article className="card" key={command} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <strong>{command}</strong>
+                <span className="pill">{count}</span>
+              </article>
+            ))}
+          </div>
+          <div style={{ marginTop: 10, display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+            {bySource.map(([source, count]) => (
+              <span className="pill" key={source}>{botLabels[source] || source} · {count}</span>
+            ))}
+          </div>
+        </div>
+
+        <div className="panel">
+          <h2>最近快捷指令</h2>
+          <div className="loglist">
+            {(status?.recentQuick || []).map((log) => (
+              <div className="log command" key={log.id}>
+                <strong>quick:{log.command} · {log.outcome || 'ok'}</strong>
+                <span>{log.groupId} · {log.nickname || log.userId} | {log.createdAt ? new Date(log.createdAt).toLocaleString() : ''}</span>
+                {log.detail && <p>{log.detail}</p>}
+              </div>
+            ))}
+            {(status?.recentQuick || []).length === 0 && <p className="hint">暂无记录。</p>}
+          </div>
+        </div>
+      </section>
+    </>
   );
 }
 

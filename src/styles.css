@@ -407,6 +407,13 @@ input[type="range"] {
   gap: 10px;
 }
 
+.card {
+  border: 1px solid #e6e2d8;
+  border-radius: 8px;
+  padding: 10px 12px;
+  background: #faf9f5;
+}
+
 .filterBar {
   display: grid;
   grid-template-columns: minmax(180px, 1fr) minmax(120px, 180px);
