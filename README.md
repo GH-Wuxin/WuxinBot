@@ -52,12 +52,15 @@ React GUI ← Vite :5173 ← Express :8787 ← server/store.ts → %APPDATA%/Wux
 
 - **数据位置**：默认存储在 `%APPDATA%\Wuxin\db.json`，也可以通过 `DATA_DIR` 环境变量自定义。
 - **API 设置**：在 `.env` 中设置 `LLM_PROVIDER`、`LLM_API_KEY`、`LLM_API_BASE_URL`。
+- **控制台密码**：设置 `ADMIN_PASSWORD`（或在 GUI 中设置管理密码）后，所有本地管理 API 都需要认证；浏览器会在首次打开时提示输入，并仅在当前标签页保存凭据。
 - **OneBot 设置**：在 GUI 的「QQ连接」页面配置 HTTP / WebSocket 地址。
 
 ## 开发
 
 ```bash
 npm run build      # 构建前端
+npm run typecheck  # 检查已类型化的服务端模块
+npm run check      # 类型检查 + 构建 + 基础/安全验证
 npm run sanity     # 运行基础集成测试
 npm run structure  # 检查模块结构
 ```
