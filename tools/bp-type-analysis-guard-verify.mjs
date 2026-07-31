@@ -1,13 +1,14 @@
 // bp-type-analysis-guard-verify.mjs — regression for natural-language BP type
-// analysis. Until osu!oracle is wired in, the bot must NOT fabricate proportions
-// from PP+ dimensions. These intents get a deterministic "not integrated" reply
-// and never reach the LLM. Exit 0 on all pass, non-zero on any failure.
+// analysis. The bot must NOT fabricate proportions from PP+ dimensions: these
+// intents get a deterministic osu!oracle reply (or binding guidance when the
+// player is unbound) and never reach the LLM. Exit 0 / non-zero.
 
 import http from 'node:http';
 import { createTestDataDir, assertNotProduction, productionDbSnapshot, verifyProductionDbUnchanged, cleanupTestDir } from './test-isolation.mjs';
 
 const testDataDir = createTestDataDir('wuxin-bptype');
 process.env.DATA_DIR = testDataDir;
+process.env.OSU_ORACLE_DISABLED = '1';
 assertNotProduction(testDataDir);
 
 const prodBefore = productionDbSnapshot();
@@ -16,6 +17,7 @@ console.log('[isolation] production db snapshot: ' + (prodBefore ? prodBefore.sh
 const { ensureStore, updateDb } = await import('../server/store.ts');
 const { processIncoming } = await import('../server/bot.ts');
 const { detectBpTypeAnalysisIntent, detectRequiredOsuTool } = await import('../server/bots/intent.ts');
+const { formatClassifierBlock } = await import('../server/osu/classifier.ts');
 
 ensureStore();
 
@@ -83,17 +85,21 @@ function setupFixture() {
     db.osuBindings = db.osuBindings || {};
     db.osuBindings['REDACTED_QQ_001'] = 1234567;
     db.groupBotConfig = db.groupBotConfig || {};
+    db.groups = [{
+      groupId: 'test-group', name: '测试群', enabled: true,
+      mode: 'normal', maxPerHour: 50, cooldownSec: 0,
+    }];
   });
 }
 
-async function send(userText) {
+async function send(userText, userId = 'REDACTED_QQ_001') {
   setupFixture();
   llmCalls = 0;
   return processIncoming({
-    source: 'gui', type: 'private',
+    source: 'gui', type: 'group',
     messageId: 'bta-' + Date.now() + '-' + Math.random().toString(36).slice(2, 6),
-    groupId: 'private', userId: 'REDACTED_QQ_001', nickname: 'Owner',
-    text: userText,
+    groupId: 'test-group', userId, nickname: 'Owner',
+    text: '[CQ:at,qq=REDACTED_QQ_002] ' + userText,
     atTargets: [], images: [], raw: {}
   }, async () => {});
 }
@@ -123,7 +129,27 @@ for (const t of analysisFalse) {
 }
 
 // ═══════════════════════════════════════════════════════
-// E2E: analysis intents get the not-integrated reply, never LLM-fabricated
+// Unit: formatClassifierBlock renders real distributions without LLM
+// ═══════════════════════════════════════════════════════
+
+console.log('\n=== Unit: formatClassifierBlock ===');
+
+{
+  const block = formatClassifierBlock({
+    distribution: { stream: 8, aim: 2 },
+    details: {},
+    totalClassified: 10,
+    errors: [],
+  });
+  assert(block.includes('stream') && block.includes('80%'), 'stream share must render with percentage');
+  assert(block.includes('aim') && block.includes('20%'), 'aim share must render with percentage');
+  assert(block.includes('串图倾向明显'), 'dominant category summary expected');
+  assert(block.includes('BP10 分类统计'), 'classifier block must state the classified count');
+  pass('format-classifier-block');
+}
+
+// ═══════════════════════════════════════════════════════
+// E2E: analysis intents get a deterministic reply, never LLM-fabricated
 // ═══════════════════════════════════════════════════════
 
 console.log('\n=== E2E: BP type analysis is intercepted, no fabricated proportions ===');
@@ -136,17 +162,17 @@ for (const [label, text] of [
   ['e2e-bptype-3', '跳图有多少'],
   ['e2e-bptype-4', '我的BP是什么类型'],
 ]) {
-  const r = await send(text);
-  if (r.reason !== 'bp_type_analysis_not_integrated') {
-    fail(label, `expected bp_type_analysis_not_integrated, got ${r.reason}`);
+  const r = await send(text, 'unbound-user');
+  if (r.reason !== 'bp_type_analysis') {
+    fail(label, `expected bp_type_analysis, got ${r.reason}`);
     continue;
   }
   if (llmCalls !== 0) {
     fail(label, `must NOT call LLM, got ${llmCalls}`);
     continue;
   }
-  if (!(r.text || '').includes('还没接入')) {
-    fail(label, `reply must state not-integrated: ${r.text}`);
+  if (!(r.text || '').includes('绑定')) {
+    fail(label, `unbound player must get binding guidance: ${r.text}`);
     continue;
   }
   if (FABRICATED_RE.test(r.text || '')) {
