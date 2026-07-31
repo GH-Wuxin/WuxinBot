@@ -19,17 +19,36 @@ import {
 } from 'lucide-react';
 import './styles.css';
 
-function api(path, options = {}) {
-  return fetch(path, {
-    headers: { 'Content-Type': 'application/json', ...(options.headers || {}) },
+const ADMIN_PASSWORD_KEY = 'wuxinAdminPassword';
+let authPromptActive = false;
+let authPromptCancelled = false;
+
+async function api(path, options = {}, allowAuthRetry = true) {
+  const savedPassword = window.sessionStorage.getItem(ADMIN_PASSWORD_KEY) || '';
+  const res = await fetch(path, {
+    headers: {
+      'Content-Type': 'application/json',
+      ...(savedPassword ? { 'X-Wuxin-Admin-Password': savedPassword } : {}),
+      ...(options.headers || {})
+    },
     ...options,
     body: options.body ? JSON.stringify(options.body) : undefined
-  }).then(async (res) => {
-    let data;
-    try { data = await res.json(); } catch { throw new Error(`服务器错误 (${res.status})`); }
-    if (!res.ok || !data.ok) throw new Error(data.error || `请求失败 (${res.status})`);
-    return data;
   });
+  let data;
+  try { data = await res.json(); } catch { throw new Error(`服务器错误 (${res.status})`); }
+  if (res.status === 401 && allowAuthRetry && !authPromptActive && !authPromptCancelled) {
+    authPromptActive = true;
+    const password = window.prompt('控制台已启用管理密码，请输入：');
+    authPromptActive = false;
+    if (password === null) {
+      authPromptCancelled = true;
+      throw new Error('需要管理密码');
+    }
+    window.sessionStorage.setItem(ADMIN_PASSWORD_KEY, password);
+    return api(path, options, false);
+  }
+  if (!res.ok || !data.ok) throw new Error(data.error || `请求失败 (${res.status})`);
+  return data;
 }
 
 const tabs = [
@@ -117,10 +136,16 @@ function App() {
   const [tab, setTab] = useState('overview');
   const [state, setState] = useState(null);
   const [toast, setToast] = useState('');
+  const [loadError, setLoadError] = useState('');
 
   const refresh = async () => {
-    const data = await api('/api/state');
-    setState(data);
+    try {
+      const data = await api('/api/state');
+      setState(data);
+      setLoadError('');
+    } catch (error) {
+      setLoadError(error.message || String(error));
+    }
   };
 
   useEffect(() => {
@@ -131,12 +156,22 @@ function App() {
 
   const saveSettings = async (patch) => {
     const data = await api('/api/settings', { method: 'POST', body: patch });
+    if (patch.adminPassword && patch.adminPassword !== '已设置') {
+      window.sessionStorage.setItem(ADMIN_PASSWORD_KEY, patch.adminPassword);
+    }
     setState((old) => ({ ...old, db: data.db }));
     setToast('已保存设置');
     setTimeout(() => setToast(''), 1800);
   };
 
-  if (!state) return <div className="boot">正在打开控制台...</div>;
+  if (!state) {
+    return (
+      <div className="boot">
+        <p>{loadError || '正在打开控制台...'}</p>
+        {loadError && <button onClick={() => { authPromptCancelled = false; refresh(); }}>重新认证</button>}
+      </div>
+    );
+  }
 
   const db = state.db;
   const ActiveIcon = tabs.find((item) => item.id === tab)?.icon || Settings;
@@ -228,8 +263,9 @@ function Overview({ db, oneBot, saveSettings, refresh }) {
       <section className="stats">
         <Stat label="启用群" value={db.groups.filter((g) => g.enabled).length} />
         <Stat label="今日消息" value={db.stateStats?.todayMessages ?? db.messages.length} />
+        <Stat label="今日 Token" value={formatTokenNumber(db.usageStats?.today?.totalTokens || 0)} />
         <Stat label="累计回复" value={db.usage.replies} />
-        <Stat label="累计 Token" value={db.usage.totalTokens} />
+        <Stat label="累计 Token" value={formatTokenNumber(db.usage.totalTokens)} />
         {(() => {
           const exp = db.experience || {};
           const levels = [0, 0, 0, 0, 0];
@@ -240,6 +276,7 @@ function Overview({ db, oneBot, saveSettings, refresh }) {
           return <Stat label="经验成员" value={`${total} 人 · ${levels.map((c, i) => c ? `${levelEmojis[i]}${c}` : '').filter(Boolean).join(' ')}`} />;
         })()}
       </section>
+      <UsageChart usageStats={db.usageStats} />
       <section className="panel actions">
         <button onClick={() => saveSettings({ onlyMentionMode: !db.settings.onlyMentionMode })}>
           {db.settings.onlyMentionMode ? '恢复正常参与' : '临时只在 @ 时回复'}
@@ -276,6 +313,53 @@ function Overview({ db, oneBot, saveSettings, refresh }) {
       </section>
       <Backups />
     </>
+  );
+}
+
+function formatTokenNumber(value) {
+  return Number(value || 0).toLocaleString('zh-CN');
+}
+
+function UsageChart({ usageStats }) {
+  const [period, setPeriod] = useState('hourly24');
+  const data = usageStats?.[period] || [];
+  const maxTokens = Math.max(1, ...data.map((item) => Number(item.totalTokens || 0)));
+  const total = data.reduce((sum, item) => sum + Number(item.totalTokens || 0), 0);
+  const requests = data.reduce((sum, item) => sum + Number(item.requests || 0), 0);
+  const label = period === 'hourly24' ? '近 24 小时' : '近 7 天';
+  return (
+    <section className="panel usagePanel">
+      <div className="usageHeader">
+        <div>
+          <h2>Token 用量波动</h2>
+          <p className="hint">{label}共 {formatTokenNumber(total)} Token · {requests} 次调用</p>
+        </div>
+        <div className="usagePeriods" role="group" aria-label="Token 统计周期">
+          <button className={period === 'hourly24' ? 'selected' : ''} onClick={() => setPeriod('hourly24')}>24 小时</button>
+          <button className={period === 'daily7' ? 'selected' : ''} onClick={() => setPeriod('daily7')}>7 天</button>
+        </div>
+      </div>
+      <div className={`usageChart ${period}`} role="img" aria-label={`${label} Token 用量柱状图`}>
+        <div className="usageBars">
+          {data.map((item, index) => {
+            const height = item.totalTokens > 0 ? Math.max(4, Math.round(item.totalTokens / maxTokens * 100)) : 0;
+            const showLabel = period === 'daily7' || index % 4 === 3 || index === data.length - 1;
+            const title = `${item.label} · ${formatTokenNumber(item.totalTokens)} Token · 输入 ${formatTokenNumber(item.promptTokens)} · 输出 ${formatTokenNumber(item.completionTokens)} · ${item.requests} 次`;
+            return (
+              <div className="usageColumn" key={item.start} title={title}>
+                <div className="usageValue">{item.totalTokens ? new Intl.NumberFormat('zh-CN', { notation: 'compact', maximumFractionDigits: 1 }).format(item.totalTokens) : ''}</div>
+                <div className="usageTrack"><div className="usageBar" style={{ height: `${height}%` }} /></div>
+                <span>{showLabel ? item.label : ''}</span>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+      <div className="usageLegend">
+        <span><i className="usageSwatch" /> 总 Token</span>
+        <span>悬停柱形查看输入、输出与请求数</span>
+      </div>
+    </section>
   );
 }
 
@@ -398,6 +482,7 @@ function Groups({ db, refresh, saveSettings }) {
   const [expandedProfiles, setExpandedProfiles] = useState({});
   const [editingProfiles, setEditingProfiles] = useState({});
   const [gpDrafts, setGpDrafts] = useState({});
+  const [botToggles, setBotToggles] = useState({}); // optimistic local state for group bot toggles
   const messages = db.messages || [];
   const users = db.users || [];
   const memories = db.memories || [];
@@ -560,6 +645,29 @@ function Groups({ db, refresh, saveSettings }) {
                     <div className="badges">{groupTags(group).map((tag) => <span key={tag.label} className={tag.cls}>{tag.label}</span>)}</div>
                     <span>{modeLabels[group.mode] || group.mode} · 每小时 {group.maxPerHour || 0} 次 · 冷却 {group.cooldownSec || 0} 秒</span>
                     <span>已设成员 {memberCount} · 有记忆成员 {memoryCount}</span>
+                    {(() => {
+                      const gbc = (db.groupBotConfig || {})[group.groupId] || { yumu: true, kanon: true, hydrant: true, lazybot: true };
+                      const local = botToggles[group.groupId] || {};
+                      const effectiveGbc = { ...gbc, ...local };
+                      const toggleGroupBot = async (botId, enabled) => {
+                        setBotToggles(prev => ({ ...prev, [group.groupId]: { ...(prev[group.groupId] || {}), [botId]: enabled } }));
+                        await api('/api/group-bot-config', { method: 'POST', body: { groupId: group.groupId, botId, enabled } });
+                        refresh();
+                      };
+                      const botNames = { yumu: '雨沐', kanon: '猫猫', hydrant: '消防栓', lazybot: 'LazyBot' };
+                      const botColors = { yumu: '#FF6B8A', kanon: '#F7B731', hydrant: '#45AAF2', lazybot: '#A55EEA' };
+                      return (
+                        <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginTop: 4, flexWrap: 'wrap' }}>
+                          <span style={{ fontSize: 12, color: '#999' }}>Bot 开关（切换时自动发送群指令给对应 Bot）：</span>
+                          {Object.entries(botNames).map(([botId, name]) => (
+                            <label key={botId} style={{ fontSize: 12, display: 'flex', alignItems: 'center', gap: 3, cursor: 'pointer', padding: '2px 6px', borderRadius: 4, background: effectiveGbc[botId] !== false ? (botColors[botId] || '#aaa') + '22' : '#f5f5f5', border: '1px solid ' + (effectiveGbc[botId] !== false ? (botColors[botId] || '#aaa') : '#ddd') }}>
+                              <input type="checkbox" checked={effectiveGbc[botId] !== false} onChange={e => toggleGroupBot(botId, e.target.checked)} style={{ width: 14, height: 14 }} />
+                              {name}
+                            </label>
+                          ))}
+                        </div>
+                      );
+                    })()}
                     {/* Group member experience levels */}
                     {(() => {
                       const groupExp = Object.entries(db.groupExperience || {})
@@ -674,16 +782,21 @@ function Model({ db, saveSettings }) {
   const isMimoModel = (value) => /^mimo-/i.test(String(value || ''));
   const withProviderDefaults = (patch) => {
     const next = { ...draft, ...patch };
-    if (looksLikeMimoEndpoint(next.apiBaseUrl)) {
+    if (patch.model !== undefined && isMimoModel(next.model)) {
+      next.llmProvider = 'openai-compatible';
+      if (!looksLikeMimoEndpoint(next.apiBaseUrl)) next.apiBaseUrl = 'https://token-plan-cn.xiaomimimo.com/v1';
+    } else if (patch.model !== undefined && isDeepSeekModel(next.model)) {
+      next.llmProvider = 'deepseek';
+      next.apiBaseUrl = 'https://api.deepseek.com';
+    } else if (patch.llmProvider === 'deepseek') {
+      next.apiBaseUrl = 'https://api.deepseek.com';
+      if (isMimoModel(next.model)) next.model = 'deepseek-v4-flash';
+    } else if (patch.llmProvider === 'openai-compatible') {
+      if (!looksLikeMimoEndpoint(next.apiBaseUrl)) next.apiBaseUrl = 'https://token-plan-cn.xiaomimimo.com/v1';
+      if (isDeepSeekModel(next.model)) next.model = 'mimo-v2.5';
+    } else if (patch.apiBaseUrl !== undefined && looksLikeMimoEndpoint(next.apiBaseUrl)) {
       next.llmProvider = 'openai-compatible';
       if (isDeepSeekModel(next.model)) next.model = 'mimo-v2.5';
-    }
-    if (next.llmProvider === 'deepseek') {
-      next.apiBaseUrl = next.apiBaseUrl || 'https://api.deepseek.com';
-      if (isMimoModel(next.model)) next.model = 'deepseek-v4-flash';
-    }
-    if (next.llmProvider !== 'deepseek' && next.apiBaseUrl === 'https://api.deepseek.com') {
-      next.apiBaseUrl = '';
     }
     return next;
   };
@@ -714,12 +827,10 @@ function Model({ db, saveSettings }) {
     'deepseek-reasoner': 'DeepSeek Reasoner（更慢更会想）',
     'deepseek-v4-flash': 'DeepSeek V4 Flash',
     'deepseek-v4-pro': 'DeepSeek V4 Pro',
-    ...(String(draft.apiBaseUrl || '').includes('mimo') || draft.llmProvider === 'openai-compatible' ? {
-      'mimo-v2.5-pro': 'MiMo-V2.5-Pro（多模态）',
-      'mimo-v2.5': 'MiMo-V2.5',
-      'mimo-v2-omni': 'MiMo-V2-Omni（视觉理解）',
-      'mimo-v2-pro': 'MiMo-V2-Pro'
-    } : {})
+    'mimo-v2.5-pro': 'MiMo-V2.5-Pro（多模态）',
+    'mimo-v2.5': 'MiMo-V2.5',
+    'mimo-v2-omni': 'MiMo-V2-Omni（视觉理解）',
+    'mimo-v2-pro': 'MiMo-V2-Pro'
   };
   const currentModel = draft.model || 'deepseek-v4-flash';
   if (currentModel && !modelOptions[currentModel]) {
@@ -737,6 +848,7 @@ function Model({ db, saveSettings }) {
         <Text label="API 地址" value={draft.apiBaseUrl} onChange={(apiBaseUrl) => setDraft(withProviderDefaults({ apiBaseUrl }))} />
         <Select label="模型" value={currentModel} onChange={(model) => setDraft(withProviderDefaults({ model }))} options={modelOptions} />
         <Text label="自定义模型名，留空则使用上面的选择" value={draft.customModel || ''} onChange={(customModel) => setDraft({ ...draft, customModel })} />
+        <p className="hint">DeepSeek 与 Mimo 的 API Key 会分别保存。切换已配置过的模型系列时，会自动换用对应的接口和 Key；首次切换仍需填写该供应商的 Key。</p>
         <Select label="视觉能力" value={draft.visionMode || 'auto'} onChange={(visionMode) => setDraft({ ...draft, visionMode })} options={{
           'auto': '自动识别（推荐）',
           'on': '按多模态模型处理',
@@ -790,6 +902,10 @@ function Model({ db, saveSettings }) {
         <label className="switch">
           <input type="checkbox" checked={draft.enableAutoModel !== false} onChange={(e) => setDraft({ ...draft, enableAutoModel: e.target.checked })} /> 自动选择模型（复杂任务自动升级到 V4 Pro）
         </label>
+        <Text label="主动接话 AI 判断次数（每群每小时，0=无限制）" value={String(draft.llmReplyGateMaxPerHour ?? 0)} onChange={(value) => setDraft({ ...draft, llmReplyGateMaxPerHour: Math.max(0, Math.min(1000, Number(value) || 0)) })} />
+        <Text label="自然群友模式接话阈值（0-100）" value={String(draft.llmReplyGateNaturalThreshold ?? 45)} onChange={(value) => setDraft({ ...draft, llmReplyGateNaturalThreshold: Math.max(0, Math.min(100, Number(value) || 0)) })} />
+        <Text label="轻度参与模式接话阈值（0-100）" value={String(draft.llmReplyGateLightThreshold ?? 70)} onChange={(value) => setDraft({ ...draft, llmReplyGateLightThreshold: Math.max(0, Math.min(100, Number(value) || 0)) })} />
+        <p className="hint">只限制自然/轻度模式下用于判断“要不要接话”的 AI 调用；@ 回复和实际聊天不受此项限制。门控调用的 Token 会计入用量统计。</p>
         <Select label="思考状态提示" value={draft.thinkingNoticeMode || 'slow'} onChange={(thinkingNoticeMode) => setDraft({ ...draft, thinkingNoticeMode })} options={{
           'off': '关闭',
           'simple': '简短：正在思考…',

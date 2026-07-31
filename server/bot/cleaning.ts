@@ -1,3 +1,4 @@
+// @ts-nocheck -- legacy runtime module; new typed modules remain checked by tsc.
 // Message cleaning utilities.
 // Extracted from bot.ts — pure text-processing functions with zero imports.
 
@@ -149,7 +150,7 @@ export function normalizeMessage(message) {
   if (Array.isArray(message)) {
     return message
       .map((part) => {
-        if (part.type === 'text') return part.data?.text || '';
+        if (part.type === 'text') return decodeCqValue(part.data?.text || '');
         if (part.type === 'at') return `[CQ:at,qq=${part.data?.qq}]`;
         if (part.type === 'image') return '[图片]';
         if (part.type === 'face') return '[表情]';
@@ -163,7 +164,7 @@ export function normalizeMessage(message) {
       .join('')
       .trim();
   }
-  return String(message || '')
+  const normalized = String(message || '')
     .replace(/\[CQ:reply[^\]]*(?:\]|$)/g, '')
     .replace(/\[CQ:json[^\]]*(?:\]|$)/g, (raw) => summarizeCqCard('json', raw))
     .replace(/\[CQ:xml[^\]]*(?:\]|$)/g, (raw) => summarizeCqCard('xml', raw))
@@ -175,6 +176,11 @@ export function normalizeMessage(message) {
     .replace(/\[CQ:video[^\]]*\]/g, '[视频]')
     .replace(/\[CQ:file[^\]]*\]/g, '[文件]')
     .trim();
+  // NapCat escapes literal CQ-reserved characters in raw_message, including
+  // brackets in valid usernames such as "[SHK]Wuxin". Decode only after real
+  // CQ segments have been handled so escaped user text cannot become a
+  // synthetic control segment during normalization.
+  return decodeCqValue(normalized).trim();
 }
 
 export function extractReplyMessageId(message) {

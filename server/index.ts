@@ -1,11 +1,12 @@
 import 'dotenv/config';
+import crypto from 'node:crypto';
 import express from 'express';
 import { ensureStore, publicDb, readDb, updateDb, upsertBy, nowIso, saveConfigSnapshot, listConfigSnapshots, restoreConfigSnapshot } from './store.js';
 import { createBackup, listBackups, restoreBackup, deleteBackup, pruneAutoBackups } from './backup.js';
-import { connectOneBot, getOneBotStatus, sendOneBotMessage } from './onebot.js';
-import { oneBotToInternal, processIncoming, decideReply, getReplyQueueStats } from './bot.js';
+import { connectOneBot, getOneBotStatus, handleOneBotEvent, sendOneBotMessage } from './onebot.js';
+import { processIncoming, decideReply, getReplyQueueStats } from './bot.js';
 import { buildPrompt } from './bot/prompt.js';
-import { callLLM, looksLikeMimoEndpoint } from './bot/llm.js';
+import { callLLM } from './bot/llm.js';
 import { getHealth, getRecalcProgress, startRecalc, tickRecalc, stopRecalc, finishRecalc } from './health.js';
 import { getGroupProfile, updateGroupProfile, clearGroupProfile, hasGroupProfileContent } from './bot/groupProfile.js';
 import { getRelationshipProfile, updateRelationshipProfile, clearRelationshipProfile, isSubstantiveRelationshipProfile } from './bot/relationshipProfile.js';
@@ -13,11 +14,57 @@ import { commitMemoryProfileResult, updateMemoryProfile } from './bot/memory.js'
 import { evaluateTrustScores } from './bot/trust.js';
 import { decayInactiveUsers } from './bot/experience.js';
 import { queryProfileLogs, getProfileLogStats } from './bot/profileLog.js';
+import { updateProviderSettings } from './modelConfig.js';
+import { startRenderServer } from './bots/renderServer.js';
 
 ensureStore();
 
 const app = express();
 app.use(express.json({ limit: '2mb' }));
+
+const SAFE_ID = /^[A-Za-z0-9_-]{1,64}$/;
+const GROUP_MODES = new Set(['silent', 'mention', 'light', 'natural']);
+const USER_POLICIES = new Set(['normal', 'whitelist', 'priority', 'muted', 'blocked', 'admin', 'owner']);
+
+function safeSecretEqual(actual, expected) {
+  const a = Buffer.from(String(actual || ''), 'utf8');
+  const b = Buffer.from(String(expected || ''), 'utf8');
+  return a.length === b.length && crypto.timingSafeEqual(a, b);
+}
+
+// The GUI remains open when no password is configured. Once ADMIN_PASSWORD or
+// the GUI password field is set, every API call must authenticate.
+app.use('/api', (req, res, next) => {
+  const expected = String(readDb().settings.adminPassword || '');
+  if (!expected) return next();
+  const supplied = req.get('x-wuxin-admin-password') || '';
+  if (!safeSecretEqual(supplied, expected)) {
+    return res.status(401).json({ ok: false, error: '需要正确的管理密码' });
+  }
+  next();
+});
+
+function identifier(value, label, res) {
+  const result = String(value || '').trim();
+  if (!SAFE_ID.test(result)) {
+    res.status(400).json({ ok: false, error: `${label} 必须为 1-64 位字母、数字、下划线或连字符` });
+    return null;
+  }
+  return result;
+}
+
+function rangedInteger(value, fallback, min, max, label, res) {
+  const result = value === undefined || value === null || value === '' ? fallback : Number(value);
+  if (!Number.isInteger(result) || result < min || result > max) {
+    res.status(400).json({ ok: false, error: `${label} 必须是 ${min}-${max} 之间的整数` });
+    return null;
+  }
+  return result;
+}
+
+function limitedText(value, max) {
+  return String(value || '').trim().slice(0, max);
+}
 
 // Express is only the local GUI/API layer. QQ events enter through OneBot's
 // WebSocket in onebot.ts; /api/onebot/event exists for manual testing or
@@ -28,6 +75,43 @@ function ok(data = {}) {
 
 app.get('/api/state', (_req, res) => {
   res.json(ok({ db: publicDb(), oneBot: getOneBotStatus() }));
+});
+
+// ── Group bot config ──
+
+app.get('/api/group-bot-config', (_req, res) => {
+  const db = readDb();
+  res.json(ok({ config: db.groupBotConfig || {}, groups: db.groups.map(g => ({ groupId: g.groupId, name: g.name })) }));
+});
+
+app.post('/api/group-bot-config', async (req, res) => {
+  const { groupId, botId, enabled } = req.body || {};
+  if (!groupId || !botId) return res.status(400).json({ ok: false, error: '缺少 groupId 或 botId' });
+  const validBots = new Set(['yumu', 'kanon', 'hydrant', 'lazybot']);
+  if (!validBots.has(botId)) return res.status(400).json({ ok: false, error: `无效的 botId: ${botId}，可选值: ${[...validBots].join(', ')}` });
+  updateDb((db) => {
+    db.groupBotConfig = db.groupBotConfig || {};
+    db.groupBotConfig[groupId] = db.groupBotConfig[groupId] || { yumu: true, kanon: true, hydrant: true, lazybot: true };
+    db.groupBotConfig[groupId][botId] = Boolean(enabled);
+  });
+  // Write shared config file that all bots read
+  try {
+    const fs = await import('node:fs');
+    const path = await import('node:path');
+    const sharedConfigPath = 'REDACTED_BOTS_ROOT/configs/group-bot-config.json';
+    const dir = path.dirname(sharedConfigPath);
+    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+    let shared = {};
+    try { shared = JSON.parse(fs.readFileSync(sharedConfigPath, 'utf8')); } catch {}
+    shared[String(groupId)] = shared[String(groupId)] || { yumu: true, kanon: true, hydrant: true, lazybot: true };
+    shared[String(groupId)][botId] = Boolean(enabled);
+    fs.writeFileSync(sharedConfigPath, JSON.stringify(shared, null, 2), 'utf8');
+    console.log('[group-bot-config] Written shared config:', sharedConfigPath);
+  } catch (err) {
+    console.error('[group-bot-config] Failed to write shared config:', err.message);
+  }
+  const db = readDb();
+  res.json(ok({ config: db.groupBotConfig || {} }));
 });
 
 app.get('/api/diagnostics', (_req, res) => {
@@ -58,25 +142,21 @@ app.get('/api/diagnostics', (_req, res) => {
 app.post('/api/settings', (req, res) => {
   updateDb((db) => {
     saveConfigSnapshot(db);
-    const incoming = req.body || {};
+    const incoming = Object.fromEntries(
+      Object.entries(req.body || {}).filter(([key]) => Object.prototype.hasOwnProperty.call(db.settings, key))
+    );
     // Empty/placeholder secret fields mean "keep the current value". Without
     // this, opening the GUI and saving a page would wipe API keys/tokens.
     const keepSecret = (field) => incoming[field] === undefined || incoming[field] === '' || incoming[field] === '已填写' || incoming[field] === '已设置';
-    db.settings = {
-      ...db.settings,
-      ...incoming,
-      apiKey: keepSecret('apiKey') ? db.settings.apiKey : incoming.apiKey,
-      oneBotAccessToken: keepSecret('oneBotAccessToken') ? db.settings.oneBotAccessToken : incoming.oneBotAccessToken,
-      adminPassword: keepSecret('adminPassword') ? db.settings.adminPassword : incoming.adminPassword
-    };
-    if (looksLikeMimoEndpoint(db.settings.apiBaseUrl)) {
-      db.settings.llmProvider = 'openai-compatible';
-      if (/^deepseek-/i.test(String(db.settings.model || ''))) db.settings.model = 'mimo-v2.5';
-    }
-    if (db.settings.llmProvider === 'deepseek') {
-      db.settings.apiBaseUrl = db.settings.apiBaseUrl || 'https://api.deepseek.com';
-      if (/^mimo-/i.test(String(db.settings.model || ''))) db.settings.model = 'deepseek-v4-flash';
-    }
+    const previousOneBotToken = db.settings.oneBotAccessToken;
+    const previousAdminPassword = db.settings.adminPassword;
+    const previousOsuSecret = db.settings.osuClientSecret;
+    const previousPplusSecret = db.settings.pplusClientSecret;
+    db.settings = updateProviderSettings(db.settings, incoming);
+    db.settings.oneBotAccessToken = keepSecret('oneBotAccessToken') ? previousOneBotToken : incoming.oneBotAccessToken;
+    db.settings.adminPassword = keepSecret('adminPassword') ? previousAdminPassword : incoming.adminPassword;
+    db.settings.osuClientSecret = keepSecret('osuClientSecret') ? previousOsuSecret : incoming.osuClientSecret;
+    db.settings.pplusClientSecret = keepSecret('pplusClientSecret') ? previousPplusSecret : incoming.pplusClientSecret;
     if (Array.isArray(db.settings.commandRoles)) {
       const validRoleIds = new Set(db.settings.commandRoles.map((role) => String(role.id)));
       db.settings.commandPermissions = Object.fromEntries(
@@ -121,14 +201,22 @@ app.post('/api/search/test-local', async (_req, res) => {
 });
 
 app.post('/api/groups', (req, res) => {
+  const groupId = identifier(req.body?.groupId, '群号', res);
+  if (!groupId) return;
+  const mode = String(req.body?.mode || 'mention');
+  if (!GROUP_MODES.has(mode)) return res.status(400).json({ ok: false, error: '无效的群回复模式' });
+  const maxPerHour = rangedInteger(req.body?.maxPerHour, 20, 1, 200, '每小时回复上限', res);
+  if (maxPerHour === null) return;
+  const cooldownSec = rangedInteger(req.body?.cooldownSec, 30, 0, 600, '冷却秒数', res);
+  if (cooldownSec === null) return;
   updateDb((db) => {
     upsertBy(db.groups, 'groupId', {
-      groupId: String(req.body.groupId || '').trim(),
-      name: req.body.name || req.body.groupId,
-      enabled: Boolean(req.body.enabled),
-      mode: req.body.mode || 'mention',
-      maxPerHour: Number(req.body.maxPerHour || 20),
-      cooldownSec: Number(req.body.cooldownSec || 30)
+      groupId,
+      name: limitedText(req.body?.name || groupId, 100),
+      enabled: Boolean(req.body?.enabled),
+      mode,
+      maxPerHour,
+      cooldownSec
     });
   });
   res.json(ok({ db: publicDb() }));
@@ -142,20 +230,28 @@ app.delete('/api/groups/:groupId', (req, res) => {
 });
 
 app.post('/api/users', (req, res) => {
+  const groupId = identifier(req.body?.groupId, '群号', res);
+  if (!groupId) return;
+  const userId = identifier(req.body?.userId, '用户号', res);
+  if (!userId) return;
+  const policy = String(req.body?.policy || 'normal');
+  if (!USER_POLICIES.has(policy)) return res.status(400).json({ ok: false, error: '无效的成员策略' });
+  const attentionLevel = rangedInteger(req.body?.attentionLevel, 3, 1, 5, '注意力等级', res);
+  if (attentionLevel === null) return;
   updateDb((db) => {
     const existingIndex = db.users.findIndex(
-      (user) => String(user.groupId) === String(req.body.groupId) && String(user.userId) === String(req.body.userId)
+      (user) => String(user.groupId) === groupId && String(user.userId) === userId
     );
     const entry = {
-      groupId: String(req.body.groupId || '').trim(),
-      userId: String(req.body.userId || '').trim(),
-      nickname: req.body.nickname || req.body.userId,
-      policy: req.body.policy || 'normal',
-      attentionLevel: Number(req.body.attentionLevel || 3),
+      groupId,
+      userId,
+      nickname: limitedText(req.body?.nickname || userId, 100),
+      policy,
+      attentionLevel,
       allowCommands: Boolean(req.body.allowCommands),
-      commandRoleId: req.body.commandRoleId || '',
-      note: req.body.note || '',
-      customPrompt: req.body.customPrompt || '',
+      commandRoleId: limitedText(req.body?.commandRoleId, 64),
+      note: limitedText(req.body?.note, 500),
+      customPrompt: limitedText(req.body?.customPrompt, 2000),
       updatedAt: nowIso()
     };
     if (existingIndex >= 0) db.users[existingIndex] = { ...db.users[existingIndex], ...entry };
@@ -183,23 +279,26 @@ app.delete('/api/users/:groupId/:userId', (req, res) => {
 });
 
 app.post('/api/memories/:userId', (req, res) => {
+  const userId = identifier(req.params.userId, '用户号', res);
+  if (!userId) return;
+  const importanceLevel = rangedInteger(req.body?.importanceLevel, 2, 1, 5, '重要程度', res);
+  if (importanceLevel === null) return;
   updateDb((db) => {
     if (!db.memories) db.memories = [];
-    const userId = String(req.params.userId || '').trim();
     const existingIndex = db.memories.findIndex((memory) => String(memory.userId) === userId);
     const incoming = req.body || {};
     const entry = {
       userId,
-      nickname: incoming.nickname || userId,
+      nickname: limitedText(incoming.nickname || userId, 100),
       enabled: incoming.enabled !== false,
-      importanceLevel: Number(incoming.importanceLevel || 2),
-      importanceLabel: incoming.importanceLabel || '',
-      summary: incoming.summary || '',
-      traits: incoming.traits || '',
-      speechStyle: incoming.speechStyle || '',
-      behavior: incoming.behavior || '',
-      preferences: incoming.preferences || '',
-      manualNotes: incoming.manualNotes || '',
+      importanceLevel,
+      importanceLabel: limitedText(incoming.importanceLabel, 100),
+      summary: limitedText(incoming.summary, 2000),
+      traits: limitedText(incoming.traits, 1000),
+      speechStyle: limitedText(incoming.speechStyle, 1000),
+      behavior: limitedText(incoming.behavior, 1000),
+      preferences: limitedText(incoming.preferences, 1000),
+      manualNotes: limitedText(incoming.manualNotes, 2000),
       updatedAt: nowIso()
     };
     if (existingIndex >= 0) db.memories[existingIndex] = { ...db.memories[existingIndex], ...entry };
@@ -287,7 +386,7 @@ app.get('/api/onebot/autodetect', async (_req, res) => {
 });
 
 app.post('/api/onebot/event', async (req, res) => {
-  const result = await processIncoming(oneBotToInternal(req.body), sendOneBotMessage);
+  const result = await handleOneBotEvent(req.body, sendOneBotMessage);
   res.json(ok({ result }));
 });
 
@@ -335,7 +434,7 @@ app.post('/api/sandbox', async (req, res) => {
   const mentioned = atTargets.includes(selfQq) || botNames.some((n) => text.includes(n)) || text.includes(`[CQ:at,qq=${selfQq}]`);
 
   // Decision
-  const decision = decideReply({ db, group, userPolicy, text, mentioned, userId });
+  const decision = await decideReply({ db, group, userPolicy, text, mentioned, userId });
 
   // Context preview
   const sandboxEvent = { type: 'group', groupId, userId, nickname, text, atTargets };
@@ -396,7 +495,7 @@ app.post('/api/clear-context', (_req, res) => {
 
 // Health
 app.get('/api/health', (_req, res) => {
-  const health = getHealth();
+  const health: any = getHealth();
   health.replyQueues = getReplyQueueStats();
   res.json(health);
 });
@@ -470,7 +569,7 @@ app.get('/api/relationship-profiles', (_req, res) => {
   const candidates = Object.entries(pendingPairCounts)
     .map(([key, count]) => {
       const parts = String(key).split(':');
-      if (parts.length !== 3 || count <= 0) return null;
+      if (parts.length !== 3 || Number(count) <= 0) return null;
       const [groupId, userA, userB] = parts;
       const pairKey = relationshipPairKey(userA, userB);
       if (profiles.some((p) => String(p.groupId) === groupId && p.pairKey === pairKey)) return null;
@@ -527,9 +626,9 @@ app.delete('/api/relationship-profiles/:groupId/:userA/:userB', (req, res) => {
 app.get('/api/profile-logs', (req, res) => {
   const { userId, runId, event, limit, offset } = req.query;
   const logs = queryProfileLogs({
-    userId: userId || undefined,
-    runId: runId || undefined,
-    event: event || undefined,
+    userId: userId ? String(userId) : undefined,
+    runId: runId ? String(runId) : undefined,
+    event: event ? String(event) as any : undefined,
     limit: limit ? Number(limit) : 100,
     offset: offset ? Number(offset) : 0,
   });
@@ -543,7 +642,10 @@ app.get('/api/backups', (_req, res) => {
 });
 
 app.post('/api/backups', (req, res) => {
-  const type = req.body?.type || 'manual';
+  const type = String(req.body?.type || 'manual');
+  if (!['manual', 'auto', 'pre-restore'].includes(type)) {
+    return res.status(400).json({ ok: false, error: '无效的备份类型' });
+  }
   const result = createBackup(type);
   res.json(ok({ backup: result }));
 });
@@ -644,4 +746,7 @@ app.use((err, _req, res, _next) => {
 app.listen(port, '127.0.0.1', () => {
   console.log(`QQ AI ChatBot server running at http://127.0.0.1:${port}`);
   connectOneBot();
+  // Start Wuxin's local yumu-image endpoint on 8389. The renderer keeps its
+  // original 8388 connection and opens this second connection independently.
+  startRenderServer(8389);
 });
