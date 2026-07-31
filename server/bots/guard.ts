@@ -195,7 +195,9 @@ export function sanitizeToolResult(content: string): string {
   // Strip anything that looks like a file path
   let cleaned = content
     .replace(/[A-Za-z]:[\\/][^\s,，。]*/g, '[路径已隐藏]')
-    .replace(/\/[^\s,，。]+\/[^\s,，。]+/g, '[路径已隐藏]')
+    // Only treat forward-slash tokens as paths when they contain a dot or a
+    // file extension; plain word lists like "aim/alt/tech/stream" must survive.
+    .replace(/\/[^\s,，。]*\.[^\s,，。]+/g, '[路径已隐藏]')
     .replace(/\\[^\s,，。]+\\[^\s,，。]+/g, '[路径已隐藏]');
 
   // Truncate if too long
