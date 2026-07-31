@@ -1,6 +1,5 @@
-// @ts-nocheck -- legacy runtime module split from server/bot.ts; new code should live in typed modules.
-import { pathToFileURL } from 'node:url';
-import { defaultPrompt, readDb, updateDb, nowIso } from '../store.js';
+// Conversation context helpers + LLM reply gate. Type-checked module.
+import { readDb, updateDb, nowIso } from '../store.js';
 import {
   normalizeMessage,
   extractImageInputs,
@@ -57,21 +56,12 @@ import {
   isIdentityQuestion,
   neutralIdentityReply
 } from './reply.js';
-import { recordMemoryObservation, maybeUpdateMemoryProfile, maybeRecordImageMemorySummary, updateMemoryProfile, commitMemoryProfileResult, maybeSweepDueMemoryProfiles } from './memory.js';
-import { getGroupProfile, updateGroupProfile, clearGroupProfile, incrementGroupProfilePending, hasGroupProfileContent } from './groupProfile.js';
-import { getRelationshipProfile, updateRelationshipProfile, clearRelationshipProfile, incrementPairPending } from './relationshipProfile.js';
-import { processTrustSignal, evaluateTrustScores, trustInteractionBonus, isTrustedMember } from './trust.js';
-import { processXpGain, getExperience, getXpBonus, formatXpBar, getUnlockedFeatures, getLevelInfo, getNextLevelInfo, LEVELS, decayInactiveUsers } from './experience.js';
-import { isSearchAvailable, searchWeb, formatSearchResults, getLastSearchStatus, extractSearchQuery } from './search.js';
-import { setBotPaused, getRecalcProgress, startRecalc, tickRecalc, finishRecalc } from '../health.js';
-import { activateModelProfile, activeProviderLabel } from '../modelConfig.js';
-import { handleOsuCommand } from '../osu/commands.js';
-import { loadRegistry, buildBotToolSchemas, enabledBots, findBot } from '../bots/registry.js';
-import { detectRequiredOsuTool, detectNamedBotRequest } from '../bots/intent.js';
-import { validateOperation } from '../bots/guard.js';
-import { runToolLoop, tryResolveBotResponse } from '../bots/executor.js';
+import { activateModelProfile } from '../modelConfig.js';
 
-export function looksLikeExternalBotSender(event, settings = {}) {
+export function looksLikeExternalBotSender(
+  event,
+  settings: { selfQq?: string; externalBotQqs?: string } = {}
+) {
   if (settings.selfQq && String(event.userId) === String(settings.selfQq)) return false;
   const explicitBotQqs = String(settings.externalBotQqs || '')
     .split(/[,\s]+/)
@@ -98,7 +88,11 @@ export function stripAtQq(text, qq) {
   return String(text || '').replace(new RegExp(`\\[CQ:at,qq=${escapeRegExp(qq)}(?:,[^\\]]*)?\\]\\s*`, 'i'), '').trim();
 }
 
-export function parseTargetAndRest(text, event, options = {}) {
+export function parseTargetAndRest(
+  text,
+  event,
+  options: { allowNumeric?: boolean } = {}
+) {
   const raw = String(text || '').trim();
   const cqTarget = extractAtQq(raw);
   if (cqTarget) return { targetQq: cqTarget, rest: stripAtQq(raw, cqTarget) };
@@ -127,7 +121,7 @@ export async function llmContentFilter(text, label) {
   }
   try {
     const db = readDb();
-    const { completeChat } = await import('./bot/llm.js');
+    const { completeChat } = await import('./llm.js');
     const resp = await completeChat(db, {
       messages: [{
         role: 'user',
@@ -290,7 +284,16 @@ export function recentLlmGateCalls(db, groupId, minutes = 60) {
   ).length;
 }
 
-export function recordLlmGateUsage({ groupId, userId, result, error, verdict, threshold }) {
+interface GateUsageRecord {
+  groupId: any;
+  userId: any;
+  result?: any;
+  error?: any;
+  verdict?: any;
+  threshold?: any;
+}
+
+export function recordLlmGateUsage({ groupId, userId, result, error, verdict, threshold }: GateUsageRecord) {
   updateDb((draft) => {
     draft.usageEvents ||= [];
     const usage = result?.usage || {};

@@ -1,5 +1,4 @@
-// @ts-nocheck -- legacy runtime module split from server/bot.ts; new code should live in typed modules.
-import { pathToFileURL } from 'node:url';
+// Owner/admin command suite split from server/bot.ts.
 import { defaultPrompt, readDb, updateDb, nowIso } from '../store.js';
 import {
   normalizeMessage,
@@ -57,19 +56,14 @@ import {
   isIdentityQuestion,
   neutralIdentityReply
 } from './reply.js';
-import { recordMemoryObservation, maybeUpdateMemoryProfile, maybeRecordImageMemorySummary, updateMemoryProfile, commitMemoryProfileResult, maybeSweepDueMemoryProfiles } from './memory.js';
-import { getGroupProfile, updateGroupProfile, clearGroupProfile, incrementGroupProfilePending, hasGroupProfileContent } from './groupProfile.js';
-import { getRelationshipProfile, updateRelationshipProfile, clearRelationshipProfile, incrementPairPending } from './relationshipProfile.js';
-import { processTrustSignal, evaluateTrustScores, trustInteractionBonus, isTrustedMember } from './trust.js';
-import { processXpGain, getExperience, getXpBonus, formatXpBar, getUnlockedFeatures, getLevelInfo, getNextLevelInfo, LEVELS, decayInactiveUsers } from './experience.js';
-import { isSearchAvailable, searchWeb, formatSearchResults, getLastSearchStatus, extractSearchQuery } from './search.js';
+import { updateMemoryProfile, commitMemoryProfileResult } from './memory.js';
+import { getGroupProfile, updateGroupProfile, clearGroupProfile, hasGroupProfileContent } from './groupProfile.js';
+import { getRelationshipProfile, updateRelationshipProfile, clearRelationshipProfile } from './relationshipProfile.js';
+import { getExperience, formatXpBar, getUnlockedFeatures, getLevelInfo, LEVELS } from './experience.js';
+import { isSearchAvailable, getLastSearchStatus } from './search.js';
 import { setBotPaused, getRecalcProgress, startRecalc, tickRecalc, finishRecalc } from '../health.js';
 import { activateModelProfile, activeProviderLabel } from '../modelConfig.js';
 import { handleOsuCommand } from '../osu/commands.js';
-import { loadRegistry, buildBotToolSchemas, enabledBots, findBot } from '../bots/registry.js';
-import { detectRequiredOsuTool, detectNamedBotRequest } from '../bots/intent.js';
-import { validateOperation } from '../bots/guard.js';
-import { runToolLoop, tryResolveBotResponse } from '../bots/executor.js';
 import {
   looksLikeExternalBotSender,
   extractAtQq,
@@ -102,7 +96,7 @@ export async function handleOwnerCommand(event, sendMessage = undefined, permiss
   const meta = parseCommandMeta(event, permissions);
   const startedAt = Date.now();
   try {
-    const result = await runOwnerCommand(event, sendMessage, permissions);
+    const result: any = await runOwnerCommand(event, sendMessage, permissions);
     const reason = String(result?.reason || result?.text || result?.error || '').slice(0, 800);
     const status = result?.error
       ? 'error'
@@ -282,7 +276,7 @@ async function runOwnerCommand(event, sendMessage, permissions = { isOwner: true
 
   function buildHelpText(db, userPolicy, perms) {
     const allowed = helpDefs.filter((d) => hasCommandPermission(db, userPolicy, perms, d.key));
-    const byGroup = {};
+    const byGroup: Record<string, string[]> = {};
     for (const d of allowed) {
       if (!byGroup[d.group]) byGroup[d.group] = [];
       if (!byGroup[d.group].includes(d.line)) byGroup[d.group].push(d.line);
@@ -320,7 +314,7 @@ async function runOwnerCommand(event, sendMessage, permissions = { isOwner: true
     const roleLevel = commandRoleLevel(db, userRoleId);
     const allowed = helpDefs.filter((p) => hasCommandPermission(db, commandUserPolicy, permissions, p.key));
     const denied = helpDefs.filter((p) => !hasCommandPermission(db, commandUserPolicy, permissions, p.key));
-    const byGroup = {};
+    const byGroup: Record<string, string[]> = {};
     for (const p of allowed) {
       if (!byGroup[p.group]) byGroup[p.group] = [];
       if (!byGroup[p.group].includes(p.line)) byGroup[p.group].push('  ' + p.line);
@@ -358,7 +352,7 @@ async function runOwnerCommand(event, sendMessage, permissions = { isOwner: true
     const db = readDb();
     const groupId = String(event.groupId);
     // Collect all users who have experience in this group
-    const groupEntries = Object.entries(db.groupExperience || {})
+    const groupEntries = Object.entries((db.groupExperience as Record<string, any>) || {})
       .filter(([key]) => key.startsWith(groupId + ':'))
       .map(([, v]) => v)
       .sort((a, b) => (b.xpInGroup || 0) - (a.xpInGroup || 0))
@@ -1119,7 +1113,7 @@ async function runOwnerCommand(event, sendMessage, permissions = { isOwner: true
 
       // Calculate today's cost from usageEvents (per-model accurate)
       const todayStart = startOfLocalDayTime();
-      const todayByModel = {};
+      const todayByModel: Record<string, { prompt: number; completion: number; requests: number }> = {};
       for (const e of (db.usageEvents || [])) {
         if (new Date(e.createdAt).getTime() < todayStart) continue;
         const m = e.model || 'unknown';
@@ -1739,7 +1733,8 @@ ${knownModels.join('\n')}
       nickname: target,
       policy: policyMap[command],
       attentionLevel: policyMap[command] === 'priority' ? 5 : 3,
-      allowCommands: policyMap[command] === 'admin'
+      allowCommands: policyMap[command] === 'admin',
+      commandRoleId: ''
     };
     if (command === '/op' || command === '/设管理员') entry.commandRoleId = 'admin';
     if (command === '/deop' || command === '/取消管理员') entry.commandRoleId = '';
