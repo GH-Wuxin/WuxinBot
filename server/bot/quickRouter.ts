@@ -381,6 +381,19 @@ const HELP_TEXT = [
   '绑定：!bind <osu用户名>；解绑：!unbind',
 ].join('\n');
 
+/**
+ * Quick commands mirror the original bots: when a panel image exists, the
+ * image IS the answer. The full text payload is only for the LLM fallback
+ * path; quick delivery drops it so `!bs 1-100` never dumps 100 text lines
+ * alongside the panel.
+ */
+export function quickPayload(result: string | { content: string; images?: string[] }): string {
+  if (typeof result === 'string') return result;
+  const images = Array.isArray(result.images) ? result.images : [];
+  if (images.length > 0) return images.join('\n');
+  return String(result.content || '');
+}
+
 function stdOnlyNote(mode: string): string | null {
   if (!mode) return null;
   const normalized = mode.toLowerCase();
@@ -529,9 +542,7 @@ export async function handleQuickCommand(
       const result = await executeInternalBotCommand('hydrant', 'profile', username, {
         db, userId: String(event.userId), groupId: event.groupId,
       });
-      const content = typeof result === 'string' ? result : result.content;
-      const images = typeof result === 'string' ? [] : (result.images || []);
-      if (sendMessage) await sendMessage(event, [content, ...images].filter(Boolean).join('\n'));
+      if (sendMessage) await sendMessage(event, quickPayload(result));
       log('profile', username || '(self)');
       return { handled: true, replied: true, reason: 'profile' };
     } catch (error: any) {
@@ -559,9 +570,7 @@ export async function handleQuickCommand(
       const result = await executeInternalBotCommand('hydrant', 'profile', query, {
         db, userId: String(event.userId), groupId: event.groupId,
       });
-      const content = typeof result === 'string' ? result : result.content;
-      const images = typeof result === 'string' ? [] : (result.images || []);
-      if (sendMessage) await sendMessage(event, [content, ...images].filter(Boolean).join('\n'));
+      if (sendMessage) await sendMessage(event, quickPayload(result));
       log('where', query);
       return { handled: true, replied: true, reason: 'where' };
     } catch (error: any) {
@@ -575,9 +584,7 @@ export async function handleQuickCommand(
       const result = await executeInternalBotCommand('hydrant', 'pplus', username, {
         db, userId: String(event.userId), groupId: event.groupId,
       });
-      const content = typeof result === 'string' ? result : result.content;
-      const images = typeof result === 'string' ? [] : (result.images || []);
-      if (sendMessage) await sendMessage(event, [content, ...images].filter(Boolean).join('\n'));
+      if (sendMessage) await sendMessage(event, quickPayload(result));
       log('pplus', username || '(self)');
       return { handled: true, replied: true, reason: 'pplus' };
     } catch (error: any) {
@@ -604,9 +611,7 @@ export async function handleQuickCommand(
         { db, userId: String(event.userId), groupId: event.groupId },
         parsed.bpSelection,
       );
-      const content = typeof result === 'string' ? result : result.content;
-      const images = typeof result === 'string' ? [] : (result.images || []);
-      if (sendMessage) await sendMessage(event, [content, ...images].filter(Boolean).join('\n'));
+      if (sendMessage) await sendMessage(event, quickPayload(result));
       log(def.capability, username || '(self)');
       return { handled: true, replied: true, reason: def.capability };
     } catch (error: any) {

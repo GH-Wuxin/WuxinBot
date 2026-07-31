@@ -1102,8 +1102,9 @@ export async function executeInternalBotCommand(
       // Try to render a score image via yumu-image
       if (getRenderServer().hasClients()) {
         try {
-          const { renderCompactScoreCard } = await import('./render.js');
-          const rendered = await renderCompactScoreCard(user, scoreForRenderer(score));
+          // 雨沐 original single-score panel (E5), same as its !r/!p output.
+          const { renderScoreCard } = await import('./render.js');
+          const rendered = await renderScoreCard(scoreForRenderer(score), user, null);
           if (rendered) {
             return {
               content: `${user.username} 最近一次 osu! 成绩：\n${scoreLine}`,
