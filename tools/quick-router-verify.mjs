@@ -17,7 +17,7 @@ const prodBefore = productionDbSnapshot();
 console.log('[isolation] production db snapshot: ' + (prodBefore ? prodBefore.sha256.slice(0, 12) + '...' : 'N/A'));
 
 const { ensureStore, readDb, updateDb } = await import('../server/store.ts');
-const { matchQuickCommand, handleQuickCommand, parseOsuArgs } = await import('../server/bot/quickRouter.ts');
+const { matchQuickCommand, handleQuickCommand, parseOsuArgs, quickPayload } = await import('../server/bot/quickRouter.ts');
 const { processIncoming } = await import('../server/bot.ts');
 
 ensureStore();
@@ -172,6 +172,24 @@ console.log('\n=== Unit: BP rank/range parsing ===');
 
   const usernameOnly = parseOsuArgs(bpDef, '玩家名');
   ok('bp-username', usernameOnly.username === '玩家名' && !usernameOnly.bpSelection, JSON.stringify(usernameOnly));
+}
+
+// ── 2b. Image-first delivery ──
+
+console.log('\n=== Unit: quickPayload (image-only delivery) ===');
+
+{
+  const withImages = quickPayload({
+    content: '玩家 的 BP1-100：\n#1 ...\n#2 ...',
+    images: ['[CQ:image,file=file:///x.png]'],
+  });
+  ok('payload-images-only', withImages === '[CQ:image,file=file:///x.png]', withImages);
+
+  const textOnly = quickPayload('纯文字结果');
+  ok('payload-text', textOnly === '纯文字结果', textOnly);
+
+  const plainString = quickPayload('直接字符串');
+  ok('payload-string', plainString === '直接字符串', plainString);
 }
 
 // ── 3. Local handlers ──
