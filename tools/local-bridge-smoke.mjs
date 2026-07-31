@@ -7,10 +7,10 @@ const ctx = { groupId: '770001', userId: 'REDACTED_QQ_001', nickname: 'Owner' };
 const cases = [
   ['yumu', '!r', 60_000],
   ['yumu', '!bs 1-5', 60_000],
-  ['hydrant', '~', 20_000],
-  ['hydrant', '++', 20_000],
+  ['hydrant', '~', 60_000],
+  ['hydrant', '++', 60_000],
   ['lazybot', '/help', 20_000],
-  ['kanon', '!ping', 20_000],
+  ['kanon', '!ping', 30_000],
 ];
 
 for (const [botId, command, timeout] of cases) {

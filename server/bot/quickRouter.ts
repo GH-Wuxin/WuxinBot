@@ -111,12 +111,12 @@ const YUMU: QuickCommandDef[] = [
 ];
 
 const KANON: QuickCommandDef[] = [
-  { id: 'recent', source: 'kanon', aliases: ['re', 'recent', 'pr'], kind: 'osu', capability: 'recent', implemented: true },
+  { id: 'recent', source: 'kanon', aliases: ['re', 'recent', 'pr'], kind: 'osu', capability: 'recent', implemented: true, bridge: true },
   { id: 'recentlist', source: 'kanon', aliases: ['res', 'recentlist', 'prs'], kind: 'osu', implemented: false },
-  { id: 'bp', source: 'kanon', aliases: ['bp'], kind: 'osu', capability: 'bp', bpArgs: true, implemented: true },
-  { id: 'bplist', source: 'kanon', aliases: ['bplist', 'get bplist'], kind: 'osu', capability: 'bplist', bpArgs: true, implemented: true },
+  { id: 'bp', source: 'kanon', aliases: ['bp'], kind: 'osu', capability: 'bp', bpArgs: true, implemented: true, bridge: true },
+  { id: 'bplist', source: 'kanon', aliases: ['bplist', 'get bplist'], kind: 'osu', capability: 'bplist', bpArgs: true, implemented: true, bridge: true },
   { id: 'score', source: 'kanon', aliases: ['score'], kind: 'osu', implemented: false },
-  { id: 'info', source: 'kanon', aliases: ['info'], kind: 'osu', capability: 'info', implemented: true },
+  { id: 'info', source: 'kanon', aliases: ['info'], kind: 'osu', capability: 'info', implemented: true, bridge: true },
   { id: 'todaybp', source: 'kanon', aliases: ['todaybp', 'get todaybp'], kind: 'osu', implemented: false },
   { id: 'search', source: 'kanon', aliases: ['search'], kind: 'osu', implemented: false },
   { id: 'update', source: 'kanon', aliases: ['update'], kind: 'osu', implemented: false },
@@ -177,9 +177,9 @@ const LAZYBOT: QuickCommandDef[] = [
 // Hydrant triggers are prefix-free (or use special tokens), so they live in
 // their own matcher instead of the shared alias table.
 const HYDRANT: QuickCommandDef[] = [
-  { id: 'self_profile', source: 'hydrant', aliases: ['~'], kind: 'osu', handler: 'self_profile', implemented: true },
-  { id: 'at_profile', source: 'hydrant', aliases: ['查'], kind: 'osu', handler: 'at_profile', implemented: true },
-  { id: 'where', source: 'hydrant', aliases: ['where'], kind: 'osu', handler: 'where', implemented: true },
+  { id: 'self_profile', source: 'hydrant', aliases: ['~'], kind: 'osu', handler: 'self_profile', implemented: true, bridge: true },
+  { id: 'at_profile', source: 'hydrant', aliases: ['查'], kind: 'osu', handler: 'at_profile', implemented: true, bridge: true },
+  { id: 'where', source: 'hydrant', aliases: ['where'], kind: 'osu', handler: 'where', implemented: true, bridge: true },
   { id: 'pp_self', source: 'hydrant', aliases: ['++'], kind: 'osu', handler: 'pp_self', implemented: true },
   { id: 'pp_user', source: 'hydrant', aliases: ['+'], kind: 'osu', handler: 'pp_user', implemented: true },
   { id: 'recommend', source: 'hydrant', aliases: ['荐图'], kind: 'osu', implemented: false },
@@ -514,9 +514,12 @@ export async function handleQuickCommand(
       atTargets,
     };
     try {
-      const bridgeTimeout = def.source === 'yumu' ? 60_000 : 25_000;
+      const bridgeTimeout = def.source === 'yumu' || def.source === 'hydrant' ? 60_000 : 30_000;
       const reply = await callLocalBot(def.source, bridgeCommand, bridgeContext, bridgeTimeout);
-      const payload = reply.images.length > 0 ? reply.images.join('\n') : reply.text;
+      // Bridge replies are the original bot's own output: keep text and images
+      // exactly as produced (the internal engine is the one that needed the
+      // image-only rule to avoid duplicating its panel text).
+      const payload = [reply.text, ...reply.images].filter(Boolean).join('\n');
       if (payload) {
         try {
           if (sendMessage) await sendMessage(event, payload);

@@ -110,7 +110,11 @@ function extractReplyFrame(frame: string): ExtractedReply | null {
   }
   if (!parsed || typeof parsed !== 'object') return null;
   const action = String(parsed.action || '').toLowerCase();
-  if (!action.startsWith('send_group_msg') && !action.startsWith('send_private_msg')) return null;
+  if (
+    !action.startsWith('send_group_msg') &&
+    !action.startsWith('send_private_msg') &&
+    !action.startsWith('send_msg')
+  ) return null;
 
   const message = parsed.params?.message;
   const texts: string[] = [];
@@ -247,6 +251,18 @@ export function callLocalBot(
     });
     ws.on('message', (data) => {
       const frame = String(data);
+      // Kanon (WatsonWsServer) and Hydrant (WudiLib) send API actions that
+      // carry an `echo` and wait for the client's acknowledgement; without it
+      // their reply-send times out and nothing reaches us.
+      try {
+        const parsed = JSON.parse(frame);
+        if (parsed && typeof parsed === 'object' && parsed.action && parsed.echo !== undefined) {
+          if (ws.readyState === WebSocket.OPEN) {
+            ws.send(JSON.stringify({ status: 'ok', retcode: 0, data: null, echo: parsed.echo }));
+          }
+        }
+      } catch { /* non-JSON frames are ignored */ }
+
       const extracted = extractReplyFrame(frame);
       if (!extracted) return;
       frames++;
