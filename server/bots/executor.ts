@@ -359,6 +359,7 @@ const DIRECT_RESULT_COMMANDS = new Set([
   'card',
   'bp',
   'bplist',
+  'bp_type',
   'ppplus',
   'skill',
 ]);
@@ -1222,6 +1223,14 @@ async function executeInternalBotCommand(
         : '';
 
       return formatInternalInfoText(user, ppPlusNote);
+    }
+
+    case 'bp_type': {
+      // osu!oracle BP type analysis. Deterministic tool result so the LLM can
+      // never fabricate proportions: it only decides WHEN to call this tool.
+      const { runBpTypeAnalysis } = await import('./bpTypeAnalysis.js');
+      const text = await runBpTypeAnalysis(db, String(userId), username);
+      return { content: text };
     }
 
     case 'bp':
