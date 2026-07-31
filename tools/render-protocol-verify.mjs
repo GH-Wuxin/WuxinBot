@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { once } from 'node:events';
 import WebSocket from 'ws';
 import { RenderServer } from '../server/bots/renderServer.ts';
+import { getHealth } from '../server/health.ts';
 
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -71,6 +72,10 @@ await assert.rejects(
   /超过 4096 KiB/
 );
 assert.equal(server.pending.size, 0, 'completed and rejected tasks must leave no pending entries');
+assert(
+  getHealth().osu.renderFailures >= 2,
+  'render failures must be counted for health observability',
+);
 
 // A disconnect must promptly reject work assigned to that renderer.
 const disconnectMessage = once(client, 'message');
