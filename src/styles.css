@@ -504,6 +504,25 @@ input[type="range"] {
   overflow-wrap: anywhere;
 }
 
+.osu-overview-stats {
+  grid-template-columns: repeat(3, minmax(150px, 1fr));
+  gap: 10px;
+}
+
+.osu-overview-stats .stat {
+  padding: 12px 14px;
+}
+
+.osu-overview-stats .stat span {
+  font-size: 12px;
+  margin-bottom: 4px;
+}
+
+.osu-overview-stats .stat strong {
+  font-size: 17px;
+  overflow-wrap: anywhere;
+}
+
 .osu-analysis-text {
   background: #f8f7f2;
   border: 1px solid #e6e2d8;
