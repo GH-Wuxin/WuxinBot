@@ -464,7 +464,7 @@ function OverviewTab({ player }) {
   const grades = player.grade_counts || {};
   return (
     <div>
-      <section className="stats" style={{ marginBottom: 12 }}>
+      <section className="stats osu-overview-stats" style={{ marginBottom: 12 }}>
         <Stat label="等级" value={`${player.level} (${player.level_progress}%)`} />
         <Stat label="准确率" value={`${player.accuracy.toFixed(2)}%`} />
         <Stat label="游玩次数" value={player.play_count.toLocaleString()} />
