@@ -667,7 +667,14 @@ async function drainQueue() {
   }
 }
 
-export async function handleOsuCommand(event: any, sendMessage: any, _permissions: any, subCommand: string, args: string) {
+export async function handleOsuCommand(
+  event: any,
+  sendMessage: any,
+  _permissions: any,
+  subCommand: string,
+  args: string,
+  options: { bypassCooldown?: boolean } = {},
+) {
   const db = readDb();
 
   const subFree = String(args || '').startsWith(subCommand + ' ') ? String(args).slice(subCommand.length + 1)
@@ -707,11 +714,13 @@ export async function handleOsuCommand(event: any, sendMessage: any, _permission
       return { replied: true, reason: 'osu analyze 无用户' };
     }
 
-    // Check 4-hour cooldown
-    const cached = lookupCachedAnalysis(db, String(event.userId), target, mode);
-    if (cached) {
-      if (sendMessage) await sendAsReply(event, sendMessage, `（4 小时内已分析过 ${mode} 模式，显示上次结果）\n\n${cached}`);
-      return { replied: true, reason: 'osu analyze 缓存命中', text: cached };
+    // Check 4-hour cooldown — admin console calls bypass it.
+    if (!options.bypassCooldown) {
+      const cached = lookupCachedAnalysis(db, String(event.userId), target, mode);
+      if (cached) {
+        if (sendMessage) await sendAsReply(event, sendMessage, `（4 小时内已分析过 ${mode} 模式，显示上次结果）\n\n${cached}`);
+        return { replied: true, reason: 'osu analyze 缓存命中', text: cached };
+      }
     }
 
     // Prevent double-submit: same user can't have multiple pending analyses

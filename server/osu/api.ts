@@ -41,19 +41,27 @@ async function osuFetch<T>(path: string, options: RequestInit = {}): Promise<T> 
   return response.json() as Promise<T>;
 }
 
-export async function getUser(username: string, mode: OsuMode = 'osu'): Promise<OsuUser> {
+export async function getUser(
+  username: string,
+  mode: OsuMode = 'osu',
+  options: { force?: boolean } = {},
+): Promise<OsuUser> {
   const cacheKey = `user:${username}:${mode}`;
   const cached = cacheGet<OsuUser>(cacheKey);
-  if (cached) return cached;
+  if (cached && !options.force) return cached;
   const user = await osuFetch<OsuUser>(`/users/@${encodeURIComponent(username)}/${mode}`);
   cacheSet(cacheKey, user, TTL.user);
   return user;
 }
 
-export async function getUserById(userId: number, mode: OsuMode = 'osu'): Promise<OsuUser> {
+export async function getUserById(
+  userId: number,
+  mode: OsuMode = 'osu',
+  options: { force?: boolean } = {},
+): Promise<OsuUser> {
   const cacheKey = `user:${userId}:${mode}`;
   const cached = cacheGet<OsuUser>(cacheKey);
-  if (cached) return cached;
+  if (cached && !options.force) return cached;
   const user = await osuFetch<OsuUser>(`/users/${userId}/${mode}`);
   cacheSet(cacheKey, user, TTL.user);
   return user;

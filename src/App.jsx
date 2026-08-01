@@ -18,6 +18,7 @@ import {
   UserCog
 } from 'lucide-react';
 import './styles.css';
+import { Osu } from './components/osu.jsx';
 
 const ADMIN_PASSWORD_KEY = 'wuxinAdminPassword';
 let authPromptActive = false;
@@ -265,7 +266,7 @@ function App() {
 
 const botLabels = { yumu: '雨沐', kanon: '猫猫', hydrant: '消防栓', lazybot: 'LazyBot' };
 
-function Osu({ db, refresh }) {
+function OsuLegacy({ db, refresh }) {
   const [status, setStatus] = useState(null);
   const [qq, setQq] = useState('');
   const [name, setName] = useState('');
