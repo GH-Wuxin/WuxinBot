@@ -99,6 +99,40 @@ async function mapLimit<T, R>(
   return results;
 }
 
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+async function fetchBestScoresWithRetry(userId: number, limit: number): Promise<OsuScore[]> {
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try {
+      return await getUserBestScores(userId, 'osu', limit);
+    } catch (error) {
+      const message = String((error as Error)?.message || error);
+      if (attempt === 0 && message.includes('429')) {
+        await sleep(1000);
+        continue;
+      }
+      throw error;
+    }
+  }
+  throw new Error(`osu! API 429 after retries (user ${userId})`);
+}
+
+async function fetchBeatmapScoresWithRetry(beatmapId: number): Promise<OsuScore[]> {
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try {
+      return await getBeatmapScores(beatmapId, 'osu');
+    } catch (error) {
+      const message = String((error as Error)?.message || error);
+      if (attempt === 0 && message.includes('429')) {
+        await sleep(1000);
+        continue;
+      }
+      throw error;
+    }
+  }
+  throw new Error(`osu! API 429 after retries (beatmap ${beatmapId})`);
+}
+
 // ── Cooldown & anti-repeat persistence ──
 
 export function checkRecommendCooldown(db: any, osuUserId: number): number {
@@ -259,13 +293,13 @@ export async function recommendForPlayer(
     }
   }
 
-  const topScores = await getUserBestScores(user.id, 'osu', TOP_PLAYS);
+  const topScores = await fetchBestScoresWithRetry(user.id, TOP_PLAYS);
   apiCalls += 1;
   if (!Array.isArray(topScores) || topScores.length === 0) {
     return { ok: false, candidates: [], source: 'none', reason: '该玩家没有 osu! 成绩，无法生成推荐。' };
   }
 
-  const ownTop100 = await getUserBestScores(user.id, 'osu', OWN_TOP).catch(() => []);
+  const ownTop100 = await fetchBestScoresWithRetry(user.id, OWN_TOP).catch(() => []);
   apiCalls += 1;
   const ownBeatmapIds = new Set<number>();
   const ownBeatmapsetIds = new Set<number>();
@@ -290,7 +324,7 @@ export async function recommendForPlayer(
       if (!beatmapId) return;
       let leaderboard: OsuScore[];
       try {
-        leaderboard = await getBeatmapScores(beatmapId, 'osu');
+        leaderboard = await fetchBeatmapScoresWithRetry(beatmapId);
         apiCalls += 1;
       } catch {
         return;
@@ -339,7 +373,7 @@ export async function recommendForPlayer(
       if (Date.now() > deadline) return;
       let scores: OsuScore[];
       try {
-        scores = await getUserBestScores(p.id, 'osu', SIMILAR_TOP);
+        scores = await fetchBestScoresWithRetry(p.id, SIMILAR_TOP);
         apiCalls += 1;
       } catch {
         return;

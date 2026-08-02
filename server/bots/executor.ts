@@ -1444,13 +1444,21 @@ export interface ToolLoopResult {
 }
 
 function sanitizeDirectDeliveryContent(content: string): string {
+  const links: string[] = [];
   return String(content || '')
     // Never allow an intercepted QQ bot to inject a second CQ operation. Images
     // are already carried in ToolResult.images and appended structurally.
     .replace(/\[CQ:[^\]]+\]/gi, '')
+    // Official osu! beatmap links are safe and useful; stash them in
+    // slash-free placeholders before the path-hiding rules run.
+    .replace(/(https?:\/\/osu\.ppy\.sh\/beatmaps\/\d+)/g, (match) => {
+      links.push(match);
+      return `__OSU_MAP_LINK_${links.length - 1}__`;
+    })
     .replace(/[A-Za-z]:[\\/][^\s,，。]*/g, '[路径已隐藏]')
     .replace(/\/[^\s,，。]+\/[^\s,，。]+/g, '[路径已隐藏]')
     .replace(/\\[^\s,，。]+\\[^\s,，。]+/g, '[路径已隐藏]')
+    .replace(/__OSU_MAP_LINK_(\d+)__/g, (_, index) => links[Number(index)])
     .replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/g, '')
     .replace(/\r\n?/g, '\n')
     .trim();
@@ -1491,6 +1499,19 @@ export async function runToolLoop(
     const result = await executeToolCall(syntheticCall, {
       db, userId, groupId, sendMessage, event, selfQq
     });
+
+    // Deterministic routing owns failures: the LLM never gets a chance to
+    // improvise a recommendation (or any data) when the tool itself failed.
+    if (!result.ok) {
+      return {
+        text: String(result.content || '查询失败，请稍后再试。'),
+        usage: totalUsage,
+        toolCallsMade: 1,
+        iterations: 1,
+        images: [],
+        directContent: ''
+      };
+    }
 
     const safeContent = sanitizeToolResult(result.content);
     if (isSafeToolResult(safeContent)) {
