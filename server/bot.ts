@@ -174,6 +174,9 @@ export function compactDirectToolLead(text, directContent = '', hasImages = fals
   return cleaned;
 }
 
+/** Replies at or below this length are never merged into a forward card. */
+const MERGE_FORWARD_MIN_CHARS = 200;
+
 // Reply queue: each group+user pair keeps its own FIFO, so different members
 // never block each other. While a reply is being generated, that member's new
 // messages are queued; after the current reply finishes, queued messages from
@@ -714,6 +717,9 @@ export async function processIncoming(event, sendMessage = undefined, queuedDeci
           model: responseOptions.overrideModel,
           label: 'Bot Harness',
           requiredTool,
+          // 自然聊天不回显工具原文：数据只供 LLM 参考并自然融入回答。
+          // 显式指令（/w osu analyze、!p 等）走独立通道，不受此开关影响。
+          deliverDirectContent: false,
         }
       );
 
@@ -757,12 +763,14 @@ export async function processIncoming(event, sendMessage = undefined, queuedDeci
     const deliveredText = [replyText, toolDirectContent].filter(Boolean).join('\n\n');
     const deliveredMediaImages = toolImages.map(toolImageToMediaInput).filter(Boolean);
 
-    // Merged-forward cards are only used when the output would actually split
-    // into two or more messages (as judged by the same segmenter used for
-    // normal delivery). A single-speech output stays a normal message even if
-    // it is long; only explicit long-form tasks force the forward card.
+    // Merged-forward cards require BOTH: the output would actually split into
+    // two or more messages (as judged by the same segmenter used for normal
+    // delivery) AND it exceeds the character floor. Replies within 200 chars
+    // never use the forward card; a single-speech output stays a normal
+    // message even if it is long; only explicit long-form tasks force the card.
     const segmentCount = splitReplySegments(deliveredText).length;
-    const isLongReply = responseOptions.longForm || segmentCount >= 2;
+    const withinMergeFloor = deliveredText.length <= MERGE_FORWARD_MIN_CHARS;
+    const isLongReply = responseOptions.longForm || (!withinMergeFloor && segmentCount >= 2);
     let segments;
     if (hasDirectToolDelivery) {
       // Structured tool output bypasses both the LLM restatement and the
