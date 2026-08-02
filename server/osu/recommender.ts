@@ -425,6 +425,6 @@ export function formatRecommendLine(candidate: RecommendCandidate, index: number
     `#${index + 1} ${candidate.title}${candidate.version ? ` [${candidate.version}]` : ''}`,
     `${stars}｜${mods}｜${candidate.pp > 0 ? `约 ${candidate.pp}pp` : 'pp 未知'}｜${bpm}｜${length}`,
     `理由：${reason}`,
-    candidate.mapUrl,
+    `BID ${candidate.beatmapId}｜${candidate.mapUrl}`,
   ].join('\n');
 }
