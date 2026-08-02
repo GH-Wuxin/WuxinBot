@@ -701,6 +701,13 @@ function Groups({ db, refresh, saveSettings }) {
     await api(`/api/clear-context/${group.groupId}`, { method: 'POST' });
     refresh();
   };
+  const deleteGroup = async (group) => {
+    const name = group.name || group.groupId;
+    const ok = window.confirm('删除群 "' + name + '"？将同时删除该群的成员策略、聊天记录、决策日志、命令日志、群画像、关系画像和 Bot 开关配置，不可恢复。继续吗？');
+    if (!ok) return;
+    await api(`/api/groups/${group.groupId}`, { method: 'DELETE' });
+    refresh();
+  };
   const hasManualGroupName = (group) => {
     const name = String(group.name || '').trim();
     const groupId = String(group.groupId || '').trim();
@@ -886,6 +893,7 @@ function Groups({ db, refresh, saveSettings }) {
                     <button onClick={() => setForm({ ...group })}>编辑</button>
                     <button onClick={() => save({ ...group, enabled: !group.enabled })}>{group.enabled ? '停用' : '启用'}</button>
                     <button onClick={() => clearContext(group)} title="只清空本群聊天记录和决策日志，不影响设置、成员策略和画像">清空上下文</button>
+                    <button className="danger" onClick={() => deleteGroup(group)} title="删除群配置及其全部群内数据，不可恢复">删除群</button>
                   </div>
                 </div>
                 {gp && (

@@ -705,8 +705,22 @@ app.post('/api/groups', (req, res) => {
 });
 
 app.delete('/api/groups/:groupId', (req, res) => {
+  const groupId = String(req.params.groupId || '');
   updateDb((db) => {
-    db.groups = db.groups.filter((group) => String(group.groupId) !== String(req.params.groupId));
+    db.groups = db.groups.filter((group) => String(group.groupId) !== groupId);
+    db.users = (db.users || []).filter((user) => String(user.groupId) !== groupId);
+    db.messages = (db.messages || []).filter((message) => String(message.groupId) !== groupId);
+    db.decisions = (db.decisions || []).filter((decision) => String(decision.groupId) !== groupId);
+    db.commandLogs = (db.commandLogs || []).filter((log) => String(log.groupId) !== groupId);
+    db.groupProfiles = (db.groupProfiles || []).filter((profile) => String(profile.groupId) !== groupId);
+    db.relationshipProfiles = (db.relationshipProfiles || []).filter((profile) => String(profile.groupId) !== groupId);
+    if (db.groupBotConfig) delete db.groupBotConfig[groupId];
+    for (const key of Object.keys(db.pendingPairCounts || {})) {
+      if (key.startsWith(groupId + ':')) delete db.pendingPairCounts[key];
+    }
+    for (const key of Object.keys(db.groupExperience || {})) {
+      if (key.startsWith(groupId + ':')) delete db.groupExperience[key];
+    }
   });
   res.json(ok({ db: publicDb() }));
 });
