@@ -1695,7 +1695,7 @@ ${knownModels.join('\n')}
     const permKey = subCommand === 'bind' ? 'osuBind'
       : subCommand === 'analyze' ? 'osuAnalyze'
       : subCommand === 'recent' ? 'osuRecent'
-      : subCommand === 'clear' ? 'osuClearCache'
+      : subCommand === 'clear' ? (String(commandArgs || '').includes('cooldown') ? 'osuClearCooldown' : 'osuClearCache')
       : 'osuHelp';
     if (!(await requireCommand(permKey))) {
       return { replied: Boolean(sendMessage), reason: commandDeniedReply(commandDb, permKey) };

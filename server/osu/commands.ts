@@ -1110,7 +1110,7 @@ async function drainQueue() {
 export async function handleOsuCommand(
   event: any,
   sendMessage: any,
-  _permissions: any,
+  permissions: any,
   subCommand: string,
   args: string,
   options: { bypassCooldown?: boolean } = {},
@@ -1331,6 +1331,38 @@ export async function handleOsuCommand(
       if (sendMessage) await sendMessage(event, '已删除你的所有分析历史。');
       return { replied: true, reason: 'osu clear history' };
     }
+    if (action === 'cooldown' || action.startsWith('cooldown ')) {
+      if (!permissions?.isOwner) {
+        if (sendMessage) await sendMessage(event, '该操作仅限 owner。');
+        return { replied: true, reason: 'osu clear cooldown 非 owner' };
+      }
+      const targetArg = String(subFree || '').replace(/^cooldown\s*/, '').trim();
+      if (!targetArg) {
+        if (sendMessage) await sendMessage(event, '用法：/w osu clear cooldown <osu用户名或ID>');
+        return { replied: true, reason: 'osu clear cooldown 缺目标' };
+      }
+      const needleId = /^\d+$/.test(targetArg) ? Number(targetArg) : 0;
+      const needleLower = targetArg.toLowerCase();
+      let removedAnalyze = 0;
+      let removedRecent = 0;
+      updateDb((draft) => {
+        const matches = (entry: any) => {
+          const idMatch = needleId > 0 && Number(entry?.osuUserId || 0) === needleId;
+          const nameMatch = [entry?.target, entry?.displayName, entry?.osuUsername]
+            .some((value) => String(value || '').toLowerCase() === needleLower);
+          return idMatch || nameMatch;
+        };
+        const beforeAnalyze = (draft.osuAnalyses || []).length;
+        draft.osuAnalyses = (draft.osuAnalyses || []).filter((entry: any) => !matches(entry));
+        removedAnalyze = beforeAnalyze - draft.osuAnalyses.length;
+        const beforeRecent = (draft.osuRecentAnalyses || []).length;
+        draft.osuRecentAnalyses = (draft.osuRecentAnalyses || []).filter((entry: any) => !matches(entry));
+        removedRecent = beforeRecent - draft.osuRecentAnalyses.length;
+      });
+      const reply = `已清除 ${targetArg} 的分析冷却缓存（完整分析 ${removedAnalyze} 条、近期 ${removedRecent} 条）。`;
+      if (sendMessage) await sendMessage(event, reply);
+      return { replied: true, reason: reply };
+    }
     if (action === 'cache') {
       updateDb((draft) => {
         draft.osuAnalyses = [];
@@ -1340,7 +1372,7 @@ export async function handleOsuCommand(
       if (sendMessage) await sendMessage(event, '已清除所有分析缓存。');
       return { replied: true, reason: 'osu clear cache' };
     }
-    if (sendMessage) await sendMessage(event, '用法：/w osu clear bind（删除绑定）/ /w osu clear history（删除分析历史）/ /w osu clear cache（清除全部缓存，仅管理员）');
+    if (sendMessage) await sendMessage(event, '用法：/w osu clear bind（删除绑定）/ /w osu clear history（删除分析历史）/ /w osu clear cooldown <玩家>（取消指定玩家冷却，仅 owner）/ /w osu clear cache（清除全部缓存，仅管理员）');
     return { replied: true, reason: 'osu clear 缺参数' };
   }
 
@@ -1353,6 +1385,7 @@ export async function handleOsuCommand(
       '/w osu recent [用户名] [--mode=std/taiko/catch/mania] — 近期短评（需先完整分析）',
       '/w osu clear bind — 删除绑定',
       '/w osu clear history — 删除分析历史',
+      '/w osu clear cooldown <玩家> — 取消指定玩家分析冷却（仅 owner）',
     ].join('\n');
     if (sendMessage) await sendMessage(event, help);
     return { replied: true, reason: 'osu help' };

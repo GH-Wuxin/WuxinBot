@@ -140,6 +140,7 @@ export const defaultCommandPermissions = {
   osuAnalyze: 'guest',
   osuRecent: 'guest',
   osuClearCache: 'admin',
+  osuClearCooldown: 'owner',
   osuHelp: 'guest'
 };
 
