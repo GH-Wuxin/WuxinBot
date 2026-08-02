@@ -214,7 +214,7 @@ export function buildBotToolSchemas(registry: BotRegistry): LlmTool[] {
     type: 'function',
     function: {
       name: 'get_player_skill',
-      description: '获取已记录的玩家 osu! 技能水平（PP、排名、领域强弱、常用 Mods、分析摘要）',
+      description: '获取已记录的玩家 osu! 技能水平快照（PP、排名、领域强弱、常用 Mods、分析摘要）。注意：这是之前分析时保存的快照，可能过时，且不含最近成绩。查询实时数据（最近成绩、最新 PP、当前状态）必须用 query_osu。',
       parameters: {
         type: 'object',
         properties: { player: { type: 'string', description: 'osu! 用户名或 QQ 号' } },
@@ -235,7 +235,7 @@ export function skillContextBlock(
   const records = skillStore?.records || [];
   if (records.length === 0) return '';
 
-  const lines: string[] = ['', '【已记录的玩家技能水平】', '你之前分析过以下玩家的 osu! 数据。在日常对话中，你可以自然地提到他们的水平——不需要背诵数据，而是像朋友一样记住他们的特点。'];
+  const lines: string[] = ['', '【已记录的玩家技能水平】', '你之前分析过以下玩家的 osu! 数据。在日常对话中，你可以自然地提到他们的水平——不需要背诵数据，而是像朋友一样记住他们的特点。', '这些记录是历史快照（保存于分析时），可能过时。涉及玩家最近成绩、最近是否游玩、当前状态时必须调用 query_osu 实时查询，禁止用快照或历史对话推断。'];
 
   for (const r of records) {
     const mods = r.topMods?.length ? `常用 Mods: ${r.topMods.join('、')}` : '';
@@ -254,6 +254,6 @@ export function skillContextBlock(
     );
   }
 
-  lines.push('使用原则：只在相关时自然提及，不背数据、不生硬复述。如果玩家最近的表现和记录有矛盾，以最近表现为准。');
+  lines.push('使用原则：只在相关时自然提及，不背数据、不生硬复述。如果玩家最近的表现和记录有矛盾，以实时查询结果为准。');
   return lines.join('\n');
 }

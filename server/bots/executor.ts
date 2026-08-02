@@ -490,29 +490,59 @@ export async function executeToolCall(
     }
 
     case 'get_recent_score': {
-      // For now, returns the recent summary from skill record
+      // Real-time recent scores from osu! API v2 (NOT the skill snapshot).
+      // The skill store often lacks recentSummary; returning the snapshot here
+      // made the LLM believe the player had no recent plays.
       const requestedPlayer = String(args.player || '').trim();
       const player = requestedPlayer || String(userId || '').trim();
-      const record = player ? lookupSkill(player) : undefined;
-      if (!record) {
+      const target = resolveInternalPlayerTarget(db, String(userId || ''), player);
+      if (!target) {
         return {
           toolCallId: toolCall.id,
           ok: true,
-          content: `没有找到玩家 "${player}" 的最近成绩记录。`
+          content: '无法确定要查询的 osu! 用户：未绑定账号且未指定用户名。请先用 /w osu bind 绑定，或直接给出 osu! 用户名。'
         };
       }
 
+      let user: OsuUser;
+      try {
+        user = await loadInternalOsuUser(target);
+      } catch (error) {
+        return {
+          toolCallId: toolCall.id,
+          ok: false,
+          content: `找不到 osu! 用户 "${player}"：${String((error as Error)?.message || error)}`,
+          error: String((error as Error)?.message || error)
+        };
+      }
+
+      const { getUserRecentScores } = await import('../osu/api.js');
+      let rawScores: OsuScore[];
+      try {
+        rawScores = await getUserRecentScores(user.id, 'osu', 3);
+      } catch (error) {
+        return {
+          toolCallId: toolCall.id,
+          ok: false,
+          content: `查询 ${user.username} 最近成绩失败：${String((error as Error)?.message || error)}`,
+          error: String((error as Error)?.message || error)
+        };
+      }
+
+      if (!Array.isArray(rawScores) || rawScores.length === 0) {
+        return {
+          toolCallId: toolCall.id,
+          ok: true,
+          content: `${user.username} 的实时 recent 查询：osu! API 未返回记录（可能最近没有提交成绩，或新成绩尚未同步）。这仅代表没有近期记录，不代表账号从未打过图；技能快照请用 get_player_skill。`
+        };
+      }
+
+      const enriched = (await enrichScoreStarRatings(rawScores, 'osu')).scores;
+      const lines = enriched.map((score, index) => formatInternalScoreLine(score, { index: index + 1 }));
       return {
         toolCallId: toolCall.id,
         ok: true,
-        content: [
-          `${record.osuUsername} 的技能记录：`,
-          `PP: ${record.pp.toLocaleString()}，全球排名 #${record.rank.toLocaleString()}`,
-          `准确率: ${record.accuracy.toFixed(1)}%`,
-          record.recentSummary ? `最近表现: ${record.recentSummary}` : '',
-          record.summary ? `总体评价: ${record.summary}` : '',
-          `最后分析时间: ${record.lastAnalyzed}`,
-        ].filter(Boolean).join('\n')
+        content: `${user.username} 最近成绩（实时 osu! API）：\n${lines.join('\n')}`
       };
     }
 
@@ -1093,7 +1123,7 @@ export async function executeInternalBotCommand(
       const { getUserRecentScores } = await import('../osu/api.js');
       const rawScores = await getUserRecentScores(user.id, 'osu', 1);
       if (!Array.isArray(rawScores) || rawScores.length === 0) {
-        return `${user.username} 最近没有 osu! 成绩记录。`;
+        return `${user.username} 最近没有 osu! 成绩记录（osu! API 未返回，可能最近没有提交成绩，或新成绩尚未同步）。`;
       }
 
       const [score] = (await enrichScoreStarRatings(rawScores, 'osu')).scores;
@@ -1305,7 +1335,9 @@ function formatSkillResult(record: any): string {
     `- PP+ 维度: ${ppPlus}`,
     `- 常用 Mods: ${mods}`,
     record.summary ? `- 分析摘要: ${record.summary}` : '',
-    record.recentSummary ? `- 最近表现: ${record.recentSummary}` : '',
+    record.recentSummary
+      ? `- 最近表现: ${record.recentSummary}（快照，最后更新: ${record.lastRecentAnalyzed || record.lastAnalyzed}）`
+      : '- 快照中无最近表现数据（不代表玩家最近没有成绩；实时最近成绩请用 query_osu capability=recent）',
     `- 最后分析: ${record.lastAnalyzed}`,
   ].filter(Boolean).join('\n');
 }
