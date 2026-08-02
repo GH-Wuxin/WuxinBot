@@ -1333,6 +1333,13 @@ export interface ToolLoopOptions {
   label?: string;
   /** When set, execute this tool before the first LLM call. LLM only writes a short lead. */
   requiredTool?: RequiredTool;
+  /**
+   * When true, the structured tool payload is returned verbatim for the caller
+   * to append after the LLM lead (command-style delivery). When false (default,
+   * natural chat), the payload stays out of the user-facing message: the LLM
+   * must integrate the key facts into its own reply instead.
+   */
+  deliverDirectContent?: boolean;
 }
 
 export interface ToolLoopResult {
@@ -1367,7 +1374,7 @@ export async function runToolLoop(
     db, messages, tools, userId, groupId,
     sendMessage, event, selfQq,
     maxIterations = 5, temperature, maxTokens, model, label,
-    requiredTool
+    requiredTool, deliverDirectContent = false
   } = options;
 
   let currentMessages = [...messages];
@@ -1404,9 +1411,11 @@ export async function runToolLoop(
             collectedImages.push(imageRef);
           }
         }
-        const dc = sanitizeDirectDeliveryContent(result.directContent || '');
-        if (dc && isSafeToolResult(dc) && !collectedDirectContent.includes(dc)) {
-          collectedDirectContent.push(dc);
+        if (deliverDirectContent) {
+          const dc = sanitizeDirectDeliveryContent(result.directContent || '');
+          if (dc && isSafeToolResult(dc) && !collectedDirectContent.includes(dc)) {
+            collectedDirectContent.push(dc);
+          }
         }
       }
 
@@ -1419,12 +1428,22 @@ export async function runToolLoop(
         content: null,
         tool_calls: [syntheticCall]
       });
+      let toolNote = '';
+      if (collectedDirectContent.length > 0) {
+        toolNote = '[交付说明：系统会在你的回复后原样附上完整结果。你可以根据上面的数据给出 pippi 的自然评价——说出你的真实看法，不用限制长度。但有一个硬规则：你引用的任何数字（PP、准确率、星数、combo）和 Mod 组合必须与上面工具返回的数据逐字一致，不准脑补、不准美化、不准四舍五入。]';
+      } else if (hasDirect) {
+        toolNote = deliverDirectContent
+          ? '[结果图片会由系统附上。请给出一句简短、自然的引导或短评，不要复述任何条目。]'
+          : '[结果图片会由系统附上。你可以自然点评这张图，但不要把工具返回的原始数据整段贴出来。]';
+      } else if (result.ok) {
+        toolNote = deliverDirectContent
+          ? ''
+          : '[数据仅供你参考：请把关键信息自然地融入回答，不要贴完整原始报表，也不要逐条复述条目；禁止用“查好了/看完了”之类的空话代替实际内容。结果图片（如有）会由系统附上。]';
+      }
       currentMessages.push({
         role: 'tool',
         tool_call_id: syntheticCall.id,
-        content: hasDirect
-          ? `${safeContent}\n\n[交付说明：系统会在你的回复后原样附上完整结果。你可以根据上面的数据给出 pippi 的自然评价——说出你的真实看法，不用限制长度。但有一个硬规则：你引用的任何数字（PP、准确率、星数、combo）和 Mod 组合必须与上面工具返回的数据逐字一致，不准脑补、不准美化、不准四舍五入。]`
-          : safeContent
+        content: toolNote ? `${safeContent}\n\n${toolNote}` : safeContent
       });
     } else {
       currentMessages.push({
@@ -1588,11 +1607,13 @@ export async function runToolLoop(
           }
         }
 
-        const directContent = sanitizeDirectDeliveryContent(result.directContent || '');
-        if (directContent && isSafeToolResult(directContent)) {
-          acceptedDirectContent = directContent;
-          if (!collectedDirectContent.includes(directContent)) {
-            collectedDirectContent.push(directContent);
+        if (deliverDirectContent) {
+          const directContent = sanitizeDirectDeliveryContent(result.directContent || '');
+          if (directContent && isSafeToolResult(directContent)) {
+            acceptedDirectContent = directContent;
+            if (!collectedDirectContent.includes(directContent)) {
+              collectedDirectContent.push(directContent);
+            }
           }
         }
       }
@@ -1600,12 +1621,22 @@ export async function runToolLoop(
       const hasDirectDelivery = Boolean(
         result.ok && ((result.images?.length || 0) > 0 || acceptedDirectContent)
       );
+      let toolNote = '';
+      if (acceptedDirectContent) {
+        toolNote = '[交付说明：系统会在你的回复后原样附上完整结果。你可以根据上面的数据给出 pippi 的自然评价——说出你的真实看法，不用限制长度。但有一个硬规则：你引用的任何数字（PP、准确率、星数、combo）和 Mod 组合必须与上面工具返回的数据逐字一致，不准脑补、不准美化、不准四舍五入。]';
+      } else if (hasDirectDelivery) {
+        toolNote = deliverDirectContent
+          ? '[结果图片会由系统附上。请给出一句简短、自然的引导或短评，不要复述任何条目。]'
+          : '[结果图片会由系统附上。你可以自然点评这张图，但不要把工具返回的原始数据整段贴出来。]';
+      } else if (result.ok) {
+        toolNote = deliverDirectContent
+          ? ''
+          : '[数据仅供你参考：请把关键信息自然地融入回答，不要贴完整原始报表，也不要逐条复述条目；禁止用“查好了/看完了”之类的空话代替实际内容。结果图片（如有）会由系统附上。]';
+      }
       currentMessages.push({
         role: 'tool',
         tool_call_id: tc.id,
-        content: hasDirectDelivery
-          ? `${safeContent}\n\n[交付说明：系统会在你的回复后原样附上完整结果。你可以根据上面的数据给出 pippi 的自然评价——说出你的真实看法，不用限制长度。但有一个硬规则：你引用的任何数字（PP、准确率、星数、combo）和 Mod 组合必须与上面工具返回的数据逐字一致，不准脑补、不准美化、不准四舍五入。]`
-          : safeContent
+        content: toolNote ? `${safeContent}\n\n${toolNote}` : safeContent
       });
 
       toolCallsMade++;
@@ -1613,11 +1644,19 @@ export async function runToolLoop(
   }
 
   // Max iterations reached — ask LLM for final answer
+  let finalPrompt: string;
+  if (collectedDirectContent.length > 0) {
+    finalPrompt = '请给出一句简短、自然的引导或短评。完整工具结果会由系统原样附上，不要复述任何条目，也不要再调用工具。';
+  } else if (collectedImages.length > 0) {
+    finalPrompt = deliverDirectContent
+      ? '结果图片会由系统附上。请给出一句简短、自然的引导或短评，不要复述任何条目，也不要再调用工具。'
+      : '结果图片会由系统附上。请基于图片内容给出一句自然点评，不要把工具返回的原始数据整段贴出来，也不要再调用工具。';
+  } else {
+    finalPrompt = '请基于以上工具调用结果给出 pippi 的自然评价，不要再调用工具。';
+  }
   currentMessages.push({
     role: 'user',
-    content: collectedDirectContent.length > 0 || collectedImages.length > 0
-      ? '请给出一句简短、自然的引导或短评。完整工具结果会由系统原样附上，不要复述任何条目，也不要再调用工具。'
-      : '请基于以上工具调用结果给出 pippi 的自然评价，不要再调用工具。'
+    content: finalPrompt
   });
 
   let finalResponse;
