@@ -757,10 +757,12 @@ export async function processIncoming(event, sendMessage = undefined, queuedDeci
     const deliveredText = [replyText, toolDirectContent].filter(Boolean).join('\n\n');
     const deliveredMediaImages = toolImages.map(toolImageToMediaInput).filter(Boolean);
 
-    // Long replies (>150 chars or multi-paragraph) are sent as merged-forward
-    // cards to avoid flooding the chat. Short replies stay as segmented messages.
-    const newlineCount = (deliveredText.match(/\n/g) || []).length;
-    const isLongReply = responseOptions.longForm || deliveredText.length > 150 || newlineCount >= 2;
+    // Merged-forward cards are only used when the output would actually split
+    // into two or more messages (as judged by the same segmenter used for
+    // normal delivery). A single-speech output stays a normal message even if
+    // it is long; only explicit long-form tasks force the forward card.
+    const segmentCount = splitReplySegments(deliveredText).length;
+    const isLongReply = responseOptions.longForm || segmentCount >= 2;
     let segments;
     if (hasDirectToolDelivery) {
       // Structured tool output bypasses both the LLM restatement and the
