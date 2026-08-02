@@ -81,6 +81,24 @@ export async function getUserRecentScores(userId: number, mode: OsuMode = 'osu',
   return scores;
 }
 
+export async function getBeatmapScores(
+  beatmapId: number,
+  mode: OsuMode = 'osu',
+  mods?: string[],
+): Promise<OsuScore[]> {
+  const normalizedMods = [...new Set((mods || []).map((mod) => String(mod).toUpperCase()).filter((mod) => mod && mod !== 'NM'))].sort();
+  const modKey = normalizedMods.join(',');
+  const cacheKey = `scores:${beatmapId}:${mode}:${modKey}`;
+  const cached = cacheGet<OsuScore[]>(cacheKey);
+  if (cached) return cached;
+  const query = new URLSearchParams({ mode });
+  if (normalizedMods.length > 0) query.set('mods', normalizedMods.join(''));
+  const body = await osuFetch<{ scores?: OsuScore[] }>(`/beatmaps/${beatmapId}/scores?${query.toString()}`);
+  const scores = Array.isArray(body?.scores) ? body.scores : [];
+  cacheSet(cacheKey, scores, 30 * 60_000);
+  return scores;
+}
+
 export async function getBeatmap(beatmapId: number): Promise<OsuBeatmap> {
   const cacheKey = `beatmap:${beatmapId}`;
   const cached = cacheGet<OsuBeatmap>(cacheKey);

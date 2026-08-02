@@ -627,6 +627,27 @@ export async function renderBestScoresList(
   }
 }
 
+// ── Beatmap recommendation card ──
+// MVP renders the official beatmapset cover as a QQ image; yumu-image has no
+// dedicated beatmap panel yet, and the text payload always carries the links.
+export async function renderBeatmapCard(
+  candidate: { coverUrl: string },
+): Promise<{ buffer: Buffer; cqCode: string } | null> {
+  if (!candidate?.coverUrl) return null;
+  try {
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), 10_000);
+    const resp = await fetch(candidate.coverUrl, { signal: ctrl.signal });
+    clearTimeout(timer);
+    if (!resp.ok) return null;
+    const buffer = Buffer.from(await resp.arrayBuffer());
+    if (buffer.length < 1024) return null;
+    return { buffer, cqCode: saveAndGetCqCode(buffer, 'bp') };
+  } catch {
+    return null;
+  }
+}
+
 function bpListCacheKey(
   apiUser: any,
   apiScores: any[],

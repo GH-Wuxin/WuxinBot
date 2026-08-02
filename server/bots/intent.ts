@@ -9,6 +9,7 @@ export interface RequiredTool {
   toolName: 'query_osu';
   args: {
     capability: string;
+    username?: string;
     bp_rank?: number;
     bp_start?: number;
     bp_end?: number;
@@ -102,6 +103,37 @@ function hasProfileIntent(text: string): boolean {
   return PROFILE_PATTERNS.some((re) => re.test(text));
 }
 
+// ── Recommend queries ──
+// "推图 / 推荐谱面 / 荐图 / 打什么图 / 有没有适合我的图" are unambiguous
+// recommendation requests. Analysis-flavored variants ("你觉得我适合打什么图",
+// "建议我打什么") stay with the LLM.
+
+const RECOMMEND_PATTERNS: RegExp[] = [
+  /推(?:一|几|两|点|张)?图/,
+  /推荐/,
+  /荐图/,
+  /打什么图/,
+  /有没有(?:适合我的|我能打的|什么)图/,
+  /有什么(?:图|谱面|歌)(?:推荐|可以打|能打)/,
+  /推荐的(?:图|谱面|歌)/,
+  /来(?:一|几|两)?张(?:图|谱面)/,
+  /找(?:一|几|两)?张(?:图|谱面)/,
+];
+
+function hasRecommendIntent(text: string): boolean {
+  if (/你觉得|我该|我应该|应该|建议|分析|怎么提升|如何提升|怎么样|适合打什么/.test(text)) return false;
+  if (/这(?:张|个|首)(?:图|谱面|歌)/.test(text)) return false;
+  return RECOMMEND_PATTERNS.some((re) => re.test(text));
+}
+
+function extractRecommendUsername(text: string): string {
+  const match = /(?:给|为|帮)([A-Za-z0-9_\[\] .'-]{2,24}?)(?:推|推荐|荐|打什么图|找|来)/.exec(text);
+  if (!match) return '';
+  const username = match[1].trim();
+  if (!username || /你|我|他|她|它/.test(username)) return '';
+  return username;
+}
+
 // ── Public API ──
 
 /**
@@ -118,6 +150,14 @@ export function detectRequiredOsuTool(userText: string): RequiredTool | null {
   // Strip CQ codes — they're not part of the user's natural language
   const clean = text.replace(/\[CQ:[^\]]+\]/gi, ' ').replace(/\s+/g, ' ').trim();
   if (!clean) return null;
+
+  if (hasRecommendIntent(clean)) {
+    const username = extractRecommendUsername(clean);
+    return {
+      toolName: 'query_osu',
+      args: { capability: 'recommend', ...(username ? { username } : {}) },
+    };
+  }
 
   if (excluded(clean)) return null;
 

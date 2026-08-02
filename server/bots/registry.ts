@@ -109,6 +109,7 @@ export const INTERNAL_CAPABILITIES = [
   { name: 'profile', description: '玩家资料文本' },
   { name: 'ppplus', description: 'PP+ 维度分析' },
   { name: 'skill', description: '玩家技能雷达' },
+  { name: 'recommend', description: '谱面推荐（协同过滤：与你同分段的玩家在打的图；玩家要求推图/推荐谱面/打什么图/有没有适合我的图时调用，数据来自 osu! API v2）' },
 ] as const;
 
 export function internalCapabilitySupported(name: string): boolean {
@@ -159,7 +160,7 @@ export function buildBotToolSchemas(registry: BotRegistry): LlmTool[] {
       type: 'function',
       function: {
         name: 'query_osu',
-        description: `查询 osu! 数据（Wuxin 内部：osu! API v2、PP+、skill store；图片由 yumu-image 渲染）。可用查询：${capList}。数据来自真实 API，不是你凭记忆编的。`,
+        description: `查询 osu! 数据（Wuxin 内部：osu! API v2、PP+、skill store；图片由 yumu-image 渲染）。可用查询：${capList}。玩家要求推图/推荐谱面/打什么图时使用 capability=recommend，username 可填任意 osu! 用户名（不需要提问者已绑定）。数据来自真实 API，不是你凭记忆编的。`,
         parameters: {
           type: 'object',
           properties: {
