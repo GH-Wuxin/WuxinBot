@@ -23,7 +23,7 @@ export interface QuickCommandDef {
   aliases: string[];
   kind: 'osu' | 'system' | 'fun' | 'admin';
   /** Internal engine capability, when the command maps to one. */
-  capability?: 'recent' | 'info' | 'profile' | 'card' | 'bp' | 'bplist' | 'pplus' | 'skill';
+  capability?: 'recent' | 'info' | 'profile' | 'card' | 'bp' | 'bplist' | 'pplus' | 'skill' | 'recommend';
   /** Local handler id for non-osu commands. */
   handler?: 'bind' | 'unbind' | 'help' | 'ping' | 'dice' | 'where' | 'self_profile' | 'at_profile' | 'pp_user' | 'pp_self' | 'notice';
   /** Admin-only commands are gated by owner/admin role before any reply. */
@@ -99,7 +99,7 @@ const YUMU: QuickCommandDef[] = [
   { id: 'leader', source: 'yumu', aliases: ['l', 'leader', 'leaderboard', 'list', 'gl', 'group leaderboard', 'group list', 'lg', 'll', 'legacy leaderboard', 'legacy list'], kind: 'osu', implemented: false },
   { id: 'nom', source: 'yumu', aliases: ['n', 'nom', 'nomination', 'nominations'], kind: 'osu', implemented: false },
   { id: 'explore', source: 'yumu', aliases: ['e', 'exp', 'explore', 'find', 'search', 'emp', 'explore most played'], kind: 'osu', implemented: false },
-  { id: 'recommend', source: 'yumu', aliases: ['rec', 'recommend', 'recommended', 'j', '推荐', '推荐谱面'], kind: 'osu', implemented: false },
+  { id: 'recommend', source: 'yumu', aliases: ['rec', 'recommend', 'recommended', 'j', '推荐', '推荐谱面'], kind: 'osu', capability: 'recommend', implemented: true },
   { id: 'view', source: 'yumu', aliases: ['v', 'view', 'vv', 'view variation', 'sv view'], kind: 'osu', implemented: false },
   { id: 'cal', source: 'yumu', aliases: ['cal', 'calculate', 'cl'], kind: 'osu', implemented: false },
   { id: 'getbg', source: 'yumu', aliases: ['gb', 'bg', 'get bg', 'get background', '获取背景'], kind: 'osu', implemented: false },
@@ -157,7 +157,7 @@ const LAZYBOT: QuickCommandDef[] = [
   { id: 'filter', source: 'lazybot', aliases: ['f', 'filter'], kind: 'osu', implemented: false },
   { id: 'compare', source: 'lazybot', aliases: ['c', 'compare'], kind: 'osu', implemented: false },
   { id: 'map', source: 'lazybot', aliases: ['m', 'map'], kind: 'osu', implemented: false },
-  { id: 'rd', source: 'lazybot', aliases: ['rd', 'recommenddifficulty'], kind: 'osu', implemented: false },
+  { id: 'rd', source: 'lazybot', aliases: ['rd', 'recommenddifficulty'], kind: 'osu', capability: 'recommend', implemented: true },
   { id: 'nametoid', source: 'lazybot', aliases: ['nametoid', 'n2d'], kind: 'osu', implemented: false },
   { id: 'avatar', source: 'lazybot', aliases: ['oa', 'avatar'], kind: 'osu', implemented: false },
   { id: 'setmode', source: 'lazybot', aliases: ['setmode', 'setruleset', 'setrule'], kind: 'system', implemented: false },
@@ -187,7 +187,7 @@ const HYDRANT: QuickCommandDef[] = [
   // Hydrant's original `+` still calls the retired syrin.me PP+ endpoint.
   // Route the same public command through Wuxin's local PP+ aggregate instead.
   { id: 'pplus', source: 'hydrant', aliases: ['+'], kind: 'osu', capability: 'pplus', implemented: true },
-  { id: 'recommend', source: 'hydrant', aliases: ['荐图'], kind: 'osu', implemented: false },
+  { id: 'recommend', source: 'hydrant', aliases: ['荐图'], kind: 'osu', capability: 'recommend', implemented: true },
   { id: 'pptth', source: 'hydrant', aliases: ['pptth'], kind: 'osu', implemented: false },
   { id: 'highlight', source: 'hydrant', aliases: ['今日高光'], kind: 'osu', implemented: false },
   { id: 'help', source: 'hydrant', aliases: ['帮助'], kind: 'system', handler: 'help', implemented: true },
@@ -801,6 +801,13 @@ export async function handleQuickCommand(
         : def.source === 'hydrant'
           ? 'hydrant'
           : 'yumu';
+    if (def.capability === 'recommend' && sendMessage) {
+      try {
+        await sendMessage(event, '（正在翻同分段玩家的成绩单…可能要等半分钟）');
+      } catch {
+        // Hint is non-fatal.
+      }
+    }
     let result: Awaited<ReturnType<typeof executeInternalBotCommand>>;
     try {
       result = await executeInternalBotCommand(

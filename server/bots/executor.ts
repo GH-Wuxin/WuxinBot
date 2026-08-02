@@ -568,6 +568,14 @@ export async function executeToolCall(
               : (parseBpSelectionFromUserText(String(context.event?.text || '')).selection || resolveBpQuerySelection({})))
         : undefined;
 
+      if (capability === 'recommend' && context.sendMessage && context.event) {
+        try {
+          await context.sendMessage(context.event, '（正在翻同分段玩家的成绩单…可能要等半分钟）');
+        } catch {
+          // Hint is non-fatal; the tool result still arrives through the loop.
+        }
+      }
+
       try {
         const rawResult = await executeInternalBotCommand(
           'wuxin_internal',
@@ -1196,6 +1204,56 @@ export async function executeInternalBotCommand(
       const { runBpTypeAnalysis } = await import('./bpTypeAnalysis.js');
       const text = await runBpTypeAnalysis(db, String(userId), username);
       return { content: text };
+    }
+
+    case 'recommend': {
+      // Real-time collaborative filtering recommendation (osu!helper style).
+      // Shares cooldown / anti-repeat / candidate cache with the quick routes.
+      const {
+        recommendForPlayer,
+        checkRecommendCooldown,
+        loadRecommendHistory,
+        markRecommendation,
+        formatRecommendLine,
+      } = await import('../osu/recommender.js');
+
+      const cooldownMs = checkRecommendCooldown(db, user.id);
+      if (cooldownMs > 0) {
+        return `${user.username} 刚推过图，${Math.ceil(cooldownMs / 60_000)} 分钟后再来换口味吧。`;
+      }
+
+      const exclude = loadRecommendHistory(db, user.id);
+      const result = await recommendForPlayer(target, db, {
+        count: 3,
+        excludeBeatmapsetIds: exclude,
+      });
+      if (!result.ok) {
+        throw new Error(result.reason || '暂时推不了图。');
+      }
+
+      try {
+        markRecommendation(user.id, result.candidates);
+      } catch {
+        // Persistence is non-fatal; the recommendation itself already exists.
+      }
+
+      const lines = result.candidates.map((c, i) => formatRecommendLine(c, i));
+      const content = `${user.username} 的谱面推荐：\n${lines.join('\n\n')}`;
+
+      let images: string[] = [];
+      if (getRenderServer().hasClients()) {
+        try {
+          const { renderBeatmapCard } = await import('./render.js');
+          for (const c of result.candidates) {
+            const rendered = await renderBeatmapCard(c);
+            if (rendered) images.push(rendered.cqCode);
+          }
+        } catch {
+          // Images are an enhancement; text + links remain available.
+        }
+      }
+
+      return { content, images };
     }
 
     case 'bp':
