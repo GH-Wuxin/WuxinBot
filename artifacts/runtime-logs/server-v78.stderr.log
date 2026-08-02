@@ -1,0 +1,58 @@
+[PP+] player/info oliwakami failed (HTTP 500, code 400): lol server goes boooom
+[PP+] player/info oliwakami failed (HTTP 500, code 400): lol server goes boooom
+[osu analyze] 区块短评第 1 次未通过： [ 'profile 短评过短', 'recent 短评过短' ]
+[osu analyze] 区块短评第 2 次未通过： [ 'profile 短评过短' ]
+[osu analyze] 结论第 1 次未通过： [ '把 PP+ 的 15 基准线误写成极限、上限或满值', '使用了追星式或动作式人格表达，偏离直接评价账号的 pippi 口吻' ]
+[osu analyze] 结论第 2 次未通过： [ '把 PP+ 的 15 基准线误写成极限、上限或满值' ]
+[osu analyze] 结论第 3 次未通过： [ '把 PP+ 的 15 基准线误写成极限、上限或满值' ]
+[osu analyze] 独立审查第 1 轮拒绝： classification[hard]=把 stream 91% 的构成扩写成'眼睛只往串多的那边看'，把当前 BP 样本写成玩家选图动机；conclusion[quality]=结论只是逐项复述 rank、星数、Mod、PP+ 数字清单，没有综合形成整体印象
+[osu analyze] 独立审查第 2 轮拒绝： conclusion[quality]=结论只是逐项复述数字清单，没有综合至少两个栏目形成整体判断，且缺少 pippi 的鲜活反应
+[osu analyze] 独立审查第 3 轮拒绝： conclusion[quality]=结论只是逐项罗列 rank、星数、Mod 和 PP+ 数字，没有综合形成只属于本账号的整体印象，且缺少 pippi 的鲜活判断
+[osu analyze] 独立审查第 4 轮拒绝： conclusion[quality]=结论只是逐项复述数字清单，没有综合形成只属于本账号的整体印象，且缺少 pippi 的鲜活判断
+[osu analyze] 最终轮仍有质量建议，保留事实有效的 LLM 成品并记录未通过项。
+[osu analyze] 综合结论使用确定性安全版本。
+[PP+] player/info oliwakami failed (HTTP 500, code 400): lol server goes boooom
+[osu analyze] 区块短评第 1 次未通过： [ 'profile 短评过短' ]
+[PP+] player/info oliwakami failed (HTTP 500, code 400): lol server goes boooom
+[osu analyze] 结论第 1 次未通过： [ '把未经证据支持的原因或状态写成了事实：懒得', '复用了冷却表达“多看两眼”', '复用了近期成品的句子骨架，请从零改写' ]
+[osu analyze] 结论第 2 次未通过： [ '把未经证据支持的原因或状态写成了事实：懒得', '复用了冷却表达“多看两眼”', '复用了近期成品的句子骨架，请从零改写' ]
+[osu analyze] 结论第 3 次未通过： [ '把未经证据支持的原因或状态写成了事实：懒得', '复用了冷却表达“多看两眼”', '复用了近期成品的句子骨架，请从零改写' ]
+[osu analyze] 独立审查第 1 轮拒绝： conclusion[quality]=结论只是逐项复述数字清单，没有综合至少两个栏目形成整体印象，也没有 pippi 的鲜活判断
+[PP+] player/info oliwakami failed (HTTP 500, code 400): lol server goes boooom
+[osu analyze] 区块短评第 1 次未通过： [ 'profile 短评过短', 'top 短评过短', 'recent 短评过短' ]
+[osu analyze] 区块短评第 2 次未通过： [ 'top 短评过短', 'recent 短评过短' ]
+[osu analyze] 区块短评第 3 次未通过： [ 'top 短评过短', 'recent 短评过短' ]
+[osu analyze] 结论第 1 次未通过： [ '把 PP+ 相对低项扩写成了具体能力结论：Stamina 只有 3.20，是相对最弱的一根——只是当前形状，不代表不会' ]
+[osu analyze] 独立审查第 1 轮拒绝： mods[hard]=把 EZDT 组合说成'不是随便开着玩的'，将当前 BP 构成扩写成动机或态度；conclusion[quality]=结论中'高 Acc 覆盖不是偶然，是这条线的主色'把当前 BP 结构断言为必然因果，且'偶尔换个视角也玩得漂亮'将 Mod 构成扩写成玩家选择
+[osu analyze] 独立审查第 2 轮拒绝： profile[hard]=把36,575次游玩和总Acc扩写成'打了很久、结果也一直收得住'，把账号快照写成历史过程；conclusion[quality]=结论基本复述各栏数字，'最俏皮的一笔'等判断未形成超越事实清单的综合印象
+[PP+] player/info oliwakami failed (HTTP 500, code 400): lol server goes boooom
+[osu analyze] 区块短评第 1 次未通过： [ 'recent 短评过短' ]
+[osu analyze] 结论第 1 次未通过： [ '把 PP+ 相对形状扩写成了具体能力成长或玩家打法', '把成绩分布写成了未经提供的感受、意图或操作机制：靠读图' ]
+[osu analyze] 结论第 2 次未通过： [ '复用了冷却表达“多看两眼”' ]
+[PP+] player/info oliwakami failed (HTTP 500, code 400): lol server goes boooom
+[osu analyze] 区块短评第 1 次未通过： [ 'profile 短评过短' ]
+[osu analyze] 区块短评第 2 次未通过： [ 'profile 短评过短' ]
+[osu analyze] 结论第 1 次未通过： [
+  '分析对象 ElicyAnn 的性别未知，不能擅自使用“他/她”',
+  '把 PP+ 相对低项扩写成了具体能力结论：不会把 Jump',
+  '复用了冷却表达“方向一致”'
+]
+[osu analyze] 结论第 2 次未通过： [ '把 PP+ 相对低项扩写成了具体能力结论：不会把 Jump' ]
+[osu analyze] 结论第 3 次未通过： [ '把 PP+ 相对低项扩写成了具体能力结论：不会把 Jump' ]
+[osu analyze] 独立审查第 1 轮拒绝： profile[hard]=把注册天数与游玩次数说成‘这个体量下能保持命中率’，将账号快照扩写成历史保持过程；mods[hard]=‘基本就是关掉所有Mod硬打’把当前BP构成扩写成玩家动机与习惯；‘开HD没让结果变差’暗示能力比较；pplus[hard]=‘准度型玩家，速度耐力方向还没被点亮’把六维显示条翻译成具体能力与未开发方向；recent[hard]=‘是状态波动还是在试什么新东西’把Recent差异写成状态或动机故事，原因必须保持未知；conclusion[hard]=‘把准度磨得很扎实’把账号快照写成历史过程；‘速度耐力还没怎么点亮’把PP+低项翻译成能力缺失
+[osu analyze] 区块短评第 1 次未通过： [ 'profile 短评过短' ]
+[osu analyze] 独立审查第 2 轮拒绝： conclusion[quality]=结论把 Recent 差异写成'状态波动还是在试什么新东西'，虽带疑问但'状态波动'已暗示原因故事；且'准度型玩家'把 PP+ 与谱面构成直接翻译成玩家类型，超出数据边界
+[PP+] player/info oliwakami failed (HTTP 500, code 400): lol server goes boooom
+[osu analyze] 区块短评第 1 次未通过： [ 'profile 短评过短', 'top5 短评过短', 'top5 短评没有落在五张成绩的真实证据上' ]
+[osu analyze] 区块短评第 2 次未通过： [ 'profile 短评过短' ]
+[osu analyze] 独立审查第 1 轮拒绝： top5[hard]=把 BP1 高分写成'某天状态特别好'，将数据差异断言为状态原因；mods[hard]=把 NF 成绩写成'开着防挂去打更难图'，将 Mod 使用扩写成动机故事；conclusion[hard]=结论重复'状态特别好'与'开着防挂'两处伪因果，且把 Recent 差异写成'往高处伸手'的确定意图
+[osu analyze] 独立审查第 2 轮拒绝： conclusion[quality]=结论把BP1与其余四张的48.6pp差写成'1天状态特别好冒出来的尖'，把当前成绩结构扩写成状态故事；且'手和难度之间确实还有距离'把Recent差值断言为能力距离，需改为并列概括
+[PP+] player/info oliwakami failed (HTTP 500, code 400): lol server goes boooom
+[osu analyze] 区块短评第 1 次未通过： [
+  'profile 短评过短',
+  'recent 短评过短',
+  'top 短评遗漏关键分布：22/33 张低于 95%，必须明确指出当前结果尚未收稳'
+]
+[osu analyze] 区块短评第 2 次未通过： [ 'recent 短评过短', 'top 短评遗漏关键分布：22/33 张低于 95%，必须明确指出当前结果尚未收稳' ]
+[osu analyze] 区块短评第 3 次未通过： [ 'top 短评遗漏关键分布：22/33 张低于 95%，必须明确指出当前结果尚未收稳' ]
+[osu analyze] 独立审查第 1 轮拒绝： mods[hard]=把 HR 组 Acc 更低写成'开了HR就顾不上准度'，将数据差异断言为因果

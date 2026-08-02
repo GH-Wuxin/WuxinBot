@@ -1,0 +1,149 @@
+{
+  "label": "v85-raw-ab-4",
+  "playerSet": "golden",
+  "startedAt": "2026-08-01T20:54:55.961Z",
+  "apiBase": "http://127.0.0.1:8787",
+  "players": [
+    {
+      "key": "ahahhaha",
+      "id": 39873822,
+      "startedAt": "2026-08-01T20:54:56.793Z",
+      "finishedAt": "2026-08-01T20:55:17.955Z",
+      "outputFile": "01-ahahhaha.txt",
+      "metadata": {
+        "target": "ahahhaha",
+        "displayName": "ahahhaha",
+        "osuUserId": 39873822,
+        "createdAt": "2026-08-01T20:55:17.573Z",
+        "analysisModel": "deepseek-v4-flash",
+        "formatVersion": 83,
+        "conclusionSource": "llm",
+        "conclusionValidationReasons": [],
+        "sectionCommentsSource": "llm",
+        "sectionCommentSources": {
+          "profile": "llm",
+          "top": "llm",
+          "top5": "llm",
+          "mods": "llm",
+          "pplus": "llm",
+          "recent": "llm",
+          "classification": "llm"
+        },
+        "sectionCommentsValidationReasons": [],
+        "generationTrace": {
+          "sectionComments": [
+            {
+              "trigger": "initial",
+              "trace": [
+                {
+                  "attempt": 1,
+                  "outcome": "rejected",
+                  "reasons": [
+                    "top 短评语义终审：包含简报外数字: 10",
+                    "mods 短评语义终审：包含简报外数字: 1.65",
+                    "top 短评包含简报外数字: 10",
+                    "mods 短评包含简报外数字: 1.65"
+                  ],
+                  "draft": "{\n  \"profile\": \"刚起步的账号，rank 还在百万级，但 123 次游玩就攒出 33 张 BP，这个密度有点意思。总 Acc 91% 配着 9 个 S，看得出在认真打，只是还没到收成的时候。\",\n  \"top\": \"BP 全挤在 1~3★，平均 Acc 90.27% 但六成以上低于 95%，这结构坦白说有点散。最高才 9.3pp，连 10pp 都没摸到，早期账号的常态吧。\",\n  \"top5\": \"#1 的 99.27% 和 #2 的 84.65% 摆在一起，像同一个人打出两种手感。中间 3.0pp 的断层说明 #1 是意外的高点，后面四张才更像日常发挥。\",\n  \"mods\": \"NM 和 HR 各占一半多点，DT 一张没有。HR 平均 Acc 比 NM 低 1.65%，但 pp 反而略高——这交易做得不亏，就是有点冒险。\",\n  \"pplus\": \"六条全贴着底，Precision 和 Jump 稍微探出头，Flow 完全躺平。这种形状只能说明还在早期，啥都看不出上限。\",\n  \"recent\": \"API 没返回最近记录，这段空白我猜不出来。\",\n  \"classification\": \"alt 占 85%，stream 和 tech 只是点缀。这么偏的构成放在 33 张样本里，说风格还太早，但方向倒是挺清楚。\"\n}"
+                },
+                {
+                  "attempt": 2,
+                  "outcome": "accepted",
+                  "reasons": [],
+                  "draft": "{\n  \"top\": \"这位玩家的BP里没有一张超过3星，最高也只有9.3pp，看起来还在很早期的摸索阶段。\",\n  \"mods\": \"BP里NM和HR各占一部分，HR的平均Acc略低一点，但整体都还在很基础的范围内。\"\n}"
+                }
+              ]
+            }
+          ],
+          "conclusion": [
+            {
+              "trigger": "initial",
+              "trace": [
+                {
+                  "attempt": 1,
+                  "outcome": "accepted",
+                  "reasons": [],
+                  "draft": "【结论】\n\n196.4pp 的账号，33 张 BP 全挤在 2★ 上下，却有一半以上的成绩挂着 HR——这种“小图硬刚判定”的结构，比星数本身更有辨识度。\nPP+ 六维里 Precision 和 Jump 相对最高，Flow 是 0.00，最低项和最高项差得挺开，跟 BP 里 alt 28 张（85%）、stream 3 张（9%）的构成方向相容——但 alt 标签只是当前样本的分布，别急着说成定型。\n\n3 小时 29 分钟、123 次游玩，这个体量撑不起“风格”两个字，只能说这位玩家在低星区里挑了一条“不躲判定”的路，而且显然还没走完。"
+                }
+              ]
+            }
+          ],
+          "final": {
+            "sectionCommentsSource": "llm",
+            "sectionCommentSources": {
+              "profile": "llm",
+              "top": "llm",
+              "top5": "llm",
+              "mods": "llm",
+              "pplus": "llm",
+              "recent": "llm",
+              "classification": "llm"
+            },
+            "conclusionSource": "llm",
+            "fullReportFallback": false
+          }
+        },
+        "reviewLog": [
+          {
+            "round": 1,
+            "verdicts": [
+              {
+                "section": "profile",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "top",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "top5",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "mods",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "pplus",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "recent",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "classification",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "conclusion",
+                "result": "REJECT",
+                "kind": "hard",
+                "reason": "结论将 BP 中 HR 13 张（占 39%）写成“一半以上”，与 verified_facts 中 13/33 的数量关系不符。"
+              }
+            ],
+            "rejects": [
+              {
+                "section": "conclusion",
+                "kind": "hard",
+                "reason": "结论将 BP 中 HR 13 张（占 39%）写成“一半以上”，与 verified_facts 中 13/33 的数量关系不符。"
+              }
+            ]
+          }
+        ],
+        "bestCount": 33,
+        "recentCount": 0,
+        "hasPPlus": true,
+        "errors": []
+      }
+    }
+  ],
+  "finishedAt": "2026-08-01T20:55:20.466Z"
+}

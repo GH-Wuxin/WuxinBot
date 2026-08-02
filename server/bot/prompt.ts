@@ -9,6 +9,7 @@ import { relationshipPromptBlock } from './relationshipProfile.js';
 import { isEmptyProfileText } from './memory.js';
 import { getExperience, getLevelInfo } from './experience.js';
 import { buildPippiPrompt, detectScene } from './persona.js';
+import { buildOsuTopicKnowledge } from '../osu/knowledge/index.js';
 import { relevantPlayersSkillBlock } from '../bots/skills.js';
 
 export function describePolicy(policy) {
@@ -380,6 +381,7 @@ export function buildPrompt(db, group, event, userPolicy) {
     scene,
     userPersonality: userPersonality || '',
     relationshipContext: relBlocks || undefined,
+    topicKnowledge: buildOsuTopicKnowledge(event.text) || undefined,
     factualContext: factualCtx || undefined,
   });
 

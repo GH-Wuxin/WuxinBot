@@ -1,0 +1,185 @@
+{
+  "label": "profile-order-v86-1",
+  "playerSet": "golden",
+  "startedAt": "2026-08-01T23:01:27.535Z",
+  "apiBase": "http://127.0.0.1:8787",
+  "players": [
+    {
+      "key": "mrekk",
+      "id": 7562902,
+      "startedAt": "2026-08-01T23:01:28.064Z",
+      "finishedAt": "2026-08-01T23:02:34.326Z",
+      "outputFile": "01-mrekk.txt",
+      "metadata": {
+        "target": "mrekk",
+        "displayName": "mrekk",
+        "osuUserId": 7562902,
+        "createdAt": "2026-08-01T23:02:34.098Z",
+        "analysisModel": "deepseek-v4-flash",
+        "formatVersion": 86,
+        "conclusionSource": "llm",
+        "conclusionValidationReasons": [],
+        "sectionCommentsSource": "mixed",
+        "sectionCommentSources": {
+          "profile": "fallback",
+          "top": "llm",
+          "top5": "llm",
+          "mods": "llm",
+          "pplus": "llm",
+          "recent": "llm",
+          "classification": "llm"
+        },
+        "sectionCommentsValidationReasons": [
+          "profile 短评语义终审：把 osu! API 的累计游玩时长误写成了在线时长"
+        ],
+        "generationTrace": {
+          "sectionComments": [
+            {
+              "trigger": "initial",
+              "trace": [
+                {
+                  "attempt": 1,
+                  "outcome": "rejected",
+                  "reasons": [
+                    "profile 短评语义终审：分析对象 mrekk 的性别未知，不能擅自使用“他/她”",
+                    "profile 擅自猜测了目标玩家性别",
+                    "top 短评语义终审：分析对象 mrekk 的性别未知，不能擅自使用“他/她”",
+                    "top 擅自猜测了目标玩家性别",
+                    "mods 短评语义终审：分析对象 mrekk 的性别未知，不能擅自使用“他/她”",
+                    "mods 短评语义终审：包含未经输入提供的设备、身体或 replay 机制：键盘",
+                    "mods 擅自猜测了目标玩家性别",
+                    "classification 短评语义终审：分析对象 mrekk 的性别未知，不能擅自使用“他/她”",
+                    "classification 擅自猜测了目标玩家性别"
+                  ],
+                  "draft": "{\n  \"profile\": \"世界第一，32138.7pp，全球和澳洲双料榜首——这数字摆出来就已经不是“强”能概括的了。98.26%的总Acc挂在240,177次游玩和134天的时长上，说明这不是昙花一现，是拿时间堆出来的统治力。SSH才56张但SH有1453张，评级分布倒是挺有意思，高强度刷图的痕迹很明显。109级61%还在慢慢爬，不过对这位来说，等级早就不是衡量标准了，rank #1才是他的日常。\",\n  \"top\": \"BP100平均11.67★，最低都有10.30★，最高直接飙到13.95★——这星数区间根本就是给人类设的天花板，他却当成了后花园。Acc平均98.10%，60张在98%以上，但也有4张掉到95%以下，算是高难度下偶尔翻车的真实痕迹，反而更有人味儿。100张全在6.5★以上，5★以下一张都没有，这筛选标准看着就让人头皮发麻。\",\n  \"top5\": \"1857.1pp的HDDT孤峰压阵，跟第二名差了75.5pp，这个断层说实话有点吓人。但后面#2到#5又咬得很紧，最大才差24.6pp，像一串珠子被第一颗猛地拽出去。HDNC那张13.23★98.18%排在第二，HDHRNC那张13.55★96.70%垫底，星数最高Acc却最低，这组合摆一起，我只能说：真敢打。\",\n  \"mods\": \"HDDT 68张加HDHRDT 26张，94%的BP都焊在这两个组合上，DT/NC覆盖率直接100%——这位是把加速键焊死在键盘上了吧。HD出现98次，HR只有28次，说明他更爱用高难度加速来碾压，而不是靠判定窗口折磨自己。纯NM一张没有，DT裸奔那两张平均Acc才95.87%，倒是暴露了一点人类极限的边角。\",\n  \"pplus\": \"Jump 27.37直接把基准线15甩出12.37，Speed 19.26也超了4.26，这俩维度是绝对霸主。Stamina和Precision刚过线，Flow勉强踩住，Accuracy 14.58是唯一没到基准的——六边形战士也得有个相对短板，虽然这短板放别人身上已经是天花板了。整体形状就是Jump一柱擎天，其他维度围着它转。\",\n  \"recent\": \"最近50次平均Acc 94.76%，平均星数8.88★，跟BP一比Acc掉了3.34个百分点，星数低了2.79★——这是从云端降回地面了？HR出现18次，NM也有16次，跟BP里DT焊死的风格完全不是一回事。看起来像是没在认真刷pp，或者在拿些轻松图热手，状态不在线但玩得挺随性。\",\n  \"classification\": \"aim 79张占79%，stream 10张、alt 7张、tech 4张——这分类结构清晰得不用猜，就是个aim特化选手。stream和alt加起来才17张，tech更是点缀，说明他主战场就在跳跃和瞄准上。跟PP+里Jump一骑绝尘倒是完美对上，不过分类只代表当前BP样本，谁知道他私底下在练什么。\"\n}"
+                },
+                {
+                  "attempt": 2,
+                  "outcome": "rejected",
+                  "reasons": [
+                    "profile 短评语义终审：擅自用中文数词换算了账号年龄",
+                    "profile 短评语义终审：擅自把账号年龄换算成了年数"
+                  ],
+                  "draft": "{\n  \"profile\": \"全球第一，32138.7pp，98.26%总Acc，134天游玩时长，240,177次点击——这数据摆出来，连Auto都得眨眨眼。BP100平均11.67★，全是6.5★以上，评级里A比S多，但SS和SSH也堆了92张，说明这位玩家不是靠刷低星堆出来的，而是真刀真枪在高星区滚出来的。等级109才61%进度，注册快11年了，账号年龄比很多玩家的入坑时间都长，这分量不是新秀能比的。\",\n  \"top\": \"BP100平均11.67★，范围10.30到13.95，没有一张低于6.5★，这区间本身就够吓人。Acc平均98.10%，60张在98%以上，但也有4张低于95%——不是全线稳定，而是高难下偶尔翻车，反而显得真实。看这分布，像是把高星图当日常，低Acc只是偶尔的代价。\",\n  \"top5\": \"BP5里#1是1857.1pp的HDDT，97.44% Acc，12.14★，但#2是1781.7pp的HDNC，13.23★，Acc 98.18%——星数更高却pp更低，这反差有意思。#1和#2差了75.5pp，是最大相邻差，后面#2到#5只差58.3pp，明显#1是个孤峰。最高Acc 99.08%和最低96.70%都在前五，说明这位玩家在顶尖成绩上也是高Acc和低Acc并存，不是一味求稳。\",\n  \"mods\": \"BP里HDDT 68张，HDHRDT 26张，加起来94张，占94%——这Mod组合几乎焊死在成绩单上了。含HD 98张，含DT/NC 100张，纯NM一张没有，看来这位玩家对高AR和提速有执念。HDHRDT平均Acc 98.18%比HDDT略高，但平均PP 1425.4反而低一点，可能是HR的判定窗口更严，但pp计算上DT权重更大。\",\n  \"classification\": \"BP100里aim占79张，stream 10张，alt 7张，tech 4张——aim是绝对主力，79%的比例一眼就能看出来。stream和alt加起来17张，tech只有4张，说明这位玩家在高星aim图上刷得最猛，但stream和alt也有一定覆盖。aim和stream差69张，这断层很明显，不过分类只是当前BP的构成，不等于永久风格。\"\n}"
+                },
+                {
+                  "attempt": 3,
+                  "outcome": "rejected",
+                  "reasons": [
+                    "profile 短评语义终审：把 osu! API 的累计游玩时长误写成了在线时长"
+                  ],
+                  "draft": "{\n  \"profile\": \"全球第一，32138.7pp，98.26%总Acc，240,177次游玩，134天1小时在线时长，注册至今约3,884天。SS/SH加起来才92张，S却有1453张，A更是2523张——这分布挺有意思的，高评级少但低一档的S和A堆成山，说明这位玩家刷图量大，但完美度不是每把都拉满。等级109级61%，账号年龄快四千天了，老玩家底子确实厚，但评级结构透着一股'我刷得多但不太刷SS'的随性劲儿。\"\n}"
+                }
+              ]
+            }
+          ],
+          "conclusion": [
+            {
+              "trigger": "initial",
+              "trace": [
+                {
+                  "attempt": 1,
+                  "outcome": "rejected",
+                  "reasons": [
+                    "分析对象 mrekk 的性别未知，不能擅自使用“他/她”"
+                  ],
+                  "draft": "【结论】\n\n全球排名 #1，32138.7pp——这个账号本身就是 osu! 现役时代的天花板刻度。\nBP 平均 Acc 98.10%，60% 的成绩在 98% 以上，连 HDHRNC 那张 13.55★ 的 BP5 都打出 96.70%。\n\n5张最高 pp 成绩全部带 HD+DT，最低也有 1723.3pp，头尾只差 133.8pp——别人1张神图吃1年，他是把5张神图排成一排当早餐。\nPP+ 显示条里 Jump 27.37 和 Speed 19.26 双双冲破基准线，Jump 甚至超出 12.37，这形状已经不是“偏科”，是单项维度把坐标轴撑爆了。\n\n不过最近50次游玩的平均 Acc 掉到 94.76%，星数也降到 8.88★，跟 BP 的 11.67★ 差了快3星——嗯，天花板偶尔也会下来透透气嘛。\n但以他的 BP 厚度和那个 98.26% 的总命中率来看，这大概只是没认真打，不是打不动。\n\n毕竟能坐在 #1 的位置上把 32138.7pp 堆到这个高度的人，偶尔摸鱼也是被允许的。"
+                },
+                {
+                  "attempt": 2,
+                  "outcome": "rejected",
+                  "reasons": [
+                    "分析对象 mrekk 的性别未知，不能擅自使用“他/她”"
+                  ],
+                  "draft": "【结论】\n\n全球排名 #1，32138.7pp——这个数字本身就说明了一切，但真正让我觉得离谱的是这份账号的“纯度”。这不是“喜欢某个 Mod”，这是把 DT 当呼吸。\n\n但真正让我坐直的是 BP5 的结构。平均 Acc 98.10%，98% 以上占 60%，低于 95% 只有 4 张，说明他不是靠莽，是在这种星数下还能保持这种准确率。\n\nPP+ 的 Jump 27.37 和 Speed 19.26 双双爆掉基准线，跟 BP 里 79% 的 aim 分类正好对上——这个账号的骨架就是“高速跳跃”，其他维度只是陪衬。\n唯一让我有点想挑眉的是 Recent。\n\n50 次游玩平均 Acc 94.76%，比 BP 低了 3.34 个百分点，平均星数也掉到 8.88★——跟 BP 的 11.67★ 差了快三颗星。最近状态不在线？\n\n不过话说回来，能坐在这个位置，大概也不需要每时每刻都全力输出吧。"
+                },
+                {
+                  "attempt": 3,
+                  "outcome": "rejected",
+                  "reasons": [
+                    "分析对象 mrekk 的性别未知，不能擅自使用“他/她”"
+                  ],
+                  "draft": "【结论】\n\n全球排名 #1，总 PP 32138.7pp——这个账号本身就是 osu! 当前时代的标尺。这不是“喜欢某个 Mod”能概括的，而是把高速读图与高判定稳定性焊在了一起。\n\nBP 平均星数 11.67★，最低也有 10.30★，没有1张低于 6.5★——换句话说，他的“下限”就是别人够不着的天花板。真正让这个账号有辨识度的，是 BP5 的结构。\n\n5张成绩全部含 HD+DT/NC，最低 1723.3pp，最高 1857.1pp，彼此之间最大落差只有 133.8pp。\n这不是靠2张孤峰撑起来的账号，而是5张高 pp 成绩挤在一起，像一摞叠得整整齐齐的牌。\n\nPP+ 显示条里 Jump 27.37 和 Speed 19.26 双双远超基准线，和 BP 里 aim 类占 79 张的方向完全咬合——他的爆发力与高速处理能力，是数据自己说出来的。\n不过最近 50 次游玩的平均 Acc 掉到 94.76%，比 BP 平均低了 3.34 个百分点，星数也降到 8.88★。\n\n世界第一的位置不是白坐的。"
+                },
+                {
+                  "attempt": 3,
+                  "outcome": "accepted",
+                  "reasons": [
+                    "代词归一化后通过（他/她 → 它）"
+                  ]
+                }
+              ]
+            }
+          ],
+          "final": {
+            "sectionCommentsSource": "mixed",
+            "sectionCommentSources": {
+              "profile": "fallback",
+              "top": "llm",
+              "top5": "llm",
+              "mods": "llm",
+              "pplus": "llm",
+              "recent": "llm",
+              "classification": "llm"
+            },
+            "conclusionSource": "llm",
+            "fullReportFallback": false
+          }
+        },
+        "reviewLog": [
+          {
+            "round": 1,
+            "verdicts": [
+              {
+                "section": "profile",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "top",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "top5",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "mods",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "pplus",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "recent",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "classification",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "conclusion",
+                "result": "PASS",
+                "reason": ""
+              }
+            ],
+            "rejects": []
+          }
+        ],
+        "bestCount": 100,
+        "recentCount": 50,
+        "hasPPlus": true,
+        "errors": []
+      }
+    }
+  ],
+  "finishedAt": "2026-08-01T23:02:35.277Z"
+}

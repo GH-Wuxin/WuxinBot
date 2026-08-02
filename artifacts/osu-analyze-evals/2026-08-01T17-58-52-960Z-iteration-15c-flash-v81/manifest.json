@@ -1,0 +1,827 @@
+{
+  "label": "iteration-15c-flash-v81",
+  "playerSet": "golden",
+  "startedAt": "2026-08-01T17:58:52.961Z",
+  "apiBase": "http://127.0.0.1:8787",
+  "players": [
+    {
+      "key": "mrekk",
+      "id": 7562902,
+      "startedAt": "2026-08-01T17:58:53.610Z",
+      "finishedAt": "2026-08-01T17:59:27.893Z",
+      "outputFile": "01-mrekk.txt",
+      "metadata": {
+        "target": "mrekk",
+        "displayName": "mrekk",
+        "osuUserId": 7562902,
+        "createdAt": "2026-08-01T17:59:27.603Z",
+        "analysisModel": "deepseek-v4-flash",
+        "formatVersion": 81,
+        "conclusionSource": "llm",
+        "conclusionValidationReasons": [],
+        "sectionCommentsSource": "mixed",
+        "sectionCommentSources": {
+          "profile": "fallback",
+          "top": "llm",
+          "top5": "llm",
+          "mods": "llm",
+          "pplus": "llm",
+          "recent": "llm",
+          "classification": "llm"
+        },
+        "sectionCommentsValidationReasons": [
+          "profile 短评语义终审：把当前账号快照或游玩次数扩写成了长期经历、维持过程或点击次数"
+        ],
+        "generationTrace": {
+          "sectionComments": [
+            {
+              "trigger": "initial",
+              "trace": [
+                {
+                  "section": "profile",
+                  "attempt": 1,
+                  "outcome": "rejected",
+                  "reasons": [
+                    "profile 短评语义终审：分析对象 mrekk 未确认是发起者本人，不能使用第二人称",
+                    "profile 短评语义终审：把未经证据支持的原因或状态写成了事实：堆出来",
+                    "profile 短评语义终审：把账号体量、游玩次数或注册时长与总 Acc 拼成了未经核准的评价关系",
+                    "profile 把未确认的目标玩家写成了发起者本人"
+                  ]
+                },
+                {
+                  "section": "profile",
+                  "attempt": 2,
+                  "outcome": "rejected",
+                  "reasons": [
+                    "profile 短评语义终审：把当前账号快照或游玩次数扩写成了长期经历、维持过程或点击次数"
+                  ]
+                },
+                {
+                  "section": "profile",
+                  "attempt": 3,
+                  "outcome": "rejected",
+                  "reasons": [
+                    "profile 短评语义终审：把当前账号快照或游玩次数扩写成了长期经历、维持过程或点击次数"
+                  ]
+                },
+                {
+                  "section": "top",
+                  "attempt": 1,
+                  "outcome": "accepted",
+                  "reasons": []
+                },
+                {
+                  "section": "top5",
+                  "attempt": 1,
+                  "outcome": "accepted",
+                  "reasons": []
+                },
+                {
+                  "section": "mods",
+                  "attempt": 1,
+                  "outcome": "accepted",
+                  "reasons": []
+                },
+                {
+                  "section": "pplus",
+                  "attempt": 1,
+                  "outcome": "accepted",
+                  "reasons": []
+                },
+                {
+                  "section": "recent",
+                  "attempt": 1,
+                  "outcome": "rejected",
+                  "reasons": [
+                    "recent 短评语义终审：分析对象 mrekk 的性别未知，不能擅自使用“他/她”",
+                    "recent 短评语义终审：包含简报外数字: 35",
+                    "recent 擅自猜测了目标玩家性别",
+                    "recent 短评包含简报外数字: 35"
+                  ]
+                },
+                {
+                  "section": "recent",
+                  "attempt": 2,
+                  "outcome": "accepted",
+                  "reasons": []
+                },
+                {
+                  "section": "classification",
+                  "attempt": 1,
+                  "outcome": "rejected",
+                  "reasons": [
+                    "classification 短评语义终审：分析对象 mrekk 的性别未知，不能擅自使用“他/她”",
+                    "classification 短评语义终审：把当前成绩构成扩写成了玩家意志、尝试过程或未来偏好",
+                    "classification 擅自猜测了目标玩家性别"
+                  ]
+                },
+                {
+                  "section": "classification",
+                  "attempt": 2,
+                  "outcome": "accepted",
+                  "reasons": []
+                }
+              ]
+            }
+          ],
+          "conclusion": [
+            {
+              "trigger": "initial",
+              "trace": [
+                {
+                  "attempt": 1,
+                  "outcome": "accepted",
+                  "reasons": []
+                }
+              ]
+            }
+          ],
+          "final": {
+            "sectionCommentsSource": "mixed",
+            "sectionCommentSources": {
+              "profile": "fallback",
+              "top": "llm",
+              "top5": "llm",
+              "mods": "llm",
+              "pplus": "llm",
+              "recent": "llm",
+              "classification": "llm"
+            },
+            "conclusionSource": "llm",
+            "fullReportFallback": false
+          }
+        },
+        "reviewLog": [
+          {
+            "round": 1,
+            "verdicts": [
+              {
+                "section": "profile",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "top",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "top5",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "mods",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "pplus",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "recent",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "classification",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "conclusion",
+                "result": "PASS",
+                "reason": ""
+              }
+            ],
+            "rejects": []
+          }
+        ],
+        "bestCount": 100,
+        "recentCount": 50,
+        "hasPPlus": true,
+        "errors": []
+      }
+    },
+    {
+      "key": "wuxin",
+      "id": 19244792,
+      "startedAt": "2026-08-01T17:59:30.390Z",
+      "finishedAt": "2026-08-01T18:00:09.732Z",
+      "outputFile": "02-wuxin.txt",
+      "metadata": {
+        "target": "[SHK]Wuxin",
+        "displayName": "[SHK]Wuxin",
+        "osuUserId": 19244792,
+        "createdAt": "2026-08-01T18:00:09.182Z",
+        "analysisModel": "deepseek-v4-flash",
+        "formatVersion": 81,
+        "conclusionSource": "fallback",
+        "conclusionValidationReasons": [
+          "把 82/100 张达到 98% 以上夸写成了全体成绩"
+        ],
+        "sectionCommentsSource": "mixed",
+        "sectionCommentSources": {
+          "profile": "fallback",
+          "top": "fallback",
+          "top5": "llm",
+          "mods": "llm",
+          "pplus": "llm",
+          "recent": "llm",
+          "classification": "llm"
+        },
+        "sectionCommentsValidationReasons": [
+          "profile 短评语义终审：把总 Acc、游玩次数或注册时长拼成了未经核准的能力、经历或稀有度结论",
+          "profile 短评语义终审：包含简报外数字: 60000",
+          "profile 短评包含简报外数字: 60000",
+          "top 短评语义终审：BP 中 >=7★ 的核准数量为 70 张，不是 100 张"
+        ],
+        "generationTrace": {
+          "sectionComments": [
+            {
+              "trigger": "initial",
+              "trace": [
+                {
+                  "section": "profile",
+                  "attempt": 1,
+                  "outcome": "rejected",
+                  "reasons": [
+                    "profile 短评语义终审：把未经证据支持的原因或状态写成了事实：堆出来",
+                    "profile 短评语义终审：把总 Acc、游玩次数或注册时长拼成了未经核准的能力、经历或稀有度结论",
+                    "profile 短评语义终审：包含简报外数字: 6000, 60000",
+                    "profile 短评包含简报外数字: 6000, 60000"
+                  ]
+                },
+                {
+                  "section": "profile",
+                  "attempt": 2,
+                  "outcome": "rejected",
+                  "reasons": [
+                    "profile 短评语义终审：把总 Acc、游玩次数或注册时长拼成了未经核准的能力、经历或稀有度结论",
+                    "profile 短评语义终审：包含简报外数字: 60000",
+                    "profile 短评包含简报外数字: 60000"
+                  ]
+                },
+                {
+                  "section": "profile",
+                  "attempt": 3,
+                  "outcome": "rejected",
+                  "reasons": [
+                    "profile 短评语义终审：把总 Acc、游玩次数或注册时长拼成了未经核准的能力、经历或稀有度结论",
+                    "profile 短评语义终审：包含简报外数字: 60000",
+                    "profile 短评包含简报外数字: 60000"
+                  ]
+                },
+                {
+                  "section": "top",
+                  "attempt": 1,
+                  "outcome": "rejected",
+                  "reasons": [
+                    "top 短评语义终审：把未经证据支持的原因或状态写成了事实：手感"
+                  ]
+                },
+                {
+                  "section": "top",
+                  "attempt": 2,
+                  "outcome": "rejected",
+                  "reasons": [
+                    "top 短评语义终审：BP 中 >=7★ 的核准数量为 70 张，不是 100 张"
+                  ]
+                },
+                {
+                  "section": "top",
+                  "attempt": 3,
+                  "outcome": "rejected",
+                  "reasons": [
+                    "top 短评语义终审：BP 中 >=7★ 的核准数量为 70 张，不是 100 张"
+                  ]
+                },
+                {
+                  "section": "top5",
+                  "attempt": 1,
+                  "outcome": "accepted",
+                  "reasons": []
+                },
+                {
+                  "section": "mods",
+                  "attempt": 1,
+                  "outcome": "rejected",
+                  "reasons": [
+                    "mods 短评语义终审：把当前成绩构成扩写成了玩家意志、尝试过程或未来偏好"
+                  ]
+                },
+                {
+                  "section": "mods",
+                  "attempt": 2,
+                  "outcome": "accepted",
+                  "reasons": []
+                },
+                {
+                  "section": "pplus",
+                  "attempt": 1,
+                  "outcome": "accepted",
+                  "reasons": []
+                },
+                {
+                  "section": "recent",
+                  "attempt": 1,
+                  "outcome": "rejected",
+                  "reasons": [
+                    "recent 短评语义终审：把未经证据支持的原因或状态写成了事实：手感"
+                  ]
+                },
+                {
+                  "section": "recent",
+                  "attempt": 2,
+                  "outcome": "accepted",
+                  "reasons": []
+                },
+                {
+                  "section": "classification",
+                  "attempt": 1,
+                  "outcome": "rejected",
+                  "reasons": [
+                    "classification 短评语义终审：分析对象 [SHK]Wuxin 的性别未知，不能擅自使用“他/她”",
+                    "classification 短评语义终审：把未经证据支持的原因或状态写成了事实：手感",
+                    "classification 擅自猜测了目标玩家性别"
+                  ]
+                },
+                {
+                  "section": "classification",
+                  "attempt": 2,
+                  "outcome": "rejected",
+                  "reasons": [
+                    "classification 短评语义终审：把当前成绩构成扩写成了玩家意志、尝试过程或未来偏好"
+                  ]
+                },
+                {
+                  "section": "classification",
+                  "attempt": 3,
+                  "outcome": "accepted",
+                  "reasons": []
+                }
+              ]
+            }
+          ],
+          "conclusion": [
+            {
+              "trigger": "initial",
+              "trace": [
+                {
+                  "attempt": 1,
+                  "outcome": "rejected",
+                  "reasons": [
+                    "把 82/100 张达到 98% 以上夸写成了全体成绩"
+                  ]
+                },
+                {
+                  "attempt": 2,
+                  "outcome": "rejected",
+                  "reasons": [
+                    "把 82/100 张达到 98% 以上夸写成了全体成绩"
+                  ]
+                },
+                {
+                  "attempt": 3,
+                  "outcome": "rejected",
+                  "reasons": [
+                    "把 82/100 张达到 98% 以上夸写成了全体成绩"
+                  ]
+                }
+              ]
+            }
+          ],
+          "final": {
+            "sectionCommentsSource": "mixed",
+            "sectionCommentSources": {
+              "profile": "fallback",
+              "top": "fallback",
+              "top5": "llm",
+              "mods": "llm",
+              "pplus": "llm",
+              "recent": "llm",
+              "classification": "llm"
+            },
+            "conclusionSource": "fallback",
+            "fullReportFallback": false
+          }
+        },
+        "reviewLog": [
+          {
+            "round": 1,
+            "verdicts": [
+              {
+                "section": "profile",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "top",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "top5",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "mods",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "pplus",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "recent",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "classification",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "conclusion",
+                "result": "PASS",
+                "reason": ""
+              }
+            ],
+            "rejects": []
+          }
+        ],
+        "bestCount": 100,
+        "recentCount": 6,
+        "hasPPlus": true,
+        "errors": []
+      }
+    },
+    {
+      "key": "ahahhaha",
+      "id": 39873822,
+      "startedAt": "2026-08-01T18:00:10.621Z",
+      "finishedAt": "2026-08-01T18:00:49.009Z",
+      "outputFile": "03-ahahhaha.txt",
+      "metadata": {
+        "target": "ahahhaha",
+        "displayName": "ahahhaha",
+        "osuUserId": 39873822,
+        "createdAt": "2026-08-01T18:00:48.720Z",
+        "analysisModel": "deepseek-v4-flash",
+        "formatVersion": 81,
+        "conclusionSource": "fallback",
+        "conclusionValidationReasons": [
+          "结论段使用第二人称“这位 ahahhaha”且未确认其为发起者本人，违反禁止第二人称的规定。"
+        ],
+        "sectionCommentsSource": "mixed",
+        "sectionCommentSources": {
+          "profile": "fallback",
+          "top": "llm",
+          "top5": "llm",
+          "mods": "llm",
+          "pplus": "llm",
+          "recent": "fallback",
+          "classification": "llm"
+        },
+        "sectionCommentsValidationReasons": [],
+        "generationTrace": {
+          "sectionComments": [
+            {
+              "trigger": "initial",
+              "trace": [
+                {
+                  "section": "profile",
+                  "attempt": 1,
+                  "outcome": "rejected",
+                  "reasons": [
+                    "profile 短评语义终审：把未经证据支持的原因或状态写成了事实：认真打",
+                    "profile 短评语义终审：把账号体量、游玩次数或注册时长与总 Acc 拼成了未经核准的评价关系"
+                  ]
+                },
+                {
+                  "section": "profile",
+                  "attempt": 2,
+                  "outcome": "rejected",
+                  "reasons": [
+                    "profile 短评语义终审：包含简报外数字: 23",
+                    "profile 短评包含简报外数字: 23"
+                  ]
+                },
+                {
+                  "section": "profile",
+                  "attempt": 3,
+                  "outcome": "rejected",
+                  "reasons": [
+                    "profile 短评语义终审：把账号体量、游玩次数或注册时长与总 Acc 拼成了未经核准的评价关系"
+                  ]
+                },
+                {
+                  "section": "top",
+                  "attempt": 1,
+                  "outcome": "accepted",
+                  "reasons": []
+                },
+                {
+                  "section": "top5",
+                  "attempt": 1,
+                  "outcome": "rejected",
+                  "reasons": [
+                    "top5 短评语义终审：把未经证据支持的原因或状态写成了事实：啃下来"
+                  ]
+                },
+                {
+                  "section": "top5",
+                  "attempt": 2,
+                  "outcome": "accepted",
+                  "reasons": []
+                },
+                {
+                  "section": "mods",
+                  "attempt": 1,
+                  "outcome": "accepted",
+                  "reasons": []
+                },
+                {
+                  "section": "pplus",
+                  "attempt": 1,
+                  "outcome": "accepted",
+                  "reasons": []
+                },
+                {
+                  "section": "recent",
+                  "attempt": 1,
+                  "outcome": "rejected",
+                  "reasons": [
+                    "recent 短评语义终审：Recent 没有记录时不能把空白猜成休息、未游玩或现实状态"
+                  ]
+                },
+                {
+                  "section": "recent",
+                  "attempt": 2,
+                  "outcome": "rejected",
+                  "reasons": [
+                    "recent 短评语义终审：Recent 没有记录时不能把空白猜成休息、未游玩或现实状态"
+                  ]
+                },
+                {
+                  "section": "recent",
+                  "attempt": 3,
+                  "outcome": "rejected",
+                  "reasons": [
+                    "recent 短评语义终审：Recent 没有记录时不能把空白猜成休息、未游玩或现实状态"
+                  ]
+                },
+                {
+                  "section": "classification",
+                  "attempt": 1,
+                  "outcome": "rejected",
+                  "reasons": [
+                    "classification 短评语义终审：alt 只有 28/33 张，不能写成 BP 全部或清一色都是该类型"
+                  ]
+                },
+                {
+                  "section": "classification",
+                  "attempt": 2,
+                  "outcome": "accepted",
+                  "reasons": []
+                }
+              ]
+            },
+            {
+              "trigger": "review-round-1",
+              "trace": [
+                {
+                  "section": "top5",
+                  "attempt": 1,
+                  "outcome": "accepted",
+                  "reasons": []
+                }
+              ]
+            },
+            {
+              "trigger": "review-round-2",
+              "trace": [
+                {
+                  "section": "top5",
+                  "attempt": 1,
+                  "outcome": "accepted",
+                  "reasons": []
+                },
+                {
+                  "section": "mods",
+                  "attempt": 1,
+                  "outcome": "accepted",
+                  "reasons": []
+                }
+              ]
+            }
+          ],
+          "conclusion": [
+            {
+              "trigger": "initial",
+              "trace": [
+                {
+                  "attempt": 1,
+                  "outcome": "accepted",
+                  "reasons": []
+                }
+              ]
+            }
+          ],
+          "final": {
+            "sectionCommentsSource": "mixed",
+            "sectionCommentSources": {
+              "profile": "fallback",
+              "top": "llm",
+              "top5": "llm",
+              "mods": "llm",
+              "pplus": "llm",
+              "recent": "fallback",
+              "classification": "llm"
+            },
+            "conclusionSource": "fallback",
+            "fullReportFallback": false
+          }
+        },
+        "reviewLog": [
+          {
+            "round": 1,
+            "verdicts": [
+              {
+                "section": "profile",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "top",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "top5",
+                "result": "REJECT",
+                "kind": "hard",
+                "reason": "把 BP5 中 HR 成绩的 Acc 代价写成“可能 HR 还在适应期”，将快照差异解释为练习状态，且“可能”未带明确保留与承认未知。"
+              },
+              {
+                "section": "mods",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "pplus",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "recent",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "classification",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "conclusion",
+                "result": "PASS",
+                "reason": ""
+              }
+            ],
+            "rejects": [
+              {
+                "section": "top5",
+                "kind": "hard",
+                "reason": "把 BP5 中 HR 成绩的 Acc 代价写成“可能 HR 还在适应期”，将快照差异解释为练习状态，且“可能”未带明确保留与承认未知。"
+              }
+            ]
+          },
+          {
+            "round": 2,
+            "verdicts": [
+              {
+                "section": "profile",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "top",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "top5",
+                "result": "REJECT",
+                "kind": "hard",
+                "reason": "#2 与 #3 相邻差为 3.0pp，但报告写成 #3 与 #4 的 0.0pp 并列，且把 HR 的 Acc 代价写成可确认的因果解释。"
+              },
+              {
+                "section": "mods",
+                "result": "REJECT",
+                "kind": "hard",
+                "reason": "BP 中 DT/NC 包含统计为 0 张，报告写成“DT 1张没碰”属事实错误。"
+              },
+              {
+                "section": "pplus",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "recent",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "classification",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "conclusion",
+                "result": "PASS",
+                "reason": ""
+              }
+            ],
+            "rejects": [
+              {
+                "section": "top5",
+                "kind": "hard",
+                "reason": "#2 与 #3 相邻差为 3.0pp，但报告写成 #3 与 #4 的 0.0pp 并列，且把 HR 的 Acc 代价写成可确认的因果解释。"
+              },
+              {
+                "section": "mods",
+                "kind": "hard",
+                "reason": "BP 中 DT/NC 包含统计为 0 张，报告写成“DT 1张没碰”属事实错误。"
+              }
+            ]
+          },
+          {
+            "round": 3,
+            "verdicts": [
+              {
+                "section": "profile",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "top",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "top5",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "mods",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "pplus",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "recent",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "classification",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "conclusion",
+                "result": "REJECT",
+                "kind": "hard",
+                "reason": "结论段使用第二人称“这位 ahahhaha”且未确认其为发起者本人，违反禁止第二人称的规定。"
+              }
+            ],
+            "rejects": [
+              {
+                "section": "conclusion",
+                "kind": "hard",
+                "reason": "结论段使用第二人称“这位 ahahhaha”且未确认其为发起者本人，违反禁止第二人称的规定。"
+              }
+            ]
+          }
+        ],
+        "bestCount": 33,
+        "recentCount": 0,
+        "hasPPlus": true,
+        "errors": []
+      }
+    }
+  ],
+  "finishedAt": "2026-08-01T18:00:50.464Z"
+}

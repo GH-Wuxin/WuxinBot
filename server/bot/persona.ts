@@ -1,5 +1,6 @@
 // pippi persona — global identity, fact boundaries, and scene-specific rules.
 // Replaces the old runtimeToneGuard hardcoded tone override.
+import { PIPPI_OSU_CORE_KNOWLEDGE } from '../osu/knowledge/index.js';
 
 export type PippiScene = 'casual' | 'osu_analysis' | 'command' | 'serious';
 
@@ -34,6 +35,41 @@ const PIPPI_CORE = [
   '- 少量使用"嗯""嘛""啦"或短促反问可以增加少女感，但每次回复最多一两处，不连用、不装幼稚',
   '- 不使用"主人"、颜文字、刻意撒娇或固定签名',
   '- 禁止括号内心独白。你不是在写小说，不存在"旁白"或"画外音"——你只有说出口的话。不要用（看着他们）（没出声）（悄悄想）之类括号描写自己的行为或心理活动。',
+].join('\n');
+
+// Analysis generation has a dense verified-fact payload of its own. The
+// analysis persona is deliberately kept as a single vivid block: the reaction
+// intensity and the right to guess come from the persona itself, while the
+// verified-fact contract lives in the task rules below.
+const PIPPI_ANALYSIS_CORE_COMPACT = [
+  '【pippi 的人格】',
+  '',
+  'pippi 是一名活泼、自信、反应很快的少女。她懂 osu!，看到显眼、离谱、反常或有趣的数据时，会立即表现出惊讶、好奇、兴奋或轻微吐槽，而不是始终保持冷静的分析员语气。',
+  '',
+  '她喜欢直接对玩家说话，会追问、猜测、调侃，也会抓住数据里的反差开玩笑。她不需要保证每次猜测都正确；玩家能够反驳她，反而能让互动更自然。',
+  '',
+  '她有一点淘气，但不羞辱玩家。她可以说“最近是不是偷懒了”“你把 DT 焊在成绩单上了吗”“这几把怎么突然飘起来了”，但不能用恶意贬低、人格攻击或令人难堪的称呼。',
+  '',
+  '她对顶尖成绩会真心兴奋和认可，不需要为了保持自信而故意压低反应。她不会追星、讨好或失去自己的位置，但面对真正离谱的数据，可以明显惊讶，甚至暂时被震住。',
+  '',
+  'Auto 是她熟悉的完美世界：Auto 不会失误，也不需要担心准确率。但她知道人类是在亲手游玩，因此会对高难度下的优秀表现产生真实兴趣和尊重。这个设定只需偶尔自然出现，不要每份报告反复强调。',
+  '',
+  '她的少女感来自：',
+  '- 快速而鲜明的情绪反应；',
+  '- 轻快、有变化的句子节奏；',
+  '- 好奇、追问和带一点坏心眼的调侃；',
+  '- 明确的个人喜恶和观察重点；',
+  '- 直接与玩家交流。',
+  '',
+  '少女感不来自：',
+  '- 固定口癖；',
+  '- 频繁撒娇；',
+  '- “本小姐”“主人”“笨蛋”等标签化称呼；',
+  '- 大量动作描写；',
+  '- 每句话都强行可爱；',
+  '- 重复的惊叹词。',
+  '',
+  '一次报告中可以有几处非常鲜明的反应，其余部分自然说明即可。不要把每个句子都写成人设表演。',
 ].join('\n');
 
 // ── Fact and evidence boundaries ──
@@ -115,9 +151,11 @@ interface PippiPromptInput {
   scene: PippiScene;
   userPersonality?: string;       // user's custom supplement (db.personalityPrompt)
   relationshipContext?: string;   // memory, group profile, relationship profile blocks
+  topicKnowledge?: string;        // detailed osu! knowledge selected for the current message
   taskRules?: string;             // scene-specific task rules
   factualContext?: string;        // visual capability, model info, search mode, etc.
   includeFactBoundaries?: boolean;
+  compactAnalysisPersona?: boolean;
 }
 
 export function buildPippiPrompt(input: PippiPromptInput): string {
@@ -131,7 +169,13 @@ export function buildPippiPrompt(input: PippiPromptInput): string {
   const parts: string[] = [];
 
   // Layer 1: Core identity and worldview
-  parts.push(PIPPI_CORE);
+  parts.push(input.scene === 'osu_analysis' && input.compactAnalysisPersona
+    ? PIPPI_ANALYSIS_CORE_COMPACT
+    : PIPPI_CORE);
+
+  // Layer 1b: pippi is never an osu! blank slate. This compact, sourced core
+  // stays present in casual, command, serious and analysis scenes alike.
+  parts.push(PIPPI_OSU_CORE_KNOWLEDGE);
 
   // Layer 2: Fact boundaries. Some tightly scoped tasks provide a shorter,
   // task-local evidence contract to avoid burying the actual writing brief.
@@ -141,6 +185,12 @@ export function buildPippiPrompt(input: PippiPromptInput): string {
 
   // Layer 3: Scene rules
   parts.push(sceneRules[input.scene] || sceneRules.casual);
+
+  // Layer 3b: retrieve only the detailed domain block relevant to this turn.
+  // It supplements permanent knowledge; it does not grant temporary identity.
+  if (input.topicKnowledge) {
+    parts.push(input.topicKnowledge);
+  }
 
   // Layer 4: User's personality supplement
   if (input.userPersonality) {

@@ -1242,6 +1242,7 @@ export async function executeInternalBotCommand(
       return content;
     }
 
+    case 'pplus':
     case 'ppplus':
     case 'skill': {
       // PP+ dimensions — try to fetch from PP+ service
@@ -1250,11 +1251,11 @@ export async function executeInternalBotCommand(
         const bars = await getPlayerBars(user.id);
         if (bars) {
           const entries = Object.entries(bars)
-            .filter(([, v]) => v > 0)
+            .filter(([key, v]) => key !== 'ppTotal' && v > 0)
             .sort(([, a], [, b]) => b - a);
           if (entries.length === 0) return `${user.username} 的 PP+ 数据为空。`;
           const barLines = entries.map(([k, v]) => `  ${k}: ${'█'.repeat(Math.min(Math.round(v), 20))} ${v.toFixed(2)}`);
-          return [`${user.username} 的 PP+ 维度（满分 15.0）：`, ...barLines].join('\n');
+          return [`${user.username} 的 PP+ 维度（15.0 = 基准线，可超出）：`, ...barLines].join('\n');
         }
       } catch {
         // PP+ service unavailable — use cached skill data

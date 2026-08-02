@@ -294,7 +294,7 @@ export async function completeChat(db, options = {}) {
   // doubled latency via retries and produced silent empty replies. Chat
   // replies do not need hidden reasoning; disable it explicitly.
   if (provider === 'deepseek') {
-    params.thinking = { type: 'disabled' };
+    params.thinking = options.thinking || { type: 'disabled' };
   }
 
   // Tool calling support (OpenAI function-calling format)
@@ -307,11 +307,19 @@ export async function completeChat(db, options = {}) {
     params.enable_search = true;
     params.search_mode = searchMode;
   }
+  if (options.responseFormat) {
+    params.response_format = options.responseFormat;
+  }
 
   const runCompletion = async (nextParams) => {
+    const requestTimeoutMs = Number(options.timeoutMs || 45_000);
+    const requestMaxRetries = Math.max(0, Number(options.requestMaxRetries ?? 2));
     const response = await withTimeout(
-      client.chat.completions.create(nextParams),
-      Number(options.timeoutMs || 45_000),
+      client.chat.completions.create(nextParams, {
+        timeout: requestTimeoutMs,
+        maxRetries: requestMaxRetries,
+      }),
+      requestTimeoutMs + 1000,
       options.label || `${llmProviderName(provider)} 调用`
     );
     return {

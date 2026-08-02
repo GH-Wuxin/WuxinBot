@@ -1,0 +1,1395 @@
+{
+  "label": "random-ten-v87-regression",
+  "playerSet": "random-bound-ten",
+  "startedAt": "2026-08-01T23:28:31.255Z",
+  "apiBase": "http://127.0.0.1:8787",
+  "players": [
+    {
+      "key": "30656658",
+      "id": 30656658,
+      "startedAt": "2026-08-01T23:28:31.255Z",
+      "outputFile": "01-30656658.txt",
+      "finishedAt": "2026-08-01T23:29:04.608Z",
+      "metadata": {
+        "target": "telecomadm1145",
+        "displayName": "telecomadm1145",
+        "osuUserId": 30656658,
+        "createdAt": "2026-08-01T23:29:04.027Z",
+        "analysisModel": "deepseek-v4-flash",
+        "formatVersion": 87,
+        "conclusionSource": "llm",
+        "conclusionValidationReasons": [],
+        "sectionCommentsSource": "llm",
+        "sectionCommentSources": {
+          "profile": "llm",
+          "top": "llm",
+          "top5": "llm",
+          "mods": "llm",
+          "pplus": "llm",
+          "recent": "llm",
+          "classification": "llm"
+        },
+        "sectionCommentsValidationReasons": [],
+        "generationTrace": {
+          "sectionComments": [
+            {
+              "trigger": "initial",
+              "trace": [
+                {
+                  "attempt": 1,
+                  "outcome": "rejected",
+                  "reasons": [
+                    "pplus 短评语义终审：Accuracy 为 6.48，没有超过 PP+ 的 15 基准线",
+                    "classification 短评语义终审：把核准数量改写成了无法核验的“一半”比例"
+                  ],
+                  "draft": "{\n  \"profile\": \"这位 telecomadm1145 账号已经 1482 天，但实际游玩时长只有 25 天 6 小时，全球排名 #127,456，总 pp 4610.7，总 Acc 98.04%。等级 100（31%），游玩次数 27,866 次，评级里 S 有 720 张、A 有 1758 张，SS 也有 65 张——A 多到快是 S 的两倍半，看起来是大量铺量堆出来的成绩，SS 反而成了点缀。整体数字不算出挑，但 Acc 能稳在 98% 以上，说明底子不差，就是样本里高分占比不算特别突出，属于那种持之以恒刷图型选手。\",\n  \"top\": \"BP 平均星数 5.52★，范围 4.55★ 到 6.60★，92 张挤在 5-6.5★ 区间，整体难度带很扎实。Acc 平均 97.68%，98% 以上占 41%，低于 95% 只有 4 张——高低 Acc 都有数量，不是全线稳定，但尾巴很干净。\",\n  \"top5\": \"第一张 250.2pp 带 DT 是孤峰，和第二张差 13.6pp，之后 #2 到 #5 都咬得很紧，最大差才 6.3pp。有意思的是 #4 和 #5 用 NM 反而打出 99% 以上 Acc，#1 的 98.61% 在五张里算中等，DT 和 NM 交叉着来，节奏感不错。\",\n  \"mods\": \"DT 47 张、NM 46 张，几乎五五开，加起来占 BP 的 93%；NC 只有 5 张，HR 2 张，含 HD 是 0。DT 平均 Acc 97.56%、PP 191.3，NM 平均 Acc 97.77%、PP 189.4，DT 略高一点但差距不大，HR 两张 Acc 98.70% 反而最稳。\",\n  \"pplus\": \"六维里 Accuracy 6.48 和 Jump 3.33 明显领先，Speed 2.30、Precision 2.20 排中间，Stamina 1.87 和 Flow 1.74 垫底。Flow 和 Stamina 偏低，跟 Accuracy 优势形成反差，不过没有维度超过基准线，整体还是偏均衡的形态。\",\n  \"recent\": \"最近 12 次平均 Acc 91.66%，比 BP 低了 6.02 个百分点，星数 5.55★ 倒是几乎一样。NM 占 10 次，状态明显不在线，像是随手打了几把，没认真刷。\",\n  \"classification\": \"BP 100 张里 aim 50 张占一半，alt 43 张紧跟其后，两者只差 7 张；tech 6 张、stream 1 张。aim 和 alt 双主，tech 只是点缀，stream 几乎没碰——结构很清晰，但样本只有 100 张，别急着定性。\"\n}"
+                },
+                {
+                  "attempt": 2,
+                  "outcome": "accepted",
+                  "reasons": [],
+                  "draft": "```json\n{\n  \"pplus\": \"六条显示条里 Accuracy 和 Jump 明显领先，Precision 和 Speed 居中，Flow 和 Stamina 垫底。这个形状挺有意思——准确率相关的维度撑得起来，但耐力类的条子就有点跟不上。\",\n  \"classification\": \"BP100 里 aim 占 50 张，alt 占 43 张，两者只差 7 张，几乎对半开。tech 有 6 张，stream 只有 1 张，基本可以忽略。\"\n}\n```"
+                }
+              ]
+            }
+          ],
+          "conclusion": [
+            {
+              "trigger": "initial",
+              "trace": [
+                {
+                  "attempt": 1,
+                  "outcome": "accepted",
+                  "reasons": [],
+                  "draft": "【结论】\n\ntelecomadm1145 这个账号最扎眼的，是它那种\"明明可以靠准度吃饭，却偏要跟高星图较劲\"的倔劲儿。\nBP 里 98% 以上 Acc 占了 41 张，可同时又有 4 张掉到 95% 以下——这不是一个追求完美的人，是一个愿意为了挑战把脸摔在地上再爬起来的人。\n\n全球排名 #127,456、总 PP 4610.7pp 的位次，配着 98.04% 的总命中率，怎么看都像是个\"被难度拖累了准度\"的典型。\n但 BP 里含 HR 只有 2 张、含 HD 是 0 张——这就很微妙了：明明 Accuracy 在 PP+ 六维里一枝独秀（6.48，几乎是第二项 Jump 3.33 的两倍），却几乎不碰 HDHR 这种最能放大准度收益的组合。\n\n但 Recent 的 12 次样本平均 Acc 只有 91.66%，比 BP 低了整整 6.02 个百分点，平均星数却只差 0.04★。难度没降，准度崩了，这状态最近明显不在线。\n\n不过，一个能在 25 天 6 小时的游玩时长里攒出 27,866 次游玩次数的账号，大概也不在乎这一时半会儿的波动吧。"
+                }
+              ]
+            }
+          ],
+          "final": {
+            "sectionCommentsSource": "llm",
+            "sectionCommentSources": {
+              "profile": "llm",
+              "top": "llm",
+              "top5": "llm",
+              "mods": "llm",
+              "pplus": "llm",
+              "recent": "llm",
+              "classification": "llm"
+            },
+            "conclusionSource": "llm",
+            "fullReportFallback": false
+          }
+        },
+        "reviewLog": [
+          {
+            "round": 1,
+            "verdicts": [
+              {
+                "section": "profile",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "top",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "top5",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "mods",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "pplus",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "recent",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "classification",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "conclusion",
+                "result": "REJECT",
+                "kind": "hard",
+                "reason": "结论中“Accuracy 6.48 几乎是 Jump 3.33 的两倍”与事实不符，实际 6.48 约为 3.33 的 1.95 倍，且“几乎不碰 HDHR”将 HD 0 张与 HR 2 张合并为不存在的组合统计。"
+              }
+            ],
+            "rejects": [
+              {
+                "section": "conclusion",
+                "kind": "hard",
+                "reason": "结论中“Accuracy 6.48 几乎是 Jump 3.33 的两倍”与事实不符，实际 6.48 约为 3.33 的 1.95 倍，且“几乎不碰 HDHR”将 HD 0 张与 HR 2 张合并为不存在的组合统计。"
+              }
+            ]
+          }
+        ],
+        "bestCount": 100,
+        "recentCount": 12,
+        "hasPPlus": true,
+        "errors": []
+      }
+    },
+    {
+      "key": "30314890",
+      "id": 30314890,
+      "startedAt": "2026-08-01T23:29:04.836Z",
+      "outputFile": "02-30314890.txt",
+      "finishedAt": "2026-08-01T23:29:57.422Z",
+      "metadata": {
+        "target": "Naaahida",
+        "displayName": "Naaahida",
+        "osuUserId": 30314890,
+        "createdAt": "2026-08-01T23:29:54.923Z",
+        "analysisModel": "deepseek-v4-flash",
+        "formatVersion": 87,
+        "conclusionSource": "llm",
+        "conclusionValidationReasons": [],
+        "sectionCommentsSource": "llm",
+        "sectionCommentSources": {
+          "profile": "llm",
+          "top": "llm",
+          "top5": "llm",
+          "mods": "llm",
+          "pplus": "llm",
+          "recent": "llm",
+          "classification": "llm"
+        },
+        "sectionCommentsValidationReasons": [],
+        "generationTrace": {
+          "sectionComments": [
+            {
+              "trigger": "initial",
+              "trace": [
+                {
+                  "attempt": 1,
+                  "outcome": "rejected",
+                  "reasons": [
+                    "profile 短评语义终审：把核准游玩次数压缩成了“万/千次”约数",
+                    "profile 短评语义终审：包含简报外数字: 100000",
+                    "mods 的 Mod 语义错误：把 BP 的 Mod 构成扩大成了绝对偏好：无 HD 不欢",
+                    "mods 短评语义终审：Mod 语义错误：把 BP 的 Mod 构成扩大成了绝对偏好：无 HD 不欢",
+                    "mods 短评语义终审：声称 BP 中没有 HD，但核准数据实际有 100 张",
+                    "profile 短评包含简报外数字: 100000"
+                  ],
+                  "draft": "{\n  \"profile\": \"Naaahida 这位玩家，注册了约 1509 天，攒下 5013pp，全球排在十万名开外，但国家排名能到 1935，说明在 CN 区里算是有点底子的。总命中率 98.18% 挺稳，不过看评级分布，SS 只有 7 张，A 却有 2789 张，这反差有点意思——明明 Acc 不差，怎么 S 和 SSH 这么少？可能平时打图不太追求重刷，或者就是喜欢开 HD 把评级压低了。56 万次的游玩次数，55 天多的时长，等级也快满 100 了，这账号的积累是实打实的，不是那种光挂着不动的。整体感觉是个认真玩但不太爱刷分的选手，数据里透着一种'我玩我的'的劲儿。\",\n  \"top\": \"BP 里 100 张成绩，星数全挤在 5.19 到 6.8 之间，平均 5.85，跨度不大但挺集中。Acc 平均 98.05%，59 张在 98% 以上，只有 2 张低于 95%，这分布算是比较健康的——不是那种上下乱跳的类型，但也别吹成全线稳定。\",\n  \"top5\": \"前五张成绩挨得真近，最高 260.6 最低 238.2，跨度才 22.4pp。第三到第四差了 8.9pp，是最大的断层，但也不算孤峰，整体就是平缓的一串。Acc 都在 98% 以上，星数也差不多，看起来是个稳定输出型选手，没有哪张图特别突出。\",\n  \"mods\": \"BP 里 100 张全带 HD，这习惯够专一的。HDDT 有 10 张，HDHR 只有 3 张，剩下的 87 张都是纯 HD。NM 一张没有，看来这位玩家是'无 HD 不欢'的类型，但 DT 和 HR 的尝试不算多，可能还在舒适区里打转。\",\n  \"pplus\": \"PP+ 显示条里 Accuracy 最高，有 5.79，Jump 次之 3.33，其他几个都趴在地上，Stamina 最低才 1.97。形状很明显是'准度突出，耐力拖后腿'，不过这些值离基准线还远得很，别急着下结论说这人耐力不行，可能只是没怎么打长串图。\",\n  \"recent\": \"Recent 一条记录都没有，API 没返回任何近期成绩。要么是最近没怎么碰游戏，要么是打了但没进榜。反正从 BP 看，这账号不是那种三天打鱼两天晒网的，估计是暂时搁下了。\",\n  \"classification\": \"BP 分类里 aim 占了 67%，压倒性的第一类，alt 有 21% 排在第二，tech 和 stream 都只有个位数。结构挺清楚的：主攻 aim，顺带练 alt，其他类型基本没碰。跟 PP+ 里 Jump 比较高也能对上，但别把这当成永久标签，毕竟只是当前 BP 的样本。\"\n}"
+                },
+                {
+                  "attempt": 2,
+                  "outcome": "rejected",
+                  "reasons": [
+                    "profile 短评语义终审：分析对象 Naaahida 的性别未知，不能擅自使用“他/她”",
+                    "profile 短评语义终审：包含简报外数字: 100000",
+                    "profile 擅自猜测了目标玩家性别",
+                    "mods 短评语义终审：分析对象 Naaahida 的性别未知，不能擅自使用“他/她”",
+                    "mods 擅自猜测了目标玩家性别",
+                    "profile 短评包含简报外数字: 100000"
+                  ],
+                  "draft": "{\n  \"profile\": \"Naaahida 这个账号，5013pp 挂在全球十万名开外，但总 Acc 98.18% 和 56,396 次游玩摆在一起，看得出是个老练的稳定型选手。等级 100 快到顶，55 天 23 小时的游玩时长，注册四年多，SS 只有 7 张，A 却有 2789 张——这分布挺有意思，像是那种能稳稳打完但不太追求完美评级的玩家。BP 里 100 张成绩平均 5.85★，98% 以上 Acc 占了 59%，说明他挑图很克制，几乎不碰低于 5★ 的图，也不硬冲高星。整体看，这是个靠大量中高星图堆出 pp 的账号，风格扎实但不算激进。\",\n  \"mods\": \"BP 里 HD 直接覆盖了 100 张，HDDT 有 10 张，HDHR 只有 3 张，纯 NM 一张都没有——这 Mod 构成干净得有点吓人，几乎全靠 HD 撑场面。平均 Acc 都维持在 98% 上下，HD 和 HDDT 的 pp 也差不多，说明他加 DT 时并没有牺牲太多准度。HR 虽然只有 3 张，但 Acc 也还行，整体看是个 HD 重度使用者，但没到非 HD 不可的程度。\"\n}"
+                },
+                {
+                  "attempt": 3,
+                  "outcome": "accepted",
+                  "reasons": [],
+                  "draft": "{\n  \"profile\": \"Naaahida 这个账号，rank 在 #104,948，pp 5013.3，放在全球池子里算是中坚偏上的位置。总 Acc 98.18% 挺稳的，但看评级分布就有点意思了——A 有 2789 个，S 才 61 个，SS 更是只有 7 个，这反差也太大了，感觉像是打了一堆差一点点就 S 的图？56,396 次游玩、55 天 23 小时的时长，注册 1509 天，平均下来每天也就 37 次左右，不算特别肝，但积累的量确实不小。等级 100 级 93%，快满级了，整体像个踏实刷图的账号，但 A 和 S 的比例这么悬殊，真让人好奇是图的问题还是人的问题。\",\n  \"mods\": \"BP 里 HD 占了 87 张，加上 HDDT 10 张，合计 97 张，几乎全是 HD 系，纯 NM 一张都没有。HR 只有 3 张，DT 也就 10 张，看来这位玩家对 HD 的依赖不是一般的高。平均 Acc 都维持在 98% 上下，HD 和 HDDT 的 pp 也差不多，说明加 DT 并没有明显拉低准确率，倒是挺稳的。\"\n}"
+                }
+              ]
+            }
+          ],
+          "conclusion": [
+            {
+              "trigger": "initial",
+              "trace": [
+                {
+                  "attempt": 1,
+                  "outcome": "rejected",
+                  "reasons": [
+                    "Stamina 的核准显示值为 1.97，不是 2.15"
+                  ],
+                  "draft": "【结论】\n\n全球排名 #104,948，总 PP 5013.3pp——这个账号最醒目的地方，是它把“HD”焊死在了 BP 里：100 张成绩全部含 HD，其中 97 张是 HD 或 HDDT，纯 NM 一张都没有。\n这跟 PP+ 显示条里 Accuracy 5.79 遥遥领先的形状完全对上了——准度是这个账号真正的地基。\n\n六维里 Stamina 2.15 垫底、Speed 2.15 也不高，倒是和 BP 里 stream 只有 5% 的分布相互呼应——这个账号的短板方向其实很一致。\n有点意外的是 Recent 样本是 0 次，账号年龄却已经约 1,509 天、游玩时长 55 天 23 小时——玩得不算少，但最近似乎没怎么动。\n\n整体看下来，这是一个“HD 命定、准度为王、aim 为主、alt 为辅”的账号；5013.3pp 的体量在 #104,948 这个位置不算显眼，但那份把 HD 贯彻到每1张成绩单上的执念，才是它最像它自己的地方。"
+                },
+                {
+                  "attempt": 2,
+                  "outcome": "accepted",
+                  "reasons": [],
+                  "draft": "【结论】\n\nNaaahida 这个账号，本质上是一台把 HD 焊死在身上的高精度刷分机——全球排名 #104,948，总 PP 5013.3pp，但真正让这个账号有辨识度的不是排名本身，而是它那近乎偏执的 Mod 选择：BP 里 100 张全部含 HD，纯 NM 一张都没有，HD 和 HDDT 合计占了 97 张。\n这已经不是“喜欢玩 HD”的程度了，这是把隐形当呼吸，离了 HD 大概连谱面都不想打开的程度。\n\nPP+ 的六维条也跟这个画像对得上：Accuracy 5.79 和 Jump 3.33 明显高于其他维度，而 Stamina 只有 1.97 垫底——高精度、吃跳跃、不靠长耐力硬扛，跟 BP 里 aim 占 67%、stream 只有 5% 的结构完全咬合。\n唯一有点微妙的地方是 Recent 样本是 0 次，最近没怎么玩的样子，账号停在 5013.3pp 这个数字上像被按了暂停键。\n\n这个账号最像它自己的地方，就是那 97% 的 HD 覆盖率——不是最强的，但绝对是最“专一”的那一批。"
+                }
+              ]
+            }
+          ],
+          "final": {
+            "sectionCommentsSource": "llm",
+            "sectionCommentSources": {
+              "profile": "llm",
+              "top": "llm",
+              "top5": "llm",
+              "mods": "llm",
+              "pplus": "llm",
+              "recent": "llm",
+              "classification": "llm"
+            },
+            "conclusionSource": "llm",
+            "fullReportFallback": false
+          }
+        },
+        "reviewLog": [
+          {
+            "round": 1,
+            "verdicts": [
+              {
+                "section": "profile",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "top",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "top5",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "mods",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "pplus",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "recent",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "classification",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "conclusion",
+                "result": "PASS",
+                "reason": ""
+              }
+            ],
+            "rejects": []
+          }
+        ],
+        "bestCount": 100,
+        "recentCount": 0,
+        "hasPPlus": true,
+        "errors": []
+      }
+    },
+    {
+      "key": "18183796",
+      "id": 18183796,
+      "startedAt": "2026-08-01T23:29:57.654Z",
+      "outputFile": "03-18183796.txt",
+      "finishedAt": "2026-08-01T23:30:34.241Z",
+      "metadata": {
+        "target": "b2ari",
+        "displayName": "b2ari",
+        "osuUserId": 18183796,
+        "createdAt": "2026-08-01T23:30:30.811Z",
+        "analysisModel": "deepseek-v4-flash",
+        "formatVersion": 87,
+        "conclusionSource": "llm",
+        "conclusionValidationReasons": [],
+        "sectionCommentsSource": "llm",
+        "sectionCommentSources": {
+          "profile": "llm",
+          "top": "llm",
+          "top5": "llm",
+          "mods": "llm",
+          "pplus": "llm",
+          "recent": "llm",
+          "classification": "llm"
+        },
+        "sectionCommentsValidationReasons": [],
+        "generationTrace": {
+          "sectionComments": [
+            {
+              "trigger": "initial",
+              "trace": [
+                {
+                  "attempt": 1,
+                  "outcome": "accepted",
+                  "reasons": [],
+                  "draft": "{\n  \"profile\": \"b2ari 这位玩家的档案放在一起看挺有意思的：一百二十多名开外的 rank，配上 4623.6pp 和 98.69% 的总 Acc，属于那种量级不大但手感很干净的账号。游玩次数两万二、时长才十天出头，等级 97 还没满，倒是评级分布里 A 有 565 张，明显比 S 系多出一大截——这结构看起来像是早期乱打了不少图，后来才慢慢收住准度。整体感觉是个认真在玩、但还没把潜力全倒出来的普通玩家，数字不夸张，胜在干净。\",\n  \"top\": \"BP 一百张全是 4.47★ 到 6.39★ 的区间，平均 5.41★，没有一张超过 6.5★，说明这位玩家基本待在中等偏上的难度带里。Acc 倒是很漂亮：平均 98.38%，六成八都在 98% 以上，只有三张低于 95%——这分布挺稳的，不是那种靠运气刷出来的成绩单。\",\n  \"top5\": \"BP5 的 pp 从 267.4 到 242.8，跨度才 24.7，头尾贴得很紧，没有孤峰。最大断层出现在 #3 和 #4 之间，差了 9.7pp，但也就这么一下，整体还是平缓的小台阶。#1 那张 6.09★ 的 HD 成绩 98.48%，跟 #2 的 99.17% 一比，显得稍微有点糙。\",\n  \"mods\": \"这位玩家的 BP 里 HD 几乎焊死了——整整 100 张全带 HD，其中 HDDT 占 47 张，纯 HD 52 张，HDHR 只有 1 张，NM 一张都没有。这组合干净得有点吓人，像是把 HD 当成了默认设置，DT 偶尔来凑热闹，其他 Mod 基本不碰。\",\n  \"pplus\": \"PP+ 的六根条子里，Accuracy 直接顶到 5.00，Flow 和 Stamina 也都在 2.9 上下，Speed 垫底只有 2.29。Precision 最低，1.91，跟 Accuracy 拉开了三倍多的差距——这形状说明准度是强项，但稳定性和速度感明显没跟上。\",\n  \"recent\": \"最近 11 次记录平均 Acc 掉到 88.47%，比 BP 的平均 98.38% 低了快十个百分点，星数倒是涨到 6.05★，比 BP 高出一截。这反差有点大——像是在挑战更难的图，但准度还没稳住，估计是最近玩得有点飘。\",\n  \"classification\": \"BP100 的分类里，stream 和 alt 各占 39 张，并列第一，tech 12 张、aim 10 张垫底。这结构挺明显的：耐力型和技术型是主力，跳跃反而少，跟 PP+ 里 Flow 高、Jump 低的形状对得上，算是一套自洽的打法。\"\n}"
+                }
+              ]
+            }
+          ],
+          "conclusion": [
+            {
+              "trigger": "initial",
+              "trace": [
+                {
+                  "attempt": 1,
+                  "outcome": "accepted",
+                  "reasons": [],
+                  "draft": "【结论】\n\nb2ari 这个账号最像1张“被 HD 焊死的精确度答卷”——4623.6pp 的全球 #126,642 排名不算惊艳，但 BP 里 100 张全部带 HD、其中 99 张是 HD 或 HDDT，这个纯度本身就够让人多看一眼。\nPrecision 1.91 垫底有点意思，但既然 BP 数据整体这么稳，这更像是低星段样本拖出来的影子，不是“不会读图”的证据。\n\n不过最近 11 次游玩的平均 Acc 掉到 88.47%，比 BP 低了近十个百分点，星数却还往上走了 0.64★——状态明显不在线，或者是在试更硬的图。\n整体看，b2ari 是个用 HD 当底色、靠 Acc 撑场子的稳定型账号，4623.6pp 的全球 #126,642 不算高，但这份“几乎不摘 HD”的固执和 98% 以上的判定水准，确实比排名本身更有辨识度。"
+                }
+              ]
+            }
+          ],
+          "final": {
+            "sectionCommentsSource": "llm",
+            "sectionCommentSources": {
+              "profile": "llm",
+              "top": "llm",
+              "top5": "llm",
+              "mods": "llm",
+              "pplus": "llm",
+              "recent": "llm",
+              "classification": "llm"
+            },
+            "conclusionSource": "llm",
+            "fullReportFallback": false
+          }
+        },
+        "reviewLog": [
+          {
+            "round": 1,
+            "verdicts": [
+              {
+                "section": "profile",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "top",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "top5",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "mods",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "pplus",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "recent",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "classification",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "conclusion",
+                "result": "PASS",
+                "reason": ""
+              }
+            ],
+            "rejects": []
+          }
+        ],
+        "bestCount": 100,
+        "recentCount": 11,
+        "hasPPlus": true,
+        "errors": []
+      }
+    },
+    {
+      "key": "13892102",
+      "id": 13892102,
+      "startedAt": "2026-08-01T23:30:34.465Z",
+      "outputFile": "04-13892102.txt",
+      "finishedAt": "2026-08-01T23:31:07.309Z",
+      "metadata": {
+        "target": "[SHK]IceTeaNeko",
+        "displayName": "[SHK]IceTeaNeko",
+        "osuUserId": 13892102,
+        "createdAt": "2026-08-01T23:31:04.941Z",
+        "analysisModel": "deepseek-v4-flash",
+        "formatVersion": 87,
+        "conclusionSource": "llm",
+        "conclusionValidationReasons": [],
+        "sectionCommentsSource": "llm",
+        "sectionCommentSources": {
+          "profile": "llm",
+          "top": "llm",
+          "top5": "llm",
+          "mods": "llm",
+          "pplus": "llm",
+          "recent": "llm",
+          "classification": "llm"
+        },
+        "sectionCommentsValidationReasons": [],
+        "generationTrace": {
+          "sectionComments": [
+            {
+              "trigger": "initial",
+              "trace": [
+                {
+                  "attempt": 1,
+                  "outcome": "accepted",
+                  "reasons": [],
+                  "draft": "{\n  \"profile\": \"这位 [SHK]IceTeaNeko 是个挺扎实的六星选手嘛！全球 #71,242、国家 #1,314，5737pp 放在这个段位算是有存在感了。总 Acc 97.65% 配着 14,512 次游玩，等级卡在 99（12%）——就差临门一脚却还没摸到 100 级，有点吊人胃口。评级分布里 A 有 1018 张，S 才 80 张，这反差挺有意思的，感觉像是刷了不少图但没怎么回头精进。整体看下来，是个量够大、稳定度还行的中坚玩家，不是那种一眼惊艳的类型，但底子不虚。\",\n  \"top\": \"BP 平均 6.50★、平均 Acc 97.20%，范围从 5.20★ 到 8.04★，跨度不小。98% 以上有 30 张，低于 95% 的只有 7 张，说明大部分时候手感在线，但偶尔也会飘一下。整体是六星图为主、高难也能碰的类型，不算极端，但够看。\",\n  \"top5\": \"BP5 全是 HD，头名 325.0pp 和后面差距不大，跨度才 34.5pp，没有孤峰，整体很平。相邻差最大在 #3 和 #4 之间，11.0pp，也是小起伏。Acc 从 97.02% 到 99.01% 都有，星数 6.24★ 到 7.33★，看起来是个稳定输出型选手，不怎么靠爆种。\",\n  \"mods\": \"HD 46 张加 NM 31 张占了 77 张，这组合挺主流的。HD 平均 Acc 97.32% 比 NM 的 96.92% 高一点，说明带 HD 反而更稳。DT/NC 系列 15 张，HR 系 8 张，都是少量点缀。SD 那两张平均 Acc 98.80%，有点小亮点，但整体还是 HD 和 NM 的天下。\",\n  \"pplus\": \"六维显示条里 Accuracy 6.37 最高，Jump 4.77 第二，Speed 2.86 垫底。这形状一看就是准度见长、速度偏弱的那种，跟 BP 里高 Acc 占比多倒是能对上。其余维度都挤在 3.5 到 4.8 之间，没有特别突出的短板，但也没啥爆点。\",\n  \"recent\": \"最近 6 次平均 Acc 94.14%，比 BP 的 97.20% 掉了 3 个多点，星数也低了 0.21★。这明显不是最佳状态，像是随便打打或者摸了些新图。6 次里 5 次带 HD，风格倒没变，就是手感差了点。\",\n  \"classification\": \"BP100 里 aim 59 张、stream 26 张，加起来 85%，这结构挺清晰的。tech 8 张、alt 7 张都是小尾巴。aim 和 stream 差 33 张，第一类压得死死的，说明这账号主要是 aim 和 stream 的料，但技术类也不是完全没碰。\"\n}"
+                }
+              ]
+            }
+          ],
+          "conclusion": [
+            {
+              "trigger": "initial",
+              "trace": [
+                {
+                  "attempt": 1,
+                  "outcome": "accepted",
+                  "reasons": [],
+                  "draft": "【结论】\n\n全球排名 #71,242，总 PP 5737.3pp——这个账号最显眼的标签不是排名本身，而是一整套“HD 焊死”的结构。\nBP 前五全是 HD，前两类里 HD 和 NM 合起来占 77%，含 HD 的成绩多达 62 张。\n\n而它偏偏还能撑住 97.20% 的平均 Acc，说明 HD 不是装饰，是真的吃得透。\n真正让这个账号有辨识度的，是 Accuracy 和 Jump 两条 PP+ 显示条明显高出其他维度，而 Speed 是六维里最低的。\n\n再配上 BP 里 aim 59 张、stream 26 张的分类结构——这个账号对“读图精准、跳跃果断”的路径明显比“高速连打”更顺手。\n倒是那2张 SD 成绩平均 Acc 98.80%，挺有性格的——敢挂 SD 的，多少有点“这条我根本不会断”的底气。\n\n最近的样本倒是有点掉线感：平均 Acc 94.14%，比 BP 整体低了 3.06 个百分点。这个账号像一杯冰茶——名字里就写着，喝着是稳的，但偶尔也会晃两下。"
+                }
+              ]
+            }
+          ],
+          "final": {
+            "sectionCommentsSource": "llm",
+            "sectionCommentSources": {
+              "profile": "llm",
+              "top": "llm",
+              "top5": "llm",
+              "mods": "llm",
+              "pplus": "llm",
+              "recent": "llm",
+              "classification": "llm"
+            },
+            "conclusionSource": "llm",
+            "fullReportFallback": false
+          }
+        },
+        "reviewLog": [
+          {
+            "round": 1,
+            "verdicts": [
+              {
+                "section": "profile",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "top",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "top5",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "mods",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "pplus",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "recent",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "classification",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "conclusion",
+                "result": "PASS",
+                "reason": ""
+              }
+            ],
+            "rejects": []
+          }
+        ],
+        "bestCount": 100,
+        "recentCount": 6,
+        "hasPPlus": true,
+        "errors": []
+      }
+    },
+    {
+      "key": "24657559",
+      "id": 24657559,
+      "startedAt": "2026-08-01T23:31:07.516Z",
+      "outputFile": "05-24657559.txt",
+      "finishedAt": "2026-08-01T23:31:47.019Z",
+      "metadata": {
+        "target": "tan-X",
+        "displayName": "tan-X",
+        "osuUserId": 24657559,
+        "createdAt": "2026-08-01T23:31:44.156Z",
+        "analysisModel": "deepseek-v4-flash",
+        "formatVersion": 87,
+        "conclusionSource": "llm",
+        "conclusionValidationReasons": [],
+        "sectionCommentsSource": "mixed",
+        "sectionCommentSources": {
+          "profile": "fallback",
+          "top": "llm",
+          "top5": "llm",
+          "mods": "llm",
+          "pplus": "llm",
+          "recent": "llm",
+          "classification": "llm"
+        },
+        "sectionCommentsValidationReasons": [
+          "profile 短评语义终审：账号年龄核准为约 5.1 年，与“1 年”不符"
+        ],
+        "generationTrace": {
+          "sectionComments": [
+            {
+              "trigger": "initial",
+              "trace": [
+                {
+                  "attempt": 1,
+                  "outcome": "rejected",
+                  "reasons": [
+                    "profile 短评语义终审：账号年龄核准为约 5.1 年，与“21 年”不符",
+                    "top 短评语义终审：忽略了 2 张低于 95% 的 BP 成绩"
+                  ],
+                  "draft": "{\n  \"profile\": \"tan-X 这个账号，全球 #9,003、国家 #137，9,639pp 放在 2021 年注册的账号上，算是一路稳稳爬上来的积累。总 Acc 98.66% 配着 94,150 次游玩和 53 天 16 小时的时长，体量不小，而且 98% 以上的 Acc 覆盖率说明手感一直在线。等级 101 的 83% 还在往上升，评级里 A 有 1,428 张，S 和 SH 加起来也四百多张——这账号不是靠一两次爆发冲上来的，是那种慢慢磨、越磨越准的类型。不过 98.66% 的总 Acc 放在这个游玩量里，还是能看出偶尔会有小失误，但整体控制力相当扎实。\",\n  \"top\": \"BP 100 张里，99 张都在 6.5★ 以上，平均 7.15★，范围 6.49★ 到 8.38★——这几乎是把高星区当自家客厅了。Acc 平均 98.57%，98% 以上的占了 79 张，低于 95% 的只有 2 张，说明这百张成绩不是靠运气堆的，而是真有稳定输出。整份 BP 看起来就像一座高塔，楼层都差不多高，偶尔一两层矮点，但整体结构相当吓人。\",\n  \"top5\": \"BP5 里 #1 那张 HR 570.5pp 直接领先 #2 有 60.6pp，像个孤峰一样戳在那里；但后面 #2 到 #5 就挤成一团，509.9、502.3、500.9、499.5，相邻差最小才 1.4pp，差点就排排坐了。第一张 Acc 99.61% 的 HR 明显是心头好，但 #5 那张 DT 的 97.94% 相比之下就有点没那么完美了——不过能挤进这个区间，还是有点东西的。\",\n  \"mods\": \"BP 里纯 NM 占了 77 张，平均 Acc 98.56%、平均 PP 424.6，这基本是主菜；DT 6 张平均 Acc 98.69% 和 NM 差不多，但 HR 5 张平均 PP 471.5 明显更高，看来加 HR 反而更出分。HDNC 4 张、HDHR 2 张这些组合也有，但数量不多。整体 Mod 构成挺朴实的，没有特别偏科，NM 为主，偶尔加点料。\",\n  \"pplus\": \"PP+ 六维里 Accuracy 10.66 和 Flow 10.38 最高，明显是准度和持续性的大头；Stamina 7.11 和 Jump 6.64 在中间，Speed 5.93 和 Precision 5.56 垫底。Precision 最低有点意思，跟 Accuracy 差了一截，看来大准度没问题，但精细到极致的读图或瞄准可能不是强项。整体形状像一座山峰，左边高右边低，但没哪个维度超过 15 的基准线，属于人类范畴里的偏科。\",\n  \"recent\": \"最近 14 次成绩平均 Acc 只有 93.35%，比 BP 的 98.57% 掉了 5.22 个百分点，星数倒是差不多（7.05★ vs 7.15★）——这明显不是图变难了，是手感没在线。Mods 里 HD 出现 7 次、HDHR 3 次，还有一次 HT，看起来最近在玩带读图压力的组合，但 Acc 没跟上，可能是试新打法或者状态有点飘。\",\n  \"classification\": \"BP 100 张里 stream 占了 78 张，aim 只有 15 张，tech 5 张、alt 2 张——这分类简直一边倒，stream 是绝对的主场，aim 连零头都不到。看来这位是那种能在长串里稳住节奏的类型，跳图反而不是常客。不过分类只是当前 BP 的构成，不代表永远只玩 stream，但至少这 100 张看起来是这么个方向。\"\n}"
+                },
+                {
+                  "attempt": 2,
+                  "outcome": "rejected",
+                  "reasons": [
+                    "profile 短评语义终审：账号年龄核准为约 5.1 年，与“21 年”不符",
+                    "profile 短评语义终审：账号年龄核准为约 5.1 年，与“1 年”不符",
+                    "profile 短评：账号档案应比其他栏目更长，重新展开这一栏"
+                  ],
+                  "draft": "{\n  \"profile\": \"这个账号从 2021 年 7 月注册到现在，差不多 5.1 年，攒下了 94,150 次游玩和 53 天 16 小时的时长，等级 101 快 83% 了。全球排名 9,003、国家 137，PP 9639.7，总 Acc 98.66%，算是稳步堆出来的中坚力量。评级分布里 A 有 1428 张，比 S 和 SS 加起来还多不少，说明打过的图范围很广，不是只挑软柿子捏。整体看下来，这位玩家属于那种不声不响但底子很扎实的类型。\",\n  \"top\": \"BP 里最显眼的是那 2 张低于 95% 的 Acc，放在一堆 98% 以上的成绩里特别扎眼，像是偶尔翻车留下的痕迹。不过 79 张都压在 98% 以上，说明大部分时候手都很稳，这两张更像是意外，不是常态。\"\n}"
+                },
+                {
+                  "attempt": 3,
+                  "outcome": "rejected",
+                  "reasons": [
+                    "profile 短评语义终审：账号年龄核准为约 5.1 年，与“1 年”不符"
+                  ],
+                  "draft": "{\n  \"profile\": \"tan-X 这个账号，全球 #9,003、国家 #137，PP 9639.7，总 Acc 98.66%，等级 101（83%），游玩时长 53 天 16 小时，注册 2021/7/13，距今约 5.1 年。94,150 次游玩，评级里 A 有 1428 个，S 有 284 个，SS 才 13 个，SSH 8 个——这分布还挺有意思的，A 比 S 多这么多，感觉像是刷了不少高难度图但没怎么回头刷 acc？不过总 Acc 能稳住 98.66%，说明底子还是扎实的。BP 100 张，平均星数 7.15★，平均 Acc 98.57%，98% 以上占了 79%，这 Acc 覆盖是真的稳，基本没有拉胯的。整体看下来，这是个高星高 acc 的账号，排名虽然没进千强，但数据厚度很够看。\"\n}"
+                }
+              ]
+            }
+          ],
+          "conclusion": [
+            {
+              "trigger": "initial",
+              "trace": [
+                {
+                  "attempt": 1,
+                  "outcome": "accepted",
+                  "reasons": [],
+                  "draft": "【结论】\n\ntan-X 这个账号，全球排名 #9,003、总 PP 9639.7pp，一眼扫过去是个典型的“稳”字当头选手——但再仔细翻翻，会发现这份稳里藏着一股相当偏执的狠劲。\nBP 里 99 张都在 6.5★ 以上，平均星数 7.15★，没有1张低于 6.49★，这哪是打图，这是把排行榜当成了“低于这个难度不配进我成绩单”的筛选器。\n\nPP+ 显示条里 Accuracy 和 Flow 是最高的两项，Precision 反而是最低的——这个形状和 BP 里海量 stream 图、高 Acc 覆盖的方向完全对得上。\n不过说真的，看到 Recent 那 14 次成绩我忍不住想笑——平均 Acc 93.35%，比 BP 整整低了 5.22 个百分点，星数倒是差不多。\n\n这落差太明显了，要么是最近在试新图翻车，要么就是状态不在线随便打打。\n78% 的 stream 占比、98.57% 的平均 Acc、BP5 里 570.5pp 的 HR 孤峰——这份账号像一台专门为高难度耐力图校准的精密仪器，精度优先，难度不妥协，偶尔飘一下，但底子稳得让人服气。"
+                }
+              ]
+            }
+          ],
+          "final": {
+            "sectionCommentsSource": "mixed",
+            "sectionCommentSources": {
+              "profile": "fallback",
+              "top": "llm",
+              "top5": "llm",
+              "mods": "llm",
+              "pplus": "llm",
+              "recent": "llm",
+              "classification": "llm"
+            },
+            "conclusionSource": "llm",
+            "fullReportFallback": false
+          }
+        },
+        "reviewLog": [
+          {
+            "round": 1,
+            "verdicts": [
+              {
+                "section": "profile",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "top",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "top5",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "mods",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "pplus",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "recent",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "classification",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "conclusion",
+                "result": "PASS",
+                "reason": ""
+              }
+            ],
+            "rejects": []
+          }
+        ],
+        "bestCount": 100,
+        "recentCount": 14,
+        "hasPPlus": true,
+        "errors": []
+      }
+    },
+    {
+      "key": "33808331",
+      "id": 33808331,
+      "startedAt": "2026-08-01T23:31:47.234Z",
+      "outputFile": "06-33808331.txt",
+      "finishedAt": "2026-08-01T23:32:39.299Z",
+      "metadata": {
+        "target": "CjhSmileFace",
+        "displayName": "CjhSmileFace",
+        "osuUserId": 33808331,
+        "createdAt": "2026-08-01T23:32:37.441Z",
+        "analysisModel": "deepseek-v4-flash",
+        "formatVersion": 87,
+        "conclusionSource": "fallback",
+        "conclusionValidationReasons": [
+          "生硬翻译或错误命名了 HD"
+        ],
+        "sectionCommentsSource": "llm",
+        "sectionCommentSources": {
+          "profile": "llm",
+          "top": "llm",
+          "top5": "llm",
+          "mods": "llm",
+          "pplus": "llm",
+          "recent": "llm",
+          "classification": "llm"
+        },
+        "sectionCommentsValidationReasons": [],
+        "generationTrace": {
+          "sectionComments": [
+            {
+              "trigger": "initial",
+              "trace": [
+                {
+                  "attempt": 1,
+                  "outcome": "rejected",
+                  "reasons": [
+                    "profile 短评语义终审：包含未经输入提供的设备、身体或 replay 机制：手很稳"
+                  ],
+                  "draft": "{\n  \"profile\": \"CjhSmileFace 这个账号，4.6k PP 挂在全球第 12 万多名，国家榜 2219——不算显眼，但 98.49% 的总命中率放在 17,780 次游玩里，看得出手很稳。玩了 19 天多，注册三年出头，等级 100 的 8%，SS 和 SSH 加起来才 4 张，倒是 S 有 164 张、A 有 804 张，成绩分布明显偏向'打得不错但没到顶'那一档。整体像个认真刷图的稳定型玩家，不冲榜，但手感一直在线。\",\n  \"top\": \"BP 里 100 张成绩，平均星数 5.70，最高才 6.46★，没有一张超过 6.5——这区间挑得挺专一的。Acc 平均 98.34%，98% 以上的占了 71 张，低于 95% 的只有 1 张，这覆盖度不是运气，是习惯性稳。\",\n  \"top5\": \"头名 263pp 比第二名高出 32pp，后面四张全挤在 228-231 之间，像个小台阶。Acc 都在 98% 以上，星数 5.8 到 6.3，Mod 混着 HD 和 NM——头名那张 HD 的 Acc 最高，但星数不是最高，看来是手感特别顺的一把。\",\n  \"mods\": \"HD 73 张是绝对主力，平均 Acc 98.39%、PP 189，比 NM 的 98.23% 和 180 都高一点；HDDT 4 张和 DT 1 张存在感不强，HR 一张没碰。整体就是个 HD 玩家，偶尔提速，但没怎么碰高难 Mod。\",\n  \"pplus\": \"六维显示条里 Accuracy 5.38 明显领先，Jump 2.90 排第二，Speed 2.05 垫底——准确率是这账号的招牌，速度短板也摆在那。不过这些数值离基准线 15 远得很，别想太多，就是个普通玩家的形状。\",\n  \"recent\": \"最近一条成绩都没留下，API 直接空手而归。前头 BP 打得挺勤，这会儿突然没声了——要么在休息，要么换地方玩了，先记着。\",\n  \"classification\": \"BP 里 aim 35 张、alt 34 张，就差 1 张，基本是五五开；stream 18 张、tech 13 张垫后。这构成挺均衡的，不是偏科型，但也没看出哪类特别突出。\"\n}"
+                },
+                {
+                  "attempt": 2,
+                  "outcome": "accepted",
+                  "reasons": [],
+                  "draft": "{\n  \"profile\": \"这位玩家 CjhSmileFace 目前以 4650.3pp 排在全球第 124,995 位，国家第 2,219 位，等级 100 还差 8% 升级。总命中率 98.49% 挺亮眼的，但评级分布里 A 有 804 张，比 S 的 164 张多出一大截，SS 和 SSH 加起来才 4 张——这组合有点意思，高分多但顶尖评级少，感觉是那种能稳定打准、但很少去刷极限成绩的类型。游玩时长 19 天 2 小时，注册 1,153 天，平均下来每天玩得不算多，但 17,780 次游玩说明每次上线都挺投入的。整体看是个稳扎稳打的玩家，量不算大，准度是招牌。\"\n}"
+                }
+              ]
+            }
+          ],
+          "conclusion": [
+            {
+              "trigger": "initial",
+              "trace": [
+                {
+                  "attempt": 1,
+                  "outcome": "rejected",
+                  "reasons": [
+                    "综合结论没有使用核准的全球 rank 或账号总 pp 判断分量"
+                  ],
+                  "draft": "【结论】\n\nCjhSmileFace 这个账号最鲜明的标签是“HD 焊死在身上、靠精准度吃饭的稳扎稳打型玩家”。\n真正撑起这个账号的是 Accuracy 维度：BP 平均 Acc 98.34%，71 张成绩在 98% 以上，PP+ 六维里 Accuracy 5.38 遥遥领先其他所有条，Jump 2.90 跟在后面当第二，Speed 2.05 垫底。\n\n不过最近的状态有点让人想歪头——Recent 样本是 0 次，账号注册 1,153 天、游玩时长 19 天 2 小时，看起来不是没玩过，而是最近没怎么上线。\nBP5 里 #1 的 263.4pp 和 #2 的 231.3pp 之间差了 32.1pp，之后 #2 到 #5 全挤在 1pp 上下的缝隙里，像是某天状态特别好打出了1张孤峰，然后又回到日常的平稳节奏。\n\n这个账号的画像很清楚：不追求花哨，不碰 HR，DT 也只是偶尔调剂，靠 HD 加高 Acc 慢慢磨出属于自己的那一份 pp——挺扎实的，就是偶尔会让人想催一句“该回来打图了吧”。"
+                },
+                {
+                  "attempt": 2,
+                  "outcome": "rejected",
+                  "reasons": [
+                    "综合结论没有使用核准的全球 rank 或账号总 pp 判断分量"
+                  ],
+                  "draft": "【结论】\n\nCjhSmileFace 这个账号，最抓眼的地方不是某张孤峰神图，而是一整片几乎不塌方的“稳”。\nBP 里 HD 占了 73 张，纯 NM 也有 22 张，两者合计 95 张，几乎把整个 BP 瓜分干净；而谱面类型上 aim 35 张、alt 34 张，只差 1 张，像是刻意在两种手感之间走钢丝。\n\nPP+ 的六维条也顺着这个印象走：Accuracy 5.38 明显最高，Jump 2.90 次之，Speed 2.05 垫底——准、跳、稳，但不太追极速。\n唯一让我想戳一下的是 BP5 的结构：#1 有 263.4pp，比 #2 高出 32.1pp，但后面3张全挤在 229.7 到 230.1 之间，差不到 2pp。\n\n加上 Recent 是 0 次记录，最近大概没怎么上线。\n整体看下来，这个账号的标签很清楚：高 Acc 覆盖、HD/NM 双修、aim-alt 均衡，但离“冲顶”还差一点狠劲——不过以这份稳度，想再往上走，缺的也许只是多打几把。"
+                },
+                {
+                  "attempt": 3,
+                  "outcome": "rejected",
+                  "reasons": [
+                    "生硬翻译或错误命名了 HD"
+                  ],
+                  "draft": "【结论】\n\nCjhSmileFace 这个账号，最显眼的标签是“稳”——不是那种靠单一神图撑起来的孤峰型玩家，而是把 4650.3pp 均匀铺在 100 张 BP 上的扎实型选手。\nMod 选择也印证了这种风格——HD 占 73 张、NM 占 22 张，两者合计 95 张，几乎完全避开高风险高回报的 Mod 组合，连 HR 都是 0 张。\n\nHD 平均 Acc 98.39% 比 NM 的 98.23% 还略高一点，说明这位玩家不是靠 HD 碰运气，而是真的把 Hidden 玩成了日常习惯。\nPP+ 的六维条里 Accuracy 5.38 和 Jump 2.90 相对突出，Speed 2.05 最低，和 BP 里高 Acc、无 HR、少 DT 的表现方向一致——这位玩家更像是在舒适区内把准确率打磨到极致，而不是硬冲速度或耐力极限。\n\n唯一让人有点好奇的是 Recent 记录是 0 次，最近似乎没怎么上线。如果哪天回来继续打，大概还是会沿着这条高 Acc、稳星数、HD 为主的路子走下去吧。"
+                }
+              ]
+            }
+          ],
+          "final": {
+            "sectionCommentsSource": "llm",
+            "sectionCommentSources": {
+              "profile": "llm",
+              "top": "llm",
+              "top5": "llm",
+              "mods": "llm",
+              "pplus": "llm",
+              "recent": "llm",
+              "classification": "llm"
+            },
+            "conclusionSource": "fallback",
+            "fullReportFallback": false
+          }
+        },
+        "reviewLog": [
+          {
+            "round": 1,
+            "verdicts": [
+              {
+                "section": "profile",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "top",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "top5",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "mods",
+                "result": "REJECT",
+                "kind": "hard",
+                "reason": "HR 1张没碰与 verified_facts 中 BP 含 HR 0 张矛盾"
+              },
+              {
+                "section": "pplus",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "recent",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "classification",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "conclusion",
+                "result": "PASS",
+                "reason": ""
+              }
+            ],
+            "rejects": [
+              {
+                "section": "mods",
+                "kind": "hard",
+                "reason": "HR 1张没碰与 verified_facts 中 BP 含 HR 0 张矛盾"
+              }
+            ]
+          }
+        ],
+        "bestCount": 100,
+        "recentCount": 0,
+        "hasPPlus": true,
+        "errors": []
+      }
+    },
+    {
+      "key": "15924859",
+      "id": 15924859,
+      "startedAt": "2026-08-01T23:32:39.523Z",
+      "outputFile": "07-15924859.txt",
+      "finishedAt": "2026-08-01T23:33:15.563Z",
+      "metadata": {
+        "target": "Cirno not Baka",
+        "displayName": "Cirno not Baka",
+        "osuUserId": 15924859,
+        "createdAt": "2026-08-01T23:33:14.189Z",
+        "analysisModel": "deepseek-v4-flash",
+        "formatVersion": 87,
+        "conclusionSource": "llm",
+        "conclusionValidationReasons": [],
+        "sectionCommentsSource": "llm",
+        "sectionCommentSources": {
+          "profile": "llm",
+          "top": "llm",
+          "top5": "llm",
+          "mods": "llm",
+          "pplus": "llm",
+          "recent": "llm",
+          "classification": "llm"
+        },
+        "sectionCommentsValidationReasons": [],
+        "generationTrace": {
+          "sectionComments": [
+            {
+              "trigger": "initial",
+              "trace": [
+                {
+                  "attempt": 1,
+                  "outcome": "rejected",
+                  "reasons": [
+                    "profile 短评语义终审：账号年龄核准为约 6.6 年，与“20 年”不符",
+                    "profile 短评语义终审：账号年龄核准为约 6.6 年，与“快 6 年半”不符",
+                    "recent 短评语义终审：把两批样本平均星数接近误写成了同一难度的谱面或单图关系"
+                  ],
+                  "draft": "```json\n{\n  \"profile\": \"Cirno not Baka，CN 区 #439，全球 #25,645，7667pp 这个位置挺有分量的——不是那种一眼望到头的顶分号，但放在 CN 这个大区里绝对算得上有点东西。总 Acc 96.57% 挂着，等级 100 级 14%，游玩时长才 8 天 17 小时，14,943 次游玩摊下来这个量级，说明上手效率相当高。评级分布倒是挺有意思，SS 只有 2 张，S 也才 48 张，A 却堆了 734 张——这账号明显是奔着刷分去的，不太在乎清谱面刷评级的仪式感。2020 年注册，到现在 2,399 天，快 6 年半的老号了，但总游玩时间才 8 天多，中间大概有大把空白期。综合看下来，这是个典型的高效冲分账号，体量不大，但每一点游玩时间都砸在提升 pp 上了。\",\n  \"top\": \"100 张 BP 全在 5.83★ 到 8.07★ 之间，平均 7.07★，92 张超过 6.5★——这个账号基本就是住在高星区不下来的类型。Acc 分布倒是有点两极，98% 以上只有 14 张，低于 95% 的有 29 张，平均 95.63%，说明这位玩家在高星图上的表现是起伏型的，不是那种稳扎稳打刷高 Acc 的风格。5★ 以下的图一张都没进 BP，这个筛选标准挺明确的。\",\n  \"top5\": \"头名 426.2pp 是 HDDT 打的，但 Acc 只有 94.33%，反而是第五名 NM 99.06% 的 390.3pp 看起来更干净。前五没有共同的 Mod 口径，NM 和 HDDT 混着来，最高最低只差 36pp，整体是个紧凑的头部。不过 #1 到 #2 差了 16.7pp，算是前五里唯一一个像样的断层，后面 #2 到 #3 只差 1.8pp，挤得很。头名虽然挂着，但 Acc 不太撑得住场面。\",\n  \"mods\": \"BP 里 65 张纯 NM 占大头，平均 Acc 96.75% 是最高的一档；DT 18 张平均 Acc 掉到 94.16%，HDDT 12 张更是只有 92.66%——带提速的 Acc 明显往下走，但 pp 反而没掉，HDDT 平均 340.9pp 是全场最高的。HR 只碰了 2 张但 Acc 98.03%，看来这位玩家对 HR 的态度是宁缺毋滥。整体就是 NM 保底、DT 系冲上限的结构。\",\n  \"pplus\": \"六个维度里 Accuracy 7.33 和 Flow 6.88 领跑，Jump 6.76 紧随其后，Precision 5.17 和 Stamina 5.14 差不多，Speed 4.88 垫底。这个形状挺有意思的——准度和流畅度是强项，但速度和耐力明显是短板，而且和 Accuracy 差了一截，不是那种全面开花的类型。不过这些条都是相对自己的，别拿去跟别人比。\",\n  \"recent\": \"最近 50 次游玩平均 Acc 只有 90.13%，比 BP 平均 95.63% 掉了 5.5 个百分点，星数倒是差不多（7.20★ vs 7.07★），49 次 NM 加 1 次 HDDT。这明显不是状态在线时的数据——同样的难度区间，Acc 掉这么多，要么是最近在试新图练手，要么就是随便打打没认真。反正 BP 里那个 96% 左右的水平最近没怎么体现出来。\",\n  \"classification\": \"BP 100 张里 aim 46 张占近一半，stream 30 张紧随其后，alt 和 tech 各 14 张和 10 张。这结构挺清晰的：aim 是绝对主力，stream 也有相当分量，alt 和 tech 属于配菜。跟 PP+ 里 Flow 偏高、Jump 也不低的方向对得上，整个 BP 的选图口味算是比较统一的。\"\n}\n```"
+                },
+                {
+                  "attempt": 2,
+                  "outcome": "accepted",
+                  "reasons": [],
+                  "draft": "{\n  \"profile\": \"这个账号的全球排名在 #25,645，国家排名 #439，7667.4pp 的体量放在注册约 2,399 天（约 6.6 年）的跨度里，算是稳步堆出来的成绩。总命中率 96.57%，游玩时长只有 8 天 17 小时，但游玩次数 14,943 次，平均下来每次游玩的时间很短，像是高频短打型。评级分布里 A 有 734 个，明显比 S 和 SS 多出一大截，说明这位玩家刷图量很大，但并不是每张都追求完美收尾，更像是把精力放在不断尝试新图上。等级 100（14%）不算特别高，但结合 BP 平均星数 7.07★，可以看出这位玩家在难度上已经走得很深了，只是不太在意刷评级。\",\n  \"recent\": \"最近 50 次游玩的平均星数 7.20★，和 BP 的 7.07★ 几乎贴在一起，说明这位玩家最近还是在打差不多难度的图。但平均 Acc 只有 90.13%，比 BP 的 95.63% 低了 5.51 个百分点，而且 49 次都是 NM，只有 1 次 HDDT——看起来最近要么是在试新图，要么就是状态没在线，准确率明显没跟上平时的水平。\"\n}"
+                }
+              ]
+            }
+          ],
+          "conclusion": [
+            {
+              "trigger": "initial",
+              "trace": [
+                {
+                  "attempt": 1,
+                  "outcome": "accepted",
+                  "reasons": [],
+                  "draft": "【结论】\n\n全球排名 #25,645，总 PP 7667.4pp——这个账号最显眼的不是某个孤峰，而是一个很奇特的“均衡偏科”结构。\n5张最高成绩里，HDDT、NM、HDDT、NM、NM 交替出现，没有共同 Mod 口径，说明这位玩家不是把某个 Mod 焊在手里的单线程选手。\n\nPP+ 的六维分布也跟这个印象咬合：Accuracy 7.33 和 Flow 6.88 是最高两项，Speed 4.88 垫底，Jump 6.76 居中。\n分类器里 aim 46 张、stream 30 张各占大头，和“Flow 高、Speed 低”的方向能对上，但没必要硬扯成因果。\n\n不过最近 50 次游玩的平均 Acc 掉到 90.13%，比 BP 低 5.51 个百分点，星数却还撑着 7.20★——这个账号最近明显没在刷分，更像是在挑高星图打、但手感没完全在线。\n7667.4pp 放在 #25,645，不靠精密度吃饭，靠的是“敢打”两个字。"
+                }
+              ]
+            }
+          ],
+          "final": {
+            "sectionCommentsSource": "llm",
+            "sectionCommentSources": {
+              "profile": "llm",
+              "top": "llm",
+              "top5": "llm",
+              "mods": "llm",
+              "pplus": "llm",
+              "recent": "llm",
+              "classification": "llm"
+            },
+            "conclusionSource": "llm",
+            "fullReportFallback": false
+          }
+        },
+        "reviewLog": [
+          {
+            "round": 1,
+            "verdicts": [
+              {
+                "section": "profile",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "top",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "top5",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "mods",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "pplus",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "recent",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "classification",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "conclusion",
+                "result": "PASS",
+                "reason": ""
+              }
+            ],
+            "rejects": []
+          }
+        ],
+        "bestCount": 100,
+        "recentCount": 50,
+        "hasPPlus": true,
+        "errors": []
+      }
+    },
+    {
+      "key": "23562404",
+      "id": 23562404,
+      "startedAt": "2026-08-01T23:33:15.788Z",
+      "outputFile": "08-23562404.txt",
+      "finishedAt": "2026-08-01T23:34:01.896Z",
+      "metadata": {
+        "target": "owoshuangshi",
+        "displayName": "owoshuangshi",
+        "osuUserId": 23562404,
+        "createdAt": "2026-08-01T23:33:58.466Z",
+        "analysisModel": "deepseek-v4-flash",
+        "formatVersion": 87,
+        "conclusionSource": "llm",
+        "conclusionValidationReasons": [],
+        "sectionCommentsSource": "llm",
+        "sectionCommentSources": {
+          "profile": "llm",
+          "top": "llm",
+          "top5": "llm",
+          "mods": "llm",
+          "pplus": "llm",
+          "recent": "llm",
+          "classification": "llm"
+        },
+        "sectionCommentsValidationReasons": [],
+        "generationTrace": {
+          "sectionComments": [
+            {
+              "trigger": "initial",
+              "trace": [
+                {
+                  "attempt": 1,
+                  "outcome": "accepted",
+                  "reasons": [],
+                  "draft": "```json\n{\n  \"profile\": \"owoshuangshi 这个账号，6768pp 挂在全球 #41,531，国家 #761，属于那种一眼看过去就知道在认真玩、但还没挤进顶尖圈子的位置。总 Acc 97.96% 放在 35,921 次游玩里算相当扎实，不过评级分布倒是很有个性——A 有 2129 次，S 只有 285 次，这反差比等级 101 还有辨识度。玩了 38 天 22 小时，注册快五年了，账号年龄 1,898 天，体量摆在这，不是随便玩玩的那种。整体看下来，是一个有积累、有底子，但成绩结构里藏着不少'差一点'痕迹的玩家。\",\n  \"top\": \"BP 100 张，平均星数 6.28★，范围 5.52★ 到 7.41★，跨度不算夸张，但 5-6.5★ 占 71 张，说明主力区间很集中。Acc 平均 97.19%，98% 以上 36 张、低于 95% 只有 9 张，分布其实挺健康的——高 Acc 是主流，低 Acc 是少数，不是全线飘忽的类型。DT 50 张 + NM 24 张直接占掉 74%，这 BP 构成倒是很直白。\",\n  \"top5\": \"头名 427.9pp 的 DT 成绩明显是个小孤峰，跟第二名差了 64.2pp，后面 #2 到 #5 却挤在 363.7、353.6、351.8、351.5 之间，相邻差从 10.1 一路缩到 0.3pp，像是五张图里只有一张特别突出，其余四张其实实力咬得很紧。有意思的是 #4 是 HR 撑场，五张里没有共同 Mod 口径，构成还挺杂的。\",\n  \"mods\": \"DT 50 张平均 Acc 97.26%、平均 PP 276.5，NM 24 张平均 Acc 97.38%、平均 PP 261.6——DT 多但 Acc 没掉，说明提速没怎么牺牲准度。HR 14 张平均 Acc 96.30% 稍微低一点，PP 倒是跟 NM 差不多。NC 11 张平均 PP 274.9 跟 DT 几乎持平，唯一一张 HDHR 直接 98.61%、317.9pp，单独拎出来还挺亮眼的。\",\n  \"pplus\": \"六维显示条里 Accuracy 8.29 一骑绝尘，Jump 4.79 排第二，但 Stamina 只有 2.89 垫底，中间断层挺明显的。Flow 4.06 和 Precision 3.64 算中游，Speed 3.10 也偏低——准度是绝对强项，耐力这块明显是短板，跟 BP 里高 Acc 占比多的观察倒是很搭。\",\n  \"recent\": \"最近 42 次记录平均 Acc 85.18%，比 BP 的 97.19% 掉了整整 12 个百分点，星数却还高了 0.22★ 到 6.50★——这是突然跑去挑战更难的图，还是状态不在线？40 次 NM + 2 次 HRRX 的配置也跟 BP 的 DT 大户风格差很远，最近这段玩得跟平时完全不是一个人。\",\n  \"classification\": \"BP 100 张里 aim 62 张占了大头，alt 19 张、tech 11 张、stream 8 张，第二类跟第一类差了 43 张，结构非常倾斜。aim 系主导很明显，alt 和 tech 算是有一定存在感，stream 基本是点缀——这分类跟 PP+ 里 Jump 偏高、Stamina 垫底的方向倒是能对上，不过样本只是当前 BP，别急着当永久标签。\"\n}\n```"
+                }
+              ]
+            }
+          ],
+          "conclusion": [
+            {
+              "trigger": "initial",
+              "trace": [
+                {
+                  "attempt": 1,
+                  "outcome": "rejected",
+                  "reasons": [
+                    "综合结论没有使用核准的全球 rank 或账号总 pp 判断分量"
+                  ],
+                  "draft": "【结论】\n\nowoshuangshi 这个账号，像是一台把“准”字焊在按键上的机器，但机器偶尔也会闹点小脾气。\n再看 Recent 的 42 次游玩，平均 Acc 掉到 85.18%，比 BP 低了整整 12.01 个百分点，星数却还挂在 6.50★ 附近，NM 占 40 次。\n\n这哪是状态下滑，分明是最近没怎么认真打，随手摸了几把高星图就溜了。\nPP+ 的显示条也很有趣：Accuracy 8.29 和 Jump 4.79 高高翘起，Stamina 2.89 却垫底——准头是天赋，耐力是短板，这账号的骨架就是“精准但不持久”。\n\n一个靠 DT 和 NM 撑起大半江山、用 97% 以上的 Acc 把 BP 铺得整整齐齐的准星型玩家，但 BP 里那 9 张低于 95% 的成绩和 Recent 的飘忽，又像在说：这位玩家认真起来能打出孤峰，放松下来也敢把 Acc 甩到 85%。\n挺好，至少比那些只会刷一种 Mod 的机器人有趣多了。"
+                },
+                {
+                  "attempt": 2,
+                  "outcome": "accepted",
+                  "reasons": [],
+                  "draft": "【结论】\n\nowoshuangshi 这个账号，最显眼的不是哪1张 BP 特别高，而是整个 BP 列表像一棵被 DT 浇灌出来的树——61 张带 DT/NC 的成绩铺满前 100，纯 NM 也有 24 张垫底，合计 74 张占了四分之三。\n但 Recent 的 42 次样本平均 Acc 直接掉到 85.18%，比 BP 低了整整 12 个百分点，而且 40 次都是 NM。\n\nBP 里 aim 类占了 62 张，alt 19 张，tech 和 stream 加起来才 19 张，跟 PP+ 的 Jump 偏高、Stamina 偏低方向一致。\n整体看下来，owoshuangshi 是个靠 DT 和 aim 图堆出 6768.3pp 的账号，BP 列表厚实且均匀，但最近的状态明显不在线——Recent 那 85% 的平均 Acc 跟 BP 的 97% 放在一起，怎么看都像在摸鱼。\n\n要是认真起来，这个账号的底子其实挺能打的。"
+                }
+              ]
+            }
+          ],
+          "final": {
+            "sectionCommentsSource": "llm",
+            "sectionCommentSources": {
+              "profile": "llm",
+              "top": "llm",
+              "top5": "llm",
+              "mods": "llm",
+              "pplus": "llm",
+              "recent": "llm",
+              "classification": "llm"
+            },
+            "conclusionSource": "llm",
+            "fullReportFallback": false
+          }
+        },
+        "reviewLog": [
+          {
+            "round": 1,
+            "verdicts": [
+              {
+                "section": "profile",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "top",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "top5",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "mods",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "pplus",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "recent",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "classification",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "conclusion",
+                "result": "PASS",
+                "reason": ""
+              }
+            ],
+            "rejects": []
+          }
+        ],
+        "bestCount": 100,
+        "recentCount": 42,
+        "hasPPlus": true,
+        "errors": []
+      }
+    },
+    {
+      "key": "37645378",
+      "id": 37645378,
+      "startedAt": "2026-08-01T23:34:02.117Z",
+      "outputFile": "09-37645378.txt",
+      "finishedAt": "2026-08-01T23:34:47.771Z",
+      "metadata": {
+        "target": "159263748abc",
+        "displayName": "159263748abc",
+        "osuUserId": 37645378,
+        "createdAt": "2026-08-01T23:34:45.441Z",
+        "analysisModel": "deepseek-v4-flash",
+        "formatVersion": 87,
+        "conclusionSource": "llm",
+        "conclusionValidationReasons": [],
+        "sectionCommentsSource": "llm",
+        "sectionCommentSources": {
+          "profile": "llm",
+          "top": "llm",
+          "top5": "llm",
+          "mods": "llm",
+          "pplus": "llm",
+          "recent": "llm",
+          "classification": "llm"
+        },
+        "sectionCommentsValidationReasons": [],
+        "generationTrace": {
+          "sectionComments": [
+            {
+              "trigger": "initial",
+              "trace": [
+                {
+                  "attempt": 1,
+                  "outcome": "rejected",
+                  "reasons": [
+                    "top5 短评语义终审：BP5 中精确组合 TDHD的核准数量为 3 张，不是 2 张"
+                  ],
+                  "draft": "```json\n{\n  \"profile\": \"159263748abc 这个账号……怎么说呢，像是一位刚刚开始探索 osu! 世界的新朋友。497 天注册时间，实际游玩时长只有 2 天 9 小时，目前 1328.4pp 排在全球 #681,713。等级 84 级算是稳步推进，但 2710 次游玩里 A 评 74 张、S 评 29 张，SS 还是零——这个分布挺有意思的，看起来玩得多但还没到收尾阶段。总 acc 93.38% 放到这个体量里算正常偏上，不过要是拿这个成绩单去跟高段位玩家比，那差距还是肉眼可见的。整体感觉就是：还在积累手感，远没到定型的时候。\",\n  \"top\": \"BP 一百张全是 5★ 以下的图，平均星数 3.53★，最高也才 4.76★。这个区间选得挺稳的，但 acc 分布就有点扎眼了——低于 95% 的占了 75 张，98% 以上只有 4 张。怎么说呢，像是在舒适区里反复试错，但还没找到真正能拿稳的节奏。\",\n  \"top5\": \"最高 78.7pp，最低 58.5pp，跨度 20.2pp 不算大，但 #3 到 #4 之间那 10.0pp 的断层挺显眼的。前两张都是 TDHD 收的，acc 都在 94% 上下，看起来是同一类图上的稳定发挥；到 #4 突然掉到 87.24%，那一跳大概是状态飘了一下吧。\",\n  \"mods\": \"TD 占了 100 张里的 87 张，准确说是 TD 和 TDHD 合计 87%，这触屏浓度也太高了吧。HD 出现 24 次，HR 只有 1 次，DT/NC 是零——完全不碰提速，看来是喜欢原速慢慢啃的类型。SD 那 13 张 acc 反而偏高，平均 95.29%，有点意思。\",\n  \"pplus\": \"六维里 Precision 和 Jump 明显是顶出来的，1.79 和 1.76；Flow 0.68 和 Stamina 0.71 就塌下去了。这个形状挺典型的——短距离精确操作有点东西，但长串和持续输出明显还没练出来。Speed 0.84 也偏低，跟完全不碰 DT 倒是能对上。\",\n  \"recent\": \"最近一条成绩都没有，API 那边干净得跟新号一样。按这个 BP 体量来看，要么是刚打完一批在歇着，要么就是暂时没找到想打的图。反正数据没说，我就先当这位玩家最近没怎么上线吧。\",\n  \"classification\": \"BP 分类结果挺一边倒的：alt 75%、aim 14%、tech 6%、stream 5%。这 alt 占比高得有点离谱了，跟 PP+ 里 Jump 偏高、Flow 偏低的方向倒是能对上——看来目前主要在跟短距离 alt 图较劲，长串和耐力向的内容还排不太上号。\"\n}\n```"
+                },
+                {
+                  "attempt": 2,
+                  "outcome": "accepted",
+                  "reasons": [],
+                  "draft": "```json\n{\n  \"top5\": \"前五张里三张都挂着 TDHD，剩下两张分别加了 SD 和单 TD，五张居然没有一张共享完整 Mod 组合，这搭配有点随性啊。头名 78.7pp 和第二名 71.5pp 咬得挺近，但第三名 69.3pp 到第四名 59.3pp 之间直接掉了 10pp，中间像被抽走一层。第四张 87.24% 的 Acc 在五张里明显拖后腿，跟前后的 95% 上下比有点扎眼。整体星数都在 4★ 上下晃，没有哪张特别跳出来。\"\n}\n```"
+                }
+              ]
+            }
+          ],
+          "conclusion": [
+            {
+              "trigger": "initial",
+              "trace": [
+                {
+                  "attempt": 1,
+                  "outcome": "rejected",
+                  "reasons": [
+                    "分析对象 159263748abc 未确认是发起者本人，不能使用第二人称"
+                  ],
+                  "draft": "【结论】\n\n全球排名 #681,713，总 PP 1328.4pp——这个账号最显眼的不是数字本身，而是它把“触屏”打成了自己的宇宙。\nBP 里 100 张全是 TD，87% 是 TD 或 TDHD，5★ 以上一张都没有，平均星数 3.53★。\n\n但这份账号也特别诚实——75% 的 BP 低于 95% Acc，平均 90.63%，只有 4 张摸到 98% 以上。\nPP+ 的 Precision 和 Jump 明显最高，Flow 和 Stamina 垫底，跟 BP 里 75% 是 alt 分类完全对得上。\n\n所以这不是“乱打”的账号，是方向很明确的账号：靠触屏、靠精准、靠短促的节奏型图来堆 PP，而不是靠耐力或长串。\nSD 那 13 张平均 Acc 95.29%，比整体高出一截，说明这位玩家在“不能失误”的场合反而更收得住手，挺有意思的。\n\n最近 0 次记录，可能是在歇着，也可能只是没上传。1328.4pp 放在 #681,713，不算耀眼，但它的辨识度比很多高 PP 账号都强——因为你看一眼 BP 构成，就知道这是谁。"
+                },
+                {
+                  "attempt": 2,
+                  "outcome": "accepted",
+                  "reasons": [],
+                  "draft": "【结论】\n\n159263748abc 这个账号，全球排名 #681,713，总 PP 1328.4pp，最显眼的标签不是“触屏玩家”，而是“用触屏把 alt 图刷成了舒适区”的人。\nBP 里 100 张全部带 TD，其中 TD 和 TDHD 合计 87 张，占掉 87% 的席位——这不是偶尔试试触屏，这是直接把触屏焊在了成绩单上。\n\nPP+ 显示条也印证了这一点：Precision 和 Jump 两条明显高于 Flow 和 Stamina，说明它更擅长点状、离散的发力，而不是持续输出。\nSD 那 13 张平均 Acc 反而有 95.29%，比整体高出一截，像是偶尔认真一下，但大部分时间都在“刷过去就算”。\n\n最近 0 次记录，这个账号大概已经歇了一阵。不过它留下的 100 个 BP 已经足够说明：这是一个用触屏、吃 alt、不追求完美但极其执着于“打进去”的账号。\n\n1328.4pp 的体量不算大，但结构干净得像一个实验——而实验结论是：TD + alt 这条路，确实能走，只是走出来的成绩单，有点歪歪扭扭的可爱。"
+                }
+              ]
+            }
+          ],
+          "final": {
+            "sectionCommentsSource": "llm",
+            "sectionCommentSources": {
+              "profile": "llm",
+              "top": "llm",
+              "top5": "llm",
+              "mods": "llm",
+              "pplus": "llm",
+              "recent": "llm",
+              "classification": "llm"
+            },
+            "conclusionSource": "llm",
+            "fullReportFallback": false
+          }
+        },
+        "reviewLog": [
+          {
+            "round": 1,
+            "verdicts": [
+              {
+                "section": "profile",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "top",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "top5",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "mods",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "pplus",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "recent",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "classification",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "conclusion",
+                "result": "REJECT",
+                "kind": "hard",
+                "reason": "结论中“它更擅长点状、离散的发力”把 PP+ 显示条直接翻译成具体操作能力，违反第 3 条。"
+              }
+            ],
+            "rejects": [
+              {
+                "section": "conclusion",
+                "kind": "hard",
+                "reason": "结论中“它更擅长点状、离散的发力”把 PP+ 显示条直接翻译成具体操作能力，违反第 3 条。"
+              }
+            ]
+          }
+        ],
+        "bestCount": 100,
+        "recentCount": 0,
+        "hasPPlus": true,
+        "errors": []
+      }
+    },
+    {
+      "key": "1455309",
+      "id": 1455309,
+      "startedAt": "2026-08-01T23:34:47.991Z",
+      "outputFile": "10-1455309.txt",
+      "finishedAt": "2026-08-01T23:35:33.669Z",
+      "metadata": {
+        "target": "Ciel",
+        "displayName": "Ciel",
+        "osuUserId": 1455309,
+        "createdAt": "2026-08-01T23:35:31.277Z",
+        "analysisModel": "deepseek-v4-flash",
+        "formatVersion": 87,
+        "conclusionSource": "llm",
+        "conclusionValidationReasons": [],
+        "sectionCommentsSource": "llm",
+        "sectionCommentSources": {
+          "profile": "llm",
+          "top": "llm",
+          "top5": "llm",
+          "mods": "llm",
+          "pplus": "llm",
+          "recent": "llm",
+          "classification": "llm"
+        },
+        "sectionCommentsValidationReasons": [],
+        "generationTrace": {
+          "sectionComments": [
+            {
+              "trigger": "initial",
+              "trace": [
+                {
+                  "attempt": 1,
+                  "outcome": "accepted",
+                  "reasons": [],
+                  "draft": "{\n  \"profile\": \"Ciel 这个号注册到现在已经 5,256 天了，但游玩时长只有 5 天 15 小时，典型的老号新皮——账号年龄比很多人的青春还长，实际游戏时长却短得让我差点以为看错。现在 2,900.9pp、全球 #296,487，等级 96 还差 77% 到 97，总 Acc 96.15% 算是个挺体面的底子。但评级分布那块就有点意思了：SSH 一个没有，SS 才 2 个，S 40 个，A 却有 268 个——这 A 的数量几乎是 S 的七倍，说明这位玩家经常能打出不错的成绩，但离完美总差那么一口气，像考试永远拿 A 却拿不到 A+ 的感觉。11,121 次游玩说多不多说少不少，但摊到 5 天多的时间里，密度倒是挺高的。\",\n  \"top\": \"BP 平均 5.36★，跨度从 4.06★ 到 6.64★，大部分成绩挤在 5 到 6.5 星之间，75 张占了一大半。Acc 平均 94.39%，但超过一半低于 95%，98% 以上的只有 9 张——这个分布真的不算稳，像在挑战边缘反复试探。\",\n  \"top5\": \"前五张里 #1 和 #2 只差 1.1pp，#2 和 #3 差 2.1pp，头部咬得很紧；但 #3 到 #4 突然拉开 13pp，像三个小伙伴手拉手跑着，第四个掉队了。最高 166.6pp 那张 HD 才 97.13%，反而 #2 的 NM 有 98.68%，有点反差。\",\n  \"mods\": \"BP 里 86 张纯 NM，14 张 HD，没有 HR、DT/NC，也没看到任何特殊 Mod——这位玩家几乎不碰变速和加难，就老老实实打原速图，最多加个 HD 提点分。\",\n  \"pplus\": \"六维显示条里 Accuracy 2.36 和 Flow 2.16 最高，Precision 1.61 垫底，Speed 1.63 也偏低。整体都在基准线 15 以下，形状有点头重脚轻，准度和流畅感还行，但精准度和速度明显拖后腿。\",\n  \"recent\": \"Recent 样本是 0，API 没返回任何近期成绩。最近可能没怎么上线，或者没留下新记录，反正这块是空白的。\",\n  \"classification\": \"BP 里 alt 30 张最多，tech 26 张紧跟，aim 和 stream 各 22 张。alt 和 tech 加起来占了一半多，看起来这位玩家挺吃这两种类型的，但只代表当前 BP 构成，别急着下定论。\"\n}"
+                }
+              ]
+            }
+          ],
+          "conclusion": [
+            {
+              "trigger": "initial",
+              "trace": [
+                {
+                  "attempt": 1,
+                  "outcome": "rejected",
+                  "reasons": [
+                    "账号年龄核准为约 14.4 年，与“12 年”不符"
+                  ],
+                  "draft": "【结论】\n\n全球排名 #296,487，总 PP 2900.9pp——这个账号最扎眼的地方不是数字本身，而是它活得像一份 2012 年的时间胶囊。\n注册 5,256 天，玩了 5 天 15 小时，BP 里 86 张纯 NM、14 张 HD，HR、DT/NC 全部挂零。\n\n但别急着把它定性成“稳定扎实的老玩家”——BP 平均 Acc 94.39%，超过一半成绩低于 95%，98% 以上只有 9 张。\n再看 PP+ 六维，Accuracy 2.36 和 Flow 2.16 明显高出 Precision 1.61 一截，跟 BP 里 alt 30 张、tech 26 张的分类结构方向对得上——这位玩家不是靠精准点跳吃饭的类型，更接近在复杂节奏里靠手感流动硬撑的类型。\n\n最妙的是 BP5 的排列：166.6pp 和 165.5pp 只差 1.1pp，然后 #3 到 #4 突然掉 13.0pp。\n最近 0 次记录，大概又是那种“想起来就回来打几把”的老玩家节奏吧——这账号不需要刷存在感，它光是存在本身，就已经很 osu! 了。"
+                },
+                {
+                  "attempt": 2,
+                  "outcome": "rejected",
+                  "reasons": [
+                    "账号年龄核准为约 14.4 年，与“10年”不符",
+                    "账号年龄核准为约 14.4 年，与“10年”不符",
+                    "包含简报外数字: 5000"
+                  ],
+                  "draft": "【结论】\n\nCiel 这个账号，2900.9pp 挂在 #296,487，一眼看过去就是个“老树发新芽”的典型——注册了5000多天，结果游玩时长才 5 天 15 小时，等级 96 卡在 77%，这种“10年老号、1周真玩”的结构本身就够我笑一下了。\n但真正有意思的不是时间账，而是这个 BP 的形状：100张成绩里 86 张纯 NM，14 张 HD，HR 和 DT 一张都没有，这哪是保守，这是把“我就想按自己的节奏打”写在了脸上。\n\n可偏偏 BP5 里又有 98.68%、98.48% 这种漂亮数字，说明不是打不动，是没把每张图都当回事。\nPP+ 的六维条也很有意思，Accuracy 2.36 和 Flow 2.16 最高，Precision 1.61 垫底，跟 BP 里那种“大方向对、细节随缘”的命中分布刚好对上。\n\n最让我想吐槽的是 Recent 样本是 0 次——最近压根没怎么玩。这个账号的辨识度不在成绩多亮眼，而在于它10年如一日地拒绝被任何主流玩法裹挟。"
+                },
+                {
+                  "attempt": 3,
+                  "outcome": "accepted",
+                  "reasons": [],
+                  "draft": "【结论】\n\n这个账号像一本翻到一半就合上的旧书——注册于 2012/3/11，账号年龄约 5,256 天，全球排名 #296,487，总 PP 2900.9pp，等级 96（77%），游玩时长却只有 5 天 15 小时。\nBP 平均 Acc 94.39%，但 98% 以上只有 9 张，低于 95% 的却有 52 张，超过一半的成绩都没能收稳。\n\nBP5 里 #1 与 #2 只差 1.1pp，#3 与 #4 却差了 13.0pp，说明顶端不是一条平滑的坡，而是一小段陡坎。\nPP+ 显示条里 Accuracy 2.36 与 Flow 2.16 最高，Precision 1.61 最低，方向与 BP 里“Acc 偏低、NM 为主”的观察相容，但也就是相容而已，不能拼成因果。\n\n最近 0 次记录，没有近期成绩可看。它不新、不厚、不专、也不稳，就是一个被时间拉得很长、却被游玩量压得很扁的旧存档。"
+                }
+              ]
+            }
+          ],
+          "final": {
+            "sectionCommentsSource": "llm",
+            "sectionCommentSources": {
+              "profile": "llm",
+              "top": "llm",
+              "top5": "llm",
+              "mods": "llm",
+              "pplus": "llm",
+              "recent": "llm",
+              "classification": "llm"
+            },
+            "conclusionSource": "llm",
+            "fullReportFallback": false
+          }
+        },
+        "reviewLog": [
+          {
+            "round": 1,
+            "verdicts": [
+              {
+                "section": "profile",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "top",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "top5",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "mods",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "pplus",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "recent",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "classification",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "conclusion",
+                "result": "PASS",
+                "reason": ""
+              }
+            ],
+            "rejects": []
+          }
+        ],
+        "bestCount": 100,
+        "recentCount": 0,
+        "hasPPlus": true,
+        "errors": []
+      }
+    }
+  ]
+}

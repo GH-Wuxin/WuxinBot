@@ -93,6 +93,8 @@ console.log('=== Unit: matchQuickCommand ===');
     ['!re', 'recent', '', {}],
     ['!pr 玩家', 'recent', '玩家', {}],
     ['!pp', 'pplus', '', {}],
+    ['!pl', 'pm', '', {}],
+    ['!etx', 'etx', '', {}],
     ['!i 玩家', 'info', '玩家', {}],
     ['!帮助', 'help', '', {}],
     ['！dice 6', 'dice', '6', {}],
@@ -107,6 +109,7 @@ console.log('=== Unit: matchQuickCommand ===');
     ['查', 'at_profile', '', { atTargets: ['123'] }],
     ['where qq=123', 'where', 'qq=123', {}],
     ['where Cookiezi', 'where', 'Cookiezi', {}],
+    ['+ ElicyAnn', 'pplus', 'ElicyAnn', {}],
     ['今日高光', 'highlight', '', {}],
     ['我的年度osu!', 'annual', '', {}],
     // Cut / removed / non-command messages must not match:

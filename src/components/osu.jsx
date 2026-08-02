@@ -313,7 +313,7 @@ function PlayerDrawer({ osuId, username, onClose }) {
     } else if (tab === 'recent' && data.recent === undefined && !loading.recent) {
       loadTab('recent', () => api(`/api/osu/player/${osuId}/recent?limit=10`));
     } else if (tab === 'pplus' && data.pplus === undefined && !loading.pplus) {
-      loadTab('pplus', () => api(`/api/osu/player/${osuId}/ppplus`));
+      loadTab('pplus', () => api(`/api/osu/player/${osuId}/pplus`));
     } else if (tab === 'bptype' && data.bptype === undefined && !loading.bptype) {
       loadTab('bptype', () => api(`/api/osu/player/${osuId}/bptype`));
     } else if (tab === 'badges' && data.badges === undefined && !loading.badges) {
@@ -514,21 +514,28 @@ function PPlusTab({ data, loading }) {
   const center = 80;
   const radius = 60;
   const angle = (index) => (Math.PI * 2 * index) / dims.length - Math.PI / 2;
+  const rawValues = dims.map((dim) => Number(bars[dim]) || 0);
+  const maxScale = Math.max(15, ...rawValues);
   const point = (index, value) => {
-    const r = (Math.max(0, Math.min(15, Number(value) || 0)) / 15) * radius;
+    const r = (Math.max(0, Number(value) || 0) / maxScale) * radius;
     return `${center + r * Math.cos(angle(index)).toFixed(4)},${center + r * Math.sin(angle(index)).toFixed(4)}`;
   };
   const polygon = dims.map((dim, index) => point(index, bars[dim])).join(' ');
-  const grid = [3, 6, 9, 12, 15].map((level) =>
+  const grid = [0.25, 0.5, 0.75, 1].map((fraction) =>
     dims.map((_, index) => {
-      const r = (level / 15) * radius;
+      const r = fraction * radius;
       return `${center + r * Math.cos(angle(index))},${center + r * Math.sin(angle(index))}`;
     }).join(' ')
   );
+  const refRing = dims.map((_, index) => {
+    const r = (15 / maxScale) * radius;
+    return `${center + r * Math.cos(angle(index))},${center + r * Math.sin(angle(index))}`;
+  }).join(' ');
   return (
     <div>
       <svg width="220" height="170" viewBox="0 0 160 160" style={{ display: 'block', margin: '0 auto' }}>
         {grid.map((points, index) => <polygon key={index} points={points} fill="none" stroke="#ddd" />)}
+        <polygon points={refRing} fill="none" stroke="#888" strokeDasharray="3 2" />
         {dims.map((_, index) => {
           const x = center + radius * Math.cos(angle(index));
           const y = center + radius * Math.sin(angle(index));
@@ -541,6 +548,7 @@ function PPlusTab({ data, loading }) {
           return <circle key={dim} cx={x} cy={y} r="2.5" fill="#3f7f6f" />;
         })}
       </svg>
+      <div style={{ fontSize: 11, color: '#888', marginTop: 2, textAlign: 'center' }}>虚线 = 15 基准线（LazyBot expertPlus 上限）</div>
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6, marginTop: 8 }}>
         {dims.map((dim) => (
           <div className="row" key={dim} style={{ margin: 0 }}>

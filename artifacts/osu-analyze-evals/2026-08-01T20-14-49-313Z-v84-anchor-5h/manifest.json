@@ -1,0 +1,311 @@
+{
+  "label": "v84-anchor-5h",
+  "playerSet": "golden",
+  "startedAt": "2026-08-01T20:14:49.315Z",
+  "apiBase": "http://127.0.0.1:8787",
+  "players": [
+    {
+      "key": "ahahhaha",
+      "id": 39873822,
+      "startedAt": "2026-08-01T20:14:49.795Z",
+      "finishedAt": "2026-08-01T20:15:37.696Z",
+      "outputFile": "01-ahahhaha.txt",
+      "metadata": {
+        "target": "ahahhaha",
+        "displayName": "ahahhaha",
+        "osuUserId": 39873822,
+        "createdAt": "2026-08-01T20:15:37.468Z",
+        "analysisModel": "deepseek-v4-flash",
+        "formatVersion": 83,
+        "conclusionSource": "llm",
+        "conclusionValidationReasons": [],
+        "sectionCommentsSource": "mixed",
+        "sectionCommentSources": {
+          "profile": "fallback",
+          "top": "llm",
+          "top5": "llm",
+          "mods": "llm",
+          "pplus": "llm",
+          "recent": "llm",
+          "classification": "llm"
+        },
+        "sectionCommentsValidationReasons": [
+          "profile 短评语义终审：把未经证据支持的原因或状态写成了事实：成长速度"
+        ],
+        "generationTrace": {
+          "sectionComments": [
+            {
+              "trigger": "initial",
+              "trace": [
+                {
+                  "attempt": 1,
+                  "outcome": "rejected",
+                  "reasons": [
+                    "profile 短评语义终审：把未经证据支持的原因或状态写成了事实：急着",
+                    "profile 短评语义终审：包含简报外数字: 2000",
+                    "top5 短评语义终审：把 BP5 的分数结构扩写成了状态、时间过程或能力故事",
+                    "mods 短评语义终审：把核准数量改写成了无法核验的“一半”比例",
+                    "recent 短评语义终审：把未经证据支持的原因或状态写成了事实：休息",
+                    "recent 短评语义终审：Recent 没有记录时不能把空白猜成休息、未游玩或现实状态",
+                    "profile 短评包含简报外数字: 2000"
+                  ]
+                },
+                {
+                  "attempt": 2,
+                  "outcome": "rejected",
+                  "reasons": [
+                    "profile 短评语义终审：擅自用中文数词换算了账号年龄"
+                  ]
+                },
+                {
+                  "attempt": 3,
+                  "outcome": "rejected",
+                  "reasons": [
+                    "profile 短评语义终审：把未经证据支持的原因或状态写成了事实：成长速度"
+                  ]
+                }
+              ]
+            }
+          ],
+          "conclusion": [
+            {
+              "trigger": "initial",
+              "trace": [
+                {
+                  "attempt": 1,
+                  "outcome": "accepted",
+                  "reasons": []
+                }
+              ]
+            },
+            {
+              "trigger": "review-round-1",
+              "trace": [
+                {
+                  "attempt": 1,
+                  "outcome": "rejected",
+                  "reasons": [
+                    "把总 Acc、游玩次数或注册时长拼成了未经核准的能力、经历或稀有度结论",
+                    "结论不能预测玩家账号的未来走向",
+                    "把当前分类构成扩写成了成长过程或未来样本目标",
+                    "包含简报外数字: 10"
+                  ]
+                },
+                {
+                  "attempt": 2,
+                  "outcome": "accepted",
+                  "reasons": []
+                }
+              ]
+            },
+            {
+              "trigger": "review-round-2",
+              "trace": [
+                {
+                  "attempt": 1,
+                  "outcome": "rejected",
+                  "reasons": [
+                    "把整体平均准确率与高准确率成绩数量拼成了同一个统计量",
+                    "包含简报外数字: 50"
+                  ]
+                },
+                {
+                  "attempt": 2,
+                  "outcome": "rejected",
+                  "reasons": [
+                    "把未经证据支持的原因或状态写成了事实：急着"
+                  ]
+                },
+                {
+                  "attempt": 3,
+                  "outcome": "accepted",
+                  "reasons": []
+                }
+              ]
+            }
+          ],
+          "final": {
+            "sectionCommentsSource": "mixed",
+            "sectionCommentSources": {
+              "profile": "fallback",
+              "top": "llm",
+              "top5": "llm",
+              "mods": "llm",
+              "pplus": "llm",
+              "recent": "llm",
+              "classification": "llm"
+            },
+            "conclusionSource": "llm",
+            "fullReportFallback": false
+          }
+        },
+        "reviewLog": [
+          {
+            "round": 1,
+            "verdicts": [
+              {
+                "section": "profile",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "top",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "top5",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "mods",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "pplus",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "recent",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "classification",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "conclusion",
+                "result": "REJECT",
+                "kind": "hard",
+                "reason": "结论将 PP+ 的 Precision/Jump 相对较高与 BP 中 85% alt 标签写成“方向是顺的”，把独立聚合值拼成不存在的因果关联。"
+              }
+            ],
+            "rejects": [
+              {
+                "section": "conclusion",
+                "kind": "hard",
+                "reason": "结论将 PP+ 的 Precision/Jump 相对较高与 BP 中 85% alt 标签写成“方向是顺的”，把独立聚合值拼成不存在的因果关联。"
+              }
+            ]
+          },
+          {
+            "round": 2,
+            "verdicts": [
+              {
+                "section": "profile",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "top",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "top5",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "mods",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "pplus",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "recent",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "classification",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "conclusion",
+                "result": "REJECT",
+                "kind": "hard",
+                "reason": "结论中“同1张图换个人打可能就 FC 了”暗示同一张图存在他人成绩，且“这位倒好，直接拿 HR 去撞墙”将 BP5 中 HR 低 Acc 解释为有意的冒险行为，属于未经证实的原因推断。"
+              }
+            ],
+            "rejects": [
+              {
+                "section": "conclusion",
+                "kind": "hard",
+                "reason": "结论中“同1张图换个人打可能就 FC 了”暗示同一张图存在他人成绩，且“这位倒好，直接拿 HR 去撞墙”将 BP5 中 HR 低 Acc 解释为有意的冒险行为，属于未经证实的原因推断。"
+              }
+            ]
+          },
+          {
+            "round": 3,
+            "verdicts": [
+              {
+                "section": "profile",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "top",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "top5",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "mods",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "pplus",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "recent",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "classification",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "conclusion",
+                "result": "REJECT",
+                "kind": "hard",
+                "reason": "结论将 PP+ 的 Precision/Jump 相对较高与 BP 中 alt 占 85% 写成方向对得上，构成对独立聚合值的因果拼接。"
+              }
+            ],
+            "rejects": [
+              {
+                "section": "conclusion",
+                "kind": "hard",
+                "reason": "结论将 PP+ 的 Precision/Jump 相对较高与 BP 中 alt 占 85% 写成方向对得上，构成对独立聚合值的因果拼接。"
+              }
+            ]
+          }
+        ],
+        "bestCount": 33,
+        "recentCount": 0,
+        "hasPPlus": true,
+        "errors": []
+      }
+    }
+  ],
+  "finishedAt": "2026-08-01T20:15:39.172Z"
+}
