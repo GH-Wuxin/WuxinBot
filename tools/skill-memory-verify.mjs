@@ -191,13 +191,28 @@ async function main() {
   }));
   const bounded = relevantPlayersSkillBlock({
     userId: 'REDACTED_QQ_001',
-    text: '比较一下我和 RivalPlayer',
+    text: '比较一下我和 RivalPlayer 的bp',
     maxRecords: 2,
   });
   assert(bounded.includes('[SHK]Wuxin'), 'bounded context must include current speaker');
   assert(bounded.includes('RivalPlayer'), 'bounded context must include explicitly named player');
   assert(!bounded.includes('Unrelated0'), 'bounded context must exclude unrelated full store');
   assert((bounded.match(/^- /gm) || []).length <= 2, 'bounded context must honor maxRecords');
+
+  const offTopic = relevantPlayersSkillBlock({
+    userId: 'REDACTED_QQ_001',
+    text: '晚上吃什么好',
+    maxRecords: 2,
+  });
+  assert(!offTopic.includes('[SHK]Wuxin'), 'off-topic chat must not inject speaker skill memory');
+  assert(!offTopic.includes('RivalPlayer'), 'off-topic chat must not inject mention/name skill memory');
+
+  const osuTopic = relevantPlayersSkillBlock({
+    userId: 'REDACTED_QQ_001',
+    text: '手感回来了，最近准度好多了',
+    maxRecords: 2,
+  });
+  assert(osuTopic.includes('[SHK]Wuxin'), 'osu-related chat must still inject speaker skill memory');
 
   console.log('All skill-memory regression tests PASSED.');
 }

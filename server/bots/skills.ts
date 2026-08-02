@@ -17,6 +17,37 @@ const MODE_ALIASES: Record<string, string> = {
   mania: 'mania',
 };
 
+// Signals that the current message is actually on an osu! topic. Speaker/mention
+// skill memory is only injected when the conversation is osu-related; otherwise
+// a big player dossier sits in the prompt for no reason and drags casual chat
+// back to osu! ("晚上吃什么" must not trigger "你 BP 里 HD 占比那么高").
+const OSU_TOPIC_SIGNALS = [
+  /osu|屙屎/i,
+  /\bbp\b|\bbp\s*#?\s*\d|bplist|\bbs\b|\bbs\s*#?\s*\d|best\s*play|top\s*play/i,
+  /\bpp\b|acc(?:uracy)?|准确率|准度/i,
+  /\brank|排名|世界第|全球第/i,
+  /星数|星级|★|打图|刷图|推图|过图|收图/i,
+  /\bfc\b|全连|\bs\s*rank\b|\bss\b|\bsh\b/i,
+  /手感|状态|飘|choke|串图|跳图|aim|stream|alt|tech|speed|flow|stamina|precision/i,
+  /mania|taiko|catch|ctb|std/i,
+  /recent|最近|今日|昨天.*成绩|成绩/i,
+  /图池|比赛|match|mp\b|观战/i,
+  /绑定|bind/i,
+  /\bmods?\b|\bhd\b|\bhr\b|\bdt\b|\bnc\b|\bez\b|\bnf\b|\bht\b/i,
+  /技能|skill|雷达|pp\+/i,
+  /谱面|beatmap|map\s*id|图\b/i,
+  /玩家|info|profile|资料|卡片|个人信息/i,
+  /得分|游玩|时长|hours|play\s*count/i,
+  /排行榜|leaderboard|\bwr\b|纪录|记录/i,
+];
+
+export function isLikelyOsuTopic(text: unknown): boolean {
+  const value = String(text || '').toLowerCase();
+  if (!value.trim()) return false;
+  if (/^\/w(?:uxin)?\s+osu(?:\s|$)/i.test(value)) return true;
+  return OSU_TOPIC_SIGNALS.some((re) => re.test(value));
+}
+
 function finiteNumber(value: unknown, fallback = 0): number {
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : fallback;
@@ -445,13 +476,20 @@ export function relevantPlayersSkillBlock(params: {
     selectedKeys.add(best.recordKey!);
   };
 
-  // Speaker first, then explicit QQ mentions, then usernames/osu IDs present in text.
+  // Speaker first, then explicit QQ mentions, then usernames/osu IDs present in
+  // text. Speaker/mention records are only pulled in when the message is on an
+  // osu! topic; naming a player in text is itself an osu-related signal.
   const speakerQq = String(params.userId || '').trim();
-  if (speakerQq) addIdentityMatches(all.filter(record => record.userId === speakerQq));
-  for (const qq of params.mentionedQqs || []) {
-    const key = String(qq || '').trim();
-    if (key) addIdentityMatches(all.filter(record => record.userId === key));
-    if (selected.length >= maxRecords) break;
+  const osuTopic = isLikelyOsuTopic(text);
+  if (speakerQq && osuTopic) {
+    addIdentityMatches(all.filter(record => record.userId === speakerQq));
+  }
+  if (osuTopic) {
+    for (const qq of params.mentionedQqs || []) {
+      const key = String(qq || '').trim();
+      if (key) addIdentityMatches(all.filter(record => record.userId === key));
+      if (selected.length >= maxRecords) break;
+    }
   }
   if (selected.length < maxRecords) {
     const textMatches = all.filter(record =>
@@ -476,7 +514,7 @@ export function relevantPlayersSkillBlock(params: {
     '',
     '【与当前对话相关的 osu! 技能记忆】',
     ...selected.slice(0, maxRecords).map(formatContextRecord),
-    '这些是旧分析留下的有限记忆。只在当前话题相关时自然使用，不要逐项背诵。',
+    '这些是旧分析留下的快照，可能已过期。日常聊天可以自然记得大概印象（比如“挺稳的”“BP 高星偏多”），但禁止用快照拼出具体成绩细节（某张图、某个 acc、某次 recent 的准确数字）；需要确认当前数据时必须调用查询工具，不能凭快照断言。如果对方说的数字和快照矛盾，以当前说法为准或建议查询，不要认定快照是对的。',
   ];
   return lines.join('\n');
 }
