@@ -61,11 +61,13 @@ const OWN_TOP = 100;
 const SIMILAR_TOP = 50;
 const SIMILAR_PER_MAP = 5;
 const SIMILAR_PER_MAP_RELAXED = 10;
-const MAX_SIMILAR_PLAYERS = 150;
-const CONCURRENCY = 10;
-const TIME_BUDGET_MS = 45_000;
+const MAX_SIMILAR_PLAYERS = 120;
+const CONCURRENCY = 20;
+const TIME_BUDGET_MS = 60_000;
 const CANDIDATE_CACHE_TTL_MS = 30 * 60_000;
 const CANDIDATE_POOL_SIZE = 12;
+const SIMILAR_TOP_CACHE_TTL_MS = 60 * 60_000;
+const REQUEST_TIMEOUT_MS = 15_000;
 
 const S_RANKS = new Set(['S', 'SH', 'SS', 'SSH']);
 
@@ -100,6 +102,39 @@ async function mapLimit<T, R>(
 }
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+const timeout = (ms: number) => new Promise<never>((_, reject) => {
+  setTimeout(() => reject(new Error(`osu! API timeout after ${ms}ms`)), ms);
+});
+
+async function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T | null> {
+  try {
+    return await Promise.race([promise, timeout(ms)]);
+  } catch {
+    return null;
+  }
+}
+
+async function fetchSimilarTopWithCache(playerId: number): Promise<OsuScore[] | null> {
+  const cacheKey = `simTop:${playerId}:osu:50`;
+  const cached = cacheGet<OsuScore[]>(cacheKey);
+  if (cached) return cached;
+  // One retry per request: a single flaky call must not starve the candidate
+  // pool, but a truly dead endpoint should not stall the whole batch.
+  let scores = await withTimeout(fetchBestScoresWithRetry(playerId, SIMILAR_TOP), REQUEST_TIMEOUT_MS);
+  if (!scores) {
+    scores = await withTimeout(fetchBestScoresWithRetry(playerId, SIMILAR_TOP), REQUEST_TIMEOUT_MS);
+  }
+  if (scores) cacheSet(cacheKey, scores, SIMILAR_TOP_CACHE_TTL_MS);
+  return scores;
+}
+
+async function fetchLeaderboardWithRetry(beatmapId: number): Promise<OsuScore[]> {
+  let scores = await withTimeout(fetchBeatmapScoresWithRetry(beatmapId), REQUEST_TIMEOUT_MS);
+  if (!scores) {
+    scores = await withTimeout(fetchBeatmapScoresWithRetry(beatmapId), REQUEST_TIMEOUT_MS);
+  }
+  return scores || [];
+}
 
 async function fetchBestScoresWithRetry(userId: number, limit: number): Promise<OsuScore[]> {
   for (let attempt = 0; attempt < 2; attempt++) {
@@ -324,7 +359,7 @@ export async function recommendForPlayer(
       if (!beatmapId) return;
       let leaderboard: OsuScore[];
       try {
-        leaderboard = await fetchBeatmapScoresWithRetry(beatmapId);
+        leaderboard = await fetchLeaderboardWithRetry(beatmapId);
         apiCalls += 1;
       } catch {
         return;
@@ -373,7 +408,7 @@ export async function recommendForPlayer(
       if (Date.now() > deadline) return;
       let scores: OsuScore[];
       try {
-        scores = await fetchBestScoresWithRetry(p.id, SIMILAR_TOP);
+        scores = (await fetchSimilarTopWithCache(p.id)) || [];
         apiCalls += 1;
       } catch {
         return;
