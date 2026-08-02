@@ -18,6 +18,7 @@ import { decayInactiveUsers } from './bot/experience.js';
 import { queryProfileLogs, getProfileLogStats } from './bot/profileLog.js';
 import { updateProviderSettings } from './modelConfig.js';
 import { startRenderServer } from './bots/renderServer.js';
+import { removeLazybotBinding, syncLazybotBinding } from './bots/bindingSync.js';
 
 // Node 20.11.1 crashes with ERR_INTERNAL_ASSERTION in internalConnectMultiple
 // when many outbound sockets race IPv4/IPv6 auto-selection (happy eyeballs).
@@ -127,6 +128,11 @@ app.post('/api/group-bot-config', async (req, res) => {
 
 // ── osu! console API ──
 
+// A persisted `running` marker is useful for the GUI, but it cannot prove that
+// work still exists after a server crash/restart. Only this process-local set
+// may suppress a duplicate start; stale disk markers are overwritten.
+const consoleAnalysesRunning = new Set<string>();
+
 function tcpProbe(port, host = '127.0.0.1', timeoutMs = 800) {
   return new Promise((resolve) => {
     const socket = net.connect({ port, host });
@@ -221,6 +227,10 @@ app.post('/api/osu/bindings', async (req, res) => {
     updateDb((db) => {
       if (db.osuBindings) delete db.osuBindings[qqStr];
     });
+    const syncResult = await removeLazybotBinding(qqStr);
+    if (!syncResult.ok && !syncResult.skipped) {
+      console.error(`[bind] GUI LazyBot 解绑同步失败: ${syncResult.error || '未知错误'}`);
+    }
     return res.json(ok({ bindings: osuBindingList() }));
   }
   const name = String(username || '').trim();
@@ -233,6 +243,13 @@ app.post('/api/osu/bindings', async (req, res) => {
       db.osuBindings = db.osuBindings || {};
       db.osuBindings[qqStr] = { id: user.id, username: String(user.username || name) };
     });
+    const syncResult = await syncLazybotBinding(qqStr, {
+      id: user.id,
+      username: String(user.username || name),
+    });
+    if (!syncResult.ok && !syncResult.skipped) {
+      console.error(`[bind] GUI LazyBot 绑定同步失败: ${syncResult.error || '未知错误'}`);
+    }
     res.json(ok({ bindings: osuBindingList() }));
   } catch {
     res.status(400).json({ ok: false, error: `osu! 用户 "${name}" 查不到。` });
@@ -454,7 +471,9 @@ app.get('/api/osu/player/:id/recent', async (req, res) => {
   }
 });
 
-app.get('/api/osu/player/:id/ppplus', async (req, res) => {
+// `/pplus` is the canonical spelling used by the GUI and documentation.
+// Keep the accidentally shipped `/ppplus` path as a compatibility alias.
+app.get(['/api/osu/player/:id/pplus', '/api/osu/player/:id/ppplus'], async (req, res) => {
   const osuId = osuIdParam(req, res);
   if (osuId === null) return;
   try {
@@ -516,8 +535,9 @@ app.post('/api/osu/player/:id/analyze', async (req, res) => {
   const osuId = osuIdParam(req, res);
   if (osuId === null) return;
   const { getStoredAnalysis, setStoredAnalysis } = await import('./osu/profileStore.js');
+  const analysisKey = String(osuId);
   const existing = getStoredAnalysis(osuId);
-  if (existing?.status === 'running') {
+  if (consoleAnalysesRunning.has(analysisKey)) {
     return res.json(ok({ analysis: existing, started: false }));
   }
 
@@ -529,6 +549,7 @@ app.post('/api/osu/player/:id/analyze', async (req, res) => {
   }
   const username = profile.player.username;
   const entry = { status: 'running' as const, at: new Date().toISOString() };
+  consoleAnalysesRunning.add(analysisKey);
   setStoredAnalysis(osuId, entry);
 
   // Console analyses bypass the QQ-side 4h cooldown; a per-player console id
@@ -567,6 +588,8 @@ app.post('/api/osu/player/:id/analyze', async (req, res) => {
         finishedAt: new Date().toISOString(),
         error: String(error?.message || error),
       });
+    } finally {
+      consoleAnalysesRunning.delete(analysisKey);
     }
   })();
 

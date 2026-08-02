@@ -6,19 +6,27 @@ import { collectPlayerData, collectRecentPlayerData } from './collector.js';
 import {
   analyzeData,
   buildAnalysisEditorPrompt,
-  buildAnalysisReviewPrompt,
+  buildAnalysisRepairPrompt,
+  buildAnalysisReviewerPrompt,
   buildAnalysisSectionCommentsPrompt,
   condensePippiComment,
+  findConclusionSectionReuse,
+  findAnalysisStyleReuse,
   formatPippiComment,
   injectAnalysisSectionComments,
   parseAnalysisSectionComments,
-  pruneInvalidPippiSentences,
+  parsePartialAnalysisSectionComments,
+  parseReviewerVerdicts,
   sanitizeAnalysisSectionComments,
   validateAnalysisReport,
   validatePippiComment,
   validateAnalysisSectionComments,
 } from './analyzer.js';
-import type { AnalysisNarrativeContext, AnalysisSectionComments } from './analyzer.js';
+import type {
+  AnalysisNarrativeContext,
+  AnalysisSectionComments,
+  AnalysisStyleAvoidance,
+} from './analyzer.js';
 import type { OsuMode, OsuScore, OsuUser } from './types.js';
 import { normalizedScoreMods, scoreStarRating } from './scoreMetrics.js';
 import {
@@ -27,6 +35,7 @@ import {
   updateRecentSkillRecordInDb,
   upsertSkillRecordInDb,
 } from '../bots/skills.js';
+import { syncLazybotBinding, removeLazybotBinding } from '../bots/bindingSync.js';
 
 // ── Queue (serial — only one analysis runs at a time) ──
 
@@ -42,23 +51,80 @@ interface QueueEntry {
 
 const ANALYSIS_COOLDOWN_MS = 4 * 3600 * 1000;
 const RECENT_COOLDOWN_MS = 10 * 60 * 1000;
-const ANALYSIS_FORMAT_VERSION = 64;
+const ANALYSIS_FORMAT_VERSION = 89;
 const RECENT_FORMAT_VERSION = 4;
-export const OSU_ANALYSIS_MODEL = 'deepseek-v4-pro';
+export const OSU_ANALYSIS_MODEL = 'deepseek-v4-flash';
+// Independent reviewer model: deliberately a separate knob from the generator
+// so the reviewer can be swapped without touching pippi's generation side.
+export const OSU_REVIEW_MODEL = 'deepseek-v4-flash';
+// The independent LLM reviewer catches semantic fabrication that a word-list
+// validator cannot (e.g. “松一口气”“乱撞中攒出直觉”). It only rewrites
+// factually rejected components and never touches prose on quality grounds.
+const ENABLE_RUNTIME_LLM_FACT_REVIEW = true;
 let queue: QueueEntry[] = [];
 let running = false;
 let currentEntry: QueueEntry | null = null;
 const MAX_ANALYZE_QUEUE = 8;
+
+/**
+ * Normalize every osuBindings format that has existed in Wuxin's database.
+ *
+ * Legacy databases stored a numeric user id or a username directly. Newer
+ * bindings store both as an object. Keeping this normalization at the command
+ * boundary prevents an object binding from becoming "[object Object]" in an
+ * osu! API request.
+ */
+export function resolveOsuBindingValue(binding: any): string | number | null {
+  if (typeof binding === 'number' && Number.isFinite(binding) && binding > 0) {
+    return binding;
+  }
+  if (typeof binding === 'string') {
+    const value = binding.trim();
+    if (!value) return null;
+    return /^\d+$/.test(value) ? Number(value) : value;
+  }
+  if (binding && typeof binding === 'object') {
+    const id = Number(binding.osuUserId ?? binding.userId ?? binding.id ?? 0);
+    if (Number.isFinite(id) && id > 0) return id;
+    const username = String(binding.osuUsername ?? binding.username ?? '').trim();
+    if (username) return username;
+  }
+  return null;
+}
+
+export function osuBindingMatchesUser(
+  binding: any,
+  user: { id?: unknown; username?: unknown } | null | undefined,
+): boolean {
+  if (!binding || !user) return false;
+  const resolvedId = Number(user.id ?? 0);
+  const resolvedUsername = String(user.username ?? '').trim().toLocaleLowerCase();
+
+  if (binding && typeof binding === 'object') {
+    const bindingId = Number(binding.osuUserId ?? binding.userId ?? binding.id ?? 0);
+    const bindingUsername = String(binding.osuUsername ?? binding.username ?? '')
+      .trim()
+      .toLocaleLowerCase();
+    return Boolean(
+      (Number.isFinite(bindingId) && bindingId > 0 && bindingId === resolvedId)
+      || (bindingUsername && bindingUsername === resolvedUsername)
+    );
+  }
+
+  const target = resolveOsuBindingValue(binding);
+  if (typeof target === 'number') return target === resolvedId;
+  return Boolean(target && String(target).trim().toLocaleLowerCase() === resolvedUsername);
+}
 
 function resolveUsername(db: any, event: any, args?: string): string | number | null {
   const provided = String(args || '').trim();
   if (provided && !provided.startsWith('--')) return provided;
   if (event.atTargets?.[0]) {
     const bindings = db.osuBindings || {};
-    return bindings[String(event.atTargets[0])] || null;
+    return resolveOsuBindingValue(bindings[String(event.atTargets[0])]);
   }
   const bindings = db.osuBindings || {};
-  return bindings[String(event.userId)] || null;
+  return resolveOsuBindingValue(bindings[String(event.userId)]);
 }
 
 function parseMode(arg?: string): OsuMode {
@@ -80,7 +146,7 @@ function parseTargetAndMode(db: any, event: any, value: string): {
 
   let target: string | number | null = null;
   const atQq = event.atTargets?.[0];
-  if (atQq) target = db.osuBindings?.[String(atQq)] || null;
+  if (atQq) target = resolveOsuBindingValue(db.osuBindings?.[String(atQq)]);
   if (!target && nameParts.length > 0) target = nameParts.join(' ');
   if (!target) target = resolveUsername(db, event);
 
@@ -135,7 +201,7 @@ function buildModComposition(scores: OsuScore[]): Record<string, number> {
   return counts;
 }
 
-function compactConclusion(value: unknown, maxLength = 220): string {
+function compactConclusion(value: unknown, maxLength = 360): string {
   const text = String(value || '')
     .replace(/^【结论】\s*/u, '')
     .replace(/\s+/g, ' ')
@@ -149,6 +215,27 @@ function conclusionFromSavedAnalysis(entry: any): string {
   const conclusionIndex = fullText.lastIndexOf('【结论】');
   if (conclusionIndex >= 0) return compactConclusion(fullText.slice(conclusionIndex));
   return compactConclusion(entry?.summary || fullText);
+}
+
+/**
+ * Build a local-only expression history for deterministic reuse checks. These
+ * strings are never injected into the next player's prompt; only an anonymous
+ * "rewrite the sentence skeleton" reason reaches the model after a collision.
+ */
+export function buildAnalysisStyleAvoidance(
+  db: any,
+  limit = 20,
+  _exclude?: { osuUserId?: unknown; displayName?: unknown },
+): AnalysisStyleAvoidance {
+  // Analyze is an independent scene. Earlier versions compared every new
+  // sentence against recent reports stored in db.osuAnalyses. That made the
+  // wording of the current player depend on who happened to be analyzed
+  // before them and progressively exhausted ordinary Chinese expressions.
+  // Keep the return shape for callers, but never carry prose across runs.
+  void db;
+  void limit;
+  void _exclude;
+  return { recentExpressions: [], blockedFragments: [] };
 }
 
 function ppPlusRecord(bars: any): Record<string, number> | undefined {
@@ -280,39 +367,98 @@ export async function sendAsReply(event: any, sendMessage: any, text: string) {
   }
 }
 
+const SECTION_COMMENT_KEYS = ['profile', 'top', 'top5', 'mods', 'pplus', 'recent', 'classification'] as const;
+type SectionCommentKey = typeof SECTION_COMMENT_KEYS[number];
+type SectionCommentSource = 'llm' | 'fallback' | 'none';
+type SectionCommentSources = Record<SectionCommentKey, SectionCommentSource>;
+
+function allSectionSources(source: SectionCommentSource): SectionCommentSources {
+  return Object.fromEntries(SECTION_COMMENT_KEYS.map(key => [key, source])) as SectionCommentSources;
+}
+
+function summarizeSectionSources(sources: SectionCommentSources): 'llm' | 'mixed' | 'fallback' | 'none' {
+  const unique = new Set(Object.values(sources));
+  if (unique.size === 1) return [...unique][0] as 'llm' | 'fallback' | 'none';
+  return 'mixed';
+}
+
+/**
+ * After the third attempt, sections that still violate hard gates (numbers,
+ * Mod semantics, HD terminology, identity) are blanked instead of shipped;
+ * style-gate issues have been removed from the mechanical validator and are
+ * the independent reviewer's job. Returns the sections to blank.
+ */
+function rejectedSectionKeys(reasons: string[]): Set<string> {
+  const rejected = new Set<string>();
+  for (const key of SECTION_COMMENT_KEYS) {
+    for (const reason of reasons) {
+      const targeted = reason.startsWith(`${key} `)
+        || reason.startsWith(`${key}短评`)
+        || reason.includes(`${key} 短评`);
+      if (!targeted && !reason.startsWith('短评')) continue;
+      rejected.add(key);
+    }
+  }
+  return rejected;
+}
+
+/**
+ * Generate (or rewrite) the six section comments. Rewrites only the rejected
+ * sections and keep PASS sections verbatim. Never backfills with generic
+ * catch-all sentences: after three attempts the latest LLM draft is kept as-is
+ * (data sections always render), with the reject reasons logged for later
+ * prompt tuning.
+ */
 async function generateAnalysisSectionComments(
   db: any,
   analysis: ReturnType<typeof analyzeData>,
   narrative: AnalysisNarrativeContext,
-  personalityPrompt: string
+  personalityPrompt: string,
+  styleAvoidance: AnalysisStyleAvoidance,
+  previous?: {
+    comments: AnalysisSectionComments;
+    badSections: string[];
+    reasons: string[];
+    sources?: SectionCommentSources;
+  }
 ): Promise<{
   comments: AnalysisSectionComments | null;
-  source: 'llm' | 'mixed' | 'none';
+  source: 'llm' | 'mixed' | 'fallback' | 'none';
+  sources: SectionCommentSources;
   reasons: string[];
   rejected: string;
+  trace: { attempt: number; outcome: 'accepted' | 'rejected' | 'parse_error' | 'error' | 'repaired'; reasons: string[] }[];
 }> {
   const prompt = buildAnalysisSectionCommentsPrompt(
     analysis,
     narrative,
-    personalityPrompt
+    personalityPrompt,
+    styleAvoidance,
   );
   let candidate = '';
-  let lastParsed: AnalysisSectionComments | null = null;
-  let lastReasons: string[] = [];
+  let lastParsed: AnalysisSectionComments | null = previous?.comments || null;
+  let lastReasons: string[] = previous?.reasons || [];
+  let badSections = new Set(previous?.badSections || []);
+  let lastSources = previous?.sources
+    ? { ...previous.sources }
+    : (previous?.comments ? allSectionSources('llm') : allSectionSources('none'));
+  const trace: { attempt: number; outcome: 'accepted' | 'rejected' | 'parse_error' | 'error' | 'repaired'; reasons: string[]; draft?: string }[] = [];
 
   for (let attempt = 1; attempt <= 3; attempt += 1) {
     try {
-      const userContent = attempt === 1
+      const isFirstPass = attempt === 1 && !previous;
+      const userContent = isFirstPass
         ? prompt.user
         : [
             prompt.user,
             '',
-            '<rejected_json>',
-            candidate,
-            '</rejected_json>',
-            '',
+            `<rejected_sections>${badSections.size > 0 ? [...badSections].join('、') : '（见 problems）'}</rejected_sections>`,
             `<problems>${lastReasons.join('；')}</problems>`,
-            '修正这些问题，保留已经自然的互动和玩笑。重新输出完整合法 JSON，不要解释。',
+            `<rewrite_round>${attempt - 1}</rewrite_round>`,
+            attempt >= 3
+              ? '这是最后一次局部重写。只使用 verified_facts 已经原样给出的数字、数量与直接关系；不要自行做加减乘除，不写比喻，不翻译 PP+ 为具体能力，不猜动机。'
+              : '从零重写被拒绝的区块，不沿用被拒句的开头、句法骨架或比喻。',
+            '只输出一个合法 JSON 对象，键必须且只能是 rejected_sections 中列出的键；不要重复其余区块，不要解释。',
           ].join('\n');
       const result = await completeChat(db, {
         model: OSU_ANALYSIS_MODEL,
@@ -320,85 +466,361 @@ async function generateAnalysisSectionComments(
           { role: 'system', content: prompt.system },
           { role: 'user', content: userContent },
         ],
-        maxTokens: 4096,
-        temperature: attempt === 1 ? 0.72 : (attempt === 2 ? 0.38 : 0.18),
-        timeoutMs: 90000,
-        label: attempt === 1 ? 'osu区块短评' : `osu区块短评重试${attempt - 1}`,
+          maxTokens: 4096,
+          temperature: attempt === 1 ? 0.76 : (attempt === 2 ? 0.5 : 0.35),
+          timeoutMs: 60000,
+          requestMaxRetries: 0,
+        label: attempt === 1 ? 'osu区块短评' : `osu区块短评重写${attempt - 1}`,
       });
       candidate = String(result.text || '').trim();
-      const parsedRaw = parseAnalysisSectionComments(candidate);
+      let parsedRaw: AnalysisSectionComments | null = null;
+      if (lastParsed && badSections.size > 0) {
+        const requestedKeys = [...badSections].filter((key): key is SectionCommentKey =>
+          SECTION_COMMENT_KEYS.includes(key as SectionCommentKey)
+        );
+        const partial = parsePartialAnalysisSectionComments(candidate, requestedKeys);
+        if (partial) {
+          parsedRaw = { ...lastParsed };
+          for (const key of requestedKeys) {
+            parsedRaw[key] = String(partial[key] || '');
+            lastSources[key] = 'llm';
+          }
+        }
+      } else {
+        parsedRaw = parseAnalysisSectionComments(candidate);
+        if (parsedRaw) lastSources = allSectionSources('llm');
+      }
       if (!parsedRaw) {
-        lastReasons = ['没有输出可解析的六区块 JSON'];
+        lastReasons = [lastParsed && badSections.size > 0
+          ? `没有输出可解析的目标区块 JSON：${[...badSections].join('、')}`
+          : '没有输出可解析的七区块 JSON'];
+        trace.push({ attempt, outcome: 'parse_error', reasons: [...lastReasons], draft: candidate.slice(0, 1800) });
         continue;
       }
-      const parsed = sanitizeAnalysisSectionComments(parsedRaw, narrative);
-      lastParsed = parsed;
+      const sanitized = sanitizeAnalysisSectionComments(parsedRaw, narrative, analysis);
+      const parsed: AnalysisSectionComments = sanitized;
       const validation = validateAnalysisSectionComments(analysis, parsed, narrative);
-      if (validation.ok) {
-        if (attempt === 1) {
-          candidate = JSON.stringify(parsed);
-          lastReasons = ['创意稿机械校验通过；仍需逐句完成一次独立事实与术语终审'];
-          continue;
-        }
+      const styleReasons = SECTION_COMMENT_KEYS.flatMap((key) =>
+        findAnalysisStyleReuse(parsed[key], styleAvoidance).map((reason) => `${key} ${reason}`)
+      );
+      // 账号档案是七栏中最长的一栏；长度排序只作为重写提示，不参与硬门。
+      const profileLength = String(parsed.profile || '').trim().length;
+      const longestOther = SECTION_COMMENT_KEYS
+        .filter((key) => key !== 'profile')
+        .reduce((max, key) => Math.max(max, String(parsed[key] || '').trim().length), 0);
+      const orderingReasons = profileLength > 0 && longestOther > profileLength
+        ? ['profile 短评：账号档案应比其他栏目更长，重新展开这一栏']
+        : [];
+      const combinedReasons = [...validation.reasons, ...styleReasons, ...orderingReasons];
+      lastParsed = parsed;
+      // Style cooldown gets two chances to request a fresher phrasing, but it
+      // must never turn an otherwise factual LLM draft into a deterministic
+      // fallback. On the final attempt only hard validation can block output.
+      if (combinedReasons.length === 0 || (attempt === 3 && validation.reasons.length === 0)) {
+        trace.push({ attempt, outcome: 'accepted', reasons: [], draft: candidate.slice(0, 1800) });
         return {
           comments: parsed,
-          source: 'llm',
+          source: summarizeSectionSources(lastSources),
+          sources: lastSources,
           reasons: [],
           rejected: '',
+          trace,
         };
       }
-      lastReasons = validation.reasons;
-      console.error(`[osu analyze] 区块短评第 ${attempt} 次未通过：`, validation.reasons);
+      lastReasons = combinedReasons;
+      trace.push({ attempt, outcome: 'rejected', reasons: combinedReasons.slice(0, 12), draft: candidate.slice(0, 1800) });
+      badSections = rejectedSectionKeys(combinedReasons);
+      console.error(`[osu analyze] 区块短评第 ${attempt} 次未通过：`, combinedReasons);
+      // 硬错误先走 LLM 定向修复（最小改动），修复结果必须重新通过机械校验；
+      // 修不动才进入下一轮的整段重写。
+      if (validation.reasons.length > 0 && badSections.size > 0) {
+        const repaired = { ...parsed };
+        let repairedAny = false;
+        for (const key of badSections) {
+          if (!SECTION_COMMENT_KEYS.includes(key as SectionCommentKey)) continue;
+          const typedKey = key as SectionCommentKey;
+          const keyReasons = validation.reasons.filter((reason) =>
+            reason.startsWith(`${typedKey} `)
+            || reason.startsWith(`${typedKey}短评`)
+            || reason.includes(`${typedKey} 短评`)
+          );
+          const fixed = await repairFailedText(
+            db, analysis, typedKey, String(repaired[typedKey] || ''),
+            keyReasons.length > 0 ? keyReasons : validation.reasons.slice(0, 8),
+            narrative,
+          );
+          if (fixed && fixed !== String(repaired[typedKey] || '')) {
+            repaired[typedKey] = fixed;
+            repairedAny = true;
+          }
+        }
+        if (repairedAny) {
+          const repairedValidation = validateAnalysisSectionComments(analysis, repaired, narrative);
+          if (repairedValidation.ok) {
+            lastParsed = repaired;
+            trace.push({ attempt, outcome: 'repaired', reasons: [], draft: candidate.slice(0, 1800) });
+            return {
+              comments: repaired,
+              source: summarizeSectionSources(lastSources),
+              sources: lastSources,
+              reasons: [],
+              rejected: '',
+              trace,
+            };
+          }
+          console.error(`[osu analyze] 硬错误修复后仍未通过：`, repairedValidation.reasons);
+        }
+      }
     } catch (error) {
       lastReasons = [String(error?.message || error)];
+      trace.push({ attempt, outcome: 'error', reasons: [...lastReasons], draft: candidate.slice(0, 1800) });
       console.error(`[osu analyze] 区块短评第 ${attempt} 次失败：`, error?.message || error);
     }
   }
 
+  // Preserve every passing LLM section. Any section that still fails the hard
+  // gates receives a small deterministic fact-only fallback instead of being
+  // silently blanked. Per-section sources make that local degradation visible.
   if (lastParsed) {
-    const mixedFallbacks: AnalysisSectionComments = {
-      profile: '档案里的排名和评级已经够有分量了。好，这个名字我可记住了！',
-      top: '星数与准确率的整体结构摆得很清楚。嗯，这一页确实值得我多看两眼。',
-      top5: '五张高位成绩排得很整齐。行，这一页的共同风格已经藏不住了。',
-      mods: 'Mod 构成把高位成绩的重心写在明面上了。偏得这么理直气壮，我当然会注意到。',
-      pplus: '六维的高低差把当前成绩侧重点摆得很直白。好啦，这个形状我记住了！',
-      recent: '近期样本与 BP 对照留下了变化。这一点我先记下，下次再看看它往哪边走。',
+    const rejectedKeys = badSections.size > 0 ? badSections : rejectedSectionKeys(lastReasons);
+    if (rejectedKeys.size > 0) {
+      const filtered = { ...lastParsed };
+      for (const key of rejectedKeys) {
+        if (!SECTION_COMMENT_KEYS.includes(key as SectionCommentKey)) continue;
+        const typedKey = key as SectionCommentKey;
+        filtered[typedKey] = analysis.safeSectionFallbacks[typedKey];
+        lastSources[typedKey] = 'fallback';
+      }
+      lastParsed = filtered;
+    }
+    return {
+      comments: lastParsed,
+      source: summarizeSectionSources(lastSources),
+      sources: lastSources,
+      reasons: lastReasons.slice(0, 8),
+      rejected: candidate.slice(0, 1800),
+      trace,
     };
-    const patched = { ...lastParsed };
-    const sectionKeys = ['profile', 'top', 'top5', 'mods', 'pplus', 'recent'] as const;
-    const badKeys = new Set(
-      sectionKeys.filter(key => lastReasons.some(
-        reason => reason.startsWith(`${key} `) || reason.includes(`${key} 短评`)
-      ))
-    );
-    if (lastReasons.some(reason => reason.includes('问句过多'))) {
-      let remainingQuestions = 2;
-      for (const key of sectionKeys) {
-        const count = (patched[key].match(/[？?]/g) || []).length;
-        if (count > remainingQuestions) {
-          badKeys.add(key);
-        } else {
-          remainingQuestions -= count;
+  }
+  return {
+    comments: { ...analysis.safeSectionFallbacks },
+    source: 'fallback',
+    sources: allSectionSources('fallback'),
+    reasons: lastReasons.slice(0, 8),
+    rejected: candidate.slice(0, 1800),
+    trace,
+  };
+}
+
+/** Deterministic pronoun rewrite for the conclusion's final fallback step. */
+function normalizeConclusionPronouns(text: string): string {
+  return String(text || '')
+    .replace(/他(?:自己|本人)|她(?:自己|本人)/g, '它自己')
+    .replace(/他的|她的/g, '它的')
+    .replace(/(?<![其们])[他她](?![们])/g, '这名玩家');
+}
+
+/**
+ * Surgical hard-error repair via a separate repair LLM (same model family as
+ * the independent reviewer, never pippi). Returns the repaired text or null
+ * when the call fails; callers must re-run the mechanical validator on the
+ * result before accepting it.
+ */
+async function repairFailedText(
+  db: any,
+  analysis: ReturnType<typeof analyzeData>,
+  target: SectionCommentKey | 'conclusion',
+  text: string,
+  reasons: string[],
+  narrative: AnalysisNarrativeContext,
+): Promise<string | null> {
+  const trimmed = String(text || '').trim();
+  if (!trimmed || reasons.length === 0) return null;
+  try {
+    const prompt = buildAnalysisRepairPrompt(analysis, target, trimmed, reasons, narrative);
+    const result = await completeChat(db, {
+      model: OSU_REVIEW_MODEL,
+      messages: [
+        { role: 'system', content: prompt.system },
+        { role: 'user', content: prompt.user },
+      ],
+      maxTokens: 1024,
+      temperature: 0,
+      timeoutMs: 60000,
+      requestMaxRetries: 0,
+      label: `osu硬错误修复(${target})`,
+    });
+    const repaired = String(result.text || '').trim();
+    return repaired || null;
+  } catch (error) {
+    console.error(`[osu analyze] 硬错误修复(${target})调用失败：`, error?.message || error);
+    return null;
+  }
+}
+
+/**
+ * Generate the final 【结论】 with up to three attempts. Mechanical checks
+ * (numbers/terminology) stay hard gates; on final failure the deterministic
+ * fact-only fallback wins. Generic catch-all sentences are never injected.
+ */
+async function generateConclusion(
+  db: any,
+  analysis: ReturnType<typeof analyzeData>,
+  narrative: AnalysisNarrativeContext,
+  personalityPrompt: string,
+  styleAvoidance: AnalysisStyleAvoidance,
+  previous?: { text: string; reasons: string[] },
+  sectionCommentsForReuse?: AnalysisSectionComments | null,
+): Promise<{
+  text: string;
+  source: 'llm' | 'fallback';
+  reasons: string[];
+  rejected: string;
+  trace: { attempt: number; outcome: 'accepted' | 'rejected' | 'error' | 'repaired'; reasons: string[] }[];
+}> {
+  const prompt = buildAnalysisEditorPrompt(analysis, narrative, personalityPrompt, styleAvoidance);
+  let lastCandidate = previous?.text || '';
+  let lastReasons: string[] = previous?.reasons || [];
+  const trace: { attempt: number; outcome: 'accepted' | 'rejected' | 'error' | 'repaired'; reasons: string[]; draft?: string }[] = [];
+
+  for (let attempt = 1; attempt <= 3; attempt += 1) {
+    try {
+      const isFirstPass = attempt === 1 && !previous;
+      const userContent = isFirstPass
+        ? prompt.user
+        : [
+            prompt.user,
+            '',
+            `<problems>${lastReasons.join('；')}</problems>`,
+            `<rewrite_round>${attempt - 1}</rewrite_round>`,
+            attempt >= 3
+              ? '这是最后一次重写。只使用 verified_facts 原样提供的数字与直接关系；不自行计算，不写能力成长、玩家动机、练习建议或 Recent 原因。'
+              : '从零重写这段结论，不保留被拒句的开头、句法骨架或比喻。',
+            '重新输出【结论】。',
+          ].join('\n');
+      const result = await completeChat(db, {
+        model: OSU_ANALYSIS_MODEL,
+        messages: [
+          { role: 'system', content: prompt.system },
+          { role: 'user', content: userContent },
+        ],
+        maxTokens: 1024,
+        temperature: attempt === 1 ? 0.66 : (attempt === 2 ? 0.46 : 0.32),
+        timeoutMs: 60000,
+        requestMaxRetries: 0,
+        label: attempt === 1 ? 'osu分析创意稿' : `osu分析结论重写${attempt - 1}`,
+      });
+      const editedText = condensePippiComment(formatPippiComment(result.text), 480);
+      lastCandidate = editedText;
+      const validation = validatePippiComment(analysis, editedText, narrative);
+      const styleReasons = findAnalysisStyleReuse(editedText, styleAvoidance);
+      const reuseReasons = findConclusionSectionReuse(editedText, sectionCommentsForReuse);
+      // 本轮测试：审查只查基本事实；文风/复用检查只记录，不参与拦截。
+      void reuseReasons;
+      // 结论必须长于账号档案栏；同样只作为重写提示。
+      const profileCommentLength = String(sectionCommentsForReuse?.profile || '').trim().length;
+      const conclusionBodyLength = editedText.replace(/^【结论】\s*/, '').trim().length;
+      const orderingReasons = profileCommentLength > 0 && conclusionBodyLength <= profileCommentLength
+        ? ['结论应比账号档案栏更长，扩写结论']
+        : [];
+      const combinedReasons = [...validation.reasons, ...styleReasons, ...orderingReasons];
+      // Repetition is a rewrite hint, not a factual safety failure. After two
+      // retries, preserve a valid LLM conclusion instead of replacing it with
+      // a mechanical fact list solely because of a familiar phrase.
+      if (combinedReasons.length === 0 || (attempt === 3 && validation.reasons.length === 0)) {
+        trace.push({ attempt, outcome: 'accepted', reasons: [], draft: editedText });
+        return { text: editedText, source: 'llm', reasons: [], rejected: '', trace };
+      }
+      lastReasons = combinedReasons;
+      trace.push({ attempt, outcome: 'rejected', reasons: combinedReasons.slice(0, 12), draft: editedText });
+      console.error(`[osu analyze] 结论第 ${attempt} 次未通过：`, combinedReasons);
+      // 硬错误先走 LLM 定向修复（最小改动），修复结果必须重新通过机械校验。
+      if (validation.reasons.length > 0) {
+        const repaired = await repairFailedText(db, analysis, 'conclusion', editedText, validation.reasons, narrative);
+        if (repaired) {
+          const repairedText = condensePippiComment(formatPippiComment(repaired), 480);
+          const repairedValidation = validatePippiComment(analysis, repairedText, narrative);
+          if (repairedValidation.ok) {
+            trace.push({ attempt, outcome: 'repaired', reasons: [], draft: repairedText });
+            return { text: repairedText, source: 'llm', reasons: [], rejected: '', trace };
+          }
+          console.error(`[osu analyze] 结论硬错误修复后仍未通过：`, repairedValidation.reasons);
         }
       }
-    }
-    for (const key of badKeys) patched[key] = mixedFallbacks[key];
-    if (badKeys.size > 0 && validateAnalysisSectionComments(analysis, patched, narrative).ok) {
-      return {
-        comments: patched,
-        source: 'mixed',
-        reasons: lastReasons.slice(0, 8),
-        rejected: candidate.slice(0, 1800),
-      };
+    } catch (error) {
+      lastReasons = [String(error?.message || error)];
+      trace.push({ attempt, outcome: 'error', reasons: [...lastReasons], draft: lastCandidate });
+      console.error(`[osu analyze] 结论第 ${attempt} 次失败：`, error?.message || error);
     }
   }
 
+  // Pronoun normalization fallback: a mechanically valid draft that only
+  // trips the gender gate (他/她 used as anaphora for the account itself,
+  // e.g. 这份账号……它自己的维度) gets a deterministic "它" rewrite instead of
+  // a fact-list fallback. This is a minimal, recorded normalization — it is
+  // not sentence pruning, and other hard errors still fail below.
+  if (lastCandidate) {
+    const normalized = normalizeConclusionPronouns(lastCandidate);
+    if (normalized !== lastCandidate) {
+      const validation = validatePippiComment(analysis, normalized, narrative);
+      const reuse = findConclusionSectionReuse(normalized, sectionCommentsForReuse);
+      void reuse;
+      if (validation.ok) {
+        trace.push({ attempt: 3, outcome: 'accepted', reasons: ['代词归一化后通过（他/她 → 它）'] });
+        return { text: normalized, source: 'llm', reasons: [], rejected: '', trace };
+      }
+    }
+  }
+
+  // Never turn a rejected draft into an apparent LLM success by deleting the
+  // sentences that failed validation. A partial residue is not a conclusion.
   return {
-    comments: null,
-    source: 'none',
+    text: analysis.safePippiFallback,
+    source: 'fallback',
     reasons: lastReasons.slice(0, 8),
-    rejected: candidate.slice(0, 1800),
+    rejected: lastCandidate.slice(0, 1200),
+    trace,
   };
+}
+
+/**
+ * Independent whole-report review. The reviewer has no persona and returns
+ * per-section verdicts; REJECT carries a short reason. Null verdicts mean the
+ * reviewer call failed (caller must not loop forever on that).
+ */
+async function reviewFullReport(
+  db: any,
+  analysis: ReturnType<typeof analyzeData>,
+  report: string,
+  narrative: AnalysisNarrativeContext,
+): Promise<{ verdicts: Awaited<ReturnType<typeof parseReviewerVerdicts>>; raw: string }> {
+  const prompt = buildAnalysisReviewerPrompt(analysis, report, narrative);
+  let lastRaw = '';
+  for (let attempt = 1; attempt <= 2; attempt += 1) {
+    try {
+      const result = await completeChat(db, {
+        model: OSU_REVIEW_MODEL,
+        messages: [
+          { role: 'system', content: prompt.system },
+          { role: 'user', content: attempt === 1
+            ? prompt.user
+            : `${prompt.user}\n\n上一次没有返回完整的八段判决。必须为 profile、top、top5、mods、pplus、recent、classification、conclusion 各返回且只返回一条。` },
+        ],
+        maxTokens: 2048,
+        temperature: 0,
+        timeoutMs: 60000,
+        requestMaxRetries: 0,
+        label: attempt === 1 ? 'osu分析独立审查' : 'osu分析独立审查重试',
+      });
+      lastRaw = String(result.text || '').trim();
+      const verdicts = parseReviewerVerdicts(lastRaw);
+      if (verdicts) return { verdicts, raw: lastRaw };
+      console.error(`[osu analyze] 独立审查第 ${attempt} 次未返回完整八段判决。`);
+    } catch (error) {
+      console.error(`[osu analyze] 独立审查第 ${attempt} 次调用失败：`, error?.message || error);
+    }
+  }
+  return { verdicts: null, raw: lastRaw };
 }
 
 async function runAnalysis(
@@ -407,152 +829,156 @@ async function runAnalysis(
 ): Promise<string> {
   const db = readDb();
   const result = await (async () => {
-    try {
-      return await collectPlayerData(target, mode);
-    } catch (error) {
-      // Transient network/API failures are common under load; retry once
-      // before declaring the whole analysis dead.
-      await new Promise((resolve) => setTimeout(resolve, 1500));
-      return collectPlayerData(target, mode);
+    let lastError: unknown;
+    for (let attempt = 1; attempt <= 3; attempt += 1) {
+      try {
+        return await collectPlayerData(target, mode);
+      } catch (error) {
+        lastError = error;
+        if (attempt >= 3) break;
+        // Player/profile fetches occasionally fail during a long batch even
+        // while OAuth and the service remain healthy. Retry at the Analyze
+        // boundary so a single transient socket failure does not become a
+        // misleading "player unavailable" report.
+        await new Promise((resolve) => setTimeout(resolve, attempt * 1500));
+      }
     }
+    throw lastError;
   })();
   const topSnapshot = buildScoreSnapshot(result.bestScores);
   const recentSnapshot = buildScoreSnapshot(result.recentScores);
   const analysis = analyzeData({
     user: result.user, bestScores: result.bestScores, recentScores: result.recentScores, mode,
-    pplusBars: result.pplusBars, refBars: result.refBars
+    pplusBars: result.pplusBars, refBars: result.refBars, classification: result.classification
   });
-  // Inject beatmap classification as a standalone section after BP100
-  let classificationBlock = '';
-  const topChinese: Record<string, string> = { aim: '跳图', stream: '串图', tech: '技术', alt: '切换' };
-  if (result.classification?.distribution && Object.keys(result.classification.distribution).length > 0) {
-    const dist = result.classification.distribution;
-    const total = Object.values(dist).reduce((a, b) => a + b, 0);
-    const entries = Object.entries(dist).sort((a, b) => b[1] - a[1]);
-    const clsLines = entries.map(([cls, count]) =>
-      `  ${cls.padEnd(8)} ${Math.round(count / total * 100)}%（${count} 张）`);
-    classificationBlock = [
-      '【谱面类型分布】',
-      `BP${total} 分类统计（osu!oracle）：`,
-      ...clsLines,
-      '',
-      `整体来看是一个${topChinese[entries[0]?.[0]] || '未知'}倾向明显的号。`,
-    ].join('\n');
-  }
-  if (classificationBlock) {
-    analysis.safeFacts += '\n\n' + classificationBlock;
-    analysis.safeBody += '\n\n' + classificationBlock;
-    analysis.safeFallback += '\n\n' + classificationBlock;
-  }
   const callerBinding = db.osuBindings?.[String(event.userId)];
-  const callerBindingText = String(callerBinding || '').trim().toLocaleLowerCase();
-  const resolvedUserId = String(result.user?.id || '').trim().toLocaleLowerCase();
-  const resolvedUsername = String(result.user?.username || '').trim().toLocaleLowerCase();
-  const isSelf = Boolean(
-    callerBindingText &&
-    (callerBindingText === resolvedUserId || callerBindingText === resolvedUsername)
-  );
+  const isSelf = osuBindingMatchesUser(callerBinding, result.user);
   const narrative = {
     playerName: result.user?.username || String(target),
     perspective: isSelf ? 'self' as const : 'unknown' as const,
   };
   const personalityPrompt = String(db.settings.personalityPrompt || '');
-  const sectionCommentsPromise = generateAnalysisSectionComments(
+  const styleAvoidance = buildAnalysisStyleAvoidance(db, 20, {
+    osuUserId: result.user?.id,
+    displayName: result.user?.username,
+  });
+
+  // ── Generation: section observations first, then the conclusion reads the
+  // same account's accepted observations. This keeps the conclusion from
+  // independently inventing a second, unrelated interpretation. ──
+  let sectionCommentsResult = await generateAnalysisSectionComments(
     db,
     analysis,
     narrative,
-    personalityPrompt
+    personalityPrompt,
+    styleAvoidance,
   );
-  let pippiComment = analysis.safePippiFallback;
-  const editorPrompt = buildAnalysisEditorPrompt(
+  const sectionGenerationCalls = [{ trigger: 'initial', trace: sectionCommentsResult.trace }];
+  const conclusionResult = await generateConclusion(
+    db,
     analysis,
     narrative,
-    personalityPrompt
+    personalityPrompt,
+    styleAvoidance,
+    undefined,
+    sectionCommentsResult.comments,
   );
-  let lastReasons: string[] = [];
-  let lastRejectedConclusion = '';
-  let creativeCandidate = '';
-  for (let attempt = 1; attempt <= 4; attempt += 1) {
-    try {
-      const isCreativePass = !creativeCandidate;
-      const reviewPrompt = isCreativePass
-        ? null
-        : buildAnalysisReviewPrompt(analysis, creativeCandidate, lastReasons, narrative);
-      const edited = await completeChat(db, {
-        model: OSU_ANALYSIS_MODEL,
-        messages: isCreativePass
-          ? [
-              { role: 'system', content: editorPrompt.system },
-              { role: 'user', content: editorPrompt.user },
-            ]
-          : [
-              { role: 'system', content: reviewPrompt!.system },
-              { role: 'user', content: reviewPrompt!.user },
-            ],
-        maxTokens: 4096,
-        temperature: isCreativePass ? 0.58 : (attempt === 2 ? 0.08 : (attempt === 3 ? 0.04 : 0.02)),
-        timeoutMs: 90000,
-        label: isCreativePass ? 'osu分析创意稿' : `osu分析事实终审${attempt - 1}`
-      });
-      const editedText = condensePippiComment(formatPippiComment(edited.text), 115);
-      const validation = validatePippiComment(analysis, editedText, narrative);
-      if (isCreativePass) {
-        creativeCandidate = editedText;
-        lastRejectedConclusion = editedText;
-        lastReasons = validation.ok
-          ? ['创意稿需要独立完成一次语义事实终审']
-          : validation.reasons;
-        continue;
+  let pippiComment = conclusionResult.text;
+  let conclusionSource = conclusionResult.source;
+  let lastReasons: string[] = [...conclusionResult.reasons];
+  let lastRejectedConclusion = conclusionResult.rejected;
+  let sectionCommentsSource = sectionCommentsResult.source;
+  let sectionCommentSources = { ...sectionCommentsResult.sources };
+  let sectionCommentsValidationReasons = [...sectionCommentsResult.reasons];
+  let sectionCommentsRejectedDraft = sectionCommentsResult.rejected;
+  const conclusionGenerationCalls = [{ trigger: 'initial', trace: conclusionResult.trace }];
+
+  // ── Whole-report factual review: at most two targeted repair opportunities,
+  // then a final factual verdict. Literary quality is decided by the generation
+  // prompt and batch evaluation, not by recursively asking another model to
+  // rewrite already-valid prose. Every REJECT remains visible in reviewLog. ──
+  const reviewLog: {
+    round: number;
+    verdicts: { section: string; result: 'PASS' | 'REJECT'; kind?: 'hard' | 'quality'; reason: string }[];
+    rejects: { section: string; kind?: 'hard' | 'quality'; reason: string }[];
+    unavailable?: boolean;
+  }[] = [];
+  let reply = '';
+  let finalReportFallback = false;
+  let finalValidation: { ok: boolean; reasons: string[] } = { ok: false, reasons: [] };
+
+  {
+    const visible = finalReportFallback ? analysis.safePippiFallback : pippiComment;
+    let report = sectionCommentsResult.comments
+      ? `${injectAnalysisSectionComments(analysis.safeBody, sectionCommentsResult.comments)}\n\n${visible}`
+      : `${analysis.safeBody}\n\n${visible}`;
+    finalValidation = validateAnalysisReport(analysis, report, narrative);
+    if (!finalValidation.ok) {
+      // Comments broke the assembly: drop them, keep body + conclusion.
+      if (sectionCommentsResult.comments) {
+        sectionCommentsSource = 'none';
+        sectionCommentSources = allSectionSources('none');
+        sectionCommentsValidationReasons = finalValidation.reasons.slice(0, 8);
+        sectionCommentsRejectedDraft = JSON.stringify(sectionCommentsResult.comments).slice(0, 1800);
+        console.error('[osu analyze] 区块短评组装终审失败，已保留安全正文：', finalValidation.reasons);
+        report = `${analysis.safeBody}\n\n${visible}`;
+        finalValidation = validateAnalysisReport(analysis, report, narrative);
       }
-      if (validation.ok) {
-        pippiComment = editedText;
-        break;
+      // Conclusion broke the assembly: fall back to the deterministic fact
+      // conclusion (mechanical gates stay hard; style gates do not).
+      if (!finalValidation.ok && conclusionSource === 'llm') {
+        console.error('[osu analyze] 结论组装终审失败，使用确定性结论：', finalValidation.reasons);
+        pippiComment = analysis.safePippiFallback;
+        conclusionSource = 'fallback';
+        lastReasons = ['结论未通过机械终审'];
+        report = `${analysis.safeBody}\n\n${pippiComment}`;
+        finalValidation = validateAnalysisReport(analysis, report, narrative);
       }
-      const prunedText = pruneInvalidPippiSentences(analysis, editedText, narrative);
-      if (validatePippiComment(analysis, prunedText, narrative).ok) {
-        pippiComment = prunedText;
-        break;
+      if (!finalValidation.ok) {
+        console.error('[osu analyze] 完整报告组装校验失败，使用确定性安全报告：', finalValidation.reasons);
+        reply = analysis.safeFallback;
+        finalReportFallback = true;
+      } else {
+        reply = report;
       }
-      creativeCandidate = editedText;
-      lastRejectedConclusion = editedText;
-      lastReasons = validation.reasons;
-      console.error(`[osu analyze] pippi 终稿第 ${attempt} 次未通过：`, validation.reasons);
-    } catch (error) {
-      lastReasons = [String(error?.message || error)];
-      console.error(`[osu analyze] pippi 终稿第 ${attempt} 次失败：`, error?.message || error);
+    } else {
+      reply = report;
+    }
+
+    // The independent reviewer is advisory only: it records per-section
+    // opinions in reviewLog and never rewrites or degrades the final text.
+    // Mechanical gates already guarantee factual safety.
+    if (ENABLE_RUNTIME_LLM_FACT_REVIEW && !finalReportFallback && reply) {
+      const review = await reviewFullReport(db, analysis, reply, narrative);
+      if (!review.verdicts) {
+        reviewLog.push({ round: 1, verdicts: [], rejects: [], unavailable: true });
+        console.error('[osu analyze] 独立审查未返回有效判决，仅记录。');
+      } else {
+        const rejects = review.verdicts.filter((v) => v.result === 'REJECT');
+        reviewLog.push({
+          round: 1,
+          verdicts: review.verdicts,
+          rejects: rejects.map((v) => ({ section: v.section, kind: v.kind, reason: v.reason })),
+        });
+        if (rejects.length > 0) {
+          console.error(
+            '[osu analyze] 独立审查记录意见（不重写、不降级）：',
+            rejects.map((v) => `${v.section}[${v.kind || 'hard'}]=${v.reason}`).join('；'),
+          );
+        }
+      }
     }
   }
+
   if (pippiComment === analysis.safePippiFallback) {
     console.error('[osu analyze] 综合结论使用确定性安全版本。');
   }
-  const conclusionSource = pippiComment === analysis.safePippiFallback ? 'fallback' : 'llm';
-  let reply = `${analysis.safeBody}\n\n${pippiComment}`;
-  const finalValidation = validateAnalysisReport(analysis, reply, narrative);
-  let finalReportFallback = false;
-  if (!finalValidation.ok) {
-    console.error('[osu analyze] 完整报告组装校验失败，使用确定性安全报告：', finalValidation.reasons);
-    reply = analysis.safeFallback;
-    finalReportFallback = true;
-  }
-  if (!reply) throw new Error('无法生成安全的分析报告');
-
-  const sectionCommentsResult = await sectionCommentsPromise;
   const visibleConclusion = finalReportFallback ? analysis.safePippiFallback : pippiComment;
-  let sectionCommentsSource = sectionCommentsResult.source;
-  let sectionCommentsValidationReasons = [...sectionCommentsResult.reasons];
-  let sectionCommentsRejectedDraft = sectionCommentsResult.rejected;
-  if (sectionCommentsResult.comments) {
-    const reportWithComments = `${injectAnalysisSectionComments(analysis.safeBody, sectionCommentsResult.comments)}\n\n${visibleConclusion}`;
-    const commentsFinalValidation = validateAnalysisReport(analysis, reportWithComments, narrative);
-    if (commentsFinalValidation.ok) {
-      reply = reportWithComments;
-    } else {
-      sectionCommentsSource = 'none';
-      sectionCommentsValidationReasons = commentsFinalValidation.reasons.slice(0, 8);
-      sectionCommentsRejectedDraft = JSON.stringify(sectionCommentsResult.comments).slice(0, 1800);
-      console.error('[osu analyze] 区块短评组装终审失败，已保留安全正文：', commentsFinalValidation.reasons);
-    }
-  }
+  const finalSectionCommentsSource = finalReportFallback ? 'none' : sectionCommentsSource;
+  const finalSectionCommentSources = finalReportFallback
+    ? allSectionSources('none')
+    : sectionCommentSources;
+  if (!reply) throw new Error('无法生成安全的分析报告');
 
   const displayName = result.user?.username || String(target);
   const modComposition = buildModComposition(result.bestScores);
@@ -584,9 +1010,23 @@ async function runAnalysis(
       conclusionRejectedDraft: finalReportFallback
         ? pippiComment.slice(0, 1200)
         : (conclusionSource === 'fallback' ? lastRejectedConclusion.slice(0, 1200) : ''),
-      sectionCommentsSource,
+      sectionCommentsSource: finalSectionCommentsSource,
+      sectionCommentSources: finalSectionCommentSources,
+      sectionComments: finalSectionCommentsSource !== 'none' ? sectionCommentsResult.comments : null,
       sectionCommentsValidationReasons,
       sectionCommentsRejectedDraft,
+      reviewLog,
+      generationTrace: {
+        sectionComments: sectionGenerationCalls,
+        conclusion: conclusionGenerationCalls,
+        final: {
+          sectionCommentsSource: finalSectionCommentsSource,
+          sectionCommentSources: finalSectionCommentSources,
+          conclusionSource: finalReportFallback ? 'fallback' : conclusionSource,
+          fullReportFallback: finalReportFallback,
+        },
+      },
+      conclusionText: visibleConclusion,
       formatVersion: ANALYSIS_FORMAT_VERSION,
       osuUserId: result.user.id,
       userId: String(event.userId),
@@ -701,6 +1141,12 @@ export async function handleOsuCommand(
       draft.osuBindings = draft.osuBindings || {};
       draft.osuBindings[String(event.userId)] = { id: userId, username };
     });
+    // Unified binding: mirror into LazyBot's token table so /ppp & friends
+    // work without a separate /link. Non-fatal when the sync is unavailable.
+    const syncResult = await syncLazybotBinding(event.userId, { id: userId, username });
+    if (!syncResult.ok && !syncResult.skipped) {
+      console.error(`[bind] LazyBot 绑定同步失败: ${syncResult.error || '未知错误'}`);
+    }
     const msg = `已将 QQ 绑定到 osu! ${username}（ID: ${userId}）。`;
     if (sendMessage) await sendMessage(event, msg);
     return { replied: true, reason: msg };
@@ -871,6 +1317,10 @@ export async function handleOsuCommand(
         draft.osuBindings = draft.osuBindings || {};
         delete draft.osuBindings[String(event.userId)];
       });
+      const syncResult = await removeLazybotBinding(event.userId);
+      if (!syncResult.ok && !syncResult.skipped) {
+        console.error(`[bind] LazyBot 解绑同步失败: ${syncResult.error || '未知错误'}`);
+      }
       if (sendMessage) await sendMessage(event, '已删除你的 osu! 绑定。');
       return { replied: true, reason: 'osu clear bind' };
     }

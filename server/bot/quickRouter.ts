@@ -34,6 +34,8 @@ export interface QuickCommandDef {
   bpArgs?: boolean;
   /** Prefer direct invocation of the original local bot (original rendering). */
   bridge?: boolean;
+  /** Inject Wuxin's unified osu! binding when a bridged command has no target. */
+  injectBinding?: boolean;
 }
 
 interface QuickMatch {
@@ -74,12 +76,12 @@ const YUMU: QuickCommandDef[] = [
   { id: 'ba', source: 'yumu', aliases: ['ba', 'bpa', 'bp analysis', 'best analysis', '分析成绩', '分析最佳成绩'], kind: 'osu', implemented: false },
   { id: 'bh', source: 'yumu', aliases: ['bh', 'bph', 'bp history', '历史成绩'], kind: 'osu', implemented: false },
   { id: 'top', source: 'yumu', aliases: ['top', 'tp', 'top plays'], kind: 'osu', implemented: false },
-  { id: 'pm', source: 'yumu', aliases: ['pm', 'pp-', 'ppminus', '表现分减', 'pv', 'ppminus vs', 'pl', 'ppminus legacy'], kind: 'osu', implemented: false },
+  { id: 'pm', source: 'yumu', aliases: ['pm', 'pp-', 'ppminus', '表现分减', 'pv', 'ppminus vs', 'pl', 'ppminus legacy'], kind: 'osu', implemented: true, bridge: true, injectBinding: true },
   { id: 'pplus', source: 'yumu', aliases: ['pp', 'px', 'p+', 'pp+', 'plus', 'pppvs', 'plusvs'], kind: 'osu', capability: 'pplus', implemented: true },
   { id: 'ppmap', source: 'yumu', aliases: ['pa', 'ppmap'], kind: 'osu', implemented: false },
   { id: 'skill', source: 'yumu', aliases: ['k', 'skill', 'skills', '技能', '技巧'], kind: 'osu', capability: 'skill', implemented: true },
   { id: 'kv', source: 'yumu', aliases: ['kv', 'skill vs', 'skills vs', '技能对比'], kind: 'osu', implemented: false },
-  { id: 'etx', source: 'yumu', aliases: ['ex', 'et', 'etx', 'elite', 'eliteronix', '精英分数', 'ev', 'etx vs', 'elite vs'], kind: 'osu', implemented: false },
+  { id: 'etx', source: 'yumu', aliases: ['ex', 'et', 'etx', 'elite', 'eliteronix', '精英分数', 'ev', 'etx vs', 'elite vs'], kind: 'osu', implemented: true, bridge: true, injectBinding: true },
   { id: 'csv', source: 'yumu', aliases: ['csi', 'csv info', 'csvppm', 'cm', 'csvrating', 'cra'], kind: 'osu', implemented: false },
   { id: 'ppst', source: 'yumu', aliases: ['ppst'], kind: 'osu', implemented: false },
   { id: 'info', source: 'yumu', aliases: ['i', 'info', 'information', '玩家信息', '个人信息', '玩家', 'ic', 'infocard', '信息卡片', '玩家卡片'], kind: 'osu', capability: 'info', implemented: true },
@@ -182,6 +184,9 @@ const HYDRANT: QuickCommandDef[] = [
   { id: 'self_profile', source: 'hydrant', aliases: ['~'], kind: 'osu', handler: 'self_profile', implemented: true, bridge: true },
   { id: 'at_profile', source: 'hydrant', aliases: ['查'], kind: 'osu', handler: 'at_profile', implemented: true, bridge: true },
   { id: 'where', source: 'hydrant', aliases: ['where'], kind: 'osu', handler: 'where', implemented: true, bridge: true },
+  // Hydrant's original `+` still calls the retired syrin.me PP+ endpoint.
+  // Route the same public command through Wuxin's local PP+ aggregate instead.
+  { id: 'pplus', source: 'hydrant', aliases: ['+'], kind: 'osu', capability: 'pplus', implemented: true },
   { id: 'recommend', source: 'hydrant', aliases: ['荐图'], kind: 'osu', implemented: false },
   { id: 'pptth', source: 'hydrant', aliases: ['pptth'], kind: 'osu', implemented: false },
   { id: 'highlight', source: 'hydrant', aliases: ['今日高光'], kind: 'osu', implemented: false },
@@ -390,9 +395,9 @@ function buildBridgeCommand(match: QuickMatch): string {
 
 const HELP_TEXT = [
   '快捷指令（迁移中，陆续接入）：',
-  '成绩：!p / !r / !pr / !re（最近）、!bp / !b / !bs（BP）、!i / !info（玩家信息）、!pp / !plus（PP+）、!k（技能）',
+  '成绩：!p / !r / !pr / !re（最近）、!bp / !b / !bs（BP）、!i / !info（玩家信息）、!pp / !plus（PP+）、!pl（旧版 PP−）、!etx（ETX）、!k（技能）',
   'LazyBot 风格：/plus /ppp（PP+）、/bp /bplist、/pr /recent、/profile /info',
-  '消防栓风格：~（自己信息卡）、查+@（查他人）、where 名字、++（PP+）',
+  '消防栓风格：~（自己信息卡）、查+@（查他人）、where 名字、+ 玩家名（PP+）',
   '绑定（唯一入口）：/w osu bind <osu用户名>；解绑：/w osu clear bind',
 ].join('\n');
 
@@ -627,7 +632,7 @@ export async function handleQuickCommand(
         }
         bridgeCommand = `where ${user}`;
       }
-    } else if (def.capability) {
+    } else if (def.capability || def.injectBinding) {
       const parsed = parseOsuArgs(def, args);
       if (!parsed.username) {
         const usesAt = atTargets.length > 0;
@@ -789,7 +794,13 @@ export async function handleQuickCommand(
       }
       return { handled: true, replied: true, reason: 'unbound_self' };
     }
-    const botId = def.source === 'kanon' ? 'kanon' : def.source === 'lazybot' ? 'lazybot' : 'yumu';
+    const botId = def.source === 'kanon'
+      ? 'kanon'
+      : def.source === 'lazybot'
+        ? 'lazybot'
+        : def.source === 'hydrant'
+          ? 'hydrant'
+          : 'yumu';
     let result: Awaited<ReturnType<typeof executeInternalBotCommand>>;
     try {
       result = await executeInternalBotCommand(

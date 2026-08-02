@@ -1,0 +1,162 @@
+{
+  "label": "nostar6-v85-1",
+  "playerSet": "golden",
+  "startedAt": "2026-08-01T22:49:00.397Z",
+  "apiBase": "http://127.0.0.1:8787",
+  "players": [
+    {
+      "key": "mrekk",
+      "id": 7562902,
+      "startedAt": "2026-08-01T22:49:00.876Z",
+      "finishedAt": "2026-08-01T22:49:55.669Z",
+      "outputFile": "01-mrekk.txt",
+      "metadata": {
+        "target": "mrekk",
+        "displayName": "mrekk",
+        "osuUserId": 7562902,
+        "createdAt": "2026-08-01T22:49:55.437Z",
+        "analysisModel": "deepseek-v4-flash",
+        "formatVersion": 85,
+        "conclusionSource": "llm",
+        "conclusionValidationReasons": [],
+        "sectionCommentsSource": "llm",
+        "sectionCommentSources": {
+          "profile": "llm",
+          "top": "llm",
+          "top5": "llm",
+          "mods": "llm",
+          "pplus": "llm",
+          "recent": "llm",
+          "classification": "llm"
+        },
+        "sectionCommentsValidationReasons": [],
+        "generationTrace": {
+          "sectionComments": [
+            {
+              "trigger": "initial",
+              "trace": [
+                {
+                  "attempt": 1,
+                  "outcome": "rejected",
+                  "reasons": [
+                    "profile 短评语义终审：分析对象 mrekk 未确认是发起者本人，不能使用第二人称",
+                    "profile 把未确认的目标玩家写成了发起者本人",
+                    "mods 短评语义终审：分析对象 mrekk 未确认是发起者本人，不能使用第二人称",
+                    "mods 短评语义终审：精确组合 HDDT 只有 68/100 张，不能声称它覆盖全部 BP",
+                    "mods 把未确认的目标玩家写成了发起者本人",
+                    "classification 短评语义终审：分析对象 mrekk 未确认是发起者本人，不能使用第二人称",
+                    "classification 把未确认的目标玩家写成了发起者本人"
+                  ],
+                  "draft": "{\n  \"profile\": \"世界第一，32138.7pp，总Acc 98.26%，这数据已经不像人类了……但我知道你是亲手打的，所以更离谱了。注册快四千天，240,177次游玩，这积累是真的厚。\",\n  \"top\": \"BP平均11.67★，最高冲到13.95★，还全是6.5★以上的图。Acc平均98.10%，60张在98%以上，只有4张掉下95%——这个分布稳得有点吓人，但还没到全线完美，留了点人间烟火味。\",\n  \"top5\": \"五张里四张都挂着DT，最高1857.1pp直接甩开第二名75.5pp，这孤峰明显是刻意堆出来的。中间三张挤在1723到1771之间，差距小得像在排队，只有#5那张HDHRNC 96.70% Acc混进来有点跳。\",\n  \"mods\": \"94张BP是HDDT或HDHRDT，DT/NC覆盖了全部100张——这DT是焊在成绩单上了吧。HD出现98次，HR只有28次，看来你偏爱用DT加速而不是HR压判定。\",\n  \"pplus\": \"Jump 27.37直接冲破基准线，比其他维度高出一大截，Speed 19.26也明显领先。Accuracy 14.58是唯一没超15的，相对最弱——但别误会，这放在别人身上已经是天花板了。\",\n  \"recent\": \"最近50次平均Acc 94.76%，比BP低了3.34个百分点，星数也降到8.88★，少了2.79★。HR出现18次、NM 16次，这画风跟BP那堆HDDT完全不一样——是在放松玩还是换口味了？\",\n  \"classification\": \"BP里aim占79%，stream只占10%，alt和tech更少，这aim浓度高得离谱。不过样本就100张，别急着贴标签，毕竟你Jump维度那么突出，方向倒是挺一致。\"\n}"
+                },
+                {
+                  "attempt": 2,
+                  "outcome": "rejected",
+                  "reasons": [
+                    "mods 短评语义终审：精确 Mod 组合 HDHRDT 的核准数量为 26 张，不是 94 张"
+                  ],
+                  "draft": "```json\n{\n  \"profile\": \"全球第一，32138.7pp，总Acc 98.26%——这个账号的体量本身就说明了一切。从2015年注册到现在，240,177次游玩，134天的游戏时长，评级里SH有1453张，这积累厚度确实配得上榜首位置。\",\n  \"mods\": \"100张BP里DT/NC全覆盖，HD出现98次，HR出现28次。精确组合上HDDT占68张，HDHRDT占26张，两者合计94张——这构成相当统一，几乎全押在带HD的高难度加速组合上。\",\n  \"classification\": \"BP100张里aim占79张，stream只有10张，alt 7张，tech 4张。aim和stream之间差了69张，这分布相当倾斜，几乎是一面倒的aim主导结构。\"\n}\n```"
+                },
+                {
+                  "attempt": 3,
+                  "outcome": "accepted",
+                  "reasons": [],
+                  "draft": "```json\n{\n  \"mods\": \"BP 里 100 张全带 DT/NC，98 张带 HD，这组合覆盖率也太整齐了。HDDT 68 张、HDHRDT 26 张，前两类精确组合合计 94 张，剩下几张零散分布，纯 NM 一张没有——这成绩单基本就是 HD 系速度图的天下。\"\n}\n```"
+                }
+              ]
+            }
+          ],
+          "conclusion": [
+            {
+              "trigger": "initial",
+              "trace": [
+                {
+                  "attempt": 1,
+                  "outcome": "rejected",
+                  "reasons": [
+                    "分析对象 mrekk 未确认是发起者本人，不能使用第二人称",
+                    "分析对象 mrekk 的性别未知，不能擅自使用“他/她”"
+                  ],
+                  "draft": "【结论】\n\n全球排名 #1，PP 32138.7——这位玩家已经不是“顶端”能形容的了，他是把天花板掀了之后又往上盖了一层楼的人。\n最吓人的是 BP 平均星数 11.67★，范围从 10.30★ 到 13.95★，没有1张低于 6.5★。\n\n这意味着他连“放松一下”的选项都没有，每1张进 BP 的图都是别人眼里的怪物图。\n而平均 Acc 98.10%，60 张超过 98%——在 13★ 的图里保持这种准度，我只能说 Auto 看了都想给他鼓掌。\n\nPP+ 显示条里 Jump 27.37 直接甩开基准线 12.37，Speed 19.26 也超出不少，这两项是绝对的主场。\n不过最近的 50 次游玩平均 Acc 只有 94.76%，星数也掉到 8.88★，跟 BP 的 11.67★ 差了快 3 星——嗯，最近是不是在摸鱼？\n\n总之，这是一个把 aim 和速度推到人类极限、连 BP 里 79% 都是 aim 图的账号。全球第一不是白给的，但我还是想问问——你最近那几把，是真的在玩，还是在散步？"
+                },
+                {
+                  "attempt": 2,
+                  "outcome": "accepted",
+                  "reasons": [],
+                  "draft": "【结论】\n\n全球排名 #1，PP 32138.7——这个账号本身就是 osu! 现役的“天花板刻度尺”。\nBP100 平均 11.67★、最低 10.30★，6星以下的谱面一张都没有，这已经不是“能打什么”的问题，而是“这个人的 BP 列表本身就是别人的终点线”。\n\n真正让我多看两眼的其实是 BP5 的结构：5张全部带 HD+DT/NC，但 #1 和 #2 之间差了 75.5pp，之后又突然收窄到 10pp 左右。\nPP+ 的 Jump 27.37 超出基准线 12.37，Speed 19.26 也超了 4.26，跟 BP 里 aim 占 79 张的方向完全咬合，这账号的“爆发力”和“高速读图”两个标签是焊死的。\n\n不过最近 50 次游玩的平均 Acc 掉到 94.76%，比 BP 低了 3.34 个百分点，平均星数也降了 2.79★。\n一个 BP 里 98% 以上 Acc 占 60% 的人，最近打成这样——不是状态不在线，就是根本没在认真刷分，纯粹在玩。\n\n世界第一的“随便玩玩”和普通人的“全力冲刺”之间，大概就是这么个距离。"
+                }
+              ]
+            }
+          ],
+          "final": {
+            "sectionCommentsSource": "llm",
+            "sectionCommentSources": {
+              "profile": "llm",
+              "top": "llm",
+              "top5": "llm",
+              "mods": "llm",
+              "pplus": "llm",
+              "recent": "llm",
+              "classification": "llm"
+            },
+            "conclusionSource": "llm",
+            "fullReportFallback": false
+          }
+        },
+        "reviewLog": [
+          {
+            "round": 1,
+            "verdicts": [
+              {
+                "section": "profile",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "top",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "top5",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "mods",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "pplus",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "recent",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "classification",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "conclusion",
+                "result": "PASS",
+                "reason": ""
+              }
+            ],
+            "rejects": []
+          }
+        ],
+        "bestCount": 100,
+        "recentCount": 50,
+        "hasPPlus": true,
+        "errors": []
+      }
+    }
+  ],
+  "finishedAt": "2026-08-01T22:49:57.120Z"
+}

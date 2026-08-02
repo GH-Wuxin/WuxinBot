@@ -1,0 +1,766 @@
+{
+  "label": "v84-anchor-5f",
+  "playerSet": "golden",
+  "startedAt": "2026-08-01T20:10:23.071Z",
+  "apiBase": "http://127.0.0.1:8787",
+  "players": [
+    {
+      "key": "mrekk",
+      "id": 7562902,
+      "startedAt": "2026-08-01T20:10:23.536Z",
+      "finishedAt": "2026-08-01T20:11:08.064Z",
+      "outputFile": "01-mrekk.txt",
+      "metadata": {
+        "target": "mrekk",
+        "displayName": "mrekk",
+        "osuUserId": 7562902,
+        "createdAt": "2026-08-01T20:11:07.837Z",
+        "analysisModel": "deepseek-v4-flash",
+        "formatVersion": 83,
+        "conclusionSource": "llm",
+        "conclusionValidationReasons": [],
+        "sectionCommentsSource": "llm",
+        "sectionCommentSources": {
+          "profile": "llm",
+          "top": "llm",
+          "top5": "llm",
+          "mods": "llm",
+          "pplus": "llm",
+          "recent": "llm",
+          "classification": "llm"
+        },
+        "sectionCommentsValidationReasons": [],
+        "generationTrace": {
+          "sectionComments": [
+            {
+              "trigger": "initial",
+              "trace": [
+                {
+                  "attempt": 1,
+                  "outcome": "rejected",
+                  "reasons": [
+                    "profile 短评语义终审：把游玩次数、排名或账号快照扩写成了堆量与成长过程",
+                    "profile 短评语义终审：包含简报外数字: 32000",
+                    "top5 短评语义终审：BP5 中精确组合 HDDT的实际数量为 3 张，不是 4 张",
+                    "pplus 短评语义终审：Accuracy 的核准显示值为 14.58，不是 15.67",
+                    "classification 短评语义终审：把当前谱面分类标签翻译成了具体操作、选图偏好或玩家类型",
+                    "profile 短评包含简报外数字: 32000"
+                  ]
+                },
+                {
+                  "attempt": 2,
+                  "outcome": "rejected",
+                  "reasons": [
+                    "top5 短评编造了简报未提供的谱面内容或操作感受"
+                  ]
+                },
+                {
+                  "attempt": 3,
+                  "outcome": "accepted",
+                  "reasons": []
+                }
+              ]
+            }
+          ],
+          "conclusion": [
+            {
+              "trigger": "initial",
+              "trace": [
+                {
+                  "attempt": 1,
+                  "outcome": "rejected",
+                  "reasons": [
+                    "把未经证据支持的原因或状态写成了事实：放松"
+                  ]
+                },
+                {
+                  "attempt": 2,
+                  "outcome": "rejected",
+                  "reasons": [
+                    "分析对象 mrekk 未确认是发起者本人，不能使用第二人称",
+                    "把 PP+ 或准确率快照扩写成了支撑排名/高位的具体能力机制",
+                    "Accuracy 的核准显示值为 14.58，不是 15.67"
+                  ]
+                },
+                {
+                  "attempt": 3,
+                  "outcome": "accepted",
+                  "reasons": []
+                }
+              ]
+            }
+          ],
+          "final": {
+            "sectionCommentsSource": "llm",
+            "sectionCommentSources": {
+              "profile": "llm",
+              "top": "llm",
+              "top5": "llm",
+              "mods": "llm",
+              "pplus": "llm",
+              "recent": "llm",
+              "classification": "llm"
+            },
+            "conclusionSource": "llm",
+            "fullReportFallback": false
+          }
+        },
+        "reviewLog": [
+          {
+            "round": 1,
+            "verdicts": [
+              {
+                "section": "profile",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "top",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "top5",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "mods",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "pplus",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "recent",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "classification",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "conclusion",
+                "result": "PASS",
+                "reason": ""
+              }
+            ],
+            "rejects": []
+          }
+        ],
+        "bestCount": 100,
+        "recentCount": 50,
+        "hasPPlus": true,
+        "errors": []
+      }
+    },
+    {
+      "key": "wuxin",
+      "id": 19244792,
+      "startedAt": "2026-08-01T20:11:09.009Z",
+      "finishedAt": "2026-08-01T20:12:03.972Z",
+      "outputFile": "02-wuxin.txt",
+      "metadata": {
+        "target": "[SHK]Wuxin",
+        "displayName": "[SHK]Wuxin",
+        "osuUserId": 19244792,
+        "createdAt": "2026-08-01T20:12:03.742Z",
+        "analysisModel": "deepseek-v4-flash",
+        "formatVersion": 83,
+        "conclusionSource": "llm",
+        "conclusionValidationReasons": [],
+        "sectionCommentsSource": "llm",
+        "sectionCommentSources": {
+          "profile": "llm",
+          "top": "llm",
+          "top5": "llm",
+          "mods": "llm",
+          "pplus": "llm",
+          "recent": "llm",
+          "classification": "llm"
+        },
+        "sectionCommentsValidationReasons": [],
+        "generationTrace": {
+          "sectionComments": [
+            {
+              "trigger": "initial",
+              "trace": [
+                {
+                  "attempt": 1,
+                  "outcome": "accepted",
+                  "reasons": []
+                }
+              ]
+            }
+          ],
+          "conclusion": [
+            {
+              "trigger": "initial",
+              "trace": [
+                {
+                  "attempt": 1,
+                  "outcome": "rejected",
+                  "reasons": [
+                    "包含简报外数字: 1000"
+                  ]
+                },
+                {
+                  "attempt": 2,
+                  "outcome": "rejected",
+                  "reasons": [
+                    "把整体平均准确率与高准确率成绩数量拼成了同一个统计量"
+                  ]
+                },
+                {
+                  "attempt": 3,
+                  "outcome": "accepted",
+                  "reasons": []
+                }
+              ]
+            },
+            {
+              "trigger": "review-round-1",
+              "trace": [
+                {
+                  "attempt": 1,
+                  "outcome": "rejected",
+                  "reasons": [
+                    "把未经证据支持的原因或状态写成了事实：休整"
+                  ]
+                },
+                {
+                  "attempt": 2,
+                  "outcome": "accepted",
+                  "reasons": []
+                }
+              ]
+            },
+            {
+              "trigger": "review-round-2",
+              "trace": [
+                {
+                  "attempt": 1,
+                  "outcome": "accepted",
+                  "reasons": []
+                }
+              ]
+            }
+          ],
+          "final": {
+            "sectionCommentsSource": "llm",
+            "sectionCommentSources": {
+              "profile": "llm",
+              "top": "llm",
+              "top5": "llm",
+              "mods": "llm",
+              "pplus": "llm",
+              "recent": "llm",
+              "classification": "llm"
+            },
+            "conclusionSource": "llm",
+            "fullReportFallback": false
+          }
+        },
+        "reviewLog": [
+          {
+            "round": 1,
+            "verdicts": [
+              {
+                "section": "profile",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "top",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "top5",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "mods",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "pplus",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "recent",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "classification",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "conclusion",
+                "result": "REJECT",
+                "kind": "hard",
+                "reason": "结论中“这账号的骨架就是‘高速流图 + 高 Acc + HD 压阵’”将当前 BP 构成表述为账号永久能力，且“高速流图”把 stream 分类与 Speed 维度混为因果，超出简报允许的方向相容表述。"
+              }
+            ],
+            "rejects": [
+              {
+                "section": "conclusion",
+                "kind": "hard",
+                "reason": "结论中“这账号的骨架就是‘高速流图 + 高 Acc + HD 压阵’”将当前 BP 构成表述为账号永久能力，且“高速流图”把 stream 分类与 Speed 维度混为因果，超出简报允许的方向相容表述。"
+              }
+            ]
+          },
+          {
+            "round": 2,
+            "verdicts": [
+              {
+                "section": "profile",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "top",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "top5",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "mods",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "pplus",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "recent",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "classification",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "conclusion",
+                "result": "REJECT",
+                "kind": "hard",
+                "reason": "结论中“这位玩家”使用第二人称视角且未确认发起者身份，违反禁止对未确认对象使用人称代词的规定。"
+              }
+            ],
+            "rejects": [
+              {
+                "section": "conclusion",
+                "kind": "hard",
+                "reason": "结论中“这位玩家”使用第二人称视角且未确认发起者身份，违反禁止对未确认对象使用人称代词的规定。"
+              }
+            ]
+          },
+          {
+            "round": 3,
+            "verdicts": [
+              {
+                "section": "profile",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "top",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "top5",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "mods",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "pplus",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "recent",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "classification",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "conclusion",
+                "result": "REJECT",
+                "kind": "hard",
+                "reason": "结论将 PP+ 与谱面类型样本的“方向相容”写成“同一套能力反复打磨的结果”，把相容关系升级为因果机制。"
+              }
+            ],
+            "rejects": [
+              {
+                "section": "conclusion",
+                "kind": "hard",
+                "reason": "结论将 PP+ 与谱面类型样本的“方向相容”写成“同一套能力反复打磨的结果”，把相容关系升级为因果机制。"
+              }
+            ]
+          }
+        ],
+        "bestCount": 100,
+        "recentCount": 0,
+        "hasPPlus": true,
+        "errors": []
+      }
+    },
+    {
+      "key": "ahahhaha",
+      "id": 39873822,
+      "startedAt": "2026-08-01T20:12:05.238Z",
+      "finishedAt": "2026-08-01T20:12:58.007Z",
+      "outputFile": "03-ahahhaha.txt",
+      "metadata": {
+        "target": "ahahhaha",
+        "displayName": "ahahhaha",
+        "osuUserId": 39873822,
+        "createdAt": "2026-08-01T20:12:57.779Z",
+        "analysisModel": "deepseek-v4-flash",
+        "formatVersion": 83,
+        "conclusionSource": "fallback",
+        "conclusionValidationReasons": [
+          "把未经证据支持的原因或状态写成了事实：急着",
+          "当前只有 BP33，不能安排训练动作或预测未来 pp/排名"
+        ],
+        "sectionCommentsSource": "llm",
+        "sectionCommentSources": {
+          "profile": "llm",
+          "top": "llm",
+          "top5": "llm",
+          "mods": "llm",
+          "pplus": "llm",
+          "recent": "llm",
+          "classification": "llm"
+        },
+        "sectionCommentsValidationReasons": [],
+        "generationTrace": {
+          "sectionComments": [
+            {
+              "trigger": "initial",
+              "trace": [
+                {
+                  "attempt": 1,
+                  "outcome": "rejected",
+                  "reasons": [
+                    "profile 短评语义终审：把未经证据支持的原因或状态写成了事实：成长速度",
+                    "top 短评语义终审：把未经证据支持的原因或状态写成了事实：手感",
+                    "top 短评语义终审：BP 中 22/33 张低于 95%，不能把整体写成稳定或高准确率已收稳",
+                    "mods 短评语义终审：把核准数量改写成了无法核验的“一半”比例",
+                    "mods 短评语义终审：当前只有 BP33，不能安排训练动作或预测未来 pp/排名",
+                    "mods 短评语义终审：包含简报外数字: 1.65",
+                    "pplus 短评语义终审：Recent 为空时不能猜测当前状态、真实能力或是否仍在游玩",
+                    "mods 短评包含简报外数字: 1.65"
+                  ]
+                },
+                {
+                  "attempt": 2,
+                  "outcome": "rejected",
+                  "reasons": [
+                    "profile 短评语义终审：把未经证据支持的原因或状态写成了事实：认真打",
+                    "top 短评语义终审：包含简报外数字: 19",
+                    "mods 短评语义终审：包含简报外数字: 1.65",
+                    "top 短评包含简报外数字: 19",
+                    "mods 短评包含简报外数字: 1.65"
+                  ]
+                },
+                {
+                  "attempt": 3,
+                  "outcome": "accepted",
+                  "reasons": []
+                }
+              ]
+            },
+            {
+              "trigger": "review-round-1",
+              "trace": [
+                {
+                  "attempt": 1,
+                  "outcome": "rejected",
+                  "reasons": [
+                    "top5 短评语义终审：BP5 中含 HR的实际数量为 3 张，不是 2 张"
+                  ]
+                },
+                {
+                  "attempt": 2,
+                  "outcome": "accepted",
+                  "reasons": []
+                }
+              ]
+            }
+          ],
+          "conclusion": [
+            {
+              "trigger": "initial",
+              "trace": [
+                {
+                  "attempt": 1,
+                  "outcome": "accepted",
+                  "reasons": []
+                }
+              ]
+            },
+            {
+              "trigger": "review-round-1",
+              "trace": [
+                {
+                  "attempt": 1,
+                  "outcome": "accepted",
+                  "reasons": []
+                }
+              ]
+            },
+            {
+              "trigger": "review-round-2",
+              "trace": [
+                {
+                  "attempt": 1,
+                  "outcome": "rejected",
+                  "reasons": [
+                    "擅自用中文数词换算了账号年龄"
+                  ]
+                },
+                {
+                  "attempt": 2,
+                  "outcome": "rejected",
+                  "reasons": [
+                    "把核准数量改写成了无法核验的“一半”比例",
+                    "把未经证据支持的原因或状态写成了事实：手感"
+                  ]
+                },
+                {
+                  "attempt": 3,
+                  "outcome": "rejected",
+                  "reasons": [
+                    "把未经证据支持的原因或状态写成了事实：急着",
+                    "当前只有 BP33，不能安排训练动作或预测未来 pp/排名"
+                  ]
+                }
+              ]
+            }
+          ],
+          "final": {
+            "sectionCommentsSource": "llm",
+            "sectionCommentSources": {
+              "profile": "llm",
+              "top": "llm",
+              "top5": "llm",
+              "mods": "llm",
+              "pplus": "llm",
+              "recent": "llm",
+              "classification": "llm"
+            },
+            "conclusionSource": "fallback",
+            "fullReportFallback": false
+          }
+        },
+        "reviewLog": [
+          {
+            "round": 1,
+            "verdicts": [
+              {
+                "section": "profile",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "top",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "top5",
+                "result": "REJECT",
+                "kind": "hard",
+                "reason": "把 BP5 中 HR 成绩的 80-88% 准确率解释为‘刚学会用 HR 就敢往上冲’，属于无证据的心理/经历推断。"
+              },
+              {
+                "section": "mods",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "pplus",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "recent",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "classification",
+                "result": "REJECT",
+                "kind": "hard",
+                "reason": "‘这结构倒是很专一’与‘当前成绩单确实很有指向性’把 alt 85% 的构成写成既定倾向，违反样本稀疏不得提前定型的限制。"
+              },
+              {
+                "section": "conclusion",
+                "result": "REJECT",
+                "kind": "hard",
+                "reason": "‘算是很早就开始碰 HR 的新人’把 BP 中 HR 出现推断为早期接触过程，属于无证据的历史过程解释。"
+              }
+            ],
+            "rejects": [
+              {
+                "section": "top5",
+                "kind": "hard",
+                "reason": "把 BP5 中 HR 成绩的 80-88% 准确率解释为‘刚学会用 HR 就敢往上冲’，属于无证据的心理/经历推断。"
+              },
+              {
+                "section": "classification",
+                "kind": "hard",
+                "reason": "‘这结构倒是很专一’与‘当前成绩单确实很有指向性’把 alt 85% 的构成写成既定倾向，违反样本稀疏不得提前定型的限制。"
+              },
+              {
+                "section": "conclusion",
+                "kind": "hard",
+                "reason": "‘算是很早就开始碰 HR 的新人’把 BP 中 HR 出现推断为早期接触过程，属于无证据的历史过程解释。"
+              }
+            ]
+          },
+          {
+            "round": 2,
+            "verdicts": [
+              {
+                "section": "profile",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "top",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "top5",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "mods",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "pplus",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "recent",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "classification",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "conclusion",
+                "result": "REJECT",
+                "kind": "hard",
+                "reason": "结论将 Recent 缺失与 BP 样本解释为动机（更在意挑战而非收尾、拿 HR 当试错工具），且未在同一段承认未知。"
+              }
+            ],
+            "rejects": [
+              {
+                "section": "conclusion",
+                "kind": "hard",
+                "reason": "结论将 Recent 缺失与 BP 样本解释为动机（更在意挑战而非收尾、拿 HR 当试错工具），且未在同一段承认未知。"
+              }
+            ]
+          },
+          {
+            "round": 3,
+            "verdicts": [
+              {
+                "section": "profile",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "top",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "top5",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "mods",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "pplus",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "recent",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "classification",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "conclusion",
+                "result": "REJECT",
+                "kind": "hard",
+                "reason": "结论段把 BP33 平均 1.98★ 与最高 9.3pp 并列，但 9.3pp 是 BP5 中单张成绩而非 BP33 整体属性，构成把独立聚合值拼成不存在的子集关系。"
+              }
+            ],
+            "rejects": [
+              {
+                "section": "conclusion",
+                "kind": "hard",
+                "reason": "结论段把 BP33 平均 1.98★ 与最高 9.3pp 并列，但 9.3pp 是 BP5 中单张成绩而非 BP33 整体属性，构成把独立聚合值拼成不存在的子集关系。"
+              }
+            ]
+          }
+        ],
+        "bestCount": 33,
+        "recentCount": 0,
+        "hasPPlus": true,
+        "errors": []
+      }
+    }
+  ],
+  "finishedAt": "2026-08-01T20:12:59.141Z"
+}

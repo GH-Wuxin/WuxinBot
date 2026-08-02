@@ -1,0 +1,1667 @@
+{
+  "label": "iteration-5-flash",
+  "playerSet": "golden",
+  "startedAt": "2026-08-01T13:33:09.296Z",
+  "apiBase": "http://127.0.0.1:8787",
+  "players": [
+    {
+      "key": "mrekk",
+      "id": 7562902,
+      "startedAt": "2026-08-01T13:33:10.091Z",
+      "finishedAt": "2026-08-01T13:33:53.177Z",
+      "outputFile": "01-mrekk.txt",
+      "metadata": {
+        "target": "mrekk",
+        "displayName": "mrekk",
+        "osuUserId": 7562902,
+        "createdAt": "2026-08-01T13:33:52.883Z",
+        "analysisModel": "deepseek-v4-flash",
+        "formatVersion": 71,
+        "conclusionSource": "llm",
+        "conclusionValidationReasons": [],
+        "sectionCommentsSource": "llm",
+        "sectionCommentSources": {
+          "profile": "llm",
+          "top": "llm",
+          "top5": "llm",
+          "mods": "llm",
+          "pplus": "llm",
+          "recent": "llm",
+          "classification": "llm"
+        },
+        "sectionCommentsValidationReasons": [],
+        "generationTrace": {
+          "sectionComments": [
+            {
+              "trigger": "initial",
+              "trace": [
+                {
+                  "attempt": 1,
+                  "outcome": "accepted",
+                  "reasons": []
+                }
+              ]
+            },
+            {
+              "trigger": "review-round-1",
+              "trace": [
+                {
+                  "attempt": 1,
+                  "outcome": "accepted",
+                  "reasons": []
+                }
+              ]
+            }
+          ],
+          "conclusion": [
+            {
+              "trigger": "initial",
+              "trace": [
+                {
+                  "attempt": 1,
+                  "outcome": "accepted",
+                  "reasons": []
+                }
+              ]
+            }
+          ],
+          "final": {
+            "sectionCommentsSource": "llm",
+            "sectionCommentSources": {
+              "profile": "llm",
+              "top": "llm",
+              "top5": "llm",
+              "mods": "llm",
+              "pplus": "llm",
+              "recent": "llm",
+              "classification": "llm"
+            },
+            "conclusionSource": "llm",
+            "fullReportFallback": false
+          }
+        },
+        "reviewLog": [
+          {
+            "round": 1,
+            "verdicts": [
+              {
+                "section": "profile",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "top",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "top5",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "mods",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "pplus",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "recent",
+                "result": "REJECT",
+                "kind": "hard",
+                "reason": "把 Recent 与 BP 的差异写成'是在随便玩，还是在试别的节奏'，这是把未知原因断言为放松/尝试等可能故事，且'随便玩'无保留语气"
+              },
+              {
+                "section": "classification",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "conclusion",
+                "result": "PASS",
+                "reason": ""
+              }
+            ],
+            "rejects": [
+              {
+                "section": "recent",
+                "kind": "hard",
+                "reason": "把 Recent 与 BP 的差异写成'是在随便玩，还是在试别的节奏'，这是把未知原因断言为放松/尝试等可能故事，且'随便玩'无保留语气"
+              }
+            ]
+          },
+          {
+            "round": 2,
+            "verdicts": [
+              {
+                "section": "profile",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "top",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "top5",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "mods",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "pplus",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "recent",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "classification",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "conclusion",
+                "result": "PASS",
+                "reason": ""
+              }
+            ],
+            "rejects": []
+          }
+        ],
+        "bestCount": 100,
+        "recentCount": 50,
+        "hasPPlus": true,
+        "errors": []
+      }
+    },
+    {
+      "key": "cryshina",
+      "id": 14715160,
+      "startedAt": "2026-08-01T13:33:54.879Z",
+      "finishedAt": "2026-08-01T13:34:53.357Z",
+      "outputFile": "02-cryshina.txt",
+      "metadata": {
+        "target": "cryshina",
+        "displayName": "cryshina",
+        "osuUserId": 14715160,
+        "createdAt": "2026-08-01T13:34:53.062Z",
+        "analysisModel": "deepseek-v4-flash",
+        "formatVersion": 71,
+        "conclusionSource": "fallback",
+        "conclusionValidationReasons": [
+          "把 Jump 和 aim 相对低写成'这条路走得太深留下的影子'，属于确定性伪因果，把数据差异断言为路径选择的结果"
+        ],
+        "sectionCommentsSource": "llm",
+        "sectionCommentSources": {
+          "profile": "llm",
+          "top": "llm",
+          "top5": "llm",
+          "mods": "llm",
+          "pplus": "llm",
+          "recent": "llm",
+          "classification": "llm"
+        },
+        "sectionCommentsValidationReasons": [],
+        "generationTrace": {
+          "sectionComments": [
+            {
+              "trigger": "initial",
+              "trace": [
+                {
+                  "attempt": 1,
+                  "outcome": "rejected",
+                  "reasons": [
+                    "recent 短评过短",
+                    "classification 短评语义终审：把当前成绩构成写成了未经提供的偏好或感受：aim 只有 7 张——这不是偏好"
+                  ]
+                },
+                {
+                  "attempt": 2,
+                  "outcome": "rejected",
+                  "reasons": [
+                    "recent 短评过短"
+                  ]
+                },
+                {
+                  "attempt": 3,
+                  "outcome": "accepted",
+                  "reasons": []
+                }
+              ]
+            },
+            {
+              "trigger": "review-round-2",
+              "trace": [
+                {
+                  "attempt": 1,
+                  "outcome": "rejected",
+                  "reasons": [
+                    "recent 复用了近期成品的句子骨架，请从零改写"
+                  ]
+                },
+                {
+                  "attempt": 2,
+                  "outcome": "accepted",
+                  "reasons": []
+                }
+              ]
+            }
+          ],
+          "conclusion": [
+            {
+              "trigger": "initial",
+              "trace": [
+                {
+                  "attempt": 1,
+                  "outcome": "rejected",
+                  "reasons": [
+                    "把 PP+ 相对低项扩写成了具体能力结论：Jump 只有 10.94，aim 图也才 7 张，这种极端偏向放在别人身上可能是短板"
+                  ]
+                },
+                {
+                  "attempt": 2,
+                  "outcome": "accepted",
+                  "reasons": []
+                }
+              ]
+            },
+            {
+              "trigger": "review-round-1",
+              "trace": [
+                {
+                  "attempt": 1,
+                  "outcome": "accepted",
+                  "reasons": []
+                }
+              ]
+            },
+            {
+              "trigger": "review-round-2",
+              "trace": [
+                {
+                  "attempt": 1,
+                  "outcome": "accepted",
+                  "reasons": []
+                }
+              ]
+            }
+          ],
+          "final": {
+            "sectionCommentsSource": "llm",
+            "sectionCommentSources": {
+              "profile": "llm",
+              "top": "llm",
+              "top5": "llm",
+              "mods": "llm",
+              "pplus": "llm",
+              "recent": "llm",
+              "classification": "llm"
+            },
+            "conclusionSource": "fallback",
+            "fullReportFallback": false
+          }
+        },
+        "reviewLog": [
+          {
+            "round": 1,
+            "verdicts": [
+              {
+                "section": "profile",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "top",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "top5",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "mods",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "pplus",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "recent",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "classification",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "conclusion",
+                "result": "REJECT",
+                "kind": "quality",
+                "reason": "结论基本复述前文事实，且'这个位置不会轻易动摇'是对未来排名的无依据断言，缺少pippi的鲜活综合判断"
+              }
+            ],
+            "rejects": [
+              {
+                "section": "conclusion",
+                "kind": "quality",
+                "reason": "结论基本复述前文事实，且'这个位置不会轻易动摇'是对未来排名的无依据断言，缺少pippi的鲜活综合判断"
+              }
+            ]
+          },
+          {
+            "round": 2,
+            "verdicts": [
+              {
+                "section": "profile",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "top",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "top5",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "mods",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "pplus",
+                "result": "REJECT",
+                "kind": "hard",
+                "reason": "把 PP+ 高项写成'为高速长串而生的形态'，属于确定性能力机制编造"
+              },
+              {
+                "section": "recent",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "classification",
+                "result": "REJECT",
+                "kind": "hard",
+                "reason": "把 stream 占比与 PP+ 高项写成'结合...当前进入 BP 的图确实集中在高速串图这一路'，将并列观察写成因果"
+              },
+              {
+                "section": "conclusion",
+                "result": "REJECT",
+                "kind": "hard",
+                "reason": "'六维形状和谱面构成严丝合缝地咬在一起'把数据并列写成因果；'Jump 相对低...更像是风格的注脚'把低项解释为风格而非数据边界"
+              }
+            ],
+            "rejects": [
+              {
+                "section": "pplus",
+                "kind": "hard",
+                "reason": "把 PP+ 高项写成'为高速长串而生的形态'，属于确定性能力机制编造"
+              },
+              {
+                "section": "classification",
+                "kind": "hard",
+                "reason": "把 stream 占比与 PP+ 高项写成'结合...当前进入 BP 的图确实集中在高速串图这一路'，将并列观察写成因果"
+              },
+              {
+                "section": "conclusion",
+                "kind": "hard",
+                "reason": "'六维形状和谱面构成严丝合缝地咬在一起'把数据并列写成因果；'Jump 相对低...更像是风格的注脚'把低项解释为风格而非数据边界"
+              }
+            ]
+          },
+          {
+            "round": 3,
+            "verdicts": [
+              {
+                "section": "profile",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "top",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "top5",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "mods",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "pplus",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "recent",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "classification",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "conclusion",
+                "result": "REJECT",
+                "kind": "hard",
+                "reason": "把 Jump 和 aim 相对低写成'这条路走得太深留下的影子'，属于确定性伪因果，把数据差异断言为路径选择的结果"
+              }
+            ],
+            "rejects": [
+              {
+                "section": "conclusion",
+                "kind": "hard",
+                "reason": "把 Jump 和 aim 相对低写成'这条路走得太深留下的影子'，属于确定性伪因果，把数据差异断言为路径选择的结果"
+              }
+            ]
+          }
+        ],
+        "bestCount": 100,
+        "recentCount": 0,
+        "hasPPlus": true,
+        "errors": []
+      }
+    },
+    {
+      "key": "oliwakami",
+      "id": 3046750,
+      "startedAt": "2026-08-01T13:34:56.550Z",
+      "finishedAt": "2026-08-01T13:35:46.722Z",
+      "outputFile": "03-oliwakami.txt",
+      "metadata": {
+        "target": "[SHK]oliwakami",
+        "displayName": "[SHK]oliwakami",
+        "osuUserId": 3046750,
+        "createdAt": "2026-08-01T13:35:46.424Z",
+        "analysisModel": "deepseek-v4-flash",
+        "formatVersion": 71,
+        "conclusionSource": "llm",
+        "conclusionValidationReasons": [],
+        "sectionCommentsSource": "llm",
+        "sectionCommentSources": {
+          "profile": "llm",
+          "top": "llm",
+          "top5": "llm",
+          "mods": "llm",
+          "pplus": "llm",
+          "recent": "llm",
+          "classification": "llm"
+        },
+        "sectionCommentsValidationReasons": [],
+        "generationTrace": {
+          "sectionComments": [
+            {
+              "trigger": "initial",
+              "trace": [
+                {
+                  "attempt": 1,
+                  "outcome": "rejected",
+                  "reasons": [
+                    "profile 短评语义终审：把核准游玩次数改写成了不可核验的中文约数",
+                    "top5 短评语义终审：包含简报外数字: 4.4",
+                    "mods 短评语义终审：把当前成绩构成写成了未经提供的偏好或感受：HD出现68次，看得出这玩家喜欢",
+                    "top5 短评包含简报外数字: 4.4"
+                  ]
+                },
+                {
+                  "attempt": 2,
+                  "outcome": "rejected",
+                  "reasons": [
+                    "profile 短评语义终审：把核准游玩次数改写成了不可核验的中文约数",
+                    "top5 短评语义终审：包含简报外数字: 4.4",
+                    "mods 短评语义终审：把当前成绩构成写成了未经提供的偏好或感受：HD出现68次，看得出这玩家喜欢",
+                    "top5 短评包含简报外数字: 4.4"
+                  ]
+                },
+                {
+                  "attempt": 3,
+                  "outcome": "accepted",
+                  "reasons": []
+                }
+              ]
+            }
+          ],
+          "conclusion": [
+            {
+              "trigger": "initial",
+              "trace": [
+                {
+                  "attempt": 1,
+                  "outcome": "rejected",
+                  "reasons": [
+                    "复用了冷却表达“这个账号最扎眼”"
+                  ]
+                },
+                {
+                  "attempt": 2,
+                  "outcome": "rejected",
+                  "reasons": [
+                    "把核准游玩次数改写成了不可核验的中文约数"
+                  ]
+                },
+                {
+                  "attempt": 3,
+                  "outcome": "accepted",
+                  "reasons": []
+                }
+              ]
+            }
+          ],
+          "final": {
+            "sectionCommentsSource": "llm",
+            "sectionCommentSources": {
+              "profile": "llm",
+              "top": "llm",
+              "top5": "llm",
+              "mods": "llm",
+              "pplus": "llm",
+              "recent": "llm",
+              "classification": "llm"
+            },
+            "conclusionSource": "llm",
+            "fullReportFallback": false
+          }
+        },
+        "reviewLog": [
+          {
+            "round": 1,
+            "verdicts": [
+              {
+                "section": "profile",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "top",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "top5",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "mods",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "pplus",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "recent",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "classification",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "conclusion",
+                "result": "PASS",
+                "reason": ""
+              }
+            ],
+            "rejects": []
+          }
+        ],
+        "bestCount": 100,
+        "recentCount": 2,
+        "hasPPlus": true,
+        "errors": []
+      }
+    },
+    {
+      "key": "wuxin",
+      "id": 19244792,
+      "startedAt": "2026-08-01T13:35:48.073Z",
+      "finishedAt": "2026-08-01T13:36:43.487Z",
+      "outputFile": "04-wuxin.txt",
+      "metadata": {
+        "target": "[SHK]Wuxin",
+        "displayName": "[SHK]Wuxin",
+        "osuUserId": 19244792,
+        "createdAt": "2026-08-01T13:36:42.944Z",
+        "analysisModel": "deepseek-v4-flash",
+        "formatVersion": 71,
+        "conclusionSource": "llm",
+        "conclusionValidationReasons": [],
+        "sectionCommentsSource": "none",
+        "sectionCommentSources": {
+          "profile": "none",
+          "top": "none",
+          "top5": "none",
+          "mods": "none",
+          "pplus": "none",
+          "recent": "none",
+          "classification": "none"
+        },
+        "sectionCommentsValidationReasons": [
+          "把 PP+ 维度名称翻译成了未经提供的具体操作能力：会打stream"
+        ],
+        "generationTrace": {
+          "sectionComments": [
+            {
+              "trigger": "initial",
+              "trace": [
+                {
+                  "attempt": 1,
+                  "outcome": "accepted",
+                  "reasons": []
+                }
+              ]
+            }
+          ],
+          "conclusion": [
+            {
+              "trigger": "initial",
+              "trace": [
+                {
+                  "attempt": 1,
+                  "outcome": "rejected",
+                  "reasons": [
+                    "把 PP+ 维度名称翻译成了未经提供的具体操作能力：会打stream",
+                    "综合结论没有让 rank 或 pp 进入账号分量判断",
+                    "复用了冷却表达“方向一致”"
+                  ]
+                },
+                {
+                  "attempt": 2,
+                  "outcome": "rejected",
+                  "reasons": [
+                    "把 PP+ 维度名称翻译成了未经提供的具体操作能力：会打stream"
+                  ]
+                },
+                {
+                  "attempt": 3,
+                  "outcome": "rejected",
+                  "reasons": [
+                    "把 PP+ 维度名称翻译成了未经提供的具体操作能力：会打stream"
+                  ]
+                }
+              ]
+            },
+            {
+              "trigger": "review-round-1",
+              "trace": [
+                {
+                  "attempt": 1,
+                  "outcome": "rejected",
+                  "reasons": [
+                    "复用了冷却表达“多看两眼”"
+                  ]
+                },
+                {
+                  "attempt": 2,
+                  "outcome": "accepted",
+                  "reasons": []
+                }
+              ]
+            },
+            {
+              "trigger": "review-round-2",
+              "trace": [
+                {
+                  "attempt": 1,
+                  "outcome": "rejected",
+                  "reasons": [
+                    "综合结论没有让 rank 或 pp 进入账号分量判断"
+                  ]
+                },
+                {
+                  "attempt": 2,
+                  "outcome": "accepted",
+                  "reasons": []
+                }
+              ]
+            }
+          ],
+          "final": {
+            "sectionCommentsSource": "none",
+            "sectionCommentSources": {
+              "profile": "none",
+              "top": "none",
+              "top5": "none",
+              "mods": "none",
+              "pplus": "none",
+              "recent": "none",
+              "classification": "none"
+            },
+            "conclusionSource": "llm",
+            "fullReportFallback": false
+          }
+        },
+        "reviewLog": [
+          {
+            "round": 1,
+            "verdicts": [
+              {
+                "section": "profile",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "top",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "top5",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "mods",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "pplus",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "recent",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "classification",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "conclusion",
+                "result": "REJECT",
+                "kind": "quality",
+                "reason": "结论只复述了排名、星数、Acc 和 Recent 差值，没有形成 pippi 的鲜活综合判断，且 Recent 差异原因已明确保留未知，但整段仍偏事实清单"
+              }
+            ],
+            "rejects": [
+              {
+                "section": "conclusion",
+                "kind": "quality",
+                "reason": "结论只复述了排名、星数、Acc 和 Recent 差值，没有形成 pippi 的鲜活综合判断，且 Recent 差异原因已明确保留未知，但整段仍偏事实清单"
+              }
+            ]
+          },
+          {
+            "round": 2,
+            "verdicts": [
+              {
+                "section": "profile",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "top",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "top5",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "mods",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "pplus",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "recent",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "classification",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "conclusion",
+                "result": "REJECT",
+                "kind": "quality",
+                "reason": "结论只复述了排名、星数、Acc 和 Recent 差值，没有形成 pippi 的鲜活综合判断，且遗漏了 BP 96% 含 HD、stream 87% 与 PP+ Flow 最高等关键呼应"
+              }
+            ],
+            "rejects": [
+              {
+                "section": "conclusion",
+                "kind": "quality",
+                "reason": "结论只复述了排名、星数、Acc 和 Recent 差值，没有形成 pippi 的鲜活综合判断，且遗漏了 BP 96% 含 HD、stream 87% 与 PP+ Flow 最高等关键呼应"
+              }
+            ]
+          },
+          {
+            "round": 3,
+            "verdicts": [
+              {
+                "section": "profile",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "top",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "top5",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "mods",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "pplus",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "recent",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "classification",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "conclusion",
+                "result": "REJECT",
+                "kind": "quality",
+                "reason": "结论只复述了排名、星数、Acc 和 Recent 差值，没有形成 pippi 的鲜活综合判断，且遗漏了 BP 96% 含 HD、stream 87% 与 PP+ Flow 最高等关键呼应"
+              }
+            ],
+            "rejects": [
+              {
+                "section": "conclusion",
+                "kind": "quality",
+                "reason": "结论只复述了排名、星数、Acc 和 Recent 差值，没有形成 pippi 的鲜活综合判断，且遗漏了 BP 96% 含 HD、stream 87% 与 PP+ Flow 最高等关键呼应"
+              }
+            ]
+          }
+        ],
+        "bestCount": 100,
+        "recentCount": 6,
+        "hasPPlus": true,
+        "errors": []
+      }
+    },
+    {
+      "key": "ben-jiang",
+      "id": 7983528,
+      "startedAt": "2026-08-01T13:36:45.704Z",
+      "finishedAt": "2026-08-01T13:37:31.223Z",
+      "outputFile": "05-ben-jiang.txt",
+      "metadata": {
+        "target": "Ben Jiang",
+        "displayName": "Ben Jiang",
+        "osuUserId": 7983528,
+        "createdAt": "2026-08-01T13:37:30.717Z",
+        "analysisModel": "deepseek-v4-flash",
+        "formatVersion": 71,
+        "conclusionSource": "llm",
+        "conclusionValidationReasons": [],
+        "sectionCommentsSource": "llm",
+        "sectionCommentSources": {
+          "profile": "llm",
+          "top": "llm",
+          "top5": "llm",
+          "mods": "llm",
+          "pplus": "llm",
+          "recent": "llm",
+          "classification": "llm"
+        },
+        "sectionCommentsValidationReasons": [],
+        "generationTrace": {
+          "sectionComments": [
+            {
+              "trigger": "initial",
+              "trace": [
+                {
+                  "attempt": 1,
+                  "outcome": "rejected",
+                  "reasons": [
+                    "top5 复用了冷却表达“多看两眼”"
+                  ]
+                },
+                {
+                  "attempt": 2,
+                  "outcome": "accepted",
+                  "reasons": []
+                }
+              ]
+            }
+          ],
+          "conclusion": [
+            {
+              "trigger": "initial",
+              "trace": [
+                {
+                  "attempt": 1,
+                  "outcome": "rejected",
+                  "reasons": [
+                    "分析对象 Ben Jiang 的性别未知，不能擅自使用“他/她”",
+                    "复用了冷却表达“这个账号最扎眼”",
+                    "复用了冷却表达“最扎眼的地方”",
+                    "复用了冷却表达“多看两眼”"
+                  ]
+                },
+                {
+                  "attempt": 2,
+                  "outcome": "rejected",
+                  "reasons": [
+                    "复用了冷却表达“方向一致”"
+                  ]
+                },
+                {
+                  "attempt": 3,
+                  "outcome": "accepted",
+                  "reasons": []
+                }
+              ]
+            }
+          ],
+          "final": {
+            "sectionCommentsSource": "llm",
+            "sectionCommentSources": {
+              "profile": "llm",
+              "top": "llm",
+              "top5": "llm",
+              "mods": "llm",
+              "pplus": "llm",
+              "recent": "llm",
+              "classification": "llm"
+            },
+            "conclusionSource": "llm",
+            "fullReportFallback": false
+          }
+        },
+        "reviewLog": [
+          {
+            "round": 1,
+            "verdicts": [
+              {
+                "section": "profile",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "top",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "top5",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "mods",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "pplus",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "recent",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "classification",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "conclusion",
+                "result": "PASS",
+                "reason": ""
+              }
+            ],
+            "rejects": []
+          }
+        ],
+        "bestCount": 100,
+        "recentCount": 0,
+        "hasPPlus": true,
+        "errors": []
+      }
+    },
+    {
+      "key": "nakanooooo",
+      "id": 36077706,
+      "startedAt": "2026-08-01T13:37:32.804Z",
+      "finishedAt": "2026-08-01T13:38:07.151Z",
+      "outputFile": "06-nakanooooo.txt",
+      "metadata": {
+        "target": "NakanoOoOo",
+        "displayName": "NakanoOoOo",
+        "osuUserId": 36077706,
+        "createdAt": "2026-08-01T13:38:06.827Z",
+        "analysisModel": "deepseek-v4-flash",
+        "formatVersion": 71,
+        "conclusionSource": "llm",
+        "conclusionValidationReasons": [],
+        "sectionCommentsSource": "llm",
+        "sectionCommentSources": {
+          "profile": "llm",
+          "top": "llm",
+          "top5": "llm",
+          "mods": "llm",
+          "pplus": "llm",
+          "recent": "llm",
+          "classification": "llm"
+        },
+        "sectionCommentsValidationReasons": [],
+        "generationTrace": {
+          "sectionComments": [
+            {
+              "trigger": "initial",
+              "trace": [
+                {
+                  "attempt": 1,
+                  "outcome": "rejected",
+                  "reasons": [
+                    "mods 短评语义终审：把成绩分布写成了未经提供的感受、意图或操作机制：舒适区"
+                  ]
+                },
+                {
+                  "attempt": 2,
+                  "outcome": "accepted",
+                  "reasons": []
+                }
+              ]
+            }
+          ],
+          "conclusion": [
+            {
+              "trigger": "initial",
+              "trace": [
+                {
+                  "attempt": 1,
+                  "outcome": "rejected",
+                  "reasons": [
+                    "综合结论没有让 rank 或 pp 进入账号分量判断"
+                  ]
+                },
+                {
+                  "attempt": 2,
+                  "outcome": "rejected",
+                  "reasons": [
+                    "复用了冷却表达“方向一致”",
+                    "复用了冷却表达“这个账号最扎眼”",
+                    "复用了冷却表达“最扎眼的地方”"
+                  ]
+                },
+                {
+                  "attempt": 3,
+                  "outcome": "accepted",
+                  "reasons": []
+                }
+              ]
+            }
+          ],
+          "final": {
+            "sectionCommentsSource": "llm",
+            "sectionCommentSources": {
+              "profile": "llm",
+              "top": "llm",
+              "top5": "llm",
+              "mods": "llm",
+              "pplus": "llm",
+              "recent": "llm",
+              "classification": "llm"
+            },
+            "conclusionSource": "llm",
+            "fullReportFallback": false
+          }
+        },
+        "reviewLog": [
+          {
+            "round": 1,
+            "verdicts": [
+              {
+                "section": "profile",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "top",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "top5",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "mods",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "pplus",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "recent",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "classification",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "conclusion",
+                "result": "PASS",
+                "reason": ""
+              }
+            ],
+            "rejects": []
+          }
+        ],
+        "bestCount": 100,
+        "recentCount": 1,
+        "hasPPlus": true,
+        "errors": []
+      }
+    },
+    {
+      "key": "elicyann",
+      "id": 37673654,
+      "startedAt": "2026-08-01T13:38:09.075Z",
+      "finishedAt": "2026-08-01T13:38:48.405Z",
+      "outputFile": "07-elicyann.txt",
+      "metadata": {
+        "target": "ElicyAnn",
+        "displayName": "ElicyAnn",
+        "osuUserId": 37673654,
+        "createdAt": "2026-08-01T13:38:48.106Z",
+        "analysisModel": "deepseek-v4-flash",
+        "formatVersion": 71,
+        "conclusionSource": "llm",
+        "conclusionValidationReasons": [],
+        "sectionCommentsSource": "llm",
+        "sectionCommentSources": {
+          "profile": "llm",
+          "top": "llm",
+          "top5": "llm",
+          "mods": "llm",
+          "pplus": "llm",
+          "recent": "llm",
+          "classification": "llm"
+        },
+        "sectionCommentsValidationReasons": [],
+        "generationTrace": {
+          "sectionComments": [
+            {
+              "trigger": "initial",
+              "trace": [
+                {
+                  "attempt": 1,
+                  "outcome": "parse_error",
+                  "reasons": [
+                    "没有输出可解析的七区块 JSON"
+                  ]
+                },
+                {
+                  "attempt": 2,
+                  "outcome": "rejected",
+                  "reasons": [
+                    "profile 擅自用中文数词换算了账号年龄",
+                    "profile 短评语义终审：擅自用中文数词换算了账号年龄",
+                    "pplus 短评语义终审：把 PP+ 维度名称翻译成了未经提供的具体操作能力：耐力条还没长出来",
+                    "classification 短评语义终审：包含简报外数字: 27",
+                    "classification 短评包含简报外数字: 27"
+                  ]
+                },
+                {
+                  "attempt": 3,
+                  "outcome": "accepted",
+                  "reasons": []
+                }
+              ]
+            }
+          ],
+          "conclusion": [
+            {
+              "trigger": "initial",
+              "trace": [
+                {
+                  "attempt": 1,
+                  "outcome": "rejected",
+                  "reasons": [
+                    "综合结论没有让 rank 或 pp 进入账号分量判断",
+                    "复用了冷却表达“最扎眼的地方”"
+                  ]
+                },
+                {
+                  "attempt": 2,
+                  "outcome": "rejected",
+                  "reasons": [
+                    "擅自用中文数词换算了账号年龄"
+                  ]
+                },
+                {
+                  "attempt": 3,
+                  "outcome": "accepted",
+                  "reasons": []
+                }
+              ]
+            }
+          ],
+          "final": {
+            "sectionCommentsSource": "llm",
+            "sectionCommentSources": {
+              "profile": "llm",
+              "top": "llm",
+              "top5": "llm",
+              "mods": "llm",
+              "pplus": "llm",
+              "recent": "llm",
+              "classification": "llm"
+            },
+            "conclusionSource": "llm",
+            "fullReportFallback": false
+          }
+        },
+        "reviewLog": [
+          {
+            "round": 1,
+            "verdicts": [
+              {
+                "section": "profile",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "top",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "top5",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "mods",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "pplus",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "recent",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "classification",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "conclusion",
+                "result": "PASS",
+                "reason": ""
+              }
+            ],
+            "rejects": []
+          }
+        ],
+        "bestCount": 100,
+        "recentCount": 42,
+        "hasPPlus": true,
+        "errors": []
+      }
+    },
+    {
+      "key": "13451b",
+      "id": 37397005,
+      "startedAt": "2026-08-01T13:38:52.330Z",
+      "finishedAt": "2026-08-01T13:39:28.495Z",
+      "outputFile": "08-13451b.txt",
+      "metadata": {
+        "target": "13451b",
+        "displayName": "13451b",
+        "osuUserId": 37397005,
+        "createdAt": "2026-08-01T13:39:28.171Z",
+        "analysisModel": "deepseek-v4-flash",
+        "formatVersion": 71,
+        "conclusionSource": "llm",
+        "conclusionValidationReasons": [],
+        "sectionCommentsSource": "mixed",
+        "sectionCommentSources": {
+          "profile": "llm",
+          "top": "fallback",
+          "top5": "llm",
+          "mods": "llm",
+          "pplus": "llm",
+          "recent": "llm",
+          "classification": "llm"
+        },
+        "sectionCommentsValidationReasons": [
+          "top 短评语义终审：BP 中 55/100 张低于 95%，不能把整体写成稳定或高准确率已收稳"
+        ],
+        "generationTrace": {
+          "sectionComments": [
+            {
+              "trigger": "initial",
+              "trace": [
+                {
+                  "attempt": 1,
+                  "outcome": "parse_error",
+                  "reasons": [
+                    "没有输出可解析的七区块 JSON"
+                  ]
+                },
+                {
+                  "attempt": 2,
+                  "outcome": "rejected",
+                  "reasons": [
+                    "top 短评语义终审：BP 中 55/100 张低于 95%，不能把整体写成稳定或高准确率已收稳"
+                  ]
+                },
+                {
+                  "attempt": 3,
+                  "outcome": "rejected",
+                  "reasons": [
+                    "top 短评语义终审：BP 中 55/100 张低于 95%，不能把整体写成稳定或高准确率已收稳"
+                  ]
+                }
+              ]
+            }
+          ],
+          "conclusion": [
+            {
+              "trigger": "initial",
+              "trace": [
+                {
+                  "attempt": 1,
+                  "outcome": "rejected",
+                  "reasons": [
+                    "复用了冷却表达“这个账号最扎眼”",
+                    "复用了冷却表达“最扎眼的地方”",
+                    "复用了冷却表达“多看两眼”"
+                  ]
+                },
+                {
+                  "attempt": 2,
+                  "outcome": "accepted",
+                  "reasons": []
+                }
+              ]
+            }
+          ],
+          "final": {
+            "sectionCommentsSource": "mixed",
+            "sectionCommentSources": {
+              "profile": "llm",
+              "top": "fallback",
+              "top5": "llm",
+              "mods": "llm",
+              "pplus": "llm",
+              "recent": "llm",
+              "classification": "llm"
+            },
+            "conclusionSource": "llm",
+            "fullReportFallback": false
+          }
+        },
+        "reviewLog": [
+          {
+            "round": 1,
+            "verdicts": [
+              {
+                "section": "profile",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "top",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "top5",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "mods",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "pplus",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "recent",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "classification",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "conclusion",
+                "result": "PASS",
+                "reason": ""
+              }
+            ],
+            "rejects": []
+          }
+        ],
+        "bestCount": 100,
+        "recentCount": 10,
+        "hasPPlus": true,
+        "errors": []
+      }
+    },
+    {
+      "key": "ahahhaha",
+      "id": 39873822,
+      "startedAt": "2026-08-01T13:39:30.198Z",
+      "finishedAt": "2026-08-01T13:39:58.594Z",
+      "outputFile": "09-ahahhaha.txt",
+      "metadata": {
+        "target": "ahahhaha",
+        "displayName": "ahahhaha",
+        "osuUserId": 39873822,
+        "createdAt": "2026-08-01T13:39:58.054Z",
+        "analysisModel": "deepseek-v4-flash",
+        "formatVersion": 71,
+        "conclusionSource": "llm",
+        "conclusionValidationReasons": [],
+        "sectionCommentsSource": "mixed",
+        "sectionCommentSources": {
+          "profile": "llm",
+          "top": "fallback",
+          "top5": "llm",
+          "mods": "llm",
+          "pplus": "llm",
+          "recent": "llm",
+          "classification": "llm"
+        },
+        "sectionCommentsValidationReasons": [
+          "top 短评语义终审：BP 中 22/33 张低于 95%，不能把整体写成稳定或高准确率已收稳"
+        ],
+        "generationTrace": {
+          "sectionComments": [
+            {
+              "trigger": "initial",
+              "trace": [
+                {
+                  "attempt": 1,
+                  "outcome": "rejected",
+                  "reasons": [
+                    "top 短评语义终审：BP 中 22/33 张低于 95%，不能把整体写成稳定或高准确率已收稳",
+                    "mods 短评语义终审：把未经证据支持的原因或状态写成了事实：拿准确率换难度",
+                    "mods 短评语义终审：包含简报外数字: 1.65",
+                    "mods 短评包含简报外数字: 1.65"
+                  ]
+                },
+                {
+                  "attempt": 2,
+                  "outcome": "rejected",
+                  "reasons": [
+                    "top 短评语义终审：BP 中 22/33 张低于 95%，不能把整体写成稳定或高准确率已收稳"
+                  ]
+                },
+                {
+                  "attempt": 3,
+                  "outcome": "rejected",
+                  "reasons": [
+                    "top 短评语义终审：BP 中 22/33 张低于 95%，不能把整体写成稳定或高准确率已收稳"
+                  ]
+                }
+              ]
+            }
+          ],
+          "conclusion": [
+            {
+              "trigger": "initial",
+              "trace": [
+                {
+                  "attempt": 1,
+                  "outcome": "accepted",
+                  "reasons": []
+                }
+              ]
+            }
+          ],
+          "final": {
+            "sectionCommentsSource": "mixed",
+            "sectionCommentSources": {
+              "profile": "llm",
+              "top": "fallback",
+              "top5": "llm",
+              "mods": "llm",
+              "pplus": "llm",
+              "recent": "llm",
+              "classification": "llm"
+            },
+            "conclusionSource": "llm",
+            "fullReportFallback": false
+          }
+        },
+        "reviewLog": [
+          {
+            "round": 1,
+            "verdicts": [
+              {
+                "section": "profile",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "top",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "top5",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "mods",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "pplus",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "recent",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "classification",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "conclusion",
+                "result": "PASS",
+                "reason": ""
+              }
+            ],
+            "rejects": []
+          }
+        ],
+        "bestCount": 33,
+        "recentCount": 0,
+        "hasPPlus": true,
+        "errors": []
+      }
+    }
+  ],
+  "finishedAt": "2026-08-01T13:39:58.906Z"
+}

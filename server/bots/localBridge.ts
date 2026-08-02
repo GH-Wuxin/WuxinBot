@@ -16,6 +16,14 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const BRIDGE_OUTPUT_DIR = path.resolve(__dirname, '..', '..', 'data', 'bot-bridge');
 const SPIKE_SELF_ID = 'REDACTED_QQ_003';
 
+function bridgeSelfId(botId: string): string {
+  // Shiro indexes reverse-WebSocket sessions by self id. Reusing the same id
+  // for concurrent yumu calls makes the newer session steal the older call's
+  // reply. A per-call local identity keeps those sessions independent.
+  if (botId === 'yumu') return String(8_800_000_000 + crypto.randomInt(0, 100_000_000));
+  return SPIKE_SELF_ID;
+}
+
 export interface LocalBotReply {
   text: string;
   /** CQ image codes (file:// or http(s) sources, ready to send). */
@@ -147,6 +155,7 @@ function buildEvent(
   endpoint: BotEndpoint,
   command: string,
   context: LocalBotCallContext,
+  selfId: string,
 ): object {
   const now = Math.floor(Date.now() / 1000);
   const userId = Number(context.userId) || 0;
@@ -154,7 +163,7 @@ function buildEvent(
     post_type: 'message',
     message_type: 'group',
     time: now,
-    self_id: Number(SPIKE_SELF_ID),
+    self_id: Number(selfId),
     sub_type: 'normal',
     // Bots parse message_id as int32; keep it small and unique per call.
     message_id: (Date.now() % 1_500_000_000) + Math.floor(Math.random() * 900),
@@ -199,9 +208,10 @@ export function callLocalBot(
   if (!command) return Promise.reject(new Error(`本地 bot ${botId} 指令为空`));
 
   return new Promise((resolve, reject) => {
+    const selfId = bridgeSelfId(botId);
     const headers: Record<string, string> = {
       'X-Client-Role': 'Universal',
-      'X-Self-ID': SPIKE_SELF_ID,
+      'X-Self-ID': selfId,
     };
     if (endpoint.auth) {
       const token = hydrantToken();
@@ -249,7 +259,7 @@ export function callLocalBot(
     const overallTimer = setTimeout(() => finish(new Error(`${botId} 调用超时（${Math.round(timeoutMs / 1000)}s）`)), timeoutMs);
 
     ws.on('open', () => {
-      ws.send(JSON.stringify(buildEvent(endpoint, command, context)));
+      ws.send(JSON.stringify(buildEvent(endpoint, command, context, selfId)));
     });
     ws.on('message', (data) => {
       const frame = String(data);

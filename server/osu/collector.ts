@@ -45,17 +45,15 @@ export async function collectPlayerData(identifier: string | number, mode: OsuMo
   // PP+ only for std — ensure data exists BEFORE building the analysis
   const usePPlus = mode === 'osu';
 
-  // ── PP+ pre-check: trigger update if missing or stale ──
+  // ── PP+ pre-check ──
+  // GET /player/info initializes an unseen player itself. Do not follow a slow
+  // or failed first initialization with /player/update: update only consumes
+  // recent scores and fails for perfectly valid players who have no recent
+  // passes. getPlayerBars already grants first-time initialization a long
+  // timeout.
   if (usePPlus) {
-    const { getPlayerBars, refreshPlayerPPlus: doRefresh } = await import('./pplus.js');
-    let bars = await getPlayerBars(userId);
-    if (!bars) {
-      // Player not in PP+ yet — trigger full update and wait
-      try {
-        await doRefresh(userId);
-        bars = await getPlayerBars(userId);
-      } catch { /* update might fail or timeout — proceed without PP+ */ }
-    }
+    const { getPlayerBars } = await import('./pplus.js');
+    const bars = await getPlayerBars(userId);
     if (bars) {
       pplusBars = bars;
     } else {
@@ -143,11 +141,8 @@ export async function collectRecentPlayerData(
   let pplusBars: PPlusBars | null = null;
   if (mode === 'osu') {
     try {
-      const { getPlayerBars, refreshPlayerPPlus } = await import('./pplus.js');
+      const { getPlayerBars } = await import('./pplus.js');
       pplusBars = await getPlayerBars(user.id);
-      if (!pplusBars) {
-        try { await refreshPlayerPPlus(user.id); pplusBars = await getPlayerBars(user.id); } catch {}
-      }
     } catch (e) { errors.push(`PP+ 数据获取失败: ${(e as Error).message}`); }
   }
 
@@ -173,7 +168,7 @@ export function formatPPlusForPrompt(pplusBars: PPlusBars | null, refBars: { lab
     }
   }
   lines.push('');
-  lines.push('尺度说明：0-15 格，15 = 基于世界精英基准。>12 接近天花板，10-12 精英，5-10 强，<5 低于专家基准。');
+  lines.push('尺度说明：15 = LazyBot expertPlus 基准线（原版显示上限，纯数据流不截断）。低于 15 时：>12 接近基准，10-12 精英，5-10 强，<5 低于专家基准；超过 15 表示该维度 raw 值已超过基准上限。');
   lines.push('不同维度可互相比较——已经是归一化后的值。');
   return lines.join('\n');
 }

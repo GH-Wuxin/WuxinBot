@@ -11,6 +11,14 @@ function fetchPP(url: string, opts: RequestInit = {}, timeoutMs: number = 10000)
   return fetch(url, { ...opts, signal: ctrl.signal }).finally(() => clearTimeout(timer));
 }
 
+// A cache hit returns almost instantly, but the aggregate service initializes a
+// previously unseen player inside GET /player/info. That first request may need
+// to download and calculate up to 200 best scores, so the ordinary 10 second
+// service timeout is far too short. Aborting the client request does not stop
+// the Java-side calculation and used to make Analyze incorrectly report that
+// PP+ was unavailable while initialization continued in the background.
+const PLAYER_INFO_TIMEOUT_MS = 5 * 60 * 1000;
+
 let ppTokenCache: { token: string; expiresAt: number } | null = null;
 
 async function getPPlusToken(): Promise<string> {
@@ -59,18 +67,39 @@ export async function getPlayerPPlus(osuUserId: string | number): Promise<PPlusP
   const db = readDb();
   const settings = db.settings as Record<string, unknown>;
   const baseUrl = String(settings.pplusBaseUrl || 'http://127.0.0.1:9001');
-  const token = await getPPlusToken();
+  let token = await getPPlusToken();
   let resp: Response;
-  try { resp = await fetchPP(`${baseUrl}/player/info?id=${encodeURIComponent(String(osuUserId))}`, { headers: { Authorization: `Bearer ${token}` } }); }
-  catch { return null; }
-  if (!resp.ok) return null;
+  const infoUrl = `${baseUrl}/player/info?id=${encodeURIComponent(String(osuUserId))}`;
+  try {
+    resp = await fetchPP(infoUrl, { headers: { Authorization: `Bearer ${token}` } }, PLAYER_INFO_TIMEOUT_MS);
+    // The PP+ token is cached in Wuxin for 23 hours, but the aggregate service
+    // can restart sooner. Re-authenticate once instead of silently losing PP+.
+    if (resp.status === 401) {
+      ppTokenCache = null;
+      token = await getPPlusToken();
+      resp = await fetchPP(infoUrl, { headers: { Authorization: `Bearer ${token}` } }, PLAYER_INFO_TIMEOUT_MS);
+    }
+  } catch (error: any) {
+    console.error(`[PP+] player/info ${String(osuUserId)} request failed: ${error?.name || 'Error'}: ${error?.message || error}`);
+    return null;
+  }
   let json: any;
-  try { json = await resp.json(); } catch { return null; }
-  if (json.code !== 200) return null;
+  try { json = await resp.json(); }
+  catch {
+    console.error(`[PP+] player/info ${String(osuUserId)} returned invalid JSON (HTTP ${resp.status})`);
+    return null;
+  }
+  if (!resp.ok || json.code !== 200) {
+    console.error(`[PP+] player/info ${String(osuUserId)} failed (HTTP ${resp.status}, code ${String(json.code ?? 'unknown')}): ${String(json.msg || '').slice(0, 160)}`);
+    return null;
+  }
   return json.data?.performances || null;
 }
 
 // ── Normalization (matches LazyBot PerformanceDimensionLimit + getScaledRatio) ──
+// LazyBot clamps raw values at the per-dimension limit so its 530px bars never
+// overflow. We only feed text/data consumers, so the limit stays as a reference
+// line (15 = expertPlus benchmark) and raw values above it are NOT truncated.
 
 const PP_DIMS: Record<string, { limit: number; alpha: number }> = {
   jump:     { limit: 11000, alpha: 0.903 },
@@ -83,7 +112,6 @@ const PP_DIMS: Record<string, { limit: number; alpha: number }> = {
 
 function normalizeBar(rawValue: number, limit: number, alpha: number): number {
   if (rawValue < 0) rawValue = 0;
-  if (rawValue > limit) rawValue = limit;
   return Math.pow(rawValue, alpha) / Math.pow(limit, alpha) * 15;
 }
 
