@@ -110,6 +110,7 @@ export const INTERNAL_CAPABILITIES = [
   { name: 'ppplus', description: 'PP+ 维度分析' },
   { name: 'skill', description: '玩家技能雷达' },
   { name: 'recommend', description: '谱面推荐（协同过滤：与你同分段的玩家在打的图；玩家要求推图/推荐谱面/打什么图/有没有适合我的图时调用，数据来自 osu! API v2）' },
+  { name: 'match', description: 'osu! 多人比赛观战（!ml <matchID> 开始监听对局并推送开局/回合成绩；玩家说“观战/比赛直播/!ml”时引导使用快捷指令）' },
 ] as const;
 
 export function internalCapabilitySupported(name: string): boolean {

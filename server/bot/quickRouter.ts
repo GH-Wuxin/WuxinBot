@@ -23,7 +23,7 @@ export interface QuickCommandDef {
   aliases: string[];
   kind: 'osu' | 'system' | 'fun' | 'admin';
   /** Internal engine capability, when the command maps to one. */
-  capability?: 'recent' | 'info' | 'profile' | 'card' | 'bp' | 'bplist' | 'pplus' | 'skill' | 'recommend';
+  capability?: 'recent' | 'info' | 'profile' | 'card' | 'bp' | 'bplist' | 'pplus' | 'skill' | 'recommend' | 'match';
   /** Local handler id for non-osu commands. */
   handler?: 'bind' | 'unbind' | 'help' | 'ping' | 'dice' | 'where' | 'self_profile' | 'at_profile' | 'pp_user' | 'pp_self' | 'notice';
   /** Admin-only commands are gated by owner/admin role before any reply. */
@@ -104,7 +104,7 @@ const YUMU: QuickCommandDef[] = [
   { id: 'cal', source: 'yumu', aliases: ['cal', 'calculate', 'cl'], kind: 'osu', implemented: false },
   { id: 'getbg', source: 'yumu', aliases: ['gb', 'bg', 'get bg', 'get background', '获取背景'], kind: 'osu', implemented: false },
   { id: 'getcover', source: 'yumu', aliases: ['gc', 'get cover', '获取封面'], kind: 'osu', implemented: false },
-  { id: 'match', source: 'yumu', aliases: ['ml', 'li', 'match listen', 'match listener', 'make love', '观战'], kind: 'osu', implemented: false },
+  { id: 'match', source: 'yumu', aliases: ['ml', 'li', 'match listen', 'match listener', 'make love', '观战'], kind: 'osu', capability: 'match', implemented: true },
   { id: 'matchnow', source: 'yumu', aliases: ['mn', 'match now', 'monitor now'], kind: 'osu', implemented: false },
   { id: 'matchrecent', source: 'yumu', aliases: ['mr', 'match recent', 'match recents'], kind: 'osu', implemented: false },
   { id: 'matchround', source: 'yumu', aliases: ['ro', 'rounds', 'match rounds'], kind: 'osu', implemented: false },
@@ -823,7 +823,7 @@ export async function handleQuickCommand(
         botId,
         def.capability,
         username,
-        { db, userId: String(event.userId), groupId: event.groupId },
+        { db, userId: String(event.userId), groupId: event.groupId, event, isOwner: permissions.isOwner },
         parsed.bpSelection,
       );
     } catch (error: any) {

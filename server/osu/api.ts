@@ -4,7 +4,7 @@
 import { getToken, refreshTokenOn401 } from './auth.js';
 import { cacheGet, cacheSet } from './cache.js';
 import { recordOsuApi429 } from '../health.js';
-import type { OsuUser, OsuScore, OsuBeatmap, OsuMode } from './types.js';
+import type { OsuUser, OsuScore, OsuBeatmap, OsuMode, OsuMatch } from './types.js';
 
 const API_BASE = 'https://osu.ppy.sh/api/v2';
 
@@ -97,6 +97,20 @@ export async function getBeatmapScores(
   const scores = Array.isArray(body?.scores) ? body.scores : [];
   cacheSet(cacheKey, scores, 30 * 60_000);
   return scores;
+}
+
+export async function getMatch(matchId: number): Promise<OsuMatch> {
+  const cacheKey = `match:${matchId}`;
+  const cached = cacheGet<OsuMatch>(cacheKey);
+  if (cached) return cached;
+  const match = await osuFetch<OsuMatch>(`/matches/${matchId}`);
+  cacheSet(cacheKey, match, 30_000);
+  return match;
+}
+
+export async function getMatchAfter(matchId: number, eventId: number): Promise<OsuMatch> {
+  // No cache: the listener polls this every 8 seconds and needs fresh data.
+  return osuFetch<OsuMatch>(`/matches/${matchId}?after=${eventId}`);
 }
 
 export async function getBeatmap(beatmapId: number): Promise<OsuBeatmap> {
