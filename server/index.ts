@@ -954,7 +954,12 @@ app.post('/api/sandbox', async (req, res) => {
   let usage = null;
   if (callLlm && decision.shouldReply) {
     try {
-      const ai = await callLLM(db, messages.slice(-10), db.settings.enableWebSearch ? (db.settings.webSearchMode || 'balanced') : null, { maxTokens: 300 });
+      // Keep the system prompt (persona) at all costs; only the recent history
+      // is trimmed when the context is longer than the sandbox budget.
+      const llmMessages = messages.length > 10
+        ? [messages[0], ...messages.slice(-9)]
+        : messages;
+      const ai = await callLLM(db, llmMessages, db.settings.enableWebSearch ? (db.settings.webSearchMode || 'balanced') : null, { maxTokens: 300 });
       replyPreview = ai.text || '';
       usage = ai.usage || null;
     } catch (e) { replyPreview = `LLM 调用失败: ${e.message}`; }
