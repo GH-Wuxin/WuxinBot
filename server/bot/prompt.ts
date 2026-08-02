@@ -288,14 +288,20 @@ function buildUserInfoLines(db, event) {
   return lines;
 }
 
-export function buildPrompt(db, group, event, userPolicy) {
+export function buildPrompt(db, group, event, userPolicy, options = {}) {
+  const {
+    includeSkill = true,
+    includeMemory = true,
+    includeGroupProfile = true,
+    includeRelationship = true,
+  } = options;
   const context = promptContextMessages(db, group, event);
   const ownerContext = ownerPrivateContextStats(db, event);
   const history = formatHistoryForModel(db, context);
 
   const isOwner = db.settings.ownerQq && String(event.userId) === String(db.settings.ownerQq);
   const speakerIdentity = `${event.nickname || event.userId}（QQ:${event.userId}，身份:${describePolicy(userPolicy.policy)}）`;
-  const memoryBlock = memoryPromptBlock(db, event.userId);
+  const memoryBlock = includeMemory ? memoryPromptBlock(db, event.userId) : '';
   const provider = llmProvider(db);
   const providerCanSearch = supportsProviderSearch(provider);
   const strictSearch = providerCanSearch && asksForExplicitSearch(event.text);
@@ -324,9 +330,9 @@ export function buildPrompt(db, group, event, userPolicy) {
     '每条消息有 [HH:MM] 标记。时间相隔大的消息不要强行串联。可以参与话题，但不要把 A 对 B 说的话当成对你说的。',
     userPolicy.customPrompt ? `对当前发言者的特别要求：${userPolicy.customPrompt}` : '',
     ...buildUserInfoLines(db, event),
-    memoryBlock ? `关于当前发言者的长期记忆：${memoryBlock}\n自然使用，不要生硬复述；与当前消息冲突时以当前消息为准。` : '',
-    event.type === 'group' ? groupProfilePromptBlock(db, event.groupId) : '',
-    event.type === 'group' ? relationshipPromptBlock(db, event) : '',
+    includeMemory && memoryBlock ? `关于当前发言者的长期记忆：${memoryBlock}\n自然使用，不要生硬复述；与当前消息冲突时以当前消息为准。` : '',
+    includeGroupProfile && event.type === 'group' ? groupProfilePromptBlock(db, event.groupId) : '',
+    includeRelationship && event.type === 'group' ? relationshipPromptBlock(db, event) : '',
   ].filter(Boolean).join('\n');
 
   // Replace @self CQ code with "@你" in the user message, keep other @s as-is
@@ -344,16 +350,16 @@ export function buildPrompt(db, group, event, userPolicy) {
   const scene = detectScene(event);
 
   // Relationship context: memory, group profile, relationship, skill memory
-  const skillBlock = relevantPlayersSkillBlock({
+  const skillBlock = includeSkill ? relevantPlayersSkillBlock({
     userId: String(event.userId),
     text: String(event.text || ''),
     mentionedQqs: event.atTargets || [],
     maxRecords: event.type === 'group' ? 3 : 2,
-  });
+  }) : '';
   const relBlocks = [
-    memoryBlock ? `关于当前发言者的长期记忆：${memoryBlock}\n自然使用，不要生硬复述。` : '',
-    event.type === 'group' ? groupProfilePromptBlock(db, event.groupId) : '',
-    event.type === 'group' ? relationshipPromptBlock(db, event) : '',
+    includeMemory && memoryBlock ? `关于当前发言者的长期记忆：${memoryBlock}\n自然使用，不要生硬复述。` : '',
+    includeGroupProfile && event.type === 'group' ? groupProfilePromptBlock(db, event.groupId) : '',
+    includeRelationship && event.type === 'group' ? relationshipPromptBlock(db, event) : '',
     skillBlock || '',
   ].filter(Boolean).join('\n\n');
 

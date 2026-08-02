@@ -901,6 +901,7 @@ app.post('/api/sandbox', async (req, res) => {
   const useMemory = body.useMemory !== false;
   const useGroupProfile = body.useGroupProfile !== false;
   const useRelationship = body.useRelationship !== false;
+  const useSkill = body.useSkill !== false;
   const callLlm = body.callLlm === true;
 
   // Get real or overridden data
@@ -920,7 +921,12 @@ app.post('/api/sandbox', async (req, res) => {
 
   // Context preview
   const sandboxEvent = { type: 'group', groupId, userId, nickname, text, atTargets };
-  const messages = buildPrompt(db, group, sandboxEvent, userPolicy);
+  const messages = buildPrompt(db, group, sandboxEvent, userPolicy, {
+    includeSkill: useSkill,
+    includeMemory: useMemory,
+    includeGroupProfile: useGroupProfile,
+    includeRelationship: useRelationship,
+  });
   const promptPreview = messages.map((m) => `[${m.role}]\n${m.content.slice(0, 500)}`).join('\n\n---\n\n').slice(0, 3000);
 
   // Profile previews
