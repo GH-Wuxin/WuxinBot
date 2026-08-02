@@ -110,7 +110,7 @@ function hasProfileIntent(text: string): boolean {
 
 const RECOMMEND_PATTERNS: RegExp[] = [
   /推(?:一|几|两|点|张)?图/,
-  /推荐/,
+  /推荐(?:谱面|歌曲|歌|图|张图|点图|点谱面)/,
   /荐图/,
   /打什么图/,
   /有没有(?:适合我的|我能打的|什么)图/,
