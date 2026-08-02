@@ -1107,10 +1107,26 @@ export async function executeInternalBotCommand(
   botId: string,
   commandName: string,
   username: string,
-  context: { db: any; userId: string; groupId?: string },
+  context: { db: any; userId: string; groupId?: string; event?: any; isOwner?: boolean },
   bpSelection?: BpQuerySelection,
 ): Promise<string | InternalBotCommandResult> {
   const { db, userId } = context;
+
+  // Match watching does not need a resolved player (the command carries a
+  // match id); handle it before the player resolution below.
+  if (commandName === 'match') {
+    const { matchManager } = await import('../osu/match.js');
+    const result = await matchManager.handleCommand(
+      db,
+      { groupId: context.groupId, userId: String(userId) },
+      String(context.event?.text || '').replace(/^[!/]?ml\s*/i, ''),
+      Boolean(context.isOwner),
+    );
+    return {
+      content: result.text || '',
+      images: result.images || [],
+    };
+  }
 
   const target = resolveInternalPlayerTarget(db, userId, username);
   if (!target) {

@@ -1250,7 +1250,13 @@ app.use((err, _req, res, _next) => {
   res.status(err?.status || err?.statusCode || 500).json({ ok: false, error: message });
 });
 
-app.listen(port, '127.0.0.1', () => {
+app.listen(port, '127.0.0.1', async () => {
+  const { setMatchSender, matchManager } = await import('./osu/match.js');
+  const { sendOneBotMessage } = await import('./onebot.js');
+  setMatchSender(sendOneBotMessage);
+  void matchManager.restore(readDb()).catch((error) => {
+    console.error('[match] 恢复监听失败:', String(error?.message || error));
+  });
   console.log(`QQ AI ChatBot server running at http://127.0.0.1:${port}`);
   connectOneBot();
   // Start Wuxin's local yumu-image endpoint on 8389. The renderer keeps its

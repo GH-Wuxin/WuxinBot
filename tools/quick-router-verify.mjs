@@ -237,10 +237,11 @@ console.log('\n=== Unit: local handlers ===');
   ok('handler-unbound-self', unboundResult.handled && unboundResult.replied && sent.some((t) => t.includes('/w osu bind')), JSON.stringify(unboundResult) + ' ' + JSON.stringify(sent));
   sent.length = 0;
 
-  // Registered but not implemented → falls through to the LLM pipeline.
+  // !ml (match watch) is implemented: a bare/unknown id gets a usage reply.
   const unimplementedMatch = matchQuickCommand({ text: '!ml 123', atTargets: [] });
   const unimplementedResult = await handleQuickCommand(groupEvent('!ml 123'), send, readDb(), unimplementedMatch, { isOwner: false, isAdmin: false });
-  ok('handler-unimplemented-fallback', unimplementedResult.handled === false && sent.length === 0, JSON.stringify(unimplementedResult));
+  ok('handler-unimplemented-fallback', unimplementedResult.handled && unimplementedResult.replied && sent.some((t) => t.includes('!ml')), JSON.stringify(unimplementedResult) + ' ' + JSON.stringify(sent));
+  sent.length = 0;
 
   // Admin command denied for a normal member.
   const adminMatch = matchQuickCommand({ text: '/addscores x', atTargets: [] });

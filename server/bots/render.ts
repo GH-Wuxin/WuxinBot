@@ -707,7 +707,7 @@ function pruneRenderOutput(): void {
   }
 }
 
-function saveAndGetCqCode(buffer: Buffer, prefix: 'info' | 'score' | 'bp'): string {
+export function saveAndGetCqCode(buffer: Buffer, prefix: 'info' | 'score' | 'bp'): string {
   const extension = detectRenderedImageType(buffer);
   if (!extension) throw new Error('渲染器返回的内容不是 JPEG、PNG 或 WebP 图片');
 
