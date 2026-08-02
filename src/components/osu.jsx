@@ -68,9 +68,13 @@ export function Osu({ db, refresh }) {
   const [searchText, setSearchText] = useState('');
   const [searching, setSearching] = useState(false);
   const [drawer, setDrawer] = useState(null); // { osuId, username }
+  const [botConfig, setBotConfig] = useState(null); // { config, groups } from /api/group-bot-config
 
   const load = async () => {
-    try { setStatus(await api('/api/osu/status')); } catch { /* keep last */ }
+    try {
+      setStatus(await api('/api/osu/status'));
+      setBotConfig(await api('/api/group-bot-config'));
+    } catch { /* keep last */ }
   };
 
   useEffect(() => {
@@ -101,6 +105,11 @@ export function Osu({ db, refresh }) {
   const toggleGroupQuick = async (groupId, enabled) => {
     await api('/api/osu/quick', { method: 'POST', body: { groupId, enabled } });
     await load();
+  };
+
+  const toggleBot = async (groupId, botId, enabled) => {
+    await api('/api/group-bot-config', { method: 'POST', body: { groupId, botId, enabled } });
+    setBotConfig(await api('/api/group-bot-config'));
   };
 
   const toggleGlobal = async (enabled) => {
@@ -216,15 +225,33 @@ export function Osu({ db, refresh }) {
           </label>
           <div style={{ marginTop: 12, display: 'grid', gap: 8 }}>
             {(status?.groups || []).map((g) => (
-              <label className="switch" key={g.groupId} style={{ margin: 0 }}>
-                <input
-                  type="checkbox"
-                  checked={Boolean(g.quick)}
-                  disabled={!g.enabled}
-                  onChange={(e) => toggleGroupQuick(g.groupId, e.target.checked)}
-                />
-                {g.name || g.groupId}（{g.groupId}）{!g.enabled && <span className="hint"> · 群未启用</span>}
-              </label>
+              <div key={g.groupId} style={{ display: 'grid', gap: 4 }}>
+                <label className="switch" style={{ margin: 0 }}>
+                  <input
+                    type="checkbox"
+                    checked={Boolean(g.quick)}
+                    disabled={!g.enabled}
+                    onChange={(e) => toggleGroupQuick(g.groupId, e.target.checked)}
+                  />
+                  {g.name || g.groupId}（{g.groupId}）{!g.enabled && <span className="hint"> · 群未启用</span>}
+                </label>
+                <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', paddingLeft: 30 }}>
+                  {['yumu', 'kanon', 'hydrant', 'lazybot'].map((botId) => {
+                    const enabled = botConfig?.config?.[g.groupId]?.[botId] !== false;
+                    return (
+                      <label key={botId} className="switch" style={{ margin: 0 }}>
+                        <input
+                          type="checkbox"
+                          checked={enabled}
+                          disabled={!g.enabled}
+                          onChange={(e) => toggleBot(g.groupId, botId, e.target.checked)}
+                        />
+                        <span style={{ fontSize: 13 }}>{botLabels[botId] || botId}</span>
+                      </label>
+                    );
+                  })}
+                </div>
+              </div>
             ))}
           </div>
         </div>

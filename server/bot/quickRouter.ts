@@ -567,6 +567,15 @@ export async function handleQuickCommand(
     } catch { /* logging is non-fatal */ }
   };
 
+  // Per-group bot toggle: when a specific bot is disabled for this group, its
+  // quick routes are fully silent here. The original bot (if still running)
+  // keeps owning the command; Wuxin just stops double-replying.
+  const groupBotConfig = db?.groupBotConfig?.[String(event?.groupId || '')];
+  if (groupBotConfig && groupBotConfig[def.source] === false) {
+    log('disabled', `${def.source}:${def.id}`);
+    return { handled: true, replied: false, reason: `group_bot_disabled:${def.source}` };
+  }
+
   // Hydrant std-only guard runs before bridging `~` / `查@`.
   if (def.handler === 'self_profile' || def.handler === 'at_profile') {
     const modeNote = stdOnlyNote((match as any).extraMode || '');
