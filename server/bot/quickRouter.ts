@@ -108,7 +108,7 @@ const YUMU: QuickCommandDef[] = [
   { id: 'matchnow', source: 'yumu', aliases: ['mn', 'match now', 'monitor now'], kind: 'osu', implemented: false },
   { id: 'matchrecent', source: 'yumu', aliases: ['mr', 'match recent', 'match recents'], kind: 'osu', implemented: false },
   { id: 'matchround', source: 'yumu', aliases: ['ro', 'rounds', 'match rounds'], kind: 'osu', implemented: false },
-  { id: 'rating', source: 'yumu', aliases: ['ra', 'rating', 'mra', 'ym rating', 'sa', 'sra', 'series', 'series rating'], kind: 'osu', implemented: false },
+  { id: 'rating', source: 'yumu', aliases: ['ra', 'rating', 'mra', 'ym rating', 'sa', 'sra', 'series', 'series rating'], kind: 'osu', implemented: true, bridge: true },
   { id: 'quickplay', source: 'yumu', aliases: ['qp', 'rp', 'quick play', 'ranked play'], kind: 'osu', implemented: false },
   { id: 'pool', source: 'yumu', aliases: ['po', 'mappool', 'gp', 'getpool', 'get pool'], kind: 'osu', implemented: false },
   { id: 'dice', source: 'yumu', aliases: ['d', 'dice', 'roll', '骰子'], kind: 'fun', handler: 'dice', implemented: true },
