@@ -65,6 +65,7 @@ const MAX_SIMILAR_PLAYERS = 150;
 const CONCURRENCY = 10;
 const TIME_BUDGET_MS = 45_000;
 const CANDIDATE_CACHE_TTL_MS = 30 * 60_000;
+const CANDIDATE_POOL_SIZE = 12;
 
 const S_RANKS = new Set(['S', 'SH', 'SS', 'SSH']);
 
@@ -101,6 +102,13 @@ async function mapLimit<T, R>(
 // ── Cooldown & anti-repeat persistence ──
 
 export function checkRecommendCooldown(db: any, osuUserId: number): number {
+  // Cooldown lives in its own map so clearing it never wipes anti-repeat history.
+  const map = db?.osuRecommendCooldowns;
+  if (map && typeof map === 'object') {
+    const lastAt = Number(map[String(osuUserId)] || 0);
+    return lastAt > 0 ? Math.max(0, RECOMMEND_COOLDOWN_MS - (Date.now() - lastAt)) : 0;
+  }
+  // Legacy fallback: records written before the cooldown map existed.
   const records = Array.isArray(db?.osuRecommendations) ? db.osuRecommendations : [];
   const last = records
     .filter((r: any) => Number(r.osuUserId) === Number(osuUserId))
@@ -124,6 +132,8 @@ export function loadRecommendHistory(db: any, osuUserId: number): Set<number> {
 export function markRecommendation(osuUserId: number, candidates: RecommendCandidate[]): void {
   const now = new Date().toISOString();
   updateDb((draft: any) => {
+    draft.osuRecommendCooldowns = draft.osuRecommendCooldowns || {};
+    draft.osuRecommendCooldowns[String(osuUserId)] = Date.now();
     draft.osuRecommendations = draft.osuRecommendations || [];
     for (const c of candidates) {
       draft.osuRecommendations.push({
@@ -134,6 +144,14 @@ export function markRecommendation(osuUserId: number, candidates: RecommendCandi
       });
     }
     draft.osuRecommendations = draft.osuRecommendations.slice(-2000);
+  });
+}
+
+export function clearRecommendCooldown(osuUserId: number): void {
+  updateDb((draft: any) => {
+    if (draft.osuRecommendCooldowns) {
+      delete draft.osuRecommendCooldowns[String(osuUserId)];
+    }
   });
 }
 
@@ -220,17 +238,24 @@ export async function recommendForPlayer(
   if (!options.bypassCache) {
     const cached = candidateCacheGet(user.id);
     if (cached) {
-      return {
-        ok: true,
-        candidates: cached.candidates,
-        source: cached.source,
-        stats: {
-          topPlayCount: 0,
-          similarPlayers: 0,
-          apiCalls: 0,
-          elapsedMs: Date.now() - startedAt,
-        },
-      };
+      const filtered = cached.candidates
+        .filter((c) => !(options.excludeBeatmapsetIds || new Set<number>()).has(c.beatmapsetId))
+        .slice(0, count);
+      if (filtered.length > 0) {
+        return {
+          ok: true,
+          candidates: filtered,
+          source: cached.source,
+          stats: {
+            topPlayCount: 0,
+            similarPlayers: 0,
+            apiCalls: 0,
+            elapsedMs: Date.now() - startedAt,
+          },
+        };
+      }
+      // All cached candidates were already recommended: fall through and
+      // regenerate with the exclusion set applied during aggregation.
     }
   }
 
@@ -364,7 +389,7 @@ export async function recommendForPlayer(
     });
 
     candidates.sort((a, b) => b.score - a.score);
-    return candidates.slice(0, count).map((c) => c.candidate);
+    return candidates.slice(0, Math.max(count, CANDIDATE_POOL_SIZE)).map((c) => c.candidate);
   }
 
   // Pass 1: strict collaborative filtering.
@@ -382,12 +407,16 @@ export async function recommendForPlayer(
     }
   }
 
-  if (result.length === 0) {
+  const finalCandidates = result
+    .filter((c) => !exclude.has(c.beatmapsetId))
+    .slice(0, count);
+
+  if (result.length === 0 || finalCandidates.length === 0) {
     return {
       ok: false,
       candidates: [],
       source: 'none',
-      reason: '同分段数据太少，暂时推不出合适的图。先去打几把热热手，之后我就能给你挑了。',
+      reason: '同分段数据太少或最近推荐的图还没消化，暂时推不出合适的图。先去打几把热热手，之后我就能给你挑了。',
       stats: {
         topPlayCount: topScores.length,
         similarPlayers: similarStrict.size,
@@ -400,7 +429,7 @@ export async function recommendForPlayer(
   candidateCacheSet(user.id, { candidates: result, source, at: Date.now() });
   return {
     ok: true,
-    candidates: result,
+    candidates: finalCandidates,
     source,
     stats: {
       topPlayCount: topScores.length,

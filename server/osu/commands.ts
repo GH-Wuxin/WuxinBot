@@ -1343,8 +1343,18 @@ export async function handleOsuCommand(
       }
       const needleId = /^\d+$/.test(targetArg) ? Number(targetArg) : 0;
       const needleLower = targetArg.toLowerCase();
+      let recommendOsuId = needleId;
+      if (!recommendOsuId) {
+        try {
+          const { getUser } = await import('./api.js');
+          recommendOsuId = (await getUser(targetArg)).id;
+        } catch {
+          // Name resolution failed; recommend cooldown stays untouched.
+        }
+      }
       let removedAnalyze = 0;
       let removedRecent = 0;
+      let removedRecommend = 0;
       updateDb((draft) => {
         const matches = (entry: any) => {
           const idMatch = needleId > 0 && Number(entry?.osuUserId || 0) === needleId;
@@ -1358,8 +1368,12 @@ export async function handleOsuCommand(
         const beforeRecent = (draft.osuRecentAnalyses || []).length;
         draft.osuRecentAnalyses = (draft.osuRecentAnalyses || []).filter((entry: any) => !matches(entry));
         removedRecent = beforeRecent - draft.osuRecentAnalyses.length;
+        if (recommendOsuId > 0 && draft.osuRecommendCooldowns?.[String(recommendOsuId)] !== undefined) {
+          delete draft.osuRecommendCooldowns[String(recommendOsuId)];
+          removedRecommend = 1;
+        }
       });
-      const reply = `已清除 ${targetArg} 的分析冷却缓存（完整分析 ${removedAnalyze} 条、近期 ${removedRecent} 条）。`;
+      const reply = `已清除 ${targetArg} 的冷却（完整分析 ${removedAnalyze} 条、近期 ${removedRecent} 条、推图 ${removedRecommend} 条）。推图防重复历史保留。`;
       if (sendMessage) await sendMessage(event, reply);
       return { replied: true, reason: reply };
     }
@@ -1385,7 +1399,7 @@ export async function handleOsuCommand(
       '/w osu recent [用户名] [--mode=std/taiko/catch/mania] — 近期短评（需先完整分析）',
       '/w osu clear bind — 删除绑定',
       '/w osu clear history — 删除分析历史',
-      '/w osu clear cooldown <玩家> — 取消指定玩家分析冷却（仅 owner）',
+      '/w osu clear cooldown <玩家> — 取消指定玩家分析/近期/推图冷却（仅 owner）',
     ].join('\n');
     if (sendMessage) await sendMessage(event, help);
     return { replied: true, reason: 'osu help' };
