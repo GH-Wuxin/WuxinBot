@@ -181,15 +181,15 @@ function buildLevelUpPrompt(nickname, oldPp, newPp, realPp, contextLines) {
   const hint = realPp == null
     ? '生成一句自然的熟络短语即可，不要提 pp 数字。'
     : realPp < newPp
-      ? '按“我给他标的 pp 比他真实 pp 高”的调性调侃，宠溺/霸气一点，例如“哦？你说你才没那么多pp？别管那么多啦，在我这，你就是 xxx pp”。'
-      : '按“他真实 pp 明明更高，却才走到这里”的调性调侃，例如“诶？你不止这么点pp吗？那你得好好努力咯”。';
+      ? '他真实 pp 更低，用“我标给你的 pp 比真实高”的宠溺/霸气调性调侃他。'
+      : '他真实 pp 明明更高，用“真实水平比这高多了”的调性调侃他。';
   return [
     `你是 pippi。群友 ${nickname} 的等级刚提升：${oldPp}pp → ${newPp}pp。`,
     compare,
     `最近群聊：${contextLines}`,
     `对 ${nickname} 说一句短语（20 字以内），暗示你们更熟了，可以拿 pp 调侃，要像你平时说话。`,
     hint,
-    '禁止出现“Lv.”“等级”“称号”“升级”“解锁”字样；只输出一句话，不要解释。',
+    '禁止出现“Lv.”“等级”“称号”“升级”“解锁”字样；禁止复述规则、示例或任何括号说明；只输出一句对玩家说的话，不要解释。',
   ].join('\n');
 }
 
