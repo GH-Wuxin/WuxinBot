@@ -9,6 +9,8 @@ export interface RequiredTool {
   toolName: 'query_osu';
   args: {
     capability: string;
+    /** Which bot the user explicitly asked to use (yumu/kanon/hydrant/lazybot). */
+    bot?: string;
     username?: string;
     bp_rank?: number;
     bp_start?: number;
@@ -211,6 +213,7 @@ export function detectNamedBotRequest(
   for (const b of bots) {
     names.add(b.id);
     names.add(b.name);
+    names.add(`${b.name}bot`); // tolerate "猫猫bot" / "雨沐bot" phrasing
   }
   const alts = Array.from(names)
     .filter(Boolean)
@@ -246,9 +249,12 @@ function matchBotByIdOrName(
   bots: { id: string; name: string }[],
   raw: string
 ): { id: string; name: string } | undefined {
-  const target = String(raw || '').trim().toLocaleLowerCase();
+  const rawTarget = String(raw || '').trim().toLocaleLowerCase();
+  const candidates = [rawTarget, rawTarget.replace(/bot$/i, '')];
   return bots.find(
-    (b) => b.id.toLocaleLowerCase() === target || b.name.toLocaleLowerCase() === target
+    (b) =>
+      candidates.includes(String(b.id).toLocaleLowerCase()) ||
+      candidates.includes(String(b.name).toLocaleLowerCase())
   );
 }
 

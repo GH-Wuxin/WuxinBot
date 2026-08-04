@@ -38,7 +38,7 @@ const BLOCKED_PATTERNS: ReadonlyArray<{ pattern: RegExp; reason: string }> = [
 // ── Validation ──
 
 const PARAM_KEYS: Readonly<Record<AllowedOperationType, ReadonlySet<string>>> = {
-  query_osu: new Set(['capability', 'username', 'bp_rank', 'bp_start', 'bp_end', 'compact']),
+  query_osu: new Set(['capability', 'username', 'bp_rank', 'bp_start', 'bp_end', 'compact', 'bot']),
   query_external_bot: new Set(['bot', 'command']),
   query_bot: new Set(['bot', 'command', 'username', 'bp_rank', 'bp_start', 'bp_end']),
   get_player_skill: new Set(['player']),

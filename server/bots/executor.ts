@@ -577,8 +577,11 @@ export async function executeToolCall(
       }
 
       try {
+        const internalBotId = ['yumu', 'kanon', 'hydrant', 'lazybot'].includes(String(args.bot || ''))
+          ? String(args.bot)
+          : 'wuxin_internal';
         const rawResult = await executeInternalBotCommand(
-          'wuxin_internal',
+          internalBotId,
           capability,
           oUsername || '',
           context,
@@ -1147,11 +1150,17 @@ export async function executeInternalBotCommand(
       // Prefer the original yumu panel (full E5 data: pp breakdown, if-FC pp,
       // density, retry/fail) via the local bridge; internal render is fallback.
       const { hasLocalEndpoint, callLocalBot } = await import('./localBridge.js');
-      if (hasLocalEndpoint('yumu')) {
+      // Route to the bot the user asked for: kanon recent is `!re` (includes
+      // fails), yumu recent is `!r`; hydrant/lazybot have no recent → internal.
+      const bridgeBot = botId === 'kanon' ? 'kanon' : 'yumu';
+      const bridgeCommand = bridgeBot === 'kanon'
+        ? `!re ${user.username}`
+        : `!r ${user.username}`;
+      if (hasLocalEndpoint(bridgeBot)) {
         try {
           const bridgeReply = await callLocalBot(
-            'yumu',
-            `!r ${user.username}`,
+            bridgeBot,
+            bridgeCommand,
             {
               groupId: context.groupId || '770099',
               userId: String(userId),
