@@ -472,8 +472,9 @@ export async function processIncoming(event, sendMessage = undefined, queuedDeci
       const xpResult = processXpGain(event, db);
       incrementPairPending(db, event.groupId, event.userId);
 
-      // Level-up phrase: pippi-style, pp-flavored, no "level/title/unlock" words.
-      if (xpResult.levelUp && sendMessage && db.settings.levelUpNotifyEnabled !== false) {
+      // Level-up phrase: generated and queued; delivered when pippi next
+      // replies to this player (never popped as a standalone message).
+      if (xpResult.levelUp && db.settings.levelUpNotifyEnabled !== false) {
         const oldPp = levelToPp(xpResult.oldLevel);
         const newPp = levelToPp(xpResult.newLevel);
         void (async () => {
@@ -507,7 +508,18 @@ export async function processIncoming(event, sendMessage = undefined, queuedDeci
             const { completeChat } = await import('./bot/llm.js');
             const resp = await completeChat(readDb(), { messages: [{ role: 'user', content: congratsPrompt }], temperature: 0.9, maxTokens: 60, label: '升级短语' });
             const congratsText = resp.text?.trim() || levelUpFallback(oldPp, newPp, realPp);
-            await sendMessage(event, `[CQ:at,qq=${event.userId}] ${congratsText}`);
+            updateDb((draft) => {
+              draft.pendingLevelUps = draft.pendingLevelUps || {};
+              draft.pendingLevelUps[String(event.userId)] = { text: congratsText, at: nowIso() };
+              // Keep the queue bounded: drop the oldest when oversized.
+              const keys = Object.keys(draft.pendingLevelUps);
+              if (keys.length > 200) {
+                const sorted = keys.sort((a, b) =>
+                  String(draft.pendingLevelUps[a].at).localeCompare(String(draft.pendingLevelUps[b].at)),
+                );
+                for (const k of sorted.slice(0, keys.length - 200)) delete draft.pendingLevelUps[k];
+              }
+            });
           } catch { /* non-fatal */ }
         })();
       }
@@ -834,6 +846,18 @@ export async function processIncoming(event, sendMessage = undefined, queuedDeci
     }
     if (!replyText && imageCqCodes.length === 0) throw new Error('模型返回了空内容。');
     if (!replyText) replyText = imageCqCodes.length > 0 ? '查好了，结果在图里。' : '查好了。';
+
+    // Deliver a queued level-up phrase as part of this reply (never standalone).
+    const pendingUpKey = String(event.userId);
+    const pendingUp = readDb().pendingLevelUps?.[pendingUpKey];
+    if (pendingUp?.text) {
+      const atLead = `[CQ:at,qq=${event.userId}] ${pendingUp.text}`;
+      replyText = replyText ? `${atLead}\n\n${replyText}` : atLead;
+      updateDb((draft) => {
+        if (draft.pendingLevelUps) delete draft.pendingLevelUps[pendingUpKey];
+      });
+    }
+
     const deliveredText = [replyText, toolDirectContent].filter(Boolean).join('\n\n');
     const deliveredMediaImages = toolImages.map(toolImageToMediaInput).filter(Boolean);
 
