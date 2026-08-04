@@ -10,6 +10,35 @@ const dataDir = process.env.DATA_DIR || path.join(process.env.APPDATA || path.jo
 const dbPath = path.join(dataDir, 'db.json');
 const dbLockPath = path.join(dataDir, 'db.lock');
 
+// Auto backup: snapshot db.json every few minutes so a corrupted write or
+// external damage never costs more than the snapshot interval. Kept under the
+// dedicated backups/ directory, pruned to the newest N snapshots.
+const AUTO_BACKUP_INTERVAL_MS = 5 * 60_000;
+const AUTO_BACKUP_KEEP = 24;
+let lastAutoBackupAt = 0;
+
+function autoBackupIfDue() {
+  const now = Date.now();
+  if (now - lastAutoBackupAt < AUTO_BACKUP_INTERVAL_MS) return;
+  try {
+    const backupDir = path.join(dataDir, 'backups');
+    fs.mkdirSync(backupDir, { recursive: true });
+    const stamp = new Date(now).toISOString().replace(/[:.]/g, '-');
+    const dest = path.join(backupDir, `auto-${stamp}.json`);
+    if (!fs.existsSync(dest)) fs.copyFileSync(dbPath, dest);
+    const files = fs.readdirSync(backupDir)
+      .filter((f) => /^auto-.*\.json$/.test(f))
+      .sort();
+    while (files.length > AUTO_BACKUP_KEEP) {
+      const oldest = files.shift();
+      try { fs.unlinkSync(path.join(backupDir, oldest)); } catch { /* ignore */ }
+    }
+    lastAutoBackupAt = now;
+  } catch (error) {
+    console.error('[store] auto backup failed:', String(error?.message || error));
+  }
+}
+
 function sleepSync(ms) {
   Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
 }
@@ -339,7 +368,11 @@ export function readDb() {
 
 export function writeDb(db) {
   ensureStore();
-  return withDbLock(() => writeJsonAtomic(dbPath, db));
+  return withDbLock(() => {
+    const result = writeJsonAtomic(dbPath, db);
+    autoBackupIfDue();
+    return result;
+  });
 }
 
 export function updateDb(mutator) {
@@ -348,6 +381,7 @@ export function updateDb(mutator) {
     const db = readDbUnlocked();
     const result = mutator(db);
     writeJsonAtomic(dbPath, db);
+    autoBackupIfDue();
     return result ?? db;
   });
 }
