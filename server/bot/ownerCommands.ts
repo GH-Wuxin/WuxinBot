@@ -393,7 +393,7 @@ async function runOwnerCommand(event, sendMessage, permissions = { isOwner: true
     const realTarget = targetQq || event.userId;
     const exp = getExperience(db, realTarget);
     if (!isTargetOther && exp.level < 2 && !permissions.isOwner && !permissions.isAdmin) {
-      if (sendMessage) await sendMessage(event, `设置称呼需要达到 Lv.2 🎯 活跃群友。你当前是 Lv.${exp.level}。`);
+      if (sendMessage) await sendMessage(event, `设置称呼需要达到 200pp 等级（Lv.2）。你当前是 ${levelToPp(exp.level)}pp（Lv.${exp.level}）。`);
       return { replied: Boolean(sendMessage), reason: '等级不足' };
     }
 
@@ -464,7 +464,7 @@ async function runOwnerCommand(event, sendMessage, permissions = { isOwner: true
     const realTarget = targetQq || event.userId;
     const exp = getExperience(db, realTarget);
     if (!isTargetOther && exp.level < 3 && !permissions.isOwner && !permissions.isAdmin) {
-      if (sendMessage) await sendMessage(event, `设置个人风格需要达到 Lv.3 ⭐ 老熟人。你当前是 Lv.${exp.level}。`);
+      if (sendMessage) await sendMessage(event, `设置个人风格需要达到 300pp 等级（Lv.3）。你当前是 ${levelToPp(exp.level)}pp（Lv.${exp.level}）。`);
       return { replied: Boolean(sendMessage), reason: '等级不足' };
     }
 
@@ -524,7 +524,7 @@ async function runOwnerCommand(event, sendMessage, permissions = { isOwner: true
     const db = readDb();
     const exp = getExperience(db, event.userId);
     if (exp.level < 3 && !permissions.isOwner && !permissions.isAdmin) {
-      if (sendMessage) await sendMessage(event, `查看画像需要达到 Lv.3 ⭐ 老熟人。你当前是 Lv.${exp.level}。`);
+      if (sendMessage) await sendMessage(event, `查看画像需要达到 300pp 等级（Lv.3）。你当前是 ${levelToPp(exp.level)}pp（Lv.${exp.level}）。`);
       return { replied: Boolean(sendMessage), reason: '等级不足' };
     }
     const mem = (db.memories || []).find((m) => String(m.userId) === String(event.userId));

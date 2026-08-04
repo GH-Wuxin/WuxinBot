@@ -20,6 +20,23 @@ export function levelFromXp(xp) {
   return Math.max(0, Math.floor(Number(xp) / 100));
 }
 
+// One-time migration for records created under the legacy 5-level system:
+// recompute every stored level from total XP (level N = N*100 XP).
+export function migrateLegacyLevels() {
+  let migrated = 0;
+  updateDb((draft) => {
+    if (!draft.experience) return;
+    for (const [userId, exp] of Object.entries(draft.experience)) {
+      const correct = levelFromXp(exp.xp);
+      if (Number(exp.level) !== correct) {
+        exp.level = correct;
+        migrated++;
+      }
+    }
+  });
+  return migrated;
+}
+
 const DAILY_XP_CAP = 30;
 const MSG_XP = 1;
 const MSG_DAILY_CAP = 15;
@@ -233,8 +250,9 @@ export function decayInactiveUsers() {
 
 // Format XP progress bar
 export function formatXpBar(exp) {
-  const currentPp = levelToPp(exp.level);
-  const nextPp = levelToPp(exp.level + 1);
+  const level = levelFromXp(exp.xp); // defensive: trust XP, not the stored field
+  const currentPp = levelToPp(level);
+  const nextPp = levelToPp(level + 1);
   const progress = exp.xp - currentPp;
   const needed = nextPp - currentPp;
   const pct = Math.min(100, Math.round((progress / needed) * 100));
