@@ -1253,7 +1253,14 @@ app.use((err, _req, res, _next) => {
 app.listen(port, '127.0.0.1', async () => {
   const { setMatchSender, matchManager } = await import('./osu/match.js');
   const { sendOneBotMessage } = await import('./onebot.js');
+  const { migrateLegacyLevels } = await import('./bot/experience.js');
   setMatchSender(sendOneBotMessage);
+  try {
+    const migrated = migrateLegacyLevels();
+    if (migrated > 0) console.log(`[experience] 已迁移 ${migrated} 条旧等级数据`);
+  } catch (error) {
+    console.error('[experience] 等级迁移失败:', String(error?.message || error));
+  }
   void matchManager.restore(readDb()).catch((error) => {
     console.error('[match] 恢复监听失败:', String(error?.message || error));
   });

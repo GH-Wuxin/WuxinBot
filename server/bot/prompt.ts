@@ -7,7 +7,7 @@ import { llmProvider, llmProviderName, supportsProviderSearch } from './llm.js';
 import { groupProfilePromptBlock } from './groupProfile.js';
 import { relationshipPromptBlock } from './relationshipProfile.js';
 import { isEmptyProfileText } from './memory.js';
-import { getExperience, getLevelInfo } from './experience.js';
+import { getExperience, levelToPp } from './experience.js';
 import { buildPippiPrompt, detectScene } from './persona.js';
 import { buildOsuTopicKnowledge } from '../osu/knowledge/index.js';
 import { relevantPlayersSkillBlock } from '../bots/skills.js';
@@ -262,8 +262,7 @@ function buildUserInfoLines(db, event) {
   const userId = String(event.userId);
   const exp = getExperience(db, userId);
   if (exp.level >= 1) {
-    const info = getLevelInfo(exp.level);
-    lines.push(`当前发言者等级：${info.emoji} ${info.title}（Lv.${info.level}）。`);
+    lines.push(`当前发言者等级：${levelToPp(exp.level)}pp（Lv.${exp.level}）。`);
   }
   // Custom name (what the bot should call this user)
   const user = (db.users || []).find((u) => String(u.userId) === userId && String(u.groupId) === String(event.groupId));
