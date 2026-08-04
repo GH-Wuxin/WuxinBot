@@ -59,7 +59,7 @@ import {
 import { updateMemoryProfile, commitMemoryProfileResult } from './memory.js';
 import { getGroupProfile, updateGroupProfile, clearGroupProfile, hasGroupProfileContent } from './groupProfile.js';
 import { getRelationshipProfile, updateRelationshipProfile, clearRelationshipProfile } from './relationshipProfile.js';
-import { getExperience, formatXpBar, getUnlockedFeatures, getLevelInfo, LEVELS } from './experience.js';
+import { getExperience, formatXpBar, getUnlockedFeatures, getLevelInfo, levelToPp, levelFromXp } from './experience.js';
 import { isSearchAvailable, getLastSearchStatus } from './search.js';
 import { setBotPaused, getRecalcProgress, startRecalc, tickRecalc, finishRecalc } from '../health.js';
 import { activateModelProfile, activeProviderLabel } from '../modelConfig.js';
@@ -368,11 +368,11 @@ async function runOwnerCommand(event, sendMessage, permissions = { isOwner: true
       const info = getLevelInfo(exp.level);
       const user = (db.users || []).find((u) => String(u.userId) === ge.userId);
       const name = user?.customName || user?.nickname || ge.userId;
-      const current = LEVELS.find((l) => l.level === exp.level) || LEVELS[0];
-      const next = LEVELS.find((l) => l.level === exp.level + 1);
-      const progress = next ? Math.round(((exp.xp - current.xp) / (next.xp - current.xp)) * 10) : 10;
+      const currentPp = levelToPp(exp.level);
+      const nextPp = levelToPp(exp.level + 1);
+      const progress = Math.min(10, Math.max(0, Math.round(((exp.xp - currentPp) / (nextPp - currentPp)) * 10)));
       const bar = '█'.repeat(progress) + '░'.repeat(10 - progress);
-      lines.push(`${i + 1}. ${info.emoji} ${name}  ${exp.xp} XP ${bar}`);
+      lines.push(`${i + 1}. ${name}  ${exp.xp} XP ${bar}（${currentPp}pp）`);
     }
     if (sendMessage) await sendForwardText(sendMessage, event, '群经验排行', lines.join('\n'));
     return { replied: Boolean(sendMessage), reason: '显示排行榜' };
@@ -584,16 +584,13 @@ async function runOwnerCommand(event, sendMessage, permissions = { isOwner: true
           draft.experience[targetQq] = e;
         }
         e.xp += amount;
-        // Re-evaluate level
-        let newLevel = 0;
-        for (let i = LEVELS.length - 1; i >= 0; i--) {
-          if (e.xp >= LEVELS[i].xp) { newLevel = LEVELS[i].level; break; }
-        }
+        // Re-evaluate level (level N = N*100 XP)
+        const newLevel = levelFromXp(e.xp);
         if (newLevel > e.level) { e.level = newLevel; e.lastLevelUpAt = nowIso(); }
       });
       const newExp = getExperience(readDb(), targetQq);
       const newInfo = getLevelInfo(newExp.level);
-      if (sendMessage) await sendMessage(event, `已给 ${nickname} 增加 ${amount} XP → ${newExp.xp} XP ${newInfo.emoji} ${newInfo.title} Lv.${newInfo.level}`);
+      if (sendMessage) await sendMessage(event, `已给 ${nickname} 增加 ${amount} XP → ${newExp.xp} XP（${newInfo.title}）`);
       return { replied: Boolean(sendMessage), reason: 'exp add' };
     }
 
@@ -606,15 +603,11 @@ async function runOwnerCommand(event, sendMessage, permissions = { isOwner: true
           draft.experience[targetQq] = e;
         }
         e.xp = amount;
-        let newLevel = 0;
-        for (let i = LEVELS.length - 1; i >= 0; i--) {
-          if (e.xp >= LEVELS[i].xp) { newLevel = LEVELS[i].level; break; }
-        }
-        e.level = newLevel;
+        e.level = levelFromXp(e.xp);
       });
       const newExp = getExperience(readDb(), targetQq);
       const newInfo = getLevelInfo(newExp.level);
-      if (sendMessage) await sendMessage(event, `已将 ${nickname} 的 XP 设为 ${amount} → ${newInfo.emoji} ${newInfo.title} Lv.${newInfo.level}`);
+      if (sendMessage) await sendMessage(event, `已将 ${nickname} 的 XP 设为 ${amount} → ${newInfo.title}`);
       return { replied: Boolean(sendMessage), reason: 'exp set' };
     }
 

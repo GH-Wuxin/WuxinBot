@@ -112,10 +112,10 @@ async function main() {
     console.log('Test 2: Level upgrade');
     setupDb(original);
 
-    // Manually set XP to just below level 1 threshold
+    // Manually set XP to just below level 1 threshold (level N = N*100 XP)
     updateDb((draft) => {
       draft.experience[TEST_USER] = {
-        xp: 49, level: 0, dailyXp: 0, dailyDate: new Date().toISOString().slice(0, 10),
+        xp: 99, level: 0, dailyXp: 0, dailyDate: new Date().toISOString().slice(0, 10),
         activeDays: 5, streakDays: 1, lastMsgDate: '', lastLevelUpAt: '', lastDecayCheck: '',
       };
     });
@@ -188,8 +188,8 @@ async function main() {
     // ============================================================
     console.log('Test 6: formatXpBar');
     const bar6 = formatXpBar({ xp: 100, level: 1, dailyXp: 5, streakDays: 3 });
-    assert(bar6.includes('群友'), 'should contain level title');
-    assert(bar6.includes('Lv.1'), 'should contain level number');
+    assert(bar6.includes('100pp'), 'should show level as 100pp');
+    assert(bar6.includes('200pp'), 'should show next level as 200pp');
     assert(bar6.includes('×1.2'), 'should contain streak multiplier');
 
     console.log('PASS: Test 6 — formatXpBar');
@@ -251,19 +251,19 @@ async function main() {
     }), send9);
     const exp9add = getExperience(readDb(), TEST_USER);
     assert(exp9add.xp === 1200, `add should set XP to 1200, got ${exp9add.xp}`);
-    assert(exp9add.level === 4, `1200 XP should be level 4, got ${exp9add.level}`);
+    assert(exp9add.level === 12, `1200 XP should be level 12 (1200/100), got ${exp9add.level}`);
     assert(sent9.some((s) => s.includes('增加 1200 XP')), 'add reply should confirm increase');
 
     await processIncoming(event({
       userId: TEST_OWNER,
       nickname: 'Owner',
-      text: `/w exp ${TEST_USER} set 60`,
+      text: `/w exp ${TEST_USER} set 160`,
       atTargets: [],
       messageId: 't9-set',
     }), send9);
     const exp9set = getExperience(readDb(), TEST_USER);
-    assert(exp9set.xp === 60, `set should set XP to 60, got ${exp9set.xp}`);
-    assert(exp9set.level === 1, `60 XP should be level 1, got ${exp9set.level}`);
+    assert(exp9set.xp === 160, `set should set XP to 160, got ${exp9set.xp}`);
+    assert(exp9set.level === 1, `160 XP should be level 1, got ${exp9set.level}`);
 
     await processIncoming(event({
       userId: TEST_OWNER,
