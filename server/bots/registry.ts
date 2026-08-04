@@ -174,6 +174,11 @@ export function buildBotToolSchemas(registry: BotRegistry): LlmTool[] {
               type: 'string',
               description: 'osu! 用户名。不填则用提问玩家的绑定账号。'
             },
+            bot: {
+              type: 'string',
+              enum: ['yumu', 'kanon', 'hydrant', 'lazybot'],
+              description: '用户点名要用的 bot（雨沐/猫猫/消防栓/LazyBot）时填对应 id；不填默认用雨沐渲染。'
+            },
             bp_rank: {
               type: 'integer', minimum: 1, maximum: 100,
               description: 'BP 单张名次，与 bp_start/bp_end 互斥。'

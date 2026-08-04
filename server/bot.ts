@@ -602,6 +602,13 @@ export async function processIncoming(event, sendMessage = undefined, queuedDeci
     const registryHere = loadRegistry(liveDb);
     const namedBotRequest = detectNamedBotRequest(event.text, registryHere.bots || []);
 
+    // If the user explicitly named a bot (猫猫/雨沐/etc.) AND asked for osu
+    // data, carry the bot choice into the required tool so rendering routes to
+    // the requested bot (e.g. recent via kanon instead of yumu).
+    if (osuDataIntent && namedBotRequest) {
+      osuDataIntent.args.bot = namedBotRequest.botId;
+    }
+
     // ── Named-bot invocation guard ──
     // User explicitly names a bot to do something (用猫猫查…、调用LazyBot). Without
     // a real Harness adapter we must NOT impersonate the bot via query_osu and must
