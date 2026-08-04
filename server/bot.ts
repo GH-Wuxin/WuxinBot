@@ -150,28 +150,27 @@ function toolImageToMediaInput(image) {
 // mentions "level", "title" or "unlock".
 
 const LEVEL_UP_FALLBACK_LOW = [
-  '你这才升到这？那我可要盯着你一路飞上去了，别让我失望。',
-  '你这实力跟这等级较什么劲，加把劲冲上来，我在上头等你。',
-  '真实水平可不止这个数，继续往上爬，我看着呢。',
-  '怎么，怕升太快吓到我？放心，我扛得住，继续。',
+  '你 {pp}pp 了！什么？比这 pp 还高？这是我这的等级 pp，不用太在意啦！',
+  '你 {pp}pp 了！什么？你真实水平比这高多了？这是我这的等级 pp，随便看看就好。',
+  '你 {pp}pp 了！嗯？明明真实 pp 比这高？这是我这的等级 pp，不用当真啦。',
 ];
 const LEVEL_UP_FALLBACK_HIGH = [
-  '我标你 {pp}pp 可不是哄你，是觉得你迟早到这儿，追上来哦。',
-  '先领个 {pp}pp 的头衔？那我等着你把它坐实。',
-  '真实 pp 差一点没关系，我这儿给你留着位置，快去补上。',
-  '在我这儿你就是 {pp}pp，这不是夸你，是给你定的目标。',
+  '你 {pp}pp 了！什么？你没那么多 pp？这是我这的等级 pp，不用太在意啦！',
+  '你 {pp}pp 了！什么？真实 pp 还没到？这是我这的等级 pp，先记着这个数就行。',
+  '你 {pp}pp 了！哦？真没那么多 pp？这是我这的等级 pp，别太当真。',
 ];
 const LEVEL_UP_FALLBACK_NONE = [
-  'pippi 更熟悉你了呢',
-  '嗯，你在我这儿算是有名字的人了',
-  '我们是不是已经算熟人了？',
+  '你 {pp}pp 了！这是我这的等级 pp，不用太在意啦。',
+  '你 {pp}pp 了！我这儿的等级 pp，随便看看就好。',
+  '你 {pp}pp 了！这是我这的等级 pp，别太当真。',
 ];
 
 function levelUpFallback(oldPp, newPp, realPp) {
   const pick = (arr) => arr[Math.floor(Math.random() * arr.length)];
-  if (realPp == null) return pick(LEVEL_UP_FALLBACK_NONE);
-  if (realPp < newPp) return pick(LEVEL_UP_FALLBACK_HIGH).replace('{pp}', String(newPp));
-  return pick(LEVEL_UP_FALLBACK_LOW);
+  const pool = realPp == null ? LEVEL_UP_FALLBACK_NONE
+    : realPp < newPp ? LEVEL_UP_FALLBACK_HIGH
+    : LEVEL_UP_FALLBACK_LOW;
+  return pick(pool).replace('{pp}', String(newPp));
 }
 
 function buildLevelUpPrompt(nickname, oldPp, newPp, realPp, contextLines) {
@@ -181,18 +180,18 @@ function buildLevelUpPrompt(nickname, oldPp, newPp, realPp, contextLines) {
       ? `他的真实 osu! pp 只有 ${realPp}pp，低于新等级对应的 ${newPp}pp。`
       : `他的真实 osu! pp 高达 ${realPp}pp，远高于新等级对应的 ${newPp}pp。`;
   const hint = realPp == null
-    ? '生成一句自然、友好的熟络短语即可，不要提 pp 数字。'
+    ? '按格式说：宣告等级 pp 后，直接说“这是我这的等级 pp，不用太在意啦”。'
     : realPp < newPp
-      ? '他真实 pp 更低，用“我标给你的 pp 比真实高”的鼓励式打趣：认可他、给他定一个够得着的目标，带着“我信你迟早到这儿”的意味。'
-      : '他真实 pp 明明更高，用“你的实力才不止这个等级”的鼓励式打趣：为他高兴、期待他继续往上冲，带着“我等着看你飞上去”的意味。';
+      ? '在宣告后加一句惊讶：“什么？你没那么多 pp？”（因为真实 pp 低于等级 pp）。'
+      : '在宣告后加一句惊讶：“什么？比这 pp 还高？”（因为真实 pp 高于等级 pp）。';
   return [
     `你是 pippi。群友 ${nickname} 的等级刚提升：${oldPp}pp → ${newPp}pp。`,
     compare,
     `最近群聊：${contextLines}`,
-    `对 ${nickname} 说一句短语（20 字以内），语气要像好朋友：真心为他高兴，可以带一点善意的打趣，但不要贬低、不要阴阳怪气、不要无脑夸。`,
+    `对 ${nickname} 说一句升级短语，格式是这样：“你 {新等级 pp}pp 了！${realPp == null ? '' : realPp < newPp ? '什么？你没那么多 pp？' : '什么？比这 pp 还高？'}这是我这的等级 pp，不用太在意啦！”`,
     hint,
+    '可以在“不用太在意”后面加半句轻松的收尾（比如“先记着这个数就行”），但不要加更多解释。',
     '禁止出现“Lv.”“等级”“称号”“升级”“解锁”字样；禁止复述规则或任何括号说明；不要用“装萌新”“少废话”“谁有意见”“别狡辩”这类带挑衅或贬低的说法；只输出一句对玩家说的话，不要解释。',
-    '语气词使用限制：尽量不用“哟、诶、哦、嗯、嘛”等语气词开头，整句最多出现一个语气词；十句里最多一句用语气词。',
   ].join('\n');
 }
 
@@ -508,7 +507,7 @@ export async function processIncoming(event, sendMessage = undefined, queuedDeci
             const { completeChat } = await import('./bot/llm.js');
             const resp = await completeChat(readDb(), { messages: [{ role: 'user', content: congratsPrompt }], temperature: 0.9, maxTokens: 60, label: '升级短语' });
             const congratsText = resp.text?.trim() || levelUpFallback(oldPp, newPp, realPp);
-            await sendMessage(event, congratsText);
+            await sendMessage(event, `[CQ:at,qq=${event.userId}] ${congratsText}`);
           } catch { /* non-fatal */ }
         })();
       }
