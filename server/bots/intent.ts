@@ -84,6 +84,8 @@ const RECENT_PATTERNS: RegExp[] = [
   new RegExp(`(?:看看|看|查|查查|查一下|查下|搜|显示|查看|帮我查|帮我看看|show|get)(?:一下|一哈|下)?\\s*(?:我(?:的)?)?\\s*re${_E}`, 'i'),
   // Bare "最近成绩" — no action verb needed when temporal keyword is explicit
   /(?:最近(?:一次|的|几[次个])?|最新(?:一次|的)?)\s*成绩/,
+  // "看看我刚刚打了什么图" "刚才打的什么图" "刚打了什么"
+  new RegExp(`(?:刚刚|刚才|刚)\\s*(?:打|玩)(?:了|的)?\\s*(?:什么图|哪些图|的图|成绩)${_E}`, 'i'),
 ];
 
 function hasRecentIntent(text: string): boolean {

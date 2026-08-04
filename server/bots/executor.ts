@@ -1144,6 +1144,33 @@ export async function executeInternalBotCommand(
 
   switch (commandName) {
     case 'recent': {
+      // Prefer the original yumu panel (full E5 data: pp breakdown, if-FC pp,
+      // density, retry/fail) via the local bridge; internal render is fallback.
+      const { hasLocalEndpoint, callLocalBot } = await import('./localBridge.js');
+      if (hasLocalEndpoint('yumu')) {
+        try {
+          const bridgeReply = await callLocalBot(
+            'yumu',
+            `!r ${user.username}`,
+            {
+              groupId: context.groupId || '770099',
+              userId: String(userId),
+              nickname: 'WuxinBridge',
+              atTargets: [],
+            },
+            60_000,
+          );
+          if (bridgeReply && (bridgeReply.text || bridgeReply.images.length > 0)) {
+            return {
+              content: bridgeReply.text || `${user.username} 最近一次 osu! 成绩：`,
+              images: bridgeReply.images,
+            };
+          }
+        } catch {
+          // Fall through to the internal renderer.
+        }
+      }
+
       const { getUserRecentScores } = await import('../osu/api.js');
       const rawScores = await getUserRecentScores(user.id, 'osu', 1);
       if (!Array.isArray(rawScores) || rawScores.length === 0) {
