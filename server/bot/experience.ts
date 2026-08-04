@@ -6,8 +6,6 @@
 import { readDb, updateDb, nowIso } from '../store.js';
 import { extractSignals } from './signals.js';
 
-export const LEVELS = null; // Levels are dynamic: level N = N*100pp (unbounded).
-
 export function levelToPp(level) {
   return Math.max(0, Math.floor(Number(level) || 0)) * 100;
 }
