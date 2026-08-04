@@ -1,16 +1,24 @@
 // @ts-nocheck -- legacy runtime module; new typed modules remain checked by tsc.
 // Experience / level system — rules-based, no LLM.
-// XP is global per QQ number. Levels unlock features and affect reply behavior.
+// Levels are unbounded and named by pp value: level N = N*100pp, reached when
+// total XP >= N*100. XP is global per QQ number. Levels unlock features and
+// affect reply behavior.
 import { readDb, updateDb, nowIso } from '../store.js';
 import { extractSignals } from './signals.js';
 
-export const LEVELS = [
-  { level: 0, title: '新人', emoji: '🌱', xp: 0 },
-  { level: 1, title: '群友', emoji: '💬', xp: 50 },
-  { level: 2, title: '活跃群友', emoji: '🎯', xp: 150 },
-  { level: 3, title: '老熟人', emoji: '⭐', xp: 350 },
-  { level: 4, title: '核心群友', emoji: '👑', xp: 700 },
-];
+export const LEVELS = null; // Levels are dynamic: level N = N*100pp (unbounded).
+
+export function levelToPp(level) {
+  return Math.max(0, Math.floor(Number(level) || 0)) * 100;
+}
+
+export function xpForLevel(level) {
+  return levelToPp(level);
+}
+
+export function levelFromXp(xp) {
+  return Math.max(0, Math.floor(Number(xp) / 100));
+}
 
 const DAILY_XP_CAP = 30;
 const MSG_XP = 1;
@@ -25,16 +33,12 @@ const DECAY_INTERVAL_DAYS = 7;
 const DECAY_RATE = 0.10;
 
 export function getLevelInfo(level) {
-  return LEVELS.find((l) => l.level === level) || LEVELS[0];
+  const lv = Math.max(0, Math.floor(Number(level) || 0));
+  return { level: lv, title: `${levelToPp(lv)}pp`, emoji: '', xp: xpForLevel(lv) };
 }
 
 export function getNextLevelInfo(level) {
-  return LEVELS.find((l) => l.level === level + 1) || null;
-}
-
-export function xpForLevel(level) {
-  const info = LEVELS.find((l) => l.level === level);
-  return info ? info.xp : 0;
+  return { level: level + 1, title: `${levelToPp(level + 1)}pp`, emoji: '', xp: xpForLevel(level + 1) };
 }
 
 export function getStreakMultiplier(streakDays) {
@@ -62,19 +66,19 @@ export function getGroupExperience(db, groupId, userId) {
 
 export function getXpBonus(db, userId) {
   const exp = getExperience(db, userId);
-  const info = getLevelInfo(exp.level);
+  const xp = Number(exp.xp || 0);
   const bonuses = {
     weightBonus: 0,
     conversationWindowSec: 120,
     memoryThresholdMul: 1.0,
     level: exp.level,
-    title: info.title,
-    emoji: info.emoji,
+    title: `${levelToPp(exp.level)}pp`,
+    emoji: '',
   };
-  if (exp.level >= 1) bonuses.weightBonus = 10;
-  if (exp.level >= 2) { bonuses.weightBonus = 15; bonuses.memoryThresholdMul = 0.8; }
-  if (exp.level >= 3) { bonuses.weightBonus = 20; bonuses.conversationWindowSec = 180; }
-  if (exp.level >= 4) { bonuses.weightBonus = 25; bonuses.memoryThresholdMul = 0.6; bonuses.conversationWindowSec = 300; }
+  if (xp >= 50) bonuses.weightBonus = 10;
+  if (xp >= 150) { bonuses.weightBonus = 15; bonuses.memoryThresholdMul = 0.8; }
+  if (xp >= 350) { bonuses.weightBonus = 20; bonuses.conversationWindowSec = 180; }
+  if (xp >= 700) { bonuses.weightBonus = 25; bonuses.memoryThresholdMul = 0.6; bonuses.conversationWindowSec = 300; }
   return bonuses;
 }
 
@@ -183,12 +187,9 @@ export function processXpGain(event, db) {
     gExp.xpInGroup += gained;
     gExp.lastActiveAt = nowIso();
 
-    // Level evaluation
+    // Level evaluation: level N requires N*100 total XP (unbounded).
     oldLevel = exp.level;
-    let newLevel = 0;
-    for (let i = LEVELS.length - 1; i >= 0; i--) {
-      if (exp.xp >= LEVELS[i].xp) { newLevel = LEVELS[i].level; break; }
-    }
+    const newLevel = levelFromXp(exp.xp);
     if (newLevel > oldLevel) {
       exp.level = newLevel;
       exp.lastLevelUpAt = nowIso();
@@ -224,26 +225,18 @@ export function decayInactiveUsers() {
       exp.xp = Math.max(0, exp.xp - decayAmount);
       exp.lastDecayCheck = today;
 
-      // Re-evaluate level
-      let newLevel = 0;
-      for (let i = LEVELS.length - 1; i >= 0; i--) {
-        if (exp.xp >= LEVELS[i].xp) { newLevel = LEVELS[i].level; break; }
-      }
-      exp.level = newLevel;
+      // Re-evaluate level (unbounded pp naming).
+      exp.level = levelFromXp(exp.xp);
     }
   });
 }
 
 // Format XP progress bar
 export function formatXpBar(exp) {
-  const current = LEVELS.find((l) => l.level === exp.level) || LEVELS[0];
-  const next = LEVELS.find((l) => l.level === exp.level + 1);
-  if (!next) {
-    // Max level
-    return `${current.emoji} ${current.title} (Lv.${current.level})\nXP: ${exp.xp} (已满级)`;
-  }
-  const progress = exp.xp - current.xp;
-  const needed = next.xp - current.xp;
+  const currentPp = levelToPp(exp.level);
+  const nextPp = levelToPp(exp.level + 1);
+  const progress = exp.xp - currentPp;
+  const needed = nextPp - currentPp;
   const pct = Math.min(100, Math.round((progress / needed) * 100));
   const filled = Math.round(pct / 10);
   const bar = '█'.repeat(filled) + '░'.repeat(10 - filled);
@@ -251,8 +244,8 @@ export function formatXpBar(exp) {
   const mulText = streakMul > 1 ? ` ×${streakMul}` : '';
 
   const lines = [
-    `${current.emoji} ${current.title} (Lv.${current.level})`,
-    `XP: ${exp.xp}/${next.xp} ${bar} ${pct}%`,
+    `当前等级：${currentPp}pp（下一级 ${nextPp}pp）`,
+    `XP: ${exp.xp}/${nextPp} ${bar} ${pct}%`,
     `今日: +${Math.round(exp.dailyXp)}/${DAILY_XP_CAP}${mulText}  连续: ${exp.streakDays}天`,
   ];
   return lines.join('\n');
@@ -260,10 +253,12 @@ export function formatXpBar(exp) {
 
 // Get unlocked features description
 export function getUnlockedFeatures(level) {
+  // Thresholds follow total XP (50/150/350/700); level N means N*100 XP.
+  const xp = xpForLevel(level);
   const features = [];
-  if (level >= 1) features.push('回复权重+10');
-  if (level >= 2) features.push('权重+15 · 记忆×0.8 · 自定义称呼');
-  if (level >= 3) features.push('权重+20 · 对话3min · 查看画像 · 个人风格');
-  if (level >= 4) features.push('权重+25 · 记忆×0.6 · 对话5min · 画像导出');
+  if (xp >= 50) features.push('回复权重+10');
+  if (xp >= 150) features.push('权重+15 · 记忆×0.8 · 自定义称呼');
+  if (xp >= 350) features.push('权重+20 · 对话3min · 查看画像 · 个人风格');
+  if (xp >= 700) features.push('权重+25 · 记忆×0.6 · 对话5min · 画像导出');
   return features;
 }

@@ -61,7 +61,7 @@ import { recordMemoryObservation, maybeUpdateMemoryProfile, maybeRecordImageMemo
 import { getGroupProfile, updateGroupProfile, clearGroupProfile, incrementGroupProfilePending, hasGroupProfileContent } from './bot/groupProfile.js';
 import { getRelationshipProfile, updateRelationshipProfile, clearRelationshipProfile, incrementPairPending } from './bot/relationshipProfile.js';
 import { processTrustSignal, evaluateTrustScores, trustInteractionBonus, isTrustedMember } from './bot/trust.js';
-import { processXpGain, getExperience, getXpBonus, formatXpBar, getUnlockedFeatures, getLevelInfo, getNextLevelInfo, LEVELS, decayInactiveUsers } from './bot/experience.js';
+import { processXpGain, getExperience, getXpBonus, formatXpBar, getUnlockedFeatures, getLevelInfo, getNextLevelInfo, levelToPp, decayInactiveUsers } from './bot/experience.js';
 import { isSearchAvailable, searchWeb, formatSearchResults, getLastSearchStatus, extractSearchQuery } from './bot/search.js';
 import { setBotPaused, getRecalcProgress, startRecalc, tickRecalc, finishRecalc } from './health.js';
 import { activateModelProfile, activeProviderLabel } from './modelConfig.js';
@@ -142,6 +142,55 @@ function toolImageToMediaInput(image) {
     return { type: 'image', url: value };
   }
   return { type: 'image', file: value };
+}
+
+// ── Level-up phrase generation ──
+// Levels are named by pp value (level N = N*100pp). The phrase compares the
+// level pp with the player's real osu! pp and teases accordingly; it never
+// mentions "level", "title" or "unlock".
+
+const LEVEL_UP_FALLBACK_LOW = [
+  '诶？你不止这么点pp吗？那你得好好努力咯',
+  '明明真本事比这高多了，才走到这里，加把劲呀',
+  '你的真实水平可不止这个数，继续往上爬',
+];
+const LEVEL_UP_FALLBACK_HIGH = [
+  '哦？你说你才没那么多pp？别管那么多啦，在我这，你就是 {pp}pp',
+  '别管那些数字了，在我眼里你就是 {pp}pp',
+  '区区真实 pp 算什么，我这边给你标的就是 {pp}pp',
+];
+const LEVEL_UP_FALLBACK_NONE = [
+  'pippi 更熟悉你了呢',
+  '嗯，你在我这儿算是有名字的人了',
+  '我们是不是已经算熟人了？',
+];
+
+function levelUpFallback(oldPp, newPp, realPp) {
+  const pick = (arr) => arr[Math.floor(Math.random() * arr.length)];
+  if (realPp == null) return pick(LEVEL_UP_FALLBACK_NONE);
+  if (realPp < newPp) return pick(LEVEL_UP_FALLBACK_HIGH).replace('{pp}', String(newPp));
+  return pick(LEVEL_UP_FALLBACK_LOW);
+}
+
+function buildLevelUpPrompt(nickname, oldPp, newPp, realPp, contextLines) {
+  const compare = realPp == null
+    ? '他的真实 osu! pp 未知（未绑定账号）。'
+    : realPp < newPp
+      ? `他的真实 osu! pp 只有 ${realPp}pp，低于新等级对应的 ${newPp}pp。`
+      : `他的真实 osu! pp 高达 ${realPp}pp，远高于新等级对应的 ${newPp}pp。`;
+  const hint = realPp == null
+    ? '生成一句自然的熟络短语即可，不要提 pp 数字。'
+    : realPp < newPp
+      ? '按“我给他标的 pp 比他真实 pp 高”的调性调侃，宠溺/霸气一点，例如“哦？你说你才没那么多pp？别管那么多啦，在我这，你就是 xxx pp”。'
+      : '按“他真实 pp 明明更高，却才走到这里”的调性调侃，例如“诶？你不止这么点pp吗？那你得好好努力咯”。';
+  return [
+    `你是 pippi。群友 ${nickname} 的等级刚提升：${oldPp}pp → ${newPp}pp。`,
+    compare,
+    `最近群聊：${contextLines}`,
+    `对 ${nickname} 说一句短语（20 字以内），暗示你们更熟了，可以拿 pp 调侃，要像你平时说话。`,
+    hint,
+    '禁止出现“Lv.”“等级”“称号”“升级”“解锁”字样；只输出一句话，不要解释。',
+  ].join('\n');
 }
 
 export function compactDirectToolLead(text, directContent = '', hasImages = false) {
@@ -421,18 +470,41 @@ export async function processIncoming(event, sendMessage = undefined, queuedDeci
       const xpResult = processXpGain(event, db);
       incrementPairPending(db, event.groupId, event.userId);
 
-      // Level-up congratulations
+      // Level-up phrase: pippi-style, pp-flavored, no "level/title/unlock" words.
       if (xpResult.levelUp && sendMessage && db.settings.levelUpNotifyEnabled !== false) {
-        const newInfo = getLevelInfo(xpResult.newLevel);
-        const features = getUnlockedFeatures(xpResult.newLevel);
-        const featureText = features.length ? `解锁：${features[features.length - 1]}` : '';
-        // Fire-and-forget: don't block the main reply
+        const oldPp = levelToPp(xpResult.oldLevel);
+        const newPp = levelToPp(xpResult.newLevel);
         void (async () => {
           try {
-            const congratsPrompt = `用户 ${event.nickname} 从 Lv.${xpResult.oldLevel} 升级到 ${newInfo.emoji} ${newInfo.title}（Lv.${newInfo.level}）。${featureText}。写一句简短的群内恭喜，15字以内，轻松活泼，不要重复。`;
+            const liveDb = readDb();
+            // Real player pp (osu API has a 6h cache; skill snapshot as fallback).
+            let realPp = null;
+            const binding = liveDb.osuBindings?.[String(event.userId)];
+            if (binding) {
+              try {
+                const { getUserById } = await import('./osu/api.js');
+                const user = await getUserById(binding.id, 'osu');
+                realPp = Math.round(Number(user.statistics?.pp || 0));
+              } catch {
+                const record = (liveDb.skillStore?.records || []).find(
+                  (r) => Number(r.osuUserId) === Number(binding.id),
+                );
+                if (record?.pp) realPp = Math.round(Number(record.pp));
+              }
+            }
+            const contextLines = recentGroupMessages(liveDb, event.groupId, 5)
+              .map((m) => `${m.nickname || m.userId}: ${String(m.content || '').slice(0, 60)}`)
+              .join('\n') || '（暂无）';
+            const congratsPrompt = buildLevelUpPrompt(
+              event.nickname || '你',
+              oldPp,
+              newPp,
+              realPp,
+              contextLines,
+            );
             const { completeChat } = await import('./bot/llm.js');
-            const resp = await completeChat(readDb(), { messages: [{ role: 'user', content: congratsPrompt }], temperature: 0.8, maxTokens: 50, label: '升级恭喜' });
-            const congratsText = resp.text?.trim() || `🎉 恭喜 ${event.nickname} 升级为 ${newInfo.emoji} ${newInfo.title}！`;
+            const resp = await completeChat(readDb(), { messages: [{ role: 'user', content: congratsPrompt }], temperature: 0.9, maxTokens: 60, label: '升级短语' });
+            const congratsText = resp.text?.trim() || levelUpFallback(oldPp, newPp, realPp);
             await sendMessage(event, congratsText);
           } catch { /* non-fatal */ }
         })();
