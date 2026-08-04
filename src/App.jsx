@@ -461,12 +461,10 @@ function Overview({ db, oneBot, saveSettings, refresh }) {
         <Stat label="累计 Token" value={formatTokenNumber(db.usage.totalTokens)} />
         {(() => {
           const exp = db.experience || {};
-          const levels = [0, 0, 0, 0, 0];
-          const levelEmojis = ['🌱', '💬', '🎯', '⭐', '👑'];
-          for (const e of Object.values(exp)) levels[e.level || 0]++;
           const total = Object.keys(exp).length;
           if (!total) return null;
-          return <Stat label="经验成员" value={`${total} 人 · ${levels.map((c, i) => c ? `${levelEmojis[i]}${c}` : '').filter(Boolean).join(' ')}`} />;
+          const maxPp = Math.max(0, ...Object.values(exp).map((e) => Math.floor(Number(e.xp || 0) / 100) * 100));
+          return <Stat label="经验成员" value={`${total} 人 · 最高 ${maxPp}pp`} />;
         })()}
       </section>
       <UsageChart usageStats={db.usageStats} />
@@ -508,6 +506,10 @@ function Overview({ db, oneBot, saveSettings, refresh }) {
     </>
   );
 }
+
+// Level is pp-valued now (level N = N*100pp); compute defensively from XP.
+const levelPpLabel = (exp) => `${Math.floor(Number(exp?.xp || 0) / 100) * 100}pp`;
+const levelLvLabel = (exp) => `Lv.${Math.floor(Number(exp?.xp || 0) / 100)}`;
 
 function formatTokenNumber(value) {
   return Number(value || 0).toLocaleString('zh-CN');
@@ -876,13 +878,12 @@ function Groups({ db, refresh, saveSettings }) {
                         .sort((a, b) => (b.xpInGroup || 0) - (a.xpInGroup || 0))
                         .slice(0, 5);
                       if (!groupExp.length) return null;
-                      const levelEmojis = ['🌱', '💬', '🎯', '⭐', '👑'];
                       return (
                         <span className="signal">成员等级：{groupExp.map((ge) => {
                           const exp = (db.experience || {})[ge.userId] || {};
                           const user = db.users?.find((u) => String(u.userId) === ge.userId);
                           const name = user?.customName || user?.nickname || ge.userId;
-                          return `${levelEmojis[exp.level || 0] || '🌱'}${name}`;
+                          return `${levelPpLabel(exp)} ${name}`;
                         }).join(' · ')}</span>
                       );
                     })()}
@@ -1201,10 +1202,8 @@ function Members({ db, refresh }) {
     }
     const exp = experience[String(user.userId)];
     if (exp) {
-      const levelEmojis = ['🌱', '💬', '🎯', '⭐', '👑'];
-      const levelNames = ['新人', '群友', '活跃群友', '老熟人', '核心群友'];
-      const lv = exp.level || 0;
-      tags.push({ label: `${levelEmojis[lv] || '🌱'} Lv.${lv} ${levelNames[lv] || ''}`, cls: lv >= 3 ? 'badge-priority' : lv >= 1 ? 'badge-cmd' : '' });
+      const lv = Math.floor(Number(exp.xp || 0) / 100);
+      tags.push({ label: `${levelPpLabel(exp)}（${levelLvLabel(exp)}）`, cls: lv >= 3 ? 'badge-priority' : lv >= 1 ? 'badge-cmd' : '' });
     }
     return tags;
   };
@@ -1436,15 +1435,12 @@ function Memory({ db, saveSettings, refresh }) {
             >
               <strong>{(() => {
                 const exp = (db.experience || {})[String(memory.userId)];
-                const levelEmojis = ['🌱', '💬', '🎯', '⭐', '👑'];
-                const emoji = exp ? (levelEmojis[exp.level || 0] || '🌱') : '';
-                return emoji + ' ' + (memory.nickname || memory.userId);
+                return (exp ? levelPpLabel(exp) : '') + ' ' + (memory.nickname || memory.userId);
               })()}</strong>
               <span>{memory.userId} | 记忆Lv.{memory.importanceLevel || 0} | {memory.messageCount || 0}条 | {(() => {
                 const exp = (db.experience || {})[String(memory.userId)];
                 if (!exp) return '无经验';
-                const levelNames = ['新人', '群友', '活跃群友', '老熟人', '核心群友'];
-                return `${levelNames[exp.level || 0]} ${exp.xp}XP`;
+                return `${levelPpLabel(exp)} ${exp.xp}XP`;
               })()}</span>
             </button>
           ))}
