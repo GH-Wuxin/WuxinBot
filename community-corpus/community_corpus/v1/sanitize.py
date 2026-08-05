@@ -116,9 +116,14 @@ _PROFILE_FIELD_RE = re.compile(
     r"(?im)^[ \t]*(?:discord|website|occupation|location|interests|twitter|youtube|"
     r"bilibili|直播间)[ \t]*[:：][ \t]*[^\n]{1,120}$"
 )
-_INVITE_PARAM_RE = re.compile(
+_UNIQUE_PARAM_RE = re.compile(
     r"(?i)([?&](?:invite_?code|join_?code|referral_?code|share_?code|reg_?code|"
-    r"invitation_?code)=)[A-Za-z0-9._%+-]{6,}"
+    r"invitation_?code|invite|code|token|key|sid|session|auth|ticket|sign)=)"
+    r"[A-Za-z0-9._%+/-]{6,}"
+)
+_REAL_NAME_RE = re.compile(
+    r"(?i)(?:我叫|真名|本名|名字叫|全名|实名)[ \t]*[:：]?[ \t]*"
+    r"([\u4e00-\u9fa5·]{2,8})"
 )
 _FORWARD_BLOCK_START_RE = re.compile(r"\[(?:转发消息|Forwarded Messages)\s*[:：]\s*\d+\s*条?\]")
 _FORWARD_NAME_LINE_RE = re.compile(
@@ -206,9 +211,15 @@ def _redact(text: str) -> tuple[str, set[str]]:
         text = _INVITE_RE.sub(PLACEHOLDER_INVITE, text)
         pii.add("invite")
 
-    if _INVITE_PARAM_RE.search(text):
-        text = _INVITE_PARAM_RE.sub(lambda m: m.group(1) + PLACEHOLDER_INVITE, text)
+    if _UNIQUE_PARAM_RE.search(text):
+        text = _UNIQUE_PARAM_RE.sub(lambda m: m.group(1) + PLACEHOLDER_INVITE, text)
         pii.add("invite")
+
+    if _REAL_NAME_RE.search(text):
+        text = _REAL_NAME_RE.sub(
+            lambda m: m.group(0).replace(m.group(1), PLACEHOLDER_NICK), text
+        )
+        pii.add("nickname")
 
     if _QQ_CONTEXT_RE.search(text):
         text = _QQ_CONTEXT_RE.sub(lambda m: m.group(0).replace(m.group(1), PLACEHOLDER_QQ), text)

@@ -163,6 +163,8 @@ def annotate_window(
         if text:
             sanitized, _, _, _ = sanitize_text(text, nick_of)
             line["text"] = sanitized
+        # never export raw display names; S# labels already carry identity
+        line.pop("sender_name", None)
     return lines
 
 
