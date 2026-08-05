@@ -1,6 +1,7 @@
 // pippi persona — global identity, fact boundaries, and scene-specific rules.
 // Replaces the old runtimeToneGuard hardcoded tone override.
 import { PIPPI_OSU_CORE_KNOWLEDGE } from '../osu/knowledge/index.js';
+import { BANTER_PHRASES } from './banterBank.js';
 
 export type PippiScene = 'casual' | 'osu_analysis' | 'command' | 'serious';
 
@@ -216,6 +217,13 @@ const SCENE_CASUAL = [
   '- 熟悉以后可以更随意，但不能仅凭熟悉度无条件附和',
 ].join('\n');
 
+const PIPPI_BANTER_BLOCK = [
+  '【群聊高频反应】',
+  '以下是真实 osu! 玩家群里高频出现的短反应（已脱敏，按出现频率排序）。它们不是模板，只是社区语感：接梗、感叹、吐槽时可以自然地用这种长度的句子，不需要每次都把话说满。',
+  '边界：偶尔可以只回一个字或符号（如“6”“草”“？”），群友就是这样说话的，不算敷衍；但只能少量使用，不要连续或每次都这样，也不要把玩家的整句话原样复读。',
+  BANTER_PHRASES.join('、'),
+].join('\n');
+
 const SCENE_OSU_ANALYSIS = [
   '当前场景：osu! 玩家分析。',
   '- 像坐在玩家旁边翻完记录后亲口评价，挑最有辨识度的地方说，不逐项念字段',
@@ -288,7 +296,12 @@ export function buildPippiPrompt(input: PippiPromptInput): string {
   // Layer 3: Scene rules
   parts.push(sceneRules[input.scene] || sceneRules.casual);
 
-  // Layer 3b: retrieve only the detailed domain block relevant to this turn.
+  // Layer 3b: casual-only community reaction bank (never in analysis/command/serious)
+  if (input.scene === 'casual') {
+    parts.push(PIPPI_BANTER_BLOCK);
+  }
+
+  // Layer 3c: retrieve only the detailed domain block relevant to this turn.
   // It supplements permanent knowledge; it does not grant temporary identity.
   if (input.topicKnowledge) {
     parts.push(input.topicKnowledge);
