@@ -13,32 +13,15 @@ import pyarrow.parquet as pq
 from .sessions import _percentile
 from .splits import TRAIN, REVIEW, EVAL
 from .windows import (
-    DATASET_COMMUNITY,
-    DATASET_BOT_OPERATION,
-    DATASET_MEDIA_REACTION,
-    DATASET_REJECTED_CANDIDATE,
+    TIER_STYLE_READY,
+    TIER_CONTEXTUAL_STYLE,
+    TIER_BOT_INTERACTION,
+    TIER_AMBIENT_CHAT,
+    TIER_PRIVATE_REJECTED,
     TYPE_REPLY_CHAIN,
     TYPE_TEMPORAL_BURST,
     TYPE_MEDIA_BOT,
 )
-
-
-def _approx_duplicates(windows: list[dict[str, Any]]) -> int:
-    """Count near-duplicate window pairs (Jaccard >= 0.8) within a session."""
-    by_session: dict[str, list[dict[str, Any]]] = collections.defaultdict(list)
-    for w in windows:
-        by_session[w["session_id"]].append(w)
-    pairs = 0
-    for session_windows in by_session.values():
-        ids = [set(w["message_ids"]) for w in session_windows]
-        for i in range(len(ids)):
-            for j in range(i + 1, len(ids)):
-                union = len(ids[i] | ids[j])
-                if union == 0:
-                    continue
-                if len(ids[i] & ids[j]) / union >= 0.8:
-                    pairs += 1
-    return pairs
 
 
 def _message_gap_stats(messages_path: pathlib.Path) -> dict[str, Any]:
@@ -73,7 +56,7 @@ def build_v1_report(
 ) -> dict[str, Any]:
     total = len(windows)
     type_dist = collections.Counter(w["window_type"] for w in windows)
-    dataset_dist = collections.Counter(w["dataset"] for w in windows)
+    tier_dist = collections.Counter(w["usage_tier"] for w in windows)
     risk_dist = collections.Counter(w["privacy_risk"] for w in windows)
     split_dist = collections.Counter(w["split"] for w in windows)
     group_dist = collections.Counter(w["group_id_hash"] for w in windows)
@@ -93,9 +76,20 @@ def build_v1_report(
     media_dependent = sum(1 for w in windows if w["media_dependent"])
     bot_output_windows = [w for w in windows if w["bot_output_count"] > 0]
     bot_output_by_type = collections.Counter(w["window_type"] for w in bot_output_windows)
-    duplicate_exact = 0  # construction already dedupes identical message_ids
-    duplicate_approx_removed = filter_stats.get("near_duplicate_removed", 0)
-    duplicate_approx_remaining = _approx_duplicates(windows)
+    duplicate_exact = filter_stats.get("duplicate_exact_removed", 0)
+    near_dup_clusters = filter_stats.get("near_duplicate_clusters", 0)
+    near_dup_clustered = filter_stats.get("near_duplicate_clustered_windows", 0)
+    near_dup_max_size = filter_stats.get("near_duplicate_max_cluster_size", 1)
+    near_dup_overlap = {
+        k: filter_stats[k]
+        for k in ("near_duplicate_overlap_mean", "near_duplicate_overlap_p90", "near_duplicate_overlap_max")
+        if k in filter_stats
+    }
+    near_dup_reasons = {
+        k.removeprefix("near_duplicate_by_"): v
+        for k, v in filter_stats.items()
+        if k.startswith("near_duplicate_by_")
+    }
     gap_stats = _message_gap_stats(cfg.normalized_dir / "full" / "messages.parquet")
     covered_messages: set[str] = set()
     for w in windows:
@@ -112,18 +106,17 @@ def build_v1_report(
         "summary": {
             "sessionCount": session_result["sessionCount"],
             "windowCount": total,
-            "windowCountBeforeDedup": filter_stats.get("windows_before_dedup", total),
-            "windowCountRemovedByDedup": filter_stats.get("near_duplicate_removed", 0),
             "windowTypeDistribution": {
                 TYPE_REPLY_CHAIN: type_dist.get(TYPE_REPLY_CHAIN, 0),
                 TYPE_TEMPORAL_BURST: type_dist.get(TYPE_TEMPORAL_BURST, 0),
                 TYPE_MEDIA_BOT: type_dist.get(TYPE_MEDIA_BOT, 0),
             },
-            "datasetDistribution": {
-                DATASET_COMMUNITY: dataset_dist.get(DATASET_COMMUNITY, 0),
-                DATASET_BOT_OPERATION: dataset_dist.get(DATASET_BOT_OPERATION, 0),
-                DATASET_MEDIA_REACTION: dataset_dist.get(DATASET_MEDIA_REACTION, 0),
-                DATASET_REJECTED_CANDIDATE: dataset_dist.get(DATASET_REJECTED_CANDIDATE, 0),
+            "usageTierDistribution": {
+                TIER_STYLE_READY: tier_dist.get(TIER_STYLE_READY, 0),
+                TIER_CONTEXTUAL_STYLE: tier_dist.get(TIER_CONTEXTUAL_STYLE, 0),
+                TIER_BOT_INTERACTION: tier_dist.get(TIER_BOT_INTERACTION, 0),
+                TIER_AMBIENT_CHAT: tier_dist.get(TIER_AMBIENT_CHAT, 0),
+                TIER_PRIVATE_REJECTED: tier_dist.get(TIER_PRIVATE_REJECTED, 0),
             },
             "privacyRiskDistribution": dict(sorted(risk_dist.items(), key=lambda x: -x[1])),
             "splitDistribution": {
@@ -136,8 +129,11 @@ def build_v1_report(
             "botOutputWindowRatio": round(len(bot_output_windows) / total, 6) if total else 0,
             "botOutputWindowByType": dict(sorted(bot_output_by_type.items(), key=lambda x: -x[1])),
             "duplicateExactWindows": duplicate_exact,
-            "duplicateApproxRemoved": duplicate_approx_removed,
-            "duplicateApproxWindowsRemaining": duplicate_approx_remaining,
+            "nearDuplicateClusters": near_dup_clusters,
+            "nearDuplicateClusteredWindows": near_dup_clustered,
+            "nearDuplicateMaxClusterSize": near_dup_max_size,
+            "nearDuplicateOverlap": near_dup_overlap,
+            "nearDuplicateReasons": near_dup_reasons,
             "parseFailures": len(full_result.get("parseFailures", [])),
             "messageCoverageRatio": round(
                 len(covered_messages) / gap_stats["uniqueMessages"], 6
@@ -172,7 +168,7 @@ def build_v1_report(
         "manualReview": {
             "file": "manual-review-v1.jsonl",
             "sampleSize": 300,
-            "pool": "community",
+            "pool": "style_ready/contextual_style/ambient_chat/bot_interaction stratified + all high-risk",
         },
     }
 
@@ -196,51 +192,85 @@ def sample_manual_review(windows: list[dict[str, Any]], seed: int, n: int = 300)
     rng = random.Random(seed)
     selected: list[dict[str, Any]] = []
     seen: set[str] = set()
+    seen_clusters: set[str] = set()
 
     # 1. all high-risk windows must be human-reviewed (privacy audit).
     for w in windows:
         if w["privacy_risk"] == "high":
             selected.append(w)
             seen.add(w["window_id"])
+            cid = w.get("overlap_cluster_id")
+            if cid:
+                seen_clusters.add(cid)
 
-    # 2. stratified sample from the community candidate pool only.
-    remaining = [
-        w for w in windows
-        if w["window_id"] not in seen
-        and w.get("dataset", DATASET_COMMUNITY) == DATASET_COMMUNITY
-        and w["human_message_count"] >= 2
+    # 2. stratified sample across the non-private tiers; never pick two
+    #    windows from the same overlap cluster (review pollution control).
+    tiers = [
+        TIER_STYLE_READY,
+        TIER_CONTEXTUAL_STYLE,
+        TIER_AMBIENT_CHAT,
+        TIER_BOT_INTERACTION,
     ]
+
+    def eligible(w: dict[str, Any]) -> bool:
+        if w["window_id"] in seen:
+            return False
+        tier = w.get("usage_tier", "")
+        if tier not in tiers:
+            return False
+        if tier != TIER_BOT_INTERACTION and w.get("human_message_count", 0) < 1:
+            return False
+        cid = w.get("overlap_cluster_id")
+        return not (cid and cid in seen_clusters)
+
+    remaining = [w for w in windows if eligible(w)]
     groups = sorted({w["group_id_hash"] for w in remaining})
     types = sorted({w["window_type"] for w in remaining})
     risks = sorted({w["privacy_risk"] for w in remaining})
-    buckets: dict[tuple[str, str, str], list[dict[str, Any]]] = collections.defaultdict(list)
+    buckets: dict[tuple[str, str, str, str], list[dict[str, Any]]] = collections.defaultdict(list)
     for w in remaining:
-        buckets[(w["group_id_hash"], w["window_type"], w["privacy_risk"])].append(w)
+        buckets[
+            (
+                w.get("usage_tier", ""),
+                w["group_id_hash"],
+                w["window_type"],
+                w["privacy_risk"],
+            )
+        ].append(w)
 
-    combos = [(g, t, r) for g in groups for t in types for r in risks]
+    combos = [
+        (t, g, ty, r)
+        for t in tiers
+        for g in groups
+        for ty in types
+        for r in risks
+    ]
     budget = n - len(selected)
     if combos and budget > 0:
         quota = max(1, budget // len(combos))
         for combo in combos:
-            bucket = buckets.get(combo, [])
+            bucket = [w for w in buckets.get(combo, []) if eligible(w)]
             if not bucket:
                 continue
             take = min(len(bucket), quota)
             for w in rng.sample(bucket, take):
-                if w["window_id"] not in seen:
-                    selected.append(w)
-                    seen.add(w["window_id"])
+                selected.append(w)
+                seen.add(w["window_id"])
+                cid = w.get("overlap_cluster_id")
+                if cid:
+                    seen_clusters.add(cid)
 
     if len(selected) < n:
         remaining = [
             w for w in windows
-            if w["window_id"] not in seen
-            and w.get("dataset", DATASET_COMMUNITY) == DATASET_COMMUNITY
-            and w["human_message_count"] >= 2
+            if eligible(w)
         ]
         for w in rng.sample(remaining, min(len(remaining), n - len(selected))):
             selected.append(w)
             seen.add(w["window_id"])
+            cid = w.get("overlap_cluster_id")
+            if cid:
+                seen_clusters.add(cid)
 
     selected.sort(key=lambda w: (w["group_id_hash"], w["start_timestamp"]))
     return selected[:n]
@@ -255,7 +285,9 @@ def write_manual_review(cfg, windows: list[dict[str, Any]], seed: int) -> list[d
             record = {
                 "window_id": w["window_id"],
                 "window_type": w["window_type"],
-                "dataset": w["dataset"],
+                "usage_tier": w["usage_tier"],
+                "overlap_cluster_id": w["overlap_cluster_id"],
+                "overlap_cluster_representative": w["overlap_cluster_representative"],
                 "group_id_hash": w["group_id_hash"],
                 "session_id": w["session_id"],
                 "split": w["split"],
