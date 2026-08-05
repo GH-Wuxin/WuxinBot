@@ -30,10 +30,20 @@ _OSU_KEYWORD_RE = re.compile(
     r"(?i)\b(" + "|".join(re.escape(t) for t in sorted(OSU_TERMS, key=len, reverse=True)) + r")\b"
 )
 
-DATASET_COMMUNITY = "community"
-DATASET_BOT_OPERATION = "bot_operation"
-DATASET_MEDIA_REACTION = "media_reaction"
-DATASET_REJECTED_CANDIDATE = "rejected_candidate"
+TIER_STYLE_READY = "style_ready"
+TIER_CONTEXTUAL_STYLE = "contextual_style"
+TIER_BOT_INTERACTION = "bot_interaction"
+TIER_AMBIENT_CHAT = "ambient_chat"
+TIER_PRIVATE_REJECTED = "private_or_rejected"
+USAGE_TIERS = frozenset(
+    {
+        TIER_STYLE_READY,
+        TIER_CONTEXTUAL_STYLE,
+        TIER_BOT_INTERACTION,
+        TIER_AMBIENT_CHAT,
+        TIER_PRIVATE_REJECTED,
+    }
+)
 
 _COMMAND_RE = re.compile(
     r"(?i)^[\s]*[!/！](?:[A-Za-z0-9_]+|[\u4e00-\u9fa5]+)"
@@ -157,41 +167,81 @@ def _reaction_related(
     return False
 
 
-def _classify_dataset(window_msgs: list[dict[str, Any]]) -> str:
+def _classify_tier(
+    window_msgs: list[dict[str, Any]],
+    media_dependent: bool,
+    pii_types: list[str],
+    privacy_risk: str,
+) -> str:
+    """Assign one of five usage tiers.
+
+    Privacy is the only veto: high-risk or un-recoverable windows become
+    ``private_or_rejected``. Bot/command windows become ``bot_interaction``.
+    Media windows stay ``contextual_style`` (media is not a defect); text-only
+    windows with enough anchor become ``style_ready``; the rest of the real
+    chat fragments become ``ambient_chat``.
+    """
+    if privacy_risk == "high" or "private_content" in pii_types:
+        return TIER_PRIVATE_REJECTED
     has_bot = any(
         m["is_bot"] or m["is_system"] or m["bot_output_like"] for m in window_msgs
     )
-    has_cmd = any(not m["is_bot"] and not m["is_system"] and _is_command(m) for m in window_msgs)
-    if has_bot or has_cmd:
-        return DATASET_BOT_OPERATION
-    if _is_spam(window_msgs):
-        return DATASET_REJECTED_CANDIDATE
-    unanchored_media = any(
-        m["has_media"] and not (m["text_clean"] or "").strip() for m in window_msgs
+    has_cmd = any(
+        not m["is_bot"] and not m["is_system"] and _is_command(m)
+        for m in window_msgs
     )
-    if unanchored_media and not _has_sufficient_anchor(window_msgs):
-        return DATASET_MEDIA_REACTION
+    if has_bot or has_cmd:
+        return TIER_BOT_INTERACTION
+    if _is_spam(window_msgs):
+        return TIER_PRIVATE_REJECTED
+    if not any(not m["is_bot"] and not m["is_system"] for m in window_msgs):
+        return TIER_PRIVATE_REJECTED
+    if media_dependent or any(m["has_media"] for m in window_msgs):
+        return TIER_CONTEXTUAL_STYLE
     if not _has_sufficient_anchor(window_msgs):
-        return DATASET_REJECTED_CANDIDATE
-    return DATASET_COMMUNITY
+        return TIER_AMBIENT_CHAT
+    return TIER_STYLE_READY
 
 
-def _dedupe_near_duplicates(
+def _cluster_overlapping_windows(
     windows: list[dict[str, Any]],
     threshold: float = 0.8,
-) -> tuple[list[dict[str, Any]], int, dict[str, Any]]:
-    """Remove windows whose message sets overlap another by >= threshold.
+) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+    """Assign ``overlap_cluster_id`` to near-duplicate windows.
 
-    Deterministic: longer windows win, then earlier start, then stable id.
-    Returns (kept windows, removed count, removal stats).
+    Nothing is deleted here: highly overlapping windows are grouped into one
+    cluster (representative = longest / earliest / stable id). Retrieval code
+    must return at most one window per cluster; see
+    :func:`retrieval_dedupe_windows`. Exact duplicate message sets are removed
+    earlier during construction.
+
+    Deterministic: windows are processed longest-first; union-find makes
+    transitive overlap chains share one cluster id.
     """
+    n = len(windows)
     order = sorted(
         range(len(windows)),
-        key=lambda i: (-len(windows[i]["message_ids"]), windows[i]["start_timestamp"], windows[i]["window_id"]),
+        key=lambda i: (
+            -len(windows[i]["message_ids"]),
+            windows[i]["start_timestamp"],
+            windows[i]["window_id"],
+        ),
     )
-    kept_flags = [False] * len(windows)
+    rank = {i: pos for pos, i in enumerate(order)}
+    parent = list(range(n))
+
+    def find(x: int) -> int:
+        while parent[x] != x:
+            parent[x] = parent[parent[x]]
+            x = parent[x]
+        return x
+
+    def union(a: int, b: int) -> None:
+        ra, rb = find(a), find(b)
+        if ra != rb:
+            parent[rb] = ra
+
     by_msg: dict[tuple[str, str], list[int]] = {}
-    removed = 0
     reasons: collections.Counter[str] = collections.Counter()
     overlaps: list[float] = []
     for i in order:
@@ -202,16 +252,17 @@ def _dedupe_near_duplicates(
         candidates: set[int] = set()
         for mid in mids:
             candidates.update(by_msg.get((sid, mid), ()))
-        dup = False
         for j in candidates:
+            if find(i) == find(j):
+                continue
             other = set(windows[j]["message_ids"])
-            union = len(mids | other)
-            mid_sim = len(mids & other) / union if union else 0.0
+            union_len = len(mids | other)
+            mid_sim = len(mids & other) / union_len if union_len else 0.0
             if mid_sim >= threshold:
                 reasons["message_ids_jaccard"] += 1
                 overlaps.append(mid_sim)
-                dup = True
-                break
+                union(i, j)
+                continue
             # same trigger + heavy time-range overlap + strong content overlap
             if windows[j]["trigger_message_id"] == w["trigger_message_id"]:
                 other_toks = _tokens(
@@ -230,21 +281,69 @@ def _dedupe_near_duplicates(
                 if time_sim >= 0.8 and (mid_sim >= 0.6 or tok_sim >= 0.8):
                     reasons["trigger_time_text"] += 1
                     overlaps.append(max(mid_sim, tok_sim))
-                    dup = True
-                    break
-        if dup:
-            removed += 1
-            continue
-        kept_flags[i] = True
+                    union(i, j)
         for mid in mids:
             by_msg.setdefault((sid, mid), []).append(i)
-    stats: dict[str, Any] = {"reasons": dict(reasons)}
+
+    roots: dict[int, list[int]] = collections.defaultdict(list)
+    for i in range(n):
+        roots[find(i)].append(i)
+
+    cluster_stats: dict[str, Any] = {
+        "reasons": dict(reasons),
+        "cluster_count": 0,
+        "clustered_window_count": 0,
+        "max_cluster_size": 1,
+        "size_distribution": {},
+    }
+    size_dist: collections.Counter[int] = collections.Counter()
+    for members in roots.values():
+        rep = min(members, key=lambda i: rank[i])
+        cluster_id = windows[rep]["window_id"]
+        if len(members) > 1:
+            cluster_stats["cluster_count"] += 1
+            cluster_stats["clustered_window_count"] += len(members)
+            cluster_stats["max_cluster_size"] = max(
+                cluster_stats["max_cluster_size"], len(members)
+            )
+        size_dist[len(members)] += 1
+        for i in members:
+            windows[i]["overlap_cluster_id"] = cluster_id
+            windows[i]["overlap_cluster_representative"] = i == rep
+
+    cluster_stats["size_distribution"] = {
+        str(k): v for k, v in sorted(size_dist.items())
+    }
     if overlaps:
         ordered = sorted(overlaps)
-        stats["overlap_mean"] = round(sum(ordered) / len(ordered), 4)
-        stats["overlap_p90"] = round(ordered[int(len(ordered) * 0.9) - 1], 4)
-        stats["overlap_max"] = round(ordered[-1], 4)
-    return [w for w, kept in zip(windows, kept_flags) if kept], removed, stats
+        cluster_stats["overlap_mean"] = round(sum(ordered) / len(ordered), 4)
+        cluster_stats["overlap_p90"] = round(ordered[int(len(ordered) * 0.9) - 1], 4)
+        cluster_stats["overlap_max"] = round(ordered[-1], 4)
+    return windows, cluster_stats
+
+
+def retrieval_dedupe_windows(windows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Return at most one window per overlap cluster for retrieval.
+
+    This is the runtime-side guarantee for retrieval pollution: the corpus
+    keeps every window, but a RAG query must only surface one representative
+    per ``overlap_cluster_id``.
+    """
+    seen: set[str] = set()
+    out: list[dict[str, Any]] = []
+    # representatives first (longest/earliest), then singletons
+    for w in windows:
+        cid = w.get("overlap_cluster_id") or w["window_id"]
+        if w.get("overlap_cluster_representative") and cid not in seen:
+            seen.add(cid)
+            out.append(w)
+    for w in windows:
+        cid = w.get("overlap_cluster_id") or w["window_id"]
+        if cid in seen:
+            continue
+        seen.add(cid)
+        out.append(w)
+    return out
 
 
 def _load_rows(table: pa.Table) -> dict[str, dict[str, Any]]:
@@ -294,7 +393,7 @@ def _is_spam(window_msgs: list[dict[str, Any]]) -> bool:
         return True
     counts = collections.Counter(t.strip() for t in nonempty)
     top_ratio = max(counts.values()) / len(nonempty)
-    if top_ratio > 0.6:
+    if len(nonempty) >= 2 and top_ratio > 0.6:
         return True
     for i in range(len(texts) - 3):
         if texts[i] and texts[i] == texts[i + 1] == texts[i + 2] == texts[i + 3]:
@@ -381,7 +480,9 @@ def _window_record(
         "end_timestamp": max(m["timestamp"] for m in enriched),
         "trigger_message_id": trigger_message_id,
         "message_ids": [m["message_id"] for m in enriched],
-        "dataset": _classify_dataset(enriched),
+        "usage_tier": _classify_tier(enriched, media_dependent, pii_types, privacy_risk),
+        "overlap_cluster_id": None,
+        "overlap_cluster_representative": False,
         "speaker_ids": speaker_ids,
         "speaker_count": len(speaker_ids),
         "human_message_count": human_count,
@@ -617,16 +718,21 @@ def build_windows(
             else:
                 filter_stats["window_duplicate_message_ids"] += 1
 
-    before_dedup = len(windows)
-    windows, removed, dedup_stats = _dedupe_near_duplicates(windows)
-    filter_stats["near_duplicate_removed"] += removed
-    filter_stats["windows_before_dedup"] = before_dedup
-    filter_stats["windows_after_dedup"] = len(windows)
-    for reason, count in dedup_stats.get("reasons", {}).items():
-        filter_stats[f"near_duplicate_removed_by_{reason}"] += count
+    windows, cluster_stats = _cluster_overlapping_windows(windows)
+    filter_stats["windows_total"] = len(windows)
+    filter_stats["duplicate_exact_removed"] = filter_stats.get(
+        "window_duplicate_message_ids", 0
+    )
+    filter_stats["near_duplicate_clusters"] = cluster_stats["cluster_count"]
+    filter_stats["near_duplicate_clustered_windows"] = cluster_stats[
+        "clustered_window_count"
+    ]
+    filter_stats["near_duplicate_max_cluster_size"] = cluster_stats["max_cluster_size"]
+    for reason, count in cluster_stats.get("reasons", {}).items():
+        filter_stats[f"near_duplicate_by_{reason}"] += count
     for stat_key in ("overlap_mean", "overlap_p90", "overlap_max"):
-        if stat_key in dedup_stats:
-            filter_stats[f"near_duplicate_{stat_key}"] = dedup_stats[stat_key]
+        if stat_key in cluster_stats:
+            filter_stats[f"near_duplicate_{stat_key}"] = cluster_stats[stat_key]
     return windows, dict(filter_stats)
 
 
@@ -641,6 +747,9 @@ def finalize_window_texts(windows: list[dict[str, Any]], sender_names: dict[str,
         w["pii_types"] = pii_types
         w["pii_confidence"] = pii_confidence
         w["privacy_risk"] = privacy_risk
+        w["usage_tier"] = _classify_tier(
+            enriched, w["media_dependent"], pii_types, privacy_risk
+        )
         w["osu_keyword_count"] = len(_OSU_KEYWORD_RE.findall(text))
         w["char_count"] = len(text)
 
@@ -658,7 +767,13 @@ def write_windows(cfg, windows: list[dict[str, Any]]) -> pathlib.Path:
             "end_timestamp": pa.array([w["end_timestamp"] for w in windows], type=pa.int64()),
             "trigger_message_id": pa.array([w["trigger_message_id"] for w in windows], type=pa.string()),
             "message_ids": pa.array([w["message_ids"] for w in windows], type=pa.list_(pa.string())),
-            "dataset": pa.array([w["dataset"] for w in windows], type=pa.string()),
+            "usage_tier": pa.array([w["usage_tier"] for w in windows], type=pa.string()),
+            "overlap_cluster_id": pa.array(
+                [w["overlap_cluster_id"] for w in windows], type=pa.string()
+            ),
+            "overlap_cluster_representative": pa.array(
+                [w["overlap_cluster_representative"] for w in windows], type=pa.bool_()
+            ),
             "speaker_ids": pa.array([w["speaker_ids"] for w in windows], type=pa.list_(pa.string())),
             "speaker_count": pa.array([w["speaker_count"] for w in windows], type=pa.int64()),
             "human_message_count": pa.array([w["human_message_count"] for w in windows], type=pa.int64()),
