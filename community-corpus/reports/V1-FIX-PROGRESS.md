@@ -35,6 +35,47 @@
   precheck.json / quickstart.md 全部生成。
 - 复验：39 个单元测试全绿 + mypy 0 错误。
 
+## 2026-08-05 第二轮：验收目标调整
+
+用户新方向：隐私与安全是唯一一票否决；普通窗口质量不再作为通过/失败条件；
+不再为人工审核百分比反复优化切窗；重叠窗口保留并只做检索侧去重。
+
+### 改动
+
+- `windows.py`：`dataset` 四分类替换为 `usage_tier` 五层
+  （style_ready / contextual_style / bot_interaction / ambient_chat /
+  private_or_rejected）；`_dedupe_near_duplicates` 替换为
+  `_cluster_overlapping_windows`：不删除高度重叠窗口，生成
+  `overlap_cluster_id` + 代表标记；新增 `retrieval_dedupe_windows`
+  保证检索时每簇最多一条。`_is_spam` 放宽为只有 ≥2 条非空文本才判重复刷屏，
+  避免单条媒体反应被误杀。
+- `sanitize.py`：新增实名自述（我叫/真名/本名…）与通用私有 URL 参数
+  （sid/session/token/code/key…）脱敏。
+- `security_fixtures.py`：新增 24 组对抗性 PII fixture（QQ/手机/邮箱/IP/
+  群号/凭据/邀请码/私有参数/Discord/profile/转发作者名/@提及/身份证/
+  银行卡/学校公司地址/实名/QQ+osu 映射/reply 预览昵称）。
+- `review_annotate.py`：导出记录移除原始 sender_name（此前为泄露点）。
+- `review_precheck.py`：改为隐私一票否决 + 结构门（usage_tier 存在、
+  overlap_cluster_id 存在、样本内非高风险同簇为 0、source_refs 存在、
+  审核表 0 泄露、全量 PII 0）；质量指标降为 informational。
+- `report_v1.py`：报告输出 usageTierDistribution 与重叠簇统计；
+  抽样改为全高风险 + 四层按群/类型/风险分层，且样本内不重复选同簇窗口。
+- `review_sheet.py`：新增“使用分层”“重叠簇ID”列；质量列保留为参考。
+- `cli.py`：默认 --review-seed 20260807；预检默认跑全量 PII 扫描。
+
+### 第二轮全量结果（seed 20260805 / review-seed 20260807）
+
+- 窗口 547,946（精确重复剔除 4,210；重叠簇 37,196，覆盖 82,941 窗口，
+  最大簇 24，重叠均值 0.8441）。
+- 分层：style_ready 24,059 / contextual_style 238,690 /
+  bot_interaction 194,872 / ambient_chat 1,257 / private_or_rejected 89,068。
+- 预检全过：privacyLeakCount 0、annotatedLeakCount 0、usageTierMissing 0、
+  overlapClusterMissing 0、sampleClusterDupes 0、missingSourceRefs 0、
+  fullCorpusPiiHitTypes 0。
+- 样本分层：style_ready 34 / contextual_style 121 / bot_interaction 80 /
+  ambient_chat 23 / private_or_rejected 42（含全部 42 条高风险）。
+- 42 个单元测试全绿 + mypy 0 错误。
+
 ## 提交记录（refactor/wuxin-cleanup-20260731-224209）
 
 - 461ac00 chore(corpus): scaffold community-corpus base pipeline and ignore generated outputs
@@ -45,6 +86,6 @@
 
 ## 尚未解决
 
-- 300 条人工审核（understandable ≥80%、effective ≥75%、trigger ≥95%、
-  bot/spam ≤5%、privacy 0）；当前自动预检通过，等待人审打分回填。
-- 人审不通过时按回填结果只修通用机制，再重抽新 300 条。
+- 人工只审隐私与分层合理性（privacy_leak=0 必须；质量列仅参考）。
+- 进入 V2：从 style_ready 人工批准一小批高质量窗口，随后小规模 RAG
+  Shadow A/B 测试。
