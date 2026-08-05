@@ -1,0 +1,1422 @@
+{
+  "source": "banter-candidates.jsonl",
+  "kept": 236,
+  "items": [
+    {
+      "text": "666",
+      "count": 1751,
+      "sample_message_id": "7669642742466856993",
+      "sample_group_id_hash": "d38dcb540ba669619cf42e586e195135b90b807fc79e57b4e96a416d70cf4175"
+    },
+    {
+      "text": "对",
+      "count": 1260,
+      "sample_message_id": "7668264491972711877",
+      "sample_group_id_hash": "d38dcb540ba669619cf42e586e195135b90b807fc79e57b4e96a416d70cf4175"
+    },
+    {
+      "text": "6",
+      "count": 934,
+      "sample_message_id": "7663408536118251337",
+      "sample_group_id_hash": "d38dcb540ba669619cf42e586e195135b90b807fc79e57b4e96a416d70cf4175"
+    },
+    {
+      "text": "吓哭了",
+      "count": 865,
+      "sample_message_id": "7664931674437794559",
+      "sample_group_id_hash": "d38dcb540ba669619cf42e586e195135b90b807fc79e57b4e96a416d70cf4175"
+    },
+    {
+      "text": "何意味",
+      "count": 745,
+      "sample_message_id": "7665544467089144340",
+      "sample_group_id_hash": "d38dcb540ba669619cf42e586e195135b90b807fc79e57b4e96a416d70cf4175"
+    },
+    {
+      "text": "唉",
+      "count": 699,
+      "sample_message_id": "7659756533885116498",
+      "sample_group_id_hash": "d38dcb540ba669619cf42e586e195135b90b807fc79e57b4e96a416d70cf4175"
+    },
+    {
+      "text": "ok",
+      "count": 684,
+      "sample_message_id": "7666749674114032047",
+      "sample_group_id_hash": "d38dcb540ba669619cf42e586e195135b90b807fc79e57b4e96a416d70cf4175"
+    },
+    {
+      "text": "我草",
+      "count": 644,
+      "sample_message_id": "7668880084570120670",
+      "sample_group_id_hash": "d38dcb540ba669619cf42e586e195135b90b807fc79e57b4e96a416d70cf4175"
+    },
+    {
+      "text": "还真是",
+      "count": 595,
+      "sample_message_id": "7670162909521417444",
+      "sample_group_id_hash": "d38dcb540ba669619cf42e586e195135b90b807fc79e57b4e96a416d70cf4175"
+    },
+    {
+      "text": "草",
+      "count": 527,
+      "sample_message_id": "7668264207717582247",
+      "sample_group_id_hash": "d38dcb540ba669619cf42e586e195135b90b807fc79e57b4e96a416d70cf4175"
+    },
+    {
+      "text": "好",
+      "count": 504,
+      "sample_message_id": "7667570999301266651",
+      "sample_group_id_hash": "d38dcb540ba669619cf42e586e195135b90b807fc79e57b4e96a416d70cf4175"
+    },
+    {
+      "text": "这么强",
+      "count": 471,
+      "sample_message_id": "7663390725771834974",
+      "sample_group_id_hash": "d38dcb540ba669619cf42e586e195135b90b807fc79e57b4e96a416d70cf4175"
+    },
+    {
+      "text": "66",
+      "count": 443,
+      "sample_message_id": "7658184852355106264",
+      "sample_group_id_hash": "d38dcb540ba669619cf42e586e195135b90b807fc79e57b4e96a416d70cf4175"
+    },
+    {
+      "text": "不知道",
+      "count": 442,
+      "sample_message_id": "7666860512862634201",
+      "sample_group_id_hash": "d38dcb540ba669619cf42e586e195135b90b807fc79e57b4e96a416d70cf4175"
+    },
+    {
+      "text": "哈哈",
+      "count": 382,
+      "sample_message_id": "7670379118275038476",
+      "sample_group_id_hash": "d38dcb540ba669619cf42e586e195135b90b807fc79e57b4e96a416d70cf4175"
+    },
+    {
+      "text": "哦",
+      "count": 337,
+      "sample_message_id": "7665358384405747971",
+      "sample_group_id_hash": "d38dcb540ba669619cf42e586e195135b90b807fc79e57b4e96a416d70cf4175"
+    },
+    {
+      "text": "本人吗",
+      "count": 326,
+      "sample_message_id": "7628145993062308360",
+      "sample_group_id_hash": "c23f8b665a1496d049121c4ac236ea7adf8d026feeeccdae98b81ee4e0680aef"
+    },
+    {
+      "text": "是",
+      "count": 324,
+      "sample_message_id": "7668263903328784705",
+      "sample_group_id_hash": "d38dcb540ba669619cf42e586e195135b90b807fc79e57b4e96a416d70cf4175"
+    },
+    {
+      "text": "不赖",
+      "count": 319,
+      "sample_message_id": "7668630383171381421",
+      "sample_group_id_hash": "d38dcb540ba669619cf42e586e195135b90b807fc79e57b4e96a416d70cf4175"
+    },
+    {
+      "text": "无敌了",
+      "count": 311,
+      "sample_message_id": "7668887432787833067",
+      "sample_group_id_hash": "d38dcb540ba669619cf42e586e195135b90b807fc79e57b4e96a416d70cf4175"
+    },
+    {
+      "text": "来",
+      "count": 303,
+      "sample_message_id": "7669425639892956865",
+      "sample_group_id_hash": "d38dcb540ba669619cf42e586e195135b90b807fc79e57b4e96a416d70cf4175"
+    },
+    {
+      "text": "难绷",
+      "count": 302,
+      "sample_message_id": "7661146158803641540",
+      "sample_group_id_hash": "d38dcb540ba669619cf42e586e195135b90b807fc79e57b4e96a416d70cf4175"
+    },
+    {
+      "text": "1",
+      "count": 279,
+      "sample_message_id": "7664974761466404837",
+      "sample_group_id_hash": "d38dcb540ba669619cf42e586e195135b90b807fc79e57b4e96a416d70cf4175"
+    },
+    {
+      "text": "妈妈",
+      "count": 279,
+      "sample_message_id": "7668319403362411944",
+      "sample_group_id_hash": "d38dcb540ba669619cf42e586e195135b90b807fc79e57b4e96a416d70cf4175"
+    },
+    {
+      "text": "神了",
+      "count": 279,
+      "sample_message_id": "7668590239748029900",
+      "sample_group_id_hash": "d38dcb540ba669619cf42e586e195135b90b807fc79e57b4e96a416d70cf4175"
+    },
+    {
+      "text": "神",
+      "count": 275,
+      "sample_message_id": "7666711868873368067",
+      "sample_group_id_hash": "d38dcb540ba669619cf42e586e195135b90b807fc79e57b4e96a416d70cf4175"
+    },
+    {
+      "text": "6666",
+      "count": 257,
+      "sample_message_id": "7643813645421125604",
+      "sample_group_id_hash": "d38dcb540ba669619cf42e586e195135b90b807fc79e57b4e96a416d70cf4175"
+    },
+    {
+      "text": "可以",
+      "count": 256,
+      "sample_message_id": "7669176145246623460",
+      "sample_group_id_hash": "d38dcb540ba669619cf42e586e195135b90b807fc79e57b4e96a416d70cf4175"
+    },
+    {
+      "text": "看看",
+      "count": 254,
+      "sample_message_id": "7668595337312253966",
+      "sample_group_id_hash": "d38dcb540ba669619cf42e586e195135b90b807fc79e57b4e96a416d70cf4175"
+    },
+    {
+      "text": "教我",
+      "count": 252,
+      "sample_message_id": "7669990815879052037",
+      "sample_group_id_hash": "d38dcb540ba669619cf42e586e195135b90b807fc79e57b4e96a416d70cf4175"
+    },
+    {
+      "text": "气笑了",
+      "count": 252,
+      "sample_message_id": "7650034648277310822",
+      "sample_group_id_hash": "d38dcb540ba669619cf42e586e195135b90b807fc79e57b4e96a416d70cf4175"
+    },
+    {
+      "text": "真的假的",
+      "count": 232,
+      "sample_message_id": "7667892341475336878",
+      "sample_group_id_hash": "d38dcb540ba669619cf42e586e195135b90b807fc79e57b4e96a416d70cf4175"
+    },
+    {
+      "text": "嗯",
+      "count": 231,
+      "sample_message_id": "7668800184731109070",
+      "sample_group_id_hash": "d38dcb540ba669619cf42e586e195135b90b807fc79e57b4e96a416d70cf4175"
+    },
+    {
+      "text": "打什么图",
+      "count": 227,
+      "sample_message_id": "7630123357111450314",
+      "sample_group_id_hash": "d38dcb540ba669619cf42e586e195135b90b807fc79e57b4e96a416d70cf4175"
+    },
+    {
+      "text": "有",
+      "count": 220,
+      "sample_message_id": "7666748775035064143",
+      "sample_group_id_hash": "d38dcb540ba669619cf42e586e195135b90b807fc79e57b4e96a416d70cf4175"
+    },
+    {
+      "text": "卧槽",
+      "count": 217,
+      "sample_message_id": "7657851274710276504",
+      "sample_group_id_hash": "d38dcb540ba669619cf42e586e195135b90b807fc79e57b4e96a416d70cf4175"
+    },
+    {
+      "text": "OK",
+      "count": 199,
+      "sample_message_id": "7669155357199795036",
+      "sample_group_id_hash": "d38dcb540ba669619cf42e586e195135b90b807fc79e57b4e96a416d70cf4175"
+    },
+    {
+      "text": "我服了",
+      "count": 190,
+      "sample_message_id": "7657150946771719877",
+      "sample_group_id_hash": "d38dcb540ba669619cf42e586e195135b90b807fc79e57b4e96a416d70cf4175"
+    },
+    {
+      "text": "好厉害",
+      "count": 186,
+      "sample_message_id": "7654985212483000030",
+      "sample_group_id_hash": "d38dcb540ba669619cf42e586e195135b90b807fc79e57b4e96a416d70cf4175"
+    },
+    {
+      "text": "干嘛",
+      "count": 186,
+      "sample_message_id": "7669004522434406728",
+      "sample_group_id_hash": "d38dcb540ba669619cf42e586e195135b90b807fc79e57b4e96a416d70cf4175"
+    },
+    {
+      "text": "打断施法！",
+      "count": 182,
+      "sample_message_id": "7668776601935888555",
+      "sample_group_id_hash": "d38dcb540ba669619cf42e586e195135b90b807fc79e57b4e96a416d70cf4175"
+    },
+    {
+      "text": "呃啊",
+      "count": 181,
+      "sample_message_id": "7665692818658691746",
+      "sample_group_id_hash": "d38dcb540ba669619cf42e586e195135b90b807fc79e57b4e96a416d70cf4175"
+    },
+    {
+      "text": "没绷住",
+      "count": 178,
+      "sample_message_id": "7666373465615784445",
+      "sample_group_id_hash": "d38dcb540ba669619cf42e586e195135b90b807fc79e57b4e96a416d70cf4175"
+    },
+    {
+      "text": "没事",
+      "count": 176,
+      "sample_message_id": "7668889534794260201",
+      "sample_group_id_hash": "d38dcb540ba669619cf42e586e195135b90b807fc79e57b4e96a416d70cf4175"
+    },
+    {
+      "text": "哇",
+      "count": 172,
+      "sample_message_id": "7667417163658250610",
+      "sample_group_id_hash": "d38dcb540ba669619cf42e586e195135b90b807fc79e57b4e96a416d70cf4175"
+    },
+    {
+      "text": "可惜",
+      "count": 166,
+      "sample_message_id": "7656418886709461095",
+      "sample_group_id_hash": "d38dcb540ba669619cf42e586e195135b90b807fc79e57b4e96a416d70cf4175"
+    },
+    {
+      "text": "我跪下了",
+      "count": 164,
+      "sample_message_id": "7670381489132437037",
+      "sample_group_id_hash": "c23f8b665a1496d049121c4ac236ea7adf8d026feeeccdae98b81ee4e0680aef"
+    },
+    {
+      "text": "呵呵",
+      "count": 161,
+      "sample_message_id": "7669146965715487363",
+      "sample_group_id_hash": "d38dcb540ba669619cf42e586e195135b90b807fc79e57b4e96a416d70cf4175"
+    },
+    {
+      "text": "跳图",
+      "count": 160,
+      "sample_message_id": "7660902200718336916",
+      "sample_group_id_hash": "d38dcb540ba669619cf42e586e195135b90b807fc79e57b4e96a416d70cf4175"
+    },
+    {
+      "text": "嘻嘻",
+      "count": 159,
+      "sample_message_id": "7658342606440479943",
+      "sample_group_id_hash": "d38dcb540ba669619cf42e586e195135b90b807fc79e57b4e96a416d70cf4175"
+    },
+    {
+      "text": "对的",
+      "count": 159,
+      "sample_message_id": "7664138487872726388",
+      "sample_group_id_hash": "d38dcb540ba669619cf42e586e195135b90b807fc79e57b4e96a416d70cf4175"
+    },
+    {
+      "text": "不懂",
+      "count": 156,
+      "sample_message_id": "7660884637643514871",
+      "sample_group_id_hash": "d38dcb540ba669619cf42e586e195135b90b807fc79e57b4e96a416d70cf4175"
+    },
+    {
+      "text": "什么意思",
+      "count": 156,
+      "sample_message_id": "7663399509886120604",
+      "sample_group_id_hash": "d38dcb540ba669619cf42e586e195135b90b807fc79e57b4e96a416d70cf4175"
+    },
+    {
+      "text": "这个",
+      "count": 154,
+      "sample_message_id": "7668795057894740315",
+      "sample_group_id_hash": "d38dcb540ba669619cf42e586e195135b90b807fc79e57b4e96a416d70cf4175"
+    },
+    {
+      "text": "这是什么",
+      "count": 154,
+      "sample_message_id": "7669359184972231109",
+      "sample_group_id_hash": "d38dcb540ba669619cf42e586e195135b90b807fc79e57b4e96a416d70cf4175"
+    },
+    {
+      "text": "哦哦",
+      "count": 152,
+      "sample_message_id": "7670153655223406039",
+      "sample_group_id_hash": "d38dcb540ba669619cf42e586e195135b90b807fc79e57b4e96a416d70cf4175"
+    },
+    {
+      "text": "好玩",
+      "count": 151,
+      "sample_message_id": "7656821354727772378",
+      "sample_group_id_hash": "d38dcb540ba669619cf42e586e195135b90b807fc79e57b4e96a416d70cf4175"
+    },
+    {
+      "text": "打串",
+      "count": 151,
+      "sample_message_id": "7669804052427137626",
+      "sample_group_id_hash": "d38dcb540ba669619cf42e586e195135b90b807fc79e57b4e96a416d70cf4175"
+    },
+    {
+      "text": "好吧",
+      "count": 145,
+      "sample_message_id": "7669046304485360819",
+      "sample_group_id_hash": "d38dcb540ba669619cf42e586e195135b90b807fc79e57b4e96a416d70cf4175"
+    },
+    {
+      "text": "真的吗",
+      "count": 139,
+      "sample_message_id": "7667091093718412154",
+      "sample_group_id_hash": "d38dcb540ba669619cf42e586e195135b90b807fc79e57b4e96a416d70cf4175"
+    },
+    {
+      "text": "开挂",
+      "count": 137,
+      "sample_message_id": "7670205057502597643",
+      "sample_group_id_hash": "d38dcb540ba669619cf42e586e195135b90b807fc79e57b4e96a416d70cf4175"
+    },
+    {
+      "text": "手速狗",
+      "count": 135,
+      "sample_message_id": "7670379316806394499",
+      "sample_group_id_hash": "d38dcb540ba669619cf42e586e195135b90b807fc79e57b4e96a416d70cf4175"
+    },
+    {
+      "text": "行",
+      "count": 135,
+      "sample_message_id": "7658953106259721770",
+      "sample_group_id_hash": "d38dcb540ba669619cf42e586e195135b90b807fc79e57b4e96a416d70cf4175"
+    },
+    {
+      "text": "我去不早说",
+      "count": 130,
+      "sample_message_id": "7660873969043233764",
+      "sample_group_id_hash": "d38dcb540ba669619cf42e586e195135b90b807fc79e57b4e96a416d70cf4175"
+    },
+    {
+      "text": "我看看",
+      "count": 129,
+      "sample_message_id": "7662013386174126638",
+      "sample_group_id_hash": "d38dcb540ba669619cf42e586e195135b90b807fc79e57b4e96a416d70cf4175"
+    },
+    {
+      "text": "我草了",
+      "count": 126,
+      "sample_message_id": "7664171219663058084",
+      "sample_group_id_hash": "d38dcb540ba669619cf42e586e195135b90b807fc79e57b4e96a416d70cf4175"
+    },
+    {
+      "text": "没",
+      "count": 125,
+      "sample_message_id": "7669045789715239789",
+      "sample_group_id_hash": "d38dcb540ba669619cf42e586e195135b90b807fc79e57b4e96a416d70cf4175"
+    },
+    {
+      "text": "对啊",
+      "count": 124,
+      "sample_message_id": "7655347622126786143",
+      "sample_group_id_hash": "d38dcb540ba669619cf42e586e195135b90b807fc79e57b4e96a416d70cf4175"
+    },
+    {
+      "text": "并非",
+      "count": 121,
+      "sample_message_id": "7670023623990718196",
+      "sample_group_id_hash": "d38dcb540ba669619cf42e586e195135b90b807fc79e57b4e96a416d70cf4175"
+    },
+    {
+      "text": "气死我了",
+      "count": 120,
+      "sample_message_id": "7663842869972807204",
+      "sample_group_id_hash": "d38dcb540ba669619cf42e586e195135b90b807fc79e57b4e96a416d70cf4175"
+    },
+    {
+      "text": "到底有多强",
+      "count": 119,
+      "sample_message_id": "7647370600652166810",
+      "sample_group_id_hash": "d38dcb540ba669619cf42e586e195135b90b807fc79e57b4e96a416d70cf4175"
+    },
+    {
+      "text": "崩溃",
+      "count": 119,
+      "sample_message_id": "7649408309602970628",
+      "sample_group_id_hash": "d38dcb540ba669619cf42e586e195135b90b807fc79e57b4e96a416d70cf4175"
+    },
+    {
+      "text": "无敌",
+      "count": 117,
+      "sample_message_id": "7661101898851874820",
+      "sample_group_id_hash": "d38dcb540ba669619cf42e586e195135b90b807fc79e57b4e96a416d70cf4175"
+    },
+    {
+      "text": "忘了",
+      "count": 115,
+      "sample_message_id": "7661966351418631827",
+      "sample_group_id_hash": "d38dcb540ba669619cf42e586e195135b90b807fc79e57b4e96a416d70cf4175"
+    },
+    {
+      "text": "这啥",
+      "count": 115,
+      "sample_message_id": "7656047676666742226",
+      "sample_group_id_hash": "d38dcb540ba669619cf42e586e195135b90b807fc79e57b4e96a416d70cf4175"
+    },
+    {
+      "text": "我也是",
+      "count": 113,
+      "sample_message_id": "7665620453503816929",
+      "sample_group_id_hash": "d38dcb540ba669619cf42e586e195135b90b807fc79e57b4e96a416d70cf4175"
+    },
+    {
+      "text": "啊？",
+      "count": 112,
+      "sample_message_id": "7662031467661181299",
+      "sample_group_id_hash": "d38dcb540ba669619cf42e586e195135b90b807fc79e57b4e96a416d70cf4175"
+    },
+    {
+      "text": "好难",
+      "count": 111,
+      "sample_message_id": "7654900344646060231",
+      "sample_group_id_hash": "d38dcb540ba669619cf42e586e195135b90b807fc79e57b4e96a416d70cf4175"
+    },
+    {
+      "text": "强强",
+      "count": 110,
+      "sample_message_id": "7670011593282829976",
+      "sample_group_id_hash": "d38dcb540ba669619cf42e586e195135b90b807fc79e57b4e96a416d70cf4175"
+    },
+    {
+      "text": "笑死我了",
+      "count": 110,
+      "sample_message_id": "7668834432834782504",
+      "sample_group_id_hash": "d38dcb540ba669619cf42e586e195135b90b807fc79e57b4e96a416d70cf4175"
+    },
+    {
+      "text": "那没事了",
+      "count": 110,
+      "sample_message_id": "7668658914727150620",
+      "sample_group_id_hash": "d38dcb540ba669619cf42e586e195135b90b807fc79e57b4e96a416d70cf4175"
+    },
+    {
+      "text": "额啊",
+      "count": 110,
+      "sample_message_id": "7652560085653881140",
+      "sample_group_id_hash": "d38dcb540ba669619cf42e586e195135b90b807fc79e57b4e96a416d70cf4175"
+    },
+    {
+      "text": "不会",
+      "count": 109,
+      "sample_message_id": "7668232132591235601",
+      "sample_group_id_hash": "d38dcb540ba669619cf42e586e195135b90b807fc79e57b4e96a416d70cf4175"
+    },
+    {
+      "text": "呜呜",
+      "count": 108,
+      "sample_message_id": "7660459757439744494",
+      "sample_group_id_hash": "d38dcb540ba669619cf42e586e195135b90b807fc79e57b4e96a416d70cf4175"
+    },
+    {
+      "text": "这样",
+      "count": 108,
+      "sample_message_id": "7666722590379652933",
+      "sample_group_id_hash": "d38dcb540ba669619cf42e586e195135b90b807fc79e57b4e96a416d70cf4175"
+    },
+    {
+      "text": "我靠",
+      "count": 107,
+      "sample_message_id": "7651122623500102796",
+      "sample_group_id_hash": "d38dcb540ba669619cf42e586e195135b90b807fc79e57b4e96a416d70cf4175"
+    },
+    {
+      "text": "别急",
+      "count": 105,
+      "sample_message_id": "7669148486097472426",
+      "sample_group_id_hash": "d38dcb540ba669619cf42e586e195135b90b807fc79e57b4e96a416d70cf4175"
+    },
+    {
+      "text": "爆了",
+      "count": 103,
+      "sample_message_id": "7666008066136256708",
+      "sample_group_id_hash": "d38dcb540ba669619cf42e586e195135b90b807fc79e57b4e96a416d70cf4175"
+    },
+    {
+      "text": "哦哦哦",
+      "count": 102,
+      "sample_message_id": "7660751919714227146",
+      "sample_group_id_hash": "d38dcb540ba669619cf42e586e195135b90b807fc79e57b4e96a416d70cf4175"
+    },
+    {
+      "text": "来了",
+      "count": 101,
+      "sample_message_id": "7665999936593582812",
+      "sample_group_id_hash": "d38dcb540ba669619cf42e586e195135b90b807fc79e57b4e96a416d70cf4175"
+    },
+    {
+      "text": "谁",
+      "count": 101,
+      "sample_message_id": "7669646157136522034",
+      "sample_group_id_hash": "d38dcb540ba669619cf42e586e195135b90b807fc79e57b4e96a416d70cf4175"
+    },
+    {
+      "text": "逆天",
+      "count": 101,
+      "sample_message_id": "7659400236479250671",
+      "sample_group_id_hash": "d38dcb540ba669619cf42e586e195135b90b807fc79e57b4e96a416d70cf4175"
+    },
+    {
+      "text": "高手",
+      "count": 101,
+      "sample_message_id": "7669955673829335727",
+      "sample_group_id_hash": "d38dcb540ba669619cf42e586e195135b90b807fc79e57b4e96a416d70cf4175"
+    },
+    {
+      "text": "你好厉害",
+      "count": 99,
+      "sample_message_id": "7634221863807616214",
+      "sample_group_id_hash": "d38dcb540ba669619cf42e586e195135b90b807fc79e57b4e96a416d70cf4175"
+    },
+    {
+      "text": "绷",
+      "count": 99,
+      "sample_message_id": "7664938301349115849",
+      "sample_group_id_hash": "d38dcb540ba669619cf42e586e195135b90b807fc79e57b4e96a416d70cf4175"
+    },
+    {
+      "text": "我已急哭",
+      "count": 98,
+      "sample_message_id": "7655994886719775252",
+      "sample_group_id_hash": "d38dcb540ba669619cf42e586e195135b90b807fc79e57b4e96a416d70cf4175"
+    },
+    {
+      "text": "神图",
+      "count": 97,
+      "sample_message_id": "7664911522977868267",
+      "sample_group_id_hash": "d38dcb540ba669619cf42e586e195135b90b807fc79e57b4e96a416d70cf4175"
+    },
+    {
+      "text": "算了",
+      "count": 97,
+      "sample_message_id": "7660695006045405433",
+      "sample_group_id_hash": "d38dcb540ba669619cf42e586e195135b90b807fc79e57b4e96a416d70cf4175"
+    },
+    {
+      "text": "一般",
+      "count": 96,
+      "sample_message_id": "7650032857140259367",
+      "sample_group_id_hash": "d38dcb540ba669619cf42e586e195135b90b807fc79e57b4e96a416d70cf4175"
+    },
+    {
+      "text": "是这样的",
+      "count": 96,
+      "sample_message_id": "7654976377385028603",
+      "sample_group_id_hash": "d38dcb540ba669619cf42e586e195135b90b807fc79e57b4e96a416d70cf4175"
+    },
+    {
+      "text": "你完了",
+      "count": 95,
+      "sample_message_id": "7669105352310420365",
+      "sample_group_id_hash": "d38dcb540ba669619cf42e586e195135b90b807fc79e57b4e96a416d70cf4175"
+    },
+    {
+      "text": "哇哇哇",
+      "count": 95,
+      "sample_message_id": "7660491215555080655",
+      "sample_group_id_hash": "d38dcb540ba669619cf42e586e195135b90b807fc79e57b4e96a416d70cf4175"
+    },
+    {
+      "text": "为什么",
+      "count": 93,
+      "sample_message_id": "7660821549837209748",
+      "sample_group_id_hash": "d38dcb540ba669619cf42e586e195135b90b807fc79e57b4e96a416d70cf4175"
+    },
+    {
+      "text": "呜呜呜",
+      "count": 93,
+      "sample_message_id": "7659742692374960823",
+      "sample_group_id_hash": "d38dcb540ba669619cf42e586e195135b90b807fc79e57b4e96a416d70cf4175"
+    },
+    {
+      "text": "额",
+      "count": 93,
+      "sample_message_id": "7651541706363709316",
+      "sample_group_id_hash": "d38dcb540ba669619cf42e586e195135b90b807fc79e57b4e96a416d70cf4175"
+    },
+    {
+      "text": "没招了",
+      "count": 92,
+      "sample_message_id": "7658350302264716704",
+      "sample_group_id_hash": "d38dcb540ba669619cf42e586e195135b90b807fc79e57b4e96a416d70cf4175"
+    },
+    {
+      "text": "什么图",
+      "count": 91,
+      "sample_message_id": "7663399517332493450",
+      "sample_group_id_hash": "d38dcb540ba669619cf42e586e195135b90b807fc79e57b4e96a416d70cf4175"
+    },
+    {
+      "text": "开挂了",
+      "count": 91,
+      "sample_message_id": "7607409747853739508",
+      "sample_group_id_hash": "d38dcb540ba669619cf42e586e195135b90b807fc79e57b4e96a416d70cf4175"
+    },
+    {
+      "text": "nb",
+      "count": 89,
+      "sample_message_id": "7664974736479453894",
+      "sample_group_id_hash": "d38dcb540ba669619cf42e586e195135b90b807fc79e57b4e96a416d70cf4175"
+    },
+    {
+      "text": "真假",
+      "count": 89,
+      "sample_message_id": "7666150350482603792",
+      "sample_group_id_hash": "d38dcb540ba669619cf42e586e195135b90b807fc79e57b4e96a416d70cf4175"
+    },
+    {
+      "text": "不好玩",
+      "count": 87,
+      "sample_message_id": "7663401424917582067",
+      "sample_group_id_hash": "d38dcb540ba669619cf42e586e195135b90b807fc79e57b4e96a416d70cf4175"
+    },
+    {
+      "text": "啥意思",
+      "count": 87,
+      "sample_message_id": "7668647635946339573",
+      "sample_group_id_hash": "d38dcb540ba669619cf42e586e195135b90b807fc79e57b4e96a416d70cf4175"
+    },
+    {
+      "text": "原来如此",
+      "count": 86,
+      "sample_message_id": "7657813929032127277",
+      "sample_group_id_hash": "d38dcb540ba669619cf42e586e195135b90b807fc79e57b4e96a416d70cf4175"
+    },
+    {
+      "text": "哈哈哈",
+      "count": 86,
+      "sample_message_id": "7664524201008169983",
+      "sample_group_id_hash": "d38dcb540ba669619cf42e586e195135b90b807fc79e57b4e96a416d70cf4175"
+    },
+    {
+      "text": "好听",
+      "count": 86,
+      "sample_message_id": "7668796912347329646",
+      "sample_group_id_hash": "d38dcb540ba669619cf42e586e195135b90b807fc79e57b4e96a416d70cf4175"
+    },
+    {
+      "text": "拉我",
+      "count": 86,
+      "sample_message_id": "7667890915019146472",
+      "sample_group_id_hash": "d38dcb540ba669619cf42e586e195135b90b807fc79e57b4e96a416d70cf4175"
+    },
+    {
+      "text": "有没有懂的",
+      "count": 86,
+      "sample_message_id": "7650454897544295210",
+      "sample_group_id_hash": "d38dcb540ba669619cf42e586e195135b90b807fc79e57b4e96a416d70cf4175"
+    },
+    {
+      "text": "蛙趣",
+      "count": 86,
+      "sample_message_id": "7658663658878645223",
+      "sample_group_id_hash": "d38dcb540ba669619cf42e586e195135b90b807fc79e57b4e96a416d70cf4175"
+    },
+    {
+      "text": "这是你吗",
+      "count": 86,
+      "sample_message_id": "7667967842032999864",
+      "sample_group_id_hash": "d38dcb540ba669619cf42e586e195135b90b807fc79e57b4e96a416d70cf4175"
+    },
+    {
+      "text": "你们关系好好",
+      "count": 85,
+      "sample_message_id": "7669376646579470359",
+      "sample_group_id_hash": "c23f8b665a1496d049121c4ac236ea7adf8d026feeeccdae98b81ee4e0680aef"
+    },
+    {
+      "text": "你们好厉害",
+      "count": 84,
+      "sample_message_id": "7456724124622751948",
+      "sample_group_id_hash": "c23f8b665a1496d049121c4ac236ea7adf8d026feeeccdae98b81ee4e0680aef"
+    },
+    {
+      "text": "厉害",
+      "count": 83,
+      "sample_message_id": "7658343744409199467",
+      "sample_group_id_hash": "d38dcb540ba669619cf42e586e195135b90b807fc79e57b4e96a416d70cf4175"
+    },
+    {
+      "text": "大神",
+      "count": 82,
+      "sample_message_id": "7657502601025388519",
+      "sample_group_id_hash": "d38dcb540ba669619cf42e586e195135b90b807fc79e57b4e96a416d70cf4175"
+    },
+    {
+      "text": "大神啊",
+      "count": 81,
+      "sample_message_id": "7663744815814622610",
+      "sample_group_id_hash": "d38dcb540ba669619cf42e586e195135b90b807fc79e57b4e96a416d70cf4175"
+    },
+    {
+      "text": "差不多",
+      "count": 81,
+      "sample_message_id": "7665672048952881920",
+      "sample_group_id_hash": "d38dcb540ba669619cf42e586e195135b90b807fc79e57b4e96a416d70cf4175"
+    },
+    {
+      "text": "我不知道",
+      "count": 81,
+      "sample_message_id": "7665348555875897275",
+      "sample_group_id_hash": "d38dcb540ba669619cf42e586e195135b90b807fc79e57b4e96a416d70cf4175"
+    },
+    {
+      "text": "真的",
+      "count": 81,
+      "sample_message_id": "7650041396603555989",
+      "sample_group_id_hash": "d38dcb540ba669619cf42e586e195135b90b807fc79e57b4e96a416d70cf4175"
+    },
+    {
+      "text": "好机会",
+      "count": 80,
+      "sample_message_id": "7670384492529956711",
+      "sample_group_id_hash": "c23f8b665a1496d049121c4ac236ea7adf8d026feeeccdae98b81ee4e0680aef"
+    },
+    {
+      "text": "麻麻",
+      "count": 80,
+      "sample_message_id": "7669001731753349967",
+      "sample_group_id_hash": "d38dcb540ba669619cf42e586e195135b90b807fc79e57b4e96a416d70cf4175"
+    },
+    {
+      "text": "不打",
+      "count": 79,
+      "sample_message_id": "7659376052668792284",
+      "sample_group_id_hash": "d38dcb540ba669619cf42e586e195135b90b807fc79e57b4e96a416d70cf4175"
+    },
+    {
+      "text": "人？",
+      "count": 79,
+      "sample_message_id": "7667933203899891596",
+      "sample_group_id_hash": "d38dcb540ba669619cf42e586e195135b90b807fc79e57b4e96a416d70cf4175"
+    },
+    {
+      "text": "还行",
+      "count": 79,
+      "sample_message_id": "7663394612140606415",
+      "sample_group_id_hash": "d38dcb540ba669619cf42e586e195135b90b807fc79e57b4e96a416d70cf4175"
+    },
+    {
+      "text": "怎么了",
+      "count": 78,
+      "sample_message_id": "7670187435160177775",
+      "sample_group_id_hash": "d38dcb540ba669619cf42e586e195135b90b807fc79e57b4e96a416d70cf4175"
+    },
+    {
+      "text": "看不懂",
+      "count": 78,
+      "sample_message_id": "7664201834700908888",
+      "sample_group_id_hash": "d38dcb540ba669619cf42e586e195135b90b807fc79e57b4e96a416d70cf4175"
+    },
+    {
+      "text": "串图",
+      "count": 77,
+      "sample_message_id": "7664906243626508068",
+      "sample_group_id_hash": "d38dcb540ba669619cf42e586e195135b90b807fc79e57b4e96a416d70cf4175"
+    },
+    {
+      "text": "不打了",
+      "count": 76,
+      "sample_message_id": "7662265213007967395",
+      "sample_group_id_hash": "d38dcb540ba669619cf42e586e195135b90b807fc79e57b4e96a416d70cf4175"
+    },
+    {
+      "text": "不是哥们",
+      "count": 76,
+      "sample_message_id": "7670012822388098648",
+      "sample_group_id_hash": "d38dcb540ba669619cf42e586e195135b90b807fc79e57b4e96a416d70cf4175"
+    },
+    {
+      "text": "不错",
+      "count": 76,
+      "sample_message_id": "7658276333788384877",
+      "sample_group_id_hash": "d38dcb540ba669619cf42e586e195135b90b807fc79e57b4e96a416d70cf4175"
+    },
+    {
+      "text": "噢噢噢噢噢",
+      "count": 76,
+      "sample_message_id": "7644121028792565925",
+      "sample_group_id_hash": "c23f8b665a1496d049121c4ac236ea7adf8d026feeeccdae98b81ee4e0680aef"
+    },
+    {
+      "text": "服了",
+      "count": 76,
+      "sample_message_id": "7648275967528691901",
+      "sample_group_id_hash": "d38dcb540ba669619cf42e586e195135b90b807fc79e57b4e96a416d70cf4175"
+    },
+    {
+      "text": "不行",
+      "count": 75,
+      "sample_message_id": "7657403752750309044",
+      "sample_group_id_hash": "d38dcb540ba669619cf42e586e195135b90b807fc79e57b4e96a416d70cf4175"
+    },
+    {
+      "text": "哦牛逼",
+      "count": 75,
+      "sample_message_id": "7621856331140679256",
+      "sample_group_id_hash": "d38dcb540ba669619cf42e586e195135b90b807fc79e57b4e96a416d70cf4175"
+    },
+    {
+      "text": "好看",
+      "count": 75,
+      "sample_message_id": "7617087284126144456",
+      "sample_group_id_hash": "d38dcb540ba669619cf42e586e195135b90b807fc79e57b4e96a416d70cf4175"
+    },
+    {
+      "text": "看看你的",
+      "count": 75,
+      "sample_message_id": "7669211365266513711",
+      "sample_group_id_hash": "d38dcb540ba669619cf42e586e195135b90b807fc79e57b4e96a416d70cf4175"
+    },
+    {
+      "text": "送我",
+      "count": 75,
+      "sample_message_id": "7632239758216542695",
+      "sample_group_id_hash": "d38dcb540ba669619cf42e586e195135b90b807fc79e57b4e96a416d70cf4175"
+    },
+    {
+      "text": "哦耶",
+      "count": 74,
+      "sample_message_id": "7641936311369230031",
+      "sample_group_id_hash": "d38dcb540ba669619cf42e586e195135b90b807fc79e57b4e96a416d70cf4175"
+    },
+    {
+      "text": "我知道",
+      "count": 74,
+      "sample_message_id": "7666857378245765064",
+      "sample_group_id_hash": "d38dcb540ba669619cf42e586e195135b90b807fc79e57b4e96a416d70cf4175"
+    },
+    {
+      "text": "哈人",
+      "count": 73,
+      "sample_message_id": "7615540945988146127",
+      "sample_group_id_hash": "d38dcb540ba669619cf42e586e195135b90b807fc79e57b4e96a416d70cf4175"
+    },
+    {
+      "text": "帅",
+      "count": 73,
+      "sample_message_id": "7657405375228360240",
+      "sample_group_id_hash": "d38dcb540ba669619cf42e586e195135b90b807fc79e57b4e96a416d70cf4175"
+    },
+    {
+      "text": "正常",
+      "count": 73,
+      "sample_message_id": "7647919754930213495",
+      "sample_group_id_hash": "d38dcb540ba669619cf42e586e195135b90b807fc79e57b4e96a416d70cf4175"
+    },
+    {
+      "text": "这倒是提醒我了",
+      "count": 73,
+      "sample_message_id": "7664934899778000237",
+      "sample_group_id_hash": "d38dcb540ba669619cf42e586e195135b90b807fc79e57b4e96a416d70cf4175"
+    },
+    {
+      "text": "对的对的",
+      "count": 72,
+      "sample_message_id": "7669106215470166672",
+      "sample_group_id_hash": "d38dcb540ba669619cf42e586e195135b90b807fc79e57b4e96a416d70cf4175"
+    },
+    {
+      "text": "这是谁",
+      "count": 72,
+      "sample_message_id": "7668269500399192207",
+      "sample_group_id_hash": "d38dcb540ba669619cf42e586e195135b90b807fc79e57b4e96a416d70cf4175"
+    },
+    {
+      "text": "你们好可爱",
+      "count": 71,
+      "sample_message_id": "7652548312363012270",
+      "sample_group_id_hash": "a59e07e687cb6fe1c6c3559488c0b02e76528692c27050e12fe89a99566b514c"
+    },
+    {
+      "text": "恐怖",
+      "count": 71,
+      "sample_message_id": "7663026229102474721",
+      "sample_group_id_hash": "d38dcb540ba669619cf42e586e195135b90b807fc79e57b4e96a416d70cf4175"
+    },
+    {
+      "text": "懂你意思",
+      "count": 71,
+      "sample_message_id": "7668794077532108736",
+      "sample_group_id_hash": "d38dcb540ba669619cf42e586e195135b90b807fc79e57b4e96a416d70cf4175"
+    },
+    {
+      "text": "我真服了",
+      "count": 71,
+      "sample_message_id": "7664898234177614411",
+      "sample_group_id_hash": "d38dcb540ba669619cf42e586e195135b90b807fc79e57b4e96a416d70cf4175"
+    },
+    {
+      "text": "老了",
+      "count": 71,
+      "sample_message_id": "7667208277462055386",
+      "sample_group_id_hash": "d38dcb540ba669619cf42e586e195135b90b807fc79e57b4e96a416d70cf4175"
+    },
+    {
+      "text": "闹麻",
+      "count": 71,
+      "sample_message_id": "7644543489469974457",
+      "sample_group_id_hash": "d38dcb540ba669619cf42e586e195135b90b807fc79e57b4e96a416d70cf4175"
+    },
+    {
+      "text": "呃",
+      "count": 70,
+      "sample_message_id": "7639975370948329322",
+      "sample_group_id_hash": "d38dcb540ba669619cf42e586e195135b90b807fc79e57b4e96a416d70cf4175"
+    },
+    {
+      "text": "有点意思",
+      "count": 70,
+      "sample_message_id": "7607505036054211901",
+      "sample_group_id_hash": "d38dcb540ba669619cf42e586e195135b90b807fc79e57b4e96a416d70cf4175"
+    },
+    {
+      "text": "3",
+      "count": 69,
+      "sample_message_id": "7656018839850020989",
+      "sample_group_id_hash": "d38dcb540ba669619cf42e586e195135b90b807fc79e57b4e96a416d70cf4175"
+    },
+    {
+      "text": "没了",
+      "count": 69,
+      "sample_message_id": "7663840915378758162",
+      "sample_group_id_hash": "d38dcb540ba669619cf42e586e195135b90b807fc79e57b4e96a416d70cf4175"
+    },
+    {
+      "text": "不是我",
+      "count": 68,
+      "sample_message_id": "7664967378298908376",
+      "sample_group_id_hash": "c23f8b665a1496d049121c4ac236ea7adf8d026feeeccdae98b81ee4e0680aef"
+    },
+    {
+      "text": "乐",
+      "count": 68,
+      "sample_message_id": "7637141737425028297",
+      "sample_group_id_hash": "d38dcb540ba669619cf42e586e195135b90b807fc79e57b4e96a416d70cf4175"
+    },
+    {
+      "text": "什么游戏",
+      "count": 68,
+      "sample_message_id": "7660822013086466515",
+      "sample_group_id_hash": "d38dcb540ba669619cf42e586e195135b90b807fc79e57b4e96a416d70cf4175"
+    },
+    {
+      "text": "好崩溃",
+      "count": 68,
+      "sample_message_id": "7644922086900793144",
+      "sample_group_id_hash": "d38dcb540ba669619cf42e586e195135b90b807fc79e57b4e96a416d70cf4175"
+    },
+    {
+      "text": "no",
+      "count": 67,
+      "sample_message_id": "7663409197684577116",
+      "sample_group_id_hash": "d38dcb540ba669619cf42e586e195135b90b807fc79e57b4e96a416d70cf4175"
+    },
+    {
+      "text": "可爱",
+      "count": 67,
+      "sample_message_id": "7665671674732385863",
+      "sample_group_id_hash": "d38dcb540ba669619cf42e586e195135b90b807fc79e57b4e96a416d70cf4175"
+    },
+    {
+      "text": "太难了",
+      "count": 67,
+      "sample_message_id": "7669634049349965703",
+      "sample_group_id_hash": "d38dcb540ba669619cf42e586e195135b90b807fc79e57b4e96a416d70cf4175"
+    },
+    {
+      "text": "干什么",
+      "count": 67,
+      "sample_message_id": "7667618769535217352",
+      "sample_group_id_hash": "c23f8b665a1496d049121c4ac236ea7adf8d026feeeccdae98b81ee4e0680aef"
+    },
+    {
+      "text": "操操操。！",
+      "count": 67,
+      "sample_message_id": "7648149174500821282",
+      "sample_group_id_hash": "d38dcb540ba669619cf42e586e195135b90b807fc79e57b4e96a416d70cf4175"
+    },
+    {
+      "text": "是你",
+      "count": 66,
+      "sample_message_id": "7645282165330043168",
+      "sample_group_id_hash": "d38dcb540ba669619cf42e586e195135b90b807fc79e57b4e96a416d70cf4175"
+    },
+    {
+      "text": "羡慕",
+      "count": 66,
+      "sample_message_id": "7661150165691739051",
+      "sample_group_id_hash": "d38dcb540ba669619cf42e586e195135b90b807fc79e57b4e96a416d70cf4175"
+    },
+    {
+      "text": "何意",
+      "count": 65,
+      "sample_message_id": "7656766731874445206",
+      "sample_group_id_hash": "d38dcb540ba669619cf42e586e195135b90b807fc79e57b4e96a416d70cf4175"
+    },
+    {
+      "text": "哭了",
+      "count": 65,
+      "sample_message_id": "7642944336411244895",
+      "sample_group_id_hash": "d38dcb540ba669619cf42e586e195135b90b807fc79e57b4e96a416d70cf4175"
+    },
+    {
+      "text": "啊",
+      "count": 65,
+      "sample_message_id": "7642379608431197144",
+      "sample_group_id_hash": "d38dcb540ba669619cf42e586e195135b90b807fc79e57b4e96a416d70cf4175"
+    },
+    {
+      "text": "憋笑",
+      "count": 65,
+      "sample_message_id": "7670379712307768699",
+      "sample_group_id_hash": "d38dcb540ba669619cf42e586e195135b90b807fc79e57b4e96a416d70cf4175"
+    },
+    {
+      "text": "我不是",
+      "count": 65,
+      "sample_message_id": "7650435394488286247",
+      "sample_group_id_hash": "d38dcb540ba669619cf42e586e195135b90b807fc79e57b4e96a416d70cf4175"
+    },
+    {
+      "text": "按不动",
+      "count": 65,
+      "sample_message_id": "7661591314092923476",
+      "sample_group_id_hash": "d38dcb540ba669619cf42e586e195135b90b807fc79e57b4e96a416d70cf4175"
+    },
+    {
+      "text": "是本人吗",
+      "count": 65,
+      "sample_message_id": "7600401191513077012",
+      "sample_group_id_hash": "c23f8b665a1496d049121c4ac236ea7adf8d026feeeccdae98b81ee4e0680aef"
+    },
+    {
+      "text": "坏了",
+      "count": 64,
+      "sample_message_id": "7661150067564070065",
+      "sample_group_id_hash": "d38dcb540ba669619cf42e586e195135b90b807fc79e57b4e96a416d70cf4175"
+    },
+    {
+      "text": "好的",
+      "count": 64,
+      "sample_message_id": "7669389111905261302",
+      "sample_group_id_hash": "d38dcb540ba669619cf42e586e195135b90b807fc79e57b4e96a416d70cf4175"
+    },
+    {
+      "text": "我擦",
+      "count": 64,
+      "sample_message_id": "7653122137984974669",
+      "sample_group_id_hash": "d38dcb540ba669619cf42e586e195135b90b807fc79e57b4e96a416d70cf4175"
+    },
+    {
+      "text": "老资历",
+      "count": 64,
+      "sample_message_id": "7667460572066685824",
+      "sample_group_id_hash": "d38dcb540ba669619cf42e586e195135b90b807fc79e57b4e96a416d70cf4175"
+    },
+    {
+      "text": "能",
+      "count": 64,
+      "sample_message_id": "7663414499304866586",
+      "sample_group_id_hash": "d38dcb540ba669619cf42e586e195135b90b807fc79e57b4e96a416d70cf4175"
+    },
+    {
+      "text": "这谁",
+      "count": 64,
+      "sample_message_id": "7622941033236298237",
+      "sample_group_id_hash": "d38dcb540ba669619cf42e586e195135b90b807fc79e57b4e96a416d70cf4175"
+    },
+    {
+      "text": "不要",
+      "count": 63,
+      "sample_message_id": "7669645447235442249",
+      "sample_group_id_hash": "d38dcb540ba669619cf42e586e195135b90b807fc79e57b4e96a416d70cf4175"
+    },
+    {
+      "text": "什么情况",
+      "count": 63,
+      "sample_message_id": "7635674774269192944",
+      "sample_group_id_hash": "d38dcb540ba669619cf42e586e195135b90b807fc79e57b4e96a416d70cf4175"
+    },
+    {
+      "text": "牛魔",
+      "count": 63,
+      "sample_message_id": "7663423053509045630",
+      "sample_group_id_hash": "d38dcb540ba669619cf42e586e195135b90b807fc79e57b4e96a416d70cf4175"
+    },
+    {
+      "text": "呜哇",
+      "count": 62,
+      "sample_message_id": "7532866129450055019",
+      "sample_group_id_hash": "c23f8b665a1496d049121c4ac236ea7adf8d026feeeccdae98b81ee4e0680aef"
+    },
+    {
+      "text": "没有人类了",
+      "count": 62,
+      "sample_message_id": "7660868395528408017",
+      "sample_group_id_hash": "d38dcb540ba669619cf42e586e195135b90b807fc79e57b4e96a416d70cf4175"
+    },
+    {
+      "text": "这个好玩",
+      "count": 62,
+      "sample_message_id": "7655323900473289019",
+      "sample_group_id_hash": "d38dcb540ba669619cf42e586e195135b90b807fc79e57b4e96a416d70cf4175"
+    },
+    {
+      "text": "不认识",
+      "count": 61,
+      "sample_message_id": "7660488628693914658",
+      "sample_group_id_hash": "d38dcb540ba669619cf42e586e195135b90b807fc79e57b4e96a416d70cf4175"
+    },
+    {
+      "text": "哦不对",
+      "count": 61,
+      "sample_message_id": "7647887714013764430",
+      "sample_group_id_hash": "d38dcb540ba669619cf42e586e195135b90b807fc79e57b4e96a416d70cf4175"
+    },
+    {
+      "text": "强",
+      "count": 61,
+      "sample_message_id": "7666455992903093414",
+      "sample_group_id_hash": "d38dcb540ba669619cf42e586e195135b90b807fc79e57b4e96a416d70cf4175"
+    },
+    {
+      "text": "我干的",
+      "count": 61,
+      "sample_message_id": "7654814221694797272",
+      "sample_group_id_hash": "c23f8b665a1496d049121c4ac236ea7adf8d026feeeccdae98b81ee4e0680aef"
+    },
+    {
+      "text": "草了",
+      "count": 61,
+      "sample_message_id": "7658501219120016999",
+      "sample_group_id_hash": "d38dcb540ba669619cf42e586e195135b90b807fc79e57b4e96a416d70cf4175"
+    },
+    {
+      "text": "发红包的人最帅",
+      "count": 60,
+      "sample_message_id": "7609958733866699439",
+      "sample_group_id_hash": "d38dcb540ba669619cf42e586e195135b90b807fc79e57b4e96a416d70cf4175"
+    },
+    {
+      "text": "我的年度osu",
+      "count": 60,
+      "sample_message_id": "7590613355175266811",
+      "sample_group_id_hash": "c23f8b665a1496d049121c4ac236ea7adf8d026feeeccdae98b81ee4e0680aef"
+    },
+    {
+      "text": "集合",
+      "count": 60,
+      "sample_message_id": "7657402552671297445",
+      "sample_group_id_hash": "d38dcb540ba669619cf42e586e195135b90b807fc79e57b4e96a416d70cf4175"
+    },
+    {
+      "text": "多发",
+      "count": 59,
+      "sample_message_id": "7641514520580602833",
+      "sample_group_id_hash": "c23f8b665a1496d049121c4ac236ea7adf8d026feeeccdae98b81ee4e0680aef"
+    },
+    {
+      "text": "有点强",
+      "count": 59,
+      "sample_message_id": "7637549440353492329",
+      "sample_group_id_hash": "d38dcb540ba669619cf42e586e195135b90b807fc79e57b4e96a416d70cf4175"
+    },
+    {
+      "text": "这么厉害",
+      "count": 59,
+      "sample_message_id": "7651774450335175168",
+      "sample_group_id_hash": "d38dcb540ba669619cf42e586e195135b90b807fc79e57b4e96a416d70cf4175"
+    },
+    {
+      "text": "这什么",
+      "count": 59,
+      "sample_message_id": "7664975556037073609",
+      "sample_group_id_hash": "d38dcb540ba669619cf42e586e195135b90b807fc79e57b4e96a416d70cf4175"
+    },
+    {
+      "text": "上号",
+      "count": 58,
+      "sample_message_id": "7670379389224675830",
+      "sample_group_id_hash": "d38dcb540ba669619cf42e586e195135b90b807fc79e57b4e96a416d70cf4175"
+    },
+    {
+      "text": "人呢",
+      "count": 58,
+      "sample_message_id": "7663409958978566148",
+      "sample_group_id_hash": "d38dcb540ba669619cf42e586e195135b90b807fc79e57b4e96a416d70cf4175"
+    },
+    {
+      "text": "似了",
+      "count": 58,
+      "sample_message_id": "7667206266790132732",
+      "sample_group_id_hash": "d38dcb540ba669619cf42e586e195135b90b807fc79e57b4e96a416d70cf4175"
+    },
+    {
+      "text": "加油",
+      "count": 58,
+      "sample_message_id": "7669176260771068496",
+      "sample_group_id_hash": "d38dcb540ba669619cf42e586e195135b90b807fc79e57b4e96a416d70cf4175"
+    },
+    {
+      "text": "可惜了",
+      "count": 58,
+      "sample_message_id": "7648984768905672106",
+      "sample_group_id_hash": "d38dcb540ba669619cf42e586e195135b90b807fc79e57b4e96a416d70cf4175"
+    },
+    {
+      "text": "0",
+      "count": 57,
+      "sample_message_id": "7669000699646069405",
+      "sample_group_id_hash": "d38dcb540ba669619cf42e586e195135b90b807fc79e57b4e96a416d70cf4175"
+    },
+    {
+      "text": "gg",
+      "count": 57,
+      "sample_message_id": "7669803648941859530",
+      "sample_group_id_hash": "d38dcb540ba669619cf42e586e195135b90b807fc79e57b4e96a416d70cf4175"
+    },
+    {
+      "text": "不信",
+      "count": 57,
+      "sample_message_id": "7656022052133184991",
+      "sample_group_id_hash": "d38dcb540ba669619cf42e586e195135b90b807fc79e57b4e96a416d70cf4175"
+    },
+    {
+      "text": "可恶",
+      "count": 57,
+      "sample_message_id": "7668597655669860038",
+      "sample_group_id_hash": "d38dcb540ba669619cf42e586e195135b90b807fc79e57b4e96a416d70cf4175"
+    },
+    {
+      "text": "好强",
+      "count": 57,
+      "sample_message_id": "7668880887989997763",
+      "sample_group_id_hash": "d38dcb540ba669619cf42e586e195135b90b807fc79e57b4e96a416d70cf4175"
+    },
+    {
+      "text": "我试试",
+      "count": 57,
+      "sample_message_id": "7662039967685795194",
+      "sample_group_id_hash": "d38dcb540ba669619cf42e586e195135b90b807fc79e57b4e96a416d70cf4175"
+    },
+    {
+      "text": "打不动",
+      "count": 57,
+      "sample_message_id": "7657598567798617619",
+      "sample_group_id_hash": "d38dcb540ba669619cf42e586e195135b90b807fc79e57b4e96a416d70cf4175"
+    },
+    {
+      "text": "是啊",
+      "count": 57,
+      "sample_message_id": "7666361679289106724",
+      "sample_group_id_hash": "d38dcb540ba669619cf42e586e195135b90b807fc79e57b4e96a416d70cf4175"
+    },
+    {
+      "text": "有的",
+      "count": 57,
+      "sample_message_id": "7663405667867977206",
+      "sample_group_id_hash": "d38dcb540ba669619cf42e586e195135b90b807fc79e57b4e96a416d70cf4175"
+    },
+    {
+      "text": "笑死",
+      "count": 57,
+      "sample_message_id": "7670379754177482494",
+      "sample_group_id_hash": "d38dcb540ba669619cf42e586e195135b90b807fc79e57b4e96a416d70cf4175"
+    },
+    {
+      "text": "还有人类吗",
+      "count": 57,
+      "sample_message_id": "7665688661993523793",
+      "sample_group_id_hash": "d38dcb540ba669619cf42e586e195135b90b807fc79e57b4e96a416d70cf4175"
+    },
+    {
+      "text": "+1",
+      "count": 56,
+      "sample_message_id": "7654882254791499647",
+      "sample_group_id_hash": "d38dcb540ba669619cf42e586e195135b90b807fc79e57b4e96a416d70cf4175"
+    },
+    {
+      "text": "什么东西",
+      "count": 56,
+      "sample_message_id": "7669153561563514468",
+      "sample_group_id_hash": "d38dcb540ba669619cf42e586e195135b90b807fc79e57b4e96a416d70cf4175"
+    },
+    {
+      "text": "太强了",
+      "count": 56,
+      "sample_message_id": "7658623912638028653",
+      "sample_group_id_hash": "d38dcb540ba669619cf42e586e195135b90b807fc79e57b4e96a416d70cf4175"
+    },
+    {
+      "text": "我失败了",
+      "count": 56,
+      "sample_message_id": "7660873392889312818",
+      "sample_group_id_hash": "d38dcb540ba669619cf42e586e195135b90b807fc79e57b4e96a416d70cf4175"
+    },
+    {
+      "text": "神秘",
+      "count": 56,
+      "sample_message_id": "7660756003149317539",
+      "sample_group_id_hash": "d38dcb540ba669619cf42e586e195135b90b807fc79e57b4e96a416d70cf4175"
+    },
+    {
+      "text": "闹麻了",
+      "count": 56,
+      "sample_message_id": "7594761928091344169",
+      "sample_group_id_hash": "d38dcb540ba669619cf42e586e195135b90b807fc79e57b4e96a416d70cf4175"
+    },
+    {
+      "text": "哪个",
+      "count": 55,
+      "sample_message_id": "7667514696931677074",
+      "sample_group_id_hash": "d38dcb540ba669619cf42e586e195135b90b807fc79e57b4e96a416d70cf4175"
+    },
+    {
+      "text": "带我",
+      "count": 55,
+      "sample_message_id": "7665354779504871153",
+      "sample_group_id_hash": "d38dcb540ba669619cf42e586e195135b90b807fc79e57b4e96a416d70cf4175"
+    },
+    {
+      "text": "打不过",
+      "count": 55,
+      "sample_message_id": "7657211685330028232",
+      "sample_group_id_hash": "d38dcb540ba669619cf42e586e195135b90b807fc79e57b4e96a416d70cf4175"
+    },
+    {
+      "text": "这么牛逼",
+      "count": 55,
+      "sample_message_id": "7623288739817132281",
+      "sample_group_id_hash": "d38dcb540ba669619cf42e586e195135b90b807fc79e57b4e96a416d70cf4175"
+    },
+    {
+      "text": "呃呃",
+      "count": 54,
+      "sample_message_id": "7662417168493161057",
+      "sample_group_id_hash": "d38dcb540ba669619cf42e586e195135b90b807fc79e57b4e96a416d70cf4175"
+    },
+    {
+      "text": "害怕",
+      "count": 54,
+      "sample_message_id": "7652636418792632180",
+      "sample_group_id_hash": "d38dcb540ba669619cf42e586e195135b90b807fc79e57b4e96a416d70cf4175"
+    },
+    {
+      "text": "试试",
+      "count": 54,
+      "sample_message_id": "7670379281373827337",
+      "sample_group_id_hash": "d38dcb540ba669619cf42e586e195135b90b807fc79e57b4e96a416d70cf4175"
+    },
+    {
+      "text": "这是你？",
+      "count": 54,
+      "sample_message_id": "7665390625447802715",
+      "sample_group_id_hash": "c23f8b665a1496d049121c4ac236ea7adf8d026feeeccdae98b81ee4e0680aef"
+    },
+    {
+      "text": "难说",
+      "count": 54,
+      "sample_message_id": "7664628131005738653",
+      "sample_group_id_hash": "d38dcb540ba669619cf42e586e195135b90b807fc79e57b4e96a416d70cf4175"
+    }
+  ]
+}
