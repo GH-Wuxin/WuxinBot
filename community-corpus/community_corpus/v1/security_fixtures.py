@@ -40,6 +40,18 @@ SECURITY_FIXTURES: list[dict[str, Any]] = [
         "expect_types": ["qq"],
     },
     {
+        "name": "qq_bare_group_number",
+        "raw": "群的话是这个 1039477458，进来别骂我菜",
+        "must_not_contain": ["1039477458"],
+        "expect_types": ["qq"],
+    },
+    {
+        "name": "qq_bare_number_line",
+        "raw": "S2 712531032",
+        "must_not_contain": ["712531032"],
+        "expect_types": ["qq"],
+    },
+    {
         "name": "phone",
         "raw": "电话 13800138000 找我",
         "must_not_contain": ["13800138000"],
@@ -85,6 +97,12 @@ SECURITY_FIXTURES: list[dict[str, Any]] = [
         "expect_types": ["invite"],
     },
     {
+        "name": "inviter_uid_param",
+        "raw": "https://example.com/invite?inviterUid=275180748&from=group",
+        "must_not_contain": ["275180748"],
+        "expect_types": ["invite"],
+    },
+    {
         "name": "invite_code",
         "raw": "https://endfield.hypergryph.com/activity/x?invite_code=Z029FJ0QD59RRMM6&share_type=link",
         "must_not_contain": ["Z029FJ0QD59RRMM6"],
@@ -117,6 +135,26 @@ SECURITY_FIXTURES: list[dict[str, Any]] = [
             "  PC: 44,602"
         ),
         "must_not_contain": ["Toriesta", "佐佐佑佑"],
+        "expect_types": ["nickname"],
+    },
+    {
+        "name": "forward_sender_name_kana",
+        "raw": (
+            "[转发消息: 3条]\n"
+            "  星がいっぱいの空はどこで: 绯想天 永江衣玖\n"
+            "  PC: 44,602"
+        ),
+        "must_not_contain": ["星がいっぱいの空はどこで"],
+        "expect_types": ["nickname"],
+    },
+    {
+        "name": "forward_sender_name_emoji_dir",
+        "raw": (
+            "[转发消息: 2条]\n"
+            "  绝世豪猫乐奈\u2067~喵\u2066\u2066: [QQ小程序]喜欢大雷还是小雷？\n"
+            "  CH₃N₈: 找的新头像"
+        ),
+        "must_not_contain": ["绝世豪猫乐奈", "CH₃N₈"],
         "expect_types": ["nickname"],
     },
     {

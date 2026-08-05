@@ -19,7 +19,25 @@ from ..config import Config
 from ..pii import detect_pii
 EXPORT_DIR_RE = re.compile(r"^group_(.+?)_\d{8}_\d{6}_chunked_jsonl$")
 CHUNK_FILE_RE = re.compile(r"^chunk_\d+\.jsonl$")
-BOT_UINS = {"REDACTED_QQ_002"}
+BOT_UINS = {
+    # current pippi/WuxinBot host account (bot replies come from it)
+    "REDACTED_QQ_002",
+    # legacy per-bot accounts present in the exported group histories
+    "1708547915",  # 忧郁小猫猫 (kanon/猫猫 bot)
+    "1902931474",  # KQN (查分 bot)
+    "3311470495",  # 天使果果喵 (Lazybot)
+    "3145729213",  # 雨沐 (临时运行)
+    "3889016014",  # 雨沐 (原版)
+    "2818054860",  # 小幽幽子 (character roleplay bot)
+    "3889001246",  # 幽幽子 (group feature bot)
+    "3929371650",  # Nikaidou Shinku (查分/图片 bot)
+    "1750011571",  # ATRI1024 (replay/avatar bot)
+    "1078589506",  # 全自助火化机 (hydrant-style pp+/查分 bot)
+    "814992458",  # 遠野幻想物語 (查分 bot)
+    "1335734629",  # 白菜V2.1 (recent-score card bot)
+    "1020640876",  # 白菜V2.1 (binding error bot)
+    "2225126759",  # Lazybot测试机
+}
 
 # Content-level bot-output patterns. A message matching one of these is a
 # bot's rendered output that the export stored as a plain text message
@@ -27,9 +45,19 @@ BOT_UINS = {"REDACTED_QQ_002"}
 # Keep patterns tight: full template + structure, not single keywords.
 BOT_OUTPUT_PATTERNS = [
     re.compile(
-        r"(?:^|\n)[^\n]*的个人信息—osu!\n{1,2}\s*\d+(?:\.\d+)?\s*pp",
+        r"(?:^|\n)[^\n]*的个人信息—(?:osu!|mania|taiko|catch)\n{1,2}\s*\d+(?:\.\d+)?\s*pp",
         re.MULTILINE,
     ),
+    re.compile(
+        r"^[^\n]*的 replay (?:轨迹|检测)\n相似度: [-+]?\d+(?:\.\d+)?%",
+        re.MULTILINE,
+    ),
+    re.compile(r"^少女祈祷中\.\.\.$", re.MULTILINE),
+    re.compile(
+        r"^主要数据已更新完毕，pp\+数据正在后台更新，请稍后使用info功能查看结果。$",
+        re.MULTILINE,
+    ),
+    re.compile(r"^[^\n]*头像已更新$", re.MULTILINE),
     re.compile(r"^[^\n]*的bp类型\nAim:", re.MULTILINE),
     re.compile(r"正在获取pp\+数据，请稍等"),
     re.compile(r"\[内联键盘\]\[Markdown消息\]"),

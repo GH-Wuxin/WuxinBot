@@ -35,6 +35,7 @@ from .sanitize import (
     _CREDENTIAL_URL_RE,
     _EMAIL_RE,
     _ID_CARD_RE,
+    _INVITE_PATH_RE,
     _UNIQUE_PARAM_RE,
     _INVITE_RE,
     _IP_RE,
@@ -42,6 +43,7 @@ from .sanitize import (
     _MENTION_RE,
     _PHONE_RE,
     _PROFILE_FIELD_RE,
+    _QQ_BARE_RE,
     _QQ_CONTEXT_RE,
     _QQ_GROUP_RE,
     _REAL_NAME_RE,
@@ -55,9 +57,11 @@ PII_SCANNERS = [
     ("email", _EMAIL_RE),
     ("ip", _IP_RE),
     ("invite_url", _INVITE_RE),
+    ("invite_path", _INVITE_PATH_RE),
     ("invite_param", _UNIQUE_PARAM_RE),
     ("qq_context", _QQ_CONTEXT_RE),
     ("qq_group", _QQ_GROUP_RE),
+    ("qq_bare", _QQ_BARE_RE),
     ("id_card", _ID_CARD_RE),
     ("credential", _CREDENTIAL_RE),
     ("credential_url", _CREDENTIAL_URL_RE),
@@ -75,7 +79,7 @@ _EXTRA_PII_RE = re.compile(
 
 _FORWARD_BLOCK_RE = re.compile(r"\[(?:转发消息|Forwarded Messages)\s*[:：]\s*\d+\s*条?\]")
 _FORWARD_NAME_LEAK_RE = re.compile(
-    r"(?m)^(\s{1,8})([A-Za-z0-9_\u4e00-\u9fa5·｜|\- ]{1,40}): "
+    r"(?m)^(\s{1,8})([^\s:]{1,40})\s*: "
 )
 
 

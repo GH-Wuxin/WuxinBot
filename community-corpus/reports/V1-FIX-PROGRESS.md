@@ -83,9 +83,66 @@
 - 8e84877 feat(corpus): topic-aware window segmentation, dataset split, near-dup dedup
 - 7a5bbbb feat(corpus): secure annotated review export, XLSX sheet, precheck
 - 4544ab7 test(corpus): 39 unit tests green, mypy clean; freeze legacy corpus-build.mjs
+- 05f0f43 feat(corpus): usage tiers, overlap clustering, retrieval dedupe
+- ccce5c0 feat(corpus): security fixtures, real-name/private-param redaction, safe annotated export
+- e882df6 feat(corpus): privacy-first precheck and tier-aware review export
+- 61df26d test(corpus): 42 green including security fixtures and tier gates; docs update
+
+## 2026-08-05 第三轮：Codex 人工代审 + 隐私补漏
+
+用户要求由 Codex 亲自审 300 条样本（不再交给外部 GPT 打分）。两轮通读后
+发现并修复了以下问题：
+
+### 修复
+
+- `sanitize.py`
+  - 新增邀请短链脱敏：`discord.gg/`、`oopz.cn/i/`、`kook.app/invite/`、
+    `kookapp.cn/invite/`（此前 `https://oopz.cn/i/jUg00i` 原样泄露）。
+  - 新增裸 QQ 号脱敏：独立成词的 9-11 位数字视为 QQ/群号替换为
+    `<QQ_NUMBER>`；URL 路径内公开数字（osu score id、bilibili/pixiv id）与
+    带单位/小数的数字（`2147483648usd`、`CNY 470548.48`）保留。
+    实测全库 1775 处裸数字中，QQ/群号/QQ UID 全部命中。
+  - `_UNIQUE_PARAM_RE` 增加 `inviter_uid`（`inviterUid=275180748` 泄露 QQ UID）。
+  - 转发块昵称正则从 ASCII+中文白名单改为 `[^\s:]{1,40}`，并重写
+    `_looks_like_person_name`：除纯大写 ASCII 标签（PC/TTH/SS/ID）与短数字外，
+    日文假名、emoji、方向符、下标（`CH₃N₈`）、全角标点等一律视为昵称。
+    全库转发昵称泄露从 174 个唯一昵称 / 865 行降为 0。
+- `windows.py`
+  - 带转发块（`[转发消息: N条]`）的窗口降级为 contextual_style，不再落入
+    style_ready（转发内容属于外部上下文）。
+  - 纯系统提示/无内容窗口归入 private_or_rejected。
+  - `_COMMAND_RE` 允许前缀后空格：`! rs`、`/ 小黑猫` 等 194 条真实指令
+    现在会触发 bot_interaction。
+- `full_import.py`
+  - 补齐 bot 输出模板：`个人信息—mania/taiko/catch`、replay 轨迹/检测、
+    `少女祈祷中...`、pp+ 后台更新提示、`X头像已更新`。
+  - `BOT_UINS` 从 1 个扩到 14 个，覆盖导出的历史 bot 账号：
+    忧郁小猫猫、KQN、天使果果喵、雨沐×2、小幽幽子、幽幽子、
+    Nikaidou Shinku、ATRI1024、全自助火化机、遠野幻想物語、白菜V2.1×2、
+    Lazybot测试机。纯 bot 消息不再污染 style_ready。
+- `review_precheck.py`：PII_SCANNERS 增加 invite_path、qq_bare；
+  转发昵称漏检正则同步放宽。
+- `review_sheet.py`：单元格清洗 XML 非法控制字符，XLSX 不再因
+  `\x14` 等字符生成失败。
+
+### 最终全量结果（seed 20260805 / review-seed 20260807）
+
+- 消息 1,279,462 条解析 0 失败；窗口 536,898（精确重复 6,241；
+  重叠簇 19,178，覆盖 44,447，最大簇 24）。
+- 分层：style_ready 28,033 / contextual_style 160,977 /
+  bot_interaction 196,731 / ambient_chat 1,935 / private_or_rejected 149,222。
+- 预检全过：privacyLeakCount 0、annotatedLeakCount 0、usageTierMissing 0、
+  overlapClusterMissing 0、sampleClusterDupes 0、missingSourceRefs 0、
+  fullCorpusPiiHitTypes 0；转发昵称专项扫描 0。
+- 300 条样本分层：style_ready 35 / contextual_style 114 /
+  bot_interaction 90 / ambient_chat 22 / private_or_rejected 39
+  （含全部 39 条高风险）。
+- 人工审读结论：39 条高风险全部正确脱敏；style_ready 无 bot 输出残留；
+  ambient/contextual/bot_interaction 分层合理。
+- V2 候选：`reports/V2-style-ready-candidates.jsonl`（35 条，24 条推荐）。
+- 43 个单元测试全绿 + mypy 0 错误。
 
 ## 尚未解决
 
-- 人工只审隐私与分层合理性（privacy_leak=0 必须；质量列仅参考）。
 - 进入 V2：从 style_ready 人工批准一小批高质量窗口，随后小规模 RAG
-  Shadow A/B 测试。
+  Shadow A/B 测试（候选清单已生成，等待用户批准）。

@@ -90,6 +90,10 @@ _INVITE_RE = re.compile(
     r"(?:https?://)?(?:jq\.qq\.com|qun\.qq\.com|qq\.com/(?:group|s))[\w./?=&%+#-]*",
     re.IGNORECASE,
 )
+_INVITE_PATH_RE = re.compile(
+    r"(?i)(?:https?://)?(?:discord\.gg|oopz\.cn/i|kook\.app(?:/invite)?|"
+    r"kookapp\.cn/invite)/[A-Za-z0-9_-]{3,}"
+)
 _QQ_CONTEXT_RE = re.compile(
     r"(?i)(?:[qｑ][qｑ]{1,2}|企鹅|群号|加群|好友|qq群|q群|加我|联系方式)[ \t]*[:：]?[ \t]*(?:是|为|号|群)?[ \t]*(\d{5,12})"
 )
@@ -112,13 +116,14 @@ _CARD_RE = re.compile(
     r"(?i)(?:银行卡|信用卡|卡号|账户|帐号)[:：]?\s*\d{12,19}"
 )
 _QQ_GROUP_RE = re.compile(r"(?<!\d)群[ \t]*[:：]?[ \t]*(\d{5,12})(?!\d)")
+_QQ_BARE_RE = re.compile(r"(?<![A-Za-z0-9/&=.\-])\d{9,11}(?![A-Za-z0-9/&=.\-])")
 _PROFILE_FIELD_RE = re.compile(
     r"(?im)^[ \t]*(?:discord|website|occupation|location|interests|twitter|youtube|"
     r"bilibili|直播间)[ \t]*[:：][ \t]*[^\n]{1,120}$"
 )
 _UNIQUE_PARAM_RE = re.compile(
     r"(?i)([?&](?:invite_?code|join_?code|referral_?code|share_?code|reg_?code|"
-    r"invitation_?code|invite|code|token|key|sid|session|auth|ticket|sign)=)"
+    r"invitation_?code|invite|inviter_?uid|code|token|key|sid|session|auth|ticket|sign)=)"
     r"[A-Za-z0-9._%+/-]{6,}"
 )
 _REAL_NAME_RE = re.compile(
@@ -127,7 +132,7 @@ _REAL_NAME_RE = re.compile(
 )
 _FORWARD_BLOCK_START_RE = re.compile(r"\[(?:转发消息|Forwarded Messages)\s*[:：]\s*\d+\s*条?\]")
 _FORWARD_NAME_LINE_RE = re.compile(
-    r"^(\s{1,8})([A-Za-z0-9_·•.\u4e00-\u9fa5｜|\- ]{1,40}): "
+    r"^(\s{1,8})([^\s:]{1,40})\s*: "
 )
 
 
@@ -136,20 +141,18 @@ def _looks_like_person_name(name: str) -> bool:
 
     Forwarded profiles contain all-caps stat labels (PC/PT/TTH/SS/ID/...);
     those must survive untouched. Real QQ display names normally contain CJK,
-    lowercase ASCII, digits, or separator punctuation.
+    Japanese kana, emoji, direction marks, subscripts, or any character outside
+    the plain ASCII label set.
     """
     n = name.strip()
     if not n:
         return False
-    if re.search(r"[\u4e00-\u9fa5]", n):
-        return True
-    if re.search(r"[a-z]", n):
-        return True
-    if re.search(r"[_·•|｜]", n):
-        return True
-    if re.search(r"[0-9]", n) and len(n) >= 4:
-        return True
-    return False
+    # plain all-caps ASCII labels (PC/PT/TTH/SS/ID) and short digit groups
+    # (e.g. "PC: 44,602") are not person names.
+    if re.fullmatch(r"[A-Z0-9 _·•|｜,.\-]{1,40}", n):
+        # long numeric prefixes are more likely QQ/account numbers than labels
+        return bool(re.fullmatch(r"[0-9,.\-]{4,}", n))
+    return True
 
 
 def _redact_forward_names(text: str) -> tuple[str, bool]:
@@ -211,6 +214,10 @@ def _redact(text: str) -> tuple[str, set[str]]:
         text = _INVITE_RE.sub(PLACEHOLDER_INVITE, text)
         pii.add("invite")
 
+    if _INVITE_PATH_RE.search(text):
+        text = _INVITE_PATH_RE.sub(PLACEHOLDER_INVITE, text)
+        pii.add("invite")
+
     if _UNIQUE_PARAM_RE.search(text):
         text = _UNIQUE_PARAM_RE.sub(lambda m: m.group(1) + PLACEHOLDER_INVITE, text)
         pii.add("invite")
@@ -229,6 +236,10 @@ def _redact(text: str) -> tuple[str, set[str]]:
         text = _QQ_GROUP_RE.sub(
             lambda m: m.group(0).replace(m.group(1), PLACEHOLDER_QQ), text
         )
+        pii.add("qq")
+
+    if _QQ_BARE_RE.search(text):
+        text = _QQ_BARE_RE.sub(PLACEHOLDER_QQ, text)
         pii.add("qq")
 
     if _PROFILE_FIELD_RE.search(text):
