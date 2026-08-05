@@ -14,6 +14,10 @@ import {
   type BpQuerySelection,
 } from '../bots/executor.js';
 import { callLocalBot, hasLocalEndpoint } from '../bots/localBridge.js';
+import {
+  recordQuickContext,
+  buildQuickShadowSummary,
+} from './quickMemory.js';
 
 export type QuickSource = 'common' | 'yumu' | 'kanon' | 'hydrant' | 'lazybot';
 
@@ -567,6 +571,38 @@ export async function handleQuickCommand(
     } catch { /* logging is non-fatal */ }
   };
 
+  // Context memory: quick replies bypass the LLM pipeline and are normally
+  // invisible to pippi. Record the query + a compact factual summary into
+  // db.messages (inContext only, never long-term memory), always naming who
+  // asked. Recording failures must never affect the reply.
+  const requester = String(event.nickname || event.userId || '未知用户');
+  const record = (content: string, images: string[] = []) => {
+    try {
+      recordQuickContext(
+        event,
+        `【快捷查询】${requester}：${String(content || '').trim()}`,
+        images,
+      );
+    } catch { /* memory is non-fatal */ }
+  };
+  const recordShadow = (
+    capability: string | undefined,
+    username: string,
+    images: string[],
+    bpSelection?: BpQuerySelection,
+  ) => {
+    void (async () => {
+      try {
+        const summary = await buildQuickShadowSummary(
+          capability,
+          username,
+          bpSelection,
+        );
+        record(summary || `快捷指令查询完成（${def.source} 面板，结果见图片）`, images);
+      } catch { /* memory is non-fatal */ }
+    })();
+  };
+
   // Per-group bot toggle: when a specific bot is disabled for this group, its
   // quick routes are fully silent here. The original bot (if still running)
   // keeps owning the command; Wuxin just stops double-replying.
@@ -588,6 +624,8 @@ export async function handleQuickCommand(
   // ── Local bot bridge: direct invocation of the original bot ──
   // Original rendering (雨沐 E5/A4 面板、消防栓文字卡等) beats the internal
   // engine; on any bridge failure we fall through to the internal handler.
+  let bridgeUser = '';
+  let parsedArgs: ParsedOsuArgs | undefined;
   if (def.bridge && hasLocalEndpoint(def.source)) {
     let bridgeCommand = buildBridgeCommand(match);
     const bridgeContext = {
@@ -610,8 +648,10 @@ export async function handleQuickCommand(
         } catch (deliveryError: any) {
           console.error('[quick] 未绑定提示发送失败:', deliveryError?.message || deliveryError);
         }
+        record(UNBOUND_SELF_PROMPT);
         return { handled: true, replied: true, reason: 'unbound_self' };
       }
+      bridgeUser = user;
       bridgeCommand = `where ${user}`;
     } else if (def.handler === 'at_profile') {
       const target = String(atTargets?.[0] || '');
@@ -623,8 +663,10 @@ export async function handleQuickCommand(
         } catch (deliveryError: any) {
           console.error('[quick] 未绑定提示发送失败:', deliveryError?.message || deliveryError);
         }
+        record(UNBOUND_TARGET_PROMPT);
         return { handled: true, replied: true, reason: 'unbound_target' };
       }
+      bridgeUser = user;
       bridgeCommand = `where ${user}`;
     } else if (def.handler === 'where') {
       const qqMatch = /^qq\s*=\s*(\d+)$/i.exec(String(args || '').trim());
@@ -637,12 +679,15 @@ export async function handleQuickCommand(
           } catch (deliveryError: any) {
             console.error('[quick] 未绑定提示发送失败:', deliveryError?.message || deliveryError);
           }
+          record(UNBOUND_QQ_PROMPT);
           return { handled: true, replied: true, reason: 'unbound_qq' };
         }
+        bridgeUser = user;
         bridgeCommand = `where ${user}`;
       }
     } else if (def.capability || def.injectBinding) {
-      const parsed = parseOsuArgs(def, args);
+      parsedArgs = parseOsuArgs(def, args);
+      const parsed = parsedArgs;
       if (!parsed.username) {
         const usesAt = atTargets.length > 0;
         const target = usesAt ? String(atTargets[0]) : String(event.userId);
@@ -654,10 +699,14 @@ export async function handleQuickCommand(
           } catch (deliveryError: any) {
             console.error('[quick] 未绑定提示发送失败:', deliveryError?.message || deliveryError);
           }
+          record(usesAt ? UNBOUND_TARGET_PROMPT : UNBOUND_SELF_PROMPT);
           return { handled: true, replied: true, reason: usesAt ? 'unbound_target' : 'unbound_self' };
         }
+        bridgeUser = user;
         // Rebuild with the injected user before any BP range.
         bridgeCommand = `${match.prefix}${match.alias} ${user}${args ? ' ' + args : ''}`;
+      } else {
+        bridgeUser = parsed.username;
       }
     }
     try {
@@ -674,6 +723,22 @@ export async function handleQuickCommand(
           console.error(`[quick] bridge ${def.source} 发送失败（面板可能已发出）:`, deliveryError?.message || deliveryError);
         }
         log('bridge', `${def.source}:${bridgeCommand}`);
+        const bridgeText = String(reply.text || '').trim();
+        if (bridgeText) {
+          record(`[${def.source}] ${bridgeText}`, reply.images);
+        } else {
+          const whereUser = def.handler === 'where' ? String(args || '').trim() : '';
+          const shadowUser = bridgeUser || whereUser;
+          const shadowCap = def.capability
+            ?? (def.handler === 'self_profile' || def.handler === 'at_profile' || def.handler === 'where'
+              ? 'profile'
+              : undefined);
+          if (shadowCap && shadowUser) {
+            recordShadow(shadowCap, shadowUser, reply.images, parsedArgs?.bpSelection);
+          } else {
+            record(`快捷指令查询完成（${def.source} 面板，结果见图片）`, reply.images);
+          }
+        }
         return { handled: true, replied: true, reason: `bridge:${def.source}` };
       }
       console.error(`[quick] bridge ${def.source} 返回空回复，回退内部引擎`);
@@ -728,6 +793,7 @@ export async function handleQuickCommand(
       });
     } catch (error: any) {
       if (sendMessage) await sendMessage(event, String(error?.message || error));
+      record(`查询失败：${String(error?.message || error)}`);
       return { handled: true, replied: true, reason: 'profile_error' };
     }
     // Delivery failure after a successful command must not trigger a second,
@@ -738,6 +804,11 @@ export async function handleQuickCommand(
       console.error(`[quick] ${def.id} 发送失败（面板可能已发出）:`, deliveryError?.message || deliveryError);
     }
     log('profile', username || '(self)');
+    const memContent = typeof result === 'string'
+      ? result
+      : String((result as any).content || '');
+    const memImages = typeof result === 'string' ? [] : ((result as any).images || []);
+    record(memContent || `查询了 ${username || '绑定玩家'} 的玩家信息`, memImages);
     return { handled: true, replied: true, reason: 'profile' };
   }
   if (def.handler === 'where') {
@@ -750,6 +821,7 @@ export async function handleQuickCommand(
         : `QQ ${qqMatch[1]} 未绑定 osu! 账号。`;
       if (sendMessage) await sendMessage(event, text);
       log('where_qq', qqMatch[1]);
+      record(text);
       return { handled: true, replied: true, reason: 'where_qq' };
     }
     if (!query) {
@@ -763,6 +835,7 @@ export async function handleQuickCommand(
       });
     } catch (error: any) {
       if (sendMessage) await sendMessage(event, String(error?.message || error));
+      record(`查询失败：${String(error?.message || error)}`);
       return { handled: true, replied: true, reason: 'where_error' };
     }
     try {
@@ -771,6 +844,11 @@ export async function handleQuickCommand(
       console.error(`[quick] ${def.id} 发送失败（面板可能已发出）:`, deliveryError?.message || deliveryError);
     }
     log('where', query);
+    const memContent = typeof result === 'string'
+      ? result
+      : String((result as any).content || '');
+    const memImages = typeof result === 'string' ? [] : ((result as any).images || []);
+    record(memContent || `查询了 ${query} 的玩家信息`, memImages);
     return { handled: true, replied: true, reason: 'where' };
   }
   // ── Internal engine capabilities ──
@@ -778,6 +856,7 @@ export async function handleQuickCommand(
     const parsed = parseOsuArgs(def, args);
     if (parsed.error) {
       if (sendMessage) await sendMessage(event, parsed.error);
+      record(`参数错误：${parsed.error}`);
       return { handled: true, replied: true, reason: '参数错误' };
     }
     let username = parsed.username;
@@ -791,6 +870,7 @@ export async function handleQuickCommand(
         } catch (deliveryError: any) {
           console.error('[quick] 未绑定提示发送失败:', deliveryError?.message || deliveryError);
         }
+        record(UNBOUND_TARGET_PROMPT);
         return { handled: true, replied: true, reason: 'unbound_target' };
       }
     }
@@ -801,6 +881,7 @@ export async function handleQuickCommand(
       } catch (deliveryError: any) {
         console.error('[quick] 未绑定提示发送失败:', deliveryError?.message || deliveryError);
       }
+      record(UNBOUND_SELF_PROMPT);
       return { handled: true, replied: true, reason: 'unbound_self' };
     }
     const botId = def.source === 'kanon'
@@ -828,6 +909,7 @@ export async function handleQuickCommand(
       );
     } catch (error: any) {
       if (sendMessage) await sendMessage(event, String(error?.message || error));
+      record(`查询失败：${String(error?.message || error)}`);
       return { handled: true, replied: true, reason: `${def.capability}_error` };
     }
     try {
@@ -836,6 +918,11 @@ export async function handleQuickCommand(
       console.error(`[quick] ${def.id} 发送失败（面板可能已发出）:`, deliveryError?.message || deliveryError);
     }
     log(def.capability, username || '(self)');
+    const memContent = typeof result === 'string'
+      ? result
+      : String((result as any).content || '');
+    const memImages = typeof result === 'string' ? [] : ((result as any).images || []);
+    record(memContent || `${def.capability} 查询完成（结果见图片）`, memImages);
     return { handled: true, replied: true, reason: def.capability };
   }
 
