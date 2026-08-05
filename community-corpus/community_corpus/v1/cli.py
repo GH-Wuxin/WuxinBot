@@ -30,8 +30,13 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--review-seed",
         type=int,
-        default=20260806,
+        default=20260807,
         help="deterministic seed for the 300-window manual review sample (new seed per round)",
+    )
+    parser.add_argument(
+        "--no-full-pii",
+        action="store_true",
+        help="skip the full-corpus PII scan in the final precheck",
     )
     parser.add_argument("--out-dir", type=pathlib.Path, default=None, help="output root (default: package root)")
     parser.add_argument("--salt-file", type=pathlib.Path, default=None, help="HMAC salt file (reuses V0 .salt)")
@@ -90,7 +95,7 @@ def main(argv: list[str] | None = None) -> int:
         cfg.output_dir / "windows" / "v1" / "windows.parquet",
         None,
         cfg.normalized_dir / "full" / "messages.parquet",
-        full_scan=False,
+        full_scan=not args.no_full_pii,
     )
     (cfg.reports_dir / "manual-review-v1-precheck.json").write_text(
         json.dumps(precheck, ensure_ascii=False, indent=2),

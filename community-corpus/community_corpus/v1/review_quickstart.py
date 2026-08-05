@@ -11,6 +11,7 @@ Output: reports/manual-review-v1-quickstart.md
 from __future__ import annotations
 
 import argparse
+import collections
 import json
 import pathlib
 import re
@@ -80,7 +81,7 @@ def build_quickstart(
     lines_out: list[str] = []
     lines_out.append("# V1 人工审核快速指引")
     lines_out.append("")
-    lines_out.append(f"样本：300 个窗口（{len(rows)} 行记录），固定种子 20260805。")
+    lines_out.append(f"样本：300 个窗口（{len(rows)} 行记录），固定种子 20260807。")
     lines_out.append("")
     lines_out.append("## 审核方式")
     lines_out.append("")
@@ -94,19 +95,34 @@ def build_quickstart(
     lines_out.append(
         "3. 末尾五列打分：understandable / effective_interaction / "
         "trigger_reply_correct 填 1 或 0；bot_system_spam_only 和 privacy_leak "
-        "正常填 0；notes 可写备注。"
+        "正常填 0；notes 可写备注。质量列仅作 V2 style_ready 人工批准的参考，"
+        "不再作为 V1 通过/失败条件。"
     )
     lines_out.append("")
-    lines_out.append("## 验收标准（300 条统计口径）")
+    lines_out.append("## 验收标准")
     lines_out.append("")
-    lines_out.append("- 可独立理解（understandable=1）占比 >= 80%")
-    lines_out.append("- 有效互动（effective_interaction=1）占比 >= 75%")
-    lines_out.append("- 触发/回复关系正确（trigger_reply_correct=1）占比 >= 95%")
-    lines_out.append("- 纯 bot/系统/刷屏窗口（bot_system_spam_only=1）占比 <= 5%")
-    lines_out.append("- 高风险隐私泄露（privacy_leak=1）必须为 0")
+    lines_out.append("- 唯一一票否决：隐私泄露（privacy_leak=1）必须为 0。")
+    lines_out.append(
+        "- 审核导出只应包含脱敏文本；发现任何 QQ/手机/邮箱/群号/token/邀请码/"
+        "原始昵称/真实姓名/Discord/转发作者名，都算失败。"
+    )
+    lines_out.append(
+        "- 普通窗口质量（可独立理解/有效互动/触发关系/纯 bot 占比）不再作为"
+        "V1 门槛；媒体依赖、短回复、Bot 参与、话题跳跃都是真实群聊的正常组成。"
+    )
     lines_out.append("")
-    lines_out.append("## 当前样本统计（供参考，不替代人工判定）")
+    lines_out.append("## 当前样本分层（供参考）")
     lines_out.append("")
+    tier_counts: dict[str, int] = collections.Counter(
+        r.get("usage_tier", "") for r in rows
+    )
+    lines_out.append(f"- style_ready：{tier_counts.get('style_ready', 0)}")
+    lines_out.append(f"- contextual_style：{tier_counts.get('contextual_style', 0)}")
+    lines_out.append(f"- ambient_chat：{tier_counts.get('ambient_chat', 0)}")
+    lines_out.append(f"- bot_interaction：{tier_counts.get('bot_interaction', 0)}")
+    lines_out.append(
+        f"- private_or_rejected：{tier_counts.get('private_or_rejected', 0)}"
+    )
     lines_out.append(
         f"- 高风险窗口：{len(high_risk)} 条（已全部纳入，必须逐条确认隐私泄露=0）"
     )
