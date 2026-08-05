@@ -46,10 +46,13 @@ USAGE_TIERS = frozenset(
 )
 
 _COMMAND_RE = re.compile(
-    r"(?i)^[\s]*[!/！](?:[A-Za-z0-9_]+|[\u4e00-\u9fa5]+)"
-    r"|^[\s]*[~～][\u4e00-\u9fa5A-Za-z0-9_]+"
+    r"(?i)^[\s]*[!/！]\s*(?:[A-Za-z0-9_]+|[\u4e00-\u9fa5]+)"
+    r"|^[\s]*[~～]\s*[\u4e00-\u9fa5A-Za-z0-9_]+"
     r"|^(?:查|查询|绑定|解绑|签到|早安|晚安|今日运势|汇率)\S*"
     r"|^@<MENTION>"
+)
+_FORWARD_BLOCK_RE = re.compile(
+    r"\[(?:转发消息|Forwarded Messages)\s*[:：]\s*\d+\s*条?\]"
 )
 _TOKEN_WORD_RE = re.compile(r"[a-z]{3,}")
 _CJK_RE = re.compile(r"[\u4e00-\u9fa5]")
@@ -181,6 +184,23 @@ def _classify_tier(
     windows with enough anchor become ``style_ready``; the rest of the real
     chat fragments become ``ambient_chat``.
     """
+    def human_content(m: dict[str, Any]) -> bool:
+        if m["is_bot"] or m["is_system"] or m["bot_output_like"]:
+            return False
+        t = (m["text_clean"] or "").strip()
+        return bool(t and not _is_pure_emoji(m)) or bool(m["has_media"])
+
+    def bot_content(m: dict[str, Any]) -> bool:
+        if m["is_system"]:
+            return False
+        t = (m["text_clean"] or "").strip()
+        return bool(t and not _is_pure_emoji(m)) and (
+            m["is_bot"] or m["bot_output_like"]
+        )
+
+    def has_forward_block(m: dict[str, Any]) -> bool:
+        return bool(_FORWARD_BLOCK_RE.search(m["text_clean"] or ""))
+
     if privacy_risk == "high" or "private_content" in pii_types:
         return TIER_PRIVATE_REJECTED
     has_bot = any(
@@ -190,13 +210,20 @@ def _classify_tier(
         not m["is_bot"] and not m["is_system"] and _is_command(m)
         for m in window_msgs
     )
-    if has_bot or has_cmd:
-        return TIER_BOT_INTERACTION
+    has_human_content = any(human_content(m) for m in window_msgs)
+    has_bot_content = any(bot_content(m) for m in window_msgs)
     if _is_spam(window_msgs):
         return TIER_PRIVATE_REJECTED
-    if not any(not m["is_bot"] and not m["is_system"] for m in window_msgs):
+    if has_bot or has_cmd:
+        if not has_human_content and not has_bot_content and not has_cmd:
+            # pure system notification / empty noise
+            return TIER_PRIVATE_REJECTED
+        return TIER_BOT_INTERACTION
+    if not has_human_content:
         return TIER_PRIVATE_REJECTED
     if media_dependent or any(m["has_media"] for m in window_msgs):
+        return TIER_CONTEXTUAL_STYLE
+    if any(has_forward_block(m) for m in window_msgs):
         return TIER_CONTEXTUAL_STYLE
     if not _has_sufficient_anchor(window_msgs):
         return TIER_AMBIENT_CHAT

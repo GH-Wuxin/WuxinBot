@@ -17,11 +17,22 @@ import csv
 import datetime
 import json
 import pathlib
+import re
 import sys
 
 from openpyxl import Workbook
 from openpyxl.styles import Alignment, Font, PatternFill
 from openpyxl.utils import get_column_letter
+
+
+_ILLEGAL_XML_RE = re.compile(r"[\x00-\x08\x0B\x0C\x0E-\x1F]")
+
+
+def _clean_cell(value: object) -> object:
+    """Strip control characters that openpyxl rejects in worksheet cells."""
+    if isinstance(value, str):
+        return _ILLEGAL_XML_RE.sub("", value)
+    return value
 
 
 ACCEPTANCE_COLUMNS = [
@@ -166,29 +177,32 @@ def _row_values(
 ) -> list:
     bot, system, human_text = _line_counts(r["window_id"], annotated_lines)
     return [
-        r["window_id"],
-        _utc(r["start_timestamp"]),
-        r.get("usage_tier", ""),
-        r.get("overlap_cluster_id", ""),
-        r["window_type"],
-        r["text_sanitized"],
-        annotated.get(r["window_id"], ""),
-        r["group_id_hash"],
-        r["session_id"],
-        r["split"],
-        r["speaker_count"],
-        r["char_count"],
-        r["osu_keyword_count"],
-        "1" if r["has_media"] else "0",
-        "1" if r["media_dependent"] else "0",
-        r["privacy_risk"],
-        "|".join(r["pii_types"]),
-        bot,
-        system,
-        human_text,
-        "1" if bot > 0 else "0",
-        "1" if bot == 0 and system == 0 else "0",
-        *([""] * len(ACCEPTANCE_COLUMNS)),
+        _clean_cell(v)
+        for v in [
+            r["window_id"],
+            _utc(r["start_timestamp"]),
+            r.get("usage_tier", ""),
+            r.get("overlap_cluster_id", ""),
+            r["window_type"],
+            r["text_sanitized"],
+            annotated.get(r["window_id"], ""),
+            r["group_id_hash"],
+            r["session_id"],
+            r["split"],
+            r["speaker_count"],
+            r["char_count"],
+            r["osu_keyword_count"],
+            "1" if r["has_media"] else "0",
+            "1" if r["media_dependent"] else "0",
+            r["privacy_risk"],
+            "|".join(r["pii_types"]),
+            bot,
+            system,
+            human_text,
+            "1" if bot > 0 else "0",
+            "1" if bot == 0 and system == 0 else "0",
+            *([""] * len(ACCEPTANCE_COLUMNS)),
+        ]
     ]
 
 

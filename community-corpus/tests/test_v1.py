@@ -15,7 +15,7 @@ import pyarrow.parquet as pq
 from community_corpus.adapters import clean_text, parse_qce_line
 from community_corpus.config import Config
 from community_corpus.v1.full_import import find_source_exports, run_full_import
-from community_corpus.v1.full_import import is_bot_output_like
+from community_corpus.v1.full_import import BOT_UINS, is_bot_output_like
 from community_corpus.v1.reader import load_sender_names
 from community_corpus.v1.report_v1 import sample_manual_review, write_manual_review
 from community_corpus.v1.review_annotate import _message_index, annotate_window, render_annotated_lines
@@ -406,6 +406,56 @@ class V1PipelineTest(unittest.TestCase):
         self.assertIn("<INVITE>", text)
         self.assertIn("invite", types)
 
+        for invite_link in (
+            "https://oopz.cn/i/jUg00i",
+            "https://discord.gg/AbCdEfG",
+            "https://kook.app/invite/AbCdEfG",
+            "https://kookapp.cn/invite/AbCdEfG",
+        ):
+            text, types, _, _ = sanitize_text(invite_link, {})
+            self.assertNotIn(invite_link, text)
+            self.assertIn("<INVITE>", text)
+            self.assertIn("invite", types)
+
+    def test_sanitize_bare_qq_number_keeps_public_url_numbers(self):
+        for raw, secret in (
+            ("S2 712531032", "712531032"),
+            ("群的话是这个 1039477458，进来别骂我菜", "1039477458"),
+            ("绑定到 948117351 上！", "948117351"),
+            ("!ymra 121189283", "121189283"),
+        ):
+            text, types, _, _ = sanitize_text(raw, {})
+            self.assertNotIn(secret, text)
+            self.assertIn("<QQ_NUMBER>", text)
+            self.assertIn("qq", types)
+
+        # public web/score ids embedded in URL paths must survive
+        for raw, keep in (
+            ("https://osu.ppy.sh/scores/6082266269", "6082266269"),
+            ("https://live.bilibili.com/1714609201", "1714609201"),
+            ("https://www.pixiv.net/i/142389334", "142389334"),
+        ):
+            text, types, _, _ = sanitize_text(raw, {})
+            self.assertIn(keep, text)
+            self.assertNotIn("qq", types)
+
+        # currency-style numbers with units/decimal parts must survive
+        for raw, keep in (
+            ("汇率2147483648usd", "2147483648usd"),
+            ("CNY 470548.48", "470548.48"),
+        ):
+            text, types, _, _ = sanitize_text(raw, {})
+            self.assertIn(keep, text)
+            self.assertNotIn("qq", types)
+
+        # inviterUid is a private URL param and must be redacted
+        text, types, _, _ = sanitize_text(
+            "https://example.com/invite?inviterUid=275180748&from=group", {}
+        )
+        self.assertNotIn("275180748", text)
+        self.assertIn("<INVITE>", text)
+        self.assertIn("invite", types)
+
     def test_sanitize_empty_profile_field_and_bracket_mention(self):
         text, types, _, _ = sanitize_text("Interests:\nS1 怎么又掉出5w了", {})
         self.assertIn("Interests:", text)
@@ -489,7 +539,7 @@ class V1PipelineTest(unittest.TestCase):
                     "media_dependent": False,
                     "privacy_risk": "low",
                     "pii_types": [],
-                    "text_sanitized": "S1 hi\nS2 hello",
+                    "text_sanitized": "S1 hi\nS2 hello\x14",
                 },
                 ensure_ascii=False,
             )
@@ -568,7 +618,43 @@ class V1PipelineTest(unittest.TestCase):
         self.assertIn("高风险", text)
 
     def test_bot_output_like(self):
+        for uin in (
+            "1708547915",  # 忧郁小猫猫
+            "1902931474",  # KQN
+            "3311470495",  # 天使果果喵
+            "3145729213",  # 雨沐 (临时运行)
+            "3889016014",  # 雨沐 (原版)
+            "2818054860",  # 小幽幽子
+            "3889001246",  # 幽幽子
+            "3929371650",  # Nikaidou Shinku
+            "1750011571",  # ATRI1024
+            "1078589506",  # 全自助火化机
+            "814992458",  # 遠野幻想物語
+            "1335734629",  # 白菜V2.1 (recent-score card bot)
+            "1020640876",  # 白菜V2.1 (binding error bot)
+            "2225126759",  # Lazybot测试机
+        ):
+            self.assertIn(uin, BOT_UINS)
         self.assertTrue(is_bot_output_like("Miku的个人信息—osu!\n\n5025.66pp 表现\n#12345"))
+        self.assertTrue(is_bot_output_like("ElicyAnn的个人信息—mania\n\n7832.35pp 表现\n#9197"))
+        self.assertTrue(is_bot_output_like("box1n的个人信息—taiko\n\n1358.26pp 表现\n#28871"))
+        self.assertTrue(
+            is_bot_output_like(
+                "Hinanawi Tenshi 与 Firika 的 replay 轨迹\n相似度: 0.88%"
+            )
+        )
+        self.assertTrue(
+            is_bot_output_like(
+                "S2 与 [SHK]qazoop 的 replay 检测\n相似度: -17.31%"
+            )
+        )
+        self.assertTrue(is_bot_output_like("少女祈祷中..."))
+        self.assertTrue(
+            is_bot_output_like(
+                "主要数据已更新完毕，pp+数据正在后台更新，请稍后使用info功能查看结果。"
+            )
+        )
+        self.assertTrue(is_bot_output_like("pr1mary头像已更新"))
         self.assertTrue(is_bot_output_like("查@某人 结果：Someone的个人信息—osu!\n\n0pp"))
         self.assertTrue(is_bot_output_like("wilson1125的bp类型\nAim:26.01% (23张)"))
         self.assertTrue(is_bot_output_like("正在获取pp+数据，请稍等。。"))
@@ -673,6 +759,14 @@ class V1PipelineTest(unittest.TestCase):
         ]
         self.assertEqual(_classify_tier(bot_cmd, False, [], "low"), TIER_BOT_INTERACTION)
 
+        spaced_cmd = [
+            row("a", "! rs", "s1"),
+            row("b", "官网链接：https://osu.ppy.sh/b/5405851\n模式：Standard", "s2"),
+        ]
+        self.assertEqual(
+            _classify_tier(spaced_cmd, False, [], "low"), TIER_BOT_INTERACTION
+        )
+
         spam = [
             row("a", "牛的", "s1"),
             row("b", "牛的", "s2"),
@@ -687,6 +781,43 @@ class V1PipelineTest(unittest.TestCase):
         self.assertEqual(
             _classify_tier(high_risk, False, ["phone"], "high"),
             TIER_PRIVATE_REJECTED,
+        )
+
+        sys_only = [
+            row("a", "系统提示", "sys", system=True),
+            row("b", "", "sys2", system=True),
+        ]
+        self.assertEqual(
+            _classify_tier(sys_only, False, [], "low"), TIER_PRIVATE_REJECTED
+        )
+
+        sys_with_human = [
+            row("a", "系统提示", "sys", system=True),
+            row("b", "我也觉得", "s1"),
+        ]
+        self.assertEqual(
+            _classify_tier(sys_with_human, False, [], "low"),
+            TIER_BOT_INTERACTION,
+        )
+
+        bot_with_spam_reactions = [
+            row("a", "！pr", "s1"),
+            row("b", "牛的", "s2"),
+            row("c", "牛的", "s3"),
+            row("d", "牛的", "s4"),
+        ]
+        self.assertEqual(
+            _classify_tier(bot_with_spam_reactions, False, [], "low"),
+            TIER_PRIVATE_REJECTED,
+        )
+
+        forward_block = [
+            row("a", "竹姐好忙", "s1"),
+            row("b", "[转发消息: 6条]\n  <NICK>: [图片]\n  <NICK>: [图片]", "s2"),
+        ]
+        self.assertEqual(
+            _classify_tier(forward_block, False, [], "low"),
+            TIER_CONTEXTUAL_STYLE,
         )
 
     def test_security_fixtures_all_redacted(self):
@@ -852,6 +983,9 @@ class V1PipelineTest(unittest.TestCase):
         self.assertEqual(ws.max_row, 2)
         self.assertEqual(ws["A1"].value, "窗口ID")
         self.assertEqual(ws.freeze_panes, "A2")
+        cell = ws["F2"].value
+        self.assertIn("S2 hello", cell)
+        self.assertNotIn("\x14", cell)
 
 
 if __name__ == "__main__":
