@@ -111,7 +111,7 @@ V0 的 `normalized/messages.parquet` 保持冻结，不被 V1 覆盖。
 ```text
 normalized/full/messages.parquet   全量消息（1,279,462 行，3 群）
 normalized/full/sessions.parquet   会话（8 分钟间隔，31392 个）
-windows/v1/windows.parquet         窗口（498385 个，去重后含 dataset 分类）
+windows/v1/windows.parquet         窗口（547946 个，含 usage_tier 与 overlap_cluster_id）
 reports/full-import-report.json    全量导入报告（消息/类型/时间/reply/媒体/Bot/PII/失败）
 reports/window-report-v1.json      全量统计报告
 reports/manual-review-v1.jsonl     固定种子人工抽查样本（300 条）
@@ -122,7 +122,7 @@ reports/manual-review-v1-annotated.jsonl
 reports/manual-review-v1-review-sheet.xlsx
                                   易读审核表（冻结表头/自动筛选/中文列名）
 reports/manual-review-v1-precheck.json
-                                  300 条自动预检（隐私/重叠/媒体锚点/刷屏）
+                                  300 条自动预检（隐私一票否决 + 分层/簇完整性）
 ```
 
 ## 运行
@@ -131,6 +131,7 @@ reports/manual-review-v1-precheck.json
 python -m community_corpus.v1.cli \
   --sources "%USERPROFILE%\.qq-chat-exporter\exports" \
   --seed 20260805 \
+  --review-seed 20260807 \
   --salt-file REDACTED_REPO_ROOT\community-corpus\.salt
 ```
 
@@ -141,16 +142,20 @@ python -m community_corpus.v1.cli \
 2. 会话：组内按时间排序，间隔 >8 分钟切新会话；超长会话按 250 条分段；
    跨会话 reply 引用补进 `context_message_ids`。
 3. 窗口：先按话题边界切段，段内取最大合法窗口（3-12 条），再按
-   `dataset` 分流为四类：
-   - `community`：可独立理解的真人社区对话（人工审核抽样池）；
-   - `bot_operation`：命令 + Bot 输出（指令行为数据，不进社区语感候选）；
-   - `media_reaction`：媒体触发且有足够文字锚点的反应窗口；
-   - `rejected_candidate`：无文字锚点/纯复读/不符合语料门槛的窗口。
+   `usage_tier` 分为五层：
+   - `style_ready`：文本本身足够理解，可直接用于社区语感 RAG；
+   - `contextual_style`：有社区表达价值，但依赖图片/Bot 结果/额外上下文；
+   - `bot_interaction`：命令、查分结果、Bot 回复及其后续人类反应；
+   - `ambient_chat`：群聊碎片、短反应、接梗和多话题环境；
+   - `private_or_rejected`：隐私/高风险/广告/无意义刷屏，不进入生产。
    `temporal_burst` 不再按固定 8 分钟平移拼接；命令与 Bot/系统输出强制断段；
-   高度重叠窗口按 message_ids Jaccard / trigger+时间+内容近似度去重。
+   高度重叠窗口不删除，按 message_ids Jaccard / trigger+时间+内容近似度生成
+   `overlap_cluster_id`（检索侧同一簇最多返回一条，见
+   `retrieval_dedupe_windows`）。
    窗口内仅保留 `text_sanitized`；`text_raw` 只用于本地溯源。
-4. 匿名化：QQ/手机/邮箱/IP/邀请链接/凭据/身份证/银行卡/昵称/@提及/位置
-   替换为占位符；pp/rank/acc/beatmap 等 osu 数字与术语不误删。
+4. 匿名化：QQ/手机/邮箱/IP/邀请链接/凭据/私有 URL 参数/身份证/银行卡/
+   昵称/实名自述/@提及/位置/Discord 等 profile 字段/转发作者名替换为占位符；
+   pp/rank/acc/beatmap 等 osu 数字与术语不误删。
 5. 分区：按群内会话时间顺序 70/15/15 切 train/review/eval，会话不跨分区，
    高重叠窗口必然同分区。
 
@@ -160,24 +165,25 @@ python -m community_corpus.v1.cli \
   （抽查 1000 个引用，0 个存在于原始导出），因此 `reply_chain` 窗口数为 0。
   报告中的 `dataGaps` 记录该缺口；若后续补充更完整的导出，此类型窗口
   可直接产出，无需改代码。
-- 媒体依赖窗口：`media_dependent` 且无足够文字锚点的窗口不再进入
-  community 候选集，而是分流到 `media_reaction` / `rejected_candidate`；
-  训练时建议保留媒体占位提示。
+- 媒体依赖窗口：约 55% 的窗口依赖图片/视频触发。媒体依赖不等于 rejected，
+  统一归入 `contextual_style`；训练/检索时建议保留媒体占位提示。
 
 ## V1 验收口径
 
-- 约 128 万条消息全部处理，解析失败 0；窗口 533,347 → 去重 34,962 →
-  498,385（Jaccard 去重 30,440 + trigger/时间/文本去重 4,522）；
+- 约 128 万条消息全部处理，解析失败 0；窗口共 547,946（精确重复剔除 4,210；
+  高度重叠不删除，37,196 个重叠簇覆盖 82,941 个窗口）；
+- 分层规模：style_ready 24,059 / contextual_style 238,690 /
+  bot_interaction 194,872 / ambient_chat 1,257 / private_or_rejected 89,068；
 - 全部窗口可经 `source_refs` 回溯到原始 JSONL 行（已抽查 5000 条，0 失败）；
 - 窗口 `text_sanitized` 无手机/邮箱/IP/凭据/身份证/银行卡/QQ 号/邀请链接
-  残留（全量扫描 0 命中）；
-- bot 输出型窗口 23,266 个（4.67%），已分流到 `bot_operation` 数据集，
+  残留（全量双引擎扫描 0 命中）；
+- bot 输出型窗口 23,267 个（4.24%），已分流到 `bot_interaction` 层，
   审核表 `annotated_lines` 中标为 `[bot]`；
-- 300 条审核样本自动预检：0 隐私泄露、0 重叠窗口、0 无锚点媒体窗口、
-  纯 bot/系统/刷屏占比 0%（全量双引擎 PII 扫描亦 0 命中）；
+- 300 条审核样本自动预检全部通过：0 隐私泄露（样本与全量）、0 审核表泄露、
+  0 分层缺失、0 簇缺失、0 样本簇重复、0 溯源缺失；
 - 同一输入 + seed 输出完全一致（测试覆盖 fixture，全量亦无随机源）；
-- 300 条人工抽查由人审读：独立可理解率、有效互动率、触发/回复正确率、
-  纯 bot/系统/刷屏占比、高风险隐私泄露，均以人审结果为准。
+- 隐私与安全是唯一一票否决；普通窗口质量（可独立理解/有效互动/触发关系/
+  纯 bot 占比）仅作 V2 style_ready 人工批准参考，不再作为 V1 门槛。
 
 ## 人工审核表
 
@@ -193,9 +199,10 @@ python -m community_corpus.v1.review_sheet \
   --output reports/manual-review-v1-review-sheet.csv
 ```
 
-CSV 每行一个窗口，末尾带五项验收打分列（understandable、
-effective_interaction、trigger_reply_correct、bot_system_spam_only、
-privacy_leak）和 notes；仅由 JSONL 派生，不改变样本本体。
+CSV/XLSX 每行一个窗口，含 usage_tier / overlap_cluster_id，末尾带五项
+参考打分列（understandable、effective_interaction、
+trigger_reply_correct、bot_system_spam_only、privacy_leak）和 notes；
+仅由 JSONL 派生，不改变样本本体。其中只有 privacy_leak 是一票否决项。
 
 ```bash
 python -m community_corpus.v1.review_quickstart \

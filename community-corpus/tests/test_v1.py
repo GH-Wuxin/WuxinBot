@@ -17,24 +17,28 @@ from community_corpus.config import Config
 from community_corpus.v1.full_import import find_source_exports, run_full_import
 from community_corpus.v1.full_import import is_bot_output_like
 from community_corpus.v1.reader import load_sender_names
-from community_corpus.v1.report_v1 import sample_manual_review
+from community_corpus.v1.report_v1 import sample_manual_review, write_manual_review
 from community_corpus.v1.review_annotate import _message_index, annotate_window, render_annotated_lines
 from community_corpus.v1.review_quickstart import build_quickstart
 from community_corpus.v1.review_sheet import build_sheet, build_sheet_xlsx
 from community_corpus.v1.sanitize import sanitize_text
+from community_corpus.v1.security_fixtures import get_security_fixtures
 from community_corpus.v1.sessions import build_sessions
 from community_corpus.v1.splits import apply_splits, session_splits
 from community_corpus.v1.windows import (
-    DATASET_BOT_OPERATION,
-    DATASET_COMMUNITY,
-    DATASET_MEDIA_REACTION,
-    DATASET_REJECTED_CANDIDATE,
+    TIER_STYLE_READY,
+    TIER_CONTEXTUAL_STYLE,
+    TIER_BOT_INTERACTION,
+    TIER_AMBIENT_CHAT,
+    TIER_PRIVATE_REJECTED,
+    USAGE_TIERS,
     build_windows,
-    _classify_dataset,
+    _classify_tier,
     finalize_window_texts,
     write_windows,
 )
-from community_corpus.v1.windows import _dedupe_near_duplicates
+from community_corpus.v1.windows import _cluster_overlapping_windows, retrieval_dedupe_windows
+from community_corpus.v1.review_precheck import run_precheck, _scan_pii
 
 FIXTURES = pathlib.Path(__file__).parent / "fixtures" / "v1"
 SOURCES = [str(FIXTURES / "group_test_200_20260805_000000_chunked_jsonl"), str(FIXTURES / "group_test_201_20260805_000000_chunked_jsonl")]
@@ -285,10 +289,14 @@ class V1PipelineTest(unittest.TestCase):
         for sid, splits in split_by_session.items():
             self.assertEqual(len(splits), 1, f"session {sid} spans splits {splits}")
 
-    def test_near_duplicate_windows_removed(self):
+    def test_near_duplicate_windows_clustered(self):
         _, _, _, windows, _ = run_v1(self.tmp)
-        by_session: dict[str, list[dict]] = {}
         for w in windows:
+            self.assertTrue(w["overlap_cluster_id"])
+            self.assertIn(w["usage_tier"], USAGE_TIERS)
+        deduped = retrieval_dedupe_windows(windows)
+        by_session: dict[str, list[dict]] = {}
+        for w in deduped:
             by_session.setdefault(w["session_id"], []).append(w)
         pairs = 0
         for session_windows in by_session.values():
@@ -300,7 +308,7 @@ class V1PipelineTest(unittest.TestCase):
                         pairs += 1
         self.assertEqual(pairs, 0)
 
-    def test_dedupe_keeps_longest_representative(self):
+    def test_cluster_representative_is_longest(self):
         def w(i: int, mids: list[str], start: int) -> dict:
             return {
                 "window_id": f"W{i:08d}",
@@ -317,8 +325,22 @@ class V1PipelineTest(unittest.TestCase):
             w(1, ["a", "b", "c"], 100),
             w(2, ["x", "y", "z"], 200),
         ]
-        kept, removed, stats = _dedupe_near_duplicates(windows)
-        self.assertEqual(removed, 1)
+        clustered, stats = _cluster_overlapping_windows(windows)
+        self.assertEqual(len(clustered), 3)  # nothing is deleted
+        self.assertEqual(stats["cluster_count"], 1)
+        self.assertEqual(stats["clustered_window_count"], 2)
+        self.assertEqual(stats["max_cluster_size"], 2)
+        self.assertEqual(
+            clustered[0]["overlap_cluster_id"],
+            clustered[1]["overlap_cluster_id"],
+        )
+        self.assertTrue(clustered[0]["overlap_cluster_representative"])
+        self.assertFalse(clustered[1]["overlap_cluster_representative"])
+        self.assertNotEqual(
+            clustered[0]["overlap_cluster_id"],
+            clustered[2]["overlap_cluster_id"],
+        )
+        kept = retrieval_dedupe_windows(clustered)
         self.assertEqual([x["window_id"] for x in kept], ["W00000000", "W00000002"])
         self.assertEqual(sum(stats["reasons"].values()), 1)
 
@@ -434,7 +456,8 @@ class V1PipelineTest(unittest.TestCase):
                 {
                     "window_id": f"W{i:08d}",
                     "window_type": "temporal_burst",
-                    "dataset": "community",
+                    "usage_tier": "style_ready",
+                    "overlap_cluster_id": f"W{i:08d}",
                     "group_id_hash": "g1",
                     "session_id": "g1-s000001",
                     "start_timestamp": 1785400000000 + i,
@@ -453,6 +476,8 @@ class V1PipelineTest(unittest.TestCase):
                 {
                     "window_id": "W00000001",
                     "window_type": "temporal_burst",
+                    "usage_tier": "style_ready",
+                    "overlap_cluster_id": "W00000001",
                     "group_id_hash": "g1",
                     "session_id": "g1-s000001",
                     "split": "train_candidate",
@@ -476,6 +501,8 @@ class V1PipelineTest(unittest.TestCase):
         self.assertEqual(n, 1)
         text = out.read_text(encoding="utf-8-sig")
         self.assertIn("window_id", text)
+        self.assertIn("usage_tier", text)
+        self.assertIn("overlap_cluster_id", text)
         self.assertIn("understandable", text)
         self.assertIn("has_bot_output", text)
         self.assertIn("human_only", text)
@@ -491,6 +518,7 @@ class V1PipelineTest(unittest.TestCase):
             text = render_annotated_lines(lines)
             self.assertIn("S", text)
             self.assertTrue(all(l["speaker_label"] != "?" for l in lines))
+            self.assertTrue(all("sender_name" not in l for l in lines))
             if any(l["role"] == "bot" for l in lines):
                 found_bot = True
         self.assertTrue(found_bot)  # fixture u_bot is marked is_bot
@@ -557,24 +585,16 @@ class V1PipelineTest(unittest.TestCase):
         self.assertTrue(miku["bot_output_like"])
         self.assertTrue(
             any(
-                w["dataset"] == DATASET_BOT_OPERATION
+                w["usage_tier"] == TIER_BOT_INTERACTION
                 and any(m["message_id"] == "2031" for m in w["_messages"])
                 for w in windows
             )
         )
 
-    def test_window_datasets_assigned(self):
+    def test_window_tiers_assigned(self):
         _, _, _, windows, _ = run_v1(self.tmp)
-        datasets = {w["dataset"] for w in windows}
-        self.assertTrue(
-            datasets
-            <= {
-                DATASET_COMMUNITY,
-                DATASET_BOT_OPERATION,
-                DATASET_MEDIA_REACTION,
-                DATASET_REJECTED_CANDIDATE,
-            }
-        )
+        tiers = {w["usage_tier"] for w in windows}
+        self.assertTrue(tiers <= USAGE_TIERS)
 
     def test_spam_media_window_rejected(self):
         def row(mid: str, text: str, has_media: bool = False) -> dict:
@@ -604,7 +624,193 @@ class V1PipelineTest(unittest.TestCase):
             row("c", "牛的"),
             row("d", "牛的"),
         ]
-        self.assertEqual(_classify_dataset(spam), DATASET_REJECTED_CANDIDATE)
+        self.assertEqual(_classify_tier(spam, True, [], "low"), TIER_PRIVATE_REJECTED)
+
+    def test_usage_tier_classification(self):
+        def row(mid: str, text: str, sender: str, media: bool = False,
+                bot: bool = False, system: bool = False) -> dict:
+            return {
+                "message_id": mid,
+                "sender_id_hash": sender,
+                "timestamp": 0,
+                "seq": mid,
+                "reply_to_id": None,
+                "message_type": "text",
+                "text_raw": text,
+                "text_clean": text,
+                "has_media": media,
+                "media_type": "none",
+                "is_bot": bot,
+                "is_system": system,
+                "bot_output_like": False,
+                "source_file": "chunks/chunk_0001.jsonl",
+                "source_offset": 1,
+                "source_offset_bytes": 0,
+                "source_export": "group_x",
+            }
+
+        style = [
+            row("a", "今天这张图手感真的不错", "s1"),
+            row("b", "确实，我acc到98了", "s2"),
+        ]
+        self.assertEqual(_classify_tier(style, False, [], "low"), TIER_STYLE_READY)
+
+        media = [
+            row("a", "", "s1", media=True),
+            row("b", "牛的", "s2"),
+        ]
+        self.assertEqual(_classify_tier(media, True, [], "low"), TIER_CONTEXTUAL_STYLE)
+
+        ambient = [
+            row("a", "6", "s1"),
+            row("b", "牛的", "s2"),
+        ]
+        self.assertEqual(_classify_tier(ambient, False, [], "low"), TIER_AMBIENT_CHAT)
+
+        bot_cmd = [
+            row("a", "!pr", "s1"),
+            row("b", "Miku的个人信息—osu!\n\n5025pp", "bot", bot=True),
+        ]
+        self.assertEqual(_classify_tier(bot_cmd, False, [], "low"), TIER_BOT_INTERACTION)
+
+        spam = [
+            row("a", "牛的", "s1"),
+            row("b", "牛的", "s2"),
+            row("c", "牛的", "s3"),
+        ]
+        self.assertEqual(_classify_tier(spam, False, [], "low"), TIER_PRIVATE_REJECTED)
+
+        high_risk = [
+            row("a", "今天手感不错", "s1"),
+            row("b", "确实", "s2"),
+        ]
+        self.assertEqual(
+            _classify_tier(high_risk, False, ["phone"], "high"),
+            TIER_PRIVATE_REJECTED,
+        )
+
+    def test_security_fixtures_all_redacted(self):
+        for fx in get_security_fixtures():
+            raw = fx["raw"]
+            prepare = fx.get("prepare")
+            if prepare is not None:
+                raw = prepare(raw)
+            text, types, confidence, risk = sanitize_text(raw, {})
+            for secret in fx["must_not_contain"]:
+                self.assertNotIn(secret, text, f"{fx['name']}: {secret!r} leaked")
+            self.assertEqual(_scan_pii(text), set(), fx["name"])
+            if fx.get("expect_types"):
+                self.assertTrue(
+                    set(fx["expect_types"]) & set(types),
+                    f"{fx['name']}: expected {fx['expect_types']} in {types}",
+                )
+
+    def test_precheck_privacy_first_gates(self):
+        def window(i: int, text: str = "S1 hi\nS2 hello") -> dict:
+            return {
+                "window_id": f"W{i:08d}",
+                "usage_tier": "style_ready",
+                "overlap_cluster_id": f"W{i:08d}",
+                "overlap_cluster_representative": True,
+                "message_ids": [f"m{i}"],
+                "media_dependent": False,
+                "human_message_count": 2,
+                "bot_message_count": 0,
+                "bot_output_count": 0,
+                "privacy_risk": "low",
+                "text_sanitized": text,
+                "source_refs": "[]",
+            }
+
+        windows = [window(i) for i in range(300)]
+        table = pa.table(
+            {
+                "window_id": pa.array([w["window_id"] for w in windows], type=pa.string()),
+                "usage_tier": pa.array([w["usage_tier"] for w in windows], type=pa.string()),
+                "overlap_cluster_id": pa.array(
+                    [w["overlap_cluster_id"] for w in windows], type=pa.string()
+                ),
+                "overlap_cluster_representative": pa.array(
+                    [w["overlap_cluster_representative"] for w in windows], type=pa.bool_()
+                ),
+                "message_ids": pa.array(
+                    [w["message_ids"] for w in windows], type=pa.list_(pa.string())
+                ),
+                "media_dependent": pa.array(
+                    [w["media_dependent"] for w in windows], type=pa.bool_()
+                ),
+                "human_message_count": pa.array(
+                    [w["human_message_count"] for w in windows], type=pa.int64()
+                ),
+                "bot_message_count": pa.array(
+                    [w["bot_message_count"] for w in windows], type=pa.int64()
+                ),
+                "bot_output_count": pa.array(
+                    [w["bot_output_count"] for w in windows], type=pa.int64()
+                ),
+                "privacy_risk": pa.array(
+                    [w["privacy_risk"] for w in windows], type=pa.string()
+                ),
+                "text_sanitized": pa.array(
+                    [w["text_sanitized"] for w in windows], type=pa.string()
+                ),
+                "source_refs": pa.array(
+                    [w["source_refs"] for w in windows], type=pa.string()
+                ),
+            }
+        )
+        win_path = self.tmp / "windows.parquet"
+        pq.write_table(table, win_path)
+        review_path = self.tmp / "review.jsonl"
+        review_path.write_text(
+            "".join(
+                json.dumps(w, ensure_ascii=False) + "\n"
+                for w in windows
+            ),
+            encoding="utf-8",
+        )
+
+        result = run_precheck(
+            review_path, win_path, None, None, full_scan=False
+        )
+        self.assertTrue(result["passed"])
+        self.assertEqual(result["gates"]["privacyLeakCount"], 0)
+        self.assertEqual(result["gates"]["sampleClusterDupes"], 0)
+        self.assertEqual(result["gates"]["usageTierMissing"], 0)
+        self.assertEqual(result["gates"]["overlapClusterMissing"], 0)
+
+        # privacy is the only veto: one leaked phone number fails the gate
+        windows[0]["text_sanitized"] = "S1 hi 13800138000"
+        review_path.write_text(
+            "".join(
+                json.dumps(w, ensure_ascii=False) + "\n"
+                for w in windows
+            ),
+            encoding="utf-8",
+        )
+        result = run_precheck(review_path, win_path, None, None, full_scan=False)
+        self.assertFalse(result["passed"])
+        self.assertEqual(result["gates"]["privacyLeakCount"], 1)
+
+        # two non-high-risk windows sharing a cluster fail the review gate
+        windows[0]["text_sanitized"] = "S1 hi\nS2 hello"
+        windows[1]["overlap_cluster_id"] = windows[0]["overlap_cluster_id"]
+        table = table.set_column(
+            table.schema.get_field_index("overlap_cluster_id"),
+            "overlap_cluster_id",
+            pa.array([w["overlap_cluster_id"] for w in windows], type=pa.string()),
+        )
+        pq.write_table(table, win_path)
+        review_path.write_text(
+            "".join(
+                json.dumps(w, ensure_ascii=False) + "\n"
+                for w in windows
+            ),
+            encoding="utf-8",
+        )
+        result = run_precheck(review_path, win_path, None, None, full_scan=False)
+        self.assertFalse(result["passed"])
+        self.assertEqual(result["gates"]["sampleClusterDupes"], 1)
 
     def test_review_sheet_xlsx_written(self):
         src = self.tmp / "sample.jsonl"
@@ -615,7 +821,8 @@ class V1PipelineTest(unittest.TestCase):
                 {
                     "window_id": "W00000001",
                     "window_type": "temporal_burst",
-                    "dataset": "community",
+                    "usage_tier": "style_ready",
+                    "overlap_cluster_id": "W00000001",
                     "group_id_hash": "g1",
                     "session_id": "g1-s000001",
                     "split": "train_candidate",
