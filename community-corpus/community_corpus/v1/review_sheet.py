@@ -36,7 +36,8 @@ ACCEPTANCE_COLUMNS = [
 CSV_COLUMNS = [
     "window_id",
     "start_utc",
-    "dataset",
+    "usage_tier",
+    "overlap_cluster_id",
     "window_type",
     "text_sanitized",
     "annotated_lines",
@@ -61,7 +62,8 @@ CSV_COLUMNS = [
 XLSX_HEADERS = [
     "窗口ID",
     "开始时间(UTC)",
-    "数据集",
+    "使用分层",
+    "重叠簇ID",
     "窗口类型",
     "脱敏文本",
     "逐行标注",
@@ -91,6 +93,7 @@ XLSX_HEADERS = [
 XLSX_WIDTHS = [
     14,
     20,
+    18,
     16,
     18,
     80,
@@ -165,7 +168,8 @@ def _row_values(
     return [
         r["window_id"],
         _utc(r["start_timestamp"]),
-        r.get("dataset", ""),
+        r.get("usage_tier", ""),
+        r.get("overlap_cluster_id", ""),
         r["window_type"],
         r["text_sanitized"],
         annotated.get(r["window_id"], ""),

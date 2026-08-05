@@ -1,13 +1,18 @@
 """Automatic pre-check for the V1 manual-review sample.
 
-Checks the acceptance gates that can be verified deterministically before
-human review:
+Acceptance is privacy-first: the only veto is raw PII leaking into any
+production candidate, review sheet, log or export. Window "quality" is
+informational only (tiers, bot share, media anchor) and no longer gates the
+pipeline.
 
-1. sample size / dataset pool (community only);
-2. pure bot/system/spam candidates <= 5%;
-3. high-risk privacy leaks == 0 (full corpus optional via --full);
-4. highly overlapping sample windows == 0;
-5. media-dependent windows without text anchor == 0.
+Deterministic gates:
+1. sample size == 300;
+2. zero PII hits in the sample sanitized text and in annotated exports;
+3. every sample window carries a valid ``usage_tier`` and ``overlap_cluster_id``;
+4. no two non-high-risk sample windows share an overlap cluster (retrieval
+   pollution control for the review round; the full corpus keeps clusters);
+5. every sample window remains traceable via ``source_refs``;
+6. optional full-corpus PII scan must be clean (--full).
 
 Output: reports/manual-review-v1-precheck.json
 """
@@ -30,7 +35,7 @@ from .sanitize import (
     _CREDENTIAL_URL_RE,
     _EMAIL_RE,
     _ID_CARD_RE,
-    _INVITE_PARAM_RE,
+    _UNIQUE_PARAM_RE,
     _INVITE_RE,
     _IP_RE,
     _LOCATION_RE,
@@ -39,9 +44,10 @@ from .sanitize import (
     _PROFILE_FIELD_RE,
     _QQ_CONTEXT_RE,
     _QQ_GROUP_RE,
+    _REAL_NAME_RE,
     _looks_like_person_name,
 )
-from .windows import _has_sufficient_anchor, _is_spam
+from .windows import USAGE_TIERS, _has_sufficient_anchor, _is_spam
 
 
 PII_SCANNERS = [
@@ -49,7 +55,7 @@ PII_SCANNERS = [
     ("email", _EMAIL_RE),
     ("ip", _IP_RE),
     ("invite_url", _INVITE_RE),
-    ("invite_param", _INVITE_PARAM_RE),
+    ("invite_param", _UNIQUE_PARAM_RE),
     ("qq_context", _QQ_CONTEXT_RE),
     ("qq_group", _QQ_GROUP_RE),
     ("id_card", _ID_CARD_RE),
@@ -59,6 +65,7 @@ PII_SCANNERS = [
     ("card", _CARD_RE),
     ("raw_mention", _MENTION_RE),
     ("location", _LOCATION_RE),
+    ("real_name", _REAL_NAME_RE),
 ]
 
 _EXTRA_PII_RE = re.compile(
@@ -117,7 +124,9 @@ def run_precheck(
         windows_path,
         columns=[
             "window_id",
-            "dataset",
+            "usage_tier",
+            "overlap_cluster_id",
+            "overlap_cluster_representative",
             "message_ids",
             "media_dependent",
             "human_message_count",
@@ -125,6 +134,7 @@ def run_precheck(
             "bot_output_count",
             "privacy_risk",
             "text_sanitized",
+            "source_refs",
         ],
     )
     windows = {w["window_id"]: w for w in win_table.to_pylist()}
@@ -146,35 +156,60 @@ def run_precheck(
     )
     messages = {r["message_id"]: r for r in message_rows}
 
-    annotated: dict[str, list[dict]] = {}
+    annotated: dict[str, dict] = {}
     if annotated_path is not None and annotated_path.exists():
         with annotated_path.open("r", encoding="utf-8") as f:
             for line in f:
                 rec = json.loads(line)
-                annotated[rec["window_id"]] = rec.get("annotated_lines", [])
+                annotated[rec["window_id"]] = rec
 
     problems: dict[str, list[str]] = {
-        "non_community": [],
-        "bot_or_spam": [],
         "privacy": [],
-        "overlap": [],
-        "media_no_anchor": [],
+        "annotated_privacy": [],
+        "usage_tier_missing": [],
+        "overlap_cluster_missing": [],
+        "cluster_dupes": [],
+        "missing_source_refs": [],
     }
     pii_hits: collections.Counter[str] = collections.Counter()
+    annotated_pii_hits: collections.Counter[str] = collections.Counter()
+    tier_dist: collections.Counter[str] = collections.Counter()
+    bot_or_spam_count = 0
+    media_no_anchor_count = 0
+    cluster_members: dict[str, list[tuple[str, str]]] = collections.defaultdict(list)
 
     for w in sample:
         wid = w["window_id"]
         full = windows.get(wid, {})
-        dataset = full.get("dataset", w.get("dataset", ""))
-        if dataset != "community" and full.get("privacy_risk") != "high":
-            problems["non_community"].append(wid)
+        tier = full.get("usage_tier", w.get("usage_tier", ""))
+        if tier not in USAGE_TIERS:
+            problems["usage_tier_missing"].append(wid)
+        else:
+            tier_dist[tier] += 1
 
-        bot_lines = sum(1 for l in annotated.get(wid, []) if l.get("role") == "bot")
-        system_lines = sum(1 for l in annotated.get(wid, []) if l.get("role") == "system")
+        cluster_id = full.get("overlap_cluster_id") or w.get("overlap_cluster_id")
+        if not cluster_id:
+            problems["overlap_cluster_missing"].append(wid)
+        risk = full.get("privacy_risk", w.get("privacy_risk", "low"))
+        if cluster_id:
+            cluster_members[cluster_id].append((wid, risk))
+
+        refs = full.get("source_refs") or w.get("source_refs")
+        if not refs:
+            problems["missing_source_refs"].append(wid)
+
+        annotated_rec = annotated.get(wid, {})
+        annotated_lines = annotated_rec.get("annotated_lines", [])
+        bot_lines = sum(1 for l in annotated_lines if l.get("role") == "bot")
+        system_lines = sum(1 for l in annotated_lines if l.get("role") == "system")
         msgs = [messages[m] for m in (full.get("message_ids") or []) if m in messages]
         spam = bool(msgs) and _is_spam(msgs)
-        if dataset == "community" and (bot_lines > 0 or system_lines > 0 or spam):
-            problems["bot_or_spam"].append(wid)
+        if tier in (
+            "style_ready",
+            "contextual_style",
+            "ambient_chat",
+        ) and (bot_lines > 0 or system_lines > 0 or spam):
+            bot_or_spam_count += 1
 
         text = w.get("text_sanitized") or ""
         hits = _scan_pii(text)
@@ -183,17 +218,26 @@ def run_precheck(
             for h in hits:
                 pii_hits[h] += 1
 
+        annotated_texts = [annotated_rec.get("annotated_text", "")]
+        annotated_texts += [line.get("text", "") for line in annotated_lines]
+        for ltext in annotated_texts:
+            lhits = _scan_pii(ltext or "")
+            if lhits:
+                problems["annotated_privacy"].append(wid)
+                for h in lhits:
+                    annotated_pii_hits[h] += 1
+
         if full.get("media_dependent"):
             if not msgs or not _has_sufficient_anchor(msgs):
-                problems["media_no_anchor"].append(wid)
+                media_no_anchor_count += 1
 
-    # near-duplicate pairs inside the sample (Jaccard >= 0.8)
-    ids = [(w["window_id"], set(w.get("message_ids", []))) for w in sample]
-    for i in range(len(ids)):
-        for j in range(i + 1, len(ids)):
-            union = len(ids[i][1] | ids[j][1])
-            if union and len(ids[i][1] & ids[j][1]) / union >= 0.8:
-                problems["overlap"].append(f"{ids[i][0]}+{ids[j][0]}")
+    # retrieval-pollution gate for the review round: no two non-high-risk
+    # sample windows may share an overlap cluster. High-risk windows are all
+    # audited for privacy and may legitimately repeat a cluster.
+    for cid, members in cluster_members.items():
+        non_high = [wid for wid, risk in members if risk != "high"]
+        if len(non_high) > 1:
+            problems["cluster_dupes"].append(cid)
 
     # optional full-corpus PII scan
     full_pii: dict[str, int] = {}
@@ -204,36 +248,48 @@ def run_precheck(
                 full_pii[h] = full_pii.get(h, 0) + 1
 
     sample_size = len(sample)
-    community_count = sum(
+    non_private_count = sum(
         1
         for w in sample
-        if windows.get(w["window_id"], {}).get("dataset", w.get("dataset", "")) == "community"
+        if windows.get(w["window_id"], {}).get("usage_tier", w.get("usage_tier", ""))
+        in ("style_ready", "contextual_style", "ambient_chat", "bot_interaction")
     )
     bot_or_spam_ratio = (
-        round(len(problems["bot_or_spam"]) / community_count, 4) if community_count else 0
+        round(bot_or_spam_count / non_private_count, 4) if non_private_count else 0
     )
     passed = (
         sample_size == 300
-        and not problems["non_community"]
-        and bot_or_spam_ratio <= 0.05
         and not problems["privacy"]
-        and not problems["overlap"]
-        and not problems["media_no_anchor"]
+        and not problems["annotated_privacy"]
+        and not problems["usage_tier_missing"]
+        and not problems["overlap_cluster_missing"]
+        and not problems["cluster_dupes"]
+        and not problems["missing_source_refs"]
         and (not full_scan or not full_pii)
     )
     result = {
         "sampleSize": sample_size,
         "passed": passed,
         "gates": {
-            "nonCommunityOnlyHighRisk": not problems["non_community"],
-            "botSystemSpamRatio": bot_or_spam_ratio,
-            "botSystemSpamRatioLimit": 0.05,
             "privacyLeakCount": len(problems["privacy"]),
-            "overlapPairs": len(problems["overlap"]),
-            "mediaWithoutAnchor": len(problems["media_no_anchor"]),
+            "annotatedLeakCount": len(problems["annotated_privacy"]),
+            "usageTierMissing": len(problems["usage_tier_missing"]),
+            "overlapClusterMissing": len(problems["overlap_cluster_missing"]),
+            "sampleClusterDupes": len(problems["cluster_dupes"]),
+            "missingSourceRefs": len(problems["missing_source_refs"]),
+            "fullCorpusPiiHitTypes": len(full_pii),
+        },
+        "informational": {
+            "tierDistribution": dict(tier_dist),
+            "botSystemSpamRatio": bot_or_spam_ratio,
+            "mediaWithoutAnchorCount": media_no_anchor_count,
+            "overlapClusterPairsIncludingHighRisk": sum(
+                1 for members in cluster_members.values() if len(members) > 1
+            ),
         },
         "problemWindows": problems,
         "samplePiiTypes": dict(pii_hits),
+        "annotatedPiiTypes": dict(annotated_pii_hits),
         "fullCorpusPiiHits": full_pii,
     }
     return result
