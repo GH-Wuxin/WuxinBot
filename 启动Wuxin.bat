@@ -31,8 +31,8 @@ if not exist "%~dp0dist" (
     call %NPM% run build
 )
 
-:: single-instance guard
-powershell -NoProfile -ExecutionPolicy Bypass -Command "$root=[IO.Path]::GetFullPath('%~dp0').TrimEnd('\'); $running=Get-CimInstance Win32_Process -ErrorAction SilentlyContinue | Where-Object { $_.Name -eq 'node.exe' -and $_.CommandLine -and $_.CommandLine.IndexOf($root, [StringComparison]::OrdinalIgnoreCase) -ge 0 } | Select-Object -First 1; if($running){ exit 10 }"
+:: single-instance guard (real backend: port 8787 or server/index.ts process)
+powershell -NoProfile -ExecutionPolicy Bypass -Command "$up=[bool](Get-NetTCPConnection -State Listen -LocalPort 8787 -ErrorAction SilentlyContinue); $proc=Get-CimInstance Win32_Process -ErrorAction SilentlyContinue | Where-Object { $_.Name -eq 'node.exe' -and $_.CommandLine -and $_.CommandLine -match 'server[/\\]index\.ts' } | Select-Object -First 1; if($up -or $proc){ exit 10 }"
 if errorlevel 10 (
     echo [i] Wuxin is already running. No second instance was started.
     start "" http://127.0.0.1:5173
