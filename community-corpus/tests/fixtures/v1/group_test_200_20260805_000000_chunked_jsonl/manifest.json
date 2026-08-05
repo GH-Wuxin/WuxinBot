@@ -1,0 +1,6 @@
+{
+  "metadata": {"name": "QQChatExporter V5", "version": "5.5.67", "exportTime": "2026-08-05T00:00:00.000Z", "format": "chunked-jsonl"},
+  "chatInfo": {"name": "osu-v1-test-200", "type": "group", "selfUin": "REDACTED_QQ_001", "selfName": "Wux1n"},
+  "statistics": {"totalMessages": 30, "timeRange": {"start": "2026-07-30T10:00:00.000Z", "end": "2026-07-30T10:45:40.000Z", "durationDays": 1}},
+  "chunked": {"format": "jsonl", "chunksDir": "chunks", "chunkFileExt": ".jsonl", "maxMessagesPerChunk": 50000, "maxBytesPerChunk": 52428800, "chunks": [{"index": 1, "fileName": "chunk_0001.jsonl", "relativePath": "chunks/chunk_0001.jsonl", "count": 29, "bytes": 8192}]}
+}
