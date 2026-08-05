@@ -142,6 +142,13 @@
 - V2 候选：`reports/V2-style-ready-candidates.jsonl`（35 条，24 条推荐）。
 - 43 个单元测试全绿 + mypy 0 错误。
 
+## 2026-08-05 人工批准
+
+用户确认相信 Codex 的审读结论，24 条推荐窗口已在
+`reports/V2-style-ready-candidates.jsonl` 中标记 `approved: true`，
+作为 V2 小规模 RAG Shadow A/B 的种子批次。其余 11 条保留为候选池，
+不进入首批。
+
 ## 尚未解决
 
 - 进入 V2：从 style_ready 人工批准一小批高质量窗口，随后小规模 RAG
