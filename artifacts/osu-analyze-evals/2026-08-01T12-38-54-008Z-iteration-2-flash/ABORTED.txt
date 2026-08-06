@@ -1,5 +1,0 @@
-本批次已中止，不得作为验收证据。
-
-原因：formatVersion 67 新增了正确的 BP5 共同 Mod 事实行，但完整报告 validator 把“BP5 五张全部含 DT/NC”误按 BP100 口径检查，导致部分 DT/NC 不满 100 张的账号被错误判定并降级为整份 fallback。
-
-处理：已隔离 BP5 与 BP100 的 DT/NC 作用域，补充精确组合数量回归测试，将 formatVersion 升到 68，并从九账号第一人重新运行。

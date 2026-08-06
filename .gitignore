@@ -2,7 +2,7 @@ node_modules/
 dist/
 data/
 logs/
-artifacts/runtime-logs/
+artifacts/
 incidents/
 .env
 fix-*.mjs
