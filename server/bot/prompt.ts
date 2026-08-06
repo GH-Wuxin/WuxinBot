@@ -11,6 +11,8 @@ import { getExperience, levelToPp } from './experience.js';
 import { buildPippiPrompt, detectScene } from './persona.js';
 import { buildOsuTopicKnowledge } from '../osu/knowledge/index.js';
 import { relevantPlayersSkillBlock } from '../bots/skills.js';
+import { retrieveKnowledgeForPrompt } from './knowledgeBase.js';
+import { toPromptBlocks } from './kbPrompt.js';
 
 export function describePolicy(policy) {
   const labels = {
@@ -348,6 +350,19 @@ export function buildPrompt(db, group, event, userPolicy, options = {}) {
 
   const scene = detectScene(event);
 
+  // Optional KB v4.1 layer. When disabled (or analysis scene) it returns
+  // empty blocks without loading anything, so `systemPrompt` below is
+  // byte-identical to the pre-KB build.
+  const kbRetrieval = retrieveKnowledgeForPrompt({
+    scene,
+    text: String(event.text || ''),
+    groupId: event.groupId,
+    messageType: event.type === 'private' ? 'private' : 'group',
+    contextMessages: context,
+    settings: db.settings?.kb,
+  });
+  const kbBlocks = kbRetrieval.blocks.length > 0 ? toPromptBlocks(kbRetrieval.blocks, kbRetrieval.route) : [];
+
   // Relationship context: memory, group profile, relationship, skill memory
   const skillBlock = includeSkill ? relevantPlayersSkillBlock({
     userId: String(event.userId),
@@ -388,6 +403,7 @@ export function buildPrompt(db, group, event, userPolicy, options = {}) {
     relationshipContext: relBlocks || undefined,
     topicKnowledge: buildOsuTopicKnowledge(event.text) || undefined,
     factualContext: factualCtx || undefined,
+    knowledgeBlocks: kbBlocks.length > 0 ? kbBlocks : undefined,
   });
 
   return [

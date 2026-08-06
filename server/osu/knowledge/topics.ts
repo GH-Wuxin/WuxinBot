@@ -3,7 +3,7 @@ import { formatKnowledgeBlock } from './types.js';
 import { OSU_KNOWLEDGE_SOURCES, WIKI_SOURCE } from './sources.js';
 import { buildModKnowledge, MOD_ANALYSIS_ENTRIES } from './mods.js';
 
-const TOPIC_ENTRIES: readonly OsuKnowledgeEntry[] = [
+export const TOPIC_ENTRIES: readonly OsuKnowledgeEntry[] = [
   {
     id: 'performance_detail', authority: 'official', tags: ['pp', 'rank', 'bp', 'weighted'], source: WIKI_SOURCE.pp,
     fact: '高位成绩按排名衰减加权进入总 pp，BP1 与 BP100 的贡献不同；bonus pp 等也会让总 pp 不等于 BP pp 简单相加。不同年代存在 pp 通胀和算法变化，因此跨时代比较优先参考当时排名与规则。',

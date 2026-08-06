@@ -1,6 +1,8 @@
 // One-time binding import (M2): merge 雨沐/消防栓/LazyBot bindings into
 // Wuxin osuBindings. 猫猫's users_osu overlaps 雨沐 entirely and is skipped.
 // Old tables stay read-only. Run with Wuxin stopped.
+// 本工具默认写生产库：store.ts 守卫要求显式设置 ALLOW_PRODUCTION_WRITE=1
+// （或 DATA_DIR 指向其他目录）后才允许写入。
 //
 // Usage: tsx tools/bindings-import.mjs
 import { execFileSync } from 'node:child_process';

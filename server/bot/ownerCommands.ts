@@ -519,12 +519,12 @@ async function runOwnerCommand(event, sendMessage, permissions = { isOwner: true
     return { replied: Boolean(sendMessage), reason: '设置风格' };
   }
 
-  // ── /w me — view own profile (Lv.3+) ──
+  // ── /w me — view own profile (Lv.1+) ──
   if (command === '/me' && isWuxinCommand) {
     const db = readDb();
     const exp = getExperience(db, event.userId);
-    if (exp.level < 3 && !permissions.isOwner && !permissions.isAdmin) {
-      if (sendMessage) await sendMessage(event, `查看画像需要达到 300pp 等级（Lv.3）。你当前是 ${levelToPp(exp.level)}pp（Lv.${exp.level}）。`);
+    if (exp.level < 1 && !permissions.isOwner && !permissions.isAdmin) {
+      if (sendMessage) await sendMessage(event, `查看画像需要达到 100pp 等级（Lv.1）。你当前是 ${levelToPp(exp.level)}pp（Lv.${exp.level}）。`);
       return { replied: Boolean(sendMessage), reason: '等级不足' };
     }
     const mem = (db.memories || []).find((m) => String(m.userId) === String(event.userId));
@@ -1688,7 +1688,9 @@ ${knownModels.join('\n')}
     const permKey = subCommand === 'bind' ? 'osuBind'
       : subCommand === 'analyze' ? 'osuAnalyze'
       : subCommand === 'recent' ? 'osuRecent'
-      : subCommand === 'clear' ? (String(commandArgs || '').includes('cooldown') ? 'osuClearCooldown' : 'osuClearCache')
+      : subCommand === 'clear' ? (String(commandArgs || '').includes('cooldown') ? 'osuClearCooldown'
+        : String(commandArgs || '').includes('recommend') ? 'osuClearRecommend'
+        : 'osuClearCache')
       : 'osuHelp';
     if (!(await requireCommand(permKey))) {
       return { replied: Boolean(sendMessage), reason: commandDeniedReply(commandDb, permKey) };

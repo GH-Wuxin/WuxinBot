@@ -27,7 +27,7 @@ export interface QuickCommandDef {
   aliases: string[];
   kind: 'osu' | 'system' | 'fun' | 'admin';
   /** Internal engine capability, when the command maps to one. */
-  capability?: 'recent' | 'info' | 'profile' | 'card' | 'bp' | 'bplist' | 'pplus' | 'skill' | 'recommend' | 'match';
+  capability?: 'recent' | 'info' | 'profile' | 'card' | 'bp' | 'bplist' | 'pplus' | 'skill' | 'recommend' | 'match' | 'score';
   /** Local handler id for non-osu commands. */
   handler?: 'bind' | 'unbind' | 'help' | 'ping' | 'dice' | 'where' | 'self_profile' | 'at_profile' | 'pp_user' | 'pp_self' | 'notice';
   /** Admin-only commands are gated by owner/admin role before any reply. */
@@ -72,7 +72,7 @@ const YUMU: QuickCommandDef[] = [
   { id: 'recent', source: 'yumu', aliases: ['p', 'pass', '通过成绩', 'pr', 're', 'recent', 'r', '最近成绩', 'ps', 'passes', 'rs', 'recents', 'pw', 'rw', 'pass show', 'recent show'], kind: 'osu', capability: 'recent', implemented: true, bridge: true },
   { id: 'rbs', source: 'yumu', aliases: ['rbs', 'recents bests', '优秀成绩'], kind: 'osu', implemented: false },
   { id: 'prcard', source: 'yumu', aliases: ['pc', 'rc', 'passcard', 'recentcard', '通过卡片', '最近卡片'], kind: 'osu', implemented: false },
-  { id: 'score', source: 'yumu', aliases: ['s', 'score', '成绩', 'sw', 'show score', 'ss', 'scores', '多成绩'], kind: 'osu', implemented: false },
+  { id: 'score', source: 'yumu', aliases: ['s', 'score', '成绩', 'sw', 'show score', 'ss', 'scores', '多成绩'], kind: 'osu', capability: 'score', implemented: true },
   { id: 'bp', source: 'yumu', aliases: ['bp', 'b', 'best', 'bestperformance', '最成绩', '最佳成绩', 'bpw', 'best show'], kind: 'osu', capability: 'bp', bpArgs: true, implemented: true, bridge: true },
   { id: 'bs', source: 'yumu', aliases: ['bs', 'bps', 'bests'], kind: 'osu', capability: 'bp', bpArgs: true, implemented: true, bridge: true },
   { id: 'todaybp', source: 'yumu', aliases: ['todaybp', 'tbp', 'tdp', 't', '今日成绩', '今日最佳成绩'], kind: 'osu', implemented: false },
@@ -123,7 +123,7 @@ const KANON: QuickCommandDef[] = [
   { id: 'recentlist', source: 'kanon', aliases: ['res', 'recentlist', 'prs'], kind: 'osu', implemented: false },
   { id: 'bp', source: 'kanon', aliases: ['bp'], kind: 'osu', capability: 'bp', bpArgs: true, implemented: true, bridge: true },
   { id: 'bplist', source: 'kanon', aliases: ['bplist', 'get bplist'], kind: 'osu', capability: 'bplist', bpArgs: true, implemented: true, bridge: true },
-  { id: 'score', source: 'kanon', aliases: ['score'], kind: 'osu', implemented: false },
+  { id: 'score', source: 'kanon', aliases: ['score'], kind: 'osu', capability: 'score', implemented: true },
   { id: 'info', source: 'kanon', aliases: ['info'], kind: 'osu', capability: 'info', implemented: true, bridge: true },
   { id: 'todaybp', source: 'kanon', aliases: ['todaybp', 'get todaybp'], kind: 'osu', implemented: false },
   { id: 'search', source: 'kanon', aliases: ['search'], kind: 'osu', implemented: false },
@@ -144,7 +144,7 @@ const LAZYBOT: QuickCommandDef[] = [
   { id: 'bpvs', source: 'lazybot', aliases: ['bpvs'], kind: 'osu', implemented: false },
   { id: 'recent', source: 'lazybot', aliases: ['pr', 'rp', 'playrecent', 're', 'recent', 'p', 'r', 'ppr', 'pre'], kind: 'osu', capability: 'recent', implemented: true, bridge: true },
   { id: 'prs', source: 'lazybot', aliases: ['prs', 'rps', 'rs', 'res', 'ps'], kind: 'osu', implemented: false },
-  { id: 'score', source: 'lazybot', aliases: ['score', 's', 'pscore'], kind: 'osu', implemented: false },
+  { id: 'score', source: 'lazybot', aliases: ['score', 's', 'pscore'], kind: 'osu', capability: 'score', implemented: true },
   { id: 'allscore', source: 'lazybot', aliases: ['allscore', 'as', 'allscores', 'ass'], kind: 'osu', implemented: false },
   { id: 'topscores', source: 'lazybot', aliases: ['topscores', 'ts'], kind: 'osu', implemented: false },
   { id: 'todaybp', source: 'lazybot', aliases: ['todaybp', 'tbp'], kind: 'osu', implemented: false },
@@ -315,6 +315,7 @@ export function matchQuickCommand(event: { text: string; atTargets?: string[] })
 interface ParsedOsuArgs {
   username: string;
   bpSelection?: BpQuerySelection;
+  scoreBeatmapId?: number;
   error?: string;
 }
 
@@ -364,6 +365,22 @@ export function parseBpArgs(args: string, compactDefault: boolean): ParsedOsuArg
 }
 
 export function parseOsuArgs(def: QuickCommandDef, args: string): ParsedOsuArgs {
+  if (def.capability === 'score') {
+    // `!s <bid> [玩家名]` / `/score <bid> [玩家名]` — BID comes first, an
+    // optional trailing username overrides the sender's binding.
+    const tokens = String(args || '').trim().split(/\s+/).filter(Boolean);
+    if (tokens.length === 0) {
+      return { username: '', error: '用法：!s <谱面BID> [玩家名]，例如 !s 4270382' };
+    }
+    const bid = Number(tokens[0]);
+    if (!Number.isInteger(bid) || bid <= 0) {
+      return { username: '', error: `谱面 BID 无效：${tokens[0]}（示例：!s 4270382）` };
+    }
+    return {
+      username: tokens.slice(1).join(' '),
+      scoreBeatmapId: bid,
+    };
+  }
   if (def.bpArgs || def.capability === 'bp' || def.capability === 'bplist') {
     // Reuse the executor parser for canonical "bp 1-100" / "bs 10" forms.
     const embedded = parseEmbeddedBpCommand(`${def.id === 'bs' ? 'bs' : 'bp'} ${args}`.trim());
@@ -904,7 +921,7 @@ export async function handleQuickCommand(
         botId,
         def.capability,
         username,
-        { db, userId: String(event.userId), groupId: event.groupId, event, isOwner: permissions.isOwner },
+        { db, userId: String(event.userId), groupId: event.groupId, event, isOwner: permissions.isOwner, beatmapId: parsed.scoreBeatmapId },
         parsed.bpSelection,
       );
     } catch (error: any) {

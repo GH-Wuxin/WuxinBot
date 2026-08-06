@@ -113,8 +113,10 @@ function hasProfileIntent(text: string): boolean {
 // "建议我打什么") stay with the LLM.
 
 const RECOMMEND_PATTERNS: RegExp[] = [
-  /推(?:一|几|两|点|张)?图/,
-  /推荐(?:谱面|歌曲|歌|图|张图|点图|点谱面)/,
+  // "推图 / 推点图 / 推点我能打的pp图 / 推几张适合我的图"
+  /推(?:一|几|两|点|张|些)?(?:[^，。！？\n]{0,16}?)图/,
+  /推荐(?:一|几|两|点|张|些)?(?:[^，。！？\n]{0,16}?)(?:图|谱面)/,
+  /推荐(?:谱面|歌曲|歌|张图|点图|点谱面)/,
   /荐图/,
   /打什么图/,
   /有没有(?:适合我的|我能打的|什么)图/,
@@ -127,7 +129,46 @@ const RECOMMEND_PATTERNS: RegExp[] = [
 function hasRecommendIntent(text: string): boolean {
   if (/你觉得|我该|我应该|应该|建议|分析|怎么提升|如何提升|怎么样|适合打什么/.test(text)) return false;
   if (/这(?:张|个|首)(?:图|谱面|歌)/.test(text)) return false;
+  if (/别推|不推|不用推|别推荐|不推荐|不想.*推|图床|截图|发图|传图|表情包/.test(text)) return false;
   return RECOMMEND_PATTERNS.some((re) => re.test(text));
+}
+
+/**
+ * Broad fallback for "the user clearly asked for recommendations" — used by
+ * the post-reply hard guard when the primary classifier missed a phrasing.
+ * Deliberately looser than hasRecommendIntent; it only runs AFTER the LLM
+ * already produced a suspicious reply, so precision matters less.
+ */
+export function hasFallbackRecommendIntent(text: string): boolean {
+  const clean = String(text || '')
+    .replace(/\[CQ:[^\]]+\]/gi, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+  if (!clean) return false;
+  if (/别推|不推|不用推|别推荐|不推荐|不想.*推|图床|截图|发图|传图/.test(clean)) return false;
+  if (/这(?:张|个|首)(?:图|谱面|歌)/.test(clean)) return false;
+  return (
+    /推(?:荐|点|一|几|两|张|些)?[^，。！？\n]{0,20}?(?:图|谱面)/.test(clean) ||
+    /荐图/.test(clean) ||
+    /打什么图/.test(clean) ||
+    /有没有.*(?:图|谱面)/.test(clean) ||
+    /有什么.*(?:图|谱面).*(?:能打|可以打|推荐)/.test(clean) ||
+    /(?:图|谱面).*(?:能打|可以打)/.test(clean)
+  );
+}
+
+/**
+ * Whether a bot reply claims to have picked actual beatmaps. Used by the hard
+ * guard: a recommendation-style reply without a real tool call is untrusted.
+ */
+export function looksLikeRecommendationReply(text: string): boolean {
+  const t = String(text || '');
+  if (/BID\s*\d+/i.test(t)) return true;
+  if (
+    /给你(?:挑|推|选|筛)|推了?|推荐|挑(?:了|好)?\s*[一二三123]?\s*张?图/.test(t) &&
+    /图|谱面/.test(t)
+  ) return true;
+  return false;
 }
 
 function extractRecommendUsername(text: string): string {
