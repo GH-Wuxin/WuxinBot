@@ -263,6 +263,30 @@ resetKbForTests();
 
   const combined = retrieveKnowledgeForPrompt({ scene: 'casual', text: 'PP+怎么用', groupId: '770001', messageType: 'group', settings: enabledSettings });
   check(combined.route.kind === 'self_and_domain', 'g5 combined route explicit self_and_domain');
+
+  const ar = retrieveKnowledgeForPrompt({ scene: 'casual', text: 'AR是什么', groupId: '770001', messageType: 'group', settings: enabledSettings });
+  const arIds = ar.blocks.filter((b) => b.collection === 'osu_domain').map((b) => b.documentId);
+  check(arIds.includes('attributes') && arIds.includes('ar_detail'), 'g5 tag anchors keep AR docs above minScore', JSON.stringify(arIds));
+
+  const hdhr = retrieveKnowledgeForPrompt({ scene: 'casual', text: 'HD和HR有什么区别', groupId: '770001', messageType: 'group', settings: enabledSettings });
+  const hdhrIds = hdhr.blocks.map((b) => b.documentId);
+  check(
+    hdhrIds.includes('mods_core') && !hdhrIds.includes('mod_ht') && !hdhrIds.includes('grade_detail'),
+    'g5 tag anchors drop one-token noise docs for HD/HR',
+    JSON.stringify(hdhrIds),
+  );
+
+  const bonus = retrieveKnowledgeForPrompt({ scene: 'casual', text: 'bonus pp是什么', groupId: '770001', messageType: 'group', settings: enabledSettings });
+  const bonusIds = bonus.blocks.filter((b) => b.collection === 'osu_domain').map((b) => b.documentId);
+  check(bonusIds.includes('performance_detail') && bonusIds.includes('bp_pp_rank'), 'g5 bonus pp ranks real pp docs first', JSON.stringify(bonusIds));
+
+  const ppp = retrieveKnowledgeForPrompt({ scene: 'casual', text: 'PP+怎么用', groupId: '770001', messageType: 'group', settings: enabledSettings });
+  const pppIds = ppp.blocks.map((b) => `${b.collection}:${b.documentId}`);
+  check(pppIds.includes('wuxin_self:quick_score_commands') && pppIds.includes('osu_domain:bp_pp_rank'), 'g5 PP+ usage hits quick command + pp docs', JSON.stringify(pppIds));
+
+  const bindShort = retrieveKnowledgeForPrompt({ scene: 'casual', text: '绑定怎么弄', groupId: '770001', messageType: 'group', settings: enabledSettings });
+  const bindIds = bindShort.blocks.map((b) => b.documentId);
+  check(bindIds.includes('bind_osu') && !bindIds.includes('quick_score_commands'), 'g5 short bind query selects bind_osu via tags', JSON.stringify(bindIds));
 }
 
 // ── Gate 6: rollout allowlist switches without restart ──
@@ -479,8 +503,24 @@ function knowledgeRootFor(knowledgeDirPath) {
 // ── Tokenizer sanity ──
 
 {
-  const tokens = kbTokenize('99ACC吗 这图aim 666');
-  check(tokens.has('acc') && tokens.has('aim') && tokens.has('99') === false && tokens.has('这图') && tokens.has('图a') === false, 'a-tokenize python-compatible', JSON.stringify([...tokens]));
+  const tokens = kbTokenize('99ACC吗 这图aim 666 PP AR HD');
+  check(
+    tokens.has('acc') && tokens.has('aim') && tokens.has('pp') && tokens.has('ar') && tokens.has('hd')
+    && tokens.has('99') === false && tokens.has('666') === false
+    && tokens.has('这图') && tokens.has('图a') === false,
+    'a-tokenize python-compatible (v3: 2-letter osu acronyms indexed)',
+    JSON.stringify([...tokens]),
+  );
+
+  const stopTokens = kbTokenize('HD和HR有什么区别？PP怎么算的？');
+  check(
+    stopTokens.has('hd') && stopTokens.has('hr') && stopTokens.has('pp')
+    && stopTokens.has('和有') === false
+    && stopTokens.has('怎么') === false
+    && stopTokens.has('什么') === false,
+    'a-tokenize v3: generic question/connective bigrams dropped as stopwords',
+    JSON.stringify([...stopTokens]),
+  );
 }
 
 // ── Final: production db untouched ──

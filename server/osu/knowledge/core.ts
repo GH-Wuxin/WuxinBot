@@ -9,11 +9,11 @@ export const OSU_CORE_ENTRIES: readonly OsuKnowledgeEntry[] = [
   },
   {
     id: 'bp_pp_rank', authority: 'official', tags: ['bp', 'pp', 'rank'], source: WIKI_SOURCE.pp,
-    fact: 'BP 是 Best Performance；总 pp 由按名次衰减加权的高位成绩、bonus pp 等组成。rank 表示当前竞争位置，pp 表示当前规则与时代下的累计表现规模；评价玩家时两者都要看。',
+    fact: 'BP 是 Best Performance；总 pp 怎么算：由按名次衰减加权的高位成绩（BP）与 bonus pp 等组成，总 pp 不等于 BP 简单相加。rank 表示当前竞争位置，pp 表示当前规则与时代下的累计表现规模；评价玩家时两者都要看。',
   },
   {
     id: 'attributes', authority: 'official', tags: ['AR', 'OD', 'CS', 'HP', 'stars'], source: WIKI_SOURCE.ar,
-    fact: 'AR 控制物件提前出现时间，OD 影响判定窗口等，CS 控制圆圈大小，HP 影响掉血与回血。星数是综合难度估计，不能单独代表所有能力。',
+    fact: 'AR 是什么：AR 控制物件提前出现时间，AR 越高反应时间越短；OD 影响判定窗口等，CS 控制圆圈大小，HP 影响掉血与回血。星数是综合难度估计，不能单独代表所有能力。',
   },
   {
     id: 'score_judgement', authority: 'official', tags: ['acc', 'combo', 'miss', 'fc', 'choke'], source: WIKI_SOURCE.grades,
@@ -21,7 +21,7 @@ export const OSU_CORE_ENTRIES: readonly OsuKnowledgeEntry[] = [
   },
   {
     id: 'mods_core', authority: 'official', tags: ['NM', 'HD', 'HR', 'DT', 'NC', 'EZ', 'FL'], source: WIKI_SOURCE.mods,
-    fact: 'NM 表示没有启用 Mod，并非一个 Mod。HDHR、HDDT、EZDT、NFSO 等是多个 Mod 的组合；NC 具有 DT 的提速效果。面向玩家使用社区缩写。',
+    fact: 'NM 表示没有启用 Mod，并非一个 Mod；HD 是 Hidden、HR 是 Hard Rock、DT 是 Double Time，NC 具有 DT 的提速效果。HDHR、HDDT、EZDT、NFSO 等是多个 Mod 的组合。面向玩家使用社区缩写。',
   },
   {
     id: 'modded_attributes', authority: 'official', tags: ['mods', 'stars', 'clock_rate'], source: OSU_KNOWLEDGE_SOURCES.api,

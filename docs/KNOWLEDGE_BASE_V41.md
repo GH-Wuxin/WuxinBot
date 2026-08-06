@@ -53,8 +53,9 @@ npx tsx tools/kb-build.mjs --data-dir <dir> # 显式目录（测试/部署隔离
 
 ## 检索与注入
 
-- BM25 与 Python 黄金实现一致：k1=1.2、b=0.75、`idf=log(1+(N-df+0.5)/(df+0.5))`、token 为英文 3+ 小写词 + 中文相邻双字 bigram（文档按唯一 token 集合计）。
+- BM25 与 Python 黄金实现一致：k1=1.2、b=0.75、`idf=log(1+(N-df+0.5)/(df+0.5))`、token 为英文 2+ 小写词（含 PP/AR/HD/HR/DT 等两字母 osu 术语，纯数字不索引）+ 中文相邻双字 bigram（文档按唯一 token 集合计）。tokenizerVersion=`v3-cjk-bigram`：剔除无领域含义的泛化疑问/连接 bigram（`怎么/什么/是什/为什/和有`），避免小语料中高频疑问词以高 IDF 反超真正含 `bonus+pp`、`hd+hr` 的文档。
 - 阈值唯一来源：manifest `content.retrievalConfig`（运行时不静默覆盖，v1 不支持在线改阈值）。
+- 权威标签锚点：若查询 token 命中文档手工维护的 `tags`（标签比较前去除 `!/+` 等命令标点），优先按标签选取 topK，不受 minScore/minDistinctQueryTokens 限制（score>0 仍要求正文词面重叠）；无标签命中才回退 BM25 minScore/gap 路径。这解决“AR 是什么”只剩单 token、`bonus pp` 被“是什/什么”反超、HT 文档靠“和有/BPM”误入 HD/HR/BPM 查询等问题。
 - 查询构造 `queryBuilderVersion=1`：从当前消息倒序取最多 5 条真人文本、累计 500 字符截止、排除 Bot/系统/纯命令/纯媒体、保留时间顺序、当前消息最后、分隔符 `\n---\n`、剥离 CQ/QQ 号/URL。
 - 配额（A6）：`wuxin_self` 800 / `osu_domain` 900 / `community_style` 400–600 / `self_and_domain` 750+600 / `osu_casual_with_domain` 400+500，总量 ≤1500；截断顺序：减文档 → 文档边界 → 单篇正文；canonical 命令行不中截；围栏字符单独计量。
 - Prompt 层 `PromptKnowledgeBlock` 只含 `sourceClass/title/text`，不暴露 documentId/window_id/SHA/cluster/内部路径；社区文本带围栏（不得逐句引用、近似复述，不得声称是真实成员说的）。
