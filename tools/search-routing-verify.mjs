@@ -154,9 +154,11 @@ console.log('\n=== E2E: named-bot / osu intents never eaten by search ===');
 {
   const r = await send('用猫猫查一下我刚刚打了什么图');
   if (r.reason && r.reason.includes('搜索')) { fail('e2e-named-kanon-search', 'was treated as search: ' + r.reason); }
-  else if (r.reason !== 'named_bot_no_adapter') { fail('e2e-named-kanon', `expected named_bot_no_adapter, got ${r.reason}`); }
-  else if (llmCalls !== 0) { fail('e2e-named-kanon-llm', `must not call LLM, got ${llmCalls}`); }
-  else if (!(r.text || '').includes('猫猫') || !(r.text || '').includes('接入 Harness')) { fail('e2e-named-kanon-text', `reply text wrong: ${r.text}`); }
+  // A named bot WITH an osu data intent bypasses the no-adapter guard and goes
+  // through deterministic query_osu (see named-bot-sandbox-verify). This case
+  // only proves the message is never eaten by web search.
+  else if (r.reason === 'named_bot_no_adapter') { fail('e2e-named-kanon', `data intent must bypass the named-bot guard, got ${r.reason}`); }
+  else if (llmCalls > 1) { fail('e2e-named-kanon-llm', `must not call LLM more than once, got ${llmCalls}`); }
   else pass('e2e-named-kanon');
 }
 
