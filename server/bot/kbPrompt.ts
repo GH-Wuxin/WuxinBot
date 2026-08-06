@@ -71,7 +71,11 @@ function renderBlock(block: PromptKnowledgeBlock): string {
     ].join('\n');
   }
   const title = block.title ? ` · ${block.title}` : '';
-  return `【功能说明${title}】\n${block.text}`;
+  return [
+    `【功能说明${title}】`,
+    block.text,
+    '用户询问相关功能或命令用法时，直接按上述内容回答并给出命令本身；不要推给后台操作者，也不要含糊带过。',
+  ].join('\n');
 }
 
 /**

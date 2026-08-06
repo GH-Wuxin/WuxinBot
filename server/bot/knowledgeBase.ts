@@ -77,21 +77,35 @@ function sentinelExists(): boolean {
 
 // ── Tokenizer / BM25 (Python-golden compatible) ──
 
-const TOKEN_WORD_RE = /[a-z]{3,}/g;
+// v3: include 2-letter osu! acronyms (PP/AR/HD/HR/DT/OD/CS/FC/...). Pure
+// digit runs stay excluded so QQ numbers / scores cannot become tokens.
+// Generic question/connective CJK bigrams are dropped as stopwords: they carry
+// no domain meaning but get high IDF in a small knowledge corpus (e.g. a doc
+// matching only "和有" or "是什/什么" must not outrank a doc matching "bonus+pp").
+const TOKEN_WORD_RE = /[a-z]{2,}/g;
 const CJK_RE = /[\u4e00-\u9fa5]/g;
+const STOPWORD_CJK_BIGRAMS = new Set(['怎么', '什么', '是什', '为什', '和有']);
+
+function normalizeTag(tag: string): string {
+  return String(tag || '').toLowerCase().replace(/[^a-z0-9\u4e00-\u9fa5]/g, '');
+}
 
 export function kbTokenize(text: string): Set<string> {
   const t = String(text || '').toLowerCase();
   const tokens = new Set<string>();
   for (const m of t.matchAll(TOKEN_WORD_RE)) tokens.add(m[0]);
   const cjk = t.match(CJK_RE) || [];
-  for (let i = 0; i + 1 < cjk.length; i += 1) tokens.add(cjk[i] + cjk[i + 1]);
+  for (let i = 0; i + 1 < cjk.length; i += 1) {
+    const bigram = cjk[i] + cjk[i + 1];
+    if (!STOPWORD_CJK_BIGRAMS.has(bigram)) tokens.add(bigram);
+  }
   return tokens;
 }
 
 interface Bm25Doc {
   id: string;
   title?: string;
+  tags: string[];
   tokens: string[];
 }
 
@@ -104,8 +118,13 @@ interface Bm25Index {
   n: number;
 }
 
-function buildIndex(collection: KnowledgeCollection, docs: { id: string; title?: string; content: string }[]): Bm25Index {
-  const converted: Bm25Doc[] = docs.map((d) => ({ id: d.id, title: d.title, tokens: [...kbTokenize(d.content)] }));
+function buildIndex(collection: KnowledgeCollection, docs: { id: string; title?: string; content: string; tags?: string[] }[]): Bm25Index {
+  const converted: Bm25Doc[] = docs.map((d) => ({
+    id: d.id,
+    title: d.title,
+    tags: (d.tags || []).map((tag) => String(tag).toLowerCase()),
+    tokens: [...kbTokenize(d.content)],
+  }));
   const df = new Map<string, number>();
   for (const doc of converted) {
     for (const tok of new Set(doc.tokens)) df.set(tok, (df.get(tok) || 0) + 1);
@@ -161,7 +180,7 @@ interface KbManifest {
 
 interface LoadedCollection {
   index: Bm25Index;
-  docs: { id: string; title?: string; content: string }[];
+  docs: { id: string; title?: string; content: string; tags?: string[] }[];
 }
 
 interface LoadedKb {
@@ -206,7 +225,7 @@ function parseCollectionFile(
   collection: KnowledgeCollection,
   expectedSha: string,
   expectedCount: number,
-): { id: string; title?: string; content: string }[] | null {
+): { id: string; title?: string; content: string; tags?: string[] }[] | null {
   const fileName = collection === 'community_style' ? 'community_style.jsonl' : `${collection}.json`;
   const filePath = path.join(buildDir, fileName);
   if (!fs.existsSync(filePath)) return null;
@@ -215,7 +234,12 @@ function parseCollectionFile(
   if (collection === 'community_style') {
     const rows = fs.readFileSync(filePath, 'utf8').split(/\r?\n/).filter(Boolean).map((line) => JSON.parse(line));
     if (rows.length !== expectedCount) return null;
-    return rows.map((row) => ({ id: String(row.id), title: row.title, content: String(row.content || '') }));
+    return rows.map((row) => ({
+      id: String(row.id),
+      title: row.title,
+      content: String(row.content || ''),
+      ...(Array.isArray(row.tags) ? { tags: row.tags.map(String) } : {}),
+    }));
   }
 
   const rows = JSON.parse(fs.readFileSync(filePath, 'utf8'));
@@ -224,6 +248,7 @@ function parseCollectionFile(
     id: String(row.id),
     title: row.title,
     content: String(row.content || ''),
+    ...(Array.isArray(row.tags) ? { tags: row.tags.map(String) } : {}),
     ...(row.source ? { source: row.source } : {}),
   }));
 }
@@ -245,7 +270,7 @@ function loadKbSync(): LoadedKb {
   ) {
     throw new Error('KB_RETRIEVAL_CONFIG_MISSING');
   }
-  if (manifest.content.tokenizerVersion !== 'v1-cjk-bigram' || manifest.content.queryBuilderVersion !== 1) {
+  if (manifest.content.tokenizerVersion !== 'v3-cjk-bigram' || manifest.content.queryBuilderVersion !== 1) {
     throw new Error('KB_VERSION_MISMATCH');
   }
   const recomputedContentSha = crypto.createHash('sha256').update(canonicalContentJson(manifest.content), 'utf8').digest('hex');
@@ -394,14 +419,40 @@ function retrieveCollection(
   queryTokens: Set<string>,
 ): { blocks: RetrievedKnowledgeBlock[]; dropped: KbDrop[] } {
   const dropped: KbDrop[] = [];
+  const index = loadedCollection.index;
+  if (index.n === 0) return { blocks: [], dropped };
+  const scored = index.docs.map((doc) => ({ doc, score: scoreDoc(index, doc, queryTokens) }));
+  // Authoritative tag anchors: if the query contains a curated doc tag, select
+  // by tag first (score > 0 guarantees lexical overlap). Tags are hand-written
+  // per document, so a tag hit is a stronger signal than BM25 score — this
+  // prevents generic CJK bigrams (e.g. 什么/怎么) from outranking a real match
+  // like "bonus+pp", and prevents one-token noise (e.g. HT doc matching "BPM").
+  const tagMatched = scored
+    .filter((item) => item.score > 0 && [...queryTokens].some((tok) => item.doc.tags.some((tag) => normalizeTag(tag) === tok)))
+    .sort((a, b) => b.score - a.score);
+  if (tagMatched.length > 0) {
+    const topK = Math.max(1, config.topK || 1);
+    const selected = tagMatched.slice(0, topK);
+    for (const item of tagMatched.slice(topK)) dropped.push({ documentId: item.doc.id, reason: 'topk' });
+    for (const item of scored) {
+      if (!tagMatched.includes(item)) dropped.push({ documentId: item.doc.id, reason: 'no_tag_match' });
+    }
+    return {
+      blocks: selected.map((item) => ({
+        collection: loadedCollection.index.collection,
+        documentId: item.doc.id,
+        title: item.doc.title,
+        text: loadedCollection.docs.find((d) => d.id === item.doc.id)?.content || '',
+        score: item.score,
+      })),
+      dropped,
+    };
+  }
   const minTokens = config.minDistinctQueryTokens ?? 1;
   if (queryTokens.size < minTokens) {
     dropped.push({ documentId: '*', reason: `query_tokens_${queryTokens.size}<${minTokens}` });
     return { blocks: [], dropped };
   }
-  const index = loadedCollection.index;
-  if (index.n === 0) return { blocks: [], dropped };
-  const scored = index.docs.map((doc) => ({ doc, score: scoreDoc(index, doc, queryTokens) }));
   const minScore = config.minScore || 0;
   const keptScored = scored.filter((item) => {
     if (item.score <= 0) {

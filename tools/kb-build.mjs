@@ -46,14 +46,14 @@ const buildsDir = path.join(knowledgeRoot, 'builds');
 const currentPath = path.join(knowledgeRoot, 'CURRENT');
 
 const SCHEMA_VERSION = 1;
-const TOKENIZER_VERSION = 'v1-cjk-bigram';
+const TOKENIZER_VERSION = 'v3-cjk-bigram';
 const QUERY_BUILDER_VERSION = 1;
 const LAST_VERIFIED_AT = '2026-08-06'; // manual human verification date, not auto-updated
 
 const RETRIEVAL_CONFIG = {
   wuxin_self: { topK: 3, minScore: 2.8, minScoreGap: 0.2, minDistinctQueryTokens: 2, requireLexicalOverlap: true },
   osu_domain: { topK: 2, minScore: 2.2, minScoreGap: 0.2, minDistinctQueryTokens: 2, requireLexicalOverlap: true },
-  community_style: { topK: 1, minScore: 3.5, minScoreGap: 0.3, minDistinctQueryTokens: 2, requireLexicalOverlap: true },
+  community_style: { topK: 1, minScore: 2.3, minScoreGap: 0.3, minDistinctQueryTokens: 2, requireLexicalOverlap: true },
 };
 
 function sha256(value) {
@@ -164,6 +164,7 @@ const WUXIN_SELF = [
     title: '快捷查分指令',
     tags: ['!p', '!bp', '!s', '!i', '!pp', '!k', '快捷指令'],
     content: [
+      'PP+ 怎么用：发 /ppp（或 !pp）查看 PP+ 维度。',
       '常用快捷指令：',
       '!p / !pr / !r — 最近成绩（雨沐/猫猫）',
       '!bp / !bs 1-100 或 #5 — 最佳成绩',
@@ -197,6 +198,7 @@ const WUXIN_SELF = [
     title: '推图 / 谱面推荐',
     tags: ['recommend', '推图', '推荐', 'rd', 'rec'],
     content: [
+      '推图怎么用：直接对 pippi 说“推图”或“推荐谱面”，也可以发 !rec、荐图、/rd。',
       '触发：玩家说“推图/推荐谱面/打什么图/有没有适合我的图”，或 !rec、荐图、/rd。',
       '推荐基于玩家真实 top 成绩做同分段协同过滤，数据不足时用官方搜索兜底；只支持 osu!std，其他模式如实拒绝。',
       '每人约 10 分钟冷却；已推荐过的图不会在短期内重复出现；支持 BPM、AR、星数等自然语言筛选，筛选无结果时如实说明。',

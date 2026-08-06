@@ -14,7 +14,7 @@ export const TOPIC_ENTRIES: readonly OsuKnowledgeEntry[] = [
   },
   {
     id: 'ar_detail', authority: 'official', tags: ['AR', 'reading'], source: WIKI_SOURCE.ar,
-    fact: 'AR 描述物件出现到击打时刻的提前时间。低 AR 与高 AR 带来不同视觉密度和反应窗口，但单凭 AR 不能概括全部 reading 能力。',
+    fact: 'AR 是什么：AR 描述物件出现到击打时刻的提前时间，AR 越高留给反应的时间越短。高 AR 图怎么打：主要靠读图和反应训练；低 AR 与高 AR 带来不同视觉密度和反应窗口，但单凭 AR 不能概括全部 reading 能力。',
   },
   {
     id: 'od_detail', authority: 'official', tags: ['OD', 'acc', 'hit_window'], source: WIKI_SOURCE.od,

@@ -54,15 +54,20 @@ _COMMAND_RE = re.compile(
 _FORWARD_BLOCK_RE = re.compile(
     r"\[(?:转发消息|Forwarded Messages)\s*[:：]\s*\d+\s*条?\]"
 )
-_TOKEN_WORD_RE = re.compile(r"[a-z]{3,}")
+_TOKEN_WORD_RE = re.compile(r"[a-z]{2,}")
 _CJK_RE = re.compile(r"[\u4e00-\u9fa5]")
+_STOPWORD_CJK_BIGRAMS = {"怎么", "什么", "是什", "为什", "和有"}
 
 
 def _tokens(text: str) -> set[str]:
     t = (text or "").lower()
     words = set(_TOKEN_WORD_RE.findall(t))
     cjk = _CJK_RE.findall(t)
-    bigrams = {cjk[i] + cjk[i + 1] for i in range(len(cjk) - 1)}
+    bigrams = {
+        cjk[i] + cjk[i + 1]
+        for i in range(len(cjk) - 1)
+        if cjk[i] + cjk[i + 1] not in _STOPWORD_CJK_BIGRAMS
+    }
     return words | bigrams
 
 
