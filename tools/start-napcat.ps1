@@ -1,10 +1,8 @@
-$launcher = "REDACTED_WORKSPACE\NapCat.Shell.Windows.OneKey\NapCat.Shell\NapCatWinBootMain.exe"
-$injector = "REDACTED_WORKSPACE\NapCat.Shell.Windows.OneKey\NapCat.Shell\NapCatWinBootHook.dll"
-$napcatDir = "REDACTED_WORKSPACE\NapCat.Shell.Windows.OneKey\NapCat.Shell"
-$qqPath = "D:\AppFile\QQ\QQ.exe"
+$launcher = "REDACTED_WORKSPACE\NapCat.Shell.Windows.OneKey\NapCat.44498.Shell\NapCatWinBootMain-patched.exe"
+$napcatDir = "REDACTED_WORKSPACE\NapCat.Shell.Windows.OneKey\NapCat.44498.Shell"
 
 Start-Process -FilePath $launcher `
-  -ArgumentList "`"$qqPath`" `"$injector`" -q REDACTED_QQ_002" `
+  -ArgumentList @('--user-data-dir=REDACTED_NAPCAT_DIR') `
   -WindowStyle Hidden -PassThru -WorkingDirectory $napcatDir
 
 Write-Host "NapCat started, waiting 20s for login..."
