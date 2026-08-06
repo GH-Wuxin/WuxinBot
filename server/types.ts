@@ -2,6 +2,7 @@
 // These describe the shapes that flow through processIncoming(),
 // the database, and the LLM layer. Not exhaustive — only covers
 // the high-traffic structures that have caused bugs when mis-assumed.
+import type { KnowledgeBaseSettings } from './bot/knowledgeTypes.js';
 
 // ── Incoming event (produced by oneBotToInternal) ──
 
@@ -76,6 +77,7 @@ export interface DbSettings {
   memorySampleRetain?: number;
   commandRoles: CommandRole[];
   commandPermissions: Record<string, string>;
+  kb?: KnowledgeBaseSettings;
   [key: string]: unknown;   // permits customModel and future fields
 }
 

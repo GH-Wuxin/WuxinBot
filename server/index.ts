@@ -10,6 +10,7 @@ import { getReplyQueueStats } from './bot/queue.js';
 import { buildPrompt } from './bot/prompt.js';
 import { callLLM } from './bot/llm.js';
 import { getHealth, getRecalcProgress, startRecalc, tickRecalc, stopRecalc, finishRecalc } from './health.js';
+import { getKbHealth } from './bot/knowledgeBase.js';
 import { getGroupProfile, updateGroupProfile, clearGroupProfile, hasGroupProfileContent } from './bot/groupProfile.js';
 import { getRelationshipProfile, updateRelationshipProfile, clearRelationshipProfile, isSubstantiveRelationshipProfile } from './bot/relationshipProfile.js';
 import { commitMemoryProfileResult, updateMemoryProfile } from './bot/memory.js';
@@ -87,6 +88,13 @@ function ok(data = {}) {
 
 app.get('/api/state', (_req, res) => {
   res.json(ok({ db: publicDb(), oneBot: getOneBotStatus() }));
+});
+
+// KB v4.1 status — admin-only via the global /api password guard. Exposes
+// collection status/doc counts/content SHA/build time/error codes only.
+// Never exposes raw query text, community content, absolute paths or stacks.
+app.get('/api/kb/status', (_req, res) => {
+  res.json(ok({ kb: getKbHealth() }));
 });
 
 // ── Group bot config ──
@@ -606,6 +614,7 @@ app.get('/api/diagnostics', (_req, res) => {
       platform: process.platform
     },
     oneBot: getOneBotStatus(),
+    kb: getKbHealth(),
     settings: publicDb(db).settings,
     groups: db.groups,
     users: db.users,
@@ -1261,9 +1270,13 @@ app.listen(port, '127.0.0.1', async () => {
   } catch (error) {
     console.error('[experience] 等级迁移失败:', String(error?.message || error));
   }
-  void matchManager.restore(readDb()).catch((error) => {
+  try {
+    void matchManager.restore(readDb()).catch((error) => {
+      console.error('[match] 恢复监听失败:', String(error?.message || error));
+    });
+  } catch (error) {
     console.error('[match] 恢复监听失败:', String(error?.message || error));
-  });
+  }
   console.log(`QQ AI ChatBot server running at http://127.0.0.1:${port}`);
   connectOneBot();
   // Start Wuxin's local yumu-image endpoint on 8389. The renderer keeps its

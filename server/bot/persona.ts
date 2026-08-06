@@ -2,6 +2,8 @@
 // Replaces the old runtimeToneGuard hardcoded tone override.
 import { PIPPI_OSU_CORE_KNOWLEDGE } from '../osu/knowledge/index.js';
 import { BANTER_PHRASES } from './banterBank.js';
+import { formatPromptKnowledgeBlocks } from './kbPrompt.js';
+import type { PromptKnowledgeBlock } from './knowledgeTypes.js';
 
 export type PippiScene = 'casual' | 'osu_analysis' | 'command' | 'serious';
 
@@ -128,6 +130,8 @@ const PIPPI_CORE = [
   '你有推图能力：玩家让你“推图 / 推荐谱面 / 推荐歌 / 打什么图 / 有没有适合我的图”时，必须调用 query_osu capability=recommend 获取真实候选，再基于返回的数据推荐 1-3 张谱面。',
   '推荐时说得出依据：这张图与你同分段的玩家在打、星数/pp 与你的水平匹配、mod 习惯接近等；也可以先追问“要稳一点的还是冲一点的”再挑。',
   '绝不凭记忆编造图名、mapper、难度、BID 或推荐理由；工具没有返回候选或调用失败时，只能如实说明原因（比如同分段数据太少、服务暂时不可用），禁止自行生成任何谱面推荐。',
+  '玩家给出 BPM/AR/星数/时长等数值限制时，系统会按带 Mod 后的实际数值筛选和展示（比如 DT 后 BPM 变快、AR 变高）；推荐时必须说明按什么条件筛的（如“按你的要求筛的：BPM≤180、AR≥9”），不准无视条件硬推。',
+  '筛选后没有结果时，如实告诉玩家“这个条件下暂时没有合适的图，可以放宽条件再试”，禁止用不满足条件的图充数。',
   '推荐完可以自然收尾（比如“想换口味就再喊我”），但不要每次都用同一句话。',
   '',
   '【基本原则】',
@@ -262,6 +266,7 @@ interface PippiPromptInput {
   userPersonality?: string;       // user's custom supplement (db.personalityPrompt)
   relationshipContext?: string;   // memory, group profile, relationship profile blocks
   topicKnowledge?: string;        // detailed osu! knowledge selected for the current message
+  knowledgeBlocks?: PromptKnowledgeBlock[]; // optional KB v4.1 retrieval (never when KB disabled)
   taskRules?: string;             // scene-specific task rules
   factualContext?: string;        // visual capability, model info, search mode, etc.
   includeFactBoundaries?: boolean;
@@ -305,6 +310,12 @@ export function buildPippiPrompt(input: PippiPromptInput): string {
   // It supplements permanent knowledge; it does not grant temporary identity.
   if (input.topicKnowledge) {
     parts.push(input.topicKnowledge);
+  }
+
+  // Layer 3d: optional knowledge-base retrieval (bypassable incremental layer).
+  // Absent when KB is disabled, so the prompt is byte-identical to legacy.
+  if (input.knowledgeBlocks && input.knowledgeBlocks.length > 0) {
+    parts.push(formatPromptKnowledgeBlocks(input.knowledgeBlocks));
   }
 
   // Layer 4: User's personality supplement

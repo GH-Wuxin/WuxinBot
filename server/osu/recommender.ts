@@ -13,7 +13,20 @@
 
 import { updateDb } from '../store.js';
 import { cacheGet, cacheSet } from './cache.js';
-import { getUser, getUserById, getUserBestScores, getBeatmapScores } from './api.js';
+import {
+  getUser,
+  getUserById,
+  getUserBestScores,
+  getBeatmapScores,
+  getBeatmapAttributes,
+} from './api.js';
+import {
+  applyModStats,
+  describeFilters,
+  isEmptyFilters,
+  splitModCombo,
+} from './recommendFilters.js';
+import type { RecommendFilters } from './recommendFilters.js';
 import type { OsuScore, OsuUser } from './types.js';
 
 export interface RecommendCandidate {
@@ -26,7 +39,13 @@ export interface RecommendCandidate {
   coverUrl: string;
   mapUrl: string;
   stars: number;
+  /** Base (NM) difficulty rating, kept for "playable" caps after mod enrichment. */
+  baseStars: number;
   bpm: number;
+  ar: number;
+  cs: number;
+  od: number;
+  hp: number;
   totalLength: number;
   mods: string[];
   pp: number;
@@ -43,6 +62,11 @@ export interface RecommendResult {
     similarPlayers: number;
     apiCalls: number;
     elapsedMs: number;
+    topStarMax?: number;
+    topStarMean?: number;
+    topModdedStarMax?: number;
+    topModdedStarMean?: number;
+    topMods?: string[];
   };
 }
 
@@ -224,12 +248,33 @@ export function clearRecommendCooldown(osuUserId: number): void {
   });
 }
 
+export function clearRecommendHistory(osuUserId: number): number {
+  let removed = 0;
+  updateDb((draft: any) => {
+    const id = Number(osuUserId);
+    const before = (draft.osuRecommendations || []).length;
+    draft.osuRecommendations = (draft.osuRecommendations || []).filter(
+      (r: any) => Number(r.osuUserId) !== id,
+    );
+    removed = before - draft.osuRecommendations.length;
+    if (draft.osuRecommendCooldowns) {
+      delete draft.osuRecommendCooldowns[String(id)];
+    }
+  });
+  return removed;
+}
+
 // ── Cached candidate pool (per player, in-memory) ──
 
 interface CandidateCacheEntry {
   candidates: RecommendCandidate[];
   source: 'collab' | 'relaxed';
   at: number;
+  topStarMax?: number;
+  topStarMean?: number;
+  topModdedStarMax?: number;
+  topModdedStarMean?: number;
+  topMods?: string[];
 }
 
 function candidateCacheGet(osuUserId: number): CandidateCacheEntry | null {
@@ -247,12 +292,16 @@ function playerPreferredMods(db: any, username: string): string[] {
   const record = (db?.skillStore?.records || []).find(
     (r: any) => String(r.osuUsername || '').toLowerCase() === String(username || '').toLowerCase(),
   );
-  if (record?.topMods?.length) return String(record.topMods[0]).toUpperCase().split('');
+  if (record?.topMods?.length) return splitModCombo(String(record.topMods[0])) || [];
   if (record?.modComposition) {
     const entries = Object.entries(record.modComposition).sort((a, b) => Number(b[1]) - Number(a[1]));
-    if (entries.length > 0) return String(entries[0][0]).toUpperCase().split('');
+    if (entries.length > 0) return splitModCombo(String(entries[0][0])) || [];
   }
   return [];
+}
+
+function candidateHasMod(modsList: string[], mod: string): boolean {
+  return modsList.includes(mod) || (mod === 'DT' && modsList.includes('NC'));
 }
 
 function candidateFromScore(score: OsuScore): RecommendCandidate | null {
@@ -274,12 +323,101 @@ function candidateFromScore(score: OsuScore): RecommendCandidate | null {
     coverUrl: String(beatmapset?.covers?.cover || ''),
     mapUrl: `https://osu.ppy.sh/beatmaps/${beatmapId}`,
     stars,
+    baseStars: stars,
     bpm: Number(beatmap?.bpm || 0),
+    ar: Number(beatmap?.ar || 0),
+    cs: Number(beatmap?.cs || 0),
+    od: Number(beatmap?.accuracy || 0),
+    hp: Number(beatmap?.drain || 0),
     totalLength: Number(beatmap?.total_length || 0),
-    mods: modKey ? modKey.split(/(?=[A-Z])/).filter(Boolean) : [],
+    mods: modKey ? splitModCombo(modKey) || [] : [],
     pp,
     similarCount: 0,
   };
+}
+
+// ── Mod-adjusted enrichment & filter application ──
+
+function needsModAdjustedFilters(filters: RecommendFilters | undefined): boolean {
+  if (!filters) return false;
+  return filters.bpmMin !== undefined || filters.bpmMax !== undefined ||
+    filters.arMin !== undefined || filters.arMax !== undefined ||
+    filters.csMin !== undefined || filters.csMax !== undefined ||
+    filters.odMin !== undefined || filters.odMax !== undefined ||
+    filters.hpMin !== undefined || filters.hpMax !== undefined ||
+    filters.starMin !== undefined || filters.starMax !== undefined;
+}
+
+async function enrichCandidateMods(candidate: RecommendCandidate): Promise<boolean> {
+  // Star rating is the only mod-dependent value the API exposes directly;
+  // AR/CS/OD/HP/BPM/length are converted locally with the standard formulas.
+  let starsOk = true;
+  if (candidate.mods.length > 0) {
+    try {
+      const attrs = await withTimeout(
+        getBeatmapAttributes(candidate.beatmapId, 'osu', candidate.mods),
+        REQUEST_TIMEOUT_MS,
+      );
+      if (attrs?.attributes && Number.isFinite(attrs.attributes.star_rating) && attrs.attributes.star_rating > 0) {
+        candidate.stars = attrs.attributes.star_rating;
+      } else {
+        starsOk = false;
+      }
+    } catch {
+      starsOk = false;
+    }
+  }
+  const adjusted = applyModStats({
+    ar: candidate.ar,
+    cs: candidate.cs,
+    od: candidate.od,
+    hp: candidate.hp,
+    bpm: candidate.bpm,
+    length: candidate.totalLength,
+  }, candidate.mods);
+  candidate.ar = adjusted.ar;
+  candidate.cs = adjusted.cs;
+  candidate.od = adjusted.od;
+  candidate.hp = adjusted.hp;
+  candidate.bpm = adjusted.bpm;
+  candidate.totalLength = adjusted.length;
+  return starsOk;
+}
+
+async function enrichCandidates(
+  candidates: RecommendCandidate[],
+  deadline: number,
+  strict: boolean,
+): Promise<RecommendCandidate[]> {
+  const out: RecommendCandidate[] = [];
+  await mapLimit(candidates, CONCURRENCY, async (c) => {
+    if (Date.now() > deadline) return;
+    const ok = await enrichCandidateMods(c);
+    if (!strict || ok) out.push(c);
+  });
+  return out;
+}
+
+function inRange(value: number | undefined, min?: number, max?: number): boolean {
+  if (value === undefined || !Number.isFinite(value)) return min === undefined && max === undefined;
+  if (min !== undefined && value < min) return false;
+  if (max !== undefined && value > max) return false;
+  return true;
+}
+
+function matchesFilters(candidate: RecommendCandidate, filters: RecommendFilters | undefined): boolean {
+  if (isEmptyFilters(filters)) return true;
+  const f = filters as RecommendFilters;
+  if (!inRange(candidate.bpm, f.bpmMin, f.bpmMax)) return false;
+  if (!inRange(candidate.ar, f.arMin, f.arMax)) return false;
+  if (!inRange(candidate.cs, f.csMin, f.csMax)) return false;
+  if (!inRange(candidate.od, f.odMin, f.odMax)) return false;
+  if (!inRange(candidate.hp, f.hpMin, f.hpMax)) return false;
+  if (!inRange(candidate.stars, f.starMin, f.starMax)) return false;
+  if (!inRange(candidate.totalLength, f.lengthMin, f.lengthMax)) return false;
+  if (!inRange(candidate.similarCount, f.similarMin, f.similarMax)) return false;
+  if (f.forbidMods?.length && f.forbidMods.some((mod) => candidateHasMod(candidate.mods, mod))) return false;
+  return true;
 }
 
 // ── Main engine ──
@@ -292,6 +430,8 @@ export async function recommendForPlayer(
     excludeBeatmapsetIds?: Set<number>;
     timeBudgetMs?: number;
     bypassCache?: boolean;
+    filters?: RecommendFilters;
+    filterStatement?: string;
   } = {},
 ): Promise<RecommendResult> {
   const count = Math.min(Math.max(options.count ?? DEFAULT_COUNT, 1), MAX_COUNT);
@@ -307,8 +447,13 @@ export async function recommendForPlayer(
   if (!options.bypassCache) {
     const cached = candidateCacheGet(user.id);
     if (cached) {
+      const playableCap = options.filters?.playable && cached.topStarMax
+        ? cached.topStarMax * 1.1
+        : undefined;
       const filtered = cached.candidates
         .filter((c) => !(options.excludeBeatmapsetIds || new Set<number>()).has(c.beatmapsetId))
+        .filter((c) => matchesFilters(c, options.filters))
+        .filter((c) => !playableCap || c.baseStars <= playableCap)
         .slice(0, count);
       if (filtered.length > 0) {
         return {
@@ -320,6 +465,11 @@ export async function recommendForPlayer(
             similarPlayers: 0,
             apiCalls: 0,
             elapsedMs: Date.now() - startedAt,
+            topStarMax: cached.topStarMax,
+            topStarMean: cached.topStarMean,
+            topModdedStarMax: cached.topModdedStarMax,
+            topModdedStarMean: cached.topModdedStarMean,
+            topMods: cached.topMods,
           },
         };
       }
@@ -346,7 +496,40 @@ export async function recommendForPlayer(
 
   const topStars = topScores.map((s) => Number(s.beatmap?.difficulty_rating || 0)).filter((v) => v > 0);
   const avgPp = mean(topScores.map((s) => Number(s.pp || 0)));
-  const starsUpper = Math.max(...topStars) * 1.3;
+  const topStarMax = Math.max(...topStars);
+  const topStarMean = mean(topStars);
+  let topMods = playerPreferredMods(db, user.username);
+  if (!topMods.length) {
+    // Fall back to the actual dominant mod combo in the player's top plays.
+    const freq = new Map<string, number>();
+    for (const s of topScores.slice(0, 10)) {
+      const combo = [...new Set((s.mods || []).map((m) => String(m).toUpperCase()))].sort().join('');
+      if (combo) freq.set(combo, (freq.get(combo) || 0) + 1);
+    }
+    const dominant = [...freq.entries()].sort((a, b) => b[1] - a[1])[0];
+    if (dominant) topMods = splitModCombo(dominant[0]) || [];
+  }
+  // Mod-adjusted star range of the player's own top plays (top 10). This is
+  // what "Top 星数" actually means in play: base 5★ + DT is ~7.5★ in game.
+  const topModdedStars = (await mapLimit(topScores.slice(0, 10), 5, async (s: OsuScore) => {
+    const mods = (s.mods || []).filter(Boolean);
+    if (!mods.length) return Number(s.beatmap?.difficulty_rating || 0);
+    try {
+      const attrs = await withTimeout(
+        getBeatmapAttributes(Number(s.beatmap?.id || 0), 'osu', mods),
+        REQUEST_TIMEOUT_MS,
+      );
+      apiCalls += 1;
+      return attrs?.attributes?.star_rating || 0;
+    } catch {
+      return 0;
+    }
+  })).filter((v: number) => v > 0);
+  const topModdedStarMax = topModdedStars.length > 0 ? Math.max(...topModdedStars) : 0;
+  const topModdedStarMean = topModdedStars.length > 0 ? mean(topModdedStars) : 0;
+  const starsUpper = options.filters?.playable
+    ? topStarMax * 1.1
+    : topStarMax * 1.3;
   const starsLower = mean(topStars) * 0.7;
   const exclude = options.excludeBeatmapsetIds || new Set<number>();
 
@@ -438,12 +621,15 @@ export async function recommendForPlayer(
     });
 
     const preferred = playerPreferredMods(db, user.username);
+    const filterPreferred = options.filters?.preferMods || [];
     const candidates = [...agg.values()].map((entry) => {
       const mods = [...entry.mods.entries()].sort((a, b) => b[1] - a[1])[0];
-      const modsList = mods && mods[0] ? mods[0].split(/(?=[A-Z])/).filter(Boolean) : [];
+      const modsList = mods && mods[0] ? splitModCombo(mods[0]) || [] : [];
       let score = entry.players.size * 100;
-      const modOverlap = preferred.length > 0 && preferred.every((m) => modsList.includes(m));
+      const modOverlap = preferred.length > 0 && preferred.every((m) => candidateHasMod(modsList, m));
       if (modOverlap) score += 15;
+      const filterOverlap = filterPreferred.length > 0 && filterPreferred.every((m) => candidateHasMod(modsList, m));
+      if (filterOverlap) score += 12;
       const stars = entry.candidate.stars;
       if (stars > 0 && stars >= mean(topStars) * 0.9 && stars <= mean(topStars) * 1.15) score += 10;
       return {
@@ -476,11 +662,36 @@ export async function recommendForPlayer(
     }
   }
 
+  // Enrich the whole candidate pool with mod-adjusted attributes first, then
+  // apply the user's filters against those adjusted values. When numeric
+  // filters exist, candidates whose attributes could not be fetched are
+  // dropped instead of being filtered on misleading base values.
+  const strictEnrich = needsModAdjustedFilters(options.filters);
+  result = await enrichCandidates(result, deadline, strictEnrich);
+
   const finalCandidates = result
+    .filter((c) => matchesFilters(c, options.filters))
     .filter((c) => !exclude.has(c.beatmapsetId))
     .slice(0, count);
 
   if (result.length === 0 || finalCandidates.length === 0) {
+    if (!isEmptyFilters(options.filters)) {
+      const filterText = options.filterStatement
+        ? `筛选条件（${options.filterStatement}）`
+        : `筛选条件（${describeFilters(options.filters)}）`;
+      return {
+        ok: false,
+        candidates: [],
+        source: 'none',
+        reason: `${filterText}下没有找到合适的谱面。可以放宽条件或换个说法再试。`,
+        stats: {
+          topPlayCount: topScores.length,
+          similarPlayers: similarStrict.size,
+          apiCalls,
+          elapsedMs: Date.now() - startedAt,
+        },
+      };
+    }
     return {
       ok: false,
       candidates: [],
@@ -495,7 +706,16 @@ export async function recommendForPlayer(
     };
   }
 
-  candidateCacheSet(user.id, { candidates: result, source, at: Date.now() });
+  candidateCacheSet(user.id, {
+    candidates: result,
+    source,
+    at: Date.now(),
+    topStarMax,
+    topStarMean,
+    topModdedStarMax,
+    topModdedStarMean,
+    topMods,
+  });
   return {
     ok: true,
     candidates: finalCandidates,
@@ -505,6 +725,11 @@ export async function recommendForPlayer(
       similarPlayers: similarStrict.size,
       apiCalls,
       elapsedMs: Date.now() - startedAt,
+      topStarMax,
+      topStarMean,
+      topModdedStarMax,
+      topModdedStarMean,
+      topMods,
     },
   };
 }
@@ -512,6 +737,7 @@ export async function recommendForPlayer(
 export function formatRecommendLine(candidate: RecommendCandidate, index: number): string {
   const stars = candidate.stars > 0 ? `${candidate.stars.toFixed(2)}★` : '星数未知';
   const bpm = candidate.bpm > 0 ? `BPM ${Math.round(candidate.bpm)}` : '';
+  const ar = candidate.ar > 0 ? `AR ${candidate.ar.toFixed(1)}` : '';
   const length = candidate.totalLength > 0
     ? `${Math.floor(candidate.totalLength / 60)}:${String(candidate.totalLength % 60).padStart(2, '0')}`
     : '';
@@ -521,7 +747,7 @@ export function formatRecommendLine(candidate: RecommendCandidate, index: number
     : '推荐候选';
   return [
     `#${index + 1} ${candidate.title}${candidate.version ? ` [${candidate.version}]` : ''}`,
-    `${stars}｜${mods}｜${candidate.pp > 0 ? `约 ${candidate.pp}pp` : 'pp 未知'}｜${bpm}｜${length}`,
+    `${stars}｜${mods}｜${candidate.pp > 0 ? `约 ${candidate.pp}pp` : 'pp 未知'}｜${ar}｜${bpm}｜${length}`,
     `理由：${reason}`,
     `BID ${candidate.beatmapId}｜${candidate.mapUrl}`,
   ].join('\n');

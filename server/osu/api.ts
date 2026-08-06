@@ -14,6 +14,11 @@ const TTL = {
   score: 120_000,
 };
 
+export interface OsuBeatmapAttributes {
+  star_rating: number;
+  max_combo?: number;
+}
+
 function fetchWithTimeout(url: string, opts: RequestInit, timeoutMs: number = 15000): Promise<Response> {
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), timeoutMs);
@@ -81,6 +86,35 @@ export async function getUserRecentScores(userId: number, mode: OsuMode = 'osu',
   return scores;
 }
 
+export async function getUserBeatmapScore(
+  userId: number,
+  beatmapId: number,
+  mode: OsuMode = 'osu',
+): Promise<OsuScore> {
+  const cacheKey = `user-score:${userId}:${beatmapId}:${mode}`;
+  const cached = cacheGet<OsuScore>(cacheKey);
+  if (cached) return cached;
+  // Same endpoint family as the original yumu `!s`: beatmap-scoped user score.
+  // legacy_only=0 first (lazer), then 1 (stable) for scores not exposed by the
+  // modern variant.
+  let body: { score?: OsuScore } | undefined;
+  for (const legacyOnly of ['0', '1']) {
+    try {
+      body = await osuFetch<{ score?: OsuScore }>(
+        `/beatmaps/${beatmapId}/scores/users/${userId}?mode=${mode}&legacy_only=${legacyOnly}`,
+      );
+      break;
+    } catch (error) {
+      if (String(error?.message || '').includes('资源不存在')) continue;
+      throw error;
+    }
+  }
+  const score = body?.score;
+  if (!score) throw new Error(`beatmap_score_not_found:${beatmapId}`);
+  cacheSet(cacheKey, score, TTL.score);
+  return score;
+}
+
 export async function getBeatmapScores(
   beatmapId: number,
   mode: OsuMode = 'osu',
@@ -122,20 +156,24 @@ export async function getBeatmap(beatmapId: number): Promise<OsuBeatmap> {
   return beatmap;
 }
 
-export async function getBeatmapAttributes(beatmapId: number, mode: OsuMode = 'osu', mods: string[] = []): Promise<{ attributes: { star_rating: number } }> {
+export async function getBeatmapAttributes(
+  beatmapId: number,
+  mode: OsuMode = 'osu',
+  mods: string[] = [],
+): Promise<{ attributes: OsuBeatmapAttributes }> {
   const normalizedMods = [...new Set(mods.map(mod => String(mod).toUpperCase()))]
     .filter(mod => mod && mod !== 'NM')
     .sort();
   const cacheKey = `attr:${beatmapId}:${mode}:${normalizedMods.join(',')}`;
-  const cached = cacheGet<{ attributes: { star_rating: number } }>(cacheKey);
+  const cached = cacheGet<{ attributes: OsuBeatmapAttributes }>(cacheKey);
   if (cached) return cached;
   const body: Record<string, unknown> = { mods: normalizedMods };
   if (mode !== 'osu') body.ruleset_id = { taiko: 1, fruits: 2, mania: 3 }[mode] || 0;
-  let attrs: { attributes: { star_rating: number } };
+  let attrs: { attributes: OsuBeatmapAttributes };
   let lastError: unknown;
   for (let attempt = 0; attempt < 3; attempt++) {
     try {
-      attrs = await osuFetch<{ attributes: { star_rating: number } }>(`/beatmaps/${beatmapId}/attributes`, {
+      attrs = await osuFetch<{ attributes: OsuBeatmapAttributes }>(`/beatmaps/${beatmapId}/attributes`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body)

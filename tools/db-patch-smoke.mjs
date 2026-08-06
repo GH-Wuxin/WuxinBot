@@ -1,4 +1,7 @@
 // One-off smoke-test helper: toggles quick-router config for owner private chat.
+// WARNING: store.ts 的生产库守卫会拦截本工具（入口不是 server/index.ts）。
+// 除非确属有意改生产库，请先设置 DATA_DIR 指向测试目录；
+// 有意操作时设置 ALLOW_PRODUCTION_WRITE=1。
 // Usage: tsx tools/db-patch-smoke.mjs enable-private|disable-private
 import { ensureStore, updateDb } from '../server/store.ts';
 

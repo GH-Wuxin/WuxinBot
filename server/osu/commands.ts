@@ -1377,6 +1377,32 @@ export async function handleOsuCommand(
       if (sendMessage) await sendMessage(event, reply);
       return { replied: true, reason: reply };
     }
+    if (action === 'recommend' || action.startsWith('recommend ')) {
+      if (!permissions?.isOwner) {
+        if (sendMessage) await sendMessage(event, '该操作仅限 owner。');
+        return { replied: true, reason: 'osu clear recommend 非 owner' };
+      }
+      const targetArg = String(subFree || '').replace(/^recommend\s*/, '').trim();
+      if (!targetArg) {
+        if (sendMessage) await sendMessage(event, '用法：/w osu clear recommend <osu用户名或ID>');
+        return { replied: true, reason: 'osu clear recommend 缺目标' };
+      }
+      let recommendOsuId = /^\d+$/.test(targetArg) ? Number(targetArg) : 0;
+      if (!recommendOsuId) {
+        try {
+          const { getUser } = await import('./api.js');
+          recommendOsuId = (await getUser(targetArg)).id;
+        } catch {
+          if (sendMessage) await sendMessage(event, `找不到 osu! 用户 "${targetArg}"，无法清除推图历史。`);
+          return { replied: true, reason: 'osu clear recommend 找不到目标' };
+        }
+      }
+      const { clearRecommendHistory } = await import('./recommender.js');
+      const removed = clearRecommendHistory(recommendOsuId);
+      const reply = `已清除 ${targetArg} 的推图历史（防重复记录 ${removed} 条，冷却已重置）。`;
+      if (sendMessage) await sendMessage(event, reply);
+      return { replied: true, reason: reply };
+    }
     if (action === 'cache') {
       updateDb((draft) => {
         draft.osuAnalyses = [];
@@ -1386,7 +1412,7 @@ export async function handleOsuCommand(
       if (sendMessage) await sendMessage(event, '已清除所有分析缓存。');
       return { replied: true, reason: 'osu clear cache' };
     }
-    if (sendMessage) await sendMessage(event, '用法：/w osu clear bind（删除绑定）/ /w osu clear history（删除分析历史）/ /w osu clear cooldown <玩家>（取消指定玩家冷却，仅 owner）/ /w osu clear cache（清除全部缓存，仅管理员）');
+    if (sendMessage) await sendMessage(event, '用法：/w osu clear bind（删除绑定）/ /w osu clear history（删除分析历史）/ /w osu clear cooldown <玩家>（取消指定玩家冷却，仅 owner）/ /w osu clear recommend <玩家>（清除指定玩家推图历史，仅 owner）/ /w osu clear cache（清除全部缓存，仅管理员）');
     return { replied: true, reason: 'osu clear 缺参数' };
   }
 
@@ -1400,6 +1426,7 @@ export async function handleOsuCommand(
       '/w osu clear bind — 删除绑定',
       '/w osu clear history — 删除分析历史',
       '/w osu clear cooldown <玩家> — 取消指定玩家分析/近期/推图冷却（仅 owner）',
+      '/w osu clear recommend <玩家> — 清除指定玩家推图历史与冷却（仅 owner）',
     ].join('\n');
     if (sendMessage) await sendMessage(event, help);
     return { replied: true, reason: 'osu help' };

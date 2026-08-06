@@ -99,6 +99,10 @@ console.log('=== Unit: matchQuickCommand ===');
     ['!帮助', 'help', '', {}],
     ['！dice 6', 'dice', '6', {}],
     ['!ml 123', 'match', '123', {}],
+    ['!s 4270382', 'score', '4270382', {}],
+    ['!score 4270382', 'score', '4270382', {}],
+    ['/s 4270382', 'score', '4270382', {}],
+    ['/score 4270382', 'score', '4270382', {}],
     ['/plus 名字', 'pplus', '名字', {}],
     ['/bp 10', 'bp', '10', {}],
     ['/recent', 'recent', '', {}],
@@ -175,6 +179,25 @@ console.log('\n=== Unit: BP rank/range parsing ===');
 
   const usernameOnly = parseOsuArgs(bpDef, '玩家名');
   ok('bp-username', usernameOnly.username === '玩家名' && !usernameOnly.bpSelection, JSON.stringify(usernameOnly));
+}
+
+// ── 2a. Score argument parsing (`!s <bid> [玩家名]`) ──
+
+console.log('\n=== Unit: score args ===');
+
+{
+  const scoreDef = { id: 'score', capability: 'score' };
+  const bidOnly = parseOsuArgs(scoreDef, '4270382');
+  ok('score-bid-only', bidOnly.scoreBeatmapId === 4270382 && bidOnly.username === '', JSON.stringify(bidOnly));
+
+  const bidWithUser = parseOsuArgs(scoreDef, '4270382 windpipeey');
+  ok('score-bid-user', bidWithUser.scoreBeatmapId === 4270382 && bidWithUser.username === 'windpipeey', JSON.stringify(bidWithUser));
+
+  const badBid = parseOsuArgs(scoreDef, 'abc');
+  ok('score-bad-bid', Boolean(badBid.error), JSON.stringify(badBid));
+
+  const empty = parseOsuArgs(scoreDef, '');
+  ok('score-empty', Boolean(empty.error), JSON.stringify(empty));
 }
 
 // ── 2b. Image-first delivery ──

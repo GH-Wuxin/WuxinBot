@@ -1,4 +1,5 @@
 // In-memory health state — not persisted to DB. Modules update this as side effects.
+import { getKbHealth } from './bot/knowledgeBase.js';
 
 const state = {
   onebot: { connected: false, lastEventAt: '', lastError: '' },
@@ -21,6 +22,7 @@ export function getHealth() {
     },
     bot: { ...state.bot },
     osu: { ...state.osu },
+    kb: getKbHealth(),
     requestCount: state.requestCount,
     status: statusSummary(),
   };

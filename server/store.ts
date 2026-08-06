@@ -3,12 +3,67 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { activateModelProfile, DEEPSEEK_BASE_URL, looksLikeMimoEndpoint, MIMO_BASE_URL, recoverProviderProfiles } from './modelConfig.js';
 import { DEFAULT_BOTS } from './bots/registry.js';
+import { DEFAULT_KB_SETTINGS } from './bot/knowledgeTypes.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const rootDir = path.resolve(__dirname, '..');
-const dataDir = process.env.DATA_DIR || path.join(process.env.APPDATA || path.join(process.env.USERPROFILE || 'C:', 'AppData', 'Roaming'), 'Wuxin');
-const dbPath = path.join(dataDir, 'db.json');
-const dbLockPath = path.join(dataDir, 'db.lock');
+
+function defaultDataDir() {
+  return path.join(process.env.APPDATA || path.join(process.env.USERPROFILE || 'C:', 'AppData', 'Roaming'), 'Wuxin');
+}
+
+/** The production data directory, computed from environment at call time. */
+export function productionDataDir(): string {
+  return path.resolve(defaultDataDir());
+}
+
+/** Resolve the active data directory. Reads DATA_DIR on every call so a
+ *  forgotten/empty env var cannot silently keep pointing at production. */
+export function getDataDir(): string {
+  return path.resolve(process.env.DATA_DIR || defaultDataDir());
+}
+
+function getDbPath() {
+  return path.join(getDataDir(), 'db.json');
+}
+
+function getDbLockPath() {
+  return path.join(getDataDir(), 'db.lock');
+}
+
+export function isProductionDb(): boolean {
+  const current = getDataDir();
+  const production = productionDataDir();
+  if (process.platform === 'win32') return current.toLowerCase() === production.toLowerCase();
+  return current === production;
+}
+
+function isTrustedServerEntry(): boolean {
+  const entry = process.argv[1];
+  if (!entry) return false;
+  const resolved = path.resolve(entry);
+  const serverIndex = path.join(rootDir, 'server', 'index.ts');
+  if (process.platform === 'win32') return resolved.toLowerCase() === serverIndex.toLowerCase();
+  return resolved === serverIndex;
+}
+
+function assertWriteTargetSafe() {
+  if (!isProductionDb()) return;
+  if (process.env.NODE_ENV === 'test') {
+    throw new Error(
+      '安全防护：检测到 NODE_ENV=test 试图写入生产数据库（%APPDATA%\\Wuxin\\db.json）。' +
+      '请显式设置 DATA_DIR 指向测试目录。'
+    );
+  }
+  if (process.env.ALLOW_PRODUCTION_WRITE === '1') return;
+  if (!isTrustedServerEntry()) {
+    throw new Error(
+      '安全防护：拒绝向生产数据库（%APPDATA%\\Wuxin\\db.json）写入——当前入口不是 server/index.ts' +
+      `（${process.argv[1] || 'unknown'}）。如确为有意操作，请显式设置 ALLOW_PRODUCTION_WRITE=1；` +
+      '测试/脚本请设置 DATA_DIR 指向临时目录。'
+    );
+  }
+}
 
 // Auto backup: snapshot db.json every few minutes so a corrupted write or
 // external damage never costs more than the snapshot interval. Kept under the
@@ -21,11 +76,11 @@ function autoBackupIfDue() {
   const now = Date.now();
   if (now - lastAutoBackupAt < AUTO_BACKUP_INTERVAL_MS) return;
   try {
-    const backupDir = path.join(dataDir, 'backups');
+    const backupDir = path.join(getDataDir(), 'backups');
     fs.mkdirSync(backupDir, { recursive: true });
     const stamp = new Date(now).toISOString().replace(/[:.]/g, '-');
     const dest = path.join(backupDir, `auto-${stamp}.json`);
-    if (!fs.existsSync(dest)) fs.copyFileSync(dbPath, dest);
+    if (!fs.existsSync(dest)) fs.copyFileSync(getDbPath(), dest);
     const files = fs.readdirSync(backupDir)
       .filter((f) => /^auto-.*\.json$/.test(f))
       .sort();
@@ -45,7 +100,7 @@ function sleepSync(ms) {
 
 function lockOwnerIsAlive() {
   try {
-    const pid = Number(fs.readFileSync(dbLockPath, 'utf8').trim());
+    const pid = Number(fs.readFileSync(getDbLockPath(), 'utf8').trim());
     if (!Number.isInteger(pid) || pid <= 0) return false;
     process.kill(pid, 0);
     return true;
@@ -55,15 +110,15 @@ function lockOwnerIsAlive() {
 }
 
 function withDbLock(callback) {
-  fs.mkdirSync(dataDir, { recursive: true });
+  fs.mkdirSync(getDataDir(), { recursive: true });
   let handle;
   for (let attempt = 0; attempt < 200; attempt += 1) {
     try {
-      handle = fs.openSync(dbLockPath, 'wx');
+      handle = fs.openSync(getDbLockPath(), 'wx');
       fs.writeFileSync(handle, String(process.pid), 'utf8');
       break;
     } catch (error) {
-      const lockExists = fs.existsSync(dbLockPath);
+      const lockExists = fs.existsSync(getDbLockPath());
       if (!['EEXIST', 'EPERM', 'EACCES'].includes(error?.code)) throw error;
       if (!lockExists) {
         sleepSync(10);
@@ -71,13 +126,13 @@ function withDbLock(callback) {
       }
       let stale = false;
       try {
-        const ageMs = Date.now() - fs.statSync(dbLockPath).mtimeMs;
+        const ageMs = Date.now() - fs.statSync(getDbLockPath()).mtimeMs;
         stale = ageMs > 30_000 || (ageMs > 2_000 && !lockOwnerIsAlive());
       } catch {
         stale = false;
       }
       if (stale) {
-        try { fs.unlinkSync(dbLockPath); } catch { /* another process may own cleanup */ }
+        try { fs.unlinkSync(getDbLockPath()); } catch { /* another process may own cleanup */ }
       } else {
         sleepSync(25);
       }
@@ -88,7 +143,7 @@ function withDbLock(callback) {
     return callback();
   } finally {
     try { fs.closeSync(handle); } catch { /* ignore close failure */ }
-    try { fs.unlinkSync(dbLockPath); } catch { /* ignore cleanup race */ }
+    try { fs.unlinkSync(getDbLockPath()); } catch { /* ignore cleanup race */ }
   }
 }
 
@@ -170,6 +225,7 @@ export const defaultCommandPermissions = {
   osuRecent: 'guest',
   osuClearCache: 'admin',
   osuClearCooldown: 'owner',
+  osuClearRecommend: 'owner',
   osuHelp: 'guest'
 };
 
@@ -239,7 +295,12 @@ const initialDb = {
     pplusReferences: [] as (string | number)[],
     commandRoles: defaultCommandRoles,
     commandPermissions: defaultCommandPermissions,
-    botRegistry: undefined // populated by normalizeDb from defaults
+    botRegistry: undefined, // populated by normalizeDb from defaults
+    kb: {
+      ...DEFAULT_KB_SETTINGS,
+      collections: { ...DEFAULT_KB_SETTINGS.collections },
+      rollout: { ...DEFAULT_KB_SETTINGS.rollout, groupIds: [] }
+    }
   },
   botRegistry: undefined,
   skillStore: { records: [], updatedAt: '' },
@@ -348,16 +409,19 @@ function normalizeDb(db) {
 // inspect, and hand-edit state easily. Keep writes atomic at the object level:
 // readDb -> mutate -> writeDb.
 export function ensureStore() {
-  fs.mkdirSync(dataDir, { recursive: true });
-  if (!fs.existsSync(dbPath)) {
+  fs.mkdirSync(getDataDir(), { recursive: true });
+  if (!fs.existsSync(getDbPath())) {
     withDbLock(() => {
-      if (!fs.existsSync(dbPath)) writeJsonAtomic(dbPath, initialDb);
+      if (!fs.existsSync(getDbPath())) {
+        assertWriteTargetSafe();
+        writeJsonAtomic(getDbPath(), initialDb);
+      }
     });
   }
 }
 
 function readDbUnlocked() {
-  const raw = fs.readFileSync(dbPath, 'utf8').replace(/^﻿/, '');
+  const raw = fs.readFileSync(getDbPath(), 'utf8').replace(/^﻿/, '');
   return normalizeDb(JSON.parse(raw));
 }
 
@@ -367,20 +431,22 @@ export function readDb() {
 }
 
 export function writeDb(db) {
+  assertWriteTargetSafe();
   ensureStore();
   return withDbLock(() => {
-    const result = writeJsonAtomic(dbPath, db);
+    const result = writeJsonAtomic(getDbPath(), db);
     autoBackupIfDue();
     return result;
   });
 }
 
 export function updateDb(mutator) {
+  assertWriteTargetSafe();
   ensureStore();
   return withDbLock(() => {
     const db = readDbUnlocked();
     const result = mutator(db);
-    writeJsonAtomic(dbPath, db);
+    writeJsonAtomic(getDbPath(), db);
     autoBackupIfDue();
     return result ?? db;
   });

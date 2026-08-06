@@ -40,6 +40,7 @@ const {
   checkRecommendCooldown,
   loadRecommendHistory,
   markRecommendation,
+  clearRecommendHistory,
   formatRecommendLine,
 } = await import('../server/osu/recommender.ts');
 const { getUserBestScores } = await import('../server/osu/api.ts');
@@ -110,6 +111,84 @@ for (const [name, osuId] of [['[SHK]Wuxin', 19244792], ['tan-X', 24657559]]) {
   assert(res.ok || (typeof res.reason === 'string' && res.reason.length > 0), label, `expected candidates or honest failure, got ${JSON.stringify(res).slice(0, 200)}`);
 }
 
+// ── 1.5 Engine: natural-language-style numeric filters (mod-adjusted) ──
+{
+  const label = 'engine:filters';
+  const { parseRecommendStatement } = await import('../server/osu/recommendFilters.ts');
+  const statement = 'bpm<=180 9<ar<10.3';
+  const parsed = parseRecommendStatement(statement);
+  assert(parsed.ok, `${label}:parse`, JSON.stringify(parsed));
+  if (parsed.ok) {
+    const res = await recommendForPlayer({ kind: 'id', value: 19244792 }, db, {
+      count: 3,
+      excludeBeatmapsetIds: new Set(),
+      bypassCache: true,
+      filters: parsed.filters,
+      filterStatement: statement,
+    });
+    assert(res.ok, `${label}:ok`, `expected ok, got ${JSON.stringify(res).slice(0, 200)}`);
+    if (res.ok) {
+      const outOfRange = res.candidates.filter(
+        (c) => c.bpm > 180 + 0.01 || c.ar < 9 - 0.01 || c.ar > 10.3 + 0.01,
+      );
+      assert(outOfRange.length === 0, `${label}:values`, JSON.stringify(
+        outOfRange.map((c) => ({ title: c.title, bpm: c.bpm, ar: c.ar })),
+      ));
+    }
+    const impossible = await recommendForPlayer({ kind: 'id', value: 19244792 }, db, {
+      count: 3,
+      excludeBeatmapsetIds: new Set(),
+      bypassCache: true,
+      filters: parseRecommendStatement('bpm<=80').filters,
+      filterStatement: 'bpm<=80',
+    });
+    assert(
+      !impossible.ok && String(impossible.reason || '').includes('筛选条件'),
+      `${label}:empty-honest`,
+      `expected filtered honest failure, got ${JSON.stringify(impossible).slice(0, 200)}`,
+    );
+    // Cache-hit path: same-tier player-count filter + no-DT must hold.
+    const hot = await recommendForPlayer({ kind: 'id', value: 19244792 }, db, {
+      count: 3,
+      excludeBeatmapsetIds: new Set(),
+      filters: parseRecommendStatement('similar>=10 no_dt').filters,
+      filterStatement: 'similar>=10 no_dt',
+    });
+    assert(hot.ok, `${label}:similar-ok`, `expected ok, got ${JSON.stringify(hot).slice(0, 200)}`);
+    if (hot.ok) {
+      const bad = hot.candidates.filter(
+        (c) => c.similarCount < 10 || c.mods.includes('DT') || c.mods.includes('NC'),
+      );
+      assert(bad.length === 0, `${label}:similar-values`, JSON.stringify(
+        bad.map((c) => ({ title: c.title, similarCount: c.similarCount, mods: c.mods })),
+      ));
+    }
+    // "playable": cap candidates at the player's Top star × 1.1 (base domain)
+    // and keep mod-adjusted display values (DT maps must show modded stars).
+    const playable = await recommendForPlayer({ kind: 'id', value: 26880346 }, db, {
+      count: 3,
+      excludeBeatmapsetIds: new Set(),
+      bypassCache: true,
+      filters: parseRecommendStatement('playable').filters,
+      filterStatement: 'playable',
+    });
+    assert(playable.ok, `${label}:playable-ok`, `expected ok, got ${JSON.stringify(playable).slice(0, 200)}`);
+    if (playable.ok) {
+      const cap = (playable.stats?.topStarMax || 0) * 1.1 + 0.01;
+      const tooHard = playable.candidates.filter((c) => c.baseStars > cap);
+      assert(tooHard.length === 0, `${label}:playable-cap`, JSON.stringify(
+        tooHard.map((c) => ({ title: c.title, baseStars: c.baseStars, cap })),
+      ));
+      const modAdjusted = playable.candidates.filter(
+        (c) => c.mods.length > 0 && c.stars > c.baseStars + 0.2,
+      );
+      assert(modAdjusted.length >= 1, `${label}:mod-adjusted`, JSON.stringify(
+        playable.candidates.map((c) => ({ title: c.title, mods: c.mods, stars: c.stars, baseStars: c.baseStars })),
+      ));
+    }
+  }
+}
+
 // ── 3. Cooldown + anti-repeat persistence ──
 {
   const label = 'cooldown';
@@ -125,6 +204,12 @@ for (const [name, osuId] of [['[SHK]Wuxin', 19244792], ['tan-X', 24657559]]) {
   assert(cooldown > 0, `${label}:set`, `expected > 0, got ${cooldown}`);
   const history = loadRecommendHistory(afterDb, osuId);
   assert(history.has(88881), `${label}:history`, `88881 missing from ${JSON.stringify([...history])}`);
+
+  const cleared = clearRecommendHistory(osuId);
+  assert(cleared >= 1, `${label}:clear-count`, `expected >=1, got ${cleared}`);
+  const afterClearDb = readDb();
+  assert(checkRecommendCooldown(afterClearDb, osuId) === 0, `${label}:clear-cooldown`, 'cooldown not reset');
+  assert(loadRecommendHistory(afterClearDb, osuId).size === 0, `${label}:clear-history`, 'history not empty');
 }
 
 // ── 4. Internal bot command returns readable output ──

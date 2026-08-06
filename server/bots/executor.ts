@@ -7,6 +7,8 @@ import { getRenderServer } from './renderServer.js';
 import { scoreStarRating } from '../osu/scoreMetrics.js';
 import { enrichScoreStarRatings } from '../osu/starRating.js';
 import type { OsuMode, OsuScore, OsuUser } from '../osu/types.js';
+import { describeFilters, isEmptyFilters } from '../osu/recommendFilters.js';
+import type { RecommendFilters } from '../osu/recommendFilters.js';
 
 // ── Pending bot responses (correlationId → resolver) ──
 
@@ -23,6 +25,14 @@ const pendingBotCalls = new Map<string, {
   timeout: NodeJS.Timeout;
   settleTimer?: NodeJS.Timeout;
 }>();
+
+// In-flight recommend executions keyed by
+// `${userId}:${username}:${normalizedRequestText}`. A model may emit two
+// recommend tool calls for the same request; the second call should share the
+// first result instead of re-running the engine and tripping the cooldown
+// mid-flight. Different filter requests from the same player must NOT share a
+// result, hence the request text is part of the key.
+const inFlightRecommends = new Map<string, Promise<Awaited<ReturnType<typeof executeInternalBotCommand>>>>();
 
 const BOT_RESPONSE_TIMEOUT_MS = 20_000;
 const BOT_TEXT_SETTLE_MS = 1_200;
@@ -376,7 +386,11 @@ function directContentForBotResult(
   images: string[] = [],
 ): string | undefined {
   const text = String(content || '').trim();
-  if (!text || images.length > 0) return undefined;
+  if (!text) return undefined;
+  // Recommendations must keep their structured text (names + BIDs) even when
+  // beatmap cards are rendered: the cards alone do not carry the identifiers.
+  const isRecommend = String(command?.name || '').toLocaleLowerCase() === 'recommend';
+  if (images.length > 0 && !isRecommend) return undefined;
 
   const lines = text.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
   const looksLikeStructuredResult =
@@ -568,7 +582,16 @@ export async function executeToolCall(
               : (parseBpSelectionFromUserText(String(context.event?.text || '')).selection || resolveBpQuerySelection({})))
         : undefined;
 
-      if (capability === 'recommend' && context.sendMessage && context.event) {
+      const recommendRequestText = String(context.event?.text || '')
+        .trim()
+        .toLowerCase()
+        .replace(/\s+/g, ' ');
+      const recommendKey = capability === 'recommend'
+        ? `${String(context.event?.userId || 'anon')}:${String(oUsername || '').trim().toLowerCase()}:${recommendRequestText}`
+        : '';
+      const pendingRecommend = recommendKey ? inFlightRecommends.get(recommendKey) : undefined;
+
+      if (capability === 'recommend' && context.sendMessage && context.event && !pendingRecommend) {
         try {
           await context.sendMessage(context.event, '（正在翻同分段玩家的成绩单…可能要等半分钟）');
         } catch {
@@ -580,13 +603,27 @@ export async function executeToolCall(
         const internalBotId = ['yumu', 'kanon', 'hydrant', 'lazybot'].includes(String(args.bot || ''))
           ? String(args.bot)
           : 'wuxin_internal';
-        const rawResult = await executeInternalBotCommand(
-          internalBotId,
-          capability,
-          oUsername || '',
-          context,
-          oBpSelection,
-        );
+        let rawResult;
+        if (pendingRecommend) {
+          rawResult = await pendingRecommend;
+        } else {
+          const run = executeInternalBotCommand(
+            internalBotId,
+            capability,
+            oUsername || '',
+            context,
+            oBpSelection,
+            capability === 'recommend' ? { translateRecommendFilters: true } : undefined,
+          );
+          if (recommendKey) inFlightRecommends.set(recommendKey, run);
+          try {
+            rawResult = await run;
+          } finally {
+            if (recommendKey && inFlightRecommends.get(recommendKey) === run) {
+              inFlightRecommends.delete(recommendKey);
+            }
+          }
+        }
         const result = typeof rawResult === 'string'
           ? { content: rawResult, images: [] as string[] }
           : { content: rawResult.content, images: rawResult.images || [] };
@@ -1110,8 +1147,9 @@ export async function executeInternalBotCommand(
   botId: string,
   commandName: string,
   username: string,
-  context: { db: any; userId: string; groupId?: string; event?: any; isOwner?: boolean },
+  context: { db: any; userId: string; groupId?: string; event?: any; isOwner?: boolean; beatmapId?: number },
   bpSelection?: BpQuerySelection,
+  options?: { translateRecommendFilters?: boolean },
 ): Promise<string | InternalBotCommandResult> {
   const { db, userId } = context;
 
@@ -1207,6 +1245,54 @@ export async function executeInternalBotCommand(
       return `${user.username} 最近一次 osu! 成绩：\n${scoreLine}`;
     }
 
+    case 'score': {
+      // Player's own best score on a specific beatmap (`!s <bid>` / `!score <bid>` / `/s <bid>`).
+      const beatmapId = Number(context.beatmapId || 0);
+      if (!Number.isInteger(beatmapId) || beatmapId <= 0) {
+        throw new Error('请提供谱面 BID，例如 !s 4270382。');
+      }
+      const { getUserBeatmapScore } = await import('../osu/api.js');
+      let score: OsuScore;
+      try {
+        score = await getUserBeatmapScore(user.id, beatmapId, 'osu');
+      } catch (error) {
+        return `${user.username} 在 BID ${beatmapId} 上没有查到成绩（${String(error?.message || error)}）。`;
+      }
+      // The beatmap-scoped score endpoint often omits beatmapset metadata;
+      // fetch it so text and the E5 panel show the real title/artist.
+      if (!score?.beatmapset?.title && !score?.beatmap?.beatmapset?.title) {
+        try {
+          const { getBeatmap } = await import('../osu/api.js');
+          const beatmap = await getBeatmap(beatmapId);
+          if (beatmap) {
+            score = {
+              ...score,
+              beatmap: score.beatmap || beatmap,
+              beatmapset: beatmap.beatmapset || (score as any).beatmapset,
+            };
+          }
+        } catch { /* metadata enrichment is non-fatal */ }
+      }
+      const [enriched] = (await enrichScoreStarRatings([score], 'osu')).scores;
+      const scoreLine = formatInternalScoreLine(enriched, { includeCombo: true });
+
+      // Same 雨沐 E5 single-score panel as `!r`/`!p`.
+      if (getRenderServer().hasClients()) {
+        try {
+          const { renderScoreCard } = await import('./render.js');
+          const rendered = await renderScoreCard(scoreForRenderer(enriched), user, null);
+          if (rendered) {
+            return {
+              content: `${user.username} 在 BID ${beatmapId} 的成绩：\n${scoreLine}`,
+              images: [rendered.cqCode],
+            };
+          }
+        } catch { /* fall through to text */ }
+      }
+
+      return `${user.username} 在 BID ${beatmapId} 的成绩：\n${scoreLine}`;
+    }
+
     case 'profile': {
       return formatInternalProfileText(user);
     }
@@ -1274,10 +1360,27 @@ export async function executeInternalBotCommand(
         return `${user.username} 刚推过图，${Math.ceil(cooldownMs / 60_000)} 分钟后再来换口味吧。`;
       }
 
+      // Natural-language filters are translated by a dedicated L2 model into a
+      // canonical statement, then parsed deterministically. Only the LLM tool
+      // path enables this; quick routes (`!推荐` etc.) stay unfiltered.
+      let filters: RecommendFilters | undefined;
+      let filterStatement = '';
+      if (options?.translateRecommendFilters) {
+        const { translateRecommendFilters } = await import('../osu/recommendFilters.js');
+        const translated = await translateRecommendFilters(String(context.event?.text || ''), db);
+        if (!translated.ok) {
+          throw new Error(translated.reason || '没听懂你要的筛选条件，暂时没法按这个条件推图。');
+        }
+        filters = translated.filters;
+        filterStatement = translated.statement || describeFilters(translated.filters);
+      }
+
       const exclude = loadRecommendHistory(db, user.id);
       const result = await recommendForPlayer(target, db, {
         count: 3,
         excludeBeatmapsetIds: exclude,
+        filters,
+        filterStatement: filterStatement || undefined,
       });
       if (!result.ok) {
         throw new Error(result.reason || '暂时推不了图。');
@@ -1290,7 +1393,19 @@ export async function executeInternalBotCommand(
       }
 
       const lines = result.candidates.map((c, i) => formatRecommendLine(c, i));
-      const content = `${user.username} 的谱面推荐：\n${lines.join('\n\n')}`;
+      const filterNote = filters && !isEmptyFilters(filters)
+        ? `（按你的要求筛选：${describeFilters(filters)}）`
+        : '';
+      const recoStats = result.stats || ({} as NonNullable<typeof result.stats>);
+      const starText = recoStats.topStarMax
+        ? `，Top 基础星数 ${(recoStats.topStarMean || 0).toFixed(1)}-${recoStats.topStarMax.toFixed(1)}★`
+        : '';
+      const moddedStarText = recoStats.topModdedStarMax
+        ? `，带Mod ${(recoStats.topModdedStarMean || 0).toFixed(1)}-${recoStats.topModdedStarMax.toFixed(1)}★`
+        : '';
+      const modsText = recoStats.topMods?.length ? `，主玩 ${recoStats.topMods.join('+')}` : '';
+      const playerContext = `目标玩家：${user.username}（PP ${(user.statistics?.pp || 0).toLocaleString()}，全球 #${(user.statistics?.global_rank || 0).toLocaleString()}${starText}${moddedStarText}${modsText}）`;
+      const content = `${playerContext}\n\n${user.username} 的谱面推荐${filterNote}：\n${lines.join('\n\n')}`;
 
       let images: string[] = [];
       if (getRenderServer().hasClients()) {
@@ -1489,6 +1604,8 @@ export interface ToolLoopResult {
   usage: any;
   toolCallsMade: number;
   iterations: number;
+  /** True when a query_osu recommend tool call completed successfully this turn. */
+  recommendToolCalled: boolean;
   /** Image references/CQ codes are kept out of LLM messages and returned to the caller. */
   images: string[];
   /** Structured text that the caller must append verbatim after the short LLM lead. */
@@ -1531,6 +1648,7 @@ export async function runToolLoop(
   let totalUsage = { total_tokens: 0, prompt_tokens: 0, completion_tokens: 0 };
   let toolCallsMade = 0;
   let iterations = 0;
+  let recommendToolCalled = false;
   const collectedImages: string[] = [];
   const collectedDirectContent: string[] = [];
 
@@ -1551,6 +1669,13 @@ export async function runToolLoop(
     const result = await executeToolCall(syntheticCall, {
       db, userId, groupId, sendMessage, event, selfQq
     });
+    if (
+      result.ok &&
+      requiredTool.toolName === 'query_osu' &&
+      requiredTool.args.capability === 'recommend'
+    ) {
+      recommendToolCalled = true;
+    }
 
     // Deterministic routing owns failures: the LLM never gets a chance to
     // improvise a recommendation (or any data) when the tool itself failed.
@@ -1560,6 +1685,7 @@ export async function runToolLoop(
         usage: totalUsage,
         toolCallsMade: 1,
         iterations: 1,
+        recommendToolCalled,
         images: [],
         directContent: ''
       };
@@ -1638,6 +1764,7 @@ export async function runToolLoop(
         usage: totalUsage,
         toolCallsMade,
         iterations,
+        recommendToolCalled,
         images: collectedImages,
         directContent: collectedDirectContent.join('\n\n')
       };
@@ -1654,6 +1781,7 @@ export async function runToolLoop(
       usage: totalUsage,
       toolCallsMade,
       iterations,
+      recommendToolCalled,
       images: collectedImages,
       directContent: collectedDirectContent.join('\n\n')
     };
@@ -1689,6 +1817,7 @@ export async function runToolLoop(
           usage: totalUsage,
           toolCallsMade,
           iterations,
+          recommendToolCalled,
           images: collectedImages,
           directContent: collectedDirectContent.join('\n\n')
         };
@@ -1717,6 +1846,7 @@ export async function runToolLoop(
         usage: totalUsage,
         toolCallsMade,
         iterations,
+        recommendToolCalled,
         images: collectedImages,
         directContent: collectedDirectContent.join('\n\n')
       };
@@ -1729,6 +1859,7 @@ export async function runToolLoop(
         usage: totalUsage,
         toolCallsMade,
         iterations,
+        recommendToolCalled,
         images: collectedImages,
         directContent: collectedDirectContent.join('\n\n')
       };
@@ -1746,9 +1877,33 @@ export async function runToolLoop(
 
     // Execute each tool call
     for (const tc of toolCalls) {
+      let callDeliversDirect = deliverDirectContent;
+      if (!callDeliversDirect) {
+        try {
+          const callArgs = JSON.parse(String((tc as any).function?.arguments || '{}'));
+          callDeliversDirect = String(tc.function?.name || '') === 'query_osu' &&
+            String(callArgs?.capability || '').trim() === 'recommend';
+        } catch {
+          callDeliversDirect = false;
+        }
+      }
+
       const result = await executeToolCall(tc, {
         db, userId, groupId, sendMessage, event, selfQq
       });
+      if (result.ok && !recommendToolCalled) {
+        try {
+          const callArgs = JSON.parse(String((tc as any).function?.arguments || '{}'));
+          if (
+            String(tc.function?.name || '') === 'query_osu' &&
+            String(callArgs?.capability || '').trim() === 'recommend'
+          ) {
+            recommendToolCalled = true;
+          }
+        } catch {
+          // Malformed args cannot be a successful recommend call.
+        }
+      }
 
       // Sanitize and validate result
       const safeContent = sanitizeToolResult(result.content);
@@ -1770,7 +1925,7 @@ export async function runToolLoop(
           }
         }
 
-        if (deliverDirectContent) {
+        if (callDeliversDirect) {
           const directContent = sanitizeDirectDeliveryContent(result.directContent || '');
           if (directContent && isSafeToolResult(directContent)) {
             acceptedDirectContent = directContent;
@@ -1840,6 +1995,7 @@ export async function runToolLoop(
         usage: totalUsage,
         toolCallsMade,
         iterations,
+        recommendToolCalled,
         images: collectedImages,
         directContent: collectedDirectContent.join('\n\n')
       };
@@ -1858,6 +2014,7 @@ export async function runToolLoop(
     usage: totalUsage,
     toolCallsMade,
     iterations,
+    recommendToolCalled,
     images: collectedImages,
     directContent: collectedDirectContent.join('\n\n')
   };

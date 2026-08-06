@@ -1,7 +1,7 @@
 // intent-verify.mjs — unit tests for detectRequiredOsuTool intent classifier.
 // Exit 0 on all pass, non-zero on any failure.
 
-const { detectRequiredOsuTool } = await import('../server/bots/intent.ts');
+const { detectRequiredOsuTool, hasFallbackRecommendIntent, looksLikeRecommendationReply } = await import('../server/bots/intent.ts');
 
 let passed = 0;
 let failed = 0;
@@ -80,6 +80,34 @@ expectMatch('profile-self-3', '查我的osu资料', 'info');
 expectMatch('profile-self-4', '查一下我的玩家信息', 'info');
 expectMatch('profile-self-5', '我的profile', 'info');
 
+console.log('\n=== Recommend queries (must match) ===');
+expectMatch('reco-1', '给我推点我能打的pp图', 'recommend');
+expectMatch('reco-2', '给我推点图', 'recommend');
+expectMatch('reco-3', '推几张适合我的图', 'recommend');
+expectMatch('reco-4', '推荐点我打得动的图', 'recommend');
+expectMatch('reco-5', '有什么图能打', 'recommend');
+expectMatch('reco-6', '有没有我能打的图', 'recommend');
+expectMatch('reco-7', '打什么图', 'recommend');
+
+console.log('\n=== Recommend guard helpers ===');
+function expectBool(label, actual, expected) {
+  if (actual === expected) {
+    console.log(`PASS [${label}]`);
+    passed++;
+  } else {
+    console.error(`FAIL [${label}]: got ${actual}, expected ${expected}`);
+    failed++;
+  }
+}
+expectBool('guard-fallback-1', hasFallbackRecommendIntent('给我推点我能打的pp图'), true);
+expectBool('guard-fallback-2', hasFallbackRecommendIntent('别推图了'), false);
+expectBool('guard-fallback-3', hasFallbackRecommendIntent('推荐一下这个图'), false);
+expectBool('guard-fallback-4', hasFallbackRecommendIntent('帮我推个图床链接'), false);
+expectBool('guard-reply-1', looksLikeRecommendationReply('给你挑了三张图：Epitaph、FD、Yomi'), true);
+expectBool('guard-reply-2', looksLikeRecommendationReply('BID 1234567'), true);
+expectBool('guard-reply-3', looksLikeRecommendationReply('今天天气不错'), false);
+expectBool('guard-reply-4', looksLikeRecommendationReply('这张图挺适合你的'), false);
+
 console.log('\n=== BP range queries ===');
 expectMatch('bp-range-1', '查一下bp1到bp10', 'bp', { bp_start: 1, bp_end: 10 });
 expectMatch('bp-range-2', 'bp1-10', 'bp', { bp_start: 1, bp_end: 10 });
@@ -118,6 +146,9 @@ expectNull('chat-7', '推荐几首好听的歌');
 expectNull('chat-8', '你知道osu吗');
 expectNull('chat-9', '我该不该打这张图');
 expectNull('chat-10', '能不能帮我看看');
+expectNull('chat-11', '别推图了');
+expectNull('chat-12', '推荐一下这个图');
+expectNull('chat-13', '帮我推个图床链接');
 
 console.log('\n=== Must NOT match (analysis/investigation) ===');
 expectNull('analysis-1', '分析一下我的osu水平');
