@@ -420,9 +420,76 @@ export function ensureStore() {
   }
 }
 
+function recoverCorruptDb(error) {
+  let canWrite = true;
+  try {
+    assertWriteTargetSafe();
+  } catch (assertError) {
+    canWrite = false;
+    console.error('[store] db rewrite skipped (untrusted entry):', String((assertError as Error)?.message || assertError));
+  }
+  const stamp = new Date().toISOString().replace(/[:.]/g, '-');
+  const dbPath = getDbPath();
+  const backupDir = path.join(getDataDir(), 'backups');
+  let evidenceName = '';
+  try {
+    if (canWrite && fs.existsSync(dbPath)) {
+      evidenceName = `db.json.corrupt-${stamp}`;
+      fs.copyFileSync(dbPath, path.join(getDataDir(), evidenceName));
+    }
+  } catch (copyError) {
+    console.error('[store] failed to preserve corrupt db:', String((copyError as Error)?.message || copyError));
+  }
+
+  const candidates = [];
+  try {
+    if (fs.existsSync(backupDir)) {
+      candidates.push(...fs.readdirSync(backupDir)
+        .filter((name) => /^auto-.*\.json$/.test(name))
+        .map((name) => path.join(backupDir, name))
+        .sort()
+        .reverse());
+    }
+  } catch (listError) {
+    console.error('[store] failed to list db backups:', String((listError as Error)?.message || listError));
+  }
+
+  for (const candidate of candidates) {
+    try {
+      const recovered = normalizeDb(JSON.parse(fs.readFileSync(candidate, 'utf8').replace(/^\uFEFF/, '')));
+      if (canWrite) {
+        try {
+          writeJsonAtomic(dbPath, recovered);
+        } catch (writeError) {
+          console.error('[store] recovered db could not be written back, continuing in memory:', String((writeError as Error)?.message || writeError));
+        }
+      }
+      console.error(`[store] db.json corrupt (${String((error as Error)?.message || error)}); recovered from ${path.basename(candidate)}${evidenceName ? `, corrupt copy kept as ${evidenceName}` : ''}`);
+      return recovered;
+    } catch {
+      // this backup is also unusable; try older snapshots
+    }
+  }
+
+  console.error(`[store] db.json corrupt (${String((error as Error)?.message || error)}) and no valid backup; starting with an empty database${evidenceName ? `, corrupt copy kept as ${evidenceName}` : ''}`);
+  const fresh = normalizeDb(JSON.parse(JSON.stringify(initialDb)));
+  if (canWrite) {
+    try {
+      writeJsonAtomic(dbPath, fresh);
+    } catch (writeError) {
+      console.error('[store] fresh db could not be written back, continuing in memory:', String((writeError as Error)?.message || writeError));
+    }
+  }
+  return fresh;
+}
+
 function readDbUnlocked() {
-  const raw = fs.readFileSync(getDbPath(), 'utf8').replace(/^﻿/, '');
-  return normalizeDb(JSON.parse(raw));
+  const raw = fs.readFileSync(getDbPath(), 'utf8').replace(/^\uFEFF/, '');
+  try {
+    return normalizeDb(JSON.parse(raw));
+  } catch (error) {
+    return recoverCorruptDb(error);
+  }
 }
 
 export function readDb() {
