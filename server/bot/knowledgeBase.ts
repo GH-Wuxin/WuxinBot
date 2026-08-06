@@ -13,9 +13,10 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
-import { readDb } from '../store.js';
+import { readDb, lastDbReadFailureAtMs } from '../store.js';
 import { routeForText, isCommandLike } from './kbRoute.js';
 import { routeCollections } from './kbPrompt.js';
+import { canViewCommand, resolveSummaryAudience, type CommandVisibility, type KnowledgeDocumentKind } from './commands/index.js';
 import {
   type KnowledgeBaseSettings,
   type KnowledgeBaseCollectionSettings,
@@ -41,6 +42,11 @@ const BM25_K1 = 1.2;
 const BM25_B = 0.75;
 
 const KB_COLLECTIONS: KnowledgeCollection[] = ['wuxin_self', 'osu_domain', 'community_style'];
+
+// Structural tags added by the command-doc generator (family/namespace), not
+// distinctive anchors: hundreds of docs share them, so tag-anchoring on them
+// would let generic matches outrank a real hand-written tag hit.
+const GENERIC_TAG_ANCHORS = new Set(['command', 'osu', 'wuxin', 'quick', '快捷指令']);
 
 const COLLECTION_SETTING_KEYS: Record<KnowledgeCollection, keyof KnowledgeBaseCollectionSettings> = {
   wuxin_self: 'wuxinSelf',
@@ -107,6 +113,8 @@ interface Bm25Doc {
   title?: string;
   tags: string[];
   tokens: string[];
+  visibility?: CommandVisibility;
+  documentKind?: KnowledgeDocumentKind;
 }
 
 interface Bm25Index {
@@ -124,6 +132,8 @@ function buildIndex(collection: KnowledgeCollection, docs: { id: string; title?:
     title: d.title,
     tags: (d.tags || []).map((tag) => String(tag).toLowerCase()),
     tokens: [...kbTokenize(d.content)],
+    ...((d as any).visibility ? { visibility: (d as any).visibility } : {}),
+    ...((d as any).documentKind ? { documentKind: (d as any).documentKind } : {}),
   }));
   const df = new Map<string, number>();
   for (const doc of converted) {
@@ -203,6 +213,38 @@ const collectionState: Record<KnowledgeCollection, { status: CollectionStatus; d
 
 let lastDecision: KbEnableDecision | null = null;
 
+// ── Startup build snapshot (no hot reload) ──
+//
+// At process startup we read `CURRENT` exactly once and fix the buildId.
+// Later database switches may enable the KB, but the process only ever loads
+// this pinned build; `CURRENT` changes after startup are ignored until the
+// next process start. KB_ENABLED=false skips even this read.
+let pinnedBuildSha: string | null = null;
+let pinAttempted = false;
+let pinError: string | null = null;
+
+function pinBuildOnce(): void {
+  if (KB_HARD_DISABLED || pinAttempted) return;
+  pinAttempted = true;
+  try {
+    const currentPath = path.join(knowledgeDir(), 'CURRENT');
+    if (!fs.existsSync(currentPath)) {
+      pinError = 'KB_CURRENT_MISSING';
+      return;
+    }
+    const contentSha = fs.readFileSync(currentPath, 'utf8').trim();
+    if (!/^[a-f0-9]{16,128}$/.test(contentSha)) {
+      pinError = 'KB_CURRENT_INVALID';
+      return;
+    }
+    pinnedBuildSha = contentSha;
+  } catch (error) {
+    pinError = String(error?.message || error);
+  }
+}
+
+pinBuildOnce();
+
 function sha256File(filePath: string): string {
   return crypto.createHash('sha256').update(fs.readFileSync(filePath)).digest('hex');
 }
@@ -249,15 +291,16 @@ function parseCollectionFile(
     title: row.title,
     content: String(row.content || ''),
     ...(Array.isArray(row.tags) ? { tags: row.tags.map(String) } : {}),
+    ...(row.visibility ? { visibility: String(row.visibility) as CommandVisibility } : {}),
+    ...(row.documentKind ? { documentKind: String(row.documentKind) as KnowledgeDocumentKind } : {}),
     ...(row.source ? { source: row.source } : {}),
   }));
 }
 
 function loadKbSync(): LoadedKb {
-  const currentPath = path.join(knowledgeDir(), 'CURRENT');
-  if (!fs.existsSync(currentPath)) throw new Error('KB_CURRENT_MISSING');
-  const contentSha = fs.readFileSync(currentPath, 'utf8').trim();
-  if (!/^[a-f0-9]{16,128}$/.test(contentSha)) throw new Error('KB_CURRENT_INVALID');
+  pinBuildOnce();
+  if (!pinnedBuildSha) throw new Error(pinError || 'KB_CURRENT_MISSING');
+  const contentSha = pinnedBuildSha;
   const buildDir = path.join(knowledgeDir(), 'builds', contentSha);
   const manifestPath = path.join(buildDir, 'manifest.json');
   if (!fs.existsSync(manifestPath)) throw new Error('KB_MANIFEST_MISSING');
@@ -349,6 +392,14 @@ export function decideKbEnabled(input: {
       lastDecision = { enabled: false, source: 'db_unavailable' };
       return lastDecision;
     }
+    // readDb() auto-recovers a corrupt db.json, so a "successful" read can
+    // still mean the DB was unavailable moments ago. Fail closed (and label
+    // the decision db_unavailable) until the recovery is older than the stale
+    // TTL; after that the recovered db is treated as the live configuration.
+    if (lastDbReadFailureAtMs() !== 0 && Date.now() - lastDbReadFailureAtMs() <= DB_STALE_TTL_MS) {
+      lastDecision = { enabled: false, source: 'db_unavailable' };
+      return lastDecision;
+    }
   }
   if (!settings || settings.enabled !== true) {
     lastDecision = { enabled: false, source: 'db' };
@@ -417,18 +468,36 @@ function retrieveCollection(
   loadedCollection: LoadedCollection,
   config: CollectionRetrievalConfig,
   queryTokens: Set<string>,
+  filter?: {
+    permissions: { isOwner: boolean; isAdmin: boolean };
+    documentKinds?: KnowledgeDocumentKind[];
+    summaryDocId?: string;
+  },
 ): { blocks: RetrievedKnowledgeBlock[]; dropped: KbDrop[] } {
   const dropped: KbDrop[] = [];
   const index = loadedCollection.index;
   if (index.n === 0) return { blocks: [], dropped };
-  const scored = index.docs.map((doc) => ({ doc, score: scoreDoc(index, doc, queryTokens) }));
+  let candidates = index.docs;
+  if (filter) {
+    candidates = index.docs.filter((doc) => {
+      const visible = canViewCommand(doc.visibility || 'public', filter.permissions);
+      const kindOk = filter.documentKinds
+        ? filter.documentKinds.includes(doc.documentKind || 'command')
+          && (!filter.summaryDocId || doc.id === filter.summaryDocId)
+        : true;
+      if (!visible) dropped.push({ documentId: doc.id, reason: 'visibility_filter' });
+      else if (!kindOk) dropped.push({ documentId: doc.id, reason: 'document_kind_filter' });
+      return visible && kindOk;
+    });
+  }
+  const scored = candidates.map((doc) => ({ doc, score: scoreDoc(index, doc, queryTokens) }));
   // Authoritative tag anchors: if the query contains a curated doc tag, select
   // by tag first (score > 0 guarantees lexical overlap). Tags are hand-written
   // per document, so a tag hit is a stronger signal than BM25 score — this
   // prevents generic CJK bigrams (e.g. 什么/怎么) from outranking a real match
   // like "bonus+pp", and prevents one-token noise (e.g. HT doc matching "BPM").
   const tagMatched = scored
-    .filter((item) => item.score > 0 && [...queryTokens].some((tok) => item.doc.tags.some((tag) => normalizeTag(tag) === tok)))
+    .filter((item) => item.score > 0 && [...queryTokens].some((tok) => !GENERIC_TAG_ANCHORS.has(tok) && item.doc.tags.some((tag) => normalizeTag(tag) === tok)))
     .sort((a, b) => b.score - a.score);
   if (tagMatched.length > 0) {
     const topK = Math.max(1, config.topK || 1);
@@ -558,6 +627,10 @@ export function retrieveKnowledgeForPrompt(input: KbRuntimeInput): KbRetrievalRe
   const settings = input.settings || (readDb().settings?.kb as KnowledgeBaseSettings | undefined);
   const collectionsEnabled = settings?.collections || DEFAULT_KB_SETTINGS.collections;
   const plans = routeCollections(route);
+  const permissions = input.permissions || { isOwner: false, isAdmin: false };
+  const summaryDocId = route.kind === 'capability_summary'
+    ? `summary:all:${resolveSummaryAudience(permissions)}`
+    : undefined;
 
   for (const plan of plans) {
     const enabled = collectionsEnabled[COLLECTION_SETTING_KEYS[plan.collection]];
@@ -571,7 +644,16 @@ export function retrieveKnowledgeForPrompt(input: KbRuntimeInput): KbRetrievalRe
       continue;
     }
     const config = loaded.manifest.content.retrievalConfig[plan.collection];
-    const result = retrieveCollection(loadedCollection, config, queryTokens);
+    const filter = plan.collection === 'wuxin_self'
+      ? {
+          permissions,
+          documentKinds: route.kind === 'capability_summary'
+            ? (['capability_summary'] as KnowledgeDocumentKind[])
+            : (['command', 'boundary'] as KnowledgeDocumentKind[]),
+          ...(summaryDocId ? { summaryDocId } : {}),
+        }
+      : undefined;
+    const result = retrieveCollection(loadedCollection, config, queryTokens, filter);
     blocks.push(...result.blocks);
     dropped.push(...result.dropped);
     collectionCalls.push(`${plan.collection}:${result.blocks.length}`);
@@ -617,9 +699,13 @@ export function resetKbForTests(): void {
   lastLoadFailLogAt = 0;
   sentinelCache = null;
   lastDecision = null;
+  pinnedBuildSha = null;
+  pinAttempted = false;
+  pinError = null;
   for (const collection of KB_COLLECTIONS) {
     collectionState[collection] = { status: 'disabled', docCount: 0 };
   }
+  pinBuildOnce();
 }
 
 export function kbSentinelPathForTests(): string {

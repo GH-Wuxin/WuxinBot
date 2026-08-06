@@ -8,6 +8,7 @@ import { groupProfilePromptBlock } from './groupProfile.js';
 import { relationshipPromptBlock } from './relationshipProfile.js';
 import { isEmptyProfileText } from './memory.js';
 import { getExperience, levelToPp } from './experience.js';
+import { commandRoleLevel, userCommandRoleId } from './commands.js';
 import { buildPippiPrompt, detectScene } from './persona.js';
 import { buildOsuTopicKnowledge } from '../osu/knowledge/index.js';
 import { relevantPlayersSkillBlock } from '../bots/skills.js';
@@ -302,6 +303,15 @@ export function buildPrompt(db, group, event, userPolicy, options = {}) {
   const history = formatHistoryForModel(db, context);
 
   const isOwner = db.settings.ownerQq && String(event.userId) === String(db.settings.ownerQq);
+  const adminRoleLevel = commandRoleLevel(db, 'admin');
+  const groupCommandRoleLevel = commandRoleLevel(db, userCommandRoleId(db, userPolicy, { isOwner, isAdmin: false }));
+  const isAdmin = event.type === 'group' && (
+    userPolicy.policy === 'admin' ||
+    userPolicy.allowCommands ||
+    groupCommandRoleLevel >= adminRoleLevel ||
+    event.senderRole === 'owner' ||
+    event.senderRole === 'admin'
+  );
   const speakerIdentity = `${event.nickname || event.userId}（QQ:${event.userId}，身份:${describePolicy(userPolicy.policy)}）`;
   const memoryBlock = includeMemory ? memoryPromptBlock(db, event.userId) : '';
   const provider = llmProvider(db);
@@ -361,6 +371,7 @@ export function buildPrompt(db, group, event, userPolicy, options = {}) {
     messageType: event.type === 'private' ? 'private' : 'group',
     contextMessages: context,
     settings: db.settings?.kb,
+    permissions: { isOwner: Boolean(isOwner), isAdmin: Boolean(isAdmin) },
   });
   const kbBlocks = kbRetrieval.blocks.length > 0 ? toPromptBlocks(kbRetrieval.blocks, kbRetrieval.route) : [];
 

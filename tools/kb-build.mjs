@@ -2,7 +2,7 @@
 //
 // Builds three collections into `<data-dir>/knowledge/builds/<content-sha>/`
 // and atomically switches the `CURRENT` pointer:
-//   wuxin_self.json       (hand-authored command/feature entries)
+//   wuxin_self.json       (metadata-generated command docs + summaries + hand-authored boundary entries)
 //   osu_domain.json       (derived from server/osu/knowledge entries)
 //   community_style.jsonl (approved V2 windows, privacy-filtered)
 //   manifest.json         (content + volatile build metadata)
@@ -20,6 +20,10 @@ import crypto from 'node:crypto';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { assertSafeBaseDir, assertSafeDeleteTarget } from '../server/fsSafe.ts';
+
+// Pure quick resolver used to pick unambiguous, verifiable examples. Imported
+// before any collection builder runs so concreteQuickExample can reference it.
+const { resolveQuickCommand } = await import('../server/bot/commands/quick.meta.ts');
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -141,13 +145,13 @@ const WUXIN_SELF = [
   {
     id: 'clear_commands',
     title: '清除绑定、冷却与历史',
-    tags: ['clear', '清除', '冷却', '历史'],
+    tags: ['clear', '清除', '冷却', '历史', '缓存', '推图历史'],
     content: [
       '命令：/w osu clear bind（删除绑定）',
       '/w osu clear history（删除分析历史）',
       '/w osu clear cooldown <玩家>（取消指定玩家分析/近期/推图冷却，仅 owner）',
       '/w osu clear recommend <玩家>（清除推图历史与冷却，仅 owner）',
-      '/w osu clear cache（清除缓存，仅管理员）',
+      '/w osu clear cache（清除全部用户的分析/近期/类型缓存，仅 owner）',
       '普通群友只能清除自己的绑定和分析历史；冷却与推图历史清除涉及他人，仅 owner 可执行。',
     ].join('\n'),
     commandExamples: [
@@ -353,6 +357,167 @@ const WUXIN_SELF = [
   },
 ];
 
+// ── wuxin_self generated from CommandDescriptor catalog ──
+
+const WUXIN_SELF_DOC_KIND = {
+  group_bot_switch: 'boundary',
+};
+
+const WUXIN_SELF_MANUAL = WUXIN_SELF.map((entry) => ({
+  ...entry,
+  visibility: 'public',
+  documentKind: WUXIN_SELF_DOC_KIND[entry.id] || 'command',
+}));
+
+function concreteCommandExample(entry) {
+  // Deterministic examples only; every example must pass the pure resolver in
+  // kb-verify. Commands without a safe concrete form get no example.
+  if (entry.namespace === 'quick') {
+    if (entry.id === 'at_profile') return null;
+    return concreteQuickExample(entry);
+  }
+  const byId = {
+    // wuxin commands with multi-action syntax
+    profile: '/w profile show',
+    promptShow: '/w prompt show',
+    promptEdit: '/w prompt add 内容',
+    note: '/w note show',
+    groupProfileShow: '/w group profile show',
+    groupProfileEdit: '/w group profile update',
+    rate: '/w rate 10',
+    cooldown: '/w cooldown 5',
+    mode: '/w mode light',
+    status: '/w status',
+    modelShow: '/w model list',
+    modelSet: '/w model deepseek-v4-flash',
+    search: '/w search status',
+    thinking: '/w thinking off',
+    sysfacts: '/w sysfacts on',
+    summarize: '/w summarize 10',
+    preset: '/w preset active',
+    usage: '/w usage',
+    pause: '/w pause',
+    why: '/w why',
+    help: '/w help',
+    ping: '/w ping',
+    my: '/w my',
+    recalc: '/w recalc',
+    refresh: '/w refresh',
+    exp: '/w exp add',
+    top: '/w top',
+    lv: '/w lv',
+    nick: '/w nick 阿然',
+    style: '/w style 简洁',
+    me: '/w me',
+    osuBind: '/w osu bind ElicyAnn',
+    osuAnalyze: '/w osu analyze',
+    osuRecent: '/w osu recent',
+    osuHelp: '/w osu help',
+    'clear.bind': '/w osu clear bind',
+    'clear.history': '/w osu clear history',
+    'clear.cooldown': '/w osu clear cooldown ElicyAnn',
+    'clear.recommend': '/w osu clear recommend ElicyAnn',
+    'clear.cache': '/w osu clear cache',
+  };
+  if (byId[entry.id]) return byId[entry.id];
+  if (entry.id === 'memberPolicy') return null;
+  return transformSyntax(entry.canonicalSyntax);
+}
+
+function concreteQuickExample(entry) {
+  const quickById = {
+    help: ['!help'],
+    ping: ['!ping'],
+    bind: ['!bind'],
+    unbind: ['!unbind'],
+    dice: ['!dice 6'],
+    self_profile: ['~'],
+    where: ['where ElicyAnn'],
+  };
+  const specials = quickById[entry.id] || [];
+  const domain = entry.source === 'lazybot' ? '/' : entry.source === 'hydrant' ? 'none' : '!';
+  const candidates = [
+    ...specials,
+    ...entry.aliases.map((alias) => (domain === '!' ? '!' + alias : domain === '/' ? '/' + alias : alias)),
+  ];
+  // Pick the first candidate that resolves back to this exact descriptor, so
+  // cross-bot alias collisions can never silently verify the wrong command.
+  for (const candidate of candidates) {
+    const resolved = resolveQuickCommand(candidate);
+    if (resolved && resolved.def.id === entry.id && resolved.def.source === entry.source) return candidate;
+  }
+  return null;
+}
+
+function transformSyntax(syntax) {
+  let cmd = syntax
+    .replace(/<名次\/范围>/g, '5')
+    .replace(/<谱面BID>/g, '4270382')
+    .replace(/\[玩家名\]/g, '')
+    .replace(/<osu用户名>/g, 'ElicyAnn')
+    .replace(/<用户名>/g, 'ElicyAnn')
+    .replace(/<玩家>/g, 'ElicyAnn')
+    .replace(/<QQ号>/g, '1234567')
+    .replace(/\[群名\]/g, '测试群')
+    .replace(/\[ms\]/g, '')
+    .replace(/\(@某人\)/g, '')
+    .replace(/@某人/g, '')
+    .replace(/\[用户名\]/g, '')
+    .replace(/\[--mode=[^\]]*\]/g, '')
+    .replace(/\s+或 where qq=.*$/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+  return cmd || null;
+}
+
+function commandTags(entry) {
+  const tags = ['command'];
+  tags.push(entry.family);
+  if (entry.namespace === 'quick') {
+    tags.push('快捷指令', entry.id);
+    for (const alias of entry.aliases.slice(0, 4)) tags.push(alias);
+  } else if (entry.namespace === 'wuxin_osu') {
+    tags.push('osu', entry.id);
+  } else {
+    tags.push('wuxin', entry.id);
+  }
+  if (Array.isArray(entry.tags)) tags.push(...entry.tags);
+  return tags;
+}
+
+async function buildWuxinSelfGenerated() {
+  const {
+    getAllCommandHelpEntries,
+    commandDocumentId,
+    entryAddress,
+    commandKnowledgeText,
+    buildCapabilitySummaryDocs,
+  } = await import('../server/bot/commands/index.ts');
+  const docs = [];
+  for (const entry of getAllCommandHelpEntries()) {
+    if (entry.status !== 'active' || entry.visibility === 'hidden') continue;
+    // `/w osu` has a canonical leaf catalog (wuxin_osu); the wuxin help
+    // entries only back `/w help`, so they must not generate duplicate KB docs.
+    if (entry.namespace === 'wuxin' && entry.family === 'osu') continue;
+    const example = concreteCommandExample(entry);
+    const doc = {
+      id: commandDocumentId(entryAddress(entry)),
+      title: entry.description,
+      tags: commandTags(entry),
+      content: commandKnowledgeText(entry),
+      visibility: entry.visibility,
+      documentKind: 'command',
+      ...(example ? { commandExamples: [{ command: example, verifier: entry.namespace === 'quick' ? 'quick' : 'wuxin' }] } : {}),
+      implementationRefs: entry.implementationRefs || [],
+    };
+    docs.push(doc);
+  }
+  for (const summary of buildCapabilitySummaryDocs()) {
+    docs.push({ ...summary });
+  }
+  return docs;
+}
+
 // ── osu_domain (from server/osu/knowledge) ──
 
 const OSU_DOMAIN_TITLES = {
@@ -504,9 +669,11 @@ function pruneOldBuilds(keepSha) {
 async function main() {
   const osuDomain = await buildOsuDomain();
   const community = buildCommunityStyle();
+  const wuxinSelfGenerated = await buildWuxinSelfGenerated();
+  const wuxinSelf = [...WUXIN_SELF_MANUAL, ...wuxinSelfGenerated].sort((a, b) => a.id.localeCompare(b.id));
 
   const collections = {
-    wuxin_self: WUXIN_SELF,
+    wuxin_self: wuxinSelf,
     osu_domain: osuDomain,
     community_style: community.entries,
   };

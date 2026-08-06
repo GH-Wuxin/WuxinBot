@@ -55,6 +55,20 @@ const { routeForText } = await import('../server/bot/kbRoute.ts');
 const { ensureStore, updateDb, readDb } = await import('../server/store.ts');
 const { buildPrompt } = await import('../server/bot/prompt.ts');
 const { matchQuickCommand } = await import('../server/bot/quickRouter.ts');
+const {
+  getAllCommandHelpEntries,
+  commandDocumentId,
+  entryAddress,
+  buildCapabilitySummaryDocs,
+  canViewCommand,
+  canListCommand,
+  resolveSummaryAudience,
+} = await import('../server/bot/commands/index.ts');
+const { parseOsuCommandText, OSU_SUBCOMMANDS, OSU_CLEAR_ACTIONS_META } = await import('../server/bot/commands/osu.meta.ts');
+const { parseOwnerCommandText, OWNER_COMMANDS } = await import('../server/bot/commands/owner.meta.ts');
+const { resolveQuickCommand, QUICK_DEFS, finalizeQuickDef } = await import('../server/bot/commands/quick.meta.ts');
+const { ANALYSIS_COOLDOWN, RECENT_COOLDOWN, RECOMMEND_COOLDOWN } = await import('../server/bot/commands/commandConstants.ts');
+const { quickCollisionKey } = await import('../server/bot/commands/alias.ts');
 
 ensureStore();
 
@@ -158,11 +172,11 @@ updateDb(fixtureDbSetup);
   check(ok, 'g1 KB disabled prompt byte-identical to legacy fixture');
 }
 
-// ── Gate 3: deterministic routing (62 scenarios) ──
+// ── Gate 3: deterministic routing (scenario set) ──
 
 {
   const scenarios = JSON.parse(fs.readFileSync(path.join(root, 'tools', 'kb-scenarios.json'), 'utf8'));
-  const closed = new Set(['none', 'wuxin_self', 'osu_domain', 'community_style', 'self_and_domain', 'osu_casual_with_domain']);
+  const closed = new Set(['none', 'wuxin_self', 'osu_domain', 'community_style', 'self_and_domain', 'osu_casual_with_domain', 'capability_summary']);
   let ok = true;
   for (const scenario of scenarios) {
     const got = routeForText(scenario.scene, scenario.text).kind;
@@ -175,7 +189,7 @@ updateDb(fixtureDbSetup);
       console.error(`  route ${scenario.id} expected ${scenario.expected} got ${got}: ${scenario.text}`);
     }
   }
-  check(ok, 'g3 routing 62 scenarios + closed enum', `total=${scenarios.length}`);
+  check(ok, 'g3 routing scenarios + closed enum', `total=${scenarios.length}`);
 }
 
 // ── Gate 4: golden TS vs Python BM25 ──
@@ -240,13 +254,14 @@ resetKbForTests();
     messageType: 'group',
     settings: enabledSettings,
   });
+  const bindIds = result.blocks.map((b) => b.documentId);
   check(
     result.route.kind === 'wuxin_self'
-    && result.blocks.length === 1
-    && result.blocks[0].collection === 'wuxin_self'
-    && result.blocks[0].documentId === 'bind_osu',
-    'g5 wuxin_self retrieval hits bind_osu',
-    JSON.stringify(result.blocks.map((b) => b.documentId)),
+    && bindIds.includes('cmd:wuxin_osu:bind')
+    && bindIds.includes('bind_osu')
+    && !bindIds.includes('cmd:wuxin_osu:clear.bind'),
+    'g5 wuxin_self bind query hits canonical + manual bind docs, never clear.bind',
+    JSON.stringify(bindIds),
   );
 
   const communityQueries = ['aim比我强好多', '单戳练读图，会读了就能打', 'hd到底怎么玩', '我们S1大人已经10k了', '今天aim手感炸了'];
@@ -285,8 +300,50 @@ resetKbForTests();
   check(pppIds.includes('wuxin_self:quick_score_commands') && pppIds.includes('osu_domain:bp_pp_rank'), 'g5 PP+ usage hits quick command + pp docs', JSON.stringify(pppIds));
 
   const bindShort = retrieveKnowledgeForPrompt({ scene: 'casual', text: '绑定怎么弄', groupId: '770001', messageType: 'group', settings: enabledSettings });
-  const bindIds = bindShort.blocks.map((b) => b.documentId);
-  check(bindIds.includes('bind_osu') && !bindIds.includes('quick_score_commands'), 'g5 short bind query selects bind_osu via tags', JSON.stringify(bindIds));
+  const bindShortIds = bindShort.blocks.map((b) => b.documentId);
+  check(bindShortIds.includes('bind_osu') && !bindShortIds.includes('quick_score_commands'), 'g5 short bind query selects bind_osu via tags', JSON.stringify(bindShortIds));
+
+  const capPublic = retrieveKnowledgeForPrompt({
+    scene: 'casual',
+    text: '你能做什么',
+    groupId: '770001',
+    messageType: 'group',
+    settings: enabledSettings,
+    permissions: { isOwner: false, isAdmin: false },
+  });
+  check(
+    capPublic.route.kind === 'capability_summary'
+    && capPublic.blocks.length === 1
+    && capPublic.blocks[0].documentId === 'summary:all:public',
+    'g5 capability overview returns exactly one public summary doc',
+    JSON.stringify(capPublic.blocks.map((b) => b.documentId)),
+  );
+  const capAdmin = retrieveKnowledgeForPrompt({
+    scene: 'casual',
+    text: '你能做什么',
+    groupId: '770001',
+    messageType: 'group',
+    settings: enabledSettings,
+    permissions: { isOwner: false, isAdmin: true },
+  });
+  check(
+    capAdmin.blocks.length === 1 && capAdmin.blocks[0].documentId === 'summary:all:group_admin',
+    'g5 capability overview uses admin audience summary',
+    JSON.stringify(capAdmin.blocks.map((b) => b.documentId)),
+  );
+  const capOwner = retrieveKnowledgeForPrompt({
+    scene: 'casual',
+    text: '你能做什么',
+    groupId: '770001',
+    messageType: 'group',
+    settings: enabledSettings,
+    permissions: { isOwner: true, isAdmin: true },
+  });
+  check(
+    capOwner.blocks.length === 1 && capOwner.blocks[0].documentId === 'summary:all:owner',
+    'g5 capability overview uses owner audience summary',
+    JSON.stringify(capOwner.blocks.map((b) => b.documentId)),
+  );
 }
 
 // ── Gate 6: rollout allowlist switches without restart ──
@@ -389,54 +446,336 @@ function knowledgeRootFor(knowledgeDirPath) {
   return path.join(knowledgeDirPath, 'builds', sha);
 }
 
-// ── Gate 10: CommandVerifier freshness ──
+// ── Gate 10: commandExamples verified via pure resolvers + runtime matcher ──
 
 {
-  const osuSource = fs.readFileSync(path.join(root, 'server', 'osu', 'commands.ts'), 'utf8');
-  const ownerSource = fs.readFileSync(path.join(root, 'server', 'bot', 'ownerCommands.ts'), 'utf8');
   const wuxinSelf = JSON.parse(fs.readFileSync(path.join(knowledgeRootFor(kbKnowledgeDirForTests()), 'wuxin_self.json'), 'utf8'));
+  const entries = getAllCommandHelpEntries();
+  const entryByDocId = new Map(entries.map((e) => [commandDocumentId(entryAddress(e)), e]));
+  const ownerMetaById = new Map(OWNER_COMMANDS.map((m) => [m.id, m]));
   let ok = true;
   let verified = 0;
+  const fail = (message) => {
+    ok = false;
+    console.error('  ' + message);
+  };
   for (const entry of wuxinSelf) {
     for (const example of entry.commandExamples || []) {
       verified += 1;
       const command = String(example.command || '');
-      if (example.verifier === 'wuxin') {
-        const osuMatch = /^\/w(?:uxin)?\s+osu\s+([a-z]+)/i.exec(command);
-        if (osuMatch) {
-          const sub = osuMatch[1].toLowerCase();
-          if (!osuSource.includes(`subCommand === '${sub}'`)) {
-            ok = false;
-            console.error(`  stale wuxin osu example: ${command}`);
-          }
+      if (example.verifier === 'quick') {
+        const pure = resolveQuickCommand(command);
+        const runtime = matchQuickCommand({ text: command, atTargets: [] });
+        if (!pure || !runtime) {
+          fail(`stale quick example: ${command}`);
           continue;
         }
-        const wuxinMatch = /^\/w(?:uxin)?\s+([a-z]+)/i.exec(command);
-        if (wuxinMatch) {
-          const sub = wuxinMatch[1].toLowerCase();
-          const direct = ownerSource.includes(`command === '/${sub}'`);
-          const policy = ownerSource.includes(`'/${sub}'`);
-          if (!direct && !policy) {
-            ok = false;
-            console.error(`  stale wuxin example: ${command}`);
-          }
+        const pureDef = finalizeQuickDef(pure.def);
+        const runtimeDef = finalizeQuickDef(runtime.def);
+        if (pureDef.id !== runtimeDef.id || pureDef.source !== runtimeDef.source) {
+          fail(`quick resolver drift: ${command} pure=${pureDef.id}/${pureDef.source} runtime=${runtimeDef.id}/${runtimeDef.source}`);
           continue;
         }
-        ok = false;
-        console.error(`  unparsable wuxin example: ${command}`);
-      } else if (example.verifier === 'quick') {
-        const matched = matchQuickCommand({ text: command, atTargets: [] });
-        if (!matched || matched.def.implemented !== true) {
-          ok = false;
-          console.error(`  stale quick example: ${command} -> ${matched ? matched.def.id + ' implemented=' + matched.def.implemented : 'no match'}`);
+        if (pureDef.status !== 'active' || pureDef.execution.kind === 'documentation_only') {
+          fail(`quick example not executable: ${command}`);
+          continue;
+        }
+        if (entry.id.startsWith('cmd:quick:')) {
+          const expected = entryByDocId.get(entry.id);
+          if (!expected) {
+            fail(`no descriptor for doc ${entry.id}`);
+            continue;
+          }
+          if (pureDef.id !== expected.id || (expected.source && pureDef.source !== expected.source)) {
+            fail(`quick example mis-hits another command: ${command} -> ${pureDef.id}/${pureDef.source}, expected ${expected.id}/${expected.source}`);
+            continue;
+          }
+        }
+      } else if (example.verifier === 'wuxin') {
+        if (/^\/w(?:uxin)?\s+osu(?:\s|$)/i.test(command)) {
+          const parsed = parseOsuCommandText(command);
+          if (!parsed) {
+            fail(`stale wuxin osu example: ${command}`);
+            continue;
+          }
+          if (entry.id.startsWith('cmd:wuxin_osu:')) {
+            const path = entry.id.slice('cmd:wuxin_osu:'.length).split('.');
+            const expectedCmd = path[0];
+            const expectedAction = path[1];
+            if (parsed.commandId !== expectedCmd || (expectedAction && parsed.actionId !== expectedAction)) {
+              fail(`wuxin osu example mis-hits: ${command} -> ${JSON.stringify(parsed)}, expected ${expectedCmd}${expectedAction ? '.' + expectedAction : ''}`);
+              continue;
+            }
+          } else if (!entry.id.startsWith('cmd:')) {
+            const meta = parsed.commandId === 'clear' ? OSU_CLEAR_ACTIONS_META[parsed.actionId] : OSU_SUBCOMMANDS[parsed.commandId];
+            if (!meta || meta.status !== 'active') {
+              fail(`manual osu example points at inactive command: ${command}`);
+              continue;
+            }
+          }
+        } else {
+          const parsed = parseOwnerCommandText(command);
+          if (!parsed) {
+            fail(`stale wuxin example: ${command}`);
+            continue;
+          }
+          if (entry.id.startsWith('cmd:wuxin:')) {
+            const expectedId = entry.id.slice('cmd:wuxin:'.length);
+            if (parsed.id.toLowerCase() !== expectedId) {
+              fail(`wuxin example mis-hits: ${command} -> ${parsed.id}, expected ${expectedId}`);
+              continue;
+            }
+          } else if (!entry.id.startsWith('cmd:')) {
+            const meta = ownerMetaById.get(parsed.id);
+            if (!meta || meta.status !== 'active') {
+              fail(`manual wuxin example points at inactive command: ${command}`);
+              continue;
+            }
+          }
         }
       } else {
-        ok = false;
-        console.error(`  unknown verifier: ${example.verifier} (${command})`);
+        fail(`unknown verifier: ${example.verifier} (${command})`);
       }
     }
   }
-  check(ok, 'g10 commandExamples verified against real registries', `verified=${verified}`);
+  check(ok, 'g10 commandExamples verified via pure resolvers + runtime matcher', `verified=${verified}`);
+}
+
+// ── Gate 11: descriptor/doc-id uniqueness + quick alias sanity ──
+
+{
+  const entries = getAllCommandHelpEntries();
+  const docIds = new Map();
+  let duplicate = null;
+  for (const entry of entries) {
+    const id = commandDocumentId(entryAddress(entry));
+    if (docIds.has(id)) {
+      duplicate = `${id} (${docIds.get(id)} vs ${entry.id})`;
+      break;
+    }
+    docIds.set(id, entry.id);
+  }
+  check(!duplicate, 'g11 command document ids unique', duplicate || `entries=${entries.length}`);
+  const emptyAlias = entries.filter((e) => e.namespace === 'quick' && e.aliases.length === 0).map((e) => e.id);
+  check(emptyAlias.length === 0, 'g11 every quick entry has at least one alias', JSON.stringify(emptyAlias));
+}
+
+// ── Gate 12: status × execution combination table ──
+
+{
+  const entries = getAllCommandHelpEntries();
+  let ok = true;
+  for (const entry of entries) {
+    const why = `${entry.namespace}:${entry.id}`;
+    if (entry.status === 'active') {
+      if (entry.execution.kind === 'local' && !entry.execution.handlerKey) {
+        ok = false;
+        console.error(`  active local missing handlerKey: ${why}`);
+      }
+      if (entry.execution.kind === 'proxy' && (!entry.execution.capability || !entry.execution.targetBot)) {
+        ok = false;
+        console.error(`  active proxy missing capability/targetBot: ${why}`);
+      }
+      if (entry.execution.kind === 'documentation_only' && !entry.execution.reason) {
+        ok = false;
+        console.error(`  active documentation_only missing reason: ${why}`);
+      }
+    }
+    if (entry.status === 'deprecated' && !entry.deprecation) {
+      ok = false;
+      console.error(`  deprecated without replacement/termination note: ${why}`);
+    }
+  }
+  check(ok, 'g12 status×execution combination table (active local/proxy/documentation_only, deprecated metadata)');
+  const hiddenDocs = JSON.parse(fs.readFileSync(path.join(knowledgeRootFor(kbKnowledgeDirForTests()), 'wuxin_self.json'), 'utf8'))
+    .filter((doc) => doc.id.startsWith('cmd:') && doc.visibility === 'hidden');
+  check(hiddenDocs.length === 0, 'g12 hidden/disabled commands never enter public KB docs', JSON.stringify(hiddenDocs.map((d) => d.id)));
+}
+
+// ── Gate 13: cooldown single-source identity ──
+
+{
+  let ok = true;
+  if (OSU_SUBCOMMANDS.analyze.cooldown !== ANALYSIS_COOLDOWN) {
+    ok = false;
+    console.error('  analyze cooldown is not the shared ANALYSIS_COOLDOWN object');
+  }
+  if (OSU_SUBCOMMANDS.recent.cooldown !== RECENT_COOLDOWN) {
+    ok = false;
+    console.error('  recent cooldown is not the shared RECENT_COOLDOWN object');
+  }
+  for (const def of QUICK_DEFS) {
+    if ((def.id === 'recommend' || def.id === 'rd') && def.cooldown !== RECOMMEND_COOLDOWN) {
+      ok = false;
+      console.error(`  quick ${def.id} cooldown is not RECOMMEND_COOLDOWN`);
+    }
+  }
+  check(ok, 'g13 cooldown ms/scope/resettableBy single-sourced from commandConstants');
+}
+
+// ── Gate 14: meta purity (static whitelist + isolated import) ──
+
+{
+  const dir = path.join(root, 'server', 'bot', 'commands');
+  const files = fs.readdirSync(dir).filter((f) => f.endsWith('.ts'));
+  let ok = true;
+  for (const file of files) {
+    const source = fs.readFileSync(path.join(dir, file), 'utf8');
+    const specifiers = [...source.matchAll(/(?:from\s+|import\s*\(\s*)['"]([^'"]+)['"]/g)].map((m) => m[1]);
+    for (const specifier of specifiers) {
+      if (!specifier.startsWith('./')) {
+        ok = false;
+        console.error(`  ${file} imports non-relative specifier: ${specifier}`);
+        continue;
+      }
+      const resolved = path.resolve(dir, specifier);
+      if (resolved !== dir && !resolved.startsWith(dir + path.sep)) {
+        ok = false;
+        console.error(`  ${file} imports outside commands dir: ${specifier}`);
+      }
+    }
+  }
+  check(ok, 'g14 meta static dependency whitelist (only ./ within server/bot/commands)');
+  const isolatedDir = createTestDataDir('wuxin-kb-meta-import');
+  const sub = spawnSync('npx.cmd', ['tsx', '-e',
+    `(async () => { process.env.DATA_DIR = ${JSON.stringify(isolatedDir)}; await import('./server/bot/commands/index.ts'); console.log('META_OK'); })()`,
+  ], { cwd: root, encoding: 'utf8', timeout: 60_000 });
+  process.env.DATA_DIR = testDataDir;
+  const wroteDb = fs.existsSync(path.join(isolatedDir, 'db.json'));
+  check(
+    sub.status === 0 && /META_OK/.test(sub.stdout || '') && !wroteDb,
+    'g14 meta modules import without db/fs side effects',
+    `status=${sub.status} out=${sub.stdout} err=${sub.stderr} wroteDb=${wroteDb}`,
+  );
+  cleanupTestDir(isolatedDir);
+}
+
+// ── Gate 15: visibility/listing consistency between help and KB ──
+
+{
+  const docs = JSON.parse(fs.readFileSync(path.join(knowledgeRootFor(kbKnowledgeDirForTests()), 'wuxin_self.json'), 'utf8'));
+  const docById = new Map(docs.map((d) => [d.id, d]));
+  const entries = getAllCommandHelpEntries();
+  const audiences = [
+    ['public', { isOwner: false, isAdmin: false }],
+    ['group_admin', { isOwner: false, isAdmin: true }],
+    ['owner', { isOwner: true, isAdmin: true }],
+  ];
+  const isWuxinOsuHelp = (entry) => entry.namespace === 'wuxin' && entry.family === 'osu';
+  const canonicalSubById = { osuBind: 'bind', osuAnalyze: 'analyze', osuRecent: 'recent', osuHelp: 'help' };
+  let ok = true;
+  for (const [label, perms] of audiences) {
+    for (const entry of entries) {
+      if (isWuxinOsuHelp(entry)) continue;
+      const docId = commandDocumentId(entryAddress(entry));
+      const doc = docById.get(docId);
+      const viewable = canViewCommand(entry.visibility, perms);
+      if (viewable && !doc) {
+        ok = false;
+        console.error(`  ${label}: no KB doc for viewable entry ${docId}`);
+      }
+      if (doc && doc.visibility !== entry.visibility) {
+        ok = false;
+        console.error(`  ${label}: doc visibility mismatch ${docId}: ${doc.visibility} vs meta ${entry.visibility}`);
+      }
+      if (canListCommand(entry.visibility, entry.discoverability, entry.permission, perms) && !doc) {
+        ok = false;
+        console.error(`  ${label}: listed entry has no KB doc ${docId}`);
+      }
+    }
+  }
+  for (const entry of entries.filter(isWuxinOsuHelp)) {
+    const canonical = entries.find((e) => e.namespace === 'wuxin_osu' && e.id === canonicalSubById[entry.id]);
+    if (!canonical) {
+      ok = false;
+      console.error(`  help entry ${entry.id} has no canonical wuxin_osu KB doc`);
+    }
+  }
+  const ownerTargets = ['清除缓存怎么弄', '/w exp 怎么用', 'clear cooldown 是什么'];
+  for (const text of ownerTargets) {
+    const r = retrieveKnowledgeForPrompt({
+      scene: 'casual',
+      text,
+      groupId: '770001',
+      messageType: 'group',
+      settings: enabledSettings,
+      permissions: { isOwner: false, isAdmin: false },
+    });
+    for (const block of r.blocks) {
+      if (block.collection !== 'wuxin_self') continue;
+      const doc = docById.get(block.documentId);
+      if (doc && (doc.visibility === 'owner' || doc.visibility === 'group_admin')) {
+        ok = false;
+        console.error(`  normal-user retrieval leaked ${doc.visibility} doc: ${block.documentId} for "${text}"`);
+      }
+    }
+  }
+  check(ok, 'g15 canView/canList consistent across help + KB, owner docs invisible to normal users');
+}
+
+// ── Gate 16: capability summaries per-audience, cumulative, single-select ──
+
+{
+  const summaries = buildCapabilitySummaryDocs();
+  const ids = summaries.map((s) => s.id);
+  check(
+    ids.length === new Set(ids).size && summaries.every((s) => /^summary:[a-z_]+:(public|group_admin|owner)$/.test(s.id)),
+    'g16 summary doc ids unique and audience-tagged',
+    `count=${summaries.length}`,
+  );
+  const allPublic = summaries.find((s) => s.id === 'summary:all:public');
+  const allAdmin = summaries.find((s) => s.id === 'summary:all:group_admin');
+  const allOwner = summaries.find((s) => s.id === 'summary:all:owner');
+  const osuPublic = summaries.find((s) => s.id === 'summary:osu:public');
+  const has = (doc, token) => doc && doc.content.includes(token);
+  check(
+    allPublic && allAdmin && allOwner
+    && !has(allPublic, '/w exp')
+    && !has(allPublic, '/w status')
+    && has(allAdmin, '/w status')
+    && !has(allAdmin, '/w exp')
+    && has(allOwner, '/w exp'),
+    'g16 summaries cumulative per audience (public ⊂ group_admin ⊂ owner)',
+    `public=${allPublic ? allPublic.content.length : 0} admin=${allAdmin ? allAdmin.content.length : 0} owner=${allOwner ? allOwner.content.length : 0}`,
+  );
+  check(
+    osuPublic && has(osuPublic, '/w osu bind'),
+    'g16 osu summary keeps canonical osu commands',
+    `osuPublic=${osuPublic ? osuPublic.content.length : 0}`,
+  );
+  check(
+    resolveSummaryAudience({ isOwner: false, isAdmin: false }) === 'public'
+    && resolveSummaryAudience({ isOwner: false, isAdmin: true }) === 'group_admin'
+    && resolveSummaryAudience({ isOwner: true, isAdmin: true }) === 'owner',
+    'g16 resolveSummaryAudience picks exactly one level',
+  );
+}
+
+// ── Gate 17: /w osu clear strict parse fixtures ──
+
+{
+  const bare = parseOsuCommandText('/w osu clear');
+  const caches = parseOsuCommandText('/w osu clear caches');
+  const cache = parseOsuCommandText('/w osu clear cache');
+  const cacheExtra = parseOsuCommandText('/w osu clear cache xxx');
+  check(
+    bare === null
+    && caches === null
+    && cache && cache.commandId === 'clear' && cache.actionId === 'cache' && cache.args === ''
+    && cacheExtra && cacheExtra.commandId === 'clear' && cacheExtra.actionId === 'cache' && cacheExtra.args === 'xxx',
+    'g17 clear parse fixtures (bare/unknown no-execute, cache exact, extra args captured for rejection)',
+    `bare=${JSON.stringify(bare)} caches=${JSON.stringify(caches)} cache=${JSON.stringify(cache)} extra=${JSON.stringify(cacheExtra)}`,
+  );
+}
+
+// ── Gate 18: build output sorted by id ──
+
+{
+  const docs = JSON.parse(fs.readFileSync(path.join(knowledgeRootFor(kbKnowledgeDirForTests()), 'wuxin_self.json'), 'utf8'));
+  const ids = docs.map((d) => d.id);
+  const sorted = [...ids].sort((a, b) => a.localeCompare(b));
+  check(JSON.stringify(ids) === JSON.stringify(sorted), 'g18 wuxin_self docs serialized in stable id order');
+  check(ids.length === new Set(ids).size, 'g18 no duplicate doc ids', `count=${ids.length}`);
 }
 
 // ── A8 query builder invariants ──

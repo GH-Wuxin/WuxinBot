@@ -9,6 +9,7 @@ export type KnowledgeCollection = 'wuxin_self' | 'osu_domain' | 'community_style
 export type KbRouteKind =
   | 'none'
   | 'wuxin_self'
+  | 'capability_summary'
   | 'osu_domain'
   | 'community_style'
   | 'self_and_domain'
@@ -66,6 +67,10 @@ export interface KbDocument {
   content: string;
   source?: string;
   authority?: string;
+  /** KB-level visibility for wuxin_self documents (default public). */
+  visibility?: 'public' | 'group_admin' | 'owner' | 'hidden';
+  /** Document category used by retrieval filtering (default command). */
+  documentKind?: 'command' | 'capability_summary' | 'boundary';
   commandExamples?: { command: string; verifier: string }[];
   implementationRefs?: { path: string; symbol: string }[];
 }
@@ -104,6 +109,7 @@ export interface KbRuntimeInput {
   messageType?: 'group' | 'private';
   contextMessages?: { role?: string; userId?: string | number; content?: string }[];
   settings?: KnowledgeBaseSettings;
+  permissions?: { isOwner: boolean; isAdmin: boolean };
 }
 
 export interface KbCollectionHealth {

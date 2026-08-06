@@ -13,6 +13,7 @@
 
 import { updateDb } from '../store.js';
 import { cacheGet, cacheSet } from './cache.js';
+import { RECOMMEND_COOLDOWN } from '../bot/commands/commandConstants.js';
 import {
   getUser,
   getUserById,
@@ -75,7 +76,7 @@ export interface PlayerTarget {
   value: string | number;
 }
 
-export const RECOMMEND_COOLDOWN_MS = 10 * 60_000;
+export const RECOMMEND_COOLDOWN_MS = RECOMMEND_COOLDOWN.ms;
 export const RECOMMEND_HISTORY_DAYS = 7;
 
 const DEFAULT_COUNT = 3;
