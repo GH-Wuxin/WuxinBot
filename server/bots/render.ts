@@ -180,6 +180,7 @@ export function buildYumuUser(
     ? directPlayTime
     : finiteNumber(stats.total_hours_played, apiUser?.total_hours_played) * 3600;
   const rankHistory = apiUser?.rank_history || stats.rank_history || null;
+  const gradeCounts = stats.grade_counts || {};
 
   return {
     ...profile,
@@ -224,12 +225,346 @@ export function buildYumuUser(
       level_current: levelCurrent,
       level_progress: levelProgress,
       level: { current: levelCurrent, progress: levelProgress },
-      grade_counts: stats.grade_counts || {},
+      grade_counts: gradeCounts,
+      // yumu's ranks components (D2/D3) read flattened count_* fields instead
+      // of the osu! API's nested grade_counts object.
+      count_ssh: finiteNumber(gradeCounts.ssh),
+      count_ss: finiteNumber(gradeCounts.ss),
+      count_sh: finiteNumber(gradeCounts.sh),
+      count_s: finiteNumber(gradeCounts.s),
+      count_a: finiteNumber(gradeCounts.a),
       rank_history: rankHistory,
       total_score: finiteNumber(stats.total_score),
       ranked_score: finiteNumber(stats.ranked_score),
       replays_watched_by_others: finiteNumber(stats.replays_watched_by_others, stats.replays_watched)
     }
+  };
+}
+
+const DAY_MS = 86_400_000;
+
+function dayNumber(year: number, month: number, date: number): number {
+  return Math.floor(Date.UTC(year, month, date) / DAY_MS);
+}
+
+function dayAtOffset(ms: number, offsetHours: number): number {
+  const shifted = new Date(ms + offsetHours * 3600_000);
+  return dayNumber(
+    shifted.getUTCFullYear(),
+    shifted.getUTCMonth(),
+    shifted.getUTCDate(),
+  );
+}
+
+function formatMonthDay(day: number): string {
+  const date = new Date(day * DAY_MS);
+  return `${date.getUTCMonth() + 1}-${date.getUTCDate()}`;
+}
+
+function formatShortYear(year: number): string {
+  return String(year % 100).padStart(2, '0');
+}
+
+function scoreTimestampMs(score: unknown): number | null {
+  const raw = (score as any)?.ended_at || (score as any)?.created_at;
+  if (typeof raw !== 'string') return null;
+  const ms = Date.parse(raw);
+  return Number.isFinite(ms) ? ms : null;
+}
+
+/**
+ * D3 "BP" heat matrix (best_arr). Mirrors yumu-bot's InfoService.BestsArray:
+ * 91 days ending at this week's Sunday, filtered by UTC+8 local date and
+ * grouped by UTC date, newest day last.
+ */
+function buildBestsArray(scores: readonly unknown[]): {
+  count: number[];
+  max: number;
+  time: string;
+  week0: string;
+  week4: string;
+  week8: string;
+} {
+  const now = new Date();
+  const today = dayNumber(now.getFullYear(), now.getMonth(), now.getDate());
+  const endOfWeek = today + ((7 - now.getDay()) % 7);
+  const start = endOfWeek - 90;
+
+  const counts = new Map<number, number>();
+  for (const score of scores) {
+    const ms = scoreTimestampMs(score);
+    if (ms == null) continue;
+    const localDay = dayAtOffset(ms, 8);
+    if (localDay > start && localDay <= endOfWeek) {
+      const groupedDay = dayAtOffset(ms, 0);
+      counts.set(groupedDay, (counts.get(groupedDay) || 0) + 1);
+    }
+  }
+
+  const count: number[] = [];
+  let max = 0;
+  let maxDay = 0;
+  for (let day = start; day <= endOfWeek; day++) {
+    const value = counts.get(day) || 0;
+    count.push(value);
+    if (value > max) {
+      max = value;
+      maxDay = day;
+    }
+  }
+
+  return {
+    count,
+    max,
+    time: max > 0 ? formatMonthDay(maxDay) : '-',
+    week0: formatMonthDay(endOfWeek),
+    week4: formatMonthDay(endOfWeek - 28),
+    week8: formatMonthDay(endOfWeek - 56),
+  };
+}
+
+/**
+ * D3 "PC" heat matrix (playcount_arr). Mirrors yumu-bot's
+ * InfoService.PlaycountsArray: monthly playcounts from three years plus the
+ * current quarter back to this December.
+ */
+function buildPlaycountsArray(monthlies: unknown): {
+  count: number[];
+  max: number;
+  time: string;
+  year0: string;
+  year1: string;
+  year2: string;
+  year3: string;
+  quarter: number;
+} {
+  const now = new Date();
+  const thisYear = now.getFullYear();
+  const thisMonth = now.getMonth() + 1;
+  const quarter = Math.floor((thisMonth - 1) / 3) + 1;
+  const latest = { year: thisYear, month: 12 };
+  const start = { year: thisYear - 3, month: quarter * 3 - 2 };
+
+  const months = new Map<string, number>();
+  if (Array.isArray(monthlies)) {
+    for (const item of monthlies) {
+      const startDate = String((item as any)?.start_date || '');
+      const match = /^(\d{4})-(\d{2})/.exec(startDate);
+      if (match) {
+        months.set(
+          `${Number(match[1])}-${Number(match[2])}`,
+          Number((item as any)?.count) || 0,
+        );
+      }
+    }
+  }
+
+  const count: number[] = [];
+  let max = 0;
+  let maxMonth = '';
+  let year = start.year;
+  let month = start.month;
+  while (year < latest.year || (year === latest.year && month <= latest.month)) {
+    const key = `${year}-${month}`;
+    const value = months.get(key) || 0;
+    count.push(value);
+    if (value > max) {
+      max = value;
+      maxMonth = key;
+    }
+    if (month === 12) {
+      year++;
+      month = 1;
+    } else {
+      month++;
+    }
+  }
+
+  return {
+    count,
+    max,
+    time: max > 0 ? maxMonth : '-',
+    year0: formatShortYear(thisYear),
+    year1: formatShortYear(thisYear - 1),
+    year2: formatShortYear(thisYear - 2),
+    year3: formatShortYear(thisYear - 3),
+    quarter,
+  };
+}
+
+interface RankingInterval {
+  start: number;
+  end: number;
+  improvement: number;
+  length: number;
+}
+
+/**
+ * D3 ranking chart payload (ranking_arr). Mirrors yumu-bot's
+ * InfoService.RankingArray including its improvement-interval scan.
+ */
+function buildRankingArray(rankHistory: unknown): {
+  ranking: number[];
+  statistics: {
+    intervals: RankingInterval[];
+    top: number;
+    bottom: number;
+    improvement: number;
+  };
+} {
+  const raw = Array.isArray((rankHistory as any)?.data)
+    ? ((rankHistory as any).data as unknown[]).map((value) => Number(value))
+    : [];
+  const ranking = raw.filter((value) => Number.isFinite(value));
+  const padded = [...ranking];
+  while (padded.length < 90) padded.unshift(0);
+
+  const intervals: RankingInterval[] = [];
+  let startIndex = -1;
+  let currentImprovement = 0;
+  let lastValidRank: number | null = null;
+
+  for (let i = 0; i < padded.length; i++) {
+    const currentRank = padded[i];
+    if (currentRank === 0) {
+      if (startIndex !== -1) {
+        const endIndex = i - 1;
+        const intervalLength = endIndex - startIndex + 1;
+        if (intervalLength >= 1) {
+          intervals.push({
+            start: startIndex,
+            end: endIndex,
+            improvement: currentImprovement,
+            length: intervalLength,
+          });
+        }
+        startIndex = -1;
+        currentImprovement = 0;
+      }
+      lastValidRank = null;
+      continue;
+    }
+
+    if (lastValidRank != null && currentRank < lastValidRank) {
+      if (startIndex === -1) startIndex = i - 1;
+      currentImprovement += lastValidRank - currentRank;
+    } else if (startIndex !== -1) {
+      const endIndex = i - 1;
+      const intervalLength = endIndex - startIndex;
+      if (intervalLength >= 1) {
+        intervals.push({
+          start: startIndex,
+          end: endIndex,
+          improvement: currentImprovement,
+          length: intervalLength,
+        });
+      }
+      startIndex = -1;
+      currentImprovement = 0;
+    }
+    lastValidRank = currentRank;
+  }
+
+  if (startIndex !== -1) {
+    const endIndex = padded.length - 1;
+    const intervalLength = endIndex - startIndex;
+    if (intervalLength >= 1) {
+      intervals.push({
+        start: startIndex,
+        end: endIndex,
+        improvement: currentImprovement,
+        length: intervalLength,
+      });
+    }
+  }
+
+  const nonZero = padded.filter((value) => value > 0);
+  const top = nonZero.length > 0 ? Math.min(...nonZero) : 0;
+  const bottom = nonZero.length > 0 ? Math.max(...nonZero) : 0;
+  const improvement = intervals.reduce((sum, interval) => sum + interval.improvement, 0);
+
+  return {
+    ranking,
+    statistics: { intervals, top, bottom, improvement },
+  };
+}
+
+/**
+ * D3 "highest rank" block. Mirrors yumu-bot's InfoService.HighestRanking.
+ */
+function buildHighestRank(apiUser: any): { rank: number; time: string } {
+  const highest = apiUser?.rank_highest;
+  if (highest && Number(highest.rank) > 0 && highest.updated_at) {
+    return { rank: Number(highest.rank), time: String(highest.updated_at) };
+  }
+
+  const ranks = Array.isArray(apiUser?.rank_history?.data)
+    ? (apiUser.rank_history.data as unknown[]).map(Number)
+    : [];
+  if (ranks.length > 0) {
+    const padded = [...ranks];
+    while (padded.length < 90) padded.unshift(0);
+    const minRank = Math.min(...padded);
+    const index = padded.indexOf(minRank);
+    return {
+      rank: minRank,
+      time: new Date(Date.now() - (89 - index) * DAY_MS).toISOString(),
+    };
+  }
+
+  const globalRank = Number(apiUser?.statistics?.global_rank || apiUser?.global_rank || 0);
+  return {
+    rank: globalRank > 0 ? globalRank : -1,
+    time: new Date().toISOString(),
+  };
+}
+
+/**
+ * Bonus pp, mirroring yumu-bot's DataUtil.getBonusPP(bests, user.pp).
+ */
+function buildBonusPp(scores: readonly unknown[], apiUser: any): number {
+  let bestPP = 0;
+  for (const score of scores) {
+    bestPP += Number((score as any)?.weight?.pp) || 0;
+  }
+  const userPP = Number(apiUser?.statistics?.pp || apiUser?.pp || 0);
+  const maxBonusPP = (417 - 1 / 3) * (1 - Math.pow(0.995, 1000));
+  return Math.min(Math.max(userPP - bestPP, 0), maxBonusPP);
+}
+
+/**
+ * Build the exact payload consumed by yumu-image's panel_D3, matching
+ * yumu-bot's InfoService v3 (`/i` / 玩家信息). apiScores should already be
+ * star-enriched so the top-six BP cards show modded star ratings.
+ */
+export async function buildYumuInfoPayload(
+  apiUser: any,
+  apiScores: readonly unknown[],
+): Promise<Record<string, unknown>> {
+  const user = {
+    ...buildYumuUser(apiUser),
+    mode: 'osu',
+    user_achievements_count: Number((apiUser as any)?.user_achievements?.length || 0),
+    beatmap_playcounts_count: Number((apiUser as any)?.beatmap_playcounts_count || 0),
+    matchmaking_stats: (apiUser as any)?.matchmaking_stats || [],
+  };
+  const bests = await mapLimit(
+    apiScores.slice(0, 6),
+    6,
+    (score) => buildYumuScore(score, apiUser),
+  );
+
+  return {
+    user,
+    bests,
+    best_arr: buildBestsArray(apiScores),
+    playcount_arr: buildPlaycountsArray((apiUser as any)?.monthly_playcounts),
+    ranking_arr: buildRankingArray(apiUser?.rank_history),
+    highest_rank: buildHighestRank(apiUser),
+    percentiles: {},
+    history_day: 0,
+    history_user: null,
+    bonus_pp: buildBonusPp(apiScores, apiUser),
   };
 }
 
@@ -506,19 +841,16 @@ function scoreAttributes(apiScore: any, score: Record<string, any>): Record<stri
 
 // ── Render specific panels ──
 
-export async function renderPlayerInfo(apiUser: any): Promise<{ buffer: Buffer; cqCode: string } | null> {
+export async function renderPlayerInfo(
+  apiUser: any,
+  apiScores: readonly unknown[] = [],
+): Promise<{ buffer: Buffer; cqCode: string } | null> {
   if (!getRenderServer().hasClients()) return null;
 
-  const payload = {
-    user: buildYumuUser(apiUser),
-    mode: 'osu',
-    scores: [],
-    best_time: [],
-    history_day: 1,
-    history_user: null
-  };
-
   try {
+    // yumu-bot's `/i` (玩家信息) renders the D3 "Information v5" panel; the
+    // Gamma card remains the separate `/card`/`ic` output.
+    const payload = await buildYumuInfoPayload(apiUser, apiScores);
     const buffer = await renderPanel('panel_D3', payload);
     return { buffer, cqCode: saveAndGetCqCode(buffer, 'info') };
   } catch (err) {
