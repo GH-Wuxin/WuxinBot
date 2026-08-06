@@ -61,10 +61,11 @@ export function visualCapabilityNotice(db, event = {}) {
     if (hasVisual) return '本轮消息包含图片占位符但未拿到实际图像。说明无法确认内容即可，不要编造。';
     return '当前没有图片内容。按普通文字聊天，不要主动提视觉能力。';
   }
-  // Text-only model: the most important thing is to NOT fabricate visual content
-  // and NOT proactively mention visual limitations when nobody asked.
+  // Text-only model: only warn when an image is actually present (or a
+  // placeholder was seen), so it does not fabricate visual content. When there
+  // is no image, no vision instruction is needed at all.
   if (hasVisual) return '你是纯文字模型，无法识别图片。被要求看图时诚实说明"我是文字模式，看不了图片"。不要编造画面内容。';
-  return '你是纯文字模型。被要求看图时诚实说明看不了。其他任何时候都不要提视觉限制或图片。';
+  return '';
 }
 
 const MEDIA_PLACEHOLDER_RE = /\[图片\]|\[表情包\]|\[表情\]|\[视频\]|\[语音\]|\[文件\]/g;
