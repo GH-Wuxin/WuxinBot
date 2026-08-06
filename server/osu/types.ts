@@ -95,6 +95,8 @@ export interface OsuScore {
   beatmap: OsuBeatmap;
   beatmapset: OsuBeatmapset;
   created_at: string;
+  /** ISO timestamp of when the score was set (v2 /scores/best includes this). */
+  ended_at?: string;
   mode: string;
   user_id: number;
   weight?: { percentage: number; pp: number };

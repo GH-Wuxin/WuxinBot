@@ -1299,19 +1299,39 @@ export async function executeInternalBotCommand(
 
     case 'info':
     case 'card': {
-      // Try to render a player info card via yumu-image
+      // `info` renders yumu's full player-info panel (D3, same as `/i`);
+      // `card` keeps the separate Gamma info card (`/ic` / `信息卡片`).
       if (getRenderServer().hasClients()) {
         try {
-          const { renderCompactInfoCard } = await import('./render.js');
-          const rendered = await renderCompactInfoCard(user);
-          if (rendered) {
-            return {
-              content: [
-                `${user.username} 的 osu! 信息卡：`,
-                `PP: ${(user.statistics?.pp || 0).toLocaleString()} | 全球 #${(user.statistics?.global_rank || 0).toLocaleString()} | 准确率 ${(user.statistics?.hit_accuracy || 0).toFixed(2)}%`
-              ].join('\n'),
-              images: [rendered.cqCode]
-            };
+          if (commandName === 'info') {
+            const { renderPlayerInfo } = await import('./render.js');
+            const { getUserBestScores } = await import('../osu/api.js');
+            const rawScores = await getUserBestScores(user.id, 'osu', 100);
+            if (Array.isArray(rawScores) && rawScores.length > 0) {
+              const enriched = (await enrichScoreStarRatings(rawScores, 'osu')).scores;
+              const rendered = await renderPlayerInfo(user, enriched);
+              if (rendered) {
+                return {
+                  content: [
+                    `${user.username} 的 osu! 信息：`,
+                    `PP: ${(user.statistics?.pp || 0).toLocaleString()} | 全球 #${(user.statistics?.global_rank || 0).toLocaleString()} | 准确率 ${(user.statistics?.hit_accuracy || 0).toFixed(2)}%`
+                  ].join('\n'),
+                  images: [rendered.cqCode]
+                };
+              }
+            }
+          } else {
+            const { renderCompactInfoCard } = await import('./render.js');
+            const rendered = await renderCompactInfoCard(user);
+            if (rendered) {
+              return {
+                content: [
+                  `${user.username} 的 osu! 信息卡：`,
+                  `PP: ${(user.statistics?.pp || 0).toLocaleString()} | 全球 #${(user.statistics?.global_rank || 0).toLocaleString()} | 准确率 ${(user.statistics?.hit_accuracy || 0).toFixed(2)}%`
+                ].join('\n'),
+                images: [rendered.cqCode]
+              };
+            }
           }
         } catch { /* fall through to text */ }
       }
