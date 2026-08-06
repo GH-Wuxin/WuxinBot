@@ -1593,8 +1593,11 @@ export interface ToolLoopOptions {
   /**
    * When true, the structured tool payload is returned verbatim for the caller
    * to append after the LLM lead (command-style delivery). When false (default,
-   * natural chat), the payload stays out of the user-facing message: the LLM
-   * must integrate the key facts into its own reply instead.
+   * natural chat), named-bot panels the executor tagged as direct-delivery
+   * products (DIRECT_RESULT_COMMANDS / structured text panels) are still
+   * returned verbatim; deterministic osu data routes and ordinary tool Q&A
+   * stay inside the tool message and the LLM must integrate the key facts
+   * into its own reply instead.
    */
   deliverDirectContent?: boolean;
 }
@@ -1700,6 +1703,10 @@ export async function runToolLoop(
             collectedImages.push(imageRef);
           }
         }
+        // Deterministic natural-language osu routes keep the payload as
+        // reference material for the LLM unless the caller opted into
+        // command-style delivery (recommend). Panels from named-bot calls are
+        // handled in the normal loop below, where the tool name is known.
         if (deliverDirectContent) {
           const dc = sanitizeDirectDeliveryContent(result.directContent || '');
           if (dc && isSafeToolResult(dc) && !collectedDirectContent.includes(dc)) {
@@ -1925,7 +1932,14 @@ export async function runToolLoop(
           }
         }
 
-        if (callDeliversDirect) {
+        // Named-bot (query_bot) results tagged as direct-delivery products are
+        // panels from an explicitly invoked bot and must be delivered verbatim
+        // even in natural chat: the LLM only writes a short lead and is never
+        // asked to reconstruct the panel (that caused the truncated "#2 Sid..."
+        // regression). Deterministic query_osu natural routes stay reference-
+        // only unless callDeliversDirect opts into command-style delivery.
+        const isNamedBotTool = String(tc.function?.name || '') === 'query_bot';
+        if (callDeliversDirect || (isNamedBotTool && result.directContent)) {
           const directContent = sanitizeDirectDeliveryContent(result.directContent || '');
           if (directContent && isSafeToolResult(directContent)) {
             acceptedDirectContent = directContent;

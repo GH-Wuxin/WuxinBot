@@ -77,10 +77,19 @@ assert(/没有观战/.test(r.text || ''), 'cmd:list-empty', r.text);
 r = await matchManager.handleCommand(db, baseEvent, '!ml end', false);
 assert(/没有观战/.test(r.text || ''), 'cmd:end-empty', r.text);
 
-// A live match must register successfully (isolated db only).
+// A real match ID must register successfully (isolated db only). The fixture
+// match is live data and eventually ends, so the assertion follows the API
+// state: a live match starts watching, an ended match is reported honestly.
 if (matchId > 0) {
+  const liveMatch = await getMatch(matchId);
+  const ended = liveMatch.match?.is_match_end === true ||
+    buildMatchRating(liveMatch).json.match?.is_match_end === true;
   r = await matchManager.handleCommand(db, baseEvent, `!ml ${matchId}`, false);
-  assert(/开始观战/.test(r.text || ''), 'cmd:live-start', r.text);
+  assert(
+    ended ? /已经结束|已结束/.test(r.text || '') : /开始观战/.test(r.text || ''),
+    'cmd:live-start',
+    r.text
+  );
 }
 
 verifyProductionDbUnchanged(prodBefore);
