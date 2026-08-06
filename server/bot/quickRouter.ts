@@ -18,32 +18,21 @@ import {
   recordQuickContext,
   buildQuickShadowSummary,
 } from './quickMemory.js';
+import {
+  EXCLAMATION_DEFS,
+  SLASH_DEFS,
+  HYDRANT_DEFS,
+  finalizeQuickDef,
+  type QuickCommandDef,
+  type RawQuickCommandDef,
+} from './commands/quick.meta.js';
+import { normalizeAlias } from './commands/alias.js';
 
-export type QuickSource = 'common' | 'yumu' | 'kanon' | 'hydrant' | 'lazybot';
-
-export interface QuickCommandDef {
-  id: string;
-  source: QuickSource;
-  aliases: string[];
-  kind: 'osu' | 'system' | 'fun' | 'admin';
-  /** Internal engine capability, when the command maps to one. */
-  capability?: 'recent' | 'info' | 'profile' | 'card' | 'bp' | 'bplist' | 'pplus' | 'skill' | 'recommend' | 'match' | 'score';
-  /** Local handler id for non-osu commands. */
-  handler?: 'bind' | 'unbind' | 'help' | 'ping' | 'dice' | 'where' | 'self_profile' | 'at_profile' | 'pp_user' | 'pp_self' | 'notice';
-  /** Admin-only commands are gated by owner/admin role before any reply. */
-  permission?: 'admin';
-  /** False until the handler is ported; matched-but-unimplemented falls to LLM. */
-  implemented?: boolean;
-  /** For `bp` family: parse a trailing BP rank/range (`1-100`, `#5`). */
-  bpArgs?: boolean;
-  /** Prefer direct invocation of the original local bot (original rendering). */
-  bridge?: boolean;
-  /** Inject Wuxin's unified osu! binding when a bridged command has no target. */
-  injectBinding?: boolean;
-}
+export type { QuickCommandDef, RawQuickCommandDef } from './commands/quick.meta.js';
+export { EXCLAMATION_DEFS, SLASH_DEFS, HYDRANT_DEFS, ALL_QUICK_DEFS, QUICK_DEFS } from './commands/quick.meta.js';
 
 interface QuickMatch {
-  def: QuickCommandDef;
+  def: RawQuickCommandDef;
   /** The full normalized command text without the prefix. */
   cmdText: string;
   /** The matched alias (normalized), used to rebuild injected commands. */
@@ -56,163 +45,9 @@ interface QuickMatch {
   extraMode?: string;
 }
 
-// ── Registry ──
-
-const COMMON: QuickCommandDef[] = [
-  { id: 'help', source: 'common', aliases: ['h', 'help', 'helps', '帮助', '文档', '完整帮助'], kind: 'system', handler: 'help', implemented: true },
-  { id: 'ping', source: 'common', aliases: ['ping', 'pi', '探测'], kind: 'system', handler: 'ping', implemented: true },
-  { id: 'bind', source: 'common', aliases: ['bind', 'bi', '绑定'], kind: 'system', handler: 'bind', implemented: true },
-  { id: 'unbind', source: 'common', aliases: ['unbind', 'ub', '解绑', '解除绑定'], kind: 'system', handler: 'unbind', implemented: true },
-  { id: 'setmode', source: 'common', aliases: ['set mode', 'set game mode', 'mode', 'sm', 'mo', '游戏模式'], kind: 'system', implemented: false },
-  { id: 'groupmode', source: 'common', aliases: ['set group mode', 'group mode', 'gm', '群模式', '群聊模式'], kind: 'system', implemented: false },
-  { id: 'check', source: 'common', aliases: ['check', 'ck', '检查'], kind: 'system', implemented: false },
-];
-
-const YUMU: QuickCommandDef[] = [
-  { id: 'recent', source: 'yumu', aliases: ['p', 'pass', '通过成绩', 'pr', 're', 'recent', 'r', '最近成绩', 'ps', 'passes', 'rs', 'recents', 'pw', 'rw', 'pass show', 'recent show'], kind: 'osu', capability: 'recent', implemented: true, bridge: true },
-  { id: 'rbs', source: 'yumu', aliases: ['rbs', 'recents bests', '优秀成绩'], kind: 'osu', implemented: false },
-  { id: 'prcard', source: 'yumu', aliases: ['pc', 'rc', 'passcard', 'recentcard', '通过卡片', '最近卡片'], kind: 'osu', implemented: false },
-  { id: 'score', source: 'yumu', aliases: ['s', 'score', '成绩', 'sw', 'show score', 'ss', 'scores', '多成绩'], kind: 'osu', capability: 'score', implemented: true },
-  { id: 'bp', source: 'yumu', aliases: ['bp', 'b', 'best', 'bestperformance', '最成绩', '最佳成绩', 'bpw', 'best show'], kind: 'osu', capability: 'bp', bpArgs: true, implemented: true, bridge: true },
-  { id: 'bs', source: 'yumu', aliases: ['bs', 'bps', 'bests'], kind: 'osu', capability: 'bp', bpArgs: true, implemented: true, bridge: true },
-  { id: 'todaybp', source: 'yumu', aliases: ['todaybp', 'tbp', 'tdp', 't', '今日成绩', '今日最佳成绩'], kind: 'osu', implemented: false },
-  { id: 'bpf', source: 'yumu', aliases: ['bpf', 'bf', 'bp fix', 'best fix', '修复成绩', '修复最佳成绩'], kind: 'osu', implemented: false },
-  { id: 'ba', source: 'yumu', aliases: ['ba', 'bpa', 'bp analysis', 'best analysis', '分析成绩', '分析最佳成绩'], kind: 'osu', implemented: false },
-  { id: 'bh', source: 'yumu', aliases: ['bh', 'bph', 'bp history', '历史成绩'], kind: 'osu', implemented: false },
-  { id: 'top', source: 'yumu', aliases: ['top', 'tp', 'top plays'], kind: 'osu', implemented: false },
-  { id: 'pm', source: 'yumu', aliases: ['pm', 'pp-', 'ppminus', '表现分减', 'pv', 'ppminus vs', 'pl', 'ppminus legacy'], kind: 'osu', implemented: true, bridge: true, injectBinding: true },
-  { id: 'pplus', source: 'yumu', aliases: ['pp', 'px', 'p+', 'pp+', 'plus', 'pppvs', 'plusvs'], kind: 'osu', capability: 'pplus', implemented: true },
-  { id: 'ppmap', source: 'yumu', aliases: ['pa', 'ppmap'], kind: 'osu', implemented: false },
-  { id: 'skill', source: 'yumu', aliases: ['k', 'skill', 'skills', '技能', '技巧'], kind: 'osu', capability: 'skill', implemented: true },
-  { id: 'kv', source: 'yumu', aliases: ['kv', 'skill vs', 'skills vs', '技能对比'], kind: 'osu', implemented: false },
-  { id: 'etx', source: 'yumu', aliases: ['ex', 'et', 'etx', 'elite', 'eliteronix', '精英分数', 'ev', 'etx vs', 'elite vs'], kind: 'osu', implemented: true, bridge: true, injectBinding: true },
-  { id: 'csv', source: 'yumu', aliases: ['csi', 'csv info', 'csvppm', 'cm', 'csvrating', 'cra'], kind: 'osu', implemented: false },
-  { id: 'ppst', source: 'yumu', aliases: ['ppst'], kind: 'osu', implemented: false },
-  { id: 'info', source: 'yumu', aliases: ['i', 'info', 'information', '玩家信息', '个人信息', '玩家', 'ic', 'infocard', '信息卡片', '玩家卡片'], kind: 'osu', capability: 'info', implemented: true },
-  { id: 'mapper', source: 'yumu', aliases: ['im', 'imapper', 'mapper', '谱师', '作者信息'], kind: 'osu', implemented: false },
-  { id: 'friend', source: 'yumu', aliases: ['f', 'friends', '好友', '好友信息'], kind: 'osu', implemented: false },
-  { id: 'badge', source: 'yumu', aliases: ['bd', 'badge', '奖牌', '牌子'], kind: 'osu', implemented: false },
-  { id: 'team', source: 'yumu', aliases: ['tm', 'team', 'clan', '战队', '战队信息'], kind: 'osu', implemented: false },
-  { id: 'getid', source: 'yumu', aliases: ['gi', 'get id', 'gn', 'get name'], kind: 'osu', implemented: false },
-  { id: 'mutual', source: 'yumu', aliases: ['mutual', 'mua', '主页链接', '亲亲'], kind: 'osu', implemented: false },
-  { id: 'qpi', source: 'yumu', aliases: ['qi', 'ri', 'quick play info', 'ranked play info', '排位匹配信息'], kind: 'osu', implemented: false },
-  { id: 'oldavatar', source: 'yumu', aliases: ['oa', 'o', 'old avatar', '旧头像', 'oc', 'oishi', 'avatar card', 'op', 'old profile', 'osu profile'], kind: 'osu', implemented: false },
-  { id: 'audio', source: 'yumu', aliases: ['a', 'audio', 'song', '谱面音频'], kind: 'osu', implemented: false },
-  { id: 'map', source: 'yumu', aliases: ['m', 'map', 'beatmap', 'mz', 'map lazer', 'beatmap lazer', '谱面'], kind: 'osu', implemented: false },
-  { id: 'qualified', source: 'yumu', aliases: ['q', 'qua', 'qualified'], kind: 'osu', implemented: false },
-  { id: 'leader', source: 'yumu', aliases: ['l', 'leader', 'leaderboard', 'list', 'gl', 'group leaderboard', 'group list', 'lg', 'll', 'legacy leaderboard', 'legacy list'], kind: 'osu', implemented: false },
-  { id: 'nom', source: 'yumu', aliases: ['n', 'nom', 'nomination', 'nominations'], kind: 'osu', implemented: false },
-  { id: 'explore', source: 'yumu', aliases: ['e', 'exp', 'explore', 'find', 'search', 'emp', 'explore most played'], kind: 'osu', implemented: false },
-  { id: 'recommend', source: 'yumu', aliases: ['rec', 'recommend', 'recommended', 'j', '推荐', '推荐谱面'], kind: 'osu', capability: 'recommend', implemented: true },
-  { id: 'view', source: 'yumu', aliases: ['v', 'view', 'vv', 'view variation', 'sv view'], kind: 'osu', implemented: false },
-  { id: 'cal', source: 'yumu', aliases: ['cal', 'calculate', 'cl'], kind: 'osu', implemented: false },
-  { id: 'getbg', source: 'yumu', aliases: ['gb', 'bg', 'get bg', 'get background', '获取背景'], kind: 'osu', implemented: false },
-  { id: 'getcover', source: 'yumu', aliases: ['gc', 'get cover', '获取封面'], kind: 'osu', implemented: false },
-  { id: 'match', source: 'yumu', aliases: ['ml', 'li', 'match listen', 'match listener', 'make love', '观战'], kind: 'osu', capability: 'match', implemented: true },
-  { id: 'matchnow', source: 'yumu', aliases: ['mn', 'match now', 'monitor now'], kind: 'osu', implemented: false },
-  { id: 'matchrecent', source: 'yumu', aliases: ['mr', 'match recent', 'match recents'], kind: 'osu', implemented: false },
-  { id: 'matchround', source: 'yumu', aliases: ['ro', 'rounds', 'match rounds'], kind: 'osu', implemented: false },
-  { id: 'rating', source: 'yumu', aliases: ['ra', 'rating', 'mra', 'ym rating', 'sa', 'sra', 'series', 'series rating'], kind: 'osu', implemented: true, bridge: true },
-  { id: 'quickplay', source: 'yumu', aliases: ['qp', 'rp', 'quick play', 'ranked play'], kind: 'osu', implemented: false },
-  { id: 'pool', source: 'yumu', aliases: ['po', 'mappool', 'gp', 'getpool', 'get pool'], kind: 'osu', implemented: false },
-  { id: 'dice', source: 'yumu', aliases: ['d', 'dice', 'roll', '骰子'], kind: 'fun', handler: 'dice', implemented: true },
-];
-
-const KANON: QuickCommandDef[] = [
-  { id: 'recent', source: 'kanon', aliases: ['re', 'recent', 'pr'], kind: 'osu', capability: 'recent', implemented: true, bridge: true },
-  { id: 'recentlist', source: 'kanon', aliases: ['res', 'recentlist', 'prs'], kind: 'osu', implemented: false },
-  { id: 'bp', source: 'kanon', aliases: ['bp'], kind: 'osu', capability: 'bp', bpArgs: true, implemented: true, bridge: true },
-  { id: 'bplist', source: 'kanon', aliases: ['bplist', 'get bplist'], kind: 'osu', capability: 'bplist', bpArgs: true, implemented: true, bridge: true },
-  { id: 'score', source: 'kanon', aliases: ['score'], kind: 'osu', capability: 'score', implemented: true },
-  { id: 'info', source: 'kanon', aliases: ['info'], kind: 'osu', capability: 'info', implemented: true, bridge: true },
-  { id: 'todaybp', source: 'kanon', aliases: ['todaybp', 'get todaybp'], kind: 'osu', implemented: false },
-  { id: 'search', source: 'kanon', aliases: ['search'], kind: 'osu', implemented: false },
-  { id: 'update', source: 'kanon', aliases: ['update'], kind: 'osu', implemented: false },
-  { id: 'getbg', source: 'kanon', aliases: ['get bg'], kind: 'osu', implemented: false },
-  { id: 'getbonuspp', source: 'kanon', aliases: ['get bonuspp', 'get bonus pp'], kind: 'osu', implemented: false },
-  { id: 'badge', source: 'kanon', aliases: ['badge', 'badge list', 'badge info'], kind: 'osu', implemented: false },
-  { id: 'setosumode', source: 'kanon', aliases: ['set osumode', 'set osu mode'], kind: 'system', implemented: false },
-];
-
-const LAZYBOT: QuickCommandDef[] = [
-  { id: 'pplus', source: 'lazybot', aliases: ['plus', 'ppp'], kind: 'osu', capability: 'pplus', implemented: true, bridge: true },
-  { id: 'bp', source: 'lazybot', aliases: ['bp', 'best', 'pbp', 'b', 'bsm'], kind: 'osu', capability: 'bp', bpArgs: true, implemented: true, bridge: true },
-  { id: 'bplist', source: 'lazybot', aliases: ['bplist'], kind: 'osu', capability: 'bplist', bpArgs: true, implemented: true, bridge: true },
-  { id: 'bpcard', source: 'lazybot', aliases: ['bpcard', 'pbpcard', 'pb', 'pbplist'], kind: 'osu', implemented: false },
-  { id: 'bpif', source: 'lazybot', aliases: ['bpif'], kind: 'osu', implemented: false },
-  { id: 'bps', source: 'lazybot', aliases: ['bps', 'bs', 'bssm'], kind: 'osu', implemented: false },
-  { id: 'bpvs', source: 'lazybot', aliases: ['bpvs'], kind: 'osu', implemented: false },
-  { id: 'recent', source: 'lazybot', aliases: ['pr', 'rp', 'playrecent', 're', 'recent', 'p', 'r', 'ppr', 'pre'], kind: 'osu', capability: 'recent', implemented: true, bridge: true },
-  { id: 'prs', source: 'lazybot', aliases: ['prs', 'rps', 'rs', 'res', 'ps'], kind: 'osu', implemented: false },
-  { id: 'score', source: 'lazybot', aliases: ['score', 's', 'pscore'], kind: 'osu', capability: 'score', implemented: true },
-  { id: 'allscore', source: 'lazybot', aliases: ['allscore', 'as', 'allscores', 'ass'], kind: 'osu', implemented: false },
-  { id: 'topscores', source: 'lazybot', aliases: ['topscores', 'ts'], kind: 'osu', implemented: false },
-  { id: 'todaybp', source: 'lazybot', aliases: ['todaybp', 'tbp'], kind: 'osu', implemented: false },
-  { id: 'profile', source: 'lazybot', aliases: ['profile', 'info'], kind: 'osu', capability: 'info', implemented: true, bridge: true },
-  { id: 'card', source: 'lazybot', aliases: ['card'], kind: 'osu', capability: 'card', implemented: true, bridge: true },
-  { id: 'pstats', source: 'lazybot', aliases: ['pstats'], kind: 'osu', implemented: false },
-  { id: 'ppmap', source: 'lazybot', aliases: ['ppmap'], kind: 'osu', implemented: false },
-  { id: 'pptest', source: 'lazybot', aliases: ['pptest'], kind: 'osu', implemented: false },
-  { id: 'whatif', source: 'lazybot', aliases: ['whatif'], kind: 'osu', implemented: false },
-  { id: 'nochoke', source: 'lazybot', aliases: ['nochoke', 'nc', 'no1miss'], kind: 'osu', implemented: false },
-  { id: 'noreading', source: 'lazybot', aliases: ['noreading', 'nr'], kind: 'osu', implemented: false },
-  { id: 'maxreading', source: 'lazybot', aliases: ['maxreading', 'mr'], kind: 'osu', implemented: false },
-  { id: 'ur', source: 'lazybot', aliases: ['ur', 'accuracy'], kind: 'osu', implemented: false },
-  { id: 'filter', source: 'lazybot', aliases: ['f', 'filter'], kind: 'osu', implemented: false },
-  { id: 'compare', source: 'lazybot', aliases: ['c', 'compare'], kind: 'osu', implemented: false },
-  { id: 'map', source: 'lazybot', aliases: ['m', 'map'], kind: 'osu', implemented: false },
-  { id: 'rd', source: 'lazybot', aliases: ['rd', 'recommenddifficulty'], kind: 'osu', capability: 'recommend', implemented: true },
-  { id: 'nametoid', source: 'lazybot', aliases: ['nametoid', 'n2d'], kind: 'osu', implemented: false },
-  { id: 'avatar', source: 'lazybot', aliases: ['oa', 'avatar'], kind: 'osu', implemented: false },
-  { id: 'setmode', source: 'lazybot', aliases: ['setmode', 'setruleset', 'setrule'], kind: 'system', implemented: false },
-  { id: 'link', source: 'lazybot', aliases: ['link', 'unlink', 'linksm'], kind: 'system', implemented: false },
-  { id: 'update', source: 'lazybot', aliases: ['update'], kind: 'osu', implemented: false },
-  { id: 'setpanel', source: 'lazybot', aliases: ['setpanel', 'sp'], kind: 'system', implemented: false },
-  { id: 'customize', source: 'lazybot', aliases: ['customize'], kind: 'osu', implemented: false },
-  { id: 'verify', source: 'lazybot', aliases: ['verify', 'verifymap', 'vm'], kind: 'system', implemented: false },
-  { id: 'thumbnail', source: 'lazybot', aliases: ['tns', 'tnp', 'thumbnail'], kind: 'osu', implemented: false },
-  { id: 'addscores', source: 'lazybot', aliases: ['addscores', 'addscore', 'add'], kind: 'admin', implemented: false },
-  { id: 'monitor', source: 'lazybot', aliases: ['monitor'], kind: 'admin', implemented: false },
-  { id: 'linkinfo', source: 'lazybot', aliases: ['li', 'linkinfo'], kind: 'system', implemented: false },
-  { id: 'um', source: 'lazybot', aliases: ['um'], kind: 'system', implemented: false },
-  { id: 'tips', source: 'lazybot', aliases: ['tips', 'addtips'], kind: 'system', implemented: false },
-  { id: 'rgc', source: 'lazybot', aliases: ['rgc'], kind: 'fun', implemented: false },
-  { id: 'name', source: 'lazybot', aliases: ['name', 'n', 'namelegacy', 'nl'], kind: 'fun', implemented: false },
-  { id: 'song', source: 'lazybot', aliases: ['song'], kind: 'fun', implemented: false },
-  { id: 'help', source: 'lazybot', aliases: ['help'], kind: 'system', handler: 'help', implemented: true },
-];
-
-// Hydrant triggers are prefix-free (or use special tokens), so they live in
-// their own matcher instead of the shared alias table.
-const HYDRANT: QuickCommandDef[] = [
-  { id: 'self_profile', source: 'hydrant', aliases: ['~'], kind: 'osu', handler: 'self_profile', implemented: true, bridge: true },
-  { id: 'at_profile', source: 'hydrant', aliases: ['查'], kind: 'osu', handler: 'at_profile', implemented: true, bridge: true },
-  { id: 'where', source: 'hydrant', aliases: ['where'], kind: 'osu', handler: 'where', implemented: true, bridge: true },
-  // Hydrant's original `+` still calls the retired syrin.me PP+ endpoint.
-  // Route the same public command through Wuxin's local PP+ aggregate instead.
-  { id: 'pplus', source: 'hydrant', aliases: ['+'], kind: 'osu', capability: 'pplus', implemented: true },
-  { id: 'recommend', source: 'hydrant', aliases: ['荐图'], kind: 'osu', capability: 'recommend', implemented: true },
-  { id: 'pptth', source: 'hydrant', aliases: ['pptth'], kind: 'osu', implemented: false },
-  { id: 'highlight', source: 'hydrant', aliases: ['今日高光'], kind: 'osu', implemented: false },
-  { id: 'help', source: 'hydrant', aliases: ['帮助'], kind: 'system', handler: 'help', implemented: true },
-  { id: 'annual', source: 'hydrant', aliases: ['我的年度osu!', '我的年度osu！', '我的年度屙屎'], kind: 'osu', implemented: false },
-];
-
-const ALL_DEFS: QuickCommandDef[] = [...COMMON, ...YUMU, ...KANON, ...LAZYBOT, ...HYDRANT];
-
-// Prefix tables. `!` precedence follows real usage: 猫猫 owns !pr/!re/!bp/
-// !bplist/!info, 雨沐 owns !p/!r/!b/!bs/!s/!t/!i. Matching picks the longest
-// actual alias, with ties resolved by registry order (kanon before yumu).
-const EXCLAMATION_DEFS = [...COMMON, ...KANON, ...YUMU];
-const SLASH_DEFS = [...LAZYBOT];
-
-function normalizeAlias(value: string): string {
-  return String(value || '').trim().toLowerCase().replace(/[！]/g, '!').replace(/[～∼]/g, '~').replace(/[，]/g, ',').replace(/[ \t]+/g, ' ');
-}
-
-function matchAlias(defs: QuickCommandDef[], rest: string): { def: QuickCommandDef; alias: string } | null {
+function matchAlias(defs: RawQuickCommandDef[], rest: string): { def: RawQuickCommandDef; alias: string } | null {
   const normalized = normalizeAlias(rest);
-  let best: { def: QuickCommandDef; alias: string; length: number } | null = null;
+  let best: { def: RawQuickCommandDef; alias: string; length: number } | null = null;
   for (const def of defs) {
     for (const alias of def.aliases) {
       const key = normalizeAlias(alias);
@@ -282,19 +117,19 @@ export function matchQuickCommand(event: { text: string; atTargets?: string[] })
   const hydrant = normalizeAlias(raw);
   if (/^~/.test(hydrant)) {
     const { mode, rest } = modeSuffix(hydrant.slice(1).trim());
-    const def = HYDRANT.find((d) => d.handler === 'self_profile')!;
+    const def = HYDRANT_DEFS.find((d) => d.handler === 'self_profile')!;
     return { def, cmdText: hydrant, alias: '~', args: rest, prefix: 'none', atTargets, extraMode: mode };
   }
   if (/^查/.test(raw)) {
     const { mode, rest } = modeSuffix(raw.slice(1).trim());
     if (atTargets.length > 0) {
-      const def = HYDRANT.find((d) => d.handler === 'at_profile')!;
+      const def = HYDRANT_DEFS.find((d) => d.handler === 'at_profile')!;
       return { def, cmdText: raw, alias: '查', args: rest, prefix: 'none', atTargets, extraMode: mode };
     }
     return null;
   }
   const normalizedRaw = normalizeAlias(raw);
-  const prefixFree = matchAlias(HYDRANT.filter((d) => d.handler !== 'self_profile' && d.handler !== 'at_profile'), normalizedRaw);
+  const prefixFree = matchAlias(HYDRANT_DEFS.filter((d) => d.handler !== 'self_profile' && d.handler !== 'at_profile'), normalizedRaw);
   if (prefixFree) {
     const def = prefixFree.def;
     return {
@@ -364,7 +199,7 @@ export function parseBpArgs(args: string, compactDefault: boolean): ParsedOsuArg
   return { username: value };
 }
 
-export function parseOsuArgs(def: QuickCommandDef, args: string): ParsedOsuArgs {
+export function parseOsuArgs(def: RawQuickCommandDef, args: string): ParsedOsuArgs {
   if (def.capability === 'score') {
     // `!s <bid> [玩家名]` / `/score <bid> [玩家名]` — BID comes first, an
     // optional trailing username overrides the sender's binding.
@@ -568,7 +403,8 @@ export async function handleQuickCommand(
   }
 
   // Admin-gated commands.
-  if ((def.permission === 'admin' || def.kind === 'admin') && !permissions.isOwner && !permissions.isAdmin) {
+  const meta = finalizeQuickDef(def);
+  if ((meta.permission === 'group_admin' || def.kind === 'admin') && !permissions.isOwner && !permissions.isAdmin) {
     const reply = commandDeniedReply(db, 'admin');
     if (sendMessage) await sendMessage(event, reply);
     return { handled: true, replied: true, reason: '权限不足' };
@@ -584,7 +420,7 @@ export async function handleQuickCommand(
         rawText: String(event.text || '').slice(0, 600),
         userRoleId: '',
         userPolicy: userPolicy.policy || 'normal',
-      }, { outcome, detail, source: def.source, implemented: Boolean(def.implemented) });
+      }, { outcome, detail, source: def.source, implemented: meta.execution.kind !== 'documentation_only' });
     } catch { /* logging is non-fatal */ }
   };
 

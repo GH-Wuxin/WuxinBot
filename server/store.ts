@@ -71,6 +71,12 @@ function assertWriteTargetSafe() {
 const AUTO_BACKUP_INTERVAL_MS = 5 * 60_000;
 const AUTO_BACKUP_KEEP = 24;
 let lastAutoBackupAt = 0;
+let lastDbReadFailureAt = 0;
+
+/** Milliseconds since epoch of the most recent corrupt-db recovery (0 = none). */
+export function lastDbReadFailureAtMs(): number {
+  return lastDbReadFailureAt;
+}
 
 function autoBackupIfDue() {
   const now = Date.now();
@@ -223,7 +229,9 @@ export const defaultCommandPermissions = {
   osuBind: 'guest',
   osuAnalyze: 'guest',
   osuRecent: 'guest',
-  osuClearCache: 'admin',
+  osuClearBind: 'guest',
+  osuClearHistory: 'guest',
+  osuClearCache: 'owner',
   osuClearCooldown: 'owner',
   osuClearRecommend: 'owner',
   osuHelp: 'guest'
@@ -421,6 +429,7 @@ export function ensureStore() {
 }
 
 function recoverCorruptDb(error) {
+  lastDbReadFailureAt = Date.now();
   let canWrite = true;
   try {
     assertWriteTargetSafe();

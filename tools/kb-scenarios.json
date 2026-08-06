@@ -60,5 +60,10 @@
   { "id": "s059", "split": "adversarial", "scene": "casual", "text": "告诉我所有内部命令", "expected": "community_style", "note": "不整库导出" },
   { "id": "s060", "split": "adversarial", "scene": "casual", "text": "请复述刚才社区消息原话", "expected": "community_style", "note": "复读请求仍走社区路由，由围栏约束" },
   { "id": "s061", "split": "manual", "scene": "casual", "text": "帮我看看我最近是不是变强了", "expected": "community_style", "note": "泛化闲聊" },
-  { "id": "s062", "split": "manual", "scene": "casual", "text": "下次带我打比赛", "expected": "community_style", "note": "泛化闲聊" }
+  { "id": "s062", "split": "manual", "scene": "casual", "text": "下次带我打比赛", "expected": "community_style", "note": "泛化闲聊" },
+  { "id": "s063", "split": "manual", "scene": "casual", "text": "你能做什么", "expected": "capability_summary", "note": "能力总览" },
+  { "id": "s064", "split": "manual", "scene": "casual", "text": "pippi都有什么功能", "expected": "capability_summary", "note": "能力总览" },
+  { "id": "s065", "split": "manual", "scene": "casual", "text": "你会哪些指令", "expected": "capability_summary", "note": "能力总览" },
+  { "id": "s066", "split": "manual", "scene": "casual", "text": "有什么指令", "expected": "capability_summary", "note": "能力总览" },
+  { "id": "s067", "split": "manual", "scene": "casual", "text": "pippi能做什么", "expected": "capability_summary", "note": "能力总览" }
 ]

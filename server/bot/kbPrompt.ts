@@ -19,6 +19,7 @@ export interface RouteCollectionPlan {
 const ROUTE_PLANS: Record<string, RouteCollectionPlan[]> = {
   none: [],
   wuxin_self: [{ collection: 'wuxin_self', budget: 800 }],
+  capability_summary: [{ collection: 'wuxin_self', budget: 900 }],
   osu_domain: [{ collection: 'osu_domain', budget: 900 }],
   community_style: [{ collection: 'community_style', budget: 500 }],
   self_and_domain: [

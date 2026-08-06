@@ -21,6 +21,11 @@ const WUXIN_FEATURE_RES = [
   /怎么(?:把|将|去|能|可以)?(?:冷却|绑定|推图|分析|缓存|历史|推荐)/,
 ];
 
+const CAPABILITY_SUMMARY_RES = [
+  /^(?:你|pippi|机器人|bot)?\s*(?:能|会|可以)?(?:做什么|干什么|干啥|些什么|什么功能|什么指令|哪些功能|哪些指令|都有什么|有什么功能|有什么指令|都能干嘛|会什么|会哪些|会做些什么)/i,
+  /(?:你的|你能|你会|pippi能|pippi会|bot能|bot会).{0,4}(?:做什么|干什么|什么功能|什么指令|哪些功能|哪些指令|都能干嘛|会哪些)/i,
+];
+
 const OSU_DEFINITION_RES = [
   /(?:pp|bp|acc|准确率|ar|od|cs|hp|星数|判定|判定窗|hit window|mods?|hd|hr|dt|nc|ht|ez|fl|nf|so|sd|pf|td|rx|rl|ap|at|aim|jump|stream|串|跳图|alt|tech|reading|读图|ranked|loved|qualified|bonus pp|weighted|加权|combo|fc|choke|miss|评级|银s|stable|lazer|转盘|kiai|滑条|手感).{0,8}(?:是什么|是啥|什么意思|啥意思|区别|差异|怎么算|怎么算的|原理|机制|作用|影响|由什么|多少|哪个|哪个更难|哪个难)/i,
   /(?:pp|bp|acc|ar|od|星数|判定|mods?|hd|hr|dt|nc|ht|aim|stream|串|alt|tech|reading|ranked|loved|手感)\s*(?:是什么|是啥|什么意思|啥意思|区别|怎么算|原理|机制)/i,
@@ -52,6 +57,10 @@ export function isCommandLike(text: string): boolean {
 
 function hasWuxinFeatureQuestion(text: string): boolean {
   return any(WUXIN_FEATURE_RES, text);
+}
+
+function hasCapabilitySummaryQuestion(text: string): boolean {
+  return any(CAPABILITY_SUMMARY_RES, text);
 }
 
 function hasOsuDefinitionQuestion(text: string): boolean {
@@ -92,6 +101,10 @@ export function routeForText(scene: string, text: string): KbRoute {
     }
   } else if (isCommandLike(value)) {
     return { kind: 'none', reason: 'deterministic_command' };
+  }
+
+  if (hasCapabilitySummaryQuestion(value)) {
+    return { kind: 'capability_summary', reason: 'explicit_capability_overview' };
   }
 
   const wuxin = hasWuxinFeatureQuestion(value);

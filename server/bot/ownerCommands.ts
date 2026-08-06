@@ -65,6 +65,12 @@ import { setBotPaused, getRecalcProgress, startRecalc, tickRecalc, finishRecalc 
 import { activateModelProfile, activeProviderLabel } from '../modelConfig.js';
 import { handleOsuCommand } from '../osu/commands.js';
 import {
+  getAllCommandHelpEntries,
+  canListCommand,
+  type CommandHelpEntry,
+  type CommandPermissions,
+} from './commands/index.js';
+import {
   looksLikeExternalBotSender,
   extractAtQq,
   escapeRegExp,
@@ -236,50 +242,26 @@ async function runOwnerCommand(event, sendMessage, permissions = { isOwner: true
 
 具体权限以控制台”权限”页为准。`;
 
-  const helpDefs = [
-    { key: 'lv', group: '等级', line: '/w lv (@某人) · 查看等级经验' },
-    { key: 'exp', group: '等级', line: '/w exp @某人 add/set/reset · 管理经验(仅owner)' },
-    { key: 'top', group: '等级', line: '/w top · 群内排行榜' },
-    { key: 'nick', group: '等级', line: '/w nick 称呼 / nick @某人 称呼 · 自定义称呼' },
-    { key: 'style', group: '等级', line: '/w style 内容 / style @某人 内容 · 个人交互风格' },
-    { key: 'me', group: '等级', line: '/w me · 查看 bot 对你的画像' },
-    { key: 'memberPolicy', group: '成员管理', line: '/w op/deop/ban/unban/trust/focus/quiet/normal @某人 · 成员权限' },
-    { key: 'note', group: '备注与画像', line: '/w note @某人 内容/show/clear · 成员备注' },
-    { key: 'profile', group: '备注与画像', line: '/w profile (@某人) show/samples/retry/rule/clear · 画像管理' },
-    { key: 'promptShow', group: '人设', line: '/w prompt show · 查看人设' },
-    { key: 'promptEdit', group: '人设', line: '/w prompt add/set/reset · 编辑人设' },
-    { key: 'promptSavebase', group: '人设', line: '/w prompt savebase · 保存基线(仅owner)' },
-    { key: 'groupAdd', group: '群聊设置', line: '/w group add [群名] · 加群(仅owner)' },
-    { key: 'groupProfileShow', group: '群聊设置', line: '/w group profile show · 查看群画像' },
-    { key: 'groupProfileEdit', group: '群聊设置', line: '/w group profile update/clear/on/off · 群画像管理' },
-    { key: 'rate', group: '群聊设置', line: '/w rate/cooldown/mode/status · 群参数' },
-    { key: 'modelShow', group: '模型与搜索', line: '/w model show/list · 查看模型' },
-    { key: 'modelSet', group: '模型与搜索', line: '/w model 模型名 · 切换模型' },
-    { key: 'search', group: '模型与搜索', line: '/w search on/off/status/fast/balanced/deep · 搜索' },
-    { key: 'thinking', group: '模型与搜索', line: '/w thinking off|simple|detail|slow [ms]|status · 思考提示' },
-    { key: 'search', group: '模型与搜索', line: '/w sysfacts on/off · 纯人设模式' },
-    { key: 'summarize', group: '模型与搜索', line: '/w summarize 条数 · 总结群聊' },
-    { key: 'preset', group: '系统', line: '/w preset class|away|sleep|active|silent|debug · 场景预设' },
-    { key: 'usage', group: '系统', line: '/w usage · 今日用量' },
-    { key: 'pause', group: '系统', line: '/w pause/resume · 暂停恢复' },
-    { key: 'why', group: '系统', line: '/w why · 最近为什么回/没回' },
-    { key: 'osuHelp', group: 'osu!', line: '/w osu help · osu! 命令帮助' },
-    { key: 'osuBind', group: 'osu!', line: '/w osu bind <用户名> · 绑定 osu! 账号' },
-    { key: 'osuAnalyze', group: 'osu!', line: '/w osu analyze (@某人) · 完整玩家分析' },
-    { key: 'osuRecent', group: 'osu!', line: '/w osu recent (@某人) · 近期成绩短评' },
-    { key: 'help', group: '系统', line: '/w help · 本帮助 | /w help 分组名' },
-    { key: 'ping', group: '系统', line: '/w ping · 检查在线' },
-    { key: 'my', group: '系统', line: '/w my · 我的权限' },
-    { key: 'recalc', group: '系统', line: '/w recalc · 重算进度' },
-    { key: 'memberPolicy', group: '系统', line: '/w refresh · 全局重算(仅owner)' },
-  ];
+  // Single source: command metadata (commands/index.ts). Runtime filtering
+  // still honors db.settings.commandPermissions overrides via permissionKey.
+  const helpEntries = getAllCommandHelpEntries().filter((entry) => entry.namespace === 'wuxin');
+  const helpPerms: CommandPermissions = { isOwner: Boolean(permissions.isOwner), isAdmin: Boolean(permissions.isAdmin) };
+  const entryLine = (entry: CommandHelpEntry) => `${entry.canonicalSyntax} · ${entry.description}`;
+  const entryAllowed = (db, userPolicy, perms, entry: CommandHelpEntry) =>
+    hasCommandPermission(db, userPolicy, perms, entry.permissionKey || entry.id)
+    && canListCommand(entry.visibility, entry.discoverability, entry.permission, {
+      isOwner: Boolean(perms.isOwner),
+      isAdmin: Boolean(perms.isAdmin),
+    });
 
   function buildHelpText(db, userPolicy, perms) {
-    const allowed = helpDefs.filter((d) => hasCommandPermission(db, userPolicy, perms, d.key));
+    const allowed = helpEntries.filter((d) => entryAllowed(db, userPolicy, perms, d));
     const byGroup: Record<string, string[]> = {};
     for (const d of allowed) {
-      if (!byGroup[d.group]) byGroup[d.group] = [];
-      if (!byGroup[d.group].includes(d.line)) byGroup[d.group].push(d.line);
+      const group = d.group || '其他';
+      if (!byGroup[group]) byGroup[group] = [];
+      const line = entryLine(d);
+      if (!byGroup[group].includes(line)) byGroup[group].push(line);
     }
     const lines = ['Wuxin 指令 · 都可以简写为 /w · 以下是你有权限的指令'];
     for (const [group, cmds] of Object.entries(byGroup)) {
@@ -312,16 +294,18 @@ async function runOwnerCommand(event, sendMessage, permissions = { isOwner: true
     const userRoleId = userCommandRoleId(db, commandUserPolicy, { isOwner: permissions.isOwner, isAdmin: permissions.isAdmin });
     const roleName = commandRoleName(db, userRoleId);
     const roleLevel = commandRoleLevel(db, userRoleId);
-    const allowed = helpDefs.filter((p) => hasCommandPermission(db, commandUserPolicy, permissions, p.key));
-    const denied = helpDefs.filter((p) => !hasCommandPermission(db, commandUserPolicy, permissions, p.key));
+    const allowed = helpEntries.filter((p) => entryAllowed(db, commandUserPolicy, permissions, p));
+    const denied = helpEntries.filter((p) => !entryAllowed(db, commandUserPolicy, permissions, p));
     const byGroup: Record<string, string[]> = {};
     for (const p of allowed) {
-      if (!byGroup[p.group]) byGroup[p.group] = [];
-      if (!byGroup[p.group].includes(p.line)) byGroup[p.group].push('  ' + p.line);
+      const group = p.group || '其他';
+      if (!byGroup[group]) byGroup[group] = [];
+      const line = '  ' + entryLine(p);
+      if (!byGroup[group].includes(line)) byGroup[group].push(line);
     }
     const lines = [`你的身份：${roleName}（等级 ${roleLevel}）`, `QQ：${event.userId}`, '', '—— 可用指令 ——'];
     for (const [group, cmds] of Object.entries(byGroup)) { lines.push(`\n【${group}】`); lines.push(...cmds); }
-    if (denied.length > 0) { lines.push('\n—— 无权限 ——'); for (const p of denied) lines.push('  ' + p.line + '（需更高权限）'); }
+    if (denied.length > 0) { lines.push('\n—— 无权限 ——'); for (const p of denied) lines.push('  ' + entryLine(p) + '（需更高权限）'); }
     if (sendMessage) await sendForwardText(sendMessage, event, '我的权限', lines.join('\n'));
     return { replied: Boolean(sendMessage), reason: `显示 ${event.userId} 权限` };
   }
@@ -1685,12 +1669,17 @@ ${knownModels.join('\n')}
   }
 
   if (command === '/osu' && isWuxinCommand) {
+    const clearAction = String(commandArgs || '').trim().split(/\s+/)[0].toLowerCase();
     const permKey = subCommand === 'bind' ? 'osuBind'
       : subCommand === 'analyze' ? 'osuAnalyze'
       : subCommand === 'recent' ? 'osuRecent'
-      : subCommand === 'clear' ? (String(commandArgs || '').includes('cooldown') ? 'osuClearCooldown'
-        : String(commandArgs || '').includes('recommend') ? 'osuClearRecommend'
-        : 'osuClearCache')
+      : subCommand === 'clear' ? ({
+          bind: 'osuClearBind',
+          history: 'osuClearHistory',
+          cooldown: 'osuClearCooldown',
+          recommend: 'osuClearRecommend',
+          cache: 'osuClearCache',
+        }[clearAction] || 'osuHelp')
       : 'osuHelp';
     if (!(await requireCommand(permKey))) {
       return { replied: Boolean(sendMessage), reason: commandDeniedReply(commandDb, permKey) };
