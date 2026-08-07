@@ -3,7 +3,8 @@
 
 import type { OsuToken } from './types.js';
 
-const TOKEN_URL = 'https://osu.ppy.sh/oauth/token';
+// Overridable for offline verification (recommend-verify serves a local mock).
+const TOKEN_URL = process.env.OSU_TOKEN_URL || 'https://osu.ppy.sh/oauth/token';
 
 let currentToken: OsuToken | null = null;
 let refreshPromise: Promise<OsuToken> | null = null;
