@@ -6,9 +6,8 @@
 // Exit 0 on all pass, non-zero on any failure.
 
 import http from 'node:http';
-import fs from 'node:fs';
-import path from 'node:path';
 import { createTestDataDir, assertNotProduction, productionDbSnapshot, verifyProductionDbUnchanged, cleanupTestDir } from './test-isolation.mjs';
+import { startOsuApiMock } from './osu-api-mock.mjs';
 
 const testDataDir = createTestDataDir('wuxin-natchat');
 process.env.DATA_DIR = testDataDir;
@@ -16,6 +15,13 @@ assertNotProduction(testDataDir);
 
 const prodBefore = productionDbSnapshot();
 console.log('[isolation] production db snapshot: ' + (prodBefore ? prodBefore.sha256.slice(0, 12) + '...' : 'N/A'));
+
+// Offline osu! API mock: the internal tool must succeed in the strongest
+// text-only profile case so the natural-chat delivery note is exercised.
+const osuMock = await startOsuApiMock();
+process.env.OSU_API_BASE_URL = osuMock.apiBase;
+process.env.OSU_TOKEN_URL = osuMock.tokenUrl;
+console.log(`[mock] osu! API served on 127.0.0.1:${osuMock.port}`);
 
 const { ensureStore, updateDb } = await import('../server/store.ts');
 const { processIncoming } = await import('../server/bot.ts');
@@ -69,28 +75,6 @@ await new Promise((r) => llmServer.listen(0, '127.0.0.1', r));
 const llmPort = llmServer.address().port;
 
 function setupFixture() {
-  // Seed real osu! credentials + a real binding from the production DB when
-  // available, so the internal tool can succeed in the strongest text-only
-  // profile case. When unavailable the tool errors and the test still verifies
-  // the no-leak guarantee.
-  let prodCreds = null;
-  let prodBinding = null;
-  try {
-    const prodDbPath = path.join(process.env.APPDATA || '', 'Wuxin', 'db.json');
-    if (fs.existsSync(prodDbPath)) {
-      const prod = JSON.parse(fs.readFileSync(prodDbPath, 'utf8'));
-      prodCreds = {
-        osuClientId: String(prod.settings?.osuClientId || ''),
-        osuClientSecret: String(prod.settings?.osuClientSecret || ''),
-      };
-      const bindings = Object.entries(prod.osuBindings || {});
-      if (bindings.length > 0) {
-        const [qq, value] = bindings[0];
-        prodBinding = { qq, value };
-      }
-    }
-  } catch { /* credentials are optional for this test */ }
-
   updateDb((db) => {
     db.settings.ownerQq = 'REDACTED_QQ_001';
     db.settings.selfQq = 'REDACTED_QQ_002';
@@ -102,10 +86,8 @@ function setupFixture() {
     db.settings.enableAutoModel = false;
     db.settings.thinkingNoticeMode = 'off';
     db.settings.memoryEnabled = false;
-    if (prodCreds?.osuClientId && prodCreds?.osuClientSecret) {
-      db.settings.osuClientId = prodCreds.osuClientId;
-      db.settings.osuClientSecret = prodCreds.osuClientSecret;
-    }
+    db.settings.osuClientId = 'fixture-client';
+    db.settings.osuClientSecret = 'fixture-secret';
     db.settings.botRegistry = {
       updatedAt: new Date().toISOString(),
       bots: [{
@@ -119,11 +101,7 @@ function setupFixture() {
       }]
     };
     db.osuBindings = db.osuBindings || {};
-    if (prodBinding) {
-      db.osuBindings['REDACTED_QQ_001'] = prodBinding.value;
-    } else {
-      db.osuBindings['REDACTED_QQ_001'] = 1234567;
-    }
+    db.osuBindings['REDACTED_QQ_001'] = 1234567;
     db.groupBotConfig = db.groupBotConfig || {};
     db.groupBotConfig['REDACTED_GROUP_001'] = { yumu: true };
   });
@@ -283,6 +261,7 @@ for (const [mode, opts] of [
 console.log(`\n${'='.repeat(40)}`);
 console.log(`Passed: ${passed}, Failed: ${failed}`);
 llmServer.close();
+await osuMock.close();
 
 const prodOk = verifyProductionDbUnchanged(prodBefore);
 if (!prodOk) {

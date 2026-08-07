@@ -1,21 +1,27 @@
 // match-verify.mjs
 // Regression guard for the !ml migration: osu matches API access, MatchRating
-// port structure, and the command layer. Uses DATA_DIR isolation (real API).
+// port structure, and the command layer. Fully OFFLINE: the osu! API base and
+// token endpoints are pointed at a local mock serving a deterministic fixture
+// match, so the suite never depends on osu.ppy.sh availability or rate limits.
 
-import fs from 'node:fs';
-import path from 'node:path';
 import { createTestDataDir, assertNotProduction, productionDbSnapshot, verifyProductionDbUnchanged, cleanupTestDir } from './test-isolation.mjs';
+import { startOsuApiMock } from './osu-api-mock.mjs';
 
 const testDataDir = createTestDataDir('wuxin-match');
 process.env.DATA_DIR = testDataDir;
 assertNotProduction(testDataDir);
 const prodBefore = productionDbSnapshot();
 
+const mock = await startOsuApiMock();
+process.env.OSU_API_BASE_URL = mock.apiBase;
+process.env.OSU_TOKEN_URL = mock.tokenUrl;
+console.log(`[mock] osu! API served on 127.0.0.1:${mock.port}`);
+
 const { ensureStore, updateDb, readDb } = await import('../server/store.ts');
 ensureStore();
-const prod = JSON.parse(fs.readFileSync(path.join(process.env.APPDATA, 'Wuxin', 'db.json'), 'utf8'));
 updateDb((d) => {
-  d.settings = JSON.parse(JSON.stringify(prod.settings || {}));
+  d.settings.osuClientId = 'fixture-client';
+  d.settings.osuClientSecret = 'fixture-secret';
 });
 
 const { getMatch, getMatchAfter } = await import('../server/osu/api.ts');
@@ -28,20 +34,23 @@ const pass = (label) => { console.log(`PASS [${label}]`); passed++; };
 const fail = (label, msg) => { console.error(`FAIL [${label}]: ${msg}`); failed++; };
 const assert = (cond, label, msg) => (cond ? pass(label) : fail(label, msg));
 
-// 1. Real matches API + incremental after query.
+const FIXTURE_MATCH_ID = 900900900;
+
+// 1. Fixture match API + incremental after query.
 let matchId = 0;
 try {
-  const match = await getMatch(121622776);
+  const match = await getMatch(FIXTURE_MATCH_ID);
   matchId = match.match.id;
-  assert(match.match.id > 0, 'api:getMatch', 'empty id');
+  assert(match.match.id === FIXTURE_MATCH_ID, 'api:getMatch', `id=${match.match.id}`);
   assert(Array.isArray(match.events), 'api:events', 'events not array');
+  assert(match.match.end_time == null, 'api:live', `end_time=${match.match.end_time}`);
   const after = await getMatchAfter(matchId, match.latest_event_id);
   assert(after.latest_event_id >= match.latest_event_id, 'api:after', `after.latest=${after.latest_event_id} base=${match.latest_event_id}`);
 } catch (e) {
   fail('api', e.message);
 }
 
-// 2. MatchRating port: structural assertions on real data (even a tiny match).
+// 2. MatchRating port: structural assertions on the fixture match.
 if (matchId > 0) {
   try {
     const match = await getMatch(matchId);
@@ -64,7 +73,7 @@ if (matchId > 0) {
   }
 }
 
-// 3. Command layer (isolated db, real API).
+// 3. Command layer (isolated db, offline fixture).
 const db = readDb();
 const baseEvent = { groupId: 'test-group', userId: 'u1' };
 
@@ -77,9 +86,7 @@ assert(/没有观战/.test(r.text || ''), 'cmd:list-empty', r.text);
 r = await matchManager.handleCommand(db, baseEvent, '!ml end', false);
 assert(/没有观战/.test(r.text || ''), 'cmd:end-empty', r.text);
 
-// A real match ID must register successfully (isolated db only). The fixture
-// match is live data and eventually ends, so the assertion follows the API
-// state: a live match starts watching, an ended match is reported honestly.
+// The fixture match is live, so registering it must start watching.
 if (matchId > 0) {
   const liveMatch = await getMatch(matchId);
   const ended = liveMatch.match?.is_match_end === true ||
@@ -92,6 +99,7 @@ if (matchId > 0) {
   );
 }
 
+await mock.close();
 verifyProductionDbUnchanged(prodBefore);
 cleanupTestDir(testDataDir);
 console.log(`\nMATCH-VERIFY: passed=${passed} failed=${failed}`);

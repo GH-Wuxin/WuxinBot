@@ -7,9 +7,8 @@
 // Exit 0 on all pass, non-zero on any failure.
 
 import http from 'node:http';
-import fs from 'node:fs';
-import path from 'node:path';
 import { createTestDataDir, assertNotProduction, productionDbSnapshot, verifyProductionDbUnchanged, cleanupTestDir } from './test-isolation.mjs';
+import { startOsuApiMock } from './osu-api-mock.mjs';
 
 const testDataDir = createTestDataDir('wuxin-bprange');
 process.env.DATA_DIR = testDataDir;
@@ -18,27 +17,12 @@ assertNotProduction(testDataDir);
 const prodBefore = productionDbSnapshot();
 console.log('[isolation] production db snapshot: ' + (prodBefore ? prodBefore.sha256.slice(0, 12) + '...' : 'N/A'));
 
-// Seed real osu! credentials + a real binding from the production DB when
-// available so the internal tool can succeed and the E2E can observe the
-// query_osu tool_calls in the lead request. Without credentials the tool fails
-// and the args can never be captured end-to-end.
-let prodCreds = null;
-let prodBinding = null;
-try {
-  const prodDbPath = path.join(process.env.APPDATA || '', 'Wuxin', 'db.json');
-  if (fs.existsSync(prodDbPath)) {
-    const prod = JSON.parse(fs.readFileSync(prodDbPath, 'utf8'));
-    prodCreds = {
-      osuClientId: String(prod.settings?.osuClientId || ''),
-      osuClientSecret: String(prod.settings?.osuClientSecret || ''),
-    };
-    const bindings = Object.entries(prod.osuBindings || {});
-    if (bindings.length > 0) {
-      const [qq, value] = bindings[0];
-      prodBinding = { qq, value };
-    }
-  }
-} catch { /* credentials are optional for the unit sections */ }
+// Offline osu! API mock: the internal tool must succeed deterministically so
+// the E2E can observe query_osu tool_calls in the lead request.
+const osuMock = await startOsuApiMock();
+process.env.OSU_API_BASE_URL = osuMock.apiBase;
+process.env.OSU_TOKEN_URL = osuMock.tokenUrl;
+console.log(`[mock] osu! API served on 127.0.0.1:${osuMock.port}`);
 
 const { ensureStore, readDb, updateDb } = await import('../server/store.ts');
 const { processIncoming } = await import('../server/bot.ts');
@@ -116,10 +100,8 @@ function setupFixture() {
     db.settings.enableAutoModel = false;
     db.settings.thinkingNoticeMode = 'off';
     db.settings.memoryEnabled = false;
-    if (prodCreds?.osuClientId && prodCreds?.osuClientSecret) {
-      db.settings.osuClientId = prodCreds.osuClientId;
-      db.settings.osuClientSecret = prodCreds.osuClientSecret;
-    }
+    db.settings.osuClientId = 'fixture-client';
+    db.settings.osuClientSecret = 'fixture-secret';
     // M1: literal quick commands (`!bs 1-100`) route deterministically; the
     // Chinese natural-language cases below still go through the LLM tool path.
     db.settings.quickRouterEnabled = true;
@@ -136,7 +118,7 @@ function setupFixture() {
       }]
     };
     db.osuBindings = db.osuBindings || {};
-    db.osuBindings['REDACTED_QQ_001'] = prodBinding ? prodBinding.value : 1234567;
+    db.osuBindings['REDACTED_QQ_001'] = 1234567;
     db.groupBotConfig = db.groupBotConfig || {};
     db.groupBotConfig['REDACTED_GROUP_001'] = { yumu: true };
   });
@@ -278,6 +260,7 @@ await runRangeE2E('bp-no-range', '查一下我的bp', { capability: 'bp' });
 console.log(`\n${'='.repeat(40)}`);
 console.log(`Passed: ${passed}, Failed: ${failed}`);
 llmServer.close();
+await osuMock.close();
 
 const prodOk = verifyProductionDbUnchanged(prodBefore);
 if (!prodOk) {
