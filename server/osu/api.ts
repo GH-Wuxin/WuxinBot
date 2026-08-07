@@ -6,7 +6,8 @@ import { cacheGet, cacheSet } from './cache.js';
 import { recordOsuApi429 } from '../health.js';
 import type { OsuUser, OsuScore, OsuBeatmap, OsuMode, OsuMatch } from './types.js';
 
-const API_BASE = 'https://osu.ppy.sh/api/v2';
+// Overridable for offline verification (recommend-verify serves a local mock).
+const API_BASE = process.env.OSU_API_BASE_URL || 'https://osu.ppy.sh/api/v2';
 
 const TTL = {
   user: 6 * 3600_000,

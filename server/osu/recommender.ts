@@ -551,7 +551,12 @@ export async function recommendForPlayer(
       if (!Array.isArray(leaderboard) || leaderboard.length === 0) return;
       const ownPp = Number(score.pp || 0);
       const ranked = leaderboard
-        .filter((s) => Number(s.pp || 0) > 0 && Number(s.user_id || 0) > 0)
+        .filter(
+          (s) =>
+            Number(s.pp || 0) > 0 &&
+            Number(s.user_id || 0) > 0 &&
+            Number(s.user_id) !== user.id,
+        )
         .map((s) => ({ s, delta: Math.abs(Number(s.pp) - ownPp) }))
         .sort((a, b) => a.delta - b.delta)
         .slice(0, perMap);
