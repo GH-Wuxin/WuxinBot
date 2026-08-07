@@ -70,8 +70,25 @@ function assertWriteTargetSafe() {
 // dedicated backups/ directory, pruned to the newest N snapshots.
 const AUTO_BACKUP_INTERVAL_MS = 5 * 60_000;
 const AUTO_BACKUP_KEEP = 24;
+const MAX_MESSAGES = 12_000;
+const MAX_DECISIONS = 30_000;
+const MAX_COMMAND_LOGS = 2_000;
+const MAX_ADMIN_ACTIONS = 1_000;
 let lastAutoBackupAt = 0;
 let lastDbReadFailureAt = 0;
+
+/**
+ * Bound unbounded history arrays so db.json rewrites stay predictable.
+ * Keeps the newest entries (arrays are append-ordered). Existing bounded
+ * collections (usageEvents, profileLogs, configSnapshots) have their own caps.
+ */
+export function applyRetention(db) {
+  if ((db.messages || []).length > MAX_MESSAGES) db.messages = db.messages.slice(-MAX_MESSAGES);
+  if ((db.decisions || []).length > MAX_DECISIONS) db.decisions = db.decisions.slice(-MAX_DECISIONS);
+  if ((db.commandLogs || []).length > MAX_COMMAND_LOGS) db.commandLogs = db.commandLogs.slice(-MAX_COMMAND_LOGS);
+  if ((db.adminActions || []).length > MAX_ADMIN_ACTIONS) db.adminActions = db.adminActions.slice(-MAX_ADMIN_ACTIONS);
+  return db;
+}
 
 /** Milliseconds since epoch of the most recent corrupt-db recovery (0 = none). */
 export function lastDbReadFailureAtMs(): number {
@@ -410,7 +427,7 @@ function normalizeDb(db) {
     ...(db.usage || {})
   };
 
-  return db;
+  return applyRetention(db);
 }
 
 // The app uses a small JSON store instead of SQLite so the user can back up,
@@ -510,7 +527,7 @@ export function writeDb(db) {
   assertWriteTargetSafe();
   ensureStore();
   return withDbLock(() => {
-    const result = writeJsonAtomic(getDbPath(), db);
+    const result = writeJsonAtomic(getDbPath(), applyRetention(db));
     autoBackupIfDue();
     return result;
   });
@@ -522,7 +539,7 @@ export function updateDb(mutator) {
   return withDbLock(() => {
     const db = readDbUnlocked();
     const result = mutator(db);
-    writeJsonAtomic(getDbPath(), db);
+    writeJsonAtomic(getDbPath(), applyRetention(db));
     autoBackupIfDue();
     return result ?? db;
   });
