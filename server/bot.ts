@@ -46,6 +46,7 @@ import {
   sumUsageSince,
   startOfLocalDayTime
 } from './bot/prompt.js';
+import { createShadowReasoningRouter, decideAndRecord, reasoningInput } from './bot/reasoningRouter.js';
 import {
   sanitizeReply,
   sendReplySegments,
@@ -612,6 +613,8 @@ async function processIncomingInner(event, sendMessage = undefined, queuedDecisi
     const liveUserPolicy = getUserPolicy(liveDb, event.groupId, event.userId);
     const messages = buildPrompt(liveDb, liveGroup, event, liveUserPolicy);
     const responseOptions = responseOptionsFor(event, liveDb, liveUserPolicy);
+    const turnId = String(event.messageId || crypto.randomUUID());
+    const reasoningRouter = createShadowReasoningRouter();
     const explicitSearch = asksForExplicitSearch(event.text);
     // osu! data queries use their own deterministic routing. Don't let the
     // generic "查/搜" search keyword match eat them before tool availability
@@ -844,6 +847,8 @@ async function processIncomingInner(event, sendMessage = undefined, queuedDecisi
         // 自然聊天不回显工具原文：数据只供 LLM 参考并自然融入回答。
         // 显式指令（/w osu analyze、!p 等）走独立通道，不受此开关影响。
         deliverDirectContent: requiredTool?.args.capability === 'recommend',
+        turnId,
+        reasoningRouter,
       };
       let toolResult = await runToolLoop(harnessChat, loopOptions);
 
@@ -877,6 +882,7 @@ async function processIncomingInner(event, sendMessage = undefined, queuedDecisi
         overrideModel: responseOptions.overrideModel,
         visionImages
       });
+      decideAndRecord(reasoningRouter, turnId, reasoningInput('conversation'), ai?.meta || null);
     }
 
     let replyText = sanitizeReply(ai.text, liveDb.settings);
@@ -888,7 +894,7 @@ async function processIncomingInner(event, sendMessage = undefined, queuedDecisi
       if (isIdentityQuestion(event.text)) {
         replyText = neutralIdentityReply(event, liveDb.settings);
       } else {
-        const rewrite = await rewriteNormalReply(liveDb, replyText, event);
+        const rewrite = await rewriteNormalReply(liveDb, replyText, event, { reasoningRouter, turnId });
         replyText = sanitizeReply(rewrite.text, liveDb.settings);
         ai.usage.total_tokens = (ai.usage.total_tokens || 0) + (rewrite.usage.total_tokens || 0);
         ai.usage.prompt_tokens = (ai.usage.prompt_tokens || 0) + (rewrite.usage.prompt_tokens || 0);
