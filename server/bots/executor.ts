@@ -10,6 +10,15 @@ import { enrichScoreStarRatings } from '../osu/starRating.js';
 import type { OsuMode, OsuScore, OsuUser } from '../osu/types.js';
 import { describeFilters, isEmptyFilters } from '../osu/recommendFilters.js';
 import type { RecommendFilters } from '../osu/recommendFilters.js';
+import type { LlmCompletionMeta } from '../bot/llm.js';
+import { reasoningInput } from '../bot/reasoningRouter.js';
+import type {
+  LlmCallRole,
+  ReasoningInput,
+  ReasoningShadowRecord,
+  ReasoningShadowSink,
+  ReasoningTurnState,
+} from '../bot/reasoningRouter.js';
 
 // ── Pending bot responses (correlationId → resolver) ──
 
@@ -2036,6 +2045,9 @@ export interface ToolLoopOptions {
    * into its own reply instead.
    */
   deliverDirectContent?: boolean;
+  /** Shadow reasoning: per-turn id + router. Recording only; never applied. */
+  turnId?: string;
+  reasoningRouter?: ReasoningShadowSink;
 }
 
 export interface ToolLoopResult {
@@ -2073,7 +2085,7 @@ function sanitizeDirectDeliveryContent(content: string): string {
 }
 
 export async function runToolLoop(
-  completeChatFn: (db: any, options: any) => Promise<{ text: string; usage: any }>,
+  completeChatFn: (db: any, options: any) => Promise<{ text: string; usage: any; meta?: LlmCompletionMeta }>,
   options: ToolLoopOptions
 ): Promise<ToolLoopResult> {
   const {
@@ -2088,8 +2100,32 @@ export async function runToolLoop(
   let toolCallsMade = 0;
   let iterations = 0;
   let recommendToolCalled = false;
+  let lastToolFailed = false;
   const collectedImages: string[] = [];
   const collectedDirectContent: string[] = [];
+  const turnId = options.turnId || `turn_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+  const reasoningRouter = options.reasoningRouter;
+  let reasoningTurn: ReasoningTurnState = { thinkingTriggered: false, rootReasonCode: null };
+  const reasoningRecords: ReasoningShadowRecord[] = [];
+  const recordReasoningCall = (
+    callRole: LlmCallRole,
+    input: ReasoningInput,
+    meta: LlmCompletionMeta | null,
+  ): void => {
+    if (!reasoningRouter) return;
+    const decision = reasoningRouter.resolve(input, reasoningTurn);
+    reasoningTurn = reasoningRouter.mergeTurn(reasoningTurn, decision);
+    const record: ReasoningShadowRecord = {
+      turnId,
+      ts: Date.now(),
+      callRole,
+      decision,
+      input,
+      actual: meta,
+    };
+    reasoningRecords.push(record);
+    reasoningRouter.record(record);
+  };
 
   // ── Required tool: execute before LLM, LLM only writes lead ──
   if (requiredTool) {
@@ -2227,6 +2263,19 @@ export async function runToolLoop(
       };
     }
 
+    recordReasoningCall(
+      'decorative_lead',
+      reasoningInput('decorative_lead', {
+        requiredTool: true,
+        toolSelectionRequired: false,
+        toolCallsMade: 1,
+        iterations: 1,
+        maxIterations,
+        hasDirectPayload: true,
+      }),
+      leadResponse?.meta || null,
+    );
+
     if (leadResponse.usage) {
       totalUsage.total_tokens += leadResponse.usage.total_tokens || 0;
       totalUsage.prompt_tokens += leadResponse.usage.prompt_tokens || 0;
@@ -2281,6 +2330,20 @@ export async function runToolLoop(
       }
       throw error;
     }
+
+    recordReasoningCall(
+      hasDirectPayload ? 'decorative_lead' : 'tool_planner',
+      reasoningInput(hasDirectPayload ? 'decorative_lead' : 'tool_planner', {
+        requiredTool: false,
+        toolSelectionRequired: !hasDirectPayload && Array.isArray(tools) && tools.length > 0,
+        toolCallsMade,
+        iterations,
+        maxIterations,
+        hasDirectPayload,
+        previousToolFailed: lastToolFailed,
+      }),
+      response?.meta || null,
+    );
 
     // Merge usage
     if (response.usage) {
@@ -2348,6 +2411,7 @@ export async function runToolLoop(
       const result = await executeToolCall(tc, {
         db, userId, groupId, sendMessage, event, selfQq
       });
+      lastToolFailed = !result.ok;
       if (result.ok && !recommendToolCalled) {
         try {
           const callArgs = JSON.parse(String((tc as any).function?.arguments || '{}'));
@@ -2482,6 +2546,20 @@ export async function runToolLoop(
     }
     throw error;
   }
+
+  recordReasoningCall(
+    'tool_synthesis',
+    reasoningInput('tool_synthesis', {
+      requiredTool: false,
+      toolSelectionRequired: false,
+      toolCallsMade,
+      iterations,
+      maxIterations,
+      hasDirectPayload: collectedDirectContent.length > 0 || collectedImages.length > 0,
+      previousToolFailed: lastToolFailed,
+    }),
+    finalResponse?.meta || null,
+  );
 
   if (finalResponse.usage) {
     totalUsage.total_tokens += finalResponse.usage.total_tokens || 0;

@@ -15,6 +15,62 @@ import {
 
 export { looksLikeMimoApiKey, looksLikeMimoEndpoint } from '../modelConfig.js';
 
+export interface LlmCompletionMeta {
+  finishReason: string | null;
+  reasoningTokens: number;
+  completionTokens: number;
+  totalTokens: number;
+  contentEmpty: boolean;
+  hadToolCalls: boolean;
+  model: string;
+  provider: string;
+  latencyMs: number;
+}
+
+/**
+ * Normalize completion metadata from a raw chat-completion response. Safe for
+ * missing fields (non-DeepSeek providers, mocks, partial payloads): numbers
+ * degrade to 0, finishReason to null, booleans to false. contentEmpty uses
+ * the same rule as the existing empty-reply check (trimmed content empty).
+ */
+export function buildLlmCompletionMeta(raw, base) {
+  const choice = raw?.choices?.[0];
+  const message = choice?.message;
+  const usage = raw?.usage;
+  const content = String(message?.content ?? '');
+  const toNonNegative = (value) => {
+    const n = Number(value);
+    return Number.isFinite(n) && n > 0 ? n : 0;
+  };
+  return {
+    finishReason: typeof choice?.finish_reason === 'string' ? choice.finish_reason : null,
+    reasoningTokens: toNonNegative(usage?.completion_tokens_details?.reasoning_tokens),
+    completionTokens: toNonNegative(usage?.completion_tokens),
+    totalTokens: toNonNegative(usage?.total_tokens),
+    contentEmpty: content.trim().length === 0,
+    hadToolCalls: Array.isArray(message?.tool_calls) && message.tool_calls.length > 0,
+    model: String(base?.model ?? ''),
+    provider: String(base?.provider ?? ''),
+    latencyMs: Number.isFinite(Number(base?.latencyMs)) ? Number(base.latencyMs) : 0,
+  };
+}
+
+/**
+ * Reasoning budget exhaustion: thinking consumed the whole max_tokens budget,
+ * so the model returned empty content and no tool calls. This must NOT fall
+ * into the ordinary empty-reply retry (which drops tools); a thinking-aware
+ * retry should raise max_tokens and keep thinking+tools.
+ */
+export function isReasoningBudgetExhaustion(meta) {
+  return Boolean(
+    meta &&
+    meta.finishReason === 'length' &&
+    meta.reasoningTokens > 0 &&
+    meta.contentEmpty &&
+    !meta.hadToolCalls,
+  );
+}
+
 export function llmProvider(db) {
   const provider = String(db.settings.llmProvider || 'deepseek').trim() || 'deepseek';
   const baseUrl = String(db.settings.apiBaseUrl || '').trim();
@@ -377,7 +433,12 @@ export async function completeChat(db, options = {}) {
       ...result,
       provider,
       model: params.model,
-      latencyMs: Date.now() - started
+      latencyMs: Date.now() - started,
+      meta: buildLlmCompletionMeta(result.raw, {
+        model: params.model,
+        provider,
+        latencyMs: Date.now() - started,
+      })
     };
   } catch (error) {
     recordLlmError(String(error?.message || error?.code || ''));
@@ -396,7 +457,12 @@ export async function completeChat(db, options = {}) {
         ...result,
         provider,
         model: params.model,
-        latencyMs: Date.now() - started
+        latencyMs: Date.now() - started,
+        meta: buildLlmCompletionMeta(result.raw, {
+          model: params.model,
+          provider,
+          latencyMs: Date.now() - started,
+        })
       };
     }
     if (/Connection error/i.test(message) || error?.name === 'APIConnectionError') {

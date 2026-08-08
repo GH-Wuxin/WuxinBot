@@ -3,6 +3,7 @@
 // Extracted from bot.ts.
 import { completeChat } from './llm.js';
 import { modelSupportsVision } from './prompt.js';
+import { decideAndRecord, reasoningInput } from './reasoningRouter.js';
 
 export function sanitizeReply(text, settings) {
   let cleaned = String(text || '').trim();
@@ -130,7 +131,8 @@ export function neutralIdentityReply(event, settings = {}) {
   return qq ? `你是 ${name}（QQ:${qq}），我这边按这个昵称识别。` : `你是 ${name}，我这边按这个昵称识别。`;
 }
 
-export async function rewriteNormalReply(db, originalText, event) {
+export async function rewriteNormalReply(db, originalText, event, options = {}) {
+  const { reasoningRouter, turnId } = options;
   const response = await completeChat(db, {
     model: db.settings.model || 'deepseek-v4-flash',
     messages: [
@@ -159,6 +161,14 @@ export async function rewriteNormalReply(db, originalText, event) {
     maxTokens: 180,
     label: '回复改写'
   });
+  if (reasoningRouter && turnId) {
+    decideAndRecord(
+      reasoningRouter,
+      turnId,
+      reasoningInput('rewrite', { previousFastFailure: true }),
+      response?.meta || null,
+    );
+  }
   return {
     text: response.text || originalText,
     usage: response.usage || {}
