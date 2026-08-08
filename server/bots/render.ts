@@ -1,6 +1,6 @@
 // Image rendering via the yumu-image WebSocket protocol.
 // Converts osu! API v2 objects into the field names consumed by yumu-image.
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import {
   existsSync,
   mkdirSync,
@@ -403,7 +403,7 @@ interface RankingInterval {
  * D3 ranking chart payload (ranking_arr). Mirrors yumu-bot's
  * InfoService.RankingArray including its improvement-interval scan.
  */
-function buildRankingArray(rankHistory: unknown): {
+export function buildRankingArray(rankHistory: unknown): {
   ranking: number[];
   statistics: {
     intervals: RankingInterval[];
@@ -450,7 +450,7 @@ function buildRankingArray(rankHistory: unknown): {
       currentImprovement += lastValidRank - currentRank;
     } else if (startIndex !== -1) {
       const endIndex = i - 1;
-      const intervalLength = endIndex - startIndex;
+      const intervalLength = endIndex - startIndex + 1;
       if (intervalLength >= 1) {
         intervals.push({
           start: startIndex,
@@ -467,7 +467,7 @@ function buildRankingArray(rankHistory: unknown): {
 
   if (startIndex !== -1) {
     const endIndex = padded.length - 1;
-    const intervalLength = endIndex - startIndex;
+    const intervalLength = endIndex - startIndex + 1;
     if (intervalLength >= 1) {
       intervals.push({
         start: startIndex,
@@ -980,7 +980,7 @@ export async function renderBeatmapCard(
   }
 }
 
-function bpListCacheKey(
+export function bpListCacheKey(
   apiUser: any,
   apiScores: any[],
   options: YumuBestScoresOptions
@@ -992,7 +992,46 @@ function bpListCacheKey(
       : '';
     return `${score?.id || score?.best_id || 0}:${mods}:${score?.pp || 0}:${score?.ended_at || score?.created_at || ''}:${score?.rank || ''}`;
   }).join('|');
-  return `a4:${apiUser?.id || 0}:${ranks}:${options.compact ? 'c' : 'n'}:${scores}`;
+  const history = options.historyUser
+    ? `:h${canonicalHistorySignature(options.historyUser)}`
+    : '';
+  return `a4:${apiUser?.id || 0}:${ranks}:${options.compact ? 'c' : 'n'}:${scores}${history}`;
+}
+
+/**
+ * Stable fingerprint of a history_user snapshot for rendered-panel caching.
+ * Two snapshots of the same osuUserId at different points in time render
+ * different header cards, so keying by id alone is a silent-wrong-result
+ * bug. The signature covers every field buildYumuUser keeps (object keys are
+ * canonicalized so equal snapshots with different key order match), and
+ * ignores `page`, which buildYumuUser always drops from render payloads.
+ */
+function canonicalHistorySignature(historyUser: any): string {
+  return createHash('sha1')
+    .update(canonicalJsonValue(historyUser, new WeakSet()))
+    .digest('hex')
+    .slice(0, 16);
+}
+
+function canonicalJsonValue(value: unknown, seen: WeakSet<object>): string {
+  if (value === null || typeof value !== 'object') {
+    return JSON.stringify(value ?? null);
+  }
+  if (seen.has(value as object)) return '"<circular>"';
+  seen.add(value as object);
+  if (Array.isArray(value)) {
+    const out = value.map((v) => canonicalJsonValue(v, seen)).join(',');
+    seen.delete(value as object);
+    return `[${out}]`;
+  }
+  const record = value as Record<string, unknown>;
+  const out = Object.keys(record)
+    .filter((key) => key !== 'page')
+    .sort()
+    .map((key) => `${JSON.stringify(key)}:${canonicalJsonValue(record[key], seen)}`)
+    .join(',');
+  seen.delete(value as object);
+  return `{${out}}`;
 }
 
 function cqCodeToFilePath(cqCode: string): string | null {
