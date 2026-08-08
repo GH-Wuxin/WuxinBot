@@ -2,18 +2,46 @@
 import { getKbHealth } from './bot/knowledgeBase.js';
 
 const state = {
-  onebot: { connected: false, lastEventAt: '', lastError: '' },
-  sendMessage: { lastSuccessAt: '', lastError: '', recentFailures: 0 },
+  onebot: {
+    connected: false,
+    transportConnected: false,
+    apiReachable: null,
+    accountOnline: null,
+    heartbeatFresh: false,
+    heartbeatGood: null,
+    lastEventAt: '',
+    lastError: '',
+    lastHeartbeatAt: '',
+    lastGetStatusAt: '',
+    lastGetStatusError: '',
+    reconnectCount: 0,
+    lastReconnectAt: '',
+  },
+  sendMessage: {
+    lastSuccessAt: '',
+    lastError: '',
+    recentFailures: 0,
+    successCount: 0,
+    failureCount: 0,
+    totalLatencyMs: 0,
+    callCount: 0,
+  },
   llm: { lastSuccessAt: '', lastError: '', recentFailures: 0, totalLatencyMs: 0, callCount: 0 },
   bot: { globalPaused: false, lastDecisionError: '' },
   osu: { api429Count: 0, renderFailures: 0 },
   requestCount: 0,
+  activeProcessing: 0,
 };
+
+// Group IDs seen since the last flight-recorder sample. Kept in memory only;
+// the recorder persists only the count, never group IDs.
+const recentGroups = new Set<string>();
 
 export function getHealth() {
   const avgLatency = state.llm.callCount > 0 ? Math.round(state.llm.totalLatencyMs / state.llm.callCount) : 0;
   return {
     onebot: { ...state.onebot },
+    sendMessage: { ...state.sendMessage },
     llm: {
       lastSuccessAt: state.llm.lastSuccessAt,
       lastError: state.llm.lastError,
@@ -24,12 +52,20 @@ export function getHealth() {
     osu: { ...state.osu },
     kb: getKbHealth(),
     requestCount: state.requestCount,
+    activeProcessing: state.activeProcessing,
     status: statusSummary(),
   };
 }
 
 function statusSummary() {
-  if (!state.onebot.connected) return { level: 'error', text: 'QQ未连接' };
+  if (!state.onebot.transportConnected && !state.onebot.connected) {
+    return { level: 'error', text: 'QQ未连接' };
+  }
+  if (state.onebot.accountOnline === false) return { level: 'error', text: 'QQ账号离线' };
+  if (state.onebot.apiReachable === false) return { level: 'error', text: 'NapCat API 不可达' };
+  if (state.onebot.lastHeartbeatAt && state.onebot.heartbeatFresh === false) {
+    return { level: 'warn', text: 'Heartbeat 超时' };
+  }
   if (state.bot.globalPaused) return { level: 'warn', text: '已暂停' };
   if (state.llm.recentFailures >= 3) return { level: 'warn', text: 'LLM近期失败较多' };
   // lastError format is now "ISO-date error-message"
@@ -44,6 +80,7 @@ function statusSummary() {
 
 export function setOneBotConnected(connected) {
   state.onebot.connected = connected;
+  state.onebot.transportConnected = connected;
 }
 
 export function setOneBotEvent(time) {
@@ -55,15 +92,64 @@ export function setOneBotError(error) {
   state.onebot.lastError = error ? (new Date().toISOString() + ' ' + error) : '';
 }
 
-// ------ Send message updates ------
-
-export function recordSendSuccess() {
-  state.sendMessage.lastSuccessAt = new Date().toISOString();
+export function setOneBotDetail(detail) {
+  if (!detail) return;
+  if (typeof detail.transportConnected === 'boolean') state.onebot.transportConnected = detail.transportConnected;
+  if (typeof detail.apiReachable === 'boolean' || detail.apiReachable === null) state.onebot.apiReachable = detail.apiReachable;
+  if (typeof detail.accountOnline === 'boolean' || detail.accountOnline === null) state.onebot.accountOnline = detail.accountOnline;
+  if (typeof detail.heartbeatFresh === 'boolean') state.onebot.heartbeatFresh = detail.heartbeatFresh;
+  if (typeof detail.heartbeatGood === 'boolean' || detail.heartbeatGood === null) state.onebot.heartbeatGood = detail.heartbeatGood;
+  if (typeof detail.lastHeartbeatAt === 'string') state.onebot.lastHeartbeatAt = detail.lastHeartbeatAt;
+  if (typeof detail.lastGetStatusAt === 'string') state.onebot.lastGetStatusAt = detail.lastGetStatusAt;
+  if (typeof detail.lastGetStatusError === 'string') state.onebot.lastGetStatusError = detail.lastGetStatusError;
+  if (typeof detail.reconnectCount === 'number') state.onebot.reconnectCount = detail.reconnectCount;
+  if (typeof detail.lastReconnectAt === 'string') state.onebot.lastReconnectAt = detail.lastReconnectAt;
 }
 
-export function recordSendError(error) {
+// ------ Send message updates ------
+
+export function recordSendSuccess(latencyMs = 0) {
+  state.sendMessage.lastSuccessAt = new Date().toISOString();
+  state.sendMessage.successCount += 1;
+  state.sendMessage.callCount += 1;
+  state.sendMessage.totalLatencyMs += latencyMs || 0;
+  state.sendMessage.recentFailures = 0;
+}
+
+export function recordSendError(error, latencyMs = 0) {
   state.sendMessage.lastError = new Date().toISOString();
   state.sendMessage.recentFailures += 1;
+  state.sendMessage.failureCount += 1;
+  state.sendMessage.callCount += 1;
+  state.sendMessage.totalLatencyMs += latencyMs || 0;
+}
+
+// ------ Connection observability aggregates ------
+
+export function markActiveProcessing(delta) {
+  state.activeProcessing = Math.max(0, state.activeProcessing + (Number(delta) || 0));
+}
+
+export function recordGroupActivity(groupId) {
+  if (groupId) recentGroups.add(String(groupId));
+}
+
+export function getConnectionAggregates() {
+  const sendAvgLatencyMs =
+    state.sendMessage.callCount > 0
+      ? Math.round(state.sendMessage.totalLatencyMs / state.sendMessage.callCount)
+      : 0;
+  return {
+    sendSuccess: state.sendMessage.successCount,
+    sendFailures: state.sendMessage.failureCount,
+    sendAvgLatencyMs,
+    activeGroups: recentGroups.size,
+    activeProcessing: state.activeProcessing,
+  };
+}
+
+export function resetRecentGroupSample() {
+  recentGroups.clear();
 }
 
 // ------ LLM updates ------
