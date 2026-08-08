@@ -314,19 +314,40 @@ export async function completeChat(db, options = {}) {
   const runCompletion = async (nextParams) => {
     const requestTimeoutMs = Number(options.timeoutMs || 45_000);
     const requestMaxRetries = Math.max(0, Number(options.requestMaxRetries ?? 2));
-    const response = await withTimeout(
-      client.chat.completions.create(nextParams, {
-        timeout: requestTimeoutMs,
-        maxRetries: requestMaxRetries,
-      }),
-      requestTimeoutMs + 1000,
-      options.label || `${llmProviderName(provider)} 调用`
-    );
-    return {
-      text: response.choices?.[0]?.message?.content?.trim() || '',
-      usage: response.usage || {},
-      raw: response
-    };
+    const outerTimeoutMs = requestTimeoutMs + 1000;
+    const label = options.label || `${llmProviderName(provider)} 调用`;
+    // The outer timeout must do more than stop waiting: abort the SDK's
+    // in-flight fetch AND cancel its pending retries. SDK v6 propagates
+    // `signal` to the per-attempt fetch and re-checks it before every attempt,
+    // so an abort during backoff prevents the next HTTP request entirely.
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), outerTimeoutMs);
+    try {
+      const response = await withTimeout(
+        client.chat.completions.create(nextParams, {
+          timeout: requestTimeoutMs,
+          maxRetries: requestMaxRetries,
+          signal: controller.signal,
+        }),
+        outerTimeoutMs,
+        label
+      );
+      return {
+        text: response.choices?.[0]?.message?.content?.trim() || '',
+        usage: response.usage || {},
+        raw: response
+      };
+    } catch (error) {
+      // The abort fires at the same instant the outer timer rejects, so the
+      // SDK usually settles first with APIUserAbortError. Normalize it back to
+      // the same user-facing timeout message callers saw before.
+      if (error instanceof OpenAI.APIUserAbortError) {
+        throw new Error(`${label} 超时 ${Math.round(outerTimeoutMs / 1000)} 秒`);
+      }
+      throw error;
+    } finally {
+      clearTimeout(timer);
+    }
   };
 
   const retryAfterEmpty = async (first) => {
