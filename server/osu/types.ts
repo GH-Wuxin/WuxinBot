@@ -138,9 +138,17 @@ export interface OsuLazerScore {
     count_geki?: number;
     count_katsu?: number;
   };
+  /** Real osu! API v2 match score team/slot/pass metadata. */
+  match?: {
+    slot?: number;
+    team?: string | null;
+    pass?: boolean;
+  };
+  /** Legacy/renamed field used by local mocks only; real API does not return it. */
   player_stat?: {
     team?: string | null;
     slot?: number;
+    pass?: boolean;
   };
   [key: string]: unknown;
 }

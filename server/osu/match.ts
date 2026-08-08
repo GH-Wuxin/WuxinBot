@@ -541,8 +541,11 @@ class MatchManager {
     const match = await getMatch(matchId);
     const { json, rounds } = buildMatchRating(match);
     const roundId = Number(data.game?.id || 0);
-    const index = Math.max(0, rounds.findIndex((r) => r.id === roundId));
-    const round = rounds[index] || data.game;
+    const foundIndex = rounds.findIndex((r) => r.id === roundId);
+    const index = foundIndex >= 0 ? foundIndex : 0;
+    // Never substitute a different completed round when the cached snapshot
+    // does not contain this round yet: render the raw event game instead.
+    const round = foundIndex >= 0 ? rounds[foundIndex] : data.game;
 
     const payload = {
       match: json,

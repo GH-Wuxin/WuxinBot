@@ -165,11 +165,28 @@ function buildDefaultFixture() {
     mode_int: 0,
     mods: [],
     scores: [
-      { id: 6001, user_id: 80001, score: 1_000_000, max_combo: 1000, mods: [], passed: true, accuracy: 0.98, statistics: { count_300: 500, count_100: 10, count_50: 0, count_miss: 0, count_geki: 0, count_katsu: 0 }, player_stat: { team: null, slot: 0 } },
-      { id: 6002, user_id: 80002, score: 980_000, max_combo: 990, mods: [], passed: true, accuracy: 0.97, statistics: { count_300: 480, count_100: 20, count_50: 0, count_miss: 0, count_geki: 0, count_katsu: 0 }, player_stat: { team: null, slot: 1 } },
-      { id: 6003, user_id: 80003, score: 950_000, max_combo: 950, mods: [], passed: true, accuracy: 0.96, statistics: { count_300: 460, count_100: 30, count_50: 0, count_miss: 0, count_geki: 0, count_katsu: 0 }, player_stat: { team: null, slot: 2 } },
+      { id: 6001, user_id: 80001, score: 1_000_000, max_combo: 1000, mods: [], passed: true, accuracy: 0.98, statistics: { count_300: 500, count_100: 10, count_50: 0, count_miss: 0, count_geki: 0, count_katsu: 0 }, match: { slot: 0, team: null, pass: true } },
+      { id: 6002, user_id: 80002, score: 980_000, max_combo: 990, mods: [], passed: true, accuracy: 0.97, statistics: { count_300: 480, count_100: 20, count_50: 0, count_miss: 0, count_geki: 0, count_katsu: 0 }, match: { slot: 1, team: null, pass: true } },
+      { id: 6003, user_id: 80003, score: 950_000, max_combo: 950, mods: [], passed: true, accuracy: 0.96, statistics: { count_300: 460, count_100: 30, count_50: 0, count_miss: 0, count_geki: 0, count_katsu: 0 }, match: { slot: 2, team: null, pass: true } },
     ],
     team_type: 'head-to-head',
+    scoring_type: 'score',
+  };
+  const teamVsRound = {
+    id: 5002,
+    beatmap: BEATMAPS.get(1002),
+    beatmap_id: 1002,
+    start_time: '2026-08-07T10:05:00Z',
+    end_time: '2026-08-07T10:09:00Z',
+    mode_int: 0,
+    mods: [],
+    scores: [
+      { id: 6101, user_id: 80001, score: 900_000, max_combo: 900, mods: [], passed: true, accuracy: 0.97, statistics: { count_300: 450, count_100: 20, count_50: 0, count_miss: 0, count_geki: 0, count_katsu: 0 }, match: { slot: 0, team: 'red', pass: true } },
+      { id: 6102, user_id: 80002, score: 850_000, max_combo: 850, mods: [], passed: true, accuracy: 0.96, statistics: { count_300: 430, count_100: 25, count_50: 0, count_miss: 0, count_geki: 0, count_katsu: 0 }, match: { slot: 1, team: 'red', pass: true } },
+      { id: 6103, user_id: 80003, score: 800_000, max_combo: 800, mods: [], passed: true, accuracy: 0.95, statistics: { count_300: 400, count_100: 30, count_50: 0, count_miss: 0, count_geki: 0, count_katsu: 0 }, match: { slot: 2, team: 'blue', pass: true } },
+      { id: 6104, user_id: 80004, score: 780_000, max_combo: 780, mods: [], passed: true, accuracy: 0.94, statistics: { count_300: 390, count_100: 35, count_50: 0, count_miss: 0, count_geki: 0, count_katsu: 0 }, match: { slot: 3, team: 'blue', pass: true } },
+    ],
+    team_type: 'team-vs',
     scoring_type: 'score',
   };
   const liveMatch = {
@@ -177,14 +194,16 @@ function buildDefaultFixture() {
     events: [
       { id: 1, detail: { type: 'player-joined', text: 'match-a joined the game' }, timestamp: '2026-08-07T09:59:00Z', user_id: 80001, game: null },
       { id: 2, detail: { type: 'match', text: 'round start' }, timestamp: '2026-08-07T10:00:00Z', user_id: null, game: round },
+      { id: 3, detail: { type: 'match', text: 'round start' }, timestamp: '2026-08-07T10:05:00Z', user_id: null, game: teamVsRound },
     ],
     users: [
       { id: 80001, username: 'match-a', country_code: 'CN', avatar_url: '', is_online: true },
       { id: 80002, username: 'match-b', country_code: 'CN', avatar_url: '', is_online: true },
       { id: 80003, username: 'match-c', country_code: 'CN', avatar_url: '', is_online: true },
+      { id: 80004, username: 'match-d', country_code: 'CN', avatar_url: '', is_online: true },
     ],
     first_event_id: 1,
-    latest_event_id: 2,
+    latest_event_id: 3,
     current_game_id: null,
   };
 
