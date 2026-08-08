@@ -182,7 +182,7 @@ function createPlayerData(player: OsuMatchUser): PlayerData {
 function roundTeamScores(round: OsuMatchRound): Record<string, number> {
   const out: Record<string, number> = {};
   for (const s of round.scores) {
-    const team = s.player_stat?.team ?? 'none';
+    const team = scoreTeam(s) ?? 'none';
     out[team] = (out[team] || 0) + Number(s.score || 0);
   }
   return out;
@@ -190,6 +190,13 @@ function roundTeamScores(round: OsuMatchRound): Record<string, number> {
 
 function roundIsTeamVs(round: OsuMatchRound): boolean {
   return round.team_type === 'team-vs' || round.team_type === 'tag-team-vs';
+}
+
+// Real osu! API v2 match scores carry team membership in `score.match`
+// ({ slot, team, pass }). Older ports/mocks used `player_stat`; accept both so
+// the serializer never silently degrades to 'none' on real data.
+function scoreTeam(s: OsuLazerScore): string | null {
+  return s.match?.team ?? s.player_stat?.team ?? null;
 }
 
 function roundWinningTeam(round: OsuMatchRound): string | null {
@@ -279,6 +286,15 @@ function applyParams(
 
 // ── Serialization helpers (snake_case, matching yumu-bot JSON) ──
 
+function modeName(modeInt?: number | null): string {
+  switch (Number(modeInt)) {
+    case 1: return 'TAIKO';
+    case 2: return 'CATCH';
+    case 3: return 'MANIA';
+    default: return 'OSU';
+  }
+}
+
 export function serializeRound(round: OsuMatchRound): Record<string, unknown> {
   const teams = roundTeamScores(round);
   return {
@@ -288,6 +304,7 @@ export function serializeRound(round: OsuMatchRound): Record<string, unknown> {
     start_time: round.start_time,
     end_time: round.end_time ?? null,
     mode_int: round.mode_int ?? null,
+    mode: modeName(round.mode_int),
     mods: round.mods || [],
     scores: (round.scores || []).map((s) => ({
       id: s.id ?? null,
@@ -297,8 +314,18 @@ export function serializeRound(round: OsuMatchRound): Record<string, unknown> {
       mods: s.mods || [],
       accuracy: s.accuracy ?? null,
       passed: s.passed ?? null,
+      perfect: s.perfect ?? null,
+      rank: s.rank ?? null,
       statistics: s.statistics || null,
       ranking: s.ranking ?? 0,
+      // yumu-image F3 contract: every score needs `match.{slot,team,pass}`
+      // (red/blue filtering) and `user` (avatar/name rendering).
+      match: {
+        slot: s.match?.slot ?? s.player_stat?.slot ?? null,
+        team: scoreTeam(s),
+        pass: s.match?.pass ?? s.player_stat?.pass ?? s.passed ?? null,
+      },
+      user: s.user || null,
       player_stat: s.player_stat || null,
     })),
     team_type: round.team_type,
@@ -324,18 +351,23 @@ function serializeEvent(event: OsuMatchEvent): Record<string, unknown> {
 }
 
 function serializeMatch(match: OsuMatch): Record<string, unknown> {
+  const inner = {
+    id: match.match.id,
+    start_time: match.match.start_time,
+    end_time: match.match.end_time ?? null,
+    name: match.match.name,
+  };
   return {
-    match: {
-      id: match.match.id,
-      start_time: match.match.start_time,
-      end_time: match.match.end_time ?? null,
-      name: match.match.name,
-    },
+    // yumu-image contract: `data.match.match` is a wrapper exposing both the
+    // nested inner match (`match.match.match`) and duplicated convenience
+    // fields (`name`, `id`, `start_time`, `end_time`) plus events/users.
+    match: inner,
     events: match.events.map(serializeEvent),
     users: match.users,
     first_event_id: match.first_event_id,
     latest_event_id: match.latest_event_id,
     current_game_id: match.current_game_id ?? null,
+    ...inner,
     is_match_end: Boolean(match.match.end_time),
   };
 }
