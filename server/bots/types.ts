@@ -71,6 +71,14 @@ export interface ToolResult {
   content: string;      // text to feed back to LLM
   images?: string[];    // image URLs or data URIs
   /**
+   * Terminal deterministic reply. When true the caller must deliver
+   * directContent (or content) verbatim and must NOT ask the LLM to write a
+   * lead, comment, or evaluate the result. Only explicit terminal states set
+   * this flag (currently recommendation cooldown); it is not implied by
+   * directContent alone.
+   */
+  final?: boolean;
+  /**
    * Trusted, structured text that must reach QQ verbatim. The LLM may inspect
    * it to write a short lead, but it is never responsible for reproducing it.
    */

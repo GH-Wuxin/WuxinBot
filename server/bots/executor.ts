@@ -740,9 +740,27 @@ async function executeToolCallInner(
             }
           }
         }
-        const result = typeof rawResult === 'string'
-          ? { content: rawResult, images: [] as string[] }
-          : { content: rawResult.content, images: rawResult.images || [] };
+        const result: { content: string; images: string[]; final?: boolean } =
+          typeof rawResult === 'string'
+            ? { content: rawResult, images: [] as string[] }
+            : { content: rawResult.content, images: rawResult.images || [], final: rawResult.final };
+        if (result.final) {
+          return {
+            toolCallId: toolCall.id,
+            ok: true,
+            content: String(result.content || ''),
+            final: true,
+            directContent: String(result.content || ''),
+            metadata: {
+              requestId: toolCall.id,
+              requestedCapability: capability,
+              actualExecutor: 'wuxin_internal',
+              command: capability,
+              success: true,
+              terminal: 'recommend_cooldown',
+            },
+          };
+        }
         return {
           toolCallId: toolCall.id,
           ok: true,
@@ -1190,6 +1208,8 @@ export interface InternalPlayerTarget {
 export interface InternalBotCommandResult {
   content: string;
   images?: string[];
+  /** Terminal deterministic reply: deliver verbatim, skip the LLM lead. */
+  final?: boolean;
 }
 
 function scoreModAcronyms(score: OsuScore): string[] {
@@ -1770,7 +1790,10 @@ export async function executeInternalBotCommand(
 
       const cooldownMs = checkRecommendCooldown(db, user.id);
       if (cooldownMs > 0) {
-        return `${user.username} 刚推过图，${Math.ceil(cooldownMs / 60_000)} 分钟后再来换口味吧。`;
+        return {
+          content: `${user.username} 刚推过图，${Math.ceil(cooldownMs / 60_000)} 分钟后再来换口味吧。本轮没有重新推荐，也没有重新检查上一批是否符合本次筛选条件。`,
+          final: true,
+        };
       }
 
       // Natural-language filters are translated by a dedicated L2 model into a
@@ -2093,6 +2116,20 @@ export async function runToolLoop(
       recommendToolCalled = true;
     }
 
+    // Terminal deterministic reply (recommendation cooldown): deliver
+    // verbatim and never let the LLM lead or comment on it.
+    if (result.final) {
+      return {
+        text: '',
+        usage: totalUsage,
+        toolCallsMade: 1,
+        iterations: 1,
+        recommendToolCalled,
+        images: [],
+        directContent: sanitizeDirectDeliveryContent(result.directContent || result.content),
+      };
+    }
+
     // Deterministic routing owns failures: the LLM never gets a chance to
     // improvise a recommendation (or any data) when the tool itself failed.
     if (!result.ok) {
@@ -2323,6 +2360,22 @@ export async function runToolLoop(
         } catch {
           // Malformed args cannot be a successful recommend call.
         }
+      }
+
+      // Terminal deterministic reply: stop the loop immediately and deliver
+      // verbatim; the LLM never sees the result and cannot add claims.
+      if (result.final) {
+        toolCallsMade++;
+        const finalDirect = sanitizeDirectDeliveryContent(result.directContent || result.content);
+        return {
+          text: '',
+          usage: totalUsage,
+          toolCallsMade,
+          iterations,
+          recommendToolCalled,
+          images: collectedImages,
+          directContent: [...collectedDirectContent, finalDirect].filter(Boolean).join('\n\n'),
+        };
       }
 
       // Sanitize and validate result
