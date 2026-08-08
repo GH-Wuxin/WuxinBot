@@ -212,8 +212,24 @@ export class MatchListener {
           this.nowGameId = newMatch.current_game_id;
           isAbort = true;
         }
-        if (gameEvent && this.nowEventId === gameEvent.id - 1 && !isAbort) {
+        // C1: `after=` is exclusive and an in-progress game event is always
+        // included, so the cursor deliberately stays at gameEvent.id - 1 while
+        // the round runs: the same event id must remain visible for its
+        // end_time mutation to be detected. The old early-return skipped
+        // roster events and missed gameEnd when the round (or whole match)
+        // finished while parked.
+        const parkedOnGame = !!gameEvent && !isAbort && this.nowEventId === gameEvent.id - 1;
+        if (parkedOnGame && gameEvent && gameEvent.game?.end_time == null) {
+          // Round still running: absorb roster/users state but stay parked.
+          this.parseUsers(newMatch.events, newMatch.users);
+          this.addUsers(newMatch.events);
+          this.match = newMatch;
           return;
+        }
+        if (parkedOnGame) {
+          // Round just finished: consume the roster events in one jump; the
+          // normal flow below will emit gameEnd (and matchEnd if over).
+          this.nowEventId = newMatch.latest_event_id;
         } else if (gameEvent) {
           this.nowEventId = gameEvent.id - 1;
         } else {
@@ -238,9 +254,15 @@ export class MatchListener {
   // Serialized side-effect delivery. The chain preserves event order and
   // prevents one slow render from blocking polling (callers never await it).
   private emit(type: string, data: any): void {
+    // Decide at enqueue time, not callback time: events already accepted into
+    // the chain before stop() (e.g. the final gameEnd right before MATCH_END)
+    // must still be delivered in order; only events enqueued after stop are
+    // dropped. Checking `this.stopped` inside the callback would silently eat
+    // the last round's panel because stop() runs in the same synchronous block.
+    const skip = this.stopped && type !== 'matchEnd';
     this.eventChain = this.eventChain
       .then(async () => {
-        if (this.stopped && type !== 'matchEnd') return;
+        if (skip) return;
         await this.onEventCb(type, data);
       })
       .catch((error) => {
