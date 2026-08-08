@@ -2,30 +2,47 @@
 import WebSocket from 'ws';
 import { readDb } from './store.js';
 import { oneBotToInternal, processIncoming } from './bot.js';
-import { setOneBotConnected, setOneBotEvent, setOneBotError, recordSendSuccess, recordSendError } from './health.js';
+import {
+  setOneBotConnected,
+  setOneBotEvent,
+  setOneBotError,
+  setOneBotDetail,
+  recordSendSuccess,
+  recordSendError,
+  recordGroupActivity,
+  getConnectionAggregates,
+  resetRecentGroupSample,
+} from './health.js';
+import { createConnectionStatus } from './onebotStatus.js';
 import { tryResolveBotResponse } from './bots/executor.js';
 
 let ws;
 let reconnectTimer = null;
 let reconnectEnabled = false;
-let status = {
-  connected: false,
-  lastError: '',
-  lastEventAt: ''
-};
+let statusProbeTimer = null;
+let statusSampleTimer = null;
+
+// P0-A: four-dimensional connection observer (transport / NapCat API /
+// QQ session / heartbeat). It never reconnects or restarts anything; it only
+// records evidence so "WS alive but QQ dead" is observable.
+const connectionStatus = createConnectionStatus({
+  getAggregates: getConnectionAggregates,
+});
 
 // OneBot adapter responsibilities:
 // - Connect to NapCat's WebSocket server to receive QQ events.
 // - Send normal QQ messages or merged-forward cards through NapCat HTTP.
 // The AI/chat logic deliberately lives in bot.ts, not here.
 export function getOneBotStatus() {
-  return status;
+  return connectionStatus.snapshot();
 }
 
 function scheduleReconnect() {
   if (!reconnectEnabled || reconnectTimer) return;
   reconnectTimer = setTimeout(() => {
     reconnectTimer = null;
+    connectionStatus.markReconnect();
+    syncHealth();
     connectOneBot();
   }, 5000);
 }
@@ -46,7 +63,6 @@ async function fetchWithTimeout(url, options, timeoutMs = 12_000) {
 async function assertOneBotSuccess(response, label) {
   const body = await response.text();
   if (!response.ok) {
-    recordSendError(`${label}：HTTP ${response.status}`);
     throw new Error(`${label}：HTTP ${response.status} ${body}`);
   }
 
@@ -55,7 +71,6 @@ async function assertOneBotSuccess(response, label) {
     try {
       payload = JSON.parse(body);
     } catch {
-      recordSendError(`${label}：返回了无效 JSON`);
       throw new Error(`${label}：OneBot 返回了无效 JSON`);
     }
   }
@@ -63,15 +78,13 @@ async function assertOneBotSuccess(response, label) {
   const retcode = Number(payload?.retcode ?? 0);
   if (payload?.status === 'failed' || retcode !== 0) {
     const detail = payload?.message || payload?.wording || payload?.msg || body;
-    recordSendError(`${label}：retcode ${retcode}`);
     throw new Error(`${label}：retcode ${retcode} ${String(detail || '').slice(0, 500)}`);
   }
 
-  recordSendSuccess();
   return payload;
 }
 
-export async function sendOneBotMessage(event, text, options = {}) {
+async function sendOneBotMessageInner(event, text, options = {}) {
   const db = readDb();
   const baseUrl = db.settings.oneBotHttpUrl;
   if (!baseUrl) throw new Error('OneBot HTTP 地址未配置。');
@@ -108,6 +121,102 @@ export async function sendOneBotMessage(event, text, options = {}) {
   await assertOneBotSuccess(response, '发送 QQ 消息失败');
 }
 
+export async function sendOneBotMessage(event, text, options = {}) {
+  const startedAt = Date.now();
+  try {
+    const result = await sendOneBotMessageInner(event, text, options);
+    recordSendSuccess(Date.now() - startedAt);
+    return result;
+  } catch (error) {
+    const latencyMs = Date.now() - startedAt;
+    recordSendError(error, latencyMs);
+    connectionStatus.recordEvent('send_error', {
+      error: String(error?.message || error).slice(0, 300),
+      latencyMs,
+    });
+    throw error;
+  }
+}
+
+function syncHealth() {
+  const s = connectionStatus.snapshot();
+  setOneBotConnected(s.connected);
+  setOneBotDetail({
+    transportConnected: s.transportConnected,
+    apiReachable: s.apiReachable,
+    accountOnline: s.accountOnline,
+    heartbeatFresh: s.heartbeatFresh,
+    heartbeatGood: s.heartbeatGood,
+    lastHeartbeatAt: s.lastHeartbeatAt,
+    lastGetStatusAt: s.lastGetStatusAt,
+    lastGetStatusError: s.lastGetStatusError,
+    reconnectCount: s.reconnectCount,
+    lastReconnectAt: s.lastReconnectAt,
+  });
+  setOneBotError(s.lastError || '');
+}
+
+async function probeGetStatus() {
+  let db;
+  try {
+    db = readDb();
+  } catch {
+    return;
+  }
+  const baseUrl = db?.settings?.oneBotHttpUrl;
+  if (!baseUrl) return;
+  try {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 12_000);
+    let response;
+    try {
+      response = await fetch(`${String(baseUrl).replace(/\/$/, '')}/get_status`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: '{}',
+        signal: controller.signal,
+      });
+    } finally {
+      clearTimeout(timer);
+    }
+    const body = await response.text();
+    let payload = null;
+    try {
+      payload = JSON.parse(body);
+    } catch {
+      // Invalid JSON handled below as a failed probe.
+    }
+    if (!response.ok || payload?.status === 'failed' || Number(payload?.retcode ?? 0) !== 0) {
+      throw new Error(payload?.message || payload?.wording || `HTTP ${response.status}`);
+    }
+    const data = payload?.data || {};
+    connectionStatus.applyGetStatus({
+      ok: true,
+      online: typeof data.online === 'boolean' ? data.online : undefined,
+      good: typeof data.good === 'boolean' ? data.good : undefined,
+    });
+  } catch (error) {
+    connectionStatus.applyGetStatus({
+      ok: false,
+      error: String(error?.message || error),
+    });
+  }
+  syncHealth();
+}
+
+function ensureStatusProbe() {
+  if (statusProbeTimer) return;
+  statusProbeTimer = setInterval(() => {
+    void probeGetStatus();
+  }, 30_000);
+  statusSampleTimer = setInterval(() => {
+    connectionStatus.sampleNow();
+    resetRecentGroupSample();
+  }, 60_000);
+  statusProbeTimer.unref?.();
+  statusSampleTimer.unref?.();
+}
+
 export async function handleOneBotEvent(event, sendMessage = sendOneBotMessage) {
   if (event?.post_type !== 'message') {
     return { consumed: false, ignored: true };
@@ -142,7 +251,7 @@ export function connectOneBot() {
   const db = readDb();
   const url = db.settings.oneBotWsUrl;
   if (!url) {
-    status = { connected: false, lastError: '没有填写 OneBot WebSocket 地址', lastEventAt: status.lastEventAt };
+    connectionStatus.markTransportError('没有填写 OneBot WebSocket 地址');
     setOneBotConnected(false);
     setOneBotError('没有填写 OneBot WebSocket 地址');
     return;
@@ -155,34 +264,69 @@ export function connectOneBot() {
   ws = new WebSocket(url, db.settings.oneBotAccessToken ? { headers: { Authorization: `Bearer ${db.settings.oneBotAccessToken}` } } : undefined);
 
   ws.on('open', () => {
-    status = { connected: true, lastError: '', lastEventAt: status.lastEventAt };
-    setOneBotConnected(true);
-    setOneBotError('');
+    connectionStatus.markTransportOpen();
+    syncHealth();
+    ensureStatusProbe();
   });
 
   ws.on('message', async (data) => {
-    status.lastEventAt = new Date().toISOString();
-    setOneBotEvent(status.lastEventAt);
     try {
       const event = JSON.parse(data.toString());
+      if (event?.post_type === 'meta_event') {
+        if (event.meta_event_type === 'heartbeat') {
+          connectionStatus.handleHeartbeat(event.status || {});
+        } else {
+          connectionStatus.recordEvent('meta_event', {
+            meta_event_type: String(event.meta_event_type || ''),
+          });
+        }
+        syncHealth();
+        return;
+      }
+      if (event?.post_type === 'message' && event.group_id) {
+        recordGroupActivity(String(event.group_id));
+      }
+      const snap = connectionStatus.markEventReceived();
+      setOneBotEvent(snap.lastEventAt);
       await handleOneBotEvent(event, sendOneBotMessage);
     } catch (error) {
-      status.lastError = error.message;
-      setOneBotError(error.message);
+      connectionStatus.recordEvent('ws_message_error', {
+        error: String(error?.message || error).slice(0, 300),
+      });
+      syncHealth();
     }
   });
 
-  ws.on('close', () => {
-    setOneBotConnected(false);
-    status.connected = false;
+  ws.on('close', (code, reason) => {
+    connectionStatus.markTransportClosed(code, reason?.toString?.());
+    syncHealth();
     scheduleReconnect();
   });
 
   ws.on('error', (error) => {
-    status.connected = false;
-    status.lastError = error.message;
-    setOneBotConnected(false);
-    setOneBotError(error.message);
+    connectionStatus.markTransportError(error.message);
+    syncHealth();
     scheduleReconnect();
   });
+}
+
+export function shutdownOneBot() {
+  if (statusProbeTimer) {
+    clearInterval(statusProbeTimer);
+    statusProbeTimer = null;
+  }
+  if (statusSampleTimer) {
+    clearInterval(statusSampleTimer);
+    statusSampleTimer = null;
+  }
+  if (ws) {
+    ws.removeAllListeners();
+    try {
+      ws.close();
+    } catch {
+      // Ignore close errors during shutdown.
+    }
+    ws = null;
+  }
+  connectionStatus.recordEvent('shutdown', {});
 }

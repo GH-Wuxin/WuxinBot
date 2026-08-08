@@ -448,7 +448,7 @@ function Overview({ db, oneBot, saveSettings, refresh }) {
             <span>整体状态</span>
             <strong style={{ fontSize: 18 }}>{statusLevel === 'ok' ? '✅' : statusLevel === 'warn' ? '⚠️' : '❌'} {health.status.text}</strong>
           </div>
-          <Stat label="QQ连接" value={health.onebot.connected ? '已连接' : '断开'} />
+          <Stat label="QQ状态" value={health.onebot.accountOnline === false ? '账号离线' : health.onebot.connected ? '已连接' : '断开'} />
           <Stat label="LLM延迟" value={health.llm.avgLatencyMs ? health.llm.avgLatencyMs + 'ms' : '暂无'} />
           <Stat label="LLM近期错误" value={health.llm.recentFailures || '无'} />
         </section>
@@ -1945,6 +1945,13 @@ function Connect({ db, oneBot, saveSettings, refresh }) {
   const friendlyError = oneBot.lastError?.includes('ECONNREFUSED')
     ? '没有连上 OneBot WebSocket。通常是 NapCat/Lagrange 还没启动，或没有开启 WebSocket 服务端，或端口填错了。'
     : oneBot.lastError || '无';
+  const overallStatus = oneBot.accountOnline === false
+    ? '账号离线'
+    : oneBot.transportConnected === false
+      ? '未连接'
+      : oneBot.apiReachable === false
+        ? 'API 不可达'
+        : '已连接';
   return (
     <section className="grid two">
       <div className="panel">
@@ -1967,8 +1974,13 @@ function Connect({ db, oneBot, saveSettings, refresh }) {
       </div>
       <div className="panel">
         <h2>连接状态</h2>
-        <Row label="状态" value={oneBot.connected ? '已连接' : '未连接'} />
+        <Row label="总状态" value={overallStatus} />
+        <Row label="WebSocket" value={oneBot.transportConnected ? '已连接' : '断开'} />
+        <Row label="NapCat API" value={oneBot.apiReachable === true ? '可达' : oneBot.apiReachable === false ? '不可达' : '探测中'} />
+        <Row label="QQ Session" value={oneBot.accountOnline === true ? '在线' : oneBot.accountOnline === false ? '离线' : '未知'} />
+        <Row label="Heartbeat" value={oneBot.heartbeatFresh ? '正常' : oneBot.lastHeartbeatAt ? '超时' : '无数据'} />
         <Row label="最近事件" value={oneBot.lastEventAt || '暂无'} />
+        <Row label="重连次数" value={oneBot.reconnectCount ?? 0} />
         <Row label="错误" value={friendlyError} />
         <p className="guide">NapCat 或 Lagrange 开启 OneBot 后，把 HTTP 和 WebSocket 地址填到这里。</p>
         <div className="steps">

@@ -63,7 +63,7 @@ import { getRelationshipProfile, updateRelationshipProfile, clearRelationshipPro
 import { processTrustSignal, evaluateTrustScores, trustInteractionBonus, isTrustedMember } from './bot/trust.js';
 import { processXpGain, getExperience, getXpBonus, formatXpBar, getUnlockedFeatures, getLevelInfo, getNextLevelInfo, levelToPp, decayInactiveUsers } from './bot/experience.js';
 import { isSearchAvailable, searchWeb, formatSearchResults, getLastSearchStatus, extractSearchQuery } from './bot/search.js';
-import { setBotPaused, getRecalcProgress, startRecalc, tickRecalc, finishRecalc } from './health.js';
+import { setBotPaused, getRecalcProgress, startRecalc, tickRecalc, finishRecalc, markActiveProcessing } from './health.js';
 import { activateModelProfile, activeProviderLabel } from './modelConfig.js';
 import { handleOsuCommand } from './osu/commands.js';
 import { loadRegistry, buildBotToolSchemas, enabledBots, findBot } from './bots/registry.js';
@@ -335,6 +335,15 @@ export function oneBotToInternal(event) {
 }
 
 export async function processIncoming(event, sendMessage = undefined, queuedDecision = undefined, isFromDrain = false) {
+  markActiveProcessing(1);
+  try {
+    return await processIncomingInner(event, sendMessage, queuedDecision, isFromDrain);
+  } finally {
+    markActiveProcessing(-1);
+  }
+}
+
+async function processIncomingInner(event, sendMessage = undefined, queuedDecision = undefined, isFromDrain = false) {
   // High-level pipeline:
   // 1. Ignore self messages and route slash commands.
   // 2. Log the incoming message and decide whether to reply.

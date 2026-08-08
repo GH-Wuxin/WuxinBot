@@ -1,10 +1,12 @@
 import 'dotenv/config';
 import crypto from 'node:crypto';
 import net from 'node:net';
+import fs from 'node:fs';
+import path from 'node:path';
 import express from 'express';
 import { ensureStore, publicDb, readDb, updateDb, upsertBy, nowIso, saveConfigSnapshot, listConfigSnapshots, restoreConfigSnapshot } from './store.js';
 import { createBackup, listBackups, restoreBackup, deleteBackup, pruneAutoBackups } from './backup.js';
-import { connectOneBot, getOneBotStatus, handleOneBotEvent, sendOneBotMessage } from './onebot.js';
+import { connectOneBot, getOneBotStatus, handleOneBotEvent, sendOneBotMessage, shutdownOneBot } from './onebot.js';
 import { processIncoming, decideReply } from './bot.js';
 import { getReplyQueueStats } from './bot/queue.js';
 import { buildPrompt } from './bot/prompt.js';
@@ -20,6 +22,49 @@ import { queryProfileLogs, getProfileLogStats } from './bot/profileLog.js';
 import { updateProviderSettings } from './modelConfig.js';
 import { startRenderServer } from './bots/renderServer.js';
 import { removeLazybotBinding, syncLazybotBinding } from './bots/bindingSync.js';
+
+// ── Process guards (P0-A) ──
+// These exist to leave a stack + exit reason behind, NOT to swallow errors
+// and keep running. uncaughtException / unhandledRejection still terminate
+// the process; SIGINT/SIGTERM shut the WS down cleanly first.
+function writeCrashLog(kind, error) {
+  try {
+    const dir = path.join(process.cwd(), 'logs');
+    fs.mkdirSync(dir, { recursive: true });
+    const filename = path.join(dir, `crash-${new Date().toISOString().replace(/[:.]/g, '-')}.log`);
+    const stack = error?.stack || String(error);
+    fs.writeFileSync(filename, `[${kind}] ${new Date().toISOString()}\n${stack}\n`, 'utf8');
+    console.error(`[crash] ${kind} logged to ${filename}`);
+  } catch (writeError) {
+    console.error('[crash] failed to write crash log:', String(writeError?.message || writeError));
+  }
+}
+
+process.on('uncaughtException', (error) => {
+  console.error('[crash] uncaughtException:', error);
+  writeCrashLog('uncaughtException', error);
+  process.exit(1);
+});
+
+process.on('unhandledRejection', (reason) => {
+  const error = reason instanceof Error ? reason : new Error(String(reason));
+  console.error('[crash] unhandledRejection:', error);
+  writeCrashLog('unhandledRejection', error);
+  process.exit(1);
+});
+
+function gracefulShutdown(signal) {
+  console.log(`[shutdown] ${signal} received, closing OneBot connection`);
+  try {
+    shutdownOneBot();
+  } catch (error) {
+    console.error('[shutdown] shutdownOneBot failed:', String(error?.message || error));
+  }
+  setTimeout(() => process.exit(0), 200);
+}
+
+process.on('SIGINT', () => gracefulShutdown('SIGINT'));
+process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
 
 // Node 20.11.1 crashes with ERR_INTERNAL_ASSERTION in internalConnectMultiple
 // when many outbound sockets race IPv4/IPv6 auto-selection (happy eyeballs).
