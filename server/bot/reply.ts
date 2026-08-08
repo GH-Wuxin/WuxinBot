@@ -208,7 +208,7 @@ export async function sendForwardText(sendMessage, event, title, text) {
     type: 'node',
     data: {
       name: index === 0 ? title : `${title} ${index + 1}`,
-      uin: (event.raw?.self_id || 'REDACTED_QQ_002'),
+      uin: (event.raw?.self_id || 'REDACTED_QQ_005'),
       content
     }
   }));
@@ -247,7 +247,7 @@ export async function sendForwardBlocks(sendMessage, event, title, text) {
     type: 'node',
     data: {
       name: index === 0 ? title : `${title} ${index + 1}`,
-      uin: (event.raw?.self_id || 'REDACTED_QQ_002'),
+      uin: (event.raw?.self_id || 'REDACTED_QQ_005'),
       content
     }
   }));

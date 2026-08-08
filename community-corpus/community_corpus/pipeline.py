@@ -31,7 +31,7 @@ from .pii import detect_pii
 
 EXPORT_DIR_RE = re.compile(r"^group_(.+?)_\d{8}_\d{6}_chunked_jsonl$")
 CHUNK_FILE_RE = re.compile(r"^chunk_\d+\.jsonl$")
-BOT_UINS = {"REDACTED_QQ_002"}
+BOT_UINS = {"REDACTED_QQ_002", "REDACTED_QQ_005"}
 
 
 def find_source_exports(sources: Iterable[str]) -> list[pathlib.Path]:

@@ -36,7 +36,7 @@ const SCRIPT_DIR = path.dirname(fileURLToPath(import.meta.url));
 const DEFAULT_OUTPUT_DIR = path.join(SCRIPT_DIR, '..', 'data', 'corpus');
 
 // pippi 自己的 QQ 账号：她的历史消息是旧模板风格，不是玩家社区交流语料。
-const DEFAULT_EXCLUDED_UINS = new Set(['REDACTED_QQ_002']);
+const DEFAULT_EXCLUDED_UINS = new Set(['REDACTED_QQ_002', 'REDACTED_QQ_005']);
 
 const PURE_MEDIA_PLACEHOLDER = /^\[(图片|动画表情|表情|视频|语音|文件|回复)[：:][^\]]*\]([\s\S]*)$/;
 const MEDIA_PLACEHOLDER_GLOBAL = /\[(图片|动画表情|表情|视频|语音|文件|链接)[：:][^\]]*\]/g;
