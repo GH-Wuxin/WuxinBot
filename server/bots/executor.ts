@@ -24,6 +24,7 @@ const pendingBotCalls = new Map<string, {
   resolve: (response: BotResponse) => void;
   timeout: NodeJS.Timeout;
   settleTimer?: NodeJS.Timeout;
+  drainPolicy?: PendingDrainPolicy;
 }>();
 
 // In-flight recommend executions keyed by
@@ -37,6 +38,43 @@ const inFlightRecommends = new Map<string, Promise<Awaited<ReturnType<typeof exe
 const BOT_RESPONSE_TIMEOUT_MS = 20_000;
 const BOT_TEXT_SETTLE_MS = 1_200;
 const BOT_PROGRESS_SETTLE_MS = 10_000;
+const BOT_IMAGE_DRAIN_MS = 2_000;
+const BOT_TEXT_DRAIN_MS = 5_000;
+const BOT_TIMEOUT_DRAIN_MS = 10_000;
+
+/**
+ * Route lifecycle drain. External QQ bots cannot echo our correlation id, so
+ * after a pending call finishes we keep the route in a short draining window:
+ * messages from the bot during this window are treated as tail messages of the
+ * just-finished request and absorbed, and new calls on the same route are
+ * rejected. This prevents a late response (e.g. after a timeout) from being
+ * claimed by the next request.
+ */
+const routeDrainUntil = new Map<string, number>();
+const routeDrainTimers = new Map<string, NodeJS.Timeout>();
+
+function routeDrainKey(botId: string, channel: string, groupId?: string): string {
+  return `${botId}\u0000${channel}\u0000${String(groupId || '')}`;
+}
+
+function setRouteDrain(key: string, drainMs: number): void {
+  const existing = routeDrainTimers.get(key);
+  if (existing) clearTimeout(existing);
+  const drainUntil = Date.now() + drainMs;
+  routeDrainUntil.set(key, drainUntil);
+  const timer = setTimeout(() => {
+    routeDrainUntil.delete(key);
+    routeDrainTimers.delete(key);
+  }, drainMs);
+  timer.unref?.();
+  routeDrainTimers.set(key, timer);
+}
+
+interface PendingDrainPolicy {
+  imageMs: number;
+  textMs: number;
+  timeoutMs: number;
+}
 
 type PendingBotCall = (typeof pendingBotCalls extends Map<string, infer T> ? T : never);
 
@@ -50,6 +88,9 @@ function responsePolicy(db: any, bot: any): {
   textSettleMs: number;
   progressSettleMs: number;
   progressKeywords: string[];
+  imageDrainMs: number;
+  textDrainMs: number;
+  timeoutDrainMs: number;
 } {
   const local = bot?.responsePolicy && typeof bot.responsePolicy === 'object'
     ? bot.responsePolicy
@@ -68,7 +109,19 @@ function responsePolicy(db: any, bot: any): {
       local.progressSettleMs ?? settings.botResponseProgressSettleMs,
       BOT_PROGRESS_SETTLE_MS
     ),
-    progressKeywords: progressKeywords.map((value: unknown) => String(value).trim()).filter(Boolean)
+    progressKeywords: progressKeywords.map((value: unknown) => String(value).trim()).filter(Boolean),
+    imageDrainMs: boundedDelay(
+      local.imageDrainMs ?? settings.botResponseImageDrainMs,
+      BOT_IMAGE_DRAIN_MS
+    ),
+    textDrainMs: boundedDelay(
+      local.textDrainMs ?? settings.botResponseTextDrainMs,
+      BOT_TEXT_DRAIN_MS
+    ),
+    timeoutDrainMs: boundedDelay(
+      local.timeoutDrainMs ?? settings.botResponseTimeoutDrainMs,
+      BOT_TIMEOUT_DRAIN_MS
+    ),
   };
 }
 
@@ -88,6 +141,16 @@ function finishPendingBotCall(entry: PendingBotCall, timeoutWithoutContent = fal
   if (entry.settleTimer) clearTimeout(entry.settleTimer);
   pendingBotCalls.delete(entry.correlationId);
 
+  // Late messages from the request we just finished can still arrive: a
+  // timeout tail, a text->image panel, or a trailing caption. Keep the route
+  // draining so those messages are absorbed instead of claiming the next call.
+  const policy = entry.drainPolicy;
+  const drainMs = timeoutWithoutContent
+    ? (policy?.timeoutMs ?? BOT_TIMEOUT_DRAIN_MS)
+    : (entry.images.length > 0
+        ? (policy?.imageMs ?? BOT_IMAGE_DRAIN_MS)
+        : (policy?.textMs ?? BOT_TEXT_DRAIN_MS));
+  setRouteDrain(routeDrainKey(entry.botId, entry.channel, entry.groupId), drainMs);
   const substantive = entry.textParts.filter((part) => !part.progress).map((part) => part.text);
   const allText = entry.textParts.map((part) => part.text);
   const selectedText = substantive.length > 0
@@ -113,17 +176,43 @@ function schedulePendingSettlement(entry: PendingBotCall, delayMs: number): void
 
 // ── Register a pending call ──
 
+function routeFailureToolMessage(botName: string, error: unknown): string {
+  const message = error instanceof Error ? error.message : String(error || '');
+  if (message.startsWith('bot_route_draining')) {
+    return `${botName} 上一条查询还在收尾，请稍等几秒再试。`;
+  }
+  return `向 ${botName} 发送指令失败: ${message}`;
+}
+
 export function registerPendingBotCall(
   request: {
     correlationId: string;
     botId: string;
     channel: 'qq_private' | 'qq_group';
     groupId?: string;
+    drainPolicy?: PendingDrainPolicy;
   },
   timeoutMs: number = BOT_RESPONSE_TIMEOUT_MS
 ): Promise<BotResponse> {
   const { correlationId, botId, channel } = request;
   const groupId = request.groupId ? String(request.groupId) : undefined;
+  const drainKey = routeDrainKey(botId, channel, groupId);
+  const drainUntil = routeDrainUntil.get(drainKey);
+  if (drainUntil !== undefined && Date.now() < drainUntil) {
+    const remainingMs = drainUntil - Date.now();
+    throw new Error(
+      `bot_route_draining: ${botId}/${channel}${groupId ? `/${groupId}` : ''} (${Math.ceil(remainingMs / 1000)}s)`
+    );
+  }
+  if (drainUntil !== undefined) {
+    // Lazy cleanup in case a timer was lost; expired drains must not stick.
+    routeDrainUntil.delete(drainKey);
+    const staleTimer = routeDrainTimers.get(drainKey);
+    if (staleTimer) {
+      clearTimeout(staleTimer);
+      routeDrainTimers.delete(drainKey);
+    }
+  }
   const routeBusy = [...pendingBotCalls.values()].some((pending) =>
     pending.botId === botId &&
     pending.channel === channel &&
@@ -143,7 +232,12 @@ export function registerPendingBotCall(
       images: [],
       rawMessageId: '',
       resolve,
-      timeout: undefined as unknown as NodeJS.Timeout
+      timeout: undefined as unknown as NodeJS.Timeout,
+      drainPolicy: request.drainPolicy ?? {
+        imageMs: BOT_IMAGE_DRAIN_MS,
+        textMs: BOT_TEXT_DRAIN_MS,
+        timeoutMs: BOT_TIMEOUT_DRAIN_MS,
+      },
     };
     entry.timeout = setTimeout(() => finishPendingBotCall(entry, true), timeoutMs);
     pendingBotCalls.set(correlationId, entry);
@@ -186,6 +280,14 @@ export function tryResolveBotResponse(
   if (candidateBots.length === 0) return false;
   const candidateBotIds = new Set(candidateBots.map((bot) => bot.id));
 
+  // While the route is draining, absorb messages from the bot as tail
+  // responses of the previous request instead of resolving the next one.
+  const draining = candidateBots.some((candidate) => {
+    const until = routeDrainUntil.get(routeDrainKey(candidate.id, eventChannel, eventGroupId));
+    return until !== undefined && Date.now() < until;
+  });
+  if (draining) return true;
+
   // A QQ bot normally does not echo our correlation ID. Match only calls on
   // the exact bot/channel/group route, then resolve that route's oldest
   // request. Other groups and private calls remain independent.
@@ -203,6 +305,11 @@ export function tryResolveBotResponse(
   const text = String(event.text || '').replace(/^\s*\[图片\]\s*$/, '').trim();
   const images = (event.images || []).map((img) => img.url || img.file || '').filter(Boolean);
   const policy = responsePolicy(db, bot);
+  entry.drainPolicy = {
+    imageMs: policy.imageDrainMs,
+    textMs: policy.textDrainMs,
+    timeoutMs: policy.timeoutDrainMs,
+  };
   if (text) {
     const progress = looksLikeProgressResponse(text, policy.progressKeywords);
     if (!entry.textParts.some((part) => part.text === text)) {
@@ -685,7 +792,18 @@ export async function executeToolCall(
       }
       try {
         const correlationId = `${extBot.id}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
-        const responsePromise = registerPendingBotCall({ correlationId, botId: extBot.id, channel: extBot.channel, groupId: extBot.channel === 'qq_group' ? String(extBot.groupId || context.groupId || '') : undefined });
+        const drainPolicy = responsePolicy(db, extBot);
+        const responsePromise = registerPendingBotCall({
+          correlationId,
+          botId: extBot.id,
+          channel: extBot.channel,
+          groupId: extBot.channel === 'qq_group' ? String(extBot.groupId || context.groupId || '') : undefined,
+          drainPolicy: {
+            imageMs: drainPolicy.imageDrainMs,
+            textMs: drainPolicy.textDrainMs,
+            timeoutMs: drainPolicy.timeoutDrainMs,
+          },
+        });
         const botEvent = { ...context.event, type: extBot.channel === 'qq_group' ? 'group' : 'private', userId: extBot.channel === 'qq_group' ? undefined : extBot.qq, groupId: extBot.channel === 'qq_group' ? String(extBot.groupId || context.groupId || '') : undefined, text: extCommand, messageId: `bot_cmd_${Date.now()}`, raw: context.event.raw || {} };
         await context.sendMessage(botEvent, extCommand);
         const response = await responsePromise;
@@ -699,7 +817,7 @@ export async function executeToolCall(
         }
         return { toolCallId: toolCall.id, ok: false, content: `${extBot.name} 查询失败: ${response.error || '无响应'}`, metadata: { requestedBot: extBot.id, actualExecutor: extBot.id, success: false } };
       } catch (err) {
-        return { toolCallId: toolCall.id, ok: false, content: `向 ${extBot.name} 发送指令失败: ${String(err?.message || err)}`, metadata: { requestedBot: extBot.id, success: false } };
+        return { toolCallId: toolCall.id, ok: false, content: routeFailureToolMessage(extBot.name, err), metadata: { requestedBot: extBot.id, success: false } };
       }
     }
 
@@ -878,6 +996,7 @@ export async function executeToolCall(
           const targetGroupId = bot.channel === 'qq_group'
             ? String(bot.groupId || context.groupId || '')
             : undefined;
+          const botResponsePolicy = responsePolicy(db, bot);
           if (bot.channel === 'qq_group' && !targetGroupId) {
             return {
               toolCallId: toolCall.id,
@@ -890,7 +1009,12 @@ export async function executeToolCall(
             correlationId,
             botId: bot.id,
             channel: bot.channel,
-            groupId: targetGroupId
+            groupId: targetGroupId,
+            drainPolicy: {
+              imageMs: botResponsePolicy.imageDrainMs,
+              textMs: botResponsePolicy.textDrainMs,
+              timeoutMs: botResponsePolicy.timeoutDrainMs,
+            },
           });
 
           const botEvent = {
@@ -943,7 +1067,7 @@ export async function executeToolCall(
           return {
             toolCallId: toolCall.id,
             ok: false,
-            content: `向 ${bot.name} 发送指令失败: ${String(err?.message || err)}`,
+            content: routeFailureToolMessage(bot.name, err),
             error: String(err?.message || err)
           };
         }

@@ -17,6 +17,8 @@ function assert(condition, message) {
   if (!condition) throw new Error(message);
 }
 
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
 async function main() {
   const { ensureStore, readDb, updateDb } = await import('../server/store.ts');
   const { handleOneBotEvent, sendOneBotMessage } = await import('../server/onebot.ts');
@@ -32,6 +34,11 @@ async function main() {
     db.settings.oneBotAccessToken = '';
     db.settings.ownerQq = 'REDACTED_QQ_001';
     db.settings.selfQq = 'REDACTED_QQ_002';
+    // Keep route drain windows short so repeated fixture calls on the same
+    // bot route can be exercised without waiting for production defaults.
+    db.settings.botResponseImageDrainMs = 30;
+    db.settings.botResponseTextDrainMs = 40;
+    db.settings.botResponseTimeoutDrainMs = 40;
   });
 
   let mode = 'failed';
@@ -235,6 +242,7 @@ async function main() {
     assert(privateResponse.text === '文字结果', 'private bot reply must preserve text');
     assert(interceptedFallbackSends === 0, 'intercepted private bot reply must not enter normal chat processing');
     console.log('PASS: private/group bot response interception with image preservation');
+    await sleep(60);
 
     updateDb((db) => {
       const fixtureBaseUrl = `http://127.0.0.1:${llmPort}/v1`;
@@ -385,6 +393,7 @@ async function main() {
       'punctuation-only cosmetic leads must use the deterministic fallback'
     );
     console.log('PASS: full LLM tool loop sends one deterministic QQ text+image message');
+    await sleep(60);
 
     llmFixtureMode = 'bp-list';
     const completeBpList = [
