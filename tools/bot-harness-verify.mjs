@@ -291,7 +291,7 @@ const listBot = {
     params: [],
     returns: 'text',
   }],
-  responsePolicy: { textSettleMs: 10, progressSettleMs: 20 },
+  responsePolicy: { textSettleMs: 10, progressSettleMs: 20, imageDrainMs: 15, textDrainMs: 15, timeoutDrainMs: 15 },
 };
 const listDb = {
   settings: {
@@ -372,6 +372,7 @@ assert(
   'LLM must be told to write only a short lead for direct content'
 );
 assert(!listCompletionCalls[1].tools?.length, 'the cosmetic lead turn after direct delivery must not expose tools again');
+await new Promise((resolve) => setTimeout(resolve, 30));
 
 let failedLeadCalls = 0;
 const directResultAfterLeadFailure = await runToolLoop(
@@ -431,17 +432,20 @@ const groupDb = {
     botRegistry: { bots: [groupBot], updatedAt: new Date(0).toISOString() },
   },
 };
+const SHORT_DRAIN_POLICY = { imageMs: 15, textMs: 15, timeoutMs: 15 };
 const groupOnePromise = registerPendingBotCall({
   correlationId: 'not-prefixed-a',
   botId: groupBot.id,
   channel: 'qq_group',
   groupId: '100',
+  drainPolicy: SHORT_DRAIN_POLICY,
 }, 2_000);
 const groupTwoPromise = registerPendingBotCall({
   correlationId: 'not-prefixed-b',
   botId: groupBot.id,
   channel: 'qq_group',
   groupId: '200',
+  drainPolicy: SHORT_DRAIN_POLICY,
 }, 2_000);
 assert(tryResolveBotResponse(groupDb, {
   type: 'group',
@@ -468,6 +472,9 @@ const stagedBot = {
   responsePolicy: {
     textSettleMs: 20,
     progressSettleMs: 80,
+    imageDrainMs: 15,
+    textDrainMs: 15,
+    timeoutDrainMs: 15,
   },
 };
 const stagedDb = {
@@ -480,6 +487,7 @@ const stagedPromise = registerPendingBotCall({
   botId: stagedBot.id,
   channel: 'qq_group',
   groupId: '300',
+  drainPolicy: SHORT_DRAIN_POLICY,
 }, 1_000);
 let stagedSettled = false;
 void stagedPromise.then(() => { stagedSettled = true; });
@@ -503,6 +511,7 @@ assert(tryResolveBotResponse(stagedDb, {
 }), 'the final image after a progress message must still resolve the pending request');
 const stagedResult = await stagedPromise;
 assert(stagedResult.images[0]?.endsWith('/final-panel.png'), 'the final image must survive a staged bot response');
+await new Promise((resolve) => setTimeout(resolve, 30));
 assert(!stagedResult.text.includes('正在查询'), 'progress chatter must not leak into an image result');
 
 const pureTextPromise = registerPendingBotCall({
@@ -510,6 +519,7 @@ const pureTextPromise = registerPendingBotCall({
   botId: stagedBot.id,
   channel: 'qq_group',
   groupId: '300',
+  drainPolicy: SHORT_DRAIN_POLICY,
 }, 1_000);
 assert(tryResolveBotResponse(stagedDb, {
   type: 'group',
@@ -520,6 +530,7 @@ assert(tryResolveBotResponse(stagedDb, {
   messageId: 'text-final-1',
 }), 'a pure-text terminal response must be consumed');
 const pureTextResult = await pureTextPromise;
+await new Promise((resolve) => setTimeout(resolve, 30));
 assert(pureTextResult.ok && pureTextResult.text === '查询失败：该玩家不存在', 'a pure-text result must complete after the configurable quiet window');
 
 const busyBot = {
@@ -538,6 +549,7 @@ const heldRoutePromise = registerPendingBotCall({
   botId: busyBot.id,
   channel: 'qq_group',
   groupId: '400',
+  drainPolicy: SHORT_DRAIN_POLICY,
 }, 1_000);
 let busyRouteSends = 0;
 const busyRouteResult = await executeToolCall(
@@ -571,6 +583,7 @@ const progressOnlyPromise = registerPendingBotCall({
   botId: stagedBot.id,
   channel: 'qq_group',
   groupId: '300',
+  drainPolicy: SHORT_DRAIN_POLICY,
 }, 1_000);
 assert(tryResolveBotResponse(stagedDb, {
   type: 'group',
