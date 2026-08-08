@@ -289,7 +289,13 @@ export async function updateRelationshipProfile(db, groupId, userA, userB) {
 
 export function clearRelationshipProfile(groupId, userA, userB) {
   const pairKey = [String(userA), String(userB)].sort().join(':');
+  const pendingKey = `${String(groupId)}:${pairKey}`;
   updateDb((draft) => {
+    // pendingPairCounts keys are `${groupId}:${userA}:${userB}` (same sorted
+    // pair). Deleting the profile must also discard unconsumed pair evidence,
+    // otherwise a count >= 25 left over from before the delete re-triggers
+    // auto-rebuild on the next interaction.
+    if (draft.pendingPairCounts) delete draft.pendingPairCounts[pendingKey];
     if (!draft.relationshipProfiles) return;
     draft.relationshipProfiles = draft.relationshipProfiles.filter((p) => !(String(p.groupId) === String(groupId) && p.pairKey === pairKey));
   });
