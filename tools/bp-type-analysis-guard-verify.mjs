@@ -1,6 +1,5 @@
-// bp-type-analysis-guard-verify.mjs — osu!oracle is now an LLM-judged tool.
-// The hardcoded intent interception is gone; the bot exposes bp_type via
-// query_osu, and the tool result stays deterministic (no fabricated ratios).
+// bp-type-analysis-guard-verify.mjs — BP-type intents are deterministically
+// routed to query_osu/bp_type, whose osu!oracle output cannot fabricate ratios.
 import http from 'node:http';
 import { createTestDataDir, assertNotProduction, productionDbSnapshot, verifyProductionDbUnchanged, cleanupTestDir } from './test-isolation.mjs';
 
@@ -12,7 +11,7 @@ assertNotProduction(testDataDir);
 const prodBefore = productionDbSnapshot();
 console.log('[isolation] production db snapshot: ' + (prodBefore ? prodBefore.sha256.slice(0, 12) + '...' : 'N/A'));
 
-const { ensureStore, updateDb } = await import('../server/store.ts');
+const { ensureStore, updateDb, readDb } = await import('../server/store.ts');
 const { processIncoming } = await import('../server/bot.ts');
 const { detectBpTypeAnalysisIntent, detectRequiredOsuTool } = await import('../server/bots/intent.ts');
 const { buildBotToolSchemas } = await import('../server/bots/registry.ts');
@@ -66,7 +65,7 @@ const llmServer = http.createServer((req, res) => {
         usage: { prompt_tokens: 10, completion_tokens: 5, total_tokens: 15 }
       }));
     } else {
-      const relay = raw.includes('无法确定要查询的 osu! 用户名')
+      const relay = raw.includes('需要先绑定')
         ? '需要绑定：无法确定要查询的 osu! 用户名，请先使用 /w osu bind 绑定账号。'
         : '好的。';
       res.end(JSON.stringify({
@@ -111,6 +110,7 @@ function setupFixture() {
     db.messages = [];
     db.decisions = [];
     db.commandLogs = [];
+    db.toolCallLogs = [];
     db.groups = [{
       groupId: 'test-group', name: '测试群', enabled: true,
       mode: 'normal', maxPerHour: 50, cooldownSec: 0,
@@ -203,10 +203,10 @@ console.log('\n=== Unit: formatClassifierBlock ===');
 }
 
 // ═══════════════════════════════════════════════════════
-// E2E: LLM judges whether to call bp_type; tool result stays deterministic
+// E2E: bp_type intent is deterministically forced before the LLM; result stays deterministic
 // ═══════════════════════════════════════════════════════
 
-console.log('\n=== E2E: bp_type is LLM-judged, result deterministic ===');
+console.log('\n=== E2E: bp_type is deterministically forced ===');
 
 for (const [label, text] of [
   ['e2e-bptype-1', '分析我的bp类型'],
@@ -220,12 +220,17 @@ for (const [label, text] of [
     fail(label, `expected a reply, got ${JSON.stringify(r)}`);
     continue;
   }
-  if (llmCalls < 1) {
-    fail(label, `LLM must be involved (tool + lead), got ${llmCalls} calls`);
+  if (llmCalls !== 0) {
+    fail(label, `deterministic error path must not call the LLM, got ${llmCalls} calls`);
     continue;
   }
   if (!(r.text || '').includes('无法确定要查询的 osu! 用户名')) {
     fail(label, `deterministic tool error must reach the reply: ${r.text}`);
+    continue;
+  }
+  const audit = (readDb().toolCallLogs || []).slice(-1)[0];
+  if (!audit || audit.capability !== 'bp_type' || audit.ok !== false || !audit.createdAt) {
+    fail(label, `query_osu audit log missing/incorrect: ${JSON.stringify(audit)}`);
     continue;
   }
   if (/占比|百分之|典型(串|跳)|主要(串|跳)/.test(r.text || '')) {
@@ -236,18 +241,44 @@ for (const [label, text] of [
 }
 
 // ═══════════════════════════════════════════════════════
-// E2E: without a tool call, the LLM answer passes through (no hardcoded reply)
+// E2E: bp_type intent forces the tool even when the LLM would not call it
 // ═══════════════════════════════════════════════════════
 
-console.log('\n=== E2E: LLM text passes through when no tool is called ===');
+console.log('\n=== E2E: bp_type intent forces deterministic tool ===');
 
 {
   respondWithTool = false;
   const r = await send('分析一下我的bp构成', 'unbound-user');
-  if (!(r.text || '').includes('好的。')) {
-    fail('e2e-llm-pass-through', `expected LLM text to pass through: ${r.text}`);
+  if (!(r.text || '').includes('无法确定要查询的 osu! 用户名')) {
+    fail('e2e-bptype-forced', `forced tool result must reach the reply: ${r.text}`);
+  } else if (llmCalls !== 0) {
+    fail('e2e-bptype-forced-llm', `deterministic error path must not call the LLM, got ${llmCalls}`);
+  } else if (!(readDb().toolCallLogs || []).some((x) => x.capability === 'bp_type')) {
+    fail('e2e-bptype-forced-audit', 'query_osu bp_type audit log missing');
   } else {
-    pass('e2e-llm-pass-through');
+    pass('e2e-bptype-forced');
+  }
+}
+
+// `查 @某人 的 BP 类型` used to be consumed by Hydrant's generic 查@ profile
+// router before the deterministic bp_type route could run.
+{
+  setupFixture();
+  llmCalls = 0;
+  const r = await processIncoming({
+    source: 'gui', type: 'private',
+    messageId: 'bta-at-' + Date.now(),
+    groupId: 'private', userId: 'REDACTED_QQ_001', nickname: 'Owner',
+    text: '查 [CQ:at,qq=REDACTED_QQ_004] 的 BP 类型',
+    atTargets: ['REDACTED_QQ_004'], images: [], raw: {},
+  }, async () => {});
+  const audit = (readDb().toolCallLogs || []).slice(-1)[0];
+  if (!audit || audit.capability !== 'bp_type') {
+    fail('e2e-bptype-at-route', `@ BP type query was not routed to bp_type: ${JSON.stringify(r)}`);
+  } else if (llmCalls !== 0) {
+    fail('e2e-bptype-at-route-llm', `deterministic @ error path must not call LLM, got ${llmCalls}`);
+  } else {
+    pass('e2e-bptype-at-route');
   }
 }
 
@@ -267,6 +298,8 @@ console.log('\n=== E2E: data queries still route to query_osu ===');
     fail('e2e-data-bprange', `data query wrongly intercepted: ${r.reason}`);
   } else if (llmCalls !== 1) {
     fail('e2e-data-bprange-llm', `expected 1 LLM lead, got ${llmCalls}`);
+  } else if (!(readDb().toolCallLogs || []).some((x) => x.capability === 'bp' && x.args?.bp_start === 1)) {
+    fail('e2e-data-bprange-audit', 'query_osu bp audit log missing');
   } else {
     pass('e2e-data-bprange');
   }

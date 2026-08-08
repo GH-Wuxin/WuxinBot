@@ -18,6 +18,7 @@ import {
 } from '../server/osu/analyzer.js';
 import { ppToBars } from '../server/osu/pplus.js';
 import {
+  applyReviewerHardFallbacks,
   buildRecentReport,
   buildAnalysisStyleAvoidance,
   OSU_ANALYSIS_MODEL,
@@ -200,6 +201,27 @@ assert(validatePippiComment(output, output.safePippiFallback).ok, 'deterministic
 const fallbackValidation = validateAnalysisReport(output, output.safeFallback);
 if (!fallbackValidation.ok) console.error('Fallback validation reasons:', fallbackValidation.reasons);
 assert(fallbackValidation.ok, 'deterministic fallback should pass validation');
+const reviewerFallback = applyReviewerHardFallbacks(
+  output,
+  { ...output.safeSectionFallbacks, top5: '这是一条会被事实审查拒绝的 LLM 短评。' },
+  '【结论】这是一条会被事实审查拒绝的 LLM 结论。',
+  [
+    { section: 'top5', kind: 'hard', reason: 'BP5 Mod 数量矛盾' },
+    { section: 'conclusion', kind: 'hard', reason: '结论事实矛盾' },
+  ],
+);
+assert(reviewerFallback.comments?.top5 === output.safeSectionFallbacks.top5, 'reviewer hard reject must replace only the rejected section');
+assert(reviewerFallback.comments?.profile === output.safeSectionFallbacks.profile, 'reviewer fallback must preserve passing sections');
+assert(reviewerFallback.conclusion === output.safePippiFallback, 'reviewer hard reject must replace a rejected conclusion');
+assert(reviewerFallback.downgradedSections.length === 1 && reviewerFallback.downgradedSections[0] === 'top5', 'reviewer fallback must report the downgraded section');
+assert(reviewerFallback.conclusionDowngraded && !reviewerFallback.unknownHardSection, 'known reviewer sections must degrade locally');
+const unknownReviewerFallback = applyReviewerHardFallbacks(
+  output,
+  { ...output.safeSectionFallbacks },
+  output.safePippiFallback,
+  [{ section: 'unexpected', kind: 'hard', reason: 'unknown section' }],
+);
+assert(unknownReviewerFallback.unknownHardSection, 'unknown reviewer section must force whole-report safety fallback');
 assert(!output.safeFallback.includes('不失误只是默认状态'), 'fallback should not belittle players with Auto standards');
 assert(output.safeFallback.includes('【账号档案 · std】'), 'full report should include account profile');
 assert(output.safeFallback.includes('【BP5】'), 'full report should include BP5');

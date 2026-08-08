@@ -70,8 +70,8 @@ export const OSU_ANALYSIS_MODEL = 'deepseek-v4-flash';
 // so the reviewer can be swapped without touching pippi's generation side.
 export const OSU_REVIEW_MODEL = 'deepseek-v4-flash';
 // The independent LLM reviewer catches semantic fabrication that a word-list
-// validator cannot (e.g. “松一口气”“乱撞中攒出直觉”). It only rewrites
-// factually rejected components and never touches prose on quality grounds.
+// validator cannot (e.g. “松一口气”“乱撞中攒出直觉”). Hard-rejected components
+// are locally replaced by deterministic facts; quality opinions never degrade.
 const ENABLE_RUNTIME_LLM_FACT_REVIEW = true;
 let queue: QueueEntry[] = [];
 let running = false;
@@ -383,6 +383,48 @@ const SECTION_COMMENT_KEYS = ['profile', 'top', 'top5', 'mods', 'pplus', 'recent
 type SectionCommentKey = typeof SECTION_COMMENT_KEYS[number];
 type SectionCommentSource = 'llm' | 'fallback' | 'none';
 type SectionCommentSources = Record<SectionCommentKey, SectionCommentSource>;
+
+export function applyReviewerHardFallbacks(
+  analysis: Pick<ReturnType<typeof analyzeData>, 'safeSectionFallbacks' | 'safePippiFallback'>,
+  comments: AnalysisSectionComments | null,
+  conclusion: string,
+  rejects: { section: string; kind?: 'hard' | 'quality'; reason?: string }[],
+): {
+  comments: AnalysisSectionComments | null;
+  conclusion: string;
+  downgradedSections: SectionCommentKey[];
+  conclusionDowngraded: boolean;
+  unknownHardSection: boolean;
+} {
+  const nextComments = comments ? { ...comments } : null;
+  const downgradedSections: SectionCommentKey[] = [];
+  let conclusionDowngraded = false;
+  let unknownHardSection = false;
+
+  for (const reject of rejects) {
+    if (reject.kind === 'quality') continue;
+    const section = String(reject.section || '').trim().toLowerCase();
+    if (section === 'conclusion') {
+      conclusionDowngraded = true;
+      continue;
+    }
+    if (SECTION_COMMENT_KEYS.includes(section as SectionCommentKey) && nextComments) {
+      const key = section as SectionCommentKey;
+      nextComments[key] = analysis.safeSectionFallbacks[key];
+      if (!downgradedSections.includes(key)) downgradedSections.push(key);
+      continue;
+    }
+    unknownHardSection = true;
+  }
+
+  return {
+    comments: nextComments,
+    conclusion: conclusionDowngraded ? analysis.safePippiFallback : conclusion,
+    downgradedSections,
+    conclusionDowngraded,
+    unknownHardSection,
+  };
+}
 
 function allSectionSources(source: SectionCommentSource): SectionCommentSources {
   return Object.fromEntries(SECTION_COMMENT_KEYS.map(key => [key, source])) as SectionCommentSources;
@@ -957,9 +999,9 @@ async function runAnalysis(
       reply = report;
     }
 
-    // The independent reviewer is advisory only: it records per-section
-    // opinions in reviewLog and never rewrites or degrades the final text.
-    // Mechanical gates already guarantee factual safety.
+    // The reviewer is a final hard-error gate. A rejected component is replaced
+    // locally with its deterministic fact-only fallback; passing components are
+    // preserved verbatim. Unknown section labels degrade the whole report.
     if (ENABLE_RUNTIME_LLM_FACT_REVIEW && !finalReportFallback && reply) {
       const review = await reviewFullReport(db, analysis, reply, narrative);
       if (!review.verdicts) {
@@ -967,16 +1009,66 @@ async function runAnalysis(
         console.error('[osu analyze] 独立审查未返回有效判决，仅记录。');
       } else {
         const rejects = review.verdicts.filter((v) => v.result === 'REJECT');
+        const hardRejects = rejects.filter((v) => v.kind !== 'quality');
         reviewLog.push({
           round: 1,
           verdicts: review.verdicts,
           rejects: rejects.map((v) => ({ section: v.section, kind: v.kind, reason: v.reason })),
         });
-        if (rejects.length > 0) {
+        if (hardRejects.length > 0) {
           console.error(
-            '[osu analyze] 独立审查记录意见（不重写、不降级）：',
-            rejects.map((v) => `${v.section}[${v.kind || 'hard'}]=${v.reason}`).join('；'),
+            '[osu analyze] 独立审查发现硬错误，执行局部确定性降级：',
+            hardRejects.map((v) => `${v.section}[${v.kind || 'hard'}]=${v.reason}`).join('；'),
           );
+          const fallbackResult = applyReviewerHardFallbacks(
+            analysis,
+            sectionCommentsResult.comments,
+            pippiComment,
+            hardRejects,
+          );
+          if (fallbackResult.unknownHardSection) {
+            reply = analysis.safeFallback;
+            pippiComment = analysis.safePippiFallback;
+            conclusionSource = 'fallback';
+            sectionCommentsSource = 'none';
+            sectionCommentSources = allSectionSources('none');
+            finalReportFallback = true;
+            finalValidation = validateAnalysisReport(analysis, reply, narrative);
+          } else {
+            sectionCommentsResult = {
+              ...sectionCommentsResult,
+              comments: fallbackResult.comments,
+            };
+            for (const key of fallbackResult.downgradedSections) {
+              sectionCommentSources[key] = 'fallback';
+            }
+            sectionCommentsSource = summarizeSectionSources(sectionCommentSources);
+            sectionCommentsValidationReasons.push(
+              ...hardRejects.map((v) => `reviewer ${v.section}: ${v.reason}`).slice(0, 8),
+            );
+            pippiComment = fallbackResult.conclusion;
+            if (fallbackResult.conclusionDowngraded) {
+              conclusionSource = 'fallback';
+              lastReasons = hardRejects
+                .filter((v) => v.section === 'conclusion')
+                .map((v) => `reviewer: ${v.reason}`)
+                .slice(0, 8);
+            }
+            const reviewedReport = fallbackResult.comments
+              ? `${injectAnalysisSectionComments(analysis.safeBody, fallbackResult.comments)}\n\n${pippiComment}`
+              : `${analysis.safeBody}\n\n${pippiComment}`;
+            finalValidation = validateAnalysisReport(analysis, reviewedReport, narrative);
+            if (finalValidation.ok) {
+              reply = reviewedReport;
+            } else {
+              reply = analysis.safeFallback;
+              pippiComment = analysis.safePippiFallback;
+              conclusionSource = 'fallback';
+              sectionCommentsSource = 'none';
+              sectionCommentSources = allSectionSources('none');
+              finalReportFallback = true;
+            }
+          }
         }
       }
     }
@@ -1105,17 +1197,25 @@ async function drainQueue() {
   while (queue.length > 0) {
     currentEntry = queue.shift()!;
     running = true;
+    const entry = currentEntry;
     try {
-      const text = await runAnalysis(currentEntry.event, currentEntry.sendMessage, currentEntry.target, currentEntry.mode);
-      await sendAsReply(currentEntry.event, currentEntry.sendMessage, text);
-      currentEntry.resolve({ replied: true, reason: 'osu analyze 完成', text });
+      const text = await runAnalysis(entry.event, entry.sendMessage, entry.target, entry.mode);
+      await sendAsReply(entry.event, entry.sendMessage, text);
+      entry.resolve({ replied: true, reason: 'osu analyze 完成', text });
     } catch (error) {
       const msg = `分析失败：${String(error?.message || error).slice(0, 300)}`;
-      if (currentEntry.sendMessage) await sendAsReply(currentEntry.event, currentEntry.sendMessage, msg);
-      currentEntry.resolve({ replied: true, reason: msg, error: String(error?.message || error) });
+      if (entry.sendMessage) {
+        try {
+          await sendAsReply(entry.event, entry.sendMessage, msg);
+        } catch (sendError) {
+          console.error('[osu analyze] 失败通知也未能发送：', sendError?.message || sendError);
+        }
+      }
+      entry.resolve({ replied: true, reason: msg, error: String(error?.message || error) });
+    } finally {
+      running = false;
+      currentEntry = null;
     }
-    running = false;
-    currentEntry = null;
   }
 }
 

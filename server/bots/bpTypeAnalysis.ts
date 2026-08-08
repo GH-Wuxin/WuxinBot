@@ -8,7 +8,11 @@ import {
   type ClassifierResult,
 } from '../osu/classifier.js';
 import { readDb, updateDb } from '../store.js';
-import { loadInternalOsuUser, resolveInternalPlayerTarget } from './executor.js';
+import {
+  loadInternalOsuUser,
+  resolveInternalPlayerTarget,
+  type TargetResolutionExtra,
+} from './executor.js';
 
 const CACHE_TTL_MS = 24 * 3600_000;
 const MAX_CACHE_ENTRIES = 100;
@@ -53,9 +57,10 @@ function formatCachedReply(entry: BpTypeAnalysisCacheEntry): string {
 export async function runBpTypeAnalysis(
   db: any,
   requestingUserId: string,
-  explicitUsername = ''
+  explicitUsername = '',
+  extra: TargetResolutionExtra = {},
 ): Promise<string> {
-  const target = resolveInternalPlayerTarget(db, String(requestingUserId), explicitUsername);
+  const target = resolveInternalPlayerTarget(db, String(requestingUserId), explicitUsername, extra);
   if (!target) {
     return '要分析 BP 谱面类型，需要先绑定 osu! 账号：发 /w osu bind 你的用户名。';
   }

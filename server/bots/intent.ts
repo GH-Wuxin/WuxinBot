@@ -301,21 +301,60 @@ function matchBotByIdOrName(
 
 // ── BP type analysis (proportion) detection ──
 // "分析我的bp类型" "串图占比如何" — these need real beatmap classification
-// (osu!oracle on Top100). Until that is wired into natural language, the LLM
-// must NOT fabricate proportions from PP+ dimensions alone. Callers intercept
-// this before the LLM sees the message.
+// (osu!oracle on Top100). The LLM must NOT fabricate proportions from PP+
+// dimensions alone: matching intents are wired as deterministic required
+// tools in bot.ts and execute before the LLM sees the message.
+
+// Explicit oracle-invocation and "check <player>'s BP composition" phrasings.
+// These are deterministic routes: the LLM must never answer proportions from
+// context when the user explicitly asked for osu_oracle.
+const BP_TYPE_ORACLE_PATTERNS: RegExp[] = [
+  // "调用osu_oracle检查[SHK]Boring的bp组成" / "用oracle看下Boring的bp占比"
+  /(?:osu_?oracle|oracle).{0,60}?\s*(?:bp|best\s*performance)\s*(?:组成|构成|结构|占比|类型|分布|分类)/i,
+  // "检查[SHK]Boring的bp组成" / "锐评Boring的bp构成"（未点名 oracle 也属于 BP 结构问题）
+  /(?:检查|分析|锐评|看看|查看|查询|查|统计|评估)[^\n，。]{1,60}?\s*的\s*(?:bp|best\s*performance)\s*(?:组成|构成|结构|占比|类型|分布|分类)/i,
+  // "调用osu_oracle分析Nakanooooo的bp100"（历史用户话术）
+  /(?:osu_?oracle|oracle)[^\n。]{0,60}?\s*的\s*bp\s*\d{0,3}/i,
+];
+
+/**
+ * Extract the target osu! username from a BP-type analysis request.
+ * Returns '' when the target is the requester ("我的bp") or absent.
+ */
+export function extractBpTypeUsername(userText: string): string {
+  const text = String(userText || '').trim()
+    .replace(/\[CQ:[^\]]+\]/gi, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+  if (!text) return '';
+  // "我的bp/你的bp" 指的是说话者自己/对方，不应当作用户名。
+  const bpRef = /的\s*(?:bp|best\s*performance)/i.exec(text);
+  if (bpRef) {
+    const prefix = text.slice(0, bpRef.index).trim();
+    if (/的$/.test(prefix) || /(?:我|你|他|她|我们|你们|他们|咱|大家)(?:自己)?$/.test(prefix)) return '';
+  }
+  const match =
+    /(?:调用|使用|让|请|用)\s*(?:osu_?oracle|oracle)\s*(?:检查|分析|锐评|看看|查看|统计|评估)?\s*(?:一下|一个)?\s*([^\n，。]{2,40}?)\s*的\s*(?:bp|best\s*performance)/i.exec(text)
+    || /(?:检查|分析|锐评|看看|查看|查询|查|统计|评估)(?:一下|一个|的)?\s*([^\n，。]{2,40}?)\s*的\s*(?:bp|best\s*performance)/i.exec(text);
+  if (!match) return '';
+  const name = String(match[1] || '').trim();
+  if (/^(?:我|你|他|她|我们|你们|他们|咱|大家)$/i.test(name)) return '';
+  if (/我的|你的|他的|她的/.test(name)) return '';
+  return name;
+}
 
 export function detectBpTypeAnalysisIntent(userText: string): boolean {
   const text = String(userText || '').trim();
   if (!text) return false;
-  return BP_TYPE_ANALYSIS_PATTERNS.some((re) => re.test(text));
+  return BP_TYPE_ANALYSIS_PATTERNS.some((re) => re.test(text)) ||
+    BP_TYPE_ORACLE_PATTERNS.some((re) => re.test(text));
 }
 
 const BP_TYPE_ANALYSIS_PATTERNS: RegExp[] = [
   // "分析我的bp类型" "看看我的BP占比" "总结一下BP结构"
-  /(?:分析|看看|看一下|讲讲|说说|评价|判断|总结|评估|描述|形容)(?:一下|我的|你的|下)?\s*(?:bp|best\s*performance)\s*(?:类型|占比|组成|结构|风格)/i,
+  /(?:分析|看看|看一下|讲讲|说说|评价|判断|总结|评估|描述|形容)(?:一下|我的|你的|下)?\s*(?:bp|best\s*performance)\s*(?:类型|占比|组成|构成|结构|风格)/i,
   // "我的BP是什么类型" "BP构成" "bp的类型"
-  /(?:我的|我|我们的|你)?\s*(?:bp|best\s*performance)\s*(?:是\s*什么|的)?\s*(?:类型|占比|组成|结构|风格)/i,
+  /(?:我的|我|我们的|你)?\s*(?:bp|best\s*performance)\s*(?:是\s*什么|的)?\s*(?:类型|占比|组成|构成|结构|风格)/i,
   // "串图占比如何" "跳图有多少" "aim图比例"
   /(?:串图|跳图|耐力图|速度图|aim|stream|tech|alt)(?:图)?\s*有?\s*(?:占比|多少|比例|如何|怎样|有几张|几张|偏|多|少)/i,
 ];

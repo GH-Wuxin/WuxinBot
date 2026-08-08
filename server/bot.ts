@@ -70,6 +70,8 @@ import { loadRegistry, buildBotToolSchemas, enabledBots, findBot } from './bots/
 import {
   detectRequiredOsuTool,
   detectNamedBotRequest,
+  detectBpTypeAnalysisIntent,
+  extractBpTypeUsername,
   hasFallbackRecommendIntent,
   looksLikeRecommendationReply,
 } from './bots/intent.js';
@@ -424,7 +426,9 @@ async function processIncomingInner(event, sendMessage = undefined, queuedDecisi
 
   // ── Legacy quick-command router (M1 of four-bot merge) ──
   // Deterministic `!p`/`!bs`/`/plus`/`~`/`查@` … commands bypass the LLM.
-  const quickMatch = matchQuickCommand(event);
+  // BP 类型查询 has its own deterministic osu!oracle route. In particular,
+  // `查 @某人 的 BP 类型` must not be consumed as Hydrant's generic 查@资料.
+  const quickMatch = detectBpTypeAnalysisIntent(event.text) ? null : matchQuickCommand(event);
   if (quickMatch && quickRouterEnabled(db, event)) {
     const quickResult = await handleQuickCommand(event, sendMessage, db, quickMatch, {
       isOwner: isGroupOwner || isPrivateOwner,
@@ -612,7 +616,19 @@ async function processIncomingInner(event, sendMessage = undefined, queuedDecisi
     // osu! data queries use their own deterministic routing. Don't let the
     // generic "查/搜" search keyword match eat them before tool availability
     // is checked — the requiredTool path handles data retrieval directly.
-    const osuDataIntent = detectRequiredOsuTool(event.text);
+    let osuDataIntent = detectRequiredOsuTool(event.text);
+    // BP 谱面类型/组成问题（含显式点名 osu_oracle）必须走确定性 bp_type 路由，
+    // 不允许 LLM 用上下文旧数据编造比例。
+    if (detectBpTypeAnalysisIntent(event.text)) {
+      const bpTypeUsername = extractBpTypeUsername(event.text);
+      osuDataIntent = {
+        toolName: 'query_osu',
+        args: {
+          capability: 'bp_type',
+          ...(bpTypeUsername ? { username: bpTypeUsername } : {}),
+        },
+      };
+    }
     const registryHere = loadRegistry(liveDb);
     const namedBotRequest = detectNamedBotRequest(event.text, registryHere.bots || []);
 
