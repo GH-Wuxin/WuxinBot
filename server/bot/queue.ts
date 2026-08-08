@@ -153,9 +153,15 @@ function mergeQueuedReplyItems(items) {
   const texts = items
     .map((item) => String(item.event?.text || '').trim())
     .filter(Boolean);
+  const images = items.flatMap((item) =>
+    Array.isArray(item.event?.images) ? item.event.images : [],
+  );
   const event = { ...last.event };
   if (texts.length > 1) {
     event.text = texts.join('\n') + '\n（以上是同一成员连续发送的消息，请综合这些内容回复一次）';
+  }
+  if (images.length > 0) {
+    event.images = images;
   }
   return {
     event,
