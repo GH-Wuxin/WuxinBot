@@ -634,8 +634,17 @@ class MatchManager {
         );
         this.listeners.set(matchId, listener);
         listener.start();
-      } catch {
-        delete state[id];
+      } catch (error) {
+        // A transient failure (timeout / 5xx / network) must NOT destroy a
+        // persisted listener: the match may still be live and restore() is
+        // retried on the next process start. Only a definitive 404 means the
+        // match no longer exists and the entry can be dropped.
+        const message = String((error as Error)?.message || error || '');
+        if (message.includes('资源不存在')) {
+          delete state[id];
+        } else {
+          console.error(`[match] restore ${matchId} failed, kept listener: ${message.slice(0, 200)}`);
+        }
       }
     }
     this.saveState(state);
