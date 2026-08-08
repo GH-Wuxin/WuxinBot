@@ -121,11 +121,17 @@ function yumuMods(mods: string[]): Array<{ acronym: string }> {
 export class MatchListener {
   private timer: NodeJS.Timeout | null = null;
   private killTimer: NodeJS.Timeout | null = null;
+  private started = false;
   private nowGameId: number | null = null;
   private nowEventId: number;
   private usersIdSet = new Set<number>();
   private userMap = new Map<number, OsuMatchUser>();
   private stopped = false;
+  // All outbound side effects (gameStart/gameEnd/gameAbort/error/matchEnd)
+  // run through this promise chain so they complete in event order. This
+  // keeps polling decoupled from rendering/sending latency while making
+  // same-batch events deterministic.
+  private eventChain: Promise<void> = Promise.resolve();
 
   constructor(
     private match: OsuMatch,
@@ -138,32 +144,43 @@ export class MatchListener {
       const gameEvent = [...match.events].reverse().find((e) => e.game != null);
       this.nowGameId = match.current_game_id;
       this.nowEventId = gameEvent ? gameEvent.id - 1 : match.latest_event_id;
-      if (gameEvent) void this.handleEvent(gameEvent);
+      if (gameEvent) this.handleEvent(gameEvent);
     }
   }
 
   start(): void {
-    if (this.timer) return;
+    if (this.started) return;
+    this.started = true;
     if (this.match.match.end_time) {
-      void this.onEventCb('matchEnd', { type: 'MATCH_END' });
+      this.emit('matchEnd', { type: 'MATCH_END' });
       this.stop('MATCH_END');
       return;
     }
-    void this.listen();
-    this.timer = setInterval(() => void this.listen(), POLL_INTERVAL_MS);
+    void this.tick();
     this.killTimer = setTimeout(() => {
       if (!this.stopped) this.stop('TIME_OUT');
     }, TIMEOUT_MS);
   }
 
+  // One poll round, then schedule the next one. Scheduling happens only after
+  // a round fully completes, so two listen() calls can never run concurrently.
+  private async tick(): Promise<void> {
+    await this.listen();
+    if (this.stopped) return;
+    this.timer = setTimeout(() => {
+      this.timer = null;
+      void this.tick();
+    }, POLL_INTERVAL_MS);
+  }
+
   stop(type: MatchStopType): void {
     if (this.stopped) return;
     this.stopped = true;
-    if (this.timer) clearInterval(this.timer);
+    if (this.timer) clearTimeout(this.timer);
     if (this.killTimer) clearTimeout(this.killTimer);
     this.timer = null;
     this.killTimer = null;
-    void this.onEventCb('matchEnd', { type });
+    this.emit('matchEnd', { type });
   }
 
   get isStopped(): boolean {
@@ -176,10 +193,16 @@ export class MatchListener {
     try {
       newMatch = await getMatchAfter(this.matchId, this.nowEventId);
     } catch (error) {
-      void this.onEventCb('error', { error });
+      if (this.stopped) return;
+      this.emit('error', { error });
       return;
     }
+    // A late response may arrive after stop(); it must not touch state or
+    // push panels once the listener is stopped.
+    if (this.stopped) return;
     try {
+      // Stale/older snapshots must never regress already-advanced state.
+      if (newMatch.latest_event_id < this.nowEventId) return;
       if (this.nowEventId === newMatch.latest_event_id) return;
 
       if (newMatch.current_game_id != null) {
@@ -208,8 +231,21 @@ export class MatchListener {
       this.onAllEvent(newMatch.events);
       if (newMatch.match.end_time) this.stop('MATCH_END');
     } catch (error) {
-      void this.onEventCb('error', { error });
+      this.emit('error', { error });
     }
+  }
+
+  // Serialized side-effect delivery. The chain preserves event order and
+  // prevents one slow render from blocking polling (callers never await it).
+  private emit(type: string, data: any): void {
+    this.eventChain = this.eventChain
+      .then(async () => {
+        if (this.stopped && type !== 'matchEnd') return;
+        await this.onEventCb(type, data);
+      })
+      .catch((error) => {
+        console.error('[match] side-effect delivery failed', type, error);
+      });
   }
 
   private onAllEvent(events: OsuMatchEvent[]): void {
@@ -220,28 +256,28 @@ export class MatchListener {
       for (const event of abortGames) {
         const game = event.game!;
         if (game.end_time != null) {
-          void this.handleEvent(event);
+          this.handleEvent(event);
         } else {
-          void this.onEventCb('gameAbort', { beatmapId: game.beatmap_id });
+          this.emit('gameAbort', { beatmapId: game.beatmap_id });
         }
       }
     }
-    void this.handleEvent(gameEvents[gameEvents.length - 1]);
+    this.handleEvent(gameEvents[gameEvents.length - 1]);
   }
 
-  private async handleEvent(event: OsuMatchEvent): Promise<void> {
+  private handleEvent(event: OsuMatchEvent): void {
     const game = event.game;
     if (!game) return;
     const isEnd = game.end_time != null;
     if (isEnd) {
-      await this.onEventCb('gameEnd', {
+      this.emit('gameEnd', {
         game,
         eventId: event.id,
         users: this.userMap,
       });
     } else {
       const users = [...this.usersIdSet].map((id) => this.userMap.get(id)).filter(Boolean) as OsuMatchUser[];
-      await this.onEventCb('gameStart', {
+      this.emit('gameStart', {
         eventId: event.id,
         matchName: this.match.match.name,
         beatmapId: game.beatmap_id,
