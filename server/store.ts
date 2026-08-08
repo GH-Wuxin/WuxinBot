@@ -73,6 +73,7 @@ const AUTO_BACKUP_KEEP = 24;
 const MAX_MESSAGES = 12_000;
 const MAX_DECISIONS = 30_000;
 const MAX_COMMAND_LOGS = 2_000;
+export const MAX_TOOL_LOGS = 5_000;
 const MAX_ADMIN_ACTIONS = 1_000;
 let lastAutoBackupAt = 0;
 let lastDbReadFailureAt = 0;
@@ -86,6 +87,7 @@ export function applyRetention(db) {
   if ((db.messages || []).length > MAX_MESSAGES) db.messages = db.messages.slice(-MAX_MESSAGES);
   if ((db.decisions || []).length > MAX_DECISIONS) db.decisions = db.decisions.slice(-MAX_DECISIONS);
   if ((db.commandLogs || []).length > MAX_COMMAND_LOGS) db.commandLogs = db.commandLogs.slice(-MAX_COMMAND_LOGS);
+  if ((db.toolCallLogs || []).length > MAX_TOOL_LOGS) db.toolCallLogs = db.toolCallLogs.slice(-MAX_TOOL_LOGS);
   if ((db.adminActions || []).length > MAX_ADMIN_ACTIONS) db.adminActions = db.adminActions.slice(-MAX_ADMIN_ACTIONS);
   return db;
 }
@@ -344,6 +346,7 @@ const initialDb = {
   messages: [],
   decisions: [],
   commandLogs: [],
+  toolCallLogs: [],
   adminActions: [],
   usageEvents: [],
   usage: {
@@ -356,7 +359,7 @@ const initialDb = {
   }
 };
 
-function normalizeDb(db) {
+export function normalizeDb(db) {
   const settings = db.settings || {};
   const roleMap = new Map();
   for (const role of defaultCommandRoles) roleMap.set(role.id, { ...role });
@@ -371,14 +374,21 @@ function normalizeDb(db) {
     });
   }
 
+  // Global cache wipe (osu clear cache) is enforced owner-only inside
+  // handleClearCache; the gate must never be configured lower than owner,
+  // otherwise admins pass the gate here and get rejected later with a
+  // misleading message.
+  const mergedCommandPermissions = {
+    ...defaultCommandPermissions,
+    ...(settings.commandPermissions || {}),
+    osuClearCache: 'owner'
+  };
+
   db.settings = activateModelProfile({
     ...initialDb.settings,
     ...settings,
     commandRoles: [...roleMap.values()].sort((a, b) => a.level - b.level),
-    commandPermissions: {
-      ...defaultCommandPermissions,
-      ...(settings.commandPermissions || {})
-    }
+    commandPermissions: mergedCommandPermissions
   }, settings.model || initialDb.settings.model);
   db.settings = recoverProviderProfiles(db.settings, db.configSnapshots || []);
 
@@ -420,6 +430,7 @@ function normalizeDb(db) {
   db.messages ||= [];
   db.decisions ||= [];
   db.commandLogs ||= [];
+  db.toolCallLogs ||= [];
   db.adminActions ||= [];
   db.usageEvents ||= [];
   db.usage = {

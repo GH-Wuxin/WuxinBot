@@ -1,6 +1,7 @@
 // Tool executor: handles LLM tool calls, runs the tool loop, manages bot communication.
 import type { LlmToolCall, ToolResult, BotResponse, LlmTool, BotCommand } from './types.js';
 import { validateOperation, sanitizeToolResult, isSafeToolResult } from './guard.js';
+import { updateDb, nowIso, MAX_TOOL_LOGS } from '../store.js';
 import { loadRegistry, enabledBots, findBot, findCommand, availableCommands, internalCapabilitySupported, INTERNAL_CAPABILITIES } from './registry.js';
 import { lookupSkill, lookupSkillByQQ } from './skills.js';
 import { getRenderServer } from './renderServer.js';
@@ -517,7 +518,7 @@ function directContentForBotResult(
   return undefined;
 }
 
-export async function executeToolCall(
+async function executeToolCallInner(
   toolCall: LlmToolCall,
   context: {
     db: any;
@@ -580,7 +581,11 @@ export async function executeToolCall(
       // Resolve through QQ binding if the player identifier looks like a QQ or nickname
       let record = lookupSkill(player);
       if (!record) {
-        const target = resolveInternalPlayerTarget(context.db, context.userId, player);
+        const target = resolveInternalPlayerTarget(context.db, context.userId, player, {
+          nickname: String(context.event?.nickname || ''),
+          atTargets: context.event?.atTargets,
+          groupId: context.groupId,
+        });
         if (target) {
           try {
             const user = await loadInternalOsuUser(target);
@@ -616,7 +621,11 @@ export async function executeToolCall(
       // made the LLM believe the player had no recent plays.
       const requestedPlayer = String(args.player || '').trim();
       const player = requestedPlayer || String(userId || '').trim();
-      const target = resolveInternalPlayerTarget(db, String(userId || ''), player);
+      const target = resolveInternalPlayerTarget(db, String(userId || ''), player, {
+        nickname: String(context.event?.nickname || ''),
+        atTargets: context.event?.atTargets,
+        groupId: context.groupId,
+      });
       if (!target) {
         return {
           toolCallId: toolCall.id,
@@ -1090,6 +1099,87 @@ export async function executeToolCall(
   }
 }
 
+// ── Tool-call audit ──
+// Every query_osu invocation (including deterministic required-tool routes)
+// is recorded so "did the tool actually run" can be answered from the DB
+// instead of inferred from reply text. Audit writes are non-fatal.
+function writeToolCallAudit(
+  toolCall: LlmToolCall,
+  context: {
+    db: any;
+    userId: string;
+    groupId?: string;
+    event?: any;
+  },
+  result: ToolResult,
+  latencyMs: number,
+): void {
+  if (String(toolCall.function?.name || '') !== 'query_osu') return;
+  let args: Record<string, unknown> = {};
+  try {
+    args = JSON.parse(toolCall.function.arguments || '{}');
+  } catch {
+    // Malformed args are still worth auditing; keep the empty object.
+  }
+  try {
+    const event = context.event || {};
+    updateDb((draft) => {
+      draft.toolCallLogs = draft.toolCallLogs || [];
+      draft.toolCallLogs.push({
+        id: crypto.randomUUID(),
+        createdAt: nowIso(),
+        groupId: String(event.groupId ?? context.groupId ?? ''),
+        userId: String(event.userId ?? context.userId ?? ''),
+        nickname: String(event.nickname ?? ''),
+        messageId: String(event.messageId ?? ''),
+        toolCallId: toolCall.id,
+        capability: String(args.capability ?? ''),
+        args,
+        ok: Boolean(result.ok),
+        error: result.error ? String(result.error).slice(0, 300) : '',
+        contentLength: String(result.content ?? '').length,
+        latencyMs,
+      });
+      draft.toolCallLogs = draft.toolCallLogs.slice(-MAX_TOOL_LOGS);
+    });
+  } catch {
+    // Auditing must never break the chat path.
+  }
+}
+
+/**
+ * Public tool executor: wraps the inner dispatcher so every query_osu call is
+ * audited with capability/user/timing even when the inner path returns early.
+ */
+export async function executeToolCall(
+  toolCall: LlmToolCall,
+  context: {
+    db: any;
+    userId: string;
+    groupId?: string;
+    sendMessage?: (event: any, text: string, extra?: any) => Promise<any>;
+    event?: any;
+    selfQq?: string;
+  }
+): Promise<ToolResult> {
+  const startedAt = Date.now();
+  let result: ToolResult;
+  try {
+    result = await executeToolCallInner(toolCall, context);
+  } catch (error: any) {
+    result = {
+      toolCallId: toolCall.id,
+      ok: false,
+      content: '',
+      error: String(error?.message || error),
+    };
+    writeToolCallAudit(toolCall, context, result, Date.now() - startedAt);
+    throw error;
+  }
+  writeToolCallAudit(toolCall, context, result, Date.now() - startedAt);
+  return result;
+}
+
 // ── Internal bot command execution ──
 
 export interface InternalPlayerTarget {
@@ -1114,29 +1204,176 @@ function scoreModAcronyms(score: OsuScore): string[] {
   return [...new Set<string>(acronyms)];
 }
 
-export function resolveInternalPlayerTarget(
+/** Normalize an osu!/QQ name without deleting legal username characters. */
+export function normalizePlayerName(name: string): string {
+  return String(name || '')
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+/**
+ * A bound leading community tag may be omitted by the requester, but two
+ * explicitly tagged names are never collapsed together. osu! stores brackets
+ * as ordinary username characters rather than a separate clan-tag field.
+ */
+function requestedNameMatchesBinding(requested: string, bound: string): boolean {
+  const requestedKey = normalizePlayerName(requested);
+  const boundKey = normalizePlayerName(bound);
+  if (!requestedKey || !boundKey) return false;
+  if (requestedKey === boundKey) return true;
+  if (/\[[^\]]*\]/.test(requestedKey)) return false;
+  const boundWithoutLeadingTags = boundKey.replace(/^(?:\[[^\]]+\]\s*)+/, '').trim();
+  return requestedKey === boundWithoutLeadingTags;
+}
+
+function bindingId(binding: unknown): number {
+  if (typeof binding === 'number' && Number.isFinite(binding) && binding > 0) return binding;
+  if (typeof binding === 'string' && /^\d+$/.test(binding.trim())) return Number(binding.trim());
+  if (binding && typeof binding === 'object') {
+    const id = Number((binding as any).osuUserId ?? (binding as any).userId ?? (binding as any).id ?? 0);
+    if (Number.isFinite(id) && id > 0) return id;
+  }
+  return 0;
+}
+
+function bindingUsername(binding: unknown): string {
+  if (typeof binding === 'string') return binding.trim();
+  if (binding && typeof binding === 'object') {
+    return String((binding as any).osuUsername ?? (binding as any).username ?? '').trim();
+  }
+  return '';
+}
+
+/** Latest QQ that used the given nickname in a group (newest message wins). */
+function findQqByNickname(db: any, groupId: string, nickname: string): string | null {
+  const needle = normalizePlayerName(nickname);
+  if (!needle || !groupId) return null;
+  const messages = Array.isArray(db?.messages) ? db.messages : [];
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const m = messages[i];
+    if (!m || m.role === 'assistant' || String(m.groupId || '') !== String(groupId)) continue;
+    const nick = String(m.nickname || '').trim();
+    if (!nick) continue;
+    if (normalizePlayerName(nick) === needle) return String(m.userId || '');
+  }
+  return null;
+}
+
+export interface TargetResolutionExtra {
+  /** Requester's QQ nickname (used to block unbound nickname guesses). */
+  nickname?: string;
+  /** QQ numbers @-mentioned in the same message. */
+  atTargets?: string[];
+  /** Current group id (used to resolve group nicknames to bindings). */
+  groupId?: string;
+}
+
+export type TargetResolutionReason =
+  | 'resolved'
+  | 'no_target'
+  | 'unbound_requester_nickname'
+  | 'group_member_unbound';
+
+export interface TargetResolutionResult {
+  target: InternalPlayerTarget | null;
+  reason: TargetResolutionReason;
+}
+
+/**
+ * Resolve a requested player to a real osu! account.
+ *
+ * Order of trust:
+ * 1. Requester's own binding when the requested name matches it (clan-tag
+ *    insensitive) — never let `Pain boy` hit a different account than the
+ *    bound `[SHK] Pain boy`.
+ * 2. @-mentioned QQ's binding.
+ * 3. Requester using their own unbound QQ nickname as an osu username is
+ *    blocked — guessing by nickname misattributes other people's data.
+ * 4. Group nickname → QQ → binding.
+ * 5. Anything else is treated as an explicit osu username and queried as-is.
+ */
+export function resolveInternalPlayerTargetDetailed(
   db: any,
   requestingUserId: string,
-  explicitUsername: string
-): InternalPlayerTarget | null {
+  explicitUsername: string,
+  extra: TargetResolutionExtra = {},
+): TargetResolutionResult {
   const explicit = String(explicitUsername || '').trim();
-  if (explicit) return { kind: 'username', value: explicit };
-
   const binding = db?.osuBindings?.[String(requestingUserId)];
-  if (typeof binding === 'number' && Number.isFinite(binding) && binding > 0) {
-    return { kind: 'id', value: binding };
+  const requesterName = bindingUsername(binding);
+
+  if (explicit) {
+    // 1) Requester's own binding wins on name match.
+    if (requesterName && requestedNameMatchesBinding(explicit, requesterName)) {
+      const id = bindingId(binding);
+      return id > 0
+        ? { target: { kind: 'id', value: id }, reason: 'resolved' }
+        : { target: { kind: 'username', value: requesterName }, reason: 'resolved' };
+    }
+
+    // 2) @-mentioned member's binding wins on name match.
+    const atTargets = Array.isArray(extra.atTargets) ? extra.atTargets.map(String) : [];
+    for (const qq of atTargets) {
+      const memberBinding = db?.osuBindings?.[qq];
+      const memberName = bindingUsername(memberBinding);
+      if (memberName && requestedNameMatchesBinding(explicit, memberName)) {
+        const id = bindingId(memberBinding);
+        return id > 0
+          ? { target: { kind: 'id', value: id }, reason: 'resolved' }
+          : { target: { kind: 'username', value: memberName }, reason: 'resolved' };
+      }
+    }
+
+    // 3) Unbound requester guessing their own QQ nickname as osu username.
+    const requesterNickname = String(extra.nickname || '').trim();
+    if (!binding && requesterNickname && normalizePlayerName(explicit) === normalizePlayerName(requesterNickname)) {
+      return { target: null, reason: 'unbound_requester_nickname' };
+    }
+
+    // 4) Group nickname → QQ → binding; never guess an unbound member's account.
+    if (extra.groupId) {
+      const qq = findQqByNickname(db, extra.groupId, explicit);
+      if (qq) {
+        const memberBinding = db?.osuBindings?.[String(qq)];
+        const memberName = bindingUsername(memberBinding);
+        if (memberName) {
+          const id = bindingId(memberBinding);
+          return id > 0
+            ? { target: { kind: 'id', value: id }, reason: 'resolved' }
+            : { target: { kind: 'username', value: memberName }, reason: 'resolved' };
+        }
+        return { target: null, reason: 'group_member_unbound' };
+      }
+    }
+
+    // 5) Explicit osu username.
+    return { target: { kind: 'username', value: explicit }, reason: 'resolved' };
   }
-  if (typeof binding === 'string' && binding.trim()) {
-    const value = binding.trim();
-    return /^\d+$/.test(value)
-      ? { kind: 'id', value: Number(value) }
-      : { kind: 'username', value };
+
+  // No explicit username: an @-mentioned member takes precedence over the
+  // requester. Ignore the bot's own QQ, which is commonly @-mentioned merely
+  // to trigger a response.
+  const mentionedQqs = (Array.isArray(extra.atTargets) ? extra.atTargets : [])
+    .map(String)
+    .filter((qq) => qq && qq !== String(db?.settings?.selfQq || ''));
+  if (mentionedQqs.length > 0) {
+    for (const qq of mentionedQqs) {
+      const memberBinding = db?.osuBindings?.[qq];
+      const memberName = bindingUsername(memberBinding);
+      const id = bindingId(memberBinding);
+      if (id > 0) return { target: { kind: 'id', value: id }, reason: 'resolved' };
+      if (memberName) return { target: { kind: 'username', value: memberName }, reason: 'resolved' };
+    }
+    return { target: null, reason: 'group_member_unbound' };
   }
-  if (binding && typeof binding === 'object') {
-    const id = Number(binding.osuUserId ?? binding.userId ?? binding.id ?? 0);
-    if (Number.isFinite(id) && id > 0) return { kind: 'id', value: id };
-    const username = String(binding.osuUsername ?? binding.username ?? '').trim();
-    if (username) return { kind: 'username', value: username };
+
+  // No explicit or mentioned target: fall back to the requester's binding.
+  if (binding) {
+    const id = bindingId(binding);
+    if (id > 0) return { target: { kind: 'id', value: id }, reason: 'resolved' };
+    if (requesterName) return { target: { kind: 'username', value: requesterName }, reason: 'resolved' };
   }
 
   // Read-only legacy fallback for databases created before osuBindings.
@@ -1144,7 +1381,18 @@ export function resolveInternalPlayerTarget(
     (user: any) => String(user.userId) === String(requestingUserId)
   );
   const legacyUsername = String(legacyUser?.osuUsername || '').trim();
-  return legacyUsername ? { kind: 'username', value: legacyUsername } : null;
+  return legacyUsername
+    ? { target: { kind: 'username', value: legacyUsername }, reason: 'resolved' }
+    : { target: null, reason: 'no_target' };
+}
+
+export function resolveInternalPlayerTarget(
+  db: any,
+  requestingUserId: string,
+  explicitUsername: string,
+  extra: TargetResolutionExtra = {},
+): InternalPlayerTarget | null {
+  return resolveInternalPlayerTargetDetailed(db, requestingUserId, explicitUsername, extra).target;
 }
 
 export async function loadInternalOsuUser(target: InternalPlayerTarget): Promise<OsuUser> {
@@ -1293,8 +1541,25 @@ export async function executeInternalBotCommand(
     };
   }
 
-  const target = resolveInternalPlayerTarget(db, userId, username);
+  const resolution = resolveInternalPlayerTargetDetailed(db, userId, username, {
+    nickname: String(context.event?.nickname || ''),
+    atTargets: context.event?.atTargets,
+    groupId: context.groupId,
+  });
+  const target = resolution.target;
   if (!target) {
+    if (resolution.reason === 'unbound_requester_nickname') {
+      throw new Error(
+        '你还没有绑定 osu! 账号，且我不能凭 QQ 昵称猜测你的 osu! 用户名。' +
+        '请先用 /w osu bind <用户名> 绑定，或提供准确的 osu! 用户名/主页链接。'
+      );
+    }
+    if (resolution.reason === 'group_member_unbound') {
+      throw new Error(
+        `群友“${username}”还没有绑定 osu! 账号，无法确认目标账号。` +
+        '请先让他用 /w osu bind 绑定，或提供准确的 osu! 用户名。'
+      );
+    }
     throw new Error('无法确定要查询的 osu! 用户名。请先使用 /w osu bind 绑定账号，或在指令中指定用户名。');
   }
 
@@ -1484,7 +1749,11 @@ export async function executeInternalBotCommand(
       // osu!oracle BP type analysis. Deterministic tool result so the LLM can
       // never fabricate proportions: it only decides WHEN to call this tool.
       const { runBpTypeAnalysis } = await import('./bpTypeAnalysis.js');
-      const text = await runBpTypeAnalysis(db, String(userId), username);
+      const text = await runBpTypeAnalysis(db, String(userId), username, {
+        nickname: String(context.event?.nickname || ''),
+        atTargets: context.event?.atTargets,
+        groupId: context.groupId,
+      });
       return { content: text };
     }
 

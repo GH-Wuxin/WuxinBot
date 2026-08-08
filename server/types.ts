@@ -215,6 +215,22 @@ export interface CommandLogEntry {
   createdAt: string;
 }
 
+export interface ToolCallLogEntry {
+  id: string;
+  createdAt: string;
+  groupId: string;
+  userId: string;
+  nickname: string;
+  messageId: string;
+  toolCallId: string;
+  capability: string;
+  args: Record<string, unknown>;
+  ok: boolean;
+  error: string;
+  contentLength: number;
+  latencyMs: number;
+}
+
 export interface UsageEvent {
   id: string;
   groupId: string;
@@ -258,6 +274,7 @@ export interface Db {
   messages: MessageRecord[];
   decisions: DecisionRecord[];
   commandLogs: CommandLogEntry[];
+  toolCallLogs: ToolCallLogEntry[];
   adminActions: Record<string, unknown>[];
   usageEvents: UsageEvent[];
   usage: {

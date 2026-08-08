@@ -1,7 +1,13 @@
 // intent-verify.mjs — unit tests for detectRequiredOsuTool intent classifier.
 // Exit 0 on all pass, non-zero on any failure.
 
-const { detectRequiredOsuTool, hasFallbackRecommendIntent, looksLikeRecommendationReply } = await import('../server/bots/intent.ts');
+const {
+  detectRequiredOsuTool,
+  detectBpTypeAnalysisIntent,
+  extractBpTypeUsername,
+  hasFallbackRecommendIntent,
+  looksLikeRecommendationReply,
+} = await import('../server/bots/intent.ts');
 
 let passed = 0;
 let failed = 0;
@@ -157,6 +163,62 @@ expectNull('analysis-3', '怎么提升我的accuracy');
 expectNull('analysis-4', '为什么这张图打不好');
 expectNull('analysis-5', '你觉得我适合打什么图');
 expectNull('analysis-6', '帮我分析一下我的bp分布');
+
+console.log('\n=== BP type analysis intent (must match) ===');
+
+const bpTypeTrue = [
+  '调用osu_oracle检查[SHK]Boring的bp组成',
+  '调用osu_oracle分析Nakanooooo的bp100',
+  '检查box1n的bp组成',
+  '分析我的bp类型',
+  '串图占比如何',
+];
+for (const t of bpTypeTrue) {
+  if (!detectBpTypeAnalysisIntent(t)) {
+    console.error(`FAIL [bp-type-true]: "${t}" → expected true`);
+    failed++;
+  } else {
+    console.log(`PASS [bp-type-true]: "${t}" → true`);
+    passed++;
+  }
+}
+
+const bpTypeFalse = [
+  '查一下我的bp1到bp10',
+  '锐评[SHK]Boring',
+  '你好',
+  '今天天气不错',
+];
+for (const t of bpTypeFalse) {
+  if (detectBpTypeAnalysisIntent(t)) {
+    console.error(`FAIL [bp-type-false]: "${t}" → expected false`);
+    failed++;
+  } else {
+    console.log(`PASS [bp-type-false]: "${t}" → false`);
+    passed++;
+  }
+}
+
+console.log('\n=== BP type username extraction ===');
+
+function expectBpUsername(label, text, expected) {
+  const got = extractBpTypeUsername(text);
+  if (got !== expected) {
+    console.error(`FAIL [${label}]: "${text}" → ${JSON.stringify(got)} (expected ${JSON.stringify(expected)})`);
+    failed++;
+  } else {
+    console.log(`PASS [${label}]: "${text}" → ${JSON.stringify(got)}`);
+    passed++;
+  }
+}
+
+expectBpUsername('bp-user-1', '调用osu_oracle检查[SHK]Boring的bp组成', '[SHK]Boring');
+expectBpUsername('bp-user-2', '调用osu_oracle分析Nakanooooo的bp100', 'Nakanooooo');
+expectBpUsername('bp-user-3', '检查box1n的bp组成', 'box1n');
+expectBpUsername('bp-user-4', '分析我的bp类型', '');
+expectBpUsername('bp-user-5', '串图占比如何', '');
+expectBpUsername('bp-user-6', '调用osu_oracle检查Akari Date的bp组成', 'Akari Date');
+expectBpUsername('bp-user-7', '检查[SHK] Pain boy的bp构成', '[SHK] Pain boy');
 
 console.log(`\n${'='.repeat(40)}`);
 console.log(`Passed: ${passed}, Failed: ${failed}`);
