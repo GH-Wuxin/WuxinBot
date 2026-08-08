@@ -7,6 +7,9 @@ import path from 'node:path';
 import os from 'node:os';
 import crypto from 'node:crypto';
 import { spawnSync } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
+
+const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
 const PRODUCTION_DIR = path.join(
   process.env.APPDATA || path.join(process.env.USERPROFILE || 'C:', 'AppData', 'Roaming'),
@@ -74,8 +77,9 @@ export function verifyProductionDbUnchanged(before) {
 /** True when a Wuxin server process (`server/index.ts`) is currently running. */
 export function isLiveServerProcessRunning() {
   if (process.platform !== 'win32') return false;
+  let cimProbe = null;
   try {
-    const probe = spawnSync(
+    cimProbe = spawnSync(
       'powershell',
       [
         '-NoProfile',
@@ -84,7 +88,28 @@ export function isLiveServerProcessRunning() {
       ],
       { encoding: 'utf8', timeout: 15_000, windowsHide: true },
     );
-    return probe.status === 0 && /LIVE/.test(probe.stdout || '');
+  } catch {
+    cimProbe = null;
+  }
+  if (cimProbe && cimProbe.status === 0) {
+    return /LIVE/.test(cimProbe.stdout || '');
+  }
+  // The sandbox often denies Win32_Process (CIM) queries, so fall back to
+  // node processes rooted inside the repository (the live server runs the
+  // repo's portable node) while excluding this test process itself.
+  try {
+    const selfPid = process.pid;
+    const repoPowerShellLiteral = '"' + REPO_ROOT + '"';
+    const fallbackProbe = spawnSync(
+      'powershell',
+      [
+        '-NoProfile',
+        '-Command',
+        `$self = ${selfPid}; $p = Get-Process node -ErrorAction SilentlyContinue | Where-Object { $_.Id -ne $self -and $_.Path -and $_.Path -like (${repoPowerShellLiteral} + '*') }; if ($p) { 'LIVE' }`,
+      ],
+      { encoding: 'utf8', timeout: 15_000, windowsHide: true },
+    );
+    return fallbackProbe.status === 0 && /LIVE/.test(fallbackProbe.stdout || '');
   } catch {
     return false;
   }
