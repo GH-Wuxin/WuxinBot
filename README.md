@@ -31,8 +31,8 @@ osu! 是目前最完整的垂直能力：绑定账号、完整玩家分析、近
 - 确定性路由 + LLM 决策：`processIncoming` 先走
   `intent.ts` / `quickRouter.ts` / `/w` 指令注册表，能确定处理的绝不交给模型；
   无法确定时才进入 LLM 工具选择。
-- 工具循环：`executor.ts` 维护 capability 注册表与工具调用循环，支持
-  多步调用、失败恢复、异步队列与超时，避免单次回复卡死 60 秒。
+- 工具循环：`executor.ts` 维护有界工具循环（默认最多 5 轮），支持多步
+  工具调用、失败恢复与外部 Bot 响应超时；回复投递由独立队列负责。
 - 推理路由：`reasoningRouter.ts` 按规则决定 `off / high / max` 推理档位，
   全量 shadow telemetry，仅记录结构化信号（不记录用户文本与工具载荷）。
 - 快速失败：LLM 调用失败、超时或工具不可用时走确定性兜底，不静默吞错。
@@ -165,8 +165,10 @@ npm run verify-all # 全部验证脚本（60+ 个场景）
 仓库还包含针对 Agent 行为的回归工具：
 
 - `tools/agent-replay.ts`：回放真实消息轨迹，验证回复与工具调用一致。
-- `tools/agent-counterfactual.ts` 与 `tools/agent-runtime/`：状态化对抗测试，
-  检查多工具调用、失败恢复与确定性路由（C1 / C2 / Phase D）。
+- `tools/agent-counterfactual.ts` 与 `tools/agent-runtime/`：replay / stateful
+  fuzz harness，验证有界执行、终态隔离（final 后不再调用 LLM / 工具 /
+  业务效果）、确定性交付（payload exactly once、required tool exactly once）、
+  工具调用计数、reasoning 单调性、trace 确定性与 harness 隔离等运行时不变量。
 - 运行时保证：JSON 存储原子写入、OneBot 发送双重校验（HTTP 状态 +
   `status/retcode`）、LLM 超时与取消、知识库 fail-closed、命令冷却与
   权限门控全部有对应验证脚本。

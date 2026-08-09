@@ -1,7 +1,7 @@
 {
-  "name": "qq-ai-chatbot",
+  "name": "wuxinbot",
   "version": "1.0.3",
-  "description": "A friendly QQ group chat AI bot with a Chinese GUI control panel.",
+  "description": "An extensible OneBot-based AI agent for QQ group chats, with tool use, memory and osu! workflows.",
   "type": "module",
   "main": "server/index.js",
   "scripts": {
