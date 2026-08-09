@@ -1180,14 +1180,7 @@ function writeToolCallAudit(
  */
 export async function executeToolCall(
   toolCall: LlmToolCall,
-  context: {
-    db: any;
-    userId: string;
-    groupId?: string;
-    sendMessage?: (event: any, text: string, extra?: any) => Promise<any>;
-    event?: any;
-    selfQq?: string;
-  }
+  context: ToolExecutionContext,
 ): Promise<ToolResult> {
   const startedAt = Date.now();
   let result: ToolResult;
@@ -2019,6 +2012,20 @@ export interface RequiredTool {
   args: Record<string, unknown>;
 }
 
+export interface ToolExecutionContext {
+  db: any;
+  userId: string;
+  groupId?: string;
+  sendMessage?: (event: any, text: string, extra?: any) => Promise<any>;
+  event?: any;
+  selfQq?: string;
+}
+
+export type ToolExecutor = (
+  toolCall: LlmToolCall,
+  context: ToolExecutionContext,
+) => Promise<ToolResult>;
+
 export interface ToolLoopOptions {
   db: any;
   messages: Array<{ role: string; content: string; tool_calls?: any[]; tool_call_id?: string }>;
@@ -2048,6 +2055,8 @@ export interface ToolLoopOptions {
   /** Shadow reasoning: per-turn id + router. Recording only; never applied. */
   turnId?: string;
   reasoningRouter?: ReasoningShadowSink;
+  /** Test seam for fully offline replay. Production defaults to executeToolCall. */
+  executeToolCallFn?: ToolExecutor;
 }
 
 export interface ToolLoopResult {
@@ -2085,7 +2094,12 @@ function sanitizeDirectDeliveryContent(content: string): string {
 }
 
 export async function runToolLoop(
-  completeChatFn: (db: any, options: any) => Promise<{ text: string; usage: any; meta?: LlmCompletionMeta }>,
+  completeChatFn: (db: any, options: any) => Promise<{
+    text: string;
+    usage: any;
+    meta?: LlmCompletionMeta;
+    raw?: unknown;
+  }>,
   options: ToolLoopOptions
 ): Promise<ToolLoopResult> {
   const {
@@ -2094,6 +2108,7 @@ export async function runToolLoop(
     maxIterations = 5, temperature, maxTokens, model, label,
     requiredTool, deliverDirectContent = false
   } = options;
+  const executeToolCallFn = options.executeToolCallFn || executeToolCall;
 
   let currentMessages = [...messages];
   let totalUsage = { total_tokens: 0, prompt_tokens: 0, completion_tokens: 0 };
@@ -2141,7 +2156,7 @@ export async function runToolLoop(
       }
     };
 
-    const result = await executeToolCall(syntheticCall, {
+    const result = await executeToolCallFn(syntheticCall, {
       db, userId, groupId, sendMessage, event, selfQq
     });
     if (
@@ -2408,7 +2423,7 @@ export async function runToolLoop(
         }
       }
 
-      const result = await executeToolCall(tc, {
+      const result = await executeToolCallFn(tc, {
         db, userId, groupId, sendMessage, event, selfQq
       });
       lastToolFailed = !result.ok;

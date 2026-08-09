@@ -17,7 +17,11 @@ const failures = [];
 const startedAt = Date.now();
 
 for (const file of files) {
-  const result = spawnSync('npx.cmd', ['tsx', path.join(toolsDir, file)], {
+  // Launch through the current Node runtime instead of the Windows `npx.cmd`
+  // shim. Node 22 returns EINVAL when spawnSync executes that shim with
+  // shell:false; `--import tsx` is cross-platform and keeps every verifier on
+  // the exact same Node binary as this runner.
+  const result = spawnSync(process.execPath, ['--import', 'tsx', path.join(toolsDir, file)], {
     cwd: root,
     stdio: 'inherit',
     shell: false,
