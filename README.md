@@ -52,10 +52,7 @@ osu! 是目前最完整的垂直能力：绑定账号、完整玩家分析、近
   `/w osu recent` 近期成绩短评，支持 std / taiko / catch / mania。
 - 推图：基于真实 top 成绩的实时协同过滤（同分段玩家正在刷的图），
   自然语言筛选（BPM / AR / 星数 / mod）、冷却与 7 天防重复。
-- 观战：`!ml` 多人比赛监听（内部 MatchListener，出图沿用雨沐渲染面板）；
-  `!ra` 系列 rating（桥接雨沐原始 Bot）。
-- 快捷指令：`!p` / `!bp` / `!bs` / `!s <BID>` / `!pp` / `!skill` / `!rec` /
-  `荐图` / `~` / `查 @某人` / `/rd` 等。
+- 快捷指令：支持接入
 
 ### Integrations
 
@@ -67,7 +64,7 @@ osu! 是目前最完整的垂直能力：绑定账号、完整玩家分析、近
   Wuxin 作为第二客户端直连调用，未在线时回退内部实现。
 - **渲染器**：yumu-image WebSocket 渲染谱面卡片与成绩图，不可用时降级文字。
 - **搜索与知识**：可选 SearXNG 真实搜索；可选 BM25 三集合知识库
-  （`wuxin_self` / `osu_domain` / `community_style`，默认关闭）。
+  （`wuxin_self` / `osu_domain` / `community_style`，默认关闭）。提示，该功能可能不稳定
 
 ## Architecture
 
