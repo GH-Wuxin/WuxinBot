@@ -49,8 +49,16 @@ export interface ReplayCompletionMeta {
   latencyMs?: number;
 }
 
+export interface ReplaySettlementPlan {
+  /** Global deterministic logical tick. This is not wall-clock time. */
+  atTick: number;
+  /** Additional attempts to settle the same injected Promise. */
+  duplicateAtTicks?: number[];
+}
+
 export interface ReplayLlmReturnStep {
   outcome: 'return';
+  settlement?: ReplaySettlementPlan;
   expect?: ReplayLlmExpectation;
   text?: string;
   toolCalls?: ReplayLlmToolCall[];
@@ -61,6 +69,7 @@ export interface ReplayLlmReturnStep {
 
 export interface ReplayLlmThrowStep {
   outcome: 'throw';
+  settlement?: ReplaySettlementPlan;
   expect?: ReplayLlmExpectation;
   error?: {
     name?: string;
@@ -79,6 +88,7 @@ export interface ReplayToolExpectation {
 
 export interface ReplayToolReturnStep {
   outcome: 'return';
+  settlement?: ReplaySettlementPlan;
   expect?: ReplayToolExpectation;
   effects?: Array<{
     kind: string;
@@ -90,6 +100,7 @@ export interface ReplayToolReturnStep {
 
 export interface ReplayToolThrowStep {
   outcome: 'throw';
+  settlement?: ReplaySettlementPlan;
   expect?: ReplayToolExpectation;
   error?: {
     name?: string;
@@ -136,6 +147,10 @@ export type ReplayAssertionId =
   | 'ASSERT_DIRECT_CONTENT'
   | 'ASSERT_TEXT'
   | 'ASSERT_RECOMMEND_TOOL_CALLED'
+  | 'ASSERT_SETTLEMENT_ATTEMPTS'
+  | 'ASSERT_ACCEPTED_SETTLEMENTS'
+  | 'ASSERT_CONTROL_KIND'
+  | 'ASSERT_RUNTIME_SETTLED_AFTER_CONTROL'
   | 'ASSERT_SCRIPT_CONSUMPTION'
   | 'ASSERT_SIDECAR_FACTS';
 
@@ -199,6 +214,14 @@ export interface ReplayScenario {
   };
   llmSteps: ReplayLlmStep[];
   toolSteps: ReplayToolStep[];
+  faultProfile?: {
+    id: string;
+    tags: string[];
+    symbolicControl?: {
+      kind: 'abort' | 'timeout';
+      atTick: number;
+    };
+  };
   oracleSidecar?: ReplayOracleSidecar;
   expected: {
     enforced: OracleSpec[];
@@ -245,6 +268,11 @@ export type TraceEventType =
   | 'tool_call'
   | 'tool_result'
   | 'tool_throw'
+  | 'scheduler_tick'
+  | 'settlement_attempt'
+  | 'turn_control'
+  | 'control_suppressed'
+  | 'runtime_settled_after_control'
   | 'final_signal_observed'
   | 'business_effect'
   | 'housekeeping_effect'

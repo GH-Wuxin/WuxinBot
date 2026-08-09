@@ -21,7 +21,9 @@ const INVARIANT_IDS = new Set<RuntimeInvariantId>([
 const ASSERTION_IDS = new Set<ReplayAssertionId>([
   'ASSERT_TERMINAL_KIND', 'ASSERT_LLM_CALL_COUNT', 'ASSERT_TOOL_CALL_COUNT',
   'ASSERT_TOOL_CALLS_MADE', 'ASSERT_ITERATIONS_AT_MOST', 'ASSERT_DIRECT_CONTENT',
-  'ASSERT_TEXT', 'ASSERT_RECOMMEND_TOOL_CALLED', 'ASSERT_SCRIPT_CONSUMPTION',
+  'ASSERT_TEXT', 'ASSERT_RECOMMEND_TOOL_CALLED', 'ASSERT_SETTLEMENT_ATTEMPTS',
+  'ASSERT_ACCEPTED_SETTLEMENTS', 'ASSERT_CONTROL_KIND',
+  'ASSERT_RUNTIME_SETTLED_AFTER_CONTROL', 'ASSERT_SCRIPT_CONSUMPTION',
   'ASSERT_SIDECAR_FACTS',
 ]);
 
@@ -63,6 +65,21 @@ function optionalFiniteNumber(value: unknown, source: string, path: string): voi
   }
 }
 
+function validateSettlement(value: unknown, source: string, path: string): void {
+  if (value === undefined) return;
+  const settlement = objectAt(value, source, path);
+  if (!Number.isInteger(settlement.atTick) || settlement.atTick < 0) {
+    fail(source, `${path}.atTick`, 'expected non-negative integer logical tick');
+  }
+  if (settlement.duplicateAtTicks !== undefined) {
+    arrayAt(settlement.duplicateAtTicks, source, `${path}.duplicateAtTicks`).forEach((tick, index) => {
+      if (!Number.isInteger(tick) || Number(tick) < 0) {
+        fail(source, `${path}.duplicateAtTicks[${index}]`, 'expected non-negative integer logical tick');
+      }
+    });
+  }
+}
+
 function validateOracleList(value: unknown, source: string, path: string, level: 'enforced' | 'candidate'): void {
   arrayAt(value, source, path).forEach((entry, index) => {
     const oracle = objectAt(entry, source, `${path}[${index}]`);
@@ -90,6 +107,7 @@ function validateLlmSteps(value: unknown, source: string): void {
     if (step.outcome !== 'return' && step.outcome !== 'throw') {
       fail(source, `${path}.outcome`, 'expected return or throw');
     }
+    validateSettlement(step.settlement, source, `${path}.settlement`);
     if (step.expect !== undefined) {
       const expect = objectAt(step.expect, source, `${path}.expect`);
       if (expect.exposedTools !== undefined) {
@@ -133,6 +151,7 @@ function validateToolSteps(value: unknown, source: string): void {
     if (step.outcome !== 'return' && step.outcome !== 'throw') {
       fail(source, `${path}.outcome`, 'expected return or throw');
     }
+    validateSettlement(step.settlement, source, `${path}.settlement`);
     if (step.expect !== undefined) {
       const expect = objectAt(step.expect, source, `${path}.expect`);
       if (expect.name !== undefined) stringAt(expect.name, source, `${path}.expect.name`);
@@ -235,6 +254,22 @@ export function parseReplayScenario(value: unknown, source = '<scenario>'): Repl
 
   validateLlmSteps(root.llmSteps, source);
   validateToolSteps(root.toolSteps, source);
+
+  if (root.faultProfile !== undefined) {
+    const profile = objectAt(root.faultProfile, source, '$.faultProfile');
+    stringAt(profile.id, source, '$.faultProfile.id');
+    arrayAt(profile.tags, source, '$.faultProfile.tags')
+      .forEach((tag, index) => stringAt(tag, source, `$.faultProfile.tags[${index}]`));
+    if (profile.symbolicControl !== undefined) {
+      const control = objectAt(profile.symbolicControl, source, '$.faultProfile.symbolicControl');
+      if (control.kind !== 'abort' && control.kind !== 'timeout') {
+        fail(source, '$.faultProfile.symbolicControl.kind', 'expected abort or timeout');
+      }
+      if (!Number.isInteger(control.atTick) || control.atTick < 0) {
+        fail(source, '$.faultProfile.symbolicControl.atTick', 'expected non-negative integer logical tick');
+      }
+    }
+  }
 
   if (root.oracleSidecar !== undefined) {
     const sidecar = objectAt(root.oracleSidecar, source, '$.oracleSidecar');

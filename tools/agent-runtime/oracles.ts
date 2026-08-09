@@ -36,7 +36,7 @@ export const INVARIANT_REGISTRY: Readonly<Record<RuntimeInvariantId, InvariantDe
   RT_EFFECT_IDEMPOTENCY: { id: 'RT_EFFECT_IDEMPOTENCY', level: 'candidate', implemented: true, description: 'Identical business effects occur at most once.' },
   RT_TOOL_THROW_RECOVERY: { id: 'RT_TOOL_THROW_RECOVERY', level: 'candidate', implemented: false, description: 'Candidate for tool throw recovery policy.' },
   RT_TARGET_LOCK: { id: 'RT_TARGET_LOCK', level: 'candidate', implemented: true, description: 'Actor, target and constraints remain locked in observed calls.' },
-  RT_ABORT_NO_LATE_EFFECT: { id: 'RT_ABORT_NO_LATE_EFFECT', level: 'candidate', implemented: false, description: 'Needs the Phase C async scheduler/abort seam.' },
+  RT_ABORT_NO_LATE_EFFECT: { id: 'RT_ABORT_NO_LATE_EFFECT', level: 'candidate', implemented: true, description: 'No new LLM/tool/result/business activity may cross an accepted harness abort/timeout boundary.' },
   RT_MALFORMED_RESULT: { id: 'RT_MALFORMED_RESULT', level: 'candidate', implemented: false, description: 'Candidate malformed-result policy.' },
   LLM_REASONING_EXHAUSTION: { id: 'LLM_REASONING_EXHAUSTION', level: 'candidate', implemented: false, description: 'Needs an injectable completeChat retry transport.' },
   LLM_ATTEMPT_METADATA: { id: 'LLM_ATTEMPT_METADATA', level: 'candidate', implemented: false, description: 'Needs per-attempt completion metadata.' },
@@ -241,6 +241,19 @@ function evaluateInvariant(
       }
       return [true, 'no duplicate business effect'];
     }
+    case 'RT_ABORT_NO_LATE_EFFECT': {
+      const control = trace.events.find((event) => event.type === 'turn_control');
+      if (!control) return [false, 'no accepted abort/timeout control boundary'];
+      const prohibited = new Set([
+        'llm_call', 'llm_result', 'llm_throw',
+        'tool_call', 'tool_result', 'tool_throw', 'final_signal_observed',
+        'business_effect',
+      ]);
+      const late = trace.events.find((event) => event.seq > control.seq && prohibited.has(event.type));
+      return late
+        ? [false, `${late.type} at seq ${late.seq} after ${String((control.data as any).kind)} terminal`]
+        : [true, 'no LLM/tool/result/business activity after abort/timeout terminal'];
+    }
     default:
       return [false, `unimplemented invariant ${id}`];
   }
@@ -263,6 +276,23 @@ function evaluateAssertion(
     case 'ASSERT_DIRECT_CONTENT': return [result?.directContent === value, `directContent=${JSON.stringify(result?.directContent)}`];
     case 'ASSERT_TEXT': return [result?.text === value, `text=${JSON.stringify(result?.text)}`];
     case 'ASSERT_RECOMMEND_TOOL_CALLED': return [result?.recommendToolCalled === value, `recommendToolCalled=${result?.recommendToolCalled}`];
+    case 'ASSERT_SETTLEMENT_ATTEMPTS': {
+      const count = events(trace, 'settlement_attempt').length;
+      return [count === value, `settlementAttempts=${count}`];
+    }
+    case 'ASSERT_ACCEPTED_SETTLEMENTS': {
+      const count = events(trace, 'settlement_attempt')
+        .filter((event) => (event.data as any).accepted === true).length;
+      return [count === value, `acceptedSettlements=${count}`];
+    }
+    case 'ASSERT_CONTROL_KIND': {
+      const kind = (events(trace, 'turn_control')[0]?.data as any)?.kind;
+      return [kind === value, `controlKind=${String(kind || 'none')}`];
+    }
+    case 'ASSERT_RUNTIME_SETTLED_AFTER_CONTROL': {
+      const actual = events(trace, 'runtime_settled_after_control').length > 0;
+      return [actual === value, `runtimeSettledAfterControl=${actual}`];
+    }
     case 'ASSERT_SCRIPT_CONSUMPTION': return [same(consumption, value), `consumption=${normalizedJson(consumption)}`];
     case 'ASSERT_SIDECAR_FACTS': {
       const root = observedRoot(trace, consumption);

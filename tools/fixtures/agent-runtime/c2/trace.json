@@ -1,0 +1,299 @@
+{
+  "events": [
+    {
+      "data": {
+        "dataDir": "<abs_path>",
+        "fetchBlocked": true,
+        "llmInjected": true,
+        "networkBlockScope": "globalThis.fetch",
+        "productionDbBaselineCaptured": true,
+        "tempDataDir": true,
+        "toolExecutorInjected": true
+      },
+      "seq": 0,
+      "type": "harness_isolation"
+    },
+    {
+      "data": {
+        "callIndex": 0,
+        "exposedTools": [
+          "normal_tool"
+        ],
+        "label": "Agent Replay C2.1 [工具循环 1]",
+        "messageCount": 1,
+        "messageRoles": [
+          "user"
+        ],
+        "toolChoice": "auto"
+      },
+      "seq": 1,
+      "type": "llm_call"
+    },
+    {
+      "data": {
+        "callIndex": 0,
+        "finishReason": "tool_calls",
+        "meta": {
+          "completionTokens": 0,
+          "contentEmpty": true,
+          "finishReason": "tool_calls",
+          "hadToolCalls": true,
+          "latencyMs": "<latencyMs>",
+          "model": "offline-scripted",
+          "provider": "offline",
+          "reasoningTokens": 0,
+          "totalTokens": 0
+        },
+        "text": "",
+        "toolCalls": [
+          {
+            "args": {
+              "target": "locked-player"
+            },
+            "id": "tc1",
+            "malformed": false,
+            "name": "normal_tool"
+          }
+        ]
+      },
+      "seq": 2,
+      "type": "llm_result"
+    },
+    {
+      "data": {
+        "actual": {
+          "completionTokens": 0,
+          "contentEmpty": true,
+          "finishReason": "tool_calls",
+          "hadToolCalls": true,
+          "latencyMs": "<latencyMs>",
+          "model": "offline-scripted",
+          "provider": "offline",
+          "reasoningTokens": 0,
+          "totalTokens": 0
+        },
+        "callRole": "tool_planner",
+        "decision": {
+          "mode": "thinking",
+          "reasonCode": "tool_selection",
+          "source": "rule"
+        },
+        "input": {
+          "ambiguousTarget": false,
+          "callRole": "tool_planner",
+          "constraintCount": 0,
+          "hasDirectPayload": false,
+          "iterations": 1,
+          "maxIterations": 3,
+          "previousFastFailure": false,
+          "previousToolFailed": false,
+          "requiredTool": false,
+          "requiresStructuredComparison": false,
+          "terminalFinal": false,
+          "toolCallsMade": 0,
+          "toolSelectionRequired": true,
+          "userCorrection": false
+        }
+      },
+      "seq": 3,
+      "type": "reasoning"
+    },
+    {
+      "data": {
+        "args": {
+          "target": "locked-player"
+        },
+        "callIndex": 0,
+        "context": {
+          "groupId": "c2-group",
+          "userId": "c2-actor"
+        },
+        "malformed": false,
+        "name": "normal_tool",
+        "toolCallId": "tc1"
+      },
+      "seq": 4,
+      "type": "tool_call"
+    },
+    {
+      "data": {
+        "label": "turn-control:abort",
+        "pendingAfterDequeue": 1,
+        "tick": 1
+      },
+      "seq": 5,
+      "type": "scheduler_tick"
+    },
+    {
+      "data": {
+        "abortSignal": true,
+        "kind": "abort",
+        "scope": "harness_outer_turn",
+        "tick": 1
+      },
+      "seq": 6,
+      "type": "turn_control"
+    },
+    {
+      "data": {
+        "label": "tool#0:primary#0",
+        "pendingAfterDequeue": 0,
+        "tick": 4
+      },
+      "seq": 7,
+      "type": "scheduler_tick"
+    },
+    {
+      "data": {
+        "accepted": true,
+        "attempt": "primary",
+        "attemptIndex": 0,
+        "boundary": "tool",
+        "callIndex": 0,
+        "requestedTick": 4
+      },
+      "seq": 8,
+      "type": "settlement_attempt"
+    },
+    {
+      "data": {
+        "data": {
+          "idempotencyKey": "normal-once",
+          "target": "locked-player"
+        },
+        "kind": "destructive_write",
+        "toolCallId": "tc1"
+      },
+      "seq": 9,
+      "type": "business_effect"
+    },
+    {
+      "data": {
+        "callIndex": 0,
+        "content": "result for locked-player",
+        "directContent": null,
+        "error": null,
+        "final": false,
+        "imageCount": 0,
+        "images": [],
+        "metadata": null,
+        "ok": true,
+        "toolCallId": "tc1"
+      },
+      "seq": 10,
+      "type": "tool_result"
+    },
+    {
+      "data": {
+        "callIndex": 1,
+        "exposedTools": [
+          "normal_tool"
+        ],
+        "label": "Agent Replay C2.1 [工具循环 2]",
+        "messageCount": 3,
+        "messageRoles": [
+          "user",
+          "assistant",
+          "tool"
+        ],
+        "toolChoice": "auto"
+      },
+      "seq": 11,
+      "type": "llm_call"
+    },
+    {
+      "data": {
+        "callIndex": 1,
+        "finishReason": "stop",
+        "meta": {
+          "completionTokens": 0,
+          "contentEmpty": false,
+          "finishReason": "stop",
+          "hadToolCalls": false,
+          "latencyMs": "<latencyMs>",
+          "model": "offline-scripted",
+          "provider": "offline",
+          "reasoningTokens": 0,
+          "totalTokens": 0
+        },
+        "text": "normal complete",
+        "toolCalls": []
+      },
+      "seq": 12,
+      "type": "llm_result"
+    },
+    {
+      "data": {
+        "actual": {
+          "completionTokens": 0,
+          "contentEmpty": false,
+          "finishReason": "stop",
+          "hadToolCalls": false,
+          "latencyMs": "<latencyMs>",
+          "model": "offline-scripted",
+          "provider": "offline",
+          "reasoningTokens": 0,
+          "totalTokens": 0
+        },
+        "callRole": "tool_planner",
+        "decision": {
+          "mode": "thinking",
+          "reasonCode": "tool_multi_step",
+          "source": "rule"
+        },
+        "input": {
+          "ambiguousTarget": false,
+          "callRole": "tool_planner",
+          "constraintCount": 0,
+          "hasDirectPayload": false,
+          "iterations": 2,
+          "maxIterations": 3,
+          "previousFastFailure": false,
+          "previousToolFailed": false,
+          "requiredTool": false,
+          "requiresStructuredComparison": false,
+          "terminalFinal": false,
+          "toolCallsMade": 1,
+          "toolSelectionRequired": true,
+          "userCorrection": false
+        }
+      },
+      "seq": 13,
+      "type": "reasoning"
+    },
+    {
+      "data": {
+        "controlKind": "abort",
+        "controlTick": 1,
+        "outcome": "result"
+      },
+      "seq": 14,
+      "type": "runtime_settled_after_control"
+    },
+    {
+      "data": {
+        "error": {
+          "code": "SYMBOLIC_TURN_TERMINAL",
+          "message": "symbolic abort accepted before runtime settlement",
+          "name": "ReplayAbort"
+        },
+        "kind": "error"
+      },
+      "seq": 15,
+      "type": "terminal"
+    }
+  ],
+  "generatorVersion": 1,
+  "scenarioId": "C2_4D1167A3C2FDDD09",
+  "schemaVersion": 1,
+  "seed": 20260811,
+  "terminal": {
+    "error": {
+      "code": "SYMBOLIC_TURN_TERMINAL",
+      "message": "symbolic abort accepted before runtime settlement",
+      "name": "ReplayAbort"
+    },
+    "kind": "error"
+  },
+  "traceVersion": 1
+}
