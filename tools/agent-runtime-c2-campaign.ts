@@ -28,10 +28,19 @@ function parseArgs(args: string[]): { config: C2CampaignConfig; json: boolean } 
     const flag = args[index];
     switch (flag) {
       case '--json': json = true; break;
+      case '--acknowledge-validated-abort-candidate':
+        config.nonGatingCandidateIds = ['RT_ABORT_NO_LATE_EFFECT'];
+        break;
       case '--seed': config.seed = integer(flag, args[++index]); break;
       case '--runs': config.numRuns = positive(flag, args[++index]); break;
       case '--max-commands': config.maxCommands = positive(flag, args[++index]); break;
       case '--hard-limit-ms': config.hardLimitMs = positive(flag, args[++index]); break;
+      case '--path': {
+        const value = args[++index];
+        if (!value) throw new Error(`${flag} requires a fast-check path`);
+        config.path = value;
+        break;
+      }
       case '--artifact-dir': {
         const value = args[++index];
         if (!value) throw new Error(`${flag} requires a path`);
@@ -52,7 +61,10 @@ async function main(): Promise<void> {
     console.log(`AGENT C2.1 CAMPAIGN ${result.status.toUpperCase()}`);
     console.log(`seed=${result.seed} requested=${result.requestedRuns} completed=${result.completedRuns} shrinks=${result.numShrinks}`);
     console.log(`productionDbUnchanged=${result.productionDbUnchanged}`);
+    console.log(`faultProfiles=${JSON.stringify(result.faultProfileCounts)}`);
+    console.log(`nonGatingCandidates=${JSON.stringify(result.nonGatingCandidateCounts)}`);
     if (result.finding) console.log(`finding=${result.finding.kind}/${result.finding.oracleId || 'none'} ${result.finding.detail}`);
+    if (result.generatorReplayPath) console.log(`generatorReplayPath=${result.generatorReplayPath}`);
     if (result.scenarioPath) console.log(`scenario=${path.relative(process.cwd(), result.scenarioPath)}`);
     if (result.tracePath) console.log(`trace=${path.relative(process.cwd(), result.tracePath)}`);
     if (result.fingerprint) console.log(`fingerprint=${result.fingerprint}`);

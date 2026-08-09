@@ -1,0 +1,104 @@
+{
+  "completedRunsBeforeFailure": 3,
+  "consumption": {
+    "llmConsumed": 3,
+    "llmTotal": 3,
+    "toolConsumed": 2,
+    "toolTotal": 2
+  },
+  "counterexamplePath": "2:1",
+  "deterministicReplay": true,
+  "evidenceVersion": 2,
+  "finding": {
+    "detail": "duplicate business effect at seq 11",
+    "kind": "candidate_violation",
+    "oracleId": "RT_EFFECT_IDEMPOTENCY",
+    "provisionalClassification": "needs_manual_review"
+  },
+  "fingerprint": "155ccb693bf272f27fd6b19bffdead0e76dac8aec264243d2f51d7659544248a",
+  "generatorReplayPath": "2",
+  "generatorVersion": 1,
+  "numShrinks": 1,
+  "oracles": [
+    {
+      "detail": "llmCalls=3/4, toolCalls=2",
+      "id": "RT_BOUNDED_LOOP",
+      "kind": "invariant",
+      "level": "enforced",
+      "passed": true
+    },
+    {
+      "detail": "substantive reasoning is monotonic",
+      "id": "RR_MONOTONIC_LOOP",
+      "kind": "invariant",
+      "level": "enforced",
+      "passed": true
+    },
+    {
+      "detail": "temp DATA_DIR, fetch-only tripwire, DB guard and injected dependency boundaries observed",
+      "id": "HARNESS_ISOLATED",
+      "kind": "invariant",
+      "level": "enforced",
+      "passed": true
+    },
+    {
+      "detail": "trace is normalized",
+      "id": "TRACE_DETERMINISTIC",
+      "kind": "invariant",
+      "level": "enforced",
+      "passed": true
+    },
+    {
+      "detail": "terminal=result",
+      "id": "ASSERT_TERMINAL_KIND",
+      "kind": "assertion",
+      "level": "enforced",
+      "passed": true
+    },
+    {
+      "detail": "settlementAttempts=0",
+      "id": "ASSERT_SETTLEMENT_ATTEMPTS",
+      "kind": "assertion",
+      "level": "enforced",
+      "passed": true
+    },
+    {
+      "detail": "acceptedSettlements=0",
+      "id": "ASSERT_ACCEPTED_SETTLEMENTS",
+      "kind": "assertion",
+      "level": "enforced",
+      "passed": true
+    },
+    {
+      "detail": "consumption={\n  \"llmConsumed\": 3,\n  \"llmTotal\": 3,\n  \"toolConsumed\": 2,\n  \"toolTotal\": 2\n}",
+      "id": "ASSERT_SCRIPT_CONSUMPTION",
+      "kind": "assertion",
+      "level": "enforced",
+      "passed": true
+    },
+    {
+      "detail": "reported and observed tool count are 2",
+      "id": "RT_TOOL_COUNT_EXACT",
+      "kind": "invariant",
+      "level": "enforced",
+      "passed": true
+    },
+    {
+      "detail": "duplicate business effect at seq 11",
+      "id": "RT_EFFECT_IDEMPOTENCY",
+      "kind": "invariant",
+      "level": "candidate",
+      "passed": false
+    }
+  ],
+  "requestedRuns": 10000,
+  "scenarioPath": "tools/fixtures/agent-runtime/phase-d/new-finding/c2/scenario.min.json",
+  "scenarioSchemaVersion": 1,
+  "seed": 20260813,
+  "semanticSteps": [
+    "behavior:retry_destructive",
+    "effective:retry_destructive+immediate+none"
+  ],
+  "tracePath": "tools/fixtures/agent-runtime/phase-d/new-finding/c2/trace.json",
+  "traceSchemaVersion": 1
+}
