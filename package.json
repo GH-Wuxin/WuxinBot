@@ -18,7 +18,8 @@
     "verify-all": "node tools/run-all-verifies.mjs",
     "agent:replay": "node --import tsx tools/agent-replay.ts",
     "agent:campaign:c1": "node --import tsx tools/agent-runtime-campaign.ts",
-    "agent:campaign:c2": "node --import tsx tools/agent-runtime-c2-campaign.ts"
+    "agent:campaign:c2": "node --import tsx tools/agent-runtime-c2-campaign.ts",
+    "agent:counterfactual": "node --import tsx tools/agent-counterfactual.ts"
   },
   "keywords": [],
   "author": "",
