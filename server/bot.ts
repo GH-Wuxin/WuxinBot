@@ -17,7 +17,8 @@ import {
 } from './bot/cleaning.js';
 import {
   callLLM,
-  completeChat
+  completeChat,
+  thinkingParamsForLevel
 } from './bot/llm.js';
 import {
   commandRoleLevel,
@@ -46,7 +47,12 @@ import {
   sumUsageSince,
   startOfLocalDayTime
 } from './bot/prompt.js';
-import { createShadowReasoningRouter, decideAndRecord, reasoningInput } from './bot/reasoningRouter.js';
+import {
+  createShadowReasoningRouter,
+  emptyTurnState,
+  reasoningEnabledFor,
+  reasoningInput
+} from './bot/reasoningRouter.js';
 import {
   sanitizeReply,
   sendReplySegments,
@@ -877,12 +883,30 @@ async function processIncomingInner(event, sendMessage = undefined, queuedDecisi
       toolImages = toolResult.images || [];
       toolDirectContent = String(toolResult.directContent || '').trim();
     } else {
+      // Phase 2 v1 context dependency: prior context is a precondition only;
+      // HIGH is triggered solely by existing deterministic signals.
+      const hasPriorContext = messages.filter((m) => m.role !== 'system').length > 1;
+      const contextDependent = hasPriorContext
+        && (looksLikeReplyToBot(event.text) || shouldUseRecentVisionImage(liveDb, event));
+      const convInput = reasoningInput('conversation', { contextDependent });
+      let convTurn = emptyTurnState();
+      const convDecision = reasoningRouter.resolve(convInput, convTurn);
+      convTurn = reasoningRouter.mergeTurn(convTurn, convDecision);
+      const convWire = thinkingParamsForLevel(convDecision.level, reasoningEnabledFor(liveDb));
       ai = await callLLM(liveDb, messages, searchMode, {
         maxTokens: responseOptions.maxTokens,
         overrideModel: responseOptions.overrideModel,
-        visionImages
+        visionImages,
+        ...convWire
       });
-      decideAndRecord(reasoningRouter, turnId, reasoningInput('conversation'), ai?.meta || null);
+      reasoningRouter.record({
+        turnId,
+        ts: Date.now(),
+        callRole: 'conversation',
+        decision: convDecision,
+        input: convInput,
+        actual: ai?.meta || null,
+      });
     }
 
     let replyText = sanitizeReply(ai.text, liveDb.settings);

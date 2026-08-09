@@ -10,10 +10,13 @@ import { enrichScoreStarRatings } from '../osu/starRating.js';
 import type { OsuMode, OsuScore, OsuUser } from '../osu/types.js';
 import { describeFilters, isEmptyFilters } from '../osu/recommendFilters.js';
 import type { RecommendFilters } from '../osu/recommendFilters.js';
+import { thinkingParamsForLevel } from '../bot/llm.js';
 import type { LlmCompletionMeta } from '../bot/llm.js';
-import { reasoningInput } from '../bot/reasoningRouter.js';
+import { emptyTurnState, reasoningEnabledFor, reasoningInput } from '../bot/reasoningRouter.js';
 import type {
   LlmCallRole,
+  ReasoningDecision,
+  ReasoningLevel,
   ReasoningInput,
   ReasoningShadowRecord,
   ReasoningShadowSink,
@@ -2120,16 +2123,27 @@ export async function runToolLoop(
   const collectedDirectContent: string[] = [];
   const turnId = options.turnId || `turn_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
   const reasoningRouter = options.reasoningRouter;
-  let reasoningTurn: ReasoningTurnState = { thinkingTriggered: false, rootReasonCode: null };
+  let reasoningTurn: ReasoningTurnState = emptyTurnState();
   const reasoningRecords: ReasoningShadowRecord[] = [];
-  const recordReasoningCall = (
+  const wireEnabled = reasoningEnabledFor(db);
+  const wireForLevel = (level: ReasoningLevel) => thinkingParamsForLevel(level, wireEnabled);
+  const decideCall = (
+    callRole: LlmCallRole,
+    input: ReasoningInput,
+  ): ReasoningDecision => {
+    const decision = reasoningRouter
+      ? reasoningRouter.resolve(input, reasoningTurn)
+      : { level: 'off', source: 'rule', reasonCode: 'fast_default' } as const;
+    if (reasoningRouter) reasoningTurn = reasoningRouter.mergeTurn(reasoningTurn, decision);
+    return decision;
+  };
+  const recordCall = (
     callRole: LlmCallRole,
     input: ReasoningInput,
     meta: LlmCompletionMeta | null,
+    decision: ReasoningDecision,
   ): void => {
     if (!reasoningRouter) return;
-    const decision = reasoningRouter.resolve(input, reasoningTurn);
-    reasoningTurn = reasoningRouter.mergeTurn(reasoningTurn, decision);
     const record: ReasoningShadowRecord = {
       turnId,
       ts: Date.now(),
@@ -2256,6 +2270,15 @@ export async function runToolLoop(
     }
 
     // LLM turn — tools disabled, only writes a short lead
+    const leadInput = reasoningInput('decorative_lead', {
+      requiredTool: true,
+      toolSelectionRequired: false,
+      toolCallsMade: 1,
+      iterations: 1,
+      maxIterations,
+      hasDirectPayload: true,
+    });
+    const leadDecision = decideCall('decorative_lead', leadInput);
     let leadResponse;
     try {
       leadResponse = await completeChatFn(db, {
@@ -2263,6 +2286,7 @@ export async function runToolLoop(
         temperature,
         maxTokens,
         model,
+        ...wireForLevel(leadDecision.level),
         label: label ? `${label} [required lead]` : undefined
       });
     } catch {
@@ -2278,18 +2302,7 @@ export async function runToolLoop(
       };
     }
 
-    recordReasoningCall(
-      'decorative_lead',
-      reasoningInput('decorative_lead', {
-        requiredTool: true,
-        toolSelectionRequired: false,
-        toolCallsMade: 1,
-        iterations: 1,
-        maxIterations,
-        hasDirectPayload: true,
-      }),
-      leadResponse?.meta || null,
-    );
+    recordCall('decorative_lead', leadInput, leadResponse?.meta || null, leadDecision);
 
     if (leadResponse.usage) {
       totalUsage.total_tokens += leadResponse.usage.total_tokens || 0;
@@ -2312,6 +2325,18 @@ export async function runToolLoop(
     iterations++;
     const hasDirectPayload = collectedDirectContent.length > 0 || collectedImages.length > 0;
 
+    const plannerInput = reasoningInput(hasDirectPayload ? 'decorative_lead' : 'tool_planner', {
+      requiredTool: false,
+      toolSelectionRequired: !hasDirectPayload && Array.isArray(tools) && tools.length > 0,
+      toolCallsMade,
+      iterations,
+      maxIterations,
+      hasDirectPayload,
+      previousToolFailed: lastToolFailed,
+    });
+    const plannerDecision = decideCall(plannerInput.callRole, plannerInput);
+    const plannerWire = wireForLevel(plannerDecision.level);
+    const thinkingOn = plannerWire.thinking?.type === 'enabled';
     let response;
     try {
       response = await completeChatFn(db, {
@@ -2320,7 +2345,10 @@ export async function runToolLoop(
         // turn is only a cosmetic lead, so tools must be disabled or some
         // providers will issue the same query_bot call again.
         tools: hasDirectPayload ? undefined : tools,
-        tool_choice: hasDirectPayload ? undefined : 'auto',
+        // Contract A: with tools present, auto is already the default, so
+        // omit tool_choice on thinking calls; keep explicit auto on fast calls.
+        tool_choice: hasDirectPayload || thinkingOn ? undefined : 'auto',
+        ...plannerWire,
         temperature,
         maxTokens,
         model,
@@ -2346,19 +2374,7 @@ export async function runToolLoop(
       throw error;
     }
 
-    recordReasoningCall(
-      hasDirectPayload ? 'decorative_lead' : 'tool_planner',
-      reasoningInput(hasDirectPayload ? 'decorative_lead' : 'tool_planner', {
-        requiredTool: false,
-        toolSelectionRequired: !hasDirectPayload && Array.isArray(tools) && tools.length > 0,
-        toolCallsMade,
-        iterations,
-        maxIterations,
-        hasDirectPayload,
-        previousToolFailed: lastToolFailed,
-      }),
-      response?.meta || null,
-    );
+    recordCall(plannerInput.callRole, plannerInput, response?.meta || null, plannerDecision);
 
     // Merge usage
     if (response.usage) {
@@ -2407,7 +2423,12 @@ export async function runToolLoop(
     currentMessages.push({
       role: 'assistant',
       content: message.content || '',
-      tool_calls: toolCalls
+      tool_calls: toolCalls,
+      // DeepSeek thinking contract: preserve reasoning_content on the
+      // assistant tool_calls message so the next tool-result round carries it.
+      ...(typeof message.reasoning_content === 'string' && message.reasoning_content
+        ? { reasoning_content: message.reasoning_content }
+        : {})
     });
 
     // Execute each tool call
@@ -2537,12 +2558,23 @@ export async function runToolLoop(
     content: finalPrompt
   });
 
+  const synthesisInput = reasoningInput('tool_synthesis', {
+    requiredTool: false,
+    toolSelectionRequired: false,
+    toolCallsMade,
+    iterations,
+    maxIterations,
+    hasDirectPayload: collectedDirectContent.length > 0 || collectedImages.length > 0,
+    previousToolFailed: lastToolFailed,
+  });
+  const synthesisDecision = decideCall('tool_synthesis', synthesisInput);
   let finalResponse;
   try {
     finalResponse = await completeChatFn(db, {
       messages: currentMessages,
       // Deliberately omit tools after the cap. A prompt alone cannot guarantee
       // that a tool-capable model will stop emitting calls.
+      ...wireForLevel(synthesisDecision.level),
       temperature,
       maxTokens,
       model,
@@ -2563,19 +2595,7 @@ export async function runToolLoop(
     throw error;
   }
 
-  recordReasoningCall(
-    'tool_synthesis',
-    reasoningInput('tool_synthesis', {
-      requiredTool: false,
-      toolSelectionRequired: false,
-      toolCallsMade,
-      iterations,
-      maxIterations,
-      hasDirectPayload: collectedDirectContent.length > 0 || collectedImages.length > 0,
-      previousToolFailed: lastToolFailed,
-    }),
-    finalResponse?.meta || null,
-  );
+  recordCall('tool_synthesis', synthesisInput, finalResponse?.meta || null, synthesisDecision);
 
   if (finalResponse.usage) {
     totalUsage.total_tokens += finalResponse.usage.total_tokens || 0;

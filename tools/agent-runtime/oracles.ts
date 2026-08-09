@@ -222,12 +222,15 @@ function evaluateInvariant(
       return [true, `target, actor and ${constraints.length} constraints locked`];
     }
     case 'RR_MONOTONIC_LOOP': {
-      let thinking = false;
+      const RANK = { off: 0, high: 1, max: 2 };
+      let maxRank = 0;
       for (const event of events(trace, 'reasoning')) {
         const data = event.data as any;
         if (data.callRole === 'decorative_lead') continue;
-        if (data.decision?.mode === 'thinking') thinking = true;
-        if (thinking && data.decision?.mode === 'fast') return [false, `fast downgrade at seq ${event.seq}`];
+        const level = String(data.decision?.level || 'off');
+        const rank = RANK[level] ?? 0;
+        if (rank > maxRank) maxRank = rank;
+        if (rank < maxRank) return [false, `${level} downgrade at seq ${event.seq}`];
       }
       return [true, 'substantive reasoning is monotonic'];
     }

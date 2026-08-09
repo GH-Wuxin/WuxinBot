@@ -71,6 +71,17 @@ export function isReasoningBudgetExhaustion(meta) {
   );
 }
 
+/**
+ * Translate a ReasoningLevel into DeepSeek wire params. OFF disables thinking
+ * and never sends reasoning_effort; HIGH/MAX enable thinking with the matching
+ * effort level. `enabled=false` (kill switch) always produces the OFF shape.
+ */
+export function thinkingParamsForLevel(level, enabled = true) {
+  if (!enabled || level === 'off') return { thinking: { type: 'disabled' } };
+  if (level === 'max') return { thinking: { type: 'enabled' }, reasoning_effort: 'max' };
+  return { thinking: { type: 'enabled' }, reasoning_effort: 'high' };
+}
+
 export function llmProvider(db) {
   const provider = String(db.settings.llmProvider || 'deepseek').trim() || 'deepseek';
   const baseUrl = String(db.settings.apiBaseUrl || '').trim();
@@ -178,7 +189,13 @@ export function normalizeLlmMessages(messages = []) {
           }
           return part;
         })
-      : toWellFormedText(message.content)
+      : toWellFormedText(message.content),
+    // DeepSeek thinking assistant messages with tool_calls must carry their
+    // reasoning_content into the following tool-result round. Explicitly
+    // preserve it rather than relying on the spread above.
+    ...(typeof message.reasoning_content === 'string'
+      ? { reasoning_content: toWellFormedText(message.reasoning_content) }
+      : {})
   }));
 }
 
@@ -341,16 +358,25 @@ export async function completeChat(db, options = {}) {
   const params = {
     model: requestModelForProvider(resolvedDb, provider, baseURL, { ...options, model: requestedModel }),
     messages,
-    temperature: Number(options.temperature ?? settings.temperature ?? 0.85),
-    max_tokens: Number(options.maxTokens || settings.maxTokens || 420)
+    temperature: Number(options.temperature ?? settings.temperature ?? 0.85)
   };
 
   // deepseek-v4-flash defaults to thinking on this API and can burn the whole
   // token budget on reasoning_content (returning empty chat content), which
   // doubled latency via retries and produced silent empty replies. Chat
   // replies do not need hidden reasoning; disable it explicitly.
+  const thinkingEnabled = provider === 'deepseek'
+    && ['enabled', 'high', 'max'].includes(String(options.thinking?.type || ''));
   if (provider === 'deepseek') {
     params.thinking = options.thinking || { type: 'disabled' };
+    if (options.reasoning_effort) {
+      params.reasoning_effort = options.reasoning_effort;
+    }
+  }
+  // Thinking requests must not be capped by the chat-default max_tokens; the
+  // reasoning content itself needs budget, so keep the provider's own limit.
+  if (!thinkingEnabled) {
+    params.max_tokens = Number(options.maxTokens || settings.maxTokens || 420);
   }
 
   // Tool calling support (OpenAI function-calling format)
@@ -407,6 +433,24 @@ export async function completeChat(db, options = {}) {
   };
 
   const retryAfterEmpty = async (first) => {
+    const firstMeta = buildLlmCompletionMeta(first.raw, {
+      model: params.model,
+      provider,
+      latencyMs: 0,
+    });
+    if (isReasoningBudgetExhaustion(firstMeta)) {
+      // Thinking consumed the whole output budget. Retry once with tools
+      // intact and no max_tokens cap; never route through the tools-dropping
+      // empty-reply retry below.
+      const retryParams = { ...params };
+      delete retryParams.max_tokens;
+      const second = await runCompletion(retryParams);
+      return {
+        text: second.text,
+        usage: mergeUsage(first.usage, second.usage),
+        raw: second.raw
+      };
+    }
     if (first.text || (first.raw?.choices?.[0]?.message?.tool_calls?.length > 0)) return first;
     const retryParams = { ...params };
     if (searchMode && supportsProviderSearch(provider)) {

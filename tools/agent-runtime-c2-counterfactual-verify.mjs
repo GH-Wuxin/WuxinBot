@@ -92,8 +92,8 @@ try {
     assert.equal(golden.variants.thinking.target, 'player-one');
     assert.equal(golden.variants.fast.terminalState.kind, 'result');
     assert.equal(golden.variants.thinking.terminalState.kind, 'result');
-    assert(golden.variants.fast.reasoningDecisions.every((entry) => entry.mode === 'fast'));
-    assert(golden.variants.thinking.reasoningDecisions.every((entry) => entry.mode === 'thinking'));
+    assert(golden.variants.fast.reasoningDecisions.every((entry) => entry.level === 'off'));
+    assert(golden.variants.thinking.reasoningDecisions.every((entry) => entry.level === 'max'));
     assert.deepEqual(golden.variants.fast.simulatedTokens, {
       prompt: 170, completion: 60, total: 230, reasoning: 0,
     });

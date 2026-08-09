@@ -1,5 +1,5 @@
 {
-  "completedRunsBeforeFailure": 3,
+  "completedRunsBeforeFailure": 1,
   "consumption": {
     "llmConsumed": 3,
     "llmTotal": 3,
@@ -15,7 +15,7 @@
     "oracleId": "RT_EFFECT_IDEMPOTENCY",
     "provisionalClassification": "needs_manual_review"
   },
-  "fingerprint": "155ccb693bf272f27fd6b19bffdead0e76dac8aec264243d2f51d7659544248a",
+  "fingerprint": "c963f0936d85a721a3da21b523b9b541a6713bcd640263a21f90b413b2eaefa0",
   "generatorReplayPath": "2",
   "generatorVersion": 1,
   "numShrinks": 1,

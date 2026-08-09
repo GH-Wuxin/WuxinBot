@@ -1,7 +1,9 @@
 // reasoning-router-verify.mjs
-// Phase 1 Shadow Reasoning Router regression. Fully OFFLINE:
-//   - pure resolver matrix (roles x features -> mode/source/reasonCode)
-//   - monotonic turn-level inheritance (planner thinking -> synthesis inherit
+// Phase 2 v1 Reasoning Router regression. Fully OFFLINE:
+//   - pure resolver matrix (roles x features -> level/source/reasonCode)
+//   - OFF/HIGH/MAX wire mapping via thinkingParamsForLevel
+//   - kill switch semantics via reasoningEnabledFor
+//   - monotonic turn-level inheritance (planner max -> synthesis inherits
 //     with the ORIGINAL root reason code; never reasonCode 'inherit')
 //   - decorative lead / direct-delivery exceptions never inherit
 //   - LlmCompletionMeta extraction degrades safely on missing/malformed raw
@@ -22,8 +24,9 @@ const {
   formatShadowRecord,
   reasoningInput,
   emptyTurnState,
+  reasoningEnabledFor,
 } = await import(pathToFileURL(path.join(REPO, 'server', 'bot', 'reasoningRouter.ts')).href);
-const { buildLlmCompletionMeta, isReasoningBudgetExhaustion } =
+const { buildLlmCompletionMeta, isReasoningBudgetExhaustion, thinkingParamsForLevel } =
   await import(pathToFileURL(path.join(REPO, 'server', 'bot', 'llm.ts')).href);
 const { runToolLoop } = await import(pathToFileURL(path.join(REPO, 'server', 'bots', 'executor.ts')).href);
 
@@ -45,8 +48,9 @@ function eq(actual, expected, label) {
   assert(JSON.stringify(actual) === JSON.stringify(expected), label, `expected ${JSON.stringify(expected)}, got ${JSON.stringify(actual)}`);
 }
 
-const FAST = 'fast';
-const THINKING = 'thinking';
+const OFF = 'off';
+const HIGH = 'high';
+const MAX = 'max';
 
 // ── 1. Resolver matrix ──
 {
@@ -54,43 +58,50 @@ const THINKING = 'thinking';
   const d = (callRole, partial = {}, turn = emptyTurnState()) =>
     resolveReasoningMode(reasoningInput(callRole, partial), turn);
 
-  eq(d('decorative_lead', { hasDirectPayload: true }, { thinkingTriggered: true, rootReasonCode: 'tool_selection' }),
-    { mode: FAST, source: 'rule', reasonCode: 'direct_delivery' }, `${label}:decorative-lead-never-inherit`);
-  eq(d('conversation'), { mode: FAST, source: 'rule', reasonCode: 'simple_chat' }, `${label}:conversation-fast`);
-  eq(d('rewrite'), { mode: FAST, source: 'rule', reasonCode: 'fast_default' }, `${label}:rewrite-fast`);
+  eq(d('decorative_lead', { hasDirectPayload: true }, { maxLevel: MAX, rootReasonCode: 'tool_selection' }),
+    { level: OFF, source: 'rule', reasonCode: 'direct_delivery' }, `${label}:decorative-lead-never-inherit`);
+  eq(d('conversation'), { level: OFF, source: 'rule', reasonCode: 'simple_chat' }, `${label}:conversation-off`);
+  eq(d('conversation', { contextDependent: true }),
+    { level: HIGH, source: 'rule', reasonCode: 'context_dependency' }, `${label}:conversation-context-high`);
+  eq(d('rewrite'), { level: OFF, source: 'rule', reasonCode: 'fast_default' }, `${label}:rewrite-off`);
   eq(d('rewrite', { previousFastFailure: true }),
-    { mode: THINKING, source: 'escalation', reasonCode: 'fast_failure_escalation' }, `${label}:rewrite-escalation`);
+    { level: MAX, source: 'escalation', reasonCode: 'fast_failure_escalation' }, `${label}:rewrite-escalation`);
 
-  eq(d('tool_planner', { requiredTool: true }), { mode: FAST, source: 'rule', reasonCode: 'deterministic_tool' }, `${label}:planner-required-tool`);
-  eq(d('tool_planner', { terminalFinal: true }), { mode: FAST, source: 'rule', reasonCode: 'deterministic_tool' }, `${label}:planner-terminal`);
-  eq(d('tool_planner', { hasDirectPayload: true }), { mode: FAST, source: 'rule', reasonCode: 'direct_delivery' }, `${label}:planner-direct`);
-  eq(d('tool_planner', { previousToolFailed: true }), { mode: THINKING, source: 'rule', reasonCode: 'tool_failure_recovery' }, `${label}:planner-failure-recovery`);
-  eq(d('tool_planner', { ambiguousTarget: true }), { mode: THINKING, source: 'rule', reasonCode: 'tool_ambiguity' }, `${label}:planner-ambiguity`);
+  eq(d('tool_planner', { requiredTool: true }), { level: OFF, source: 'rule', reasonCode: 'deterministic_tool' }, `${label}:planner-required-tool`);
+  eq(d('tool_planner', { terminalFinal: true }), { level: OFF, source: 'rule', reasonCode: 'deterministic_tool' }, `${label}:planner-terminal`);
+  eq(d('tool_planner', { hasDirectPayload: true }), { level: OFF, source: 'rule', reasonCode: 'direct_delivery' }, `${label}:planner-direct`);
+  eq(d('tool_planner', { previousToolFailed: true }), { level: MAX, source: 'rule', reasonCode: 'tool_failure_recovery' }, `${label}:planner-failure-recovery`);
+  eq(d('tool_planner', { ambiguousTarget: true }), { level: MAX, source: 'rule', reasonCode: 'tool_ambiguity' }, `${label}:planner-ambiguity`);
   eq(d('tool_planner', { toolCallsMade: 2, iterations: 3, toolSelectionRequired: true }),
-    { mode: THINKING, source: 'rule', reasonCode: 'tool_multi_step' }, `${label}:planner-multi-step`);
-  eq(d('tool_planner', { toolSelectionRequired: true }), { mode: THINKING, source: 'rule', reasonCode: 'tool_selection' }, `${label}:planner-selection`);
-  eq(d('tool_planner'), { mode: FAST, source: 'rule', reasonCode: 'fast_default' }, `${label}:planner-fast-default`);
+    { level: MAX, source: 'rule', reasonCode: 'tool_multi_step' }, `${label}:planner-multi-step`);
+  eq(d('tool_planner', { toolSelectionRequired: true }), { level: MAX, source: 'rule', reasonCode: 'tool_selection' }, `${label}:planner-selection`);
+  eq(d('tool_planner', { contextDependent: true }), { level: HIGH, source: 'rule', reasonCode: 'context_dependency' }, `${label}:planner-context-high`);
+  eq(d('tool_planner', { contextDependent: true, toolSelectionRequired: true }),
+    { level: MAX, source: 'rule', reasonCode: 'tool_selection' }, `${label}:planner-high-plus-selection-max`);
+  eq(d('tool_planner'), { level: OFF, source: 'rule', reasonCode: 'fast_default' }, `${label}:planner-off-default`);
 
-  eq(d('tool_synthesis', { hasDirectPayload: true }, { thinkingTriggered: true, rootReasonCode: 'tool_selection' }),
-    { mode: FAST, source: 'rule', reasonCode: 'direct_delivery' }, `${label}:synthesis-direct-exception`);
-  eq(d('tool_synthesis', {}, { thinkingTriggered: true, rootReasonCode: 'tool_selection' }),
-    { mode: THINKING, source: 'inherit', reasonCode: 'tool_selection' }, `${label}:synthesis-inherits-root`);
+  eq(d('tool_synthesis', { hasDirectPayload: true }, { maxLevel: MAX, rootReasonCode: 'tool_selection' }),
+    { level: OFF, source: 'rule', reasonCode: 'direct_delivery' }, `${label}:synthesis-direct-exception`);
+  eq(d('tool_synthesis', {}, { maxLevel: HIGH, rootReasonCode: 'context_dependency' }),
+    { level: HIGH, source: 'inherit', reasonCode: 'context_dependency' }, `${label}:synthesis-inherits-high-root`);
+  eq(d('tool_synthesis', {}, { maxLevel: MAX, rootReasonCode: 'tool_selection' }),
+    { level: MAX, source: 'inherit', reasonCode: 'tool_selection' }, `${label}:synthesis-inherits-max-root`);
   eq(d('tool_synthesis', { requiresStructuredComparison: true }),
-    { mode: THINKING, source: 'rule', reasonCode: 'structured_fact_compare' }, `${label}:synthesis-structured-compare`);
-  eq(d('tool_synthesis'), { mode: FAST, source: 'rule', reasonCode: 'fast_default' }, `${label}:synthesis-fast-default`);
+    { level: MAX, source: 'rule', reasonCode: 'structured_fact_compare' }, `${label}:synthesis-structured-compare`);
+  eq(d('tool_synthesis'), { level: OFF, source: 'rule', reasonCode: 'fast_default' }, `${label}:synthesis-off-default`);
 }
 
 // ── 2. Monotonic turn state ──
 {
   const label = 'turn-state';
   let turn = emptyTurnState();
-  turn = mergeTurnState(turn, { mode: THINKING, source: 'rule', reasonCode: 'tool_selection' });
-  eq(turn, { thinkingTriggered: true, rootReasonCode: 'tool_selection' }, `${label}:triggered`);
-  turn = mergeTurnState(turn, { mode: THINKING, source: 'rule', reasonCode: 'tool_failure_recovery' });
-  eq(turn, { thinkingTriggered: true, rootReasonCode: 'tool_selection' }, `${label}:first-root-wins`);
-  turn = mergeTurnState(turn, { mode: FAST, source: 'rule', reasonCode: 'direct_delivery' });
-  eq(turn, { thinkingTriggered: true, rootReasonCode: 'tool_selection' }, `${label}:fast-never-clears`);
-  eq(mergeTurnState(emptyTurnState(), { mode: FAST, source: 'rule', reasonCode: 'fast_default' }),
+  turn = mergeTurnState(turn, { level: HIGH, source: 'rule', reasonCode: 'context_dependency' });
+  eq(turn, { maxLevel: HIGH, rootReasonCode: 'context_dependency' }, `${label}:high-triggered`);
+  turn = mergeTurnState(turn, { level: MAX, source: 'rule', reasonCode: 'tool_selection' });
+  eq(turn, { maxLevel: MAX, rootReasonCode: 'context_dependency' }, `${label}:max-upgrade-keeps-root`);
+  turn = mergeTurnState(turn, { level: OFF, source: 'rule', reasonCode: 'direct_delivery' });
+  eq(turn, { maxLevel: MAX, rootReasonCode: 'context_dependency' }, `${label}:off-never-clears`);
+  eq(mergeTurnState(emptyTurnState(), { level: OFF, source: 'rule', reasonCode: 'fast_default' }),
     emptyTurnState(), `${label}:untouched`);
 }
 
@@ -134,16 +145,44 @@ const THINKING = 'thinking';
   assert(!isReasoningBudgetExhaustion(meta('length', 50, true, true)), `${label}:tool-calls-not-exhaustion`, 'tool calls present');
 }
 
-// ── 5. decideAndRecord: structured input only ──
+// ── 5. Wire mapping + kill switch ──
+{
+  const label = 'wire';
+  eq(thinkingParamsForLevel(OFF, true), { thinking: { type: 'disabled' } }, `${label}:off`);
+  eq(thinkingParamsForLevel(HIGH, true), { thinking: { type: 'enabled' }, reasoning_effort: 'high' }, `${label}:high`);
+  eq(thinkingParamsForLevel(MAX, true), { thinking: { type: 'enabled' }, reasoning_effort: 'max' }, `${label}:max`);
+  eq(thinkingParamsForLevel(MAX, false), { thinking: { type: 'disabled' } }, `${label}:kill-switch-forces-off`);
+}
+{
+  const label = 'kill-switch';
+  const original = process.env.REASONING_ENABLED;
+  try {
+    delete process.env.REASONING_ENABLED;
+    assert(reasoningEnabledFor({ settings: { reasoningEnabled: true } }), `${label}:settings-on-env-unset`, 'should be true');
+    assert(!reasoningEnabledFor({ settings: { reasoningEnabled: false } }), `${label}:settings-off`, 'should be false');
+    assert(!reasoningEnabledFor({ settings: {} }), `${label}:missing-settings`, 'should be false');
+    process.env.REASONING_ENABLED = 'false';
+    assert(!reasoningEnabledFor({ settings: { reasoningEnabled: true } }), `${label}:env-false-veto`, 'should be false');
+    process.env.REASONING_ENABLED = '0';
+    assert(!reasoningEnabledFor({ settings: { reasoningEnabled: true } }), `${label}:env-0-veto`, 'should be false');
+    process.env.REASONING_ENABLED = 'true';
+    assert(reasoningEnabledFor({ settings: { reasoningEnabled: true } }), `${label}:env-true-allows`, 'should be true');
+  } finally {
+    if (original === undefined) delete process.env.REASONING_ENABLED;
+    else process.env.REASONING_ENABLED = original;
+  }
+}
+
+// ── 6. decideAndRecord: structured input only ──
 {
   const label = 'record';
   const router = createShadowReasoningRouter();
   const meta = buildLlmCompletionMeta({ choices: [{ message: { content: 'ok' }, finish_reason: 'stop' }] }, {});
-  const input = reasoningInput('conversation', { constraintCount: 2 });
+  const input = reasoningInput('conversation', { contextDependent: true });
   const { decision } = decideAndRecord(router, 'turn-1', input, meta);
   const records = router.snapshot();
   assert(records.length === 1, `${label}:recorded`, `expected 1, got ${records.length}`);
-  eq(decision, { mode: FAST, source: 'rule', reasonCode: 'simple_chat' }, `${label}:decision`);
+  eq(decision, { level: HIGH, source: 'rule', reasonCode: 'context_dependency' }, `${label}:decision`);
   eq(records[0].turnId, 'turn-1', `${label}:turn-id`);
   eq(records[0].actual, meta, `${label}:actual`);
   const keys = Object.keys(records[0].input);
@@ -154,15 +193,15 @@ const THINKING = 'thinking';
   const line = formatShadowRecord(records[0]);
   const parsed = JSON.parse(line);
   eq(Object.keys(parsed).join(','),
-    'ts,turnId,callRole,shadowMode,source,reasonCode,actualModel,finishReason,reasoningTokens,completionTokens,totalTokens,latencyMs,toolCalls,textEmpty',
+    'ts,turnId,callRole,level,source,reasonCode,actualModel,finishReason,reasoningTokens,completionTokens,totalTokens,latencyMs,toolCalls,textEmpty',
     `${label}:format-keys`);
   eq(parsed.turnId, 'turn-1', `${label}:format-turn-id`);
   eq(parsed.callRole, 'conversation', `${label}:format-role`);
-  eq(parsed.shadowMode, 'fast', `${label}:format-mode`);
+  eq(parsed.level, 'high', `${label}:format-level`);
   eq(parsed.textEmpty, false, `${label}:format-text-empty`);
 }
 
-// ── 6. runToolLoop integration ──
+// ── 7. runToolLoop integration ──
 const fakeToolSchema = [{
   type: 'function',
   function: { name: 'fake_tool', description: 'fake', parameters: { type: 'object', properties: {}, required: [] } },
@@ -196,7 +235,7 @@ const metaFor = (content, toolCalls, finishReason) =>
   const records = router.snapshot();
   assert(records.length === 1, `${label}:count`, `expected 1, got ${records.length}`);
   eq(records[0].callRole, 'tool_planner', `${label}:role`);
-  eq(records[0].decision, { mode: THINKING, source: 'rule', reasonCode: 'tool_selection' }, `${label}:decision`);
+  eq(records[0].decision, { level: MAX, source: 'rule', reasonCode: 'tool_selection' }, `${label}:decision`);
 }
 
 {
@@ -235,9 +274,9 @@ const metaFor = (content, toolCalls, finishReason) =>
   const records = router.snapshot();
   assert(records.length === 5, `${label}:count`, `expected 5 (4 planner + 1 synthesis), got ${records.length}`);
   eq(records.map((r) => r.callRole), ['tool_planner', 'tool_planner', 'tool_planner', 'tool_planner', 'tool_synthesis'], `${label}:roles`);
-  eq(records[0].decision, { mode: THINKING, source: 'rule', reasonCode: 'tool_selection' }, `${label}:first-planner`);
-  eq(records[1].decision, { mode: THINKING, source: 'rule', reasonCode: 'tool_failure_recovery' }, `${label}:second-planner`);
-  eq(records[4].decision, { mode: THINKING, source: 'inherit', reasonCode: 'tool_selection' }, `${label}:synthesis-inherit-root`);
+  eq(records[0].decision, { level: MAX, source: 'rule', reasonCode: 'tool_selection' }, `${label}:first-planner`);
+  eq(records[1].decision, { level: MAX, source: 'rule', reasonCode: 'tool_failure_recovery' }, `${label}:second-planner`);
+  eq(records[4].decision, { level: MAX, source: 'inherit', reasonCode: 'tool_selection' }, `${label}:synthesis-inherit-root`);
 }
 
 console.log(`\nREASONING-ROUTER-VERIFY: passed=${passed} failed=${failed}`);
