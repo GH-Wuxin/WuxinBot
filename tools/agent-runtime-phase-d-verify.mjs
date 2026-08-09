@@ -125,11 +125,11 @@ try {
       .digest('hex');
     const evidence = JSON.parse(await fs.readFile(phaseDEvidencePath, 'utf8'));
     assert.equal(evidence.requestedRuns, 10_000);
-    assert.equal(evidence.completedRunsBeforeFailure, 3);
+    assert.equal(evidence.completedRunsBeforeFailure, 1);
     assert.equal(evidence.counterexamplePath, '2:1');
     assert.equal(evidence.generatorReplayPath, '2');
     assert.equal(fingerprint, evidence.fingerprint);
-    assert.equal(fingerprint, '155ccb693bf272f27fd6b19bffdead0e76dac8aec264243d2f51d7659544248a');
+    assert.equal(fingerprint, 'c963f0936d85a721a3da21b523b9b541a6713bcd640263a21f90b413b2eaefa0');
   });
 
   await check('normalized evidence contains no volatile timestamp/path/UUID/port fields', async () => {

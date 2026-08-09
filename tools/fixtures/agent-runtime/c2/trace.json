@@ -74,7 +74,7 @@
         },
         "callRole": "tool_planner",
         "decision": {
-          "mode": "thinking",
+          "level": "max",
           "reasonCode": "tool_selection",
           "source": "rule"
         },
@@ -82,6 +82,7 @@
           "ambiguousTarget": false,
           "callRole": "tool_planner",
           "constraintCount": 0,
+          "contextDependent": false,
           "hasDirectPayload": false,
           "iterations": 1,
           "maxIterations": 3,
@@ -237,7 +238,7 @@
         },
         "callRole": "tool_planner",
         "decision": {
-          "mode": "thinking",
+          "level": "max",
           "reasonCode": "tool_multi_step",
           "source": "rule"
         },
@@ -245,6 +246,7 @@
           "ambiguousTarget": false,
           "callRole": "tool_planner",
           "constraintCount": 0,
+          "contextDependent": false,
           "hasDirectPayload": false,
           "iterations": 2,
           "maxIterations": 3,

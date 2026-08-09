@@ -299,6 +299,7 @@ const initialDb = {
     searchMaxResults: 5,
     searchTimeoutMs: 8000,
     enableAutoModel: true,
+    reasoningEnabled: false,
     llmReplyGateMaxPerHour: 0,
     llmReplyGateNaturalThreshold: 45,
     llmReplyGateLightThreshold: 70,

@@ -66,6 +66,8 @@ export interface DbSettings {
   enableWebSearch: boolean;
   webSearchMode: 'fast' | 'balanced' | 'deep';
   enableAutoModel: boolean;
+  /** Phase 2 v1 master switch; env REASONING_ENABLED=false|0 is a hard veto. */
+  reasoningEnabled: boolean;
   llmReplyGateMaxPerHour?: number;
   llmReplyGateNaturalThreshold?: number;
   llmReplyGateLightThreshold?: number;

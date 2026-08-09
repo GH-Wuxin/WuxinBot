@@ -13,7 +13,8 @@ import {
   type ReplayScenario,
   type ReplayToolStep,
 } from './types.js';
-import type { ReasoningMode } from '../../server/bot/reasoningRouter.js';
+/** Fixture variant labels (fast/thinking) — distinct from router levels. */
+type ReasoningMode = 'fast' | 'thinking';
 
 export const COUNTERFACTUAL_SCHEMA_VERSION = 1 as const;
 
@@ -58,7 +59,7 @@ export interface CounterfactualVariantSummary {
   };
   reasoningDecisions: Array<{
     callRole: string;
-    mode: string;
+    level: string;
     source: string;
     reasonCode: string;
   }>;
@@ -191,7 +192,7 @@ function summarize(
     terminalState,
     reasoningDecisions: reasoningEvents.map((event) => ({
       callRole: String((event.data as any).callRole || ''),
-      mode: String((event.data as any).decision?.mode || ''),
+      level: String((event.data as any).decision?.level || ''),
       source: String((event.data as any).decision?.source || ''),
       reasonCode: String((event.data as any).decision?.reasonCode || ''),
     })),

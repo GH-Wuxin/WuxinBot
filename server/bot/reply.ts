@@ -1,9 +1,9 @@
 // @ts-nocheck -- legacy runtime module; new typed modules remain checked by tsc.
 // Reply output: sanitization, segmentation, merged-forward, rewrite guard.
 // Extracted from bot.ts.
-import { completeChat } from './llm.js';
+import { completeChat, thinkingParamsForLevel } from './llm.js';
 import { modelSupportsVision } from './prompt.js';
-import { decideAndRecord, reasoningInput } from './reasoningRouter.js';
+import { emptyTurnState, reasoningEnabledFor, reasoningInput } from './reasoningRouter.js';
 
 export function sanitizeReply(text, settings) {
   let cleaned = String(text || '').trim();
@@ -133,6 +133,13 @@ export function neutralIdentityReply(event, settings = {}) {
 
 export async function rewriteNormalReply(db, originalText, event, options = {}) {
   const { reasoningRouter, turnId } = options;
+  const rewriteInput = reasoningInput('rewrite', { previousFastFailure: true });
+  let rewriteTurn = emptyTurnState();
+  const rewriteDecision = reasoningRouter
+    ? reasoningRouter.resolve(rewriteInput, rewriteTurn)
+    : { level: 'off', source: 'rule', reasonCode: 'fast_default' };
+  if (reasoningRouter) rewriteTurn = reasoningRouter.mergeTurn(rewriteTurn, rewriteDecision);
+  const rewriteWire = thinkingParamsForLevel(rewriteDecision.level, reasoningEnabledFor(db));
   const response = await completeChat(db, {
     model: db.settings.model || 'deepseek-v4-flash',
     messages: [
@@ -159,15 +166,18 @@ export async function rewriteNormalReply(db, originalText, event, options = {}) 
     ],
     temperature: 0.25,
     maxTokens: 180,
+    ...rewriteWire,
     label: '回复改写'
   });
   if (reasoningRouter && turnId) {
-    decideAndRecord(
-      reasoningRouter,
+    reasoningRouter.record({
       turnId,
-      reasoningInput('rewrite', { previousFastFailure: true }),
-      response?.meta || null,
-    );
+      ts: Date.now(),
+      callRole: 'rewrite',
+      decision: rewriteDecision,
+      input: rewriteInput,
+      actual: response?.meta || null,
+    });
   }
   return {
     text: response.text || originalText,

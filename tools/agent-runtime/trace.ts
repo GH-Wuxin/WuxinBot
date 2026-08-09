@@ -174,7 +174,7 @@ function compactData(event: ReplayTraceEvent): string {
     case 'harness_isolation':
       return `harness_isolation fetchBlocked=${Boolean(d.fetchBlocked)} llmInjected=${Boolean(d.llmInjected)} toolExecutorInjected=${Boolean(d.toolExecutorInjected)}`;
     case 'reasoning':
-      return `reasoning ${d.callRole} -> ${d.decision?.mode}/${d.decision?.reasonCode}`;
+      return `reasoning ${d.callRole} -> ${d.decision?.level}/${d.decision?.reasonCode}`;
     case 'adapter_error':
       return `adapter_error ${d.message || ''}`;
     case 'terminal':

@@ -356,7 +356,7 @@ try {
     assert.deepEqual(llmCalls[1].data.exposedTools, []);
     const reasoning = result.trace.events.filter((event) => event.type === 'reasoning');
     assert.deepEqual(reasoning.map((event) => event.data.callRole), ['tool_planner', 'decorative_lead']);
-    assert.deepEqual(reasoning.map((event) => event.data.decision.mode), ['thinking', 'fast']);
+    assert.deepEqual(reasoning.map((event) => event.data.decision.level), ['max', 'off']);
     const directResults = result.trace.events.filter(
       (event) => event.type === 'tool_result' && String(event.data.directContent || '').length > 0,
     );

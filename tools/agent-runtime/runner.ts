@@ -1,5 +1,5 @@
 import { createShadowReasoningRouter } from '../../server/bot/reasoningRouter.js';
-import type { ReasoningMode, ReasoningShadowSink } from '../../server/bot/reasoningRouter.js';
+import type { ReasoningLevel, ReasoningShadowSink } from '../../server/bot/reasoningRouter.js';
 import { createScriptedAdapters } from './adapters.js';
 import { assertReplayIsolation } from './isolation.js';
 import { evaluateOracles } from './oracles.js';
@@ -56,8 +56,16 @@ function usesSymbolicSettlement(scenario: ReplayScenario): boolean {
 
 export interface ReplayExecutionOptions {
   /** Harness-only Shadow decision override. It never reaches completeChat. */
-  scriptedReasoningMode?: ReasoningMode;
+  scriptedReasoningMode?: 'fast' | 'thinking' | ReasoningLevel;
 }
+
+const SCRIPTED_LEVEL: Record<string, ReasoningLevel> = {
+  fast: 'off',
+  thinking: 'max',
+  off: 'off',
+  high: 'high',
+  max: 'max',
+};
 
 export async function replayScenario(
   scenario: ReplayScenario,
@@ -79,12 +87,15 @@ export async function replayScenario(
     : undefined;
   const adapters = createScriptedAdapters(scenario, recorder, scheduler);
   const baseRouter = createShadowReasoningRouter(2_000, () => {});
+  const scriptedLevel = execution.scriptedReasoningMode
+    ? SCRIPTED_LEVEL[execution.scriptedReasoningMode]
+    : undefined;
   const reasoningRouter: ReasoningShadowSink = {
-    resolve: (input, turn) => execution.scriptedReasoningMode
+    resolve: (input, turn) => scriptedLevel
       ? {
-          mode: execution.scriptedReasoningMode,
+          level: scriptedLevel,
           source: 'rule',
-          reasonCode: execution.scriptedReasoningMode === 'fast' ? 'fast_default' : 'structured_fact_compare',
+          reasonCode: scriptedLevel === 'off' ? 'fast_default' : 'structured_fact_compare',
         }
       : baseRouter.resolve(input, turn),
     mergeTurn: (turn, decision) => baseRouter.mergeTurn(turn, decision),
