@@ -1,82 +1,111 @@
-# WuxinBot — osu! 社区 QQ 群聊机器人（pippi）
+# WuxinBot
 
-WuxinBot 是一个本地运行的 Windows QQ 群聊 AI 机器人。它的外显人格是
-**pippi**——一个懂 osu!、活泼自信的少女。项目通过 NapCat / OneBot v11
-接入 QQ，连接 DeepSeek（或任意 OpenAI 兼容接口）与 osu! API v2，
-既能自然聊天，也能查成绩、分析玩家、推荐谱面、观战比赛。
+> 面向 QQ 群聊的可扩展 AI Agent，基于 OneBot，集成工具调用、长期记忆、
+> osu! 工作流与外部 Bot 能力。
 
-## 功能亮点
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](./LICENSE)
+[![Node](https://img.shields.io/badge/Node.js-20%2B-339933?logo=node.js&logoColor=white)](https://nodejs.org)
+[![TypeScript](https://img.shields.io/badge/TypeScript-6-3178C6?logo=typescript&logoColor=white)](./tsconfig.json)
 
-### osu! 原生能力
+![控制台](docs/screenshot.png)
 
-- **玩家分析**：`/w osu analyze` 输出完整分析（BP、PP+、技能维度与结论），
-  `/w osu recent` 对比近期成绩给出短评；支持 std / taiko / catch / mania。
-- **推图推荐**：基于玩家真实 top 成绩做实时协同过滤——找到同分段玩家正在刷的图，
-  再按难度窗口与 mod 偏好排序；支持自然语言筛选（BPM、AR、星数、mod），
-  自动冷却与 7 天防重复。
-- **比赛观战与 rating**：`!ml` 监听多人比赛并推送开局与回合成绩（出图沿用
-  雨沐的 yumu-image 面板）；`!ra` 系列 rating 桥接雨沐原始 Bot。
-- **快捷指令生态**：兼容社区熟悉的 `!p` / `!bp` / `!bs` / `!s <BID>` / `!pp` /
-  `!skill` / `!rec` / `荐图` / `~` / `查 @某人` / `/rd` 等指令，统一绑定
-  QQ 与 osu! 账号。
+## WuxinBot 是什么
 
-### 自然群聊
+WuxinBot 不是一个单纯的 LLM 聊天壳。它以 QQ 群聊为主要的交互环境，
+每条消息都会经过确定性的路由与决策层：先判断是自然聊天、管理指令还是
+osu! 查询，再决定是否进入工具循环。模型可以调用真实工具（osu! API、
+玩家分析、推图推荐、比赛监听、外部 Bot、搜索引擎），而不是凭记忆编造数据。
 
-- 每个群独立回复模式：静默、仅 @、轻度参与、自然群友。
-- 长期记忆：个人画像、群聊氛围画像、群友关系画像，自动更新并可在 GUI 管理。
-- 无上限的 pp 制等级：N 级 = N×100pp；`/w lv`、`/w top` 查看，升级时由
-  pippi 生成个性化祝贺。
-- 自定义称呼与交互风格（`/w nick`、`/w style`）、自动模型切换、
-  SearXNG 联网搜索、思考状态提示、场景预设。
+它的外显人格是 pippi——一个懂 osu!、活泼自信的少女。人格由
+`persona.ts` / `prompt.ts` 构建，与记忆、群上下文、成员策略共同决定
+每次回复，而不是把「人设」硬塞进每条消息。
 
-### 管理与运维
+osu! 是目前最完整的垂直能力：绑定账号、完整玩家分析、近期成绩短评、
+基于真实 top 成绩的协同过滤推图、多人比赛观战，以及一批兼容社区习惯的
+快捷指令。除此之外，它同样适合作为通用群聊机器人运行。
 
-- 成员策略：管理员、信任成员、重点关注、少回应、黑名单。
-- 群参数：回复频率上限、发言冷却、暂停 / 恢复、人设编辑与基线保存。
-- 决策沙盒：不发真实 QQ 消息即可测试机器人是否会回复、为什么回复。
-- `/w why` 解释最近一次回复或未回复的原因。
-- 自动备份（每 8 小时）与 GUI 手动备份 / 恢复。
+## 核心能力
 
-### 控制台 GUI
+### Agent Runtime
 
-React + Vite + Express 的中文控制台，包含总览、群聊、成员、记忆、关系、
-画像日志、osu、模型、权限等页面，可在浏览器中完成全部配置。
+- 确定性路由 + LLM 决策：`processIncoming` 先走
+  `intent.ts` / `quickRouter.ts` / `/w` 指令注册表，能确定处理的绝不交给模型；
+  无法确定时才进入 LLM 工具选择。
+- 工具循环：`executor.ts` 维护 capability 注册表与工具调用循环，支持
+  多步调用、失败恢复、异步队列与超时，避免单次回复卡死 60 秒。
+- 推理路由：`reasoningRouter.ts` 按规则决定 `off / high / max` 推理档位，
+  全量 shadow telemetry，仅记录结构化信号（不记录用户文本与工具载荷）。
+- 快速失败：LLM 调用失败、超时或工具不可用时走确定性兜底，不静默吞错。
 
-## 架构
+### 群聊与记忆
 
-```text
-QQ 群消息
-  → NapCat / OneBot v11（HTTP + WebSocket）
-  → server/onebot.ts → server/bot.ts（意图识别 / 路由 / 记忆 / 人设）
-  → LLM（DeepSeek / OpenAI 兼容接口）
-  → 回复：直接发送，或经 yumu-image 渲染成图片
+- 回复决策：每群独立模式（静默 / 仅 @ / 轻度参与 / 自然群友）、成员策略
+  （管理员 / 信任 / 重点 / 少回应 / 黑名单）、频率上限与冷却、FIFO 回复队列。
+- 长期记忆：个人画像 V3（证据账本制）、群聊氛围画像、群友关系画像与自动信任分，
+  全部可审计（`profileLog.ts`）、可重算、可在 GUI 管理。
+- 经验等级：无上限 pp 制（N 级 = N×100pp），`/w lv` / `/w top` / 自定义称呼
+  与交互风格，升级由 pippi 生成个性化祝贺。
+- 可观测：`/w why` 解释最近为什么回复或没回复；决策沙盒无需真实 QQ 消息即可测试。
 
-可选：Yumu / Kanon / Hydrant / LazyBot
-  → 各自 OneBot WebSocket server
-  → Wuxin 作为第二客户端直连调用（server/bots/localBridge.ts）
+### osu!
 
-React 控制台 GUI ← Vite :5173 ← Express :8787 ← server/store.ts → %APPDATA%\Wuxin\db.json
+- 绑定：`/w osu bind <用户名>` 统一绑定，快捷指令共享同一账号。
+- 分析：`/w osu analyze` 完整玩家分析（BP、PP+、技能维度与结论），
+  `/w osu recent` 近期成绩短评，支持 std / taiko / catch / mania。
+- 推图：基于真实 top 成绩的实时协同过滤（同分段玩家正在刷的图），
+  自然语言筛选（BPM / AR / 星数 / mod）、冷却与 7 天防重复。
+- 观战：`!ml` 多人比赛监听（内部 MatchListener，出图沿用雨沐渲染面板）；
+  `!ra` 系列 rating（桥接雨沐原始 Bot）。
+- 快捷指令：`!p` / `!bp` / `!bs` / `!s <BID>` / `!pp` / `!skill` / `!rec` /
+  `荐图` / `~` / `查 @某人` / `/rd` 等。
+
+### Integrations
+
+- **OneBot v11**：NapCat（或其他兼容客户端）经 HTTP / WebSocket 接入，
+  支持直接消息与合并转发。
+- **LLM**：DeepSeek 或任意 OpenAI 兼容接口，可运行时切换供应商与模型，
+  复杂任务自动升级更强模型。
+- **外部 Bot 桥接**：Yumu / Kanon / Hydrant / LazyBot 各自运行 OneBot WS，
+  Wuxin 作为第二客户端直连调用，未在线时回退内部实现。
+- **渲染器**：yumu-image WebSocket 渲染谱面卡片与成绩图，不可用时降级文字。
+- **搜索与知识**：可选 SearXNG 真实搜索；可选 BM25 三集合知识库
+  （`wuxin_self` / `osu_domain` / `community_style`，默认关闭）。
+
+## Architecture
+
+```mermaid
+flowchart LR
+    QQ["QQ 群 / 私聊"] --> NAP["NapCat / OneBot v11"]
+    NAP -->|"WS :3001 / HTTP :3000"| ONEBOT["server/onebot.ts"]
+    ONEBOT --> PROC["processIncoming<br/>确定性路由"]
+    PROC -->|"指令 / 快捷指令"| ROUTE["intent.ts / quickRouter.ts<br/>/w 指令 / ! 指令"]
+    PROC -->|"自然聊天"| DECIDE["decideReply<br/>gate / 群模式 / 成员策略 / 队列"]
+    DECIDE --> LLM["LLM（llm.ts）<br/>DeepSeek / OpenAI 兼容"]
+    LLM -->|"tool_calls"| EXEC["工具循环（executor.ts）<br/>capability registry"]
+    EXEC --> OSU["osu! 引擎<br/>analyzer / recommender / match"]
+    EXEC --> BOTS["外部 Bot<br/>Yumu / Kanon / Hydrant / LazyBot"]
+    EXEC --> EXT["SearXNG / 知识库"]
+    OSU --> RENDER["yumu-image 渲染<br/>renderServer.ts"]
+    LLM -->|"最终回复"| SEND["sendOneBotMessage"]
+    RENDER --> SEND
+    SEND --> NAP
+    DB[("store.ts<br/>%APPDATA%/Wuxin/db.json")]
+    PROC --> DB
+    DECIDE --> DB
+    EXEC --> DB
+    GUI["React 控制台 :5173"] --> API["Express :8787 /api"]
+    API --> DB
 ```
 
-## 快速开始
+## Quick Start
 
-### 环境要求
-
-- Windows（Node.js 20+，推荐 22；代码已规避 Node 20.11 的并发连接崩溃问题）
-- [NapCat](https://github.com/NapNeko/NapCatQQ) 或其他兼容 OneBot v11 的客户端
-- DeepSeek API Key（或任意 OpenAI 兼容供应商的 API Key）
-
-### 1. 安装
+环境要求：Windows、Node.js 20+（推荐 22）、[NapCat](https://github.com/NapNeko/NapCatQQ)
+或其他 OneBot v11 客户端、DeepSeek（或 OpenAI 兼容）API Key。
 
 ```bash
 git clone https://github.com/GH-Wuxin/WuxinBot.git
 cd WuxinBot
 npm install
-```
-
-### 2. 配置 .env
-
-```bash
 copy .env.example .env
 ```
 
@@ -86,100 +115,74 @@ copy .env.example .env
 LLM_PROVIDER=deepseek
 LLM_API_KEY=你的Key
 ADMIN_PASSWORD=控制台密码
-OSU_CLIENT_ID=你的osu客户端ID
-OSU_CLIENT_SECRET=你的osu客户端Secret
 ```
 
-完整环境变量见 `.env.example`，外部 Bot 桥接与渲染器配置见
-[docs/EXTERNAL_INTEGRATION.md](docs/EXTERNAL_INTEGRATION.md)。
-
-### 3. 接入 QQ
-
-1. 安装 NapCat 并登录机器人 QQ 小号。
-2. 运行 `tools/enable-napcat-local-onebot.ps1` 写入本机 OneBot 配置
-   （HTTP `127.0.0.1:3000`、WebSocket `127.0.0.1:3001`）。
-3. 双击 `启动Wuxin.bat`（或 `npm run dev`），打开控制台
-   <http://127.0.0.1:5173>。
-4. 在「QQ连接」页填写 HTTP / WebSocket 地址、你的 QQ（owner）与 bot QQ，
-   保存并连接。
-
-### 4. 可选：osu! API
-
-在 osu! 官网 OAuth 页面创建应用，填入 `OSU_CLIENT_ID` 与
-`OSU_CLIENT_SECRET`，即可使用 analyze / recent / recommend / match 等功能。
-
-## 指令
-
-管理指令使用 `/w` 前缀（也支持 `/wuxin`），在群内发送 `/w help` 可查看
-分组帮助与当前权限可用的指令。
-
-| 分类 | 常用指令 |
-| --- | --- |
-| 系统 | `/w ping` `/w why` `/w my` `/w summarize` `/w help` |
-| osu! | `/w osu bind <用户名>` `/w osu analyze` `/w osu recent` `/w osu clear` `/w osu help` |
-| 等级 / 画像 | `/w lv` `/w top` `/w nick` `/w style` `/w me` |
-| 群管理 | `/w mode` `/w op` `/w ban` `/w trust` `/w focus` `/w quiet` `/w rate` `/w cooldown` `/w preset` `/w prompt` `/w pause` |
-
-同时兼容社区熟悉的快捷指令（按原 Bot 风格路由，可走内部实现或桥接原始 Bot）：
-
-```text
-!p / !pr     最近成绩
-!bp / !bs    BP（支持名次 / 范围）
-!s <BID>     按谱面查成绩
-!pp           PP+ 面板
-!skill        技能雷达
-!ml           比赛观战（雨沐渲染）
-!ra           系列 rating（桥接雨沐）
-!rec / 荐图   推图推荐
-~ / 查 @某人   osu! 信息卡
-/rd           谱面难度推荐
-```
-
-## 配置
-
-- **数据位置**：默认 `%APPDATA%\Wuxin\db.json`，可用 `DATA_DIR` 环境变量覆盖。
-- **模型**：`.env` 中配置 `LLM_PROVIDER` / `LLM_API_KEY` / `LLM_API_BASE_URL` /
-  `LLM_MODEL`，控制台「模型」页可运行时切换。
-- **安全**：设置 `ADMIN_PASSWORD` 后，所有本地管理 API 均需认证。
-- **知识库**：默认关闭（`KB_ENABLED=false`），设计文档见
-  [docs/KNOWLEDGE_BASE_V41.md](docs/KNOWLEDGE_BASE_V41.md)。
-
-## 开发与测试
+启动：
 
 ```bash
-npm run dev        # 开发模式（后端 tsx watch + 前端 Vite）
-npm run build      # 构建前端
+npm run dev
+```
+
+打开 <http://127.0.0.1:5173>，在「QQ连接」页填入 HTTP / WebSocket 地址、
+你的 QQ（owner）与 bot QQ，保存并连接。或先运行
+`tools/enable-napcat-local-onebot.ps1` 写入本机 OneBot 配置，再双击
+`启动Wuxin.bat`。
+
+## Optional Integrations
+
+- **osu! API**：在 osu! 官网 OAuth 页面创建应用，配置 `OSU_CLIENT_ID` /
+  `OSU_CLIENT_SECRET`，启用 analyze / recent / recommend / match。
+- **SearXNG**：配置本地 SearXNG 地址后，模型基于搜索结果回答，未配置时
+  明确拒绝搜索请求。
+- **Yumu / Kanon / Hydrant / LazyBot**：`BOTS_ROOT` 指向外部 Bot 部署目录，
+  通过 `localBridge.ts` 直连调用；详见
+  [docs/EXTERNAL_INTEGRATION.md](docs/EXTERNAL_INTEGRATION.md)。
+- **yumu-image 渲染器**：配置 `YUMU_NODE` / `YUMU_DIR` 后启用图片输出，
+  不可用时自动降级文字。
+- **知识库（KB）**：`KB_ENABLED=false` 为启动级硬开关，默认关闭；设计见
+  [docs/KNOWLEDGE_BASE_V41.md](docs/KNOWLEDGE_BASE_V41.md)。
+
+## Configuration
+
+完整环境变量见 [.env.example](.env.example)。关键项：
+
+- `LLM_PROVIDER` / `LLM_API_KEY` / `LLM_API_BASE_URL` / `LLM_MODEL`：模型供应商。
+- `ADMIN_PASSWORD`：设置后所有本地管理 API 均需认证。
+- `DATA_DIR`：数据目录，默认 `%APPDATA%\Wuxin\db.json`。
+- `OSU_CLIENT_ID` / `OSU_CLIENT_SECRET`：osu! API v2 client credentials。
+- `BOTS_ROOT` / `YUMU_NODE` / `YUMU_DIR`：外部 Bot 与渲染器路径。
+
+## Testing & Runtime Guarantees
+
+```bash
 npm run typecheck  # TypeScript 类型检查
 npm run check      # 类型检查 + 构建 + 基础 / 安全验证
 npm run sanity     # 基础集成测试
-npm run verify-all # 运行全部验证脚本
+npm run security   # 安全验证
+npm run verify-all # 全部验证脚本（60+ 个场景）
 ```
 
-仓库包含大量针对核心链路的验证脚本（意图识别、快捷路由、osu! 数据、
-推荐引擎、队列、备份、知识库等），改动后建议运行 `npm run check` 与
-`npm run verify-all`。
+仓库还包含针对 Agent 行为的回归工具：
 
-## 常见问题
+- `tools/agent-replay.ts`：回放真实消息轨迹，验证回复与工具调用一致。
+- `tools/agent-counterfactual.ts` 与 `tools/agent-runtime/`：状态化对抗测试，
+  检查多工具调用、失败恢复与确定性路由（C1 / C2 / Phase D）。
+- 运行时保证：JSON 存储原子写入、OneBot 发送双重校验（HTTP 状态 +
+  `status/retcode`）、LLM 超时与取消、知识库 fail-closed、命令冷却与
+  权限门控全部有对应验证脚本。
 
-- **Node 版本**：启动代码已规避 Node 20.11 的 happy-eyeballs 并发崩溃；
-  若仍遇到问题，建议使用 Node 22。`启动Wuxin.bat` 会优先使用
-  `portable-node`（若存在）。
-- **发图失败**：图片渲染依赖 yumu-image；确认 `YUMU_NODE` / `YUMU_DIR`
-  配置且渲染器已启动，未配置时自动降级为文字回复。
-- **知识库未生效**：`KB_ENABLED=false` 是启动级硬开关，数据库总开关
-  也需开启；两者都满足才会注入知识。
-- **数据目录**：非测试模式要求 `DATA_DIR` 指向明确目录，多实例请勿
-  共用同一数据文件。
+## Documentation
 
-## 许可与致谢
+- [docs/EXTERNAL_INTEGRATION.md](docs/EXTERNAL_INTEGRATION.md) — OneBot /
+  LLM / osu! / 外部 Bot 桥接 / 渲染器部署指南
+- [docs/KNOWLEDGE_BASE_V41.md](docs/KNOWLEDGE_BASE_V41.md) — 知识库架构与开关
+- [CHANGELOG.md](CHANGELOG.md) — 更新日志
 
-- WuxinBot 主体代码采用 MIT License，见 [LICENSE](./LICENSE)。
+## License & Third-party Software
+
+- WuxinBot 主体代码：MIT License，见 [LICENSE](./LICENSE)。
 - `server/osu/matchRating.ts` 与 `server/osu/match.ts` 派生自
   [yumu-bot/yumu-bot](https://github.com/yumu-bot/yumu-bot)（Apache-2.0），
   来源 commit、修改说明与许可证全文见
   [THIRD_PARTY_NOTICES.md](./THIRD_PARTY_NOTICES.md) 与
   [LICENSE.yumu-bot](./LICENSE.yumu-bot)。
-
-> 本项目是 AI 辅助开发实验项目：代码主要由 AI 工具生成、修改和重构，
-> 人工负责需求设计、功能测试、问题反馈与最终整合。可能存在代码风格
-> 不统一等问题，欢迎 issue 与 PR。
