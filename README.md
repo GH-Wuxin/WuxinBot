@@ -7,8 +7,6 @@
 [![Node](https://img.shields.io/badge/Node.js-20%2B-339933?logo=node.js&logoColor=white)](https://nodejs.org)
 [![TypeScript](https://img.shields.io/badge/TypeScript-6-3178C6?logo=typescript&logoColor=white)](./tsconfig.json)
 
-![控制台](docs/screenshot.png)
-
 ## WuxinBot 是什么
 
 WuxinBot 不是一个单纯的 LLM 聊天壳。它以 QQ 群聊为主要的交互环境，
