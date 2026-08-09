@@ -71,17 +71,11 @@ export function classifyReplayResult(result: ReplayRunResult): CampaignFinding |
   }
   const candidate = firstFailed(result.oracles, 'candidate');
   if (!candidate) return null;
-  const toolCountEvidence = candidate.id === 'RT_TOOL_COUNT_EXACT' &&
-    result.trace.terminal.kind === 'result' &&
-    result.trace.events.filter((event) => event.type === 'tool_call').length !==
-      result.trace.terminal.result.toolCallsMade;
   return {
     kind: 'candidate_violation',
     oracleId: String(candidate.id),
     detail: candidate.detail,
-    provisionalClassification: toolCountEvidence
-      ? 'provisional_real_production_candidate'
-      : 'needs_manual_review',
+    provisionalClassification: 'needs_manual_review',
   };
 }
 

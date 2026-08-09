@@ -1,5 +1,4 @@
-// Contract characterization only. This verifier intentionally preserves the
-// known violation; it does not repair runToolLoop accounting.
+// Enforced regression for executor-boundary toolCallsMade accounting.
 import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 import path from 'node:path';
@@ -35,6 +34,8 @@ async function replayTwice(replayScenario, scenario) {
 const source = await readFixture('scenario.min.json');
 const safeControl = await readFixture('counterfactual-safe-result.json');
 const requiredUnsafeControl = await readFixture('counterfactual-required-unsafe.json');
+const multiTool = await readFixture('regression-multi-tool.json');
+const toolThrow = await readFixture('regression-tool-throw.json');
 
 // The safe control is derived from the sole reproduction source. Its executor
 // call, arguments and business-effect script are identical; only the returned
@@ -53,6 +54,8 @@ try {
   const sourceResult = await replayTwice(replayScenario, source);
   const safeResult = await replayTwice(replayScenario, safeControl);
   const requiredUnsafeResult = await replayTwice(replayScenario, requiredUnsafeControl);
+  const multiToolResult = await replayTwice(replayScenario, multiTool);
+  const toolThrowResult = await replayTwice(replayScenario, toolThrow);
 
   for (const result of [sourceResult, safeResult, requiredUnsafeResult]) {
     assert.equal(eventCount(result, 'tool_call'), 1, `${result.scenario.id}: executor invocation`);
@@ -62,21 +65,35 @@ try {
     assert.equal(result.consumption.toolTotal, 1, `${result.scenario.id}: tool script total`);
   }
 
-  assert.equal(sourceResult.trace.terminal.result.toolCallsMade, 0);
-  assert.equal(exactOracle(sourceResult)?.passed, false);
-  assert.match(exactOracle(sourceResult)?.detail || '', /reported 0, observed 1/);
+  for (const result of [sourceResult, safeResult, requiredUnsafeResult]) {
+    assert.equal(result.trace.terminal.kind, 'result');
+    assert.equal(result.trace.terminal.result.toolCallsMade, 1);
+    assert.equal(exactOracle(result)?.level, 'enforced');
+    assert.equal(exactOracle(result)?.passed, true, exactOracle(result)?.detail);
+  }
 
-  assert.equal(safeResult.trace.terminal.result.toolCallsMade, 1);
-  assert.equal(exactOracle(safeResult)?.passed, true);
+  assert.equal(eventCount(multiToolResult, 'tool_call'), 2);
+  assert.equal(eventCount(multiToolResult, 'tool_result'), 2);
+  assert.equal(multiToolResult.trace.terminal.kind, 'result');
+  assert.equal(multiToolResult.trace.terminal.result.toolCallsMade, 2);
+  assert.equal(exactOracle(multiToolResult)?.level, 'enforced');
+  assert.equal(exactOracle(multiToolResult)?.passed, true, exactOracle(multiToolResult)?.detail);
+  const failedResult = multiToolResult.trace.events.find(
+    (event) => event.type === 'tool_result' && event.data.ok === false,
+  );
+  assert(failedResult, 'ok=false ToolResult must remain observable and counted');
 
-  // The same unsafe result is counted on requiredTool, disproving a global
-  // "only safe/accepted results count" interpretation of the field.
-  assert.equal(requiredUnsafeResult.trace.terminal.result.toolCallsMade, 1);
-  assert.equal(exactOracle(requiredUnsafeResult)?.passed, true);
+  // Existing throw semantics stay unchanged: the executor invocation is
+  // observed, runToolLoop rejects, and no ToolLoopResult count exists.
+  assert.equal(eventCount(toolThrowResult, 'tool_call'), 1);
+  assert.equal(eventCount(toolThrowResult, 'tool_throw'), 1);
+  assert.equal(eventCount(toolThrowResult, 'tool_result'), 0);
+  assert.equal(toolThrowResult.trace.terminal.kind, 'error');
+  assert.equal(exactOracle(toolThrowResult), undefined);
 
   assert.equal(await isolation.assertProductionDbUnchanged(), true);
 } finally {
   await isolation.restore();
 }
 
-console.log('AGENT TOOL COUNT CONTRACT: KNOWN VIOLATION CONFIRMED (productionDbUnchanged=true)');
+console.log('AGENT TOOL COUNT CONTRACT: FIXED + ENFORCED REGRESSION (productionDbUnchanged=true)');

@@ -119,6 +119,10 @@
         "id": "TRACE_DETERMINISTIC"
       },
       {
+        "kind": "invariant",
+        "id": "RT_TOOL_COUNT_EXACT"
+      },
+      {
         "kind": "assertion",
         "id": "ASSERT_TERMINAL_KIND",
         "value": "result"
@@ -140,10 +144,6 @@
       }
     ],
     "candidate": [
-      {
-        "kind": "invariant",
-        "id": "RT_TOOL_COUNT_EXACT"
-      },
       {
         "kind": "invariant",
         "id": "RT_EFFECT_IDEMPOTENCY"

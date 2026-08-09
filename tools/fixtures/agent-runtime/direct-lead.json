@@ -57,6 +57,7 @@
       { "kind": "invariant", "id": "RR_MONOTONIC_LOOP" },
       { "kind": "invariant", "id": "HARNESS_ISOLATED" },
       { "kind": "invariant", "id": "TRACE_DETERMINISTIC" },
+      { "kind": "invariant", "id": "RT_TOOL_COUNT_EXACT" },
       { "kind": "assertion", "id": "ASSERT_TERMINAL_KIND", "value": "result" },
       { "kind": "assertion", "id": "ASSERT_LLM_CALL_COUNT", "value": 2 },
       { "kind": "assertion", "id": "ASSERT_TOOL_CALL_COUNT", "value": 1 },
@@ -65,7 +66,6 @@
       { "kind": "assertion", "id": "ASSERT_SCRIPT_CONSUMPTION", "value": { "llmConsumed": 2, "llmTotal": 2, "toolConsumed": 1, "toolTotal": 1 } }
     ],
     "candidate": [
-      { "kind": "invariant", "id": "RT_TOOL_COUNT_EXACT" },
       { "kind": "invariant", "id": "RT_TARGET_LOCK" },
       { "kind": "invariant", "id": "RT_EFFECT_IDEMPOTENCY" }
     ]

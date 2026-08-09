@@ -2,11 +2,17 @@
 
 Date: 2026-08-09
 
-## Decision
+## Resolution status
+
+Resolved after this audit. The ordinary planner now accounts once immediately after `executeToolCallFn` settles with a `ToolResult`, and `RT_TOOL_COUNT_EXACT` is an enforced invariant. The original `scenario.min.json`, both counterfactual controls, a two-call batch containing `ok=false`, and the existing throw behavior are covered by deterministic regressions.
+
+The remainder of this document preserves the pre-fix evidence and classification reasoning that authorized the minimal production change.
+
+## Pre-fix decision
 
 `RT_TOOL_COUNT_EXACT` is a **known production accounting violation** in the ordinary planner path. It is not an invalid invariant and not a harness observability mismatch.
 
-No production fix is included in this audit. The invariant remains candidate/diagnostic rather than becoming a smoke-blocking enforced invariant.
+The audit commit itself contained no production fix. Its conclusion was subsequently used to authorize the isolated accounting fix and enforced regression.
 
 The confirmed field contract, for a `runToolLoop` invocation that returns a `ToolLoopResult`, is:
 
@@ -114,12 +120,12 @@ The harness observes invocation at the injected production executor seam, and th
 
 Only ordinary non-final unsafe content passes through a `continue` located before `toolCallsMade++`. Changing only result safety flips the reported count from zero to one without changing the number of executor invocations. The violation is therefore production branch-local accounting.
 
-## Operational severity
+## Pre-fix operational severity
 
-The current user-facing impact is low:
+The user-facing impact was low:
 
 - `server/bot.ts` discards the returned count;
 - no DB usage or billing counter reads it;
 - the only production behavior difference is Shadow Reasoning telemetry/decision classification.
 
-The semantic contract violation is nevertheless real and deterministic. It should remain a known diagnostic until a separately authorized production fix decides where executor-boundary accounting must occur and updates this characterization fixture deliberately.
+The semantic contract violation was nevertheless real and deterministic. The subsequent authorized fix placed accounting at the shared settled-result boundary, updated the characterization fixtures, and promoted the invariant to enforced.
