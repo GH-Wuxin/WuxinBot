@@ -1,0 +1,43 @@
+import assert from 'node:assert/strict';
+import { createLLMClient, llmProvider, normalizeLlmMessages } from '../server/bot/llm.ts';
+
+const baseSettings = {
+  apiKey: 'sk-test',
+  llmProvider: 'deepseek',
+  apiBaseUrl: 'https://api.deepseek.com',
+  model: 'deepseek-v4-flash'
+};
+
+assert.equal(
+  llmProvider({ settings: { ...baseSettings, apiBaseUrl: 'https://token-plan-cn.xiaomimimo.com/v1' } }),
+  'openai-compatible',
+  'Mimo endpoint should force OpenAI-compatible provider'
+);
+
+assert.throws(
+  () => createLLMClient({ settings: { ...baseSettings, apiKey: 'tp-test-mimo-key' } }),
+  /配置错配/,
+  'Mimo-looking key must not be sent to DeepSeek'
+);
+
+assert.doesNotThrow(
+  () => createLLMClient({
+    settings: {
+      ...baseSettings,
+      llmProvider: 'openai-compatible',
+      apiBaseUrl: 'https://token-plan-cn.xiaomimimo.com/v1',
+      apiKey: 'tp-test-mimo-key',
+      model: 'mimo-v2.5'
+    }
+  }),
+  'Mimo OpenAI-compatible config should pass'
+);
+
+const normalized = normalizeLlmMessages([
+  { role: 'user', content: `正常文本${String.fromCharCode(0xD800)}尾部` },
+  { role: 'user', content: [{ type: 'text', text: String.fromCharCode(0xDC00) }] }
+]);
+assert.equal(normalized[0].content, '正常文本�尾部', 'unpaired high surrogate must be replaced');
+assert.equal(normalized[1].content[0].text, '�', 'unpaired low surrogate in multimodal text must be replaced');
+
+console.log('PASS: LLM provider/key guard verification');

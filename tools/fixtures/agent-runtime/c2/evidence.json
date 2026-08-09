@@ -1,0 +1,118 @@
+{
+  "completedRunsBeforeFailure": 3,
+  "consumption": {
+    "llmConsumed": 2,
+    "llmTotal": 2,
+    "toolConsumed": 1,
+    "toolTotal": 1
+  },
+  "counterexamplePath": "2:2:1",
+  "deterministicReplay": true,
+  "evidenceVersion": 2,
+  "finding": {
+    "detail": "business_effect at seq 9 after abort terminal",
+    "kind": "candidate_violation",
+    "oracleId": "RT_ABORT_NO_LATE_EFFECT",
+    "provisionalClassification": "needs_manual_review"
+  },
+  "fingerprint": "c0568b365ab1765d2cb7d75beef34e22411d5b55104ac18e1781eb3b633b8363",
+  "generatorVersion": 1,
+  "numShrinks": 2,
+  "oracles": [
+    {
+      "detail": "llmCalls=2/4, toolCalls=1",
+      "id": "RT_BOUNDED_LOOP",
+      "kind": "invariant",
+      "level": "enforced",
+      "passed": true
+    },
+    {
+      "detail": "substantive reasoning is monotonic",
+      "id": "RR_MONOTONIC_LOOP",
+      "kind": "invariant",
+      "level": "enforced",
+      "passed": true
+    },
+    {
+      "detail": "temp DATA_DIR, fetch-only tripwire, DB guard and injected dependency boundaries observed",
+      "id": "HARNESS_ISOLATED",
+      "kind": "invariant",
+      "level": "enforced",
+      "passed": true
+    },
+    {
+      "detail": "trace is normalized",
+      "id": "TRACE_DETERMINISTIC",
+      "kind": "invariant",
+      "level": "enforced",
+      "passed": true
+    },
+    {
+      "detail": "terminal=error",
+      "id": "ASSERT_TERMINAL_KIND",
+      "kind": "assertion",
+      "level": "enforced",
+      "passed": true
+    },
+    {
+      "detail": "settlementAttempts=1",
+      "id": "ASSERT_SETTLEMENT_ATTEMPTS",
+      "kind": "assertion",
+      "level": "enforced",
+      "passed": true
+    },
+    {
+      "detail": "acceptedSettlements=1",
+      "id": "ASSERT_ACCEPTED_SETTLEMENTS",
+      "kind": "assertion",
+      "level": "enforced",
+      "passed": true
+    },
+    {
+      "detail": "consumption={\n  \"llmConsumed\": 2,\n  \"llmTotal\": 2,\n  \"toolConsumed\": 1,\n  \"toolTotal\": 1\n}",
+      "id": "ASSERT_SCRIPT_CONSUMPTION",
+      "kind": "assertion",
+      "level": "enforced",
+      "passed": true
+    },
+    {
+      "detail": "controlKind=abort",
+      "id": "ASSERT_CONTROL_KIND",
+      "kind": "assertion",
+      "level": "enforced",
+      "passed": true
+    },
+    {
+      "detail": "runtimeSettledAfterControl=true",
+      "id": "ASSERT_RUNTIME_SETTLED_AFTER_CONTROL",
+      "kind": "assertion",
+      "level": "enforced",
+      "passed": true
+    },
+    {
+      "detail": "no duplicate business effect",
+      "id": "RT_EFFECT_IDEMPOTENCY",
+      "kind": "invariant",
+      "level": "candidate",
+      "passed": true
+    },
+    {
+      "detail": "business_effect at seq 9 after abort terminal",
+      "id": "RT_ABORT_NO_LATE_EFFECT",
+      "kind": "invariant",
+      "level": "candidate",
+      "passed": false
+    }
+  ],
+  "requestedRuns": 1000,
+  "scenarioPath": "tools/fixtures/agent-runtime/c2/scenario.min.json",
+  "scenarioSchemaVersion": 1,
+  "seed": 20260811,
+  "semanticSteps": [
+    "control:abort",
+    "settlement:immediate",
+    "effective:normal+late+abort"
+  ],
+  "tracePath": "tools/fixtures/agent-runtime/c2/trace.json",
+  "traceSchemaVersion": 1
+}

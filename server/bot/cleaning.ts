@@ -1,0 +1,276 @@
+// @ts-nocheck -- legacy runtime module; new typed modules remain checked by tsc.
+// Message cleaning utilities.
+// Extracted from bot.ts — pure text-processing functions with zero imports.
+
+export function decodeCqValue(value) {
+  return String(value || '')
+    .replace(/&#44;/g, ',')
+    .replace(/&#91;/g, '[')
+    .replace(/&#93;/g, ']')
+    .replace(/&amp;/g, '&');
+}
+
+export function parseCqParams(raw) {
+  const body = String(raw || '').replace(/^\[CQ:[^,]+,?/, '').replace(/\]$/, '');
+  const params = {};
+  for (const pair of body.split(',')) {
+    const index = pair.indexOf('=');
+    if (index <= 0) continue;
+    params[pair.slice(0, index)] = decodeCqValue(pair.slice(index + 1));
+  }
+  return params;
+}
+
+function safeJsonParse(text) {
+  try {
+    return JSON.parse(String(text || ''));
+  } catch {
+    return null;
+  }
+}
+
+function findCardText(value, keys) {
+  if (!value || typeof value !== 'object') return '';
+  for (const key of keys) {
+    if (typeof value[key] === 'string' && value[key].trim()) return value[key].trim();
+  }
+  for (const child of Object.values(value)) {
+    if (child && typeof child === 'object') {
+      const found = findCardText(child, keys);
+      if (found) return found;
+    }
+  }
+  return '';
+}
+
+function compactCardText(text) {
+  // QQ mini-app titles often contain nested labels like "[QQ小程序]".
+  // Card placeholders are bracket-based too, so flatten inner brackets before
+  // storing them. Otherwise memory cleaning can mistake the tail of a card
+  // title for real user text.
+  return String(text || '')
+    .replace(/\[QQ小程序\]/gi, 'QQ小程序 ')
+    .replace(/[\[\]]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, 42);
+}
+
+export function cardPlaceholder(title, desc) {
+  const cleanTitle = compactCardText(title);
+  const cleanDesc = compactCardText(desc);
+  if (cleanTitle && cleanDesc && cleanDesc !== cleanTitle) return `[分享卡片：${cleanTitle} / ${cleanDesc}]`;
+  if (cleanTitle) return `[分享卡片：${cleanTitle}]`;
+  if (cleanDesc) return `[分享卡片：${cleanDesc}]`;
+  return '[分享卡片]';
+}
+
+function summarizeJsonCard(data) {
+  if (typeof data !== 'object') {
+    const decoded = decodeCqValue(data);
+    const parsedText = safeJsonParse(decoded);
+    if (!parsedText) {
+      const prompt = decoded.match(/"prompt"\s*:\s*"([^"]+)/)?.[1];
+      const desc = decoded.match(/"(?:summary|desc|description)"\s*:\s*"([^"]+)/)?.[1];
+      return cardPlaceholder(prompt, desc);
+    }
+    data = parsedText;
+  }
+  const parsed = data;
+  const title = findCardText(parsed, ['title', 'name', 'prompt', 'desc']);
+  const desc = findCardText(parsed, ['summary', 'description', 'content', 'text', 'tag']);
+  return cardPlaceholder(title, desc);
+}
+
+function summarizeXmlCard(data) {
+  const text = String(data || '');
+  const title =
+    text.match(/title=["']([^"']+)["']/i)?.[1] ||
+    text.match(/<title>([^<]+)<\/title>/i)?.[1] ||
+    text.match(/name=["']([^"']+)["']/i)?.[1];
+  const desc =
+    text.match(/desc=["']([^"']+)["']/i)?.[1] ||
+    text.match(/summary=["']([^"']+)["']/i)?.[1] ||
+    text.match(/brief=["']([^"']+)["']/i)?.[1] ||
+    text.match(/<desc>([^<]+)<\/desc>/i)?.[1];
+  return cardPlaceholder(title, desc);
+}
+
+function summarizeCardPart(part) {
+  if (part.type === 'json') return summarizeJsonCard(part.data?.data || part.data);
+  if (part.type === 'xml') return summarizeXmlCard(part.data?.data || part.data);
+  if (part.type === 'forward') return cardPlaceholder(part.data?.title || part.data?.name, part.data?.summary || part.data?.content);
+  return '[分享卡片]';
+}
+
+function summarizeCqCard(kind, raw) {
+  const params = parseCqParams(raw);
+  if (kind === 'json') return summarizeJsonCard(params.data || params.content || params.resid || raw);
+  if (kind === 'xml') return summarizeXmlCard(params.data || params.content || raw);
+  return cardPlaceholder(params.title || params.name, params.summary || params.content || params.id);
+}
+
+function compactImageInput(data = {}) {
+  const url = String(data.url || data.file_url || data.src || data.download_url || '').trim();
+  const file = String(data.file || data.file_id || data.path || data.name || '').trim();
+  if (!url && !file) return null;
+  return { type: 'image', url, file };
+}
+
+export function extractImageInputs(message) {
+  const images = [];
+  const seen = new Set();
+  const add = (input) => {
+    const item = compactImageInput(input);
+    if (!item) return;
+    const key = item.url || item.file;
+    if (seen.has(key)) return;
+    seen.add(key);
+    images.push(item);
+  };
+
+  if (Array.isArray(message)) {
+    for (const part of message) {
+      if (part?.type === 'image') add(part.data || {});
+    }
+    return images;
+  }
+
+  const raw = String(message || '');
+  for (const match of raw.matchAll(/\[CQ:image[^\]]*\]/g)) {
+    add(parseCqParams(match[0]));
+  }
+  return images;
+}
+
+export function normalizeMessage(message) {
+  // Visual/media segments are reduced to explicit placeholders at the cleaning
+  // layer. Vision-capable providers still need a later transport step that
+  // passes actual image URLs/files to the model.
+  if (Array.isArray(message)) {
+    return message
+      .map((part) => {
+        if (part.type === 'text') return decodeCqValue(part.data?.text || '');
+        if (part.type === 'at') return `[CQ:at,qq=${part.data?.qq}]`;
+        if (part.type === 'image') return '[图片]';
+        if (part.type === 'face') return '[表情]';
+        if (part.type === 'mface') return '[表情包]';
+        if (part.type === 'record') return '[语音]';
+        if (part.type === 'video') return '[视频]';
+        if (part.type === 'file') return '[文件]';
+        if (part.type === 'json' || part.type === 'xml' || part.type === 'forward') return summarizeCardPart(part);
+        return '';
+      })
+      .join('')
+      .trim();
+  }
+  const normalized = String(message || '')
+    .replace(/\[CQ:reply[^\]]*(?:\]|$)/g, '')
+    .replace(/\[CQ:json[^\]]*(?:\]|$)/g, (raw) => summarizeCqCard('json', raw))
+    .replace(/\[CQ:xml[^\]]*(?:\]|$)/g, (raw) => summarizeCqCard('xml', raw))
+    .replace(/\[CQ:forward[^\]]*(?:\]|$)/g, (raw) => summarizeCqCard('forward', raw))
+    .replace(/\[CQ:image[^\]]*\]/g, '[图片]')
+    .replace(/\[CQ:face[^\]]*\]/g, '[表情]')
+    .replace(/\[CQ:mface[^\]]*\]/g, '[表情包]')
+    .replace(/\[CQ:record[^\]]*\]/g, '[语音]')
+    .replace(/\[CQ:video[^\]]*\]/g, '[视频]')
+    .replace(/\[CQ:file[^\]]*\]/g, '[文件]')
+    .trim();
+  // NapCat escapes literal CQ-reserved characters in raw_message, including
+  // brackets in valid usernames such as "[TST]Alpha". Decode only after real
+  // CQ segments have been handled so escaped user text cannot become a
+  // synthetic control segment during normalization.
+  return decodeCqValue(normalized).trim();
+}
+
+export function extractReplyMessageId(message) {
+  if (Array.isArray(message)) {
+    const reply = message.find((part) => part.type === 'reply');
+    return reply?.data?.id ? String(reply.data.id) : null;
+  }
+  const raw = String(message || '');
+  const match = raw.match(/\[CQ:reply,id=([^\],\]]+)/);
+  return match ? String(match[1]) : null;
+}
+
+export function extractAtTargets(message) {
+  if (Array.isArray(message)) {
+    return message
+      .filter((part) => part.type === 'at' && part.data?.qq)
+      .map((part) => String(part.data.qq));
+  }
+  const targets = [];
+  const raw = String(message || '');
+  for (const match of raw.matchAll(/\[CQ:at,qq=([^\],]+)[^\]]*\]/g)) {
+    targets.push(String(match[1]));
+  }
+  return targets;
+}
+
+export function mentionsBot(text, settings) {
+  const names = String(settings.botNames || '')
+    .split(',')
+    .map((name) => name.trim())
+    .filter(Boolean);
+  if (settings.selfQq && text.includes(`[CQ:at,qq=${settings.selfQq}]`)) return true;
+  const lower = String(text || '').toLowerCase();
+  return names.some((name) => {
+    const alias = name.toLowerCase();
+    if (alias.length <= 3 || /^(bot|ai)$/i.test(alias)) {
+      const escaped = alias.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      return new RegExp(`(^|[\\s@：:,，。.!！?？])${escaped}($|[\\s：:,，。.!！?？])`, 'i').test(lower);
+    }
+    return lower.includes(alias);
+  });
+}
+
+export function isQuestion(text) {
+  return /[?？吗呢么]|怎么|咋|如何|为什么|为啥|是不是|能不能|要不要|觉得/.test(text);
+}
+
+export function hasVisualPlaceholder(text) {
+  return /\[(图片|表情|表情包|视频|文件)\]/.test(text);
+}
+
+export function asksToInspectVisual(text) {
+  // Pure [图片]/[表情包] messages should be ignored. Only explain the visual
+  // limitation when the user adds real text asking the bot to inspect it.
+  const raw = String(text || '').replace(/\[CQ:(?:at|reply)[^\]]+\]/g, ' ');
+  // Pattern 2: "看上文图片/看上面的图/看看之前的图" — no [图片] placeholder but
+  // user explicitly asks to look at images in context or quoted messages.
+  if (/看(上文|上面|之前|前面|刚才|刚才发|群里发|聊天记录).{0,6}(图|照片|图片|截图|表情)/.test(raw)) return true;
+  if (/(看下|看看|查看|帮我看看|帮我看|看一下).{0,6}(这个|这张|那张|上面|上文|之前|前面).{0,6}(图|照片|图片|截图|表情)/.test(raw)) return true;
+  if (/(这个|这张|那张|上面|上文|之前|前面).{0,6}(图|照片|图片|截图|表情).{0,6}(看看|看下|看一下|查看|识别|分析|评价|解释|啥意思|什么意思)/.test(raw)) return true;
+  if (/(识别|分析|评价|解释).{0,6}(图|照片|图片|截图|表情|这个|这张|那张)/.test(raw)) return true;
+  if (!hasVisualPlaceholder(text)) return false;
+  const wordsOnly = raw
+    .replace(/\[(图片|表情|表情包|视频|文件|语音)\]/g, ' ')
+    .trim();
+  if (!wordsOnly) return false;
+  return /看一下|看看|帮.*看|识别|认一下|截图|这是什么|啥意思|什么意思|评价|分析|解释|猜一下|能看见|看得到/.test(wordsOnly);
+}
+
+export function looksLikeVisualFollowup(text) {
+  const raw = String(text || '')
+    .replace(/\[CQ:(?:at|reply)[^\]]+\]/g, ' ')
+    .replace(/\[(图片|表情|表情包|视频|文件|语音)\]/g, ' ')
+    .trim();
+  if (!raw) return false;
+  if (asksToInspectVisual(text)) return true;
+  return /^(现在看|再看|重新看|看这个|看看这个|这个不是吗|这个呢|这张呢|那张呢|问你话呢)$/.test(raw) ||
+    /让你看(图|图片|照片|截图|表情)?|能看[得的]?(出来|出|到|见)|看[得的](出来|出|到|见)|看得到|看得见|刚才那(个|张)|上面那(个|张)|我刚发的/.test(raw);
+}
+
+export function onlyVisualMessage(text) {
+  return /^[\s\[\]图片表情包视频文件语音]+$/.test(text || '') && hasVisualPlaceholder(text || '');
+}
+
+export function textWithoutControlPlaceholders(text) {
+  return String(text || '')
+    .replace(/\[CQ:at,qq=[^\]]+\]/g, ' ')
+    .replace(/\[CQ:reply[^\]]+\]/g, ' ')
+    .replace(/\[(图片|表情|表情包|视频|文件|语音)\]/g, ' ')
+    .replace(/\[分享卡片[\s\S]*?\]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}

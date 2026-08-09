@@ -1,0 +1,64 @@
+{
+  "evidenceVersion": 2,
+  "scenarioSchemaVersion": 1,
+  "traceSchemaVersion": 1,
+  "generatorVersion": 1,
+  "scenarioPath": "tools/fixtures/agent-runtime/c1/scenario.min.json",
+  "seed": 20260809,
+  "status": "fixed_enforced_regression",
+  "contract": "toolCallsMade equals executor calls that settled with a ToolResult",
+  "historicalViolation": {
+    "checkpoint": "fdcd40d210c88bcd81ccfc6be68692aadf99c1a0",
+    "auditCheckpoint": "db30dd6c735f9e1326c5ffe360c6a097e586e3e1",
+    "detail": "ordinary unsafe result previously reported 0 after one settled executor call"
+  },
+  "formalCampaign": {
+    "requestedRuns": 1000,
+    "completedRuns": 1000,
+    "counterexamplePath": null,
+    "numShrinks": 0,
+    "status": "passed",
+    "productionDbUnchanged": true
+  },
+  "regressions": [
+    {
+      "id": "C1_BF2090C558EAD62C",
+      "role": "sole_primary_reproduction_promoted_to_regression",
+      "observedExecutorCalls": 1,
+      "reportedToolCallsMade": 1,
+      "invariantLevel": "enforced",
+      "passed": true
+    },
+    {
+      "id": "C1_COUNTERFACTUAL_SAFE_RESULT",
+      "role": "safe_result_control",
+      "observedExecutorCalls": 1,
+      "reportedToolCallsMade": 1,
+      "passed": true
+    },
+    {
+      "id": "C1_COUNTERFACTUAL_REQUIRED_UNSAFE",
+      "role": "required_tool_unsafe_control",
+      "observedExecutorCalls": 1,
+      "reportedToolCallsMade": 1,
+      "passed": true
+    },
+    {
+      "id": "C1_REGRESSION_MULTI_TOOL_COUNT",
+      "role": "multi_tool_with_ok_false_result",
+      "observedExecutorCalls": 2,
+      "reportedToolCallsMade": 2,
+      "passed": true
+    },
+    {
+      "id": "C1_REGRESSION_TOOL_THROW",
+      "role": "existing_throw_semantics",
+      "observedExecutorCalls": 1,
+      "settledToolResults": 0,
+      "terminalKind": "error",
+      "toolLoopResultExists": false,
+      "passed": true
+    }
+  ],
+  "deterministicReplay": true
+}

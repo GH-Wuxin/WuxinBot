@@ -1,0 +1,49 @@
+{
+  "name": "qq-ai-chatbot",
+  "version": "1.0.3",
+  "description": "A friendly QQ group chat AI bot with a Chinese GUI control panel.",
+  "type": "module",
+  "main": "server/index.js",
+  "scripts": {
+    "dev": "concurrently \"npm run server\" \"npm run web\"",
+    "server": "tsx watch server/index.ts",
+    "web": "vite --host 127.0.0.1 --port 5173 --strictPort",
+    "build": "vite build",
+    "typecheck": "tsc --noEmit",
+    "check": "npm run typecheck && npm run build && npm run sanity && npm run security",
+    "start": "tsx server/index.ts",
+    "sanity": "tsx tools/sanity.mjs",
+    "security": "tsx tools/security-verify.mjs",
+    "structure": "node tools/structure-report.mjs",
+    "verify-all": "node tools/run-all-verifies.mjs",
+    "agent:replay": "node --import tsx tools/agent-replay.ts",
+    "agent:campaign:c1": "node --import tsx tools/agent-runtime-campaign.ts",
+    "agent:campaign:c2": "node --import tsx tools/agent-runtime-c2-campaign.ts",
+    "agent:counterfactual": "node --import tsx tools/agent-counterfactual.ts"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "@vitejs/plugin-react": "^4.7.0",
+    "concurrently": "^9.2.3",
+    "dotenv": "^17.4.2",
+    "express": "^5.2.1",
+    "lucide-react": "^1.16.0",
+    "openai": "^6.38.0",
+    "react": "^19.2.6",
+    "react-dom": "^19.2.6",
+    "typescript": "^6.0.3",
+    "vite": "^6.4.3",
+    "ws": "^8.21.0"
+  },
+  "devDependencies": {
+    "@types/express": "^5.0.6",
+    "@types/node": "^26.1.1",
+    "@types/react": "^19.2.17",
+    "@types/react-dom": "^19.2.3",
+    "@types/ws": "^8.18.1",
+    "fast-check": "^4.9.0",
+    "tsx": "^4.22.3"
+  }
+}
