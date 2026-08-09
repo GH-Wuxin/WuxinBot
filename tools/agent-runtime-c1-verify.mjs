@@ -2,7 +2,6 @@
 // campaign command so a candidate finding can be inspected before expansion.
 import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
-import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import fc from 'fast-check';
@@ -72,19 +71,13 @@ await check('semantic stateful generator emits versioned parseable scenarios', (
   }
 });
 
-await check('oracle classifier prioritizes enforced and labels exact tool-count evidence', () => {
+await check('oracle classifier treats exact tool accounting as enforced', () => {
   const enforced = classifyReplayResult(replayResult([
-    { level: 'candidate', id: 'RT_TOOL_COUNT_EXACT', passed: false, detail: 'candidate' },
-    { level: 'enforced', id: 'RT_FINAL_NO_LLM', passed: false, detail: 'enforced' },
+    { level: 'enforced', id: 'RT_TOOL_COUNT_EXACT', passed: false, detail: 'reported 0, observed 1' },
+    { level: 'candidate', id: 'RT_TARGET_LOCK', passed: false, detail: 'target drift' },
   ], 1, 0));
   assert.equal(enforced.kind, 'enforced_violation');
-  assert.equal(enforced.oracleId, 'RT_FINAL_NO_LLM');
-
-  const exact = classifyReplayResult(replayResult([
-    { level: 'candidate', id: 'RT_TOOL_COUNT_EXACT', passed: false, detail: 'reported 0, observed 1' },
-  ], 1, 0));
-  assert.equal(exact.kind, 'candidate_violation');
-  assert.equal(exact.provisionalClassification, 'provisional_real_production_candidate');
+  assert.equal(enforced.oracleId, 'RT_TOOL_COUNT_EXACT');
 
   const uncertain = classifyReplayResult(replayResult([
     { level: 'candidate', id: 'RT_TARGET_LOCK', passed: false, detail: 'target drift' },
@@ -106,59 +99,43 @@ await check('safe-only stateful sample executes the real runToolLoop', async () 
   assert.equal(result.productionDbUnchanged, true);
 });
 
-await check('automatic shrink persists the candidate and disk replay is deterministic', async () => {
-  const artifactDir = await fs.mkdtemp(path.join(os.tmpdir(), 'wuxin-agent-c1-verify-'));
-  try {
-    const campaign = await runC1Campaign({
-      seed: C1_DEFAULT_SEED,
-      numRuns: 20,
-      maxCommands: 5,
-      includeUnsafe: true,
-      hardLimitMs: 15_000,
-      artifactDir,
-    });
-    assert.equal(campaign.status, 'violation', normalizedJson(campaign));
-    assert.equal(campaign.finding?.kind, 'candidate_violation');
-    assert.equal(campaign.finding?.oracleId, 'RT_TOOL_COUNT_EXACT');
-    assert.equal(campaign.finding?.provisionalClassification, 'provisional_real_production_candidate');
-    assert(campaign.numShrinks > 0, 'the fixed synthetic fault must exercise automatic shrink');
-    assert(campaign.counterexamplePath, 'fast-check path must be retained as auxiliary provenance');
-    assert.equal(campaign.productionDbUnchanged, true);
-
-    const scenarioPath = path.join(artifactDir, 'scenario.min.json');
-    const evidencePath = path.join(artifactDir, 'evidence.json');
-    const scenario = parseReplayScenarioJson(await fs.readFile(scenarioPath, 'utf8'), scenarioPath);
-    const evidence = JSON.parse(await fs.readFile(evidencePath, 'utf8'));
-    assert.equal(evidence.evidenceVersion, 1);
-    assert.equal(evidence.deterministicReplay, true);
-    assert.equal(evidence.finding.oracleId, 'RT_TOOL_COUNT_EXACT');
-    assert.equal(evidence.scenarioPath, 'tools/fixtures/agent-runtime/c1/scenario.min.json');
-
-    const isolation = await installReplayIsolation();
-    try {
-      const { replayScenario } = await import('./agent-runtime/runner.ts');
-      const first = await replayScenario(scenario);
-      const second = await replayScenario(scenario);
-      assert.equal(normalizedJson(first.trace), normalizedJson(second.trace));
-      const finding = classifyReplayResult(first);
-      assert.equal(finding?.oracleId, 'RT_TOOL_COUNT_EXACT');
-      assert.equal(await isolation.assertProductionDbUnchanged(), true);
-    } finally {
-      await isolation.restore();
-    }
-  } finally {
-    await fs.rm(artifactDir, { recursive: true, force: true });
-  }
+await check('unsafe-inclusive stateful sample enforces exact tool accounting', async () => {
+  const campaign = await runC1Campaign({
+    seed: C1_DEFAULT_SEED,
+    numRuns: 50,
+    maxCommands: 5,
+    includeUnsafe: true,
+    hardLimitMs: 15_000,
+  });
+  assert.equal(campaign.status, 'passed', normalizedJson(campaign));
+  assert.equal(campaign.completedRuns, 50);
+  assert.equal(campaign.productionDbUnchanged, true);
 });
 
-await check('formal scenario.min.json remains the deterministic replay truth', async () => {
+await check('stateful command generator still supports automatic shrink', () => {
+  const property = fc.property(
+    c1CommandsArbitrary(5, { includeUnsafe: true }),
+    (commands) => {
+      const generated = buildC1Scenario(commands, C1_DEFAULT_SEED);
+      if (generated.semanticSteps.some((step) => step.startsWith('unsafe('))) {
+        throw new Error('synthetic shrink sentinel');
+      }
+    },
+  );
+  const details = fc.check(property, {
+    seed: C1_DEFAULT_SEED,
+    numRuns: 50,
+  });
+  assert.equal(details.failed, true);
+  assert(details.numShrinks > 0);
+  assert(details.counterexamplePath);
+  const minimized = buildC1Scenario(details.counterexample[0], C1_DEFAULT_SEED);
+  assert.deepEqual(minimized.semanticSteps, ['unsafe(batch=1)', 'planner_text']);
+});
+
+await check('formal scenario.min.json is the enforced deterministic regression', async () => {
   const scenarioPath = path.join(FORMAL_ARTIFACT_DIR, 'scenario.min.json');
-  const evidencePath = path.join(FORMAL_ARTIFACT_DIR, 'evidence.json');
   const scenario = parseReplayScenarioJson(await fs.readFile(scenarioPath, 'utf8'), scenarioPath);
-  const evidence = JSON.parse(await fs.readFile(evidencePath, 'utf8'));
-  assert.equal(evidence.seed, C1_DEFAULT_SEED);
-  assert.equal(evidence.requestedRuns, 1_000);
-  assert.equal(evidence.finding.oracleId, 'RT_TOOL_COUNT_EXACT');
 
   const isolation = await installReplayIsolation();
   try {
@@ -166,7 +143,13 @@ await check('formal scenario.min.json remains the deterministic replay truth', a
     const first = await replayScenario(scenario);
     const second = await replayScenario(scenario);
     assert.equal(normalizedJson(first.trace), normalizedJson(second.trace));
-    assert.equal(classifyReplayResult(first)?.oracleId, evidence.finding.oracleId);
+    const exact = first.oracles.find((oracle) => oracle.id === 'RT_TOOL_COUNT_EXACT');
+    assert.equal(exact?.level, 'enforced');
+    assert.equal(exact?.passed, true, exact?.detail);
+    assert.equal(first.trace.events.filter((event) => event.type === 'tool_call').length, 1);
+    assert.equal(first.trace.terminal.kind, 'result');
+    assert.equal(first.trace.terminal.result.toolCallsMade, 1);
+    assert.equal(classifyReplayResult(first), null);
     assert.equal(await isolation.assertProductionDbUnchanged(), true);
   } finally {
     await isolation.restore();

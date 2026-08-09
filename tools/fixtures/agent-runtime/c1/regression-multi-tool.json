@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "traceVersion": 1,
   "generatorVersion": 1,
-  "id": "C1_COUNTERFACTUAL_SAFE_RESULT",
+  "id": "C1_REGRESSION_MULTI_TOOL_COUNT",
   "seed": 20260809,
   "initialState": {
     "context": {
@@ -15,18 +15,19 @@
     "messages": [
       {
         "role": "user",
-        "content": "C1 offline stateful replay"
+        "content": "C1 multi-tool accounting regression"
       }
     ],
     "toolSchemas": [
       {
-        "name": "replay_tool_1",
-        "description": "C1 generated tool 1"
+        "name": "replay_tool_1"
+      },
+      {
+        "name": "replay_tool_2"
       }
     ],
     "maxIterations": 3,
-    "deliverDirectContent": true,
-    "label": "Agent Replay toolCallsMade safe-result control"
+    "label": "Agent Replay multi-tool accounting"
   },
   "llmSteps": [
     {
@@ -37,23 +38,31 @@
           "id": "generated_call_1",
           "name": "replay_tool_1",
           "args": {
-            "target": "player-1",
-            "ordinal": 1
+            "target": "player-1"
+          }
+        },
+        {
+          "id": "generated_call_2",
+          "name": "replay_tool_2",
+          "args": {
+            "target": "player-2"
           }
         }
       ],
       "expect": {
         "exposedTools": [
-          "replay_tool_1"
+          "replay_tool_1",
+          "replay_tool_2"
         ]
       }
     },
     {
       "outcome": "return",
-      "text": "generated final answer after 1 rounds",
+      "text": "multi-tool complete",
       "expect": {
         "exposedTools": [
-          "replay_tool_1"
+          "replay_tool_1",
+          "replay_tool_2"
         ]
       }
     }
@@ -64,51 +73,44 @@
       "expect": {
         "name": "replay_tool_1",
         "args": {
-          "target": "player-1",
-          "ordinal": 1
+          "target": "player-1"
         }
       },
       "effects": [
         {
-          "kind": "generated_effect_1",
-          "class": "business",
-          "data": {
-            "idempotencyKey": "generated-1"
-          }
+          "kind": "multi_effect_1",
+          "class": "business"
         }
       ],
       "result": {
         "ok": true,
-        "content": "generated safe result 1"
+        "content": "safe first result"
+      }
+    },
+    {
+      "outcome": "return",
+      "expect": {
+        "name": "replay_tool_2",
+        "args": {
+          "target": "player-2"
+        }
+      },
+      "result": {
+        "ok": false,
+        "content": "deterministic tool failure",
+        "error": "fixture_failure"
       }
     }
   ],
-  "oracleSidecar": {
-    "actor": {
-      "userId": "c1-actor",
-      "groupId": "c1-group"
-    },
-    "target": {
-      "callIndex": 0,
-      "toolName": "replay_tool_1",
-      "args": {
-        "target": "player-1",
-        "ordinal": 1
-      }
-    },
-    "constraints": [
-      {
-        "callIndex": 0,
-        "path": "args.target",
-        "equals": "player-1"
-      }
-    ]
-  },
   "expected": {
     "enforced": [
       {
         "kind": "invariant",
         "id": "RT_BOUNDED_LOOP"
+      },
+      {
+        "kind": "invariant",
+        "id": "RR_MONOTONIC_LOOP"
       },
       {
         "kind": "invariant",
@@ -129,8 +131,13 @@
       },
       {
         "kind": "assertion",
+        "id": "ASSERT_TOOL_CALL_COUNT",
+        "value": 2
+      },
+      {
+        "kind": "assertion",
         "id": "ASSERT_TOOL_CALLS_MADE",
-        "value": 1
+        "value": 2
       },
       {
         "kind": "assertion",
@@ -138,8 +145,8 @@
         "value": {
           "llmConsumed": 2,
           "llmTotal": 2,
-          "toolConsumed": 1,
-          "toolTotal": 1
+          "toolConsumed": 2,
+          "toolTotal": 2
         }
       }
     ],
@@ -147,10 +154,6 @@
       {
         "kind": "invariant",
         "id": "RT_EFFECT_IDEMPOTENCY"
-      },
-      {
-        "kind": "invariant",
-        "id": "RT_TARGET_LOCK"
       }
     ]
   }

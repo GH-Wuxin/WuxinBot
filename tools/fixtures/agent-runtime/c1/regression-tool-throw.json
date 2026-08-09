@@ -1,0 +1,107 @@
+{
+  "schemaVersion": 1,
+  "traceVersion": 1,
+  "generatorVersion": 1,
+  "id": "C1_REGRESSION_TOOL_THROW",
+  "seed": 20260809,
+  "initialState": {
+    "context": {
+      "userId": "c1-actor",
+      "groupId": "c1-group"
+    },
+    "db": {
+      "settings": {}
+    },
+    "messages": [
+      {
+        "role": "user",
+        "content": "C1 tool throw contract"
+      }
+    ],
+    "toolSchemas": [
+      {
+        "name": "replay_tool_throw"
+      }
+    ],
+    "maxIterations": 3,
+    "label": "Agent Replay tool throw contract"
+  },
+  "llmSteps": [
+    {
+      "outcome": "return",
+      "text": "",
+      "toolCalls": [
+        {
+          "id": "generated_throw_call",
+          "name": "replay_tool_throw",
+          "args": {
+            "target": "player-throw"
+          }
+        }
+      ],
+      "expect": {
+        "exposedTools": [
+          "replay_tool_throw"
+        ]
+      }
+    }
+  ],
+  "toolSteps": [
+    {
+      "outcome": "throw",
+      "expect": {
+        "name": "replay_tool_throw",
+        "args": {
+          "target": "player-throw"
+        }
+      },
+      "error": {
+        "name": "FixtureToolError",
+        "message": "deterministic executor throw",
+        "code": "FIXTURE_TOOL_THROW"
+      }
+    }
+  ],
+  "expected": {
+    "enforced": [
+      {
+        "kind": "invariant",
+        "id": "RT_BOUNDED_LOOP"
+      },
+      {
+        "kind": "invariant",
+        "id": "HARNESS_ISOLATED"
+      },
+      {
+        "kind": "invariant",
+        "id": "TRACE_DETERMINISTIC"
+      },
+      {
+        "kind": "assertion",
+        "id": "ASSERT_TERMINAL_KIND",
+        "value": "error"
+      },
+      {
+        "kind": "assertion",
+        "id": "ASSERT_TOOL_CALL_COUNT",
+        "value": 1
+      },
+      {
+        "kind": "assertion",
+        "id": "ASSERT_SCRIPT_CONSUMPTION",
+        "value": {
+          "llmConsumed": 1,
+          "llmTotal": 1,
+          "toolConsumed": 1,
+          "toolTotal": 1
+        }
+      }
+    ],
+    "candidate": [
+      {
+        "kind": "invariant",
+        "id": "RT_TOOL_THROW_RECOVERY"
+      }
+    ]
+  }
+}

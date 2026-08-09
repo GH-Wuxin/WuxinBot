@@ -117,6 +117,14 @@ await check('parser keeps enforced/candidate invariant tiers honest', () => {
   const enforcedInCandidate = baseScenario('VERIFY_BAD_TIER_B');
   enforcedInCandidate.expected.candidate = [{ kind: 'invariant', id: 'RT_FINAL_NO_LLM' }];
   expectScenarioError(enforcedInCandidate, /belongs in expected\.enforced/);
+
+  const exactInCandidate = baseScenario('VERIFY_BAD_TIER_TOOL_COUNT');
+  exactInCandidate.expected.candidate = [{ kind: 'invariant', id: 'RT_TOOL_COUNT_EXACT' }];
+  expectScenarioError(exactInCandidate, /belongs in expected\.enforced/);
+
+  const exactInEnforced = baseScenario('VERIFY_ENFORCED_TOOL_COUNT');
+  exactInEnforced.expected.enforced = [{ kind: 'invariant', id: 'RT_TOOL_COUNT_EXACT' }];
+  assert.equal(parseReplayScenario(exactInEnforced).expected.enforced[0].id, 'RT_TOOL_COUNT_EXACT');
 });
 
 await check('parser rejects semantic sidecars and unknown fields in initialState', () => {

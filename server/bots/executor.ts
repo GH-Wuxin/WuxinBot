@@ -2426,6 +2426,10 @@ export async function runToolLoop(
       const result = await executeToolCallFn(tc, {
         db, userId, groupId, sendMessage, event, selfQq
       });
+      // Accounting is tied to the executor boundary, not to whether its
+      // returned content is safe enough to expose to the LLM. Reaching this
+      // line means one tool call actually executed and settled with a result.
+      toolCallsMade++;
       lastToolFailed = !result.ok;
       if (result.ok && !recommendToolCalled) {
         try {
@@ -2444,7 +2448,6 @@ export async function runToolLoop(
       // Terminal deterministic reply: stop the loop immediately and deliver
       // verbatim; the LLM never sees the result and cannot add claims.
       if (result.final) {
-        toolCallsMade++;
         const finalDirect = sanitizeDirectDeliveryContent(result.directContent || result.content);
         return {
           text: '',
@@ -2515,8 +2518,6 @@ export async function runToolLoop(
         tool_call_id: tc.id,
         content: toolNote ? `${safeContent}\n\n${toolNote}` : safeContent
       });
-
-      toolCallsMade++;
     }
   }
 

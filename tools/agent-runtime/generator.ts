@@ -225,6 +225,7 @@ export function buildC1Scenario(
     { kind: 'invariant', id: 'RR_MONOTONIC_LOOP' },
     { kind: 'invariant', id: 'HARNESS_ISOLATED' },
     { kind: 'invariant', id: 'TRACE_DETERMINISTIC' },
+    { kind: 'invariant', id: 'RT_TOOL_COUNT_EXACT' },
     { kind: 'assertion', id: 'ASSERT_TERMINAL_KIND', value: 'result' },
     {
       kind: 'assertion',
@@ -252,7 +253,6 @@ export function buildC1Scenario(
   }
 
   const candidate: OracleSpec[] = [
-    { kind: 'invariant', id: 'RT_TOOL_COUNT_EXACT' },
     { kind: 'invariant', id: 'RT_EFFECT_IDEMPOTENCY' },
   ];
   const firstTool = builder.firstTool;
