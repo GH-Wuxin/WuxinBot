@@ -59,7 +59,10 @@ function firstFailed(oracles: OracleResult[], level: 'enforced' | 'candidate'): 
   return oracles.find((oracle) => oracle.level === level && !oracle.passed);
 }
 
-export function classifyReplayResult(result: ReplayRunResult): CampaignFinding | null {
+export function classifyReplayResult(
+  result: ReplayRunResult,
+  options: { ignoredCandidateIds?: ReadonlySet<string> | readonly string[] } = {},
+): CampaignFinding | null {
   const enforced = firstFailed(result.oracles, 'enforced');
   if (enforced) {
     return {
@@ -69,7 +72,11 @@ export function classifyReplayResult(result: ReplayRunResult): CampaignFinding |
       provisionalClassification: 'needs_manual_review',
     };
   }
-  const candidate = firstFailed(result.oracles, 'candidate');
+  const ignored = options.ignoredCandidateIds instanceof Set
+    ? options.ignoredCandidateIds
+    : new Set(options.ignoredCandidateIds || []);
+  const candidate = result.oracles.find((oracle) =>
+    oracle.level === 'candidate' && !oracle.passed && !ignored.has(String(oracle.id)));
   if (!candidate) return null;
   return {
     kind: 'candidate_violation',

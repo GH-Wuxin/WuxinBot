@@ -13,6 +13,7 @@ import type { ReplayRunResult, ReplayScenario } from './types.js';
 export const C2_DEFAULT_SEED = 20_260_811;
 export const C2_DEFAULT_RUNS = 1_000;
 export const C2_HARD_LIMIT_MS = 60_000;
+const VALIDATED_NON_GATING_CANDIDATES = new Set(['RT_ABORT_NO_LATE_EFFECT']);
 
 type GeneratedCommand = Command<any, any>;
 
@@ -22,6 +23,9 @@ export interface C2CampaignConfig {
   maxCommands?: number;
   artifactDir?: string;
   hardLimitMs?: number;
+  path?: string;
+  /** Validated candidates remain evaluated and counted, but do not gate this campaign. */
+  nonGatingCandidateIds?: readonly string[];
 }
 
 export interface C2CampaignResult {
@@ -31,12 +35,19 @@ export interface C2CampaignResult {
   completedRuns: number;
   numShrinks: number;
   counterexamplePath: string | null;
+  generatorReplayPath?: string;
   finding?: CampaignFinding;
   scenarioPath?: string;
   evidencePath?: string;
   tracePath?: string;
   fingerprint?: string;
+  faultProfileCounts: Record<string, number>;
+  nonGatingCandidateCounts: Record<string, number>;
   productionDbUnchanged: boolean;
+}
+
+function sortedCounts(counts: Map<string, number>): Record<string, number> {
+  return Object.fromEntries([...counts.entries()].sort(([left], [right]) => left.localeCompare(right)));
 }
 
 async function atomicWrite(file: string, content: string): Promise<void> {
@@ -79,17 +90,24 @@ async function persistFinding(args: {
   numShrinks: number;
   counterexamplePath: string;
   replayScenario: (scenario: ReplayScenario) => Promise<ReplayRunResult>;
+  ignoredCandidateIds?: ReadonlySet<string>;
 }): Promise<{ scenarioPath: string; evidencePath: string; tracePath: string; fingerprint: string }> {
   const scenarioPath = path.join(args.artifactDir, 'scenario.min.json');
   const evidencePath = path.join(args.artifactDir, 'evidence.json');
   const tracePath = path.join(args.artifactDir, 'trace.json');
-  await atomicWrite(scenarioPath, JSON.stringify(args.scenario, null, 2) + '\n');
+  const relativeScenarioPath = path.relative(process.cwd(), scenarioPath).replace(/\\/g, '/');
+  const relativeTracePath = path.relative(process.cwd(), tracePath).replace(/\\/g, '/');
+  const scenarioToSave: ReplayScenario = {
+    ...args.scenario,
+    minimalReproduction: relativeScenarioPath,
+  };
+  await atomicWrite(scenarioPath, JSON.stringify(scenarioToSave, null, 2) + '\n');
 
   // The disk scenario is the long-term replay source. seed/path remain
   // generator-version-scoped auxiliary provenance only.
   const saved = parseReplayScenarioJson(await fs.readFile(scenarioPath, 'utf8'), scenarioPath);
   const replay = await replayTwice(saved, args.replayScenario);
-  const replayFinding = classifyReplayResult(replay);
+  const replayFinding = classifyReplayResult(replay, { ignoredCandidateIds: args.ignoredCandidateIds });
   if (!replayFinding || replayFinding.kind !== args.finding.kind || replayFinding.oracleId !== args.finding.oracleId) {
     throw new Error('shrunk C2 scenario did not reproduce the same finding from disk');
   }
@@ -103,10 +121,14 @@ async function persistFinding(args: {
     scenarioSchemaVersion: saved.schemaVersion,
     traceSchemaVersion: saved.traceVersion,
     generatorVersion: saved.generatorVersion,
-    scenarioPath: C2_ARTIFACT_SCENARIO,
-    tracePath: 'tools/fixtures/agent-runtime/c2/trace.json',
+    scenarioPath: relativeScenarioPath,
+    tracePath: relativeTracePath,
     seed: args.seed,
     counterexamplePath: args.counterexamplePath,
+    // fc.commands reports the shrink suffix in counterexamplePath, but the
+    // stable generator re-entry point is the original case index. Re-entering
+    // this path deterministically shrinks to the same scenario again.
+    generatorReplayPath: args.counterexamplePath.split(':')[0],
     requestedRuns: args.requestedRuns,
     completedRunsBeforeFailure: args.completedRuns,
     numShrinks: args.numShrinks,
@@ -127,6 +149,14 @@ export async function runC2Campaign(config: C2CampaignConfig = {}): Promise<C2Ca
   const maxCommands = config.maxCommands ?? 3;
   const hardLimitMs = config.hardLimitMs ?? C2_HARD_LIMIT_MS;
   const artifactDir = path.resolve(config.artifactDir || path.dirname(path.resolve(C2_ARTIFACT_SCENARIO)));
+  const nonGatingCandidateIds = new Set(config.nonGatingCandidateIds || []);
+  for (const id of nonGatingCandidateIds) {
+    if (!VALIDATED_NON_GATING_CANDIDATES.has(id)) {
+      throw new Error(`candidate is not registered as validated/non-gating: ${id}`);
+    }
+  }
+  const faultProfileCounts = new Map<string, number>();
+  const nonGatingCandidateCounts = new Map<string, number>();
   const oldAppData = process.env.APPDATA;
   const realProductionDb = path.join(
     oldAppData || path.join(process.env.USERPROFILE || 'C:', 'AppData', 'Roaming'),
@@ -145,6 +175,8 @@ export async function runC2Campaign(config: C2CampaignConfig = {}): Promise<C2Ca
     const { replayScenario } = await import('./runner.js');
     const property = fc.asyncProperty(c2CommandsArbitrary(maxCommands), async (commands) => {
       const generated = buildC2Scenario(commands as Iterable<GeneratedCommand>, seed);
+      const profileId = generated.scenario.faultProfile?.id || 'none';
+      faultProfileCounts.set(profileId, (faultProfileCounts.get(profileId) || 0) + 1);
       let replay: ReplayRunResult;
       try {
         replay = await replayTwice(generated.scenario, replayScenario);
@@ -155,7 +187,13 @@ export async function runC2Campaign(config: C2CampaignConfig = {}): Promise<C2Ca
           provisionalClassification: 'needs_manual_review',
         }, generated.scenario.id);
       }
-      const finding = classifyReplayResult(replay);
+      for (const oracle of replay.oracles) {
+        const id = String(oracle.id);
+        if (oracle.level === 'candidate' && !oracle.passed && nonGatingCandidateIds.has(id)) {
+          nonGatingCandidateCounts.set(id, (nonGatingCandidateCounts.get(id) || 0) + 1);
+        }
+      }
+      const finding = classifyReplayResult(replay, { ignoredCandidateIds: nonGatingCandidateIds });
       if (finding) throw new CampaignViolation(finding, generated.scenario.id);
     });
 
@@ -166,13 +204,17 @@ export async function runC2Campaign(config: C2CampaignConfig = {}): Promise<C2Ca
       markInterruptAsFailure: true,
       timeout: 2_000,
       maxSkipsPerRun: 100,
+      ...(config.path ? { path: config.path } : {}),
     });
 
     if (!details.failed && !details.interrupted) {
       productionDbUnchanged = await productionGuard();
       return {
         status: 'passed', seed, requestedRuns, completedRuns: details.numRuns,
-        numShrinks: details.numShrinks, counterexamplePath: null, productionDbUnchanged,
+        numShrinks: details.numShrinks, counterexamplePath: null,
+        faultProfileCounts: sortedCounts(faultProfileCounts),
+        nonGatingCandidateCounts: sortedCounts(nonGatingCandidateCounts),
+        productionDbUnchanged,
       };
     }
     if (!details.counterexample || !details.counterexamplePath) {
@@ -185,6 +227,8 @@ export async function runC2Campaign(config: C2CampaignConfig = {}): Promise<C2Ca
           detail: details.interrupted ? `campaign exceeded ${hardLimitMs}ms` : 'campaign failed without counterexample',
           provisionalClassification: 'needs_manual_review',
         },
+        faultProfileCounts: sortedCounts(faultProfileCounts),
+        nonGatingCandidateCounts: sortedCounts(nonGatingCandidateCounts),
         productionDbUnchanged,
       };
     }
@@ -192,7 +236,7 @@ export async function runC2Campaign(config: C2CampaignConfig = {}): Promise<C2Ca
     const minimizedCommands = details.counterexample[0] as Iterable<GeneratedCommand>;
     const minimized = buildC2Scenario(minimizedCommands, seed);
     const replay = await replayTwice(minimized.scenario, replayScenario);
-    const finding = classifyReplayResult(replay) || {
+    const finding = classifyReplayResult(replay, { ignoredCandidateIds: nonGatingCandidateIds }) || {
       kind: 'harness_bug' as const,
       detail: String((details.errorInstance as any)?.message || details.errorInstance || 'shrunk failure lost its oracle finding'),
       provisionalClassification: 'needs_manual_review' as const,
@@ -208,12 +252,17 @@ export async function runC2Campaign(config: C2CampaignConfig = {}): Promise<C2Ca
       numShrinks: details.numShrinks,
       counterexamplePath: details.counterexamplePath,
       replayScenario,
+      ignoredCandidateIds: nonGatingCandidateIds,
     });
     productionDbUnchanged = await productionGuard();
     return {
       status: 'violation', seed, requestedRuns, completedRuns: details.numRuns,
       numShrinks: details.numShrinks, counterexamplePath: details.counterexamplePath,
-      finding, ...files, productionDbUnchanged,
+      generatorReplayPath: details.counterexamplePath.split(':')[0],
+      finding, ...files,
+      faultProfileCounts: sortedCounts(faultProfileCounts),
+      nonGatingCandidateCounts: sortedCounts(nonGatingCandidateCounts),
+      productionDbUnchanged,
     };
   } finally {
     try {
