@@ -1,0 +1,353 @@
+{
+  "counterfactualSchemaVersion": 1,
+  "scenarioSchemaVersion": 1,
+  "traceSchemaVersion": 1,
+  "generatorVersion": 1,
+  "id": "C2_COUNTERFACTUAL_FAST_THINKING",
+  "seed": 20260812,
+  "base": {
+    "initialState": {
+      "context": {
+        "userId": "counterfactual-actor",
+        "groupId": "counterfactual-group"
+      },
+      "db": {
+        "settings": {}
+      },
+      "messages": [
+        {
+          "role": "user",
+          "content": "Compare the same target using scripted offline decisions"
+        }
+      ],
+      "toolSchemas": [
+        {
+          "name": "lookup_profile",
+          "description": "Read the target profile"
+        },
+        {
+          "name": "lookup_detail",
+          "description": "Read additional target detail"
+        }
+      ],
+      "maxIterations": 3,
+      "deliverDirectContent": true,
+      "label": "Agent Replay C2.2 Counterfactual"
+    },
+    "oracleSidecar": {
+      "actor": {
+        "userId": "counterfactual-actor",
+        "groupId": "counterfactual-group"
+      },
+      "target": {
+        "callIndex": 0,
+        "toolName": "lookup_profile",
+        "args": {
+          "target": "player-one"
+        }
+      },
+      "constraints": [
+        {
+          "callIndex": 0,
+          "path": "args.target",
+          "equals": "player-one"
+        }
+      ]
+    }
+  },
+  "variants": {
+    "fast": {
+      "mode": "fast",
+      "llmSteps": [
+        {
+          "outcome": "return",
+          "text": "",
+          "toolCalls": [
+            {
+              "id": "fast-profile",
+              "name": "lookup_profile",
+              "args": {
+                "target": "player-one"
+              }
+            }
+          ],
+          "usage": {
+            "prompt_tokens": 80,
+            "completion_tokens": 20,
+            "total_tokens": 100
+          },
+          "meta": {
+            "reasoningTokens": 0,
+            "latencyMs": 15
+          },
+          "expect": {
+            "exposedTools": [
+              "lookup_profile",
+              "lookup_detail"
+            ]
+          }
+        },
+        {
+          "outcome": "return",
+          "text": "Fast profile summary for player-one",
+          "usage": {
+            "prompt_tokens": 90,
+            "completion_tokens": 40,
+            "total_tokens": 130
+          },
+          "meta": {
+            "reasoningTokens": 0,
+            "latencyMs": 20
+          },
+          "expect": {
+            "exposedTools": [
+              "lookup_profile",
+              "lookup_detail"
+            ]
+          }
+        }
+      ],
+      "toolSteps": [
+        {
+          "outcome": "return",
+          "expect": {
+            "name": "lookup_profile",
+            "args": {
+              "target": "player-one"
+            }
+          },
+          "result": {
+            "ok": true,
+            "content": "profile facts for player-one"
+          }
+        }
+      ],
+      "expected": {
+        "enforced": [
+          {
+            "kind": "invariant",
+            "id": "RT_BOUNDED_LOOP"
+          },
+          {
+            "kind": "invariant",
+            "id": "RR_MONOTONIC_LOOP"
+          },
+          {
+            "kind": "invariant",
+            "id": "HARNESS_ISOLATED"
+          },
+          {
+            "kind": "invariant",
+            "id": "TRACE_DETERMINISTIC"
+          },
+          {
+            "kind": "invariant",
+            "id": "RT_TOOL_COUNT_EXACT"
+          },
+          {
+            "kind": "assertion",
+            "id": "ASSERT_TERMINAL_KIND",
+            "value": "result"
+          },
+          {
+            "kind": "assertion",
+            "id": "ASSERT_TOOL_CALL_COUNT",
+            "value": 1
+          },
+          {
+            "kind": "assertion",
+            "id": "ASSERT_TOOL_CALLS_MADE",
+            "value": 1
+          },
+          {
+            "kind": "assertion",
+            "id": "ASSERT_SCRIPT_CONSUMPTION",
+            "value": {
+              "llmConsumed": 2,
+              "llmTotal": 2,
+              "toolConsumed": 1,
+              "toolTotal": 1
+            }
+          }
+        ],
+        "candidate": [
+          {
+            "kind": "invariant",
+            "id": "RT_TARGET_LOCK"
+          },
+          {
+            "kind": "invariant",
+            "id": "RT_EFFECT_IDEMPOTENCY"
+          }
+        ]
+      }
+    },
+    "thinking": {
+      "mode": "thinking",
+      "llmSteps": [
+        {
+          "outcome": "return",
+          "text": "",
+          "toolCalls": [
+            {
+              "id": "thinking-profile",
+              "name": "lookup_profile",
+              "args": {
+                "target": "player-one"
+              }
+            }
+          ],
+          "usage": {
+            "prompt_tokens": 90,
+            "completion_tokens": 30,
+            "total_tokens": 120
+          },
+          "meta": {
+            "reasoningTokens": 50,
+            "latencyMs": 40
+          },
+          "expect": {
+            "exposedTools": [
+              "lookup_profile",
+              "lookup_detail"
+            ]
+          }
+        },
+        {
+          "outcome": "return",
+          "text": "",
+          "toolCalls": [
+            {
+              "id": "thinking-detail",
+              "name": "lookup_detail",
+              "args": {
+                "target": "player-one"
+              }
+            }
+          ],
+          "usage": {
+            "prompt_tokens": 120,
+            "completion_tokens": 50,
+            "total_tokens": 170
+          },
+          "meta": {
+            "reasoningTokens": 70,
+            "latencyMs": 60
+          },
+          "expect": {
+            "exposedTools": [
+              "lookup_profile",
+              "lookup_detail"
+            ]
+          }
+        },
+        {
+          "outcome": "return",
+          "text": "Thinking profile and detail summary for player-one",
+          "usage": {
+            "prompt_tokens": 110,
+            "completion_tokens": 50,
+            "total_tokens": 160
+          },
+          "meta": {
+            "reasoningTokens": 60,
+            "latencyMs": 70
+          },
+          "expect": {
+            "exposedTools": [
+              "lookup_profile",
+              "lookup_detail"
+            ]
+          }
+        }
+      ],
+      "toolSteps": [
+        {
+          "outcome": "return",
+          "expect": {
+            "name": "lookup_profile",
+            "args": {
+              "target": "player-one"
+            }
+          },
+          "result": {
+            "ok": true,
+            "content": "profile facts for player-one"
+          }
+        },
+        {
+          "outcome": "return",
+          "expect": {
+            "name": "lookup_detail",
+            "args": {
+              "target": "player-one"
+            }
+          },
+          "result": {
+            "ok": true,
+            "content": "detail facts for player-one"
+          }
+        }
+      ],
+      "expected": {
+        "enforced": [
+          {
+            "kind": "invariant",
+            "id": "RT_BOUNDED_LOOP"
+          },
+          {
+            "kind": "invariant",
+            "id": "RR_MONOTONIC_LOOP"
+          },
+          {
+            "kind": "invariant",
+            "id": "HARNESS_ISOLATED"
+          },
+          {
+            "kind": "invariant",
+            "id": "TRACE_DETERMINISTIC"
+          },
+          {
+            "kind": "invariant",
+            "id": "RT_TOOL_COUNT_EXACT"
+          },
+          {
+            "kind": "assertion",
+            "id": "ASSERT_TERMINAL_KIND",
+            "value": "result"
+          },
+          {
+            "kind": "assertion",
+            "id": "ASSERT_TOOL_CALL_COUNT",
+            "value": 2
+          },
+          {
+            "kind": "assertion",
+            "id": "ASSERT_TOOL_CALLS_MADE",
+            "value": 2
+          },
+          {
+            "kind": "assertion",
+            "id": "ASSERT_SCRIPT_CONSUMPTION",
+            "value": {
+              "llmConsumed": 3,
+              "llmTotal": 3,
+              "toolConsumed": 2,
+              "toolTotal": 2
+            }
+          }
+        ],
+        "candidate": [
+          {
+            "kind": "invariant",
+            "id": "RT_TARGET_LOCK"
+          },
+          {
+            "kind": "invariant",
+            "id": "RT_EFFECT_IDEMPOTENCY"
+          }
+        ]
+      }
+    }
+  }
+}

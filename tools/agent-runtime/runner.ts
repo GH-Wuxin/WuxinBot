@@ -1,5 +1,5 @@
 import { createShadowReasoningRouter } from '../../server/bot/reasoningRouter.js';
-import type { ReasoningShadowSink } from '../../server/bot/reasoningRouter.js';
+import type { ReasoningMode, ReasoningShadowSink } from '../../server/bot/reasoningRouter.js';
 import { createScriptedAdapters } from './adapters.js';
 import { assertReplayIsolation } from './isolation.js';
 import { evaluateOracles } from './oracles.js';
@@ -54,7 +54,15 @@ function usesSymbolicSettlement(scenario: ReplayScenario): boolean {
   );
 }
 
-export async function replayScenario(scenario: ReplayScenario): Promise<ReplayRunResult> {
+export interface ReplayExecutionOptions {
+  /** Harness-only Shadow decision override. It never reaches completeChat. */
+  scriptedReasoningMode?: ReasoningMode;
+}
+
+export async function replayScenario(
+  scenario: ReplayScenario,
+  execution: ReplayExecutionOptions = {},
+): Promise<ReplayRunResult> {
   const isolation = assertReplayIsolation();
   const { runToolLoop } = await import('../../server/bots/executor.js');
   const recorder = new TraceRecorder(scenario.id, scenario.seed);
@@ -64,6 +72,7 @@ export async function replayScenario(scenario: ReplayScenario): Promise<ReplayRu
     // not claim that the process is a general-purpose http/net sandbox.
     llmInjected: true,
     toolExecutorInjected: true,
+    ...(execution.scriptedReasoningMode ? { scriptedReasoningMode: execution.scriptedReasoningMode } : {}),
   });
   const scheduler = usesSymbolicSettlement(scenario)
     ? new DeterministicSettlementScheduler(recorder)
@@ -71,7 +80,13 @@ export async function replayScenario(scenario: ReplayScenario): Promise<ReplayRu
   const adapters = createScriptedAdapters(scenario, recorder, scheduler);
   const baseRouter = createShadowReasoningRouter(2_000, () => {});
   const reasoningRouter: ReasoningShadowSink = {
-    resolve: (input, turn) => baseRouter.resolve(input, turn),
+    resolve: (input, turn) => execution.scriptedReasoningMode
+      ? {
+          mode: execution.scriptedReasoningMode,
+          source: 'rule',
+          reasonCode: execution.scriptedReasoningMode === 'fast' ? 'fast_default' : 'structured_fact_compare',
+        }
+      : baseRouter.resolve(input, turn),
     mergeTurn: (turn, decision) => baseRouter.mergeTurn(turn, decision),
     record(entry) {
       baseRouter.record(entry);
