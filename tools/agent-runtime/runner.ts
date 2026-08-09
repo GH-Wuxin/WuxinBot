@@ -3,6 +3,7 @@ import type { ReasoningShadowSink } from '../../server/bot/reasoningRouter.js';
 import { createScriptedAdapters } from './adapters.js';
 import { assertReplayIsolation } from './isolation.js';
 import { evaluateOracles } from './oracles.js';
+import { DeterministicSettlementScheduler } from './scheduler.js';
 import { TraceRecorder } from './trace.js';
 import {
   type JsonValue,
@@ -30,6 +31,29 @@ function terminalError(error: any): ReplayTerminal {
   };
 }
 
+function terminalResult(result: any): ReplayTerminal {
+  return {
+    kind: 'result',
+    result: {
+      text: String(result.text || ''),
+      usage: result.usage as JsonValue,
+      toolCallsMade: Number(result.toolCallsMade || 0),
+      iterations: Number(result.iterations || 0),
+      recommendToolCalled: Boolean(result.recommendToolCalled),
+      images: [...(result.images || [])].map(String),
+      directContent: String(result.directContent || ''),
+    },
+  };
+}
+
+function usesSymbolicSettlement(scenario: ReplayScenario): boolean {
+  return Boolean(
+    scenario.faultProfile?.symbolicControl ||
+    scenario.llmSteps.some((step) => step.settlement) ||
+    scenario.toolSteps.some((step) => step.settlement),
+  );
+}
+
 export async function replayScenario(scenario: ReplayScenario): Promise<ReplayRunResult> {
   const isolation = assertReplayIsolation();
   const { runToolLoop } = await import('../../server/bots/executor.js');
@@ -41,7 +65,10 @@ export async function replayScenario(scenario: ReplayScenario): Promise<ReplayRu
     llmInjected: true,
     toolExecutorInjected: true,
   });
-  const adapters = createScriptedAdapters(scenario, recorder);
+  const scheduler = usesSymbolicSettlement(scenario)
+    ? new DeterministicSettlementScheduler(recorder)
+    : undefined;
+  const adapters = createScriptedAdapters(scenario, recorder, scheduler);
   const baseRouter = createShadowReasoningRouter(2_000, () => {});
   const reasoningRouter: ReasoningShadowSink = {
     resolve: (input, turn) => baseRouter.resolve(input, turn),
@@ -54,9 +81,8 @@ export async function replayScenario(scenario: ReplayScenario): Promise<ReplayRu
   };
 
   let terminal: ReplayTerminal;
-  try {
-    const state = scenario.initialState;
-    const result = await runToolLoop(adapters.completeChat, {
+  const state = scenario.initialState;
+  const invokeRuntime = () => runToolLoop(adapters.completeChat, {
       db: state.db || { settings: {} },
       messages: state.messages as any,
       tools: toLlmTools(state.toolSchemas),
@@ -76,20 +102,74 @@ export async function replayScenario(scenario: ReplayScenario): Promise<ReplayRu
       // real executeToolCall; replay replaces only the dependency boundary.
       executeToolCallFn: adapters.executeToolCall,
     } as any);
-    terminal = {
-      kind: 'result',
-      result: {
-        text: String(result.text || ''),
-        usage: result.usage as JsonValue,
-        toolCallsMade: Number(result.toolCallsMade || 0),
-        iterations: Number(result.iterations || 0),
-        recommendToolCalled: Boolean(result.recommendToolCalled),
-        images: [...(result.images || [])].map(String),
-        directContent: String(result.directContent || ''),
-      },
-    };
-  } catch (error) {
-    terminal = terminalError(error);
+
+  if (!scheduler) {
+    try {
+      terminal = terminalResult(await invokeRuntime());
+    } catch (error) {
+      terminal = terminalError(error);
+    }
+  } else {
+    let runtimeSettled = false;
+    let runtimeTerminal: ReplayTerminal | undefined;
+    let controlAccepted: { kind: 'abort' | 'timeout'; tick: number } | undefined;
+    const control = scenario.faultProfile?.symbolicControl;
+    const abortController = new AbortController();
+    if (control) {
+      scheduler.scheduleAt(control.atTick, `turn-control:${control.kind}`, () => {
+        if (runtimeSettled) {
+          recorder.push('control_suppressed', { kind: control.kind, tick: scheduler.tick });
+          return;
+        }
+        abortController.abort(control.kind);
+        controlAccepted = { kind: control.kind, tick: scheduler.tick };
+        recorder.push('turn_control', {
+          kind: control.kind,
+          tick: scheduler.tick,
+          abortSignal: abortController.signal.aborted,
+          scope: 'harness_outer_turn',
+        });
+      });
+    }
+
+    const runtimePromise = invokeRuntime()
+      .then((result) => {
+        runtimeTerminal = terminalResult(result);
+      })
+      .catch((error) => {
+        runtimeTerminal = terminalError(error);
+      })
+      .finally(() => {
+        runtimeSettled = true;
+        if (controlAccepted) {
+          recorder.push('runtime_settled_after_control', {
+            controlKind: controlAccepted.kind,
+            controlTick: controlAccepted.tick,
+            outcome: runtimeTerminal?.kind || 'unknown',
+          });
+        }
+      });
+
+    await scheduler.flushRuntimeMicrotasks();
+    let guard = 0;
+    while (!runtimeSettled || scheduler.pending > 0) {
+      if (++guard > 10_000) throw new ReplayHarnessError('symbolic scheduler exceeded 10000 actions');
+      if (scheduler.pending > 0) {
+        await scheduler.runNext();
+        continue;
+      }
+      await scheduler.flushRuntimeMicrotasks();
+      if (!runtimeSettled && scheduler.pending === 0) {
+        throw new ReplayHarnessError('runtime is pending with no symbolic settlement action');
+      }
+    }
+    await runtimePromise;
+    terminal = controlAccepted
+      ? terminalError(Object.assign(
+          new Error(`symbolic ${controlAccepted.kind} accepted before runtime settlement`),
+          { name: controlAccepted.kind === 'abort' ? 'ReplayAbort' : 'ReplayTimeout', code: 'SYMBOLIC_TURN_TERMINAL' },
+        ))
+      : (runtimeTerminal || terminalError(new Error('runtime settled without an outcome')));
   }
 
   const trace = recorder.finish(terminal);

@@ -155,6 +155,16 @@ function compactData(event: ReplayTraceEvent): string {
       return `tool#${d.callIndex} ${d.toolCallId} ok=${d.ok} final=${Boolean(d.final)} direct=${Boolean(d.directContent)} images=${d.imageCount || 0}`;
     case 'tool_throw':
       return `tool#${d.callIndex} ${d.toolCallId} throw ${d.error?.name || 'Error'}: ${d.error?.message || ''}`;
+    case 'scheduler_tick':
+      return `tick ${d.tick} ${d.label || ''}`.trim();
+    case 'settlement_attempt':
+      return `${d.boundary}#${d.callIndex} ${d.attempt} accepted=${Boolean(d.accepted)}`;
+    case 'turn_control':
+      return `turn_control ${d.kind} tick=${d.tick}`;
+    case 'control_suppressed':
+      return `control_suppressed ${d.kind} tick=${d.tick}`;
+    case 'runtime_settled_after_control':
+      return `runtime_settled_after_control ${d.controlKind} outcome=${d.outcome}`;
     case 'final_signal_observed':
       return `final_signal_observed ${d.toolCallId || ''}`.trim();
     case 'business_effect':
