@@ -98,7 +98,6 @@ Windows 下也可以使用仓库中的 `启动Wuxin.bat`、`停止Wuxin.bat` 和
 - [`.env.example`](./.env.example)：最小环境变量入口
 - [`docs/EXTERNAL_INTEGRATION.md`](./docs/EXTERNAL_INTEGRATION.md)：OneBot、LLM、osu! OAuth、外部 Bot 与渲染器集成
 - [`docs/KNOWLEDGE_BASE_V41.md`](./docs/KNOWLEDGE_BASE_V41.md)：知识库构建、开关、路由与验证
-- [`docs/AGENT_REPLAY_PHASE_D_EVIDENCE_REPORT.md`](./docs/AGENT_REPLAY_PHASE_D_EVIDENCE_REPORT.md)：Replay / Stateful Fuzz Harness 的证据、边界与复现方式
 
 运行数据默认位于 Windows 的 `%APPDATA%\Wuxin\db.json`，可通过 `DATA_DIR` 改到其他目录。
 
