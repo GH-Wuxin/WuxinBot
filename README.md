@@ -1,78 +1,124 @@
-# Wuxin — QQ 群聊 AI 机器人
+# WuxinBot
 
-一个本地运行的 Windows QQ 群聊 AI 机器人，带中文控制台 GUI，通过 NapCat / OneBot 接入 QQ，可连接 DeepSeek 或其他 OpenAI 兼容 API。
+面向 QQ 群聊、基于 OneBot v11 的可扩展 AI Agent。
 
-## 快速开始
+WuxinBot 把开放式对话、确定性消息路由和有边界的工具调用放进同一个运行时：明确命令与高置信度数据查询由代码直接处理，需要理解上下文或选择工具时才交给 LLM。它不是一个会无限规划和执行任务的 autonomous agent，也不只是把群消息原样转发给模型的聊天 Bot。
 
-1. 安装 [NapCat](https://github.com/NapNeko/NapCatQQ)，并登录你的机器人 QQ 小号。
-2. 在 [Releases](https://github.com/GH-Wuxin/WuxinBot/releases) 下载最新版本（推荐 full 包内置 Node.js），解压，双击 启动Wuxin.bat
-3. 在”模型”页选择接口供应商（默认 DeepSeek，也支持 OpenAI 兼容接口），输入 API 地址和 API Key
-4. 在「QQ连接」页输入你自己的qq号（owner）以及用作bot的小号，点击「自动检测」，然后保存并连接。
+当前发行版默认使用 **pippi** 作为交互 persona；pippi 是表现层的人格设定，不是 WuxinBot 的项目定义。
 
-## 运行要求
+## 为什么不只是普通 LLM Bot
 
-- Node.js 20+
-- NapCat，或其他兼容 OneBot v11 的客户端
-- DeepSeek API Key，或其他 OpenAI 兼容供应商的 API Key
+- **确定性优先**：快捷命令和明确的 osu! 数据意图先经过代码路由，开放式问题再进入模型规划，避免把可验证操作交给提示词碰运气。
+- **有界工具循环**：LLM 可以选择并连续调用结构化工具，但循环有明确的迭代上限；到达边界后会关闭工具并完成最终综合。
+- **完整的工具续接**：工具结果会回到当前处理流程，模型可以依据真实结果继续分析和回复；可信的确定性结果也可以不经模型改写直接交付。
+- **Adaptive Reasoning**：简单对话保持轻量；遇到上下文依赖、工具选择、目标歧义或失败恢复时，运行时可以提高推理强度，也可以通过总开关关闭。
+- **可验证的 Agent Runtime**：Replay 与 Stateful Fuzz Harness 直接驱动生产使用的工具循环，检查有界执行、终态隔离、调用次数和确定性交付。
 
-## 主要功能
+## 核心架构
 
-- **多群支持**：每个群可单独设置回复模式，包括静默、只在 @ 时回复、轻度参与、自然群友。
-- **成员策略**：支持管理员、信任成员、重点关注、少回应、黑名单、成员定制提示词等。
-- **长期记忆**：支持语境感知的个人画像、群聊氛围画像、群友关系画像。
-- **自动模型切换**：复杂任务可自动升级到更强模型。（也就是调用DS V4 Pro）
-- **联网搜索**：可接入 SearXNG 等真实搜索源，基于搜索结果回答而非瞎编。
-- **场景预设**：一键切换上课、出门、睡觉、活跃、安静、调试等模式。
-- **备份系统**：支持每 8 小时自动备份，也可在 GUI 中手动备份和恢复。
-- **决策沙盒**：不用真的发 QQ 消息，也能测试机器人是否会回复、为什么回复。
-- **思考状态提示**：可配置四种模式（关/简短/详细/仅慢请求显示），默认 3 秒延迟。
-- **画像分层**：长期画像与近期动态两层，单日高频话题不覆盖长期人格。
-- **身份锚点防护**：防止 bot 被正确 @ 后仍回复「at 的不是自己」。
-- **社交记忆**：自动信任分 + 群聊氛围画像 + 群友关系画像。
-
-## 架构
-
-```
-NapCat QQ → OneBot WS → server/onebot.ts → server/bot.ts → LLM → OneBot HTTP → QQ
-                                  ↑
-React GUI ← Vite :5173 ← Express :8787 ← server/store.ts → %APPDATA%/Wuxin/db.json
+```mermaid
+flowchart LR
+    QQ["QQ 群聊 / 私聊"] --> OB["OneBot v11"]
+    OB --> RT["消息运行时"]
+    RT --> ROUTE["确定性路由"]
+    RT --> LOOP["有界 Agent 工具循环"]
+    LOOP <--> LLM["OpenAI-compatible LLM"]
+    RT --> CONTEXT["Context / Memory / Knowledge"]
+    CONTEXT --> LOOP
+    ROUTE --> TOOLS["Tool Runtime"]
+    LOOP --> TOOLS
+    TOOLS --> OSU["osu! Workflows"]
+    TOOLS --> EXT["External Integrations"]
+    ROUTE --> DELIVERY["OneBot HTTP 交付"]
+    LOOP --> DELIVERY
+    RT <--> STORE["本地持久化"]
 ```
 
-## 指令
+消息由 OneBot WebSocket 进入运行时，经确定性路由或有界工具流程处理，再通过 OneBot HTTP 返回 QQ。运行配置、群聊状态、记忆和 osu! 绑定默认持久化到本地数据目录。
 
-所有指令都使用 `/w` 前缀，也支持 `/wuxin`。在 QQ 群里发送：
+## 主要能力
 
-```text
-/w help
-```
+### 群聊中的持续对话
 
-即可查看当前可用指令。
+WuxinBot 支持按群和成员设置交互策略，并把近期上下文、长期用户记忆、群聊关系以及可选知识库检索组装进对话上下文。persona 与这些运行时能力分离：默认是 pippi，也可以继续调整其交互风格，而无需改动消息路由和工具执行层。
 
-## 配置
+### Tool-backed workflows
 
-- **数据位置**：默认存储在 `%APPDATA%\Wuxin\db.json`，也可以通过 `DATA_DIR` 环境变量自定义。
-- **API 设置**：在 `.env` 中设置 `LLM_PROVIDER`、`LLM_API_KEY`、`LLM_API_BASE_URL`。
-- **控制台密码**：设置 `ADMIN_PASSWORD`（或在 GUI 中设置管理密码）后，所有本地管理 API 都需要认证；浏览器会在首次打开时提示输入，并仅在当前标签页保存凭据。
-- **OneBot 设置**：在 GUI 的「QQ连接」页面配置 HTTP / WebSocket 地址。
+工具以明确的输入格式和允许操作范围接入。模型负责在开放问题中选择工具和组织回复；运行时决定哪些工具可以使用、何时停止以及交付什么结果。当前工具面以查询和 osu! 工作流为主，不提供任意文件、Shell 或电脑控制能力。
 
-## 开发
+### osu! workflows
 
-推荐使用项目自带的 `portable-node`（Node 22）运行；`启动Wuxin.bat` 与
-`tools/restart-wuxin.ps1` 都会自动优先使用它。请勿用系统 Node 20 手动启动，
-否则可能出现并发连接崩溃（Node 20.11 的 happy-eyeballs 缺陷）。
+osu! 是当前最完整的垂直能力：
+
+- QQ 与 osu! 账号绑定和玩家档案；
+- BP、Recent、PP+、skill 与谱面类型分析；
+- 基于实际游玩数据的谱面推荐；
+- multiplayer 监听、回合事件推送与比赛 rating。
+
+LLM 负责解释和表达，玩家数据、成绩、星数与工具结果来自实际接口或确定性计算。外部 Bot 和图片渲染属于可选集成，不是核心运行时的前置条件。
+
+## Quick Start
+
+### 1. 准备运行环境
+
+- Node.js（建议使用当前 LTS；仓库带有 portable Node 时优先使用它）
+- 一个 OneBot v11 实现，例如 [NapCatQQ](https://github.com/NapNeko/NapCatQQ)
+- DeepSeek 或其他 OpenAI-compatible LLM endpoint
+- 可选：osu! OAuth Client Credentials，用于 osu! 工作流
+
+### 2. 安装与配置
 
 ```bash
-npm run build      # 构建前端
-npm run typecheck  # 检查已类型化的服务端模块
-npm run check      # 类型检查 + 构建 + 基础/安全验证
-npm run sanity     # 运行基础集成测试
-npm run structure  # 检查模块结构
+git clone https://github.com/GH-Wuxin/WuxinBot.git
+cd WuxinBot
+npm install
 ```
-## 开发说明
 
-本项目是一个 AI 辅助开发实验项目。作者本人并非专业程序员，代码主要由 AI 工具生成、修改和重构；人工部分主要负责需求设计、功能测试、问题反馈、版本管理与最终整合。
+复制 [`.env.example`](./.env.example) 为 `.env`，填写 LLM API key，并按所用供应商配置 provider、endpoint 与 model：
 
-因此，本项目可能存在代码风格不统一、实现方式不够优雅等问题。欢迎提出 issue、建议或 pull request。（甚至这段话都是GPT写的）
-## 许可
+```env
+LLM_API_KEY=your_api_key
+```
 
-MIT
+如需 osu! 功能，再填写 `OSU_CLIENT_ID` 与 `OSU_CLIENT_SECRET`。不要把 `.env` 或任何真实凭据提交到 Git。
+
+### 3. 启动
+
+```bash
+npm run build
+npm start
+```
+
+默认管理界面位于 `http://127.0.0.1:8787`。在界面中配置 OneBot WebSocket / HTTP 地址并连接；默认值分别为 `ws://127.0.0.1:3001` 和 `http://127.0.0.1:3000`。
+
+Windows 下也可以使用仓库中的 `启动Wuxin.bat`、`停止Wuxin.bat` 和 `打开控制台.bat`。所有 QQ 指令及当前权限可见范围以群内 `/w help` 输出为准。
+
+## 配置与文档
+
+- [`.env.example`](./.env.example)：最小环境变量入口
+- [`docs/EXTERNAL_INTEGRATION.md`](./docs/EXTERNAL_INTEGRATION.md)：OneBot、LLM、osu! OAuth、外部 Bot 与渲染器集成
+- [`docs/KNOWLEDGE_BASE_V41.md`](./docs/KNOWLEDGE_BASE_V41.md)：知识库构建、开关、路由与验证
+
+运行数据默认位于 Windows 的 `%APPDATA%\Wuxin\db.json`，可通过 `DATA_DIR` 改到其他目录。
+
+## 开发与验证
+
+```bash
+npm run dev          # 同时启动服务端与 Vite 前端
+npm run typecheck    # TypeScript 检查
+npm run check        # 类型、构建、基础与安全验证
+npm run verify-all   # 运行整库 verifier
+npm run agent:replay # 重放 Agent runtime scenario
+```
+
+Replay Harness 使用 scripted LLM 和隔离 executor 驱动真实工具循环。它验证当前模型空间内的 runtime invariants，但不等价于真实 LLM 输出质量评估，也不证明生产环境不存在其他 race 或副作用问题。
+
+## 项目边界
+
+WuxinBot 属于 conversational agent，而非 autonomous agent。它不会在 QQ 对话之外自行设定目标，也不会无上限地规划、重试或执行任务。默认 persona 属于产品表现层；LLM 供应商可配置，知识库和外部 Bot 可选。OneBot 消息运行时与 bounded tool loop 才是项目的核心。
+
+## License
+
+WuxinBot 主体代码采用 [MIT License](./LICENSE)。
+
+`server/osu/matchRating.ts` 与 `server/osu/match.ts` 包含派生自 [yumu-bot](https://github.com/yumu-bot/yumu-bot) 的 Apache-2.0 代码。来源、修改说明与许可证全文见 [THIRD_PARTY_NOTICES.md](./THIRD_PARTY_NOTICES.md) 和 [LICENSE.yumu-bot](./LICENSE.yumu-bot)。
