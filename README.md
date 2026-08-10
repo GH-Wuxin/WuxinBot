@@ -101,6 +101,18 @@ Windows 下也可以使用仓库中的 `启动Wuxin.bat`、`停止Wuxin.bat` 和
 
 运行数据默认位于 Windows 的 `%APPDATA%\Wuxin\db.json`，可通过 `DATA_DIR` 改到其他目录。
 
+## Deployment
+
+| 级别 | 范围 | 文档 |
+|------|------|------|
+| **Core** | WuxinBot + OneBot + LLM | [Quick Start](#quick-start) |
+| **Full Feature** | + osu! API、PP+、渲染、KB、外部 Bot | [Full Deployment Guide](./docs/FULL_DEPLOYMENT.md) |
+| **Reference** | + 维护者兼容的组件版本与补丁 | [Full Deployment Guide](./docs/FULL_DEPLOYMENT.md#3-reference-component-matrix) |
+
+- [Full Deployment Guide](./docs/FULL_DEPLOYMENT.md)：从空环境到完整功能的部署流程
+- [External Integration](./docs/EXTERNAL_INTEGRATION.md)：外部 Bot 与渲染器集成细节
+- [reference-stack.json](./docs/reference-stack.json)：组件版本与依赖的 machine-readable 记录
+
 ## 开发与验证
 
 ```bash
