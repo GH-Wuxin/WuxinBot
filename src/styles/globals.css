@@ -1,0 +1,62 @@
+html,
+body,
+#root {
+  min-height: 100%;
+}
+
+body {
+  background: var(--v2-bg);
+  color: var(--v2-text);
+  font-family: "Segoe UI", "Microsoft YaHei", system-ui, sans-serif;
+}
+
+.console-v2 {
+  color: var(--v2-text);
+  font-size: 14px;
+  line-height: 1.45;
+}
+
+.console-v2 *,
+.console-v2 *::before,
+.console-v2 *::after {
+  box-sizing: border-box;
+}
+
+.console-v2 button,
+.console-v2 input,
+.console-v2 select,
+.console-v2 textarea {
+  font: inherit;
+}
+
+.console-v2 button:focus-visible,
+.console-v2 input:focus-visible,
+.console-v2 select:focus-visible,
+.console-v2 textarea:focus-visible {
+  outline: 2px solid var(--v2-accent);
+  outline-offset: 2px;
+}
+
+.console-v2 h1,
+.console-v2 h2,
+.console-v2 h3,
+.console-v2 p {
+  margin-top: 0;
+}
+
+.console-v2 strong,
+.console-v2 .metric-card > strong {
+  font-variant-numeric: tabular-nums;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .console-v2 *,
+  .console-v2 *::before,
+  .console-v2 *::after {
+    scroll-behavior: auto !important;
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+  }
+}
+
