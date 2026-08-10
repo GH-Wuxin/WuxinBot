@@ -5,9 +5,9 @@
  * 已被 community-corpus V1 正式取代，禁止直接接入 V1 或作为正式语料管线：
  *   python -m community_corpus.v1.cli \
  *     --sources "%USERPROFILE%\.qq-chat-exporter\exports" \
- *     --seed 20260805 --salt-file REDACTED_REPO_ROOT\community-corpus\.salt
+ *     --seed 20260805 --salt-file <repo-root>\community-corpus\.salt
  *
- * 正式产物位于 REDACTED_REPO_ROOT\community-corpus\（normalized/full、
+ * 正式产物位于 <repo-root>\community-corpus\（normalized/full、
  * windows/v1、reports）。本文件逻辑不再维护；如确有可迁移价值，
  * 先审阅 community_corpus/v1/* 再决定是否移植。
  */
@@ -15,13 +15,13 @@
  * 从 QCE 导出的 chunked-jsonl 聊天记录构建 pippi 社区语料库。
  *
  * 输入：%USERPROFILE%\.qq-chat-exporter\exports\group_*_chunked_jsonl
- * 输出：REDACTED_REPO_ROOT\data\corpus\<groupId>.jsonl + stats.json
+ * 输出：<repo-root>\data\corpus\<groupId>.jsonl + stats.json
  *
  * 每条输出 = 一个对话窗口（按时间连续切分），供 RAG / few-shot 检索使用。
  *
  * 用法：
  *   node tools/corpus-build.mjs
- *   node tools/corpus-build.mjs --groups REDACTED_GROUP_002,REDACTED_GROUP_003
+ *   node tools/corpus-build.mjs --groups <groupId>,<groupId>
  *   node tools/corpus-build.mjs --exports C:\path\to\export1,C:\path\to\export2
  */
 
