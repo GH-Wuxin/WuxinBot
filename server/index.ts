@@ -22,6 +22,7 @@ import { queryProfileLogs, getProfileLogStats } from './bot/profileLog.js';
 import { updateProviderSettings } from './modelConfig.js';
 import { getRenderServer, startRenderServer } from './bots/renderServer.js';
 import { removeLazybotBinding, syncLazybotBinding } from './bots/bindingSync.js';
+import { sharedGroupBotConfigPath } from './bots/externalPaths.js';
 
 // ── Process guards (P0-A) ──
 // These exist to leave a stack + exit reason behind, NOT to swallow errors
@@ -163,7 +164,7 @@ app.post('/api/group-bot-config', async (req, res) => {
   try {
     const fs = await import('node:fs');
     const path = await import('node:path');
-    const sharedConfigPath = 'REDACTED_BOTS_ROOT/configs/group-bot-config.json';
+    const sharedConfigPath = sharedGroupBotConfigPath();
     const dir = path.dirname(sharedConfigPath);
     if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
     let shared = {};

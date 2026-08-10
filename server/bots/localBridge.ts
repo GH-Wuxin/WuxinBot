@@ -11,10 +11,14 @@ import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import { fileURLToPath } from 'node:url';
+import { hydrantConfigPath } from './externalPaths.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const BRIDGE_OUTPUT_DIR = path.resolve(__dirname, '..', '..', 'data', 'bot-bridge');
-const SPIKE_SELF_ID = 'REDACTED_QQ_003';
+// Local fake self id used by the bridge for non-yumu bots. Override with
+// BRIDGE_SELF_ID when the deployment's NapCat/OneBot setup requires a specific
+// self id (the private deployment keeps its real id in .env).
+const SPIKE_SELF_ID = process.env.BRIDGE_SELF_ID || '1000000003';
 
 function bridgeSelfId(botId: string): string {
   // Shiro indexes reverse-WebSocket sessions by self id. Reusing the same id
@@ -38,7 +42,7 @@ interface BotEndpoint {
   messageArray?: boolean;
 }
 
-const HYDRANT_CONFIG_PATH = 'REDACTED_BOTS_ROOT/configs/private/hydrant/appsettings.json';
+const HYDRANT_CONFIG_PATH = hydrantConfigPath();
 
 function hydrantToken(): string {
   try {

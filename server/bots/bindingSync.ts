@@ -10,10 +10,10 @@
 import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
+import { botsRoot, lazybotConfigPath } from './externalPaths.js';
 
-const BOTS_ROOT = 'REDACTED_BOTS_ROOT';
-const MYSQL = path.join(BOTS_ROOT, 'runtime/mariadb-11.4.12-winx64/bin/mysql.exe');
-const LAZY_CFG = path.join(BOTS_ROOT, 'configs/private/lazybot/application.yaml');
+const MYSQL = path.join(botsRoot(), 'runtime/mariadb-11.4.12-winx64/bin/mysql.exe');
+const LAZY_CFG = lazybotConfigPath();
 const LAZY_DB = 'lazybot';
 
 export interface BindingSyncResult {
