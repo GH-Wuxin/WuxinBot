@@ -19,3 +19,5 @@ src/*backup*.txt
 Wuxin-v0.1.0-portable.zip
 release/
 portable-node/
+.public-export/
+external-bots/

@@ -23,7 +23,10 @@ console.log('[isolation] production db snapshot: ' + (prodBefore ? prodBefore.sh
 
 // ── 1. Build the knowledge base into the isolated data dir ──
 
-const build = spawnSync('npx.cmd', ['tsx', 'tools/kb-build.mjs', '--data-dir', testDataDir], {
+// Launch through the current Node runtime: Windows Node 22 cannot spawn
+// npx.cmd directly with shell:false (EINVAL). Same approach as
+// run-all-verifies.mjs.
+const build = spawnSync(process.execPath, ['--import', 'tsx', 'tools/kb-build.mjs', '--data-dir', testDataDir], {
   cwd: root,
   encoding: 'utf8',
   timeout: 120_000,
@@ -373,7 +376,7 @@ resetKbForTests();
   const corruptDir = createTestDataDir('wuxin-kb-corrupt');
   process.env.DATA_DIR = testDataDir;
   fs.writeFileSync(path.join(corruptDir, 'db.json'), '{not-json', 'utf8');
-  const sub = spawnSync('npx.cmd', ['tsx', '-e',
+  const sub = spawnSync(process.execPath, ['--import', 'tsx', '-e',
     `(async () => { process.env.DATA_DIR = ${JSON.stringify(corruptDir)}; const m = await import('./server/bot/knowledgeBase.ts'); console.log(JSON.stringify(m.decideKbEnabled({}))); })()`,
   ], { cwd: root, encoding: 'utf8', timeout: 60_000 });
   let dbDecision = null;
@@ -385,7 +388,7 @@ resetKbForTests();
   );
   cleanupTestDir(corruptDir);
 
-  const envSub = spawnSync('npx.cmd', ['tsx', '-e',
+  const envSub = spawnSync(process.execPath, ['--import', 'tsx', '-e',
     `(async () => { process.env.KB_ENABLED = 'false'; process.env.DATA_DIR = ${JSON.stringify(testDataDir)}; const m = await import('./server/bot/knowledgeBase.ts'); console.log(JSON.stringify(m.decideKbEnabled({settings: ${JSON.stringify(enabledSettings)}, groupId: '770001', messageType: 'group'}))); })()`,
   ], { cwd: root, encoding: 'utf8', timeout: 60_000 });
   let envDecision = null;
@@ -404,7 +407,7 @@ resetKbForTests();
   const dirB = createTestDataDir('wuxin-kb-repro-b');
   process.env.DATA_DIR = testDataDir;
   for (const dir of [dirA, dirB]) {
-    const b = spawnSync('npx.cmd', ['tsx', 'tools/kb-build.mjs', '--data-dir', dir], { cwd: root, encoding: 'utf8', timeout: 120_000 });
+    const b = spawnSync(process.execPath, ['--import', 'tsx', 'tools/kb-build.mjs', '--data-dir', dir], { cwd: root, encoding: 'utf8', timeout: 120_000 });
     if (b.status !== 0) throw new Error('repro build failed: ' + (b.stderr || b.stdout));
   }
   const readManifest = (dir) => {
@@ -637,7 +640,7 @@ function knowledgeRootFor(knowledgeDirPath) {
   }
   check(ok, 'g14 meta static dependency whitelist (only ./ within server/bot/commands)');
   const isolatedDir = createTestDataDir('wuxin-kb-meta-import');
-  const sub = spawnSync('npx.cmd', ['tsx', '-e',
+  const sub = spawnSync(process.execPath, ['--import', 'tsx', '-e',
     `(async () => { process.env.DATA_DIR = ${JSON.stringify(isolatedDir)}; await import('./server/bot/commands/index.ts'); console.log('META_OK'); })()`,
   ], { cwd: root, encoding: 'utf8', timeout: 60_000 });
   process.env.DATA_DIR = testDataDir;

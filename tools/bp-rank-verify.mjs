@@ -204,7 +204,10 @@ const qqBot = {
     params: [],
     returns: 'text',
   }],
-  responsePolicy: { textSettleMs: 0, progressSettleMs: 0 },
+  // The fixture settles responses synchronously, so the post-call drain
+  // quarantine (added by 38a7117 for late-response absorption) must not block
+  // the back-to-back BP routing cases in this file.
+  responsePolicy: { textSettleMs: 0, progressSettleMs: 0, textDrainMs: 0, imageDrainMs: 0, timeoutDrainMs: 0 },
 };
 const qqDb = {
   settings: {
