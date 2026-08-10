@@ -1,7 +1,15 @@
-// osu! multiplayer match listener — TS port of yumu-bot's MatchListener /
-// MatchListenerService. Polls osu! API v2 every 8 seconds, renders events
-// through yumu-image (panel_E7 for round start, panel_F3 for round end) and
-// pushes them to the bound groups through Wuxin.
+// SPDX-License-Identifier: Apache-2.0
+//
+// Derived from yumu-bot (https://github.com/yumu-bot/yumu-bot) commit
+// 420ed650fa41ed8193e9fa1dc4c675cb4923a841:
+//   src/main/java/com/now/nowbot/model/match/MatchListener.kt
+//   src/main/java/com/now/nowbot/service/messageServiceImpl/MatchListenerService.kt
+// Licensed under the Apache License, Version 2.0. See LICENSE.yumu-bot
+// and THIRD_PARTY_NOTICES.md. Polls osu! API v2 every 8 seconds, renders
+// events through yumu-image (panel_E7 for round start, panel_F3 for round
+// end) and pushes them to the bound groups through Wuxin. Wuxin-specific
+// additions: polling bounds, group binding/persistence, rendering/sending
+// pipeline, event-order serialization and cursor fixes.
 
 import { getMatch, getMatchAfter, getBeatmap } from './api.js';
 import { buildMatchRating, serializeRound, type MatchRatingJson } from './matchRating.js';
