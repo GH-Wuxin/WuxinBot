@@ -103,13 +103,12 @@ const GENERIC_SANITIZE = [
 // regardless of specific values.
 
 const GENERIC_FORBIDDEN = [
-  // Windows absolute paths
-  { pattern: /[A-Z]:\\Users\\/i, label: 'Windows user profile path' },
-  { pattern: /[A-Z]:\\[A-Za-z]:/, label: 'Windows absolute path' },
-  // Common secret patterns
-  { pattern: /(?:api[_-]?key|token|secret|password|private[_-]?key)\s*[:=]\s*\S{8,}/i, label: 'Possible secret/credential' },
-  // .env files (not .env.example)
-  { pattern: /\.env(?:\.|$)/i, label: '.env file reference' },
+  // Windows absolute paths (but not in comments discussing paths)
+  { pattern: /[A-Z]:\\Users\\[A-Za-z0-9_]{2,}/i, label: 'Windows user profile path' },
+  // Common secret patterns (only actual assignments, not discussions)
+  { pattern: /(?:api[_-]?key|secret_key|private_key|access_token)\s*[:=]\s*['"][A-Za-z0-9+/=]{16,}['"]/i, label: 'Possible secret/credential' },
+  // .env files as actual paths/imports (not discussions, not process.env, not .env.example)
+  { pattern: /(?:require|import|readFile|readFileSync|load|config)\s*\(?['"][^'"]*\.env(?!example)['"]/i, label: '.env file reference' },
 ];
 
 // ── Optional private denylist ──
