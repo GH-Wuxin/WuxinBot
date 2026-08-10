@@ -20,7 +20,7 @@ import { evaluateTrustScores } from './bot/trust.js';
 import { decayInactiveUsers } from './bot/experience.js';
 import { queryProfileLogs, getProfileLogStats } from './bot/profileLog.js';
 import { updateProviderSettings } from './modelConfig.js';
-import { startRenderServer } from './bots/renderServer.js';
+import { getRenderServer, startRenderServer } from './bots/renderServer.js';
 import { removeLazybotBinding, syncLazybotBinding } from './bots/bindingSync.js';
 
 // ── Process guards (P0-A) ──
@@ -253,6 +253,10 @@ app.get('/api/osu/status', async (_req, res) => {
   res.json(ok({
     health: { api429Count: health.osu.api429Count, renderFailures: health.osu.renderFailures },
     bots,
+    renderer: {
+      listeningPort: getRenderServer().getListeningPort(),
+      hasClients: getRenderServer().hasClients(),
+    },
     quickRouterEnabled: Boolean(db.settings.quickRouterEnabled),
     groups: osuQuickGroupList(db),
     bindings: osuBindingList(db),

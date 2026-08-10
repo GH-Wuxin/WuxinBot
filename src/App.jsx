@@ -1,89 +1,16 @@
-﻿import React, { useEffect, useMemo, useState } from 'react';
-import { createRoot } from 'react-dom/client';
-import {
-  Activity,
-  BookOpen,
-  Bot,
-  Brain,
-  Cable,
-  FileText,
-  GitBranch,
-  KeyRound,
-  MessageCircle,
-  Pause,
-  Play,
-  Settings,
-  Shield,
-  SlidersHorizontal,
-  UserCog
-} from 'lucide-react';
+﻿import React, { useEffect, useState } from 'react';
 import './styles.css';
-import { Osu } from './components/osu.jsx';
+import './styles/tokens.css';
+import './styles/globals.css';
+import './styles/components.css';
+import { AppShell } from './components/layout/AppShell.jsx';
+import { DashboardPage } from './pages/Dashboard/index.jsx';
+import { GroupsPage } from './pages/Groups/index.jsx';
+import { IntegrationsPage } from './pages/Integrations/index.jsx';
+import { OsuPage } from './pages/Osu/index.jsx';
+import { api as authenticatedApi, rememberAdminPassword, resetAdminAuthPrompt } from './lib/api.js';
 
-const ADMIN_PASSWORD_KEY = 'wuxinAdminPassword';
-let authPromptActive = false;
-let authPromptCancelled = false;
-
-// osu! 官方 logo 单色版：白圈咬口 + "osu!" 文字（文字用蒙版镂空，随文字颜色变化）
-function OsuCookie({ size = 18 }) {
-  return (
-    <svg width={size} height={size} viewBox="0 0 24 24" aria-hidden="true" style={{ display: 'block', flexShrink: 0 }}>
-      <mask id="osu-cookie-mask">
-        <rect width="24" height="24" fill="white" />
-        <text x="12" y="14.3" textAnchor="middle" fontSize="7.6" fontWeight="800" letterSpacing="-0.2" fontFamily="'Segoe UI', Arial, sans-serif" fill="black">osu</text>
-      </mask>
-      <path
-        fillRule="evenodd"
-        d="M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20zM17 8.6a3 3 0 1 0 6 0 3 3 0 1 0-6 0z"
-        fill="currentColor"
-        mask="url(#osu-cookie-mask)"
-      />
-    </svg>
-  );
-}
-
-async function api(path, options = {}, allowAuthRetry = true) {
-  const savedPassword = window.sessionStorage.getItem(ADMIN_PASSWORD_KEY) || '';
-  const res = await fetch(path, {
-    headers: {
-      'Content-Type': 'application/json',
-      ...(savedPassword ? { 'X-Wuxin-Admin-Password': savedPassword } : {}),
-      ...(options.headers || {})
-    },
-    ...options,
-    body: options.body ? JSON.stringify(options.body) : undefined
-  });
-  let data;
-  try { data = await res.json(); } catch { throw new Error(`服务器错误 (${res.status})`); }
-  if (res.status === 401 && allowAuthRetry && !authPromptActive && !authPromptCancelled) {
-    authPromptActive = true;
-    const password = window.prompt('控制台已启用管理密码，请输入：');
-    authPromptActive = false;
-    if (password === null) {
-      authPromptCancelled = true;
-      throw new Error('需要管理密码');
-    }
-    window.sessionStorage.setItem(ADMIN_PASSWORD_KEY, password);
-    return api(path, options, false);
-  }
-  if (!res.ok || !data.ok) throw new Error(data.error || `请求失败 (${res.status})`);
-  return data;
-}
-
-const tabs = [
-  { id: 'overview', label: '总览', icon: Activity },
-  { id: 'groups', label: '群聊', icon: MessageCircle },
-  { id: 'osu', label: 'osu!', icon: OsuCookie },
-  { id: 'persona', label: '人设', icon: Brain },
-  { id: 'model', label: '模型', icon: SlidersHorizontal },
-  { id: 'members', label: '成员', icon: UserCog },
-  { id: 'memory', label: '记忆', icon: BookOpen },
-  { id: 'relationships', label: '关系', icon: GitBranch },
-  { id: 'profileLogs', label: '画像日志', icon: FileText },
-  { id: 'permissions', label: '权限', icon: KeyRound },
-  { id: 'connect', label: 'QQ连接', icon: Cable },
-  { id: 'logs', label: '日志', icon: Shield }
-];
+const api = authenticatedApi;
 
 const modeLabels = {
   silent: '静默',
@@ -100,13 +27,6 @@ const policyLabels = {
   blocked: '不回应',
   admin: '管理员',
   owner: '所有者'
-};
-
-const modelLabels = {
-  'deepseek-v4-flash': 'V4 Flash',
-  'deepseek-v4-pro': 'V4 Pro',
-  'deepseek-chat': 'Chat',
-  'deepseek-reasoner': 'Reasoner'
 };
 
 const commandLabels = {
@@ -149,10 +69,7 @@ const sampleTypeLabels = {
   'bot-output': '机器长文'
 };
 
-const groupProfileFields = ['atmosphere', 'topics', 'humorStyle', 'pace', 'boundaries', 'botStrategy'];
-const hasGroupProfileContent = (profile) => groupProfileFields.some((field) => String(profile?.[field] || '').trim());
-
-function App() {
+export function App() {
   const [tab, setTab] = useState('overview');
   const [state, setState] = useState(null);
   const [toast, setToast] = useState('');
@@ -176,9 +93,7 @@ function App() {
 
   const saveSettings = async (patch) => {
     const data = await api('/api/settings', { method: 'POST', body: patch });
-    if (patch.adminPassword && patch.adminPassword !== '已设置') {
-      window.sessionStorage.setItem(ADMIN_PASSWORD_KEY, patch.adminPassword);
-    }
+    rememberAdminPassword(patch.adminPassword);
     setState((old) => ({ ...old, db: data.db }));
     setToast('已保存设置');
     setTimeout(() => setToast(''), 1800);
@@ -188,406 +103,36 @@ function App() {
     return (
       <div className="boot">
         <p>{loadError || '正在打开控制台...'}</p>
-        {loadError && <button onClick={() => { authPromptCancelled = false; refresh(); }}>重新认证</button>}
+        {loadError && <button onClick={() => { resetAdminAuthPrompt(); refresh(); }}>重新认证</button>}
       </div>
     );
   }
 
   const db = state.db;
-  const ActiveIcon = tabs.find((item) => item.id === tab)?.icon || Settings;
-
-  return (
-    <div className="app">
-      <aside className="sidebar">
-        <div className="brand">
-          <Bot size={28} />
-          <div>
-            <strong>QQ AI 群友</strong>
-            <span>内部小群聊天机器人</span>
-          </div>
-        </div>
-        <nav>
-          {tabs.map((item) => {
-            const Icon = item.icon;
-            return (
-              <button key={item.id} className={tab === item.id ? 'active' : ''} onClick={() => setTab(item.id)}>
-                <Icon size={18} />
-                {item.label}
-              </button>
-            );
-          })}
-        </nav>
-        <div style={{ marginTop: 16 }}>
-          <GlobalSearch db={db} setTab={setTab} />
-        </div>
-      </aside>
-
-      <main>
-        <header className="topbar">
-          <div>
-            <p>{db.settings.globalPaused ? '机器人已暂停' : '机器人运行中'}</p>
-            <h1><ActiveIcon size={26} /> {tabs.find((item) => item.id === tab)?.label}</h1>
-          </div>
-          <button
-            onClick={async () => { await api('/api/stop-all', { method: 'POST' }); refresh(); }}
-            title="停止所有正在执行的后台操作（重算等）"
-          >
-            停止全部操作
-          </button>
-          <button
-            className={db.settings.globalPaused ? 'primary' : 'danger'}
-            onClick={() => saveSettings({ globalPaused: !db.settings.globalPaused })}
-          >
-            {db.settings.globalPaused ? <Play size={18} /> : <Pause size={18} />}
-            {db.settings.globalPaused ? '恢复聊天' : '暂停机器人'}
-          </button>
-        </header>
-
-        {toast && <div className="toast">{toast}</div>}
-
-        <RecalcPanel />
-
-        {tab === 'overview' && <Overview db={db} oneBot={state.oneBot} saveSettings={saveSettings} refresh={refresh} />}
-        {tab === 'groups' && <Groups db={db} refresh={refresh} saveSettings={saveSettings} />}
-        {tab === 'osu' && <Osu db={db} refresh={refresh} />}
-        {tab === 'persona' && <Persona db={db} saveSettings={saveSettings} />}
-        {tab === 'model' && <Model db={db} saveSettings={saveSettings} />}
-        {tab === 'members' && <Members db={db} refresh={refresh} />}
-        {tab === 'memory' && <Memory db={db} saveSettings={saveSettings} refresh={refresh} />}
-        {tab === 'relationships' && <Relationships db={db} refresh={refresh} />}
-        {tab === 'profileLogs' && <ProfileLogs />}
-        {tab === 'permissions' && <Permissions db={db} saveSettings={saveSettings} refresh={refresh} />}
-        {tab === 'connect' && <Connect db={db} oneBot={state.oneBot} saveSettings={saveSettings} refresh={refresh} />}
-        {tab === 'logs' && <Logs db={db} />}
-      </main>
-    </div>
-  );
-}
-
-const botLabels = { yumu: '雨沐', kanon: '猫猫', hydrant: '消防栓', lazybot: 'LazyBot' };
-
-function OsuLegacy({ db, refresh }) {
-  const [status, setStatus] = useState(null);
-  const [qq, setQq] = useState('');
-  const [name, setName] = useState('');
-  const [busy, setBusy] = useState(false);
-
-  const load = async () => {
-    try {
-      const data = await api('/api/osu/status');
-      setStatus(data);
-    } catch { /* keep last status */ }
-  };
-
-  useEffect(() => {
-    load();
-    const timer = setInterval(load, 10000);
-    return () => clearInterval(timer);
-  }, []);
-
-  const addBinding = async () => {
-    if (!qq.trim() || !name.trim()) return;
-    setBusy(true);
-    try {
-      await api('/api/osu/bindings', { method: 'POST', body: { action: 'add', qq, username: name } });
-      setQq('');
-      setName('');
-      await load();
-      await refresh();
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  const removeBinding = async (targetQq) => {
-    if (!window.confirm(`确定解除 QQ ${targetQq} 的 osu! 绑定？`)) return;
-    await api('/api/osu/bindings', { method: 'POST', body: { action: 'remove', qq: targetQq } });
-    await load();
-    await refresh();
-  };
-
-  const toggleGroupQuick = async (groupId, enabled) => {
-    await api('/api/osu/quick', { method: 'POST', body: { groupId, enabled } });
-    await load();
-  };
-
-  const toggleGlobal = async (enabled) => {
-    await api('/api/osu/quick', { method: 'POST', body: { global: enabled } });
-    await load();
-  };
-
-  const byCommand = Object.entries(status?.stats?.byCommand || {}).slice(0, 10);
-  const bySource = Object.entries(status?.stats?.bySource || {});
-
-  return (
-    <>
-      <section className="stats">
-        <Stat label="绑定账号" value={status?.bindings?.length ?? '…'} />
-        <Stat label="快捷指令调用" value={status?.stats?.quickTotal ?? '…'} />
-        <Stat label="/w osu analyze" value={status?.stats?.analyzeCount ?? '…'} />
-        <Stat label="/w osu bind" value={status?.stats?.bindCount ?? '…'} />
-        <Stat label="osu API 429" value={status?.health?.api429Count ?? '…'} />
-        <Stat label="渲染失败" value={status?.health?.renderFailures ?? '…'} />
-      </section>
-
-      <section className="panel actions" style={{ marginBottom: 16 }}>
-        <strong>原 bot 服务</strong>
-        <span className="hint" style={{ flex: 1 }}>快捷指令通过本地桥接直连原 bot，端口探测状态如下。</span>
-        {(status?.bots || []).map((bot) => (
-          <span key={bot.id} className="pill" style={bot.up ? { background: '#e3f2ea', color: '#1f6e52' } : { background: '#fde8e8', color: '#b34444' }}>
-            {botLabels[bot.id] || bot.id} · {bot.port} {bot.up ? '在线' : '离线'}
-          </span>
-        ))}
-      </section>
-
-      <section className="grid two">
-        <div className="panel">
-          <h2>绑定管理</h2>
-          <p className="hint">唯一的绑定入口是 /w osu bind；这里供管理员直接维护（QQ → osu 用户名，自动解析 ID）。</p>
-          <div className="row" style={{ gap: 8, marginBottom: 12 }}>
-            <input placeholder="QQ 号" value={qq} onChange={(e) => setQq(e.target.value)} style={{ flex: 1 }} />
-            <input placeholder="osu 用户名" value={name} onChange={(e) => setName(e.target.value)} style={{ flex: 1.4 }} />
-            <button className="primary" onClick={addBinding} disabled={busy || !qq.trim() || !name.trim()}>添加</button>
-          </div>
-          <div style={{ overflow: 'auto', maxHeight: 420 }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
-              <thead>
-                <tr style={{ textAlign: 'left', color: '#66716c' }}>
-                  <th style={{ padding: '6px 8px' }}>QQ</th>
-                  <th style={{ padding: '6px 8px' }}>osu ID</th>
-                  <th style={{ padding: '6px 8px' }}>用户名</th>
-                  <th style={{ padding: '6px 8px' }}></th>
-                </tr>
-              </thead>
-              <tbody>
-                {(status?.bindings || []).map((b) => (
-                  <tr key={b.qq} style={{ borderTop: '1px solid #eee' }}>
-                    <td style={{ padding: '6px 8px' }}>{b.qq}</td>
-                    <td style={{ padding: '6px 8px' }}>{b.id || '-'}</td>
-                    <td style={{ padding: '6px 8px' }}>{b.username || '-'}</td>
-                    <td style={{ padding: '6px 8px', textAlign: 'right' }}>
-                      <button style={{ fontSize: 12, padding: '3px 10px' }} onClick={() => removeBinding(b.qq)}>解绑</button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
-
-        <div className="panel">
-          <h2>快捷路由开关</h2>
-          <p className="hint">快捷指令默认按群关闭（避免和原 bot 双回复）；原 bot 停服后可以全局开启。</p>
-          <label className="switch">
-            <input type="checkbox" checked={Boolean(status?.quickRouterEnabled)} onChange={(e) => toggleGlobal(e.target.checked)} />
-            全局开启快捷路由
-          </label>
-          <div style={{ marginTop: 12, display: 'grid', gap: 8 }}>
-            {(status?.groups || []).map((g) => (
-              <label className="switch" key={g.groupId} style={{ margin: 0 }}>
-                <input
-                  type="checkbox"
-                  checked={Boolean(g.quick)}
-                  disabled={!g.enabled}
-                  onChange={(e) => toggleGroupQuick(g.groupId, e.target.checked)}
-                />
-                {g.name || g.groupId}（{g.groupId}）{!g.enabled && <span className="hint"> · 群未启用</span>}
-              </label>
-            ))}
-          </div>
-        </div>
-      </section>
-
-      <section className="grid two" style={{ marginTop: 16 }}>
-        <div className="panel">
-          <h2>快捷指令统计</h2>
-          <p className="hint">按指令与来源统计（commandLogs 中的 quick:* 记录）。</p>
-          <div className="cards">
-            {byCommand.length === 0 && <p className="hint">还没有快捷指令记录。</p>}
-            {byCommand.map(([command, count]) => (
-              <article className="card" key={command} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <strong>{command}</strong>
-                <span className="pill">{count}</span>
-              </article>
-            ))}
-          </div>
-          <div style={{ marginTop: 10, display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-            {bySource.map(([source, count]) => (
-              <span className="pill" key={source}>{botLabels[source] || source} · {count}</span>
-            ))}
-          </div>
-        </div>
-
-        <div className="panel">
-          <h2>最近快捷指令</h2>
-          <div className="loglist">
-            {(status?.recentQuick || []).map((log) => (
-              <div className="log command" key={log.id}>
-                <strong>quick:{log.command} · {log.outcome || 'ok'}</strong>
-                <span>{log.groupId} · {log.nickname || log.userId} | {log.createdAt ? new Date(log.createdAt).toLocaleString() : ''}</span>
-                {log.detail && <p>{log.detail}</p>}
-              </div>
-            ))}
-            {(status?.recentQuick || []).length === 0 && <p className="hint">暂无记录。</p>}
-          </div>
-        </div>
-      </section>
-    </>
-  );
-}
-
-function Overview({ db, oneBot, saveSettings, refresh }) {
-  const [health, setHealth] = useState(null);
-  useEffect(() => { api('/api/health').then(setHealth).catch(() => {}); const t = setInterval(() => { api('/api/health').then(setHealth).catch(() => {}); }, 5000); return () => clearInterval(t); }, []);
-  const statusLevel = health?.status?.level || 'unknown';
-  return (
-    <>
-      {health && (
-        <section className="stats">
-          <div className="stat" style={statusLevel === 'error' ? { borderColor: '#e4b4b4', background: '#fff5f5' } : statusLevel === 'warn' ? { borderColor: '#e1d4a8', background: '#fffef5' } : {}}>
-            <span>整体状态</span>
-            <strong style={{ fontSize: 18 }}>{statusLevel === 'ok' ? '✅' : statusLevel === 'warn' ? '⚠️' : '❌'} {health.status.text}</strong>
-          </div>
-          <Stat label="QQ状态" value={health.onebot.accountOnline === false ? '账号离线' : health.onebot.connected ? '已连接' : '断开'} />
-          <Stat label="LLM延迟" value={health.llm.avgLatencyMs ? health.llm.avgLatencyMs + 'ms' : '暂无'} />
-          <Stat label="LLM近期错误" value={health.llm.recentFailures || '无'} />
-        </section>
-      )}
-      <section className="stats">
-        <Stat label="启用群" value={db.groups.filter((g) => g.enabled).length} />
-        <Stat label="今日消息" value={db.stateStats?.todayMessages ?? db.messages.length} />
-        <Stat label="今日 Token" value={formatTokenNumber(db.usageStats?.today?.totalTokens || 0)} />
-        <Stat label="累计回复" value={db.usage.replies} />
-        <Stat label="累计 Token" value={formatTokenNumber(db.usage.totalTokens)} />
-        {(() => {
-          const exp = db.experience || {};
-          const total = Object.keys(exp).length;
-          if (!total) return null;
-          const maxPp = Math.max(0, ...Object.values(exp).map((e) => Math.floor(Number(e.xp || 0) / 100) * 100));
-          return <Stat label="经验成员" value={`${total} 人 · 最高 ${maxPp}pp`} />;
-        })()}
-      </section>
-      <UsageChart usageStats={db.usageStats} />
-      <section className="panel actions">
-        <button onClick={() => saveSettings({ onlyMentionMode: !db.settings.onlyMentionMode })}>
-          {db.settings.onlyMentionMode ? '恢复正常参与' : '临时只在 @ 时回复'}
-        </button>
-        <button onClick={refresh}>刷新状态</button>
-      </section>
-      <section className="panel modelSwitch">
-        <div>
-          <h2>快速切换模型</h2>
-          <p className="hint">日常聊天推荐 V4 Flash；想让它更认真、更慢一点时可以切 V4 Pro 或 Reasoner。</p>
-        </div>
-        <div className="segments">
-          {Object.entries(modelLabels).map(([model, label]) => (
-            <button
-              key={model}
-              className={db.settings.model === model ? 'selected' : ''}
-              onClick={() => saveSettings({ model })}
-            >
-              {label}
-            </button>
-          ))}
-        </div>
-      </section>
-      <section className="grid two">
-        <div className="panel">
-          <h2>当前状态</h2>
-          <Row label="模型" value={db.settings.model} />
-          <Row label="LLM Key" value={db.settings.apiKey || '未填写'} />
-          <Row label="OneBot 连接" value={oneBot.connected ? '已连接' : '未连接'} />
-          <Row label="最近 QQ 事件" value={oneBot.lastEventAt || '暂无'} />
-          <Row label="连接错误" value={oneBot.lastError || '无'} />
-        </div>
-        <div className="panel" style={{ overflow: 'auto', maxHeight: 'calc(100vh - 200px)' }}><Sandbox db={db} /></div>
-      </section>
-      <Backups />
-    </>
-  );
+  return <AppShell page={tab} onNavigate={setTab} db={db} oneBot={state.oneBot}
+    onStopAll={async () => { await api('/api/stop-all', { method: 'POST' }); refresh(); }}
+    onPauseToggle={() => saveSettings({ globalPaused: !db.settings.globalPaused })}>
+    {toast && <div className="toast">{toast}</div>}
+    {tab === 'overview' && <DashboardPage db={db} oneBot={state.oneBot} saveSettings={saveSettings} refreshState={refresh} />}
+    {tab === 'groups' && <GroupsPage db={db} refreshState={refresh} saveSettings={saveSettings} />}
+    {tab === 'agent' && <div className="legacy-page"><Sandbox db={db} /></div>}
+    {tab === 'osu' && <OsuPage db={db} refreshState={refresh} />}
+    {tab === 'persona' && <div className="legacy-page"><Persona db={db} saveSettings={saveSettings} /></div>}
+    {tab === 'model' && <div className="legacy-page"><Model db={db} saveSettings={saveSettings} /></div>}
+    {tab === 'members' && <div className="legacy-page"><Members db={db} refresh={refresh} /></div>}
+    {tab === 'memory' && <div className="legacy-page"><Memory db={db} saveSettings={saveSettings} refresh={refresh} /></div>}
+    {tab === 'relationships' && <div className="legacy-page"><Relationships db={db} refresh={refresh} /></div>}
+    {tab === 'profileLogs' && <div className="legacy-page"><ProfileLogs /></div>}
+    {tab === 'permissions' && <div className="legacy-page"><Permissions db={db} saveSettings={saveSettings} refresh={refresh} /></div>}
+    {tab === 'integrations' && <IntegrationsPage db={db} oneBot={state.oneBot} saveSettings={saveSettings} refreshState={refresh} />}
+    {tab === 'logs' && <div className="legacy-page"><Logs db={db} /></div>}
+    {tab === 'maintenance' && <div className="legacy-page"><RecalcPanel /><Backups /></div>}
+  </AppShell>;
 }
 
 // Level is pp-valued now (level N = N*100pp); compute defensively from XP.
 const levelPpLabel = (exp) => `${Math.floor(Number(exp?.xp || 0) / 100) * 100}pp`;
 const levelLvLabel = (exp) => `Lv.${Math.floor(Number(exp?.xp || 0) / 100)}`;
-
-function formatTokenNumber(value) {
-  return Number(value || 0).toLocaleString('zh-CN');
-}
-
-function UsageChart({ usageStats }) {
-  const [period, setPeriod] = useState('hourly24');
-  const data = usageStats?.[period] || [];
-  const maxTokens = Math.max(1, ...data.map((item) => Number(item.totalTokens || 0)));
-  const total = data.reduce((sum, item) => sum + Number(item.totalTokens || 0), 0);
-  const requests = data.reduce((sum, item) => sum + Number(item.requests || 0), 0);
-  const label = period === 'hourly24' ? '近 24 小时' : '近 7 天';
-  return (
-    <section className="panel usagePanel">
-      <div className="usageHeader">
-        <div>
-          <h2>Token 用量波动</h2>
-          <p className="hint">{label}共 {formatTokenNumber(total)} Token · {requests} 次调用</p>
-        </div>
-        <div className="usagePeriods" role="group" aria-label="Token 统计周期">
-          <button className={period === 'hourly24' ? 'selected' : ''} onClick={() => setPeriod('hourly24')}>24 小时</button>
-          <button className={period === 'daily7' ? 'selected' : ''} onClick={() => setPeriod('daily7')}>7 天</button>
-        </div>
-      </div>
-      <div className={`usageChart ${period}`} role="img" aria-label={`${label} Token 用量柱状图`}>
-        <div className="usageBars">
-          {data.map((item, index) => {
-            const height = item.totalTokens > 0 ? Math.max(4, Math.round(item.totalTokens / maxTokens * 100)) : 0;
-            const showLabel = period === 'daily7' || index % 4 === 3 || index === data.length - 1;
-            const title = `${item.label} · ${formatTokenNumber(item.totalTokens)} Token · 输入 ${formatTokenNumber(item.promptTokens)} · 输出 ${formatTokenNumber(item.completionTokens)} · ${item.requests} 次`;
-            return (
-              <div className="usageColumn" key={item.start} title={title}>
-                <div className="usageValue">{item.totalTokens ? new Intl.NumberFormat('zh-CN', { notation: 'compact', maximumFractionDigits: 1 }).format(item.totalTokens) : ''}</div>
-                <div className="usageTrack"><div className="usageBar" style={{ height: `${height}%` }} /></div>
-                <span>{showLabel ? item.label : ''}</span>
-              </div>
-            );
-          })}
-        </div>
-      </div>
-      <div className="usageLegend">
-        <span><i className="usageSwatch" /> 总 Token</span>
-        <span>悬停柱形查看输入、输出与请求数</span>
-      </div>
-    </section>
-  );
-}
-
-function GlobalSearch({ db, setTab }) {
-  const [query, setQuery] = useState('');
-  const allData = useMemo(() => {
-    if (!query.trim()) return [];
-    const q = query.trim().toLowerCase();
-    const results = [];
-    for (const g of (db.groups || [])) {
-      if (String(g.groupId).includes(q) || (g.name || '').toLowerCase().includes(q)) results.push({ label: `群: ${g.name || g.groupId}`, tab: 'groups' });
-    }
-    for (const u of (db.users || [])) {
-      if (String(u.userId).includes(q) || (u.nickname || '').toLowerCase().includes(q) || (u.note || '').toLowerCase().includes(q)) results.push({ label: `成员: ${u.nickname || u.userId}`, tab: 'members' });
-    }
-    for (const m of (db.memories || [])) {
-      if (String(m.userId).includes(q) || (m.nickname || '').toLowerCase().includes(q) || (m.summary || '').toLowerCase().includes(q)) results.push({ label: `记忆: ${m.nickname || m.userId}`, tab: 'memory' });
-    }
-    return results.slice(0, 20);
-  }, [query, db]);
-  return (
-    <div>
-      <input placeholder="全局搜索 QQ/昵称/群名..." value={query} onChange={(e) => setQuery(e.target.value)} style={{ background: '#1a2d28', border: '1px solid #3a554c', color: '#dbe9e3', fontSize: 13, padding: '8px 10px', borderRadius: 6, width: '100%' }} />
-      {allData.length > 0 && (
-        <div style={{ marginTop: 4, maxHeight: 200, overflow: 'auto' }}>
-          {allData.map((r, i) => (
-            <div key={i} onClick={() => { setTab(r.tab); setQuery(''); }} style={{ padding: '4px 6px', fontSize: 12, color: '#bad0c8', cursor: 'pointer', borderRadius: 4, marginTop: 2, background: 'transparent' }} onMouseOver={(e) => e.target.style.background = '#31544b'} onMouseOut={(e) => e.target.style.background = 'transparent'}>{r.label}</div>
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
 
 function RecalcPanel() {
   const [state, setState] = useState({ running: false, done: 0, total: 0, label: '', stopped: false });
@@ -667,294 +212,6 @@ function Backups() {
         </div>
       </div>
     </section>
-  );
-}
-
-function Groups({ db, refresh, saveSettings }) {
-  const [form, setForm] = useState({ groupId: '', name: '', enabled: true, mode: 'mention', maxPerHour: 20, cooldownSec: 30 });
-  const [search, setSearch] = useState('');
-  const [sortBy, setSortBy] = useState('recent');
-  const [expandedProfiles, setExpandedProfiles] = useState({});
-  const [editingProfiles, setEditingProfiles] = useState({});
-  const [gpDrafts, setGpDrafts] = useState({});
-  const [botToggles, setBotToggles] = useState({}); // optimistic local state for group bot toggles
-  const messages = db.messages || [];
-  const users = db.users || [];
-  const memories = db.memories || [];
-  const groupProfiles = db.groupProfiles || [];
-  const messagesByGroup = useMemo(() => {
-    const grouped = {};
-    for (const message of messages) {
-      const groupId = String(message.groupId || '');
-      if (!groupId) continue;
-      if (!grouped[groupId]) grouped[groupId] = [];
-      grouped[groupId].push(message);
-    }
-    return grouped;
-  }, [messages]);
-  const save = async (payload) => {
-    await api('/api/groups', { method: 'POST', body: payload });
-    setForm({ groupId: '', name: '', enabled: true, mode: 'mention', maxPerHour: 20, cooldownSec: 30 });
-    refresh();
-  };
-  const clearContext = async (group) => {
-    const ok = window.confirm('只清空"' + (group.name || group.groupId) + '"的聊天上下文和决策日志，不会删除群配置。继续吗？');
-    if (!ok) return;
-    await api(`/api/clear-context/${group.groupId}`, { method: 'POST' });
-    refresh();
-  };
-  const deleteGroup = async (group) => {
-    const name = group.name || group.groupId;
-    const ok = window.confirm('删除群 "' + name + '"？将同时删除该群的成员策略、聊天记录、决策日志、命令日志、群画像、关系画像和 Bot 开关配置，不可恢复。继续吗？');
-    if (!ok) return;
-    await api(`/api/groups/${group.groupId}`, { method: 'DELETE' });
-    refresh();
-  };
-  const hasManualGroupName = (group) => {
-    const name = String(group.name || '').trim();
-    const groupId = String(group.groupId || '').trim();
-    return Boolean(name && name !== groupId && name !== `群${groupId}` && name !== `群聊${groupId}` && name !== `群聊 ${groupId}`);
-  };
-  const recentGroupMessages = (groupId) => messagesByGroup[String(groupId)] || [];
-  const latestMessage = (groupId) => {
-    const list = recentGroupMessages(groupId);
-    return list.length ? list[list.length - 1] : null;
-  };
-  const recentNames = (groupId, limit = 4) => {
-    const seen = new Set();
-    const names = [];
-    for (const message of [...recentGroupMessages(groupId)].reverse()) {
-      if (message.role === 'assistant') continue;
-      const name = String(message.nickname || '').trim();
-      const userId = String(message.userId || '').trim();
-      if (!name || name === userId || seen.has(userId || name)) continue;
-      seen.add(userId || name);
-      names.push(name);
-      if (names.length >= limit) break;
-    }
-    return names;
-  };
-  const configuredMembers = (groupId) => users.filter((user) => String(user.groupId) === String(groupId));
-  const memoryMembers = (groupId) => memories.filter((memory) => (memory.groupsSeen || []).map(String).includes(String(groupId)));
-  const displayGroupName = (group) => {
-    if (hasManualGroupName(group)) return group.name;
-    const names = recentNames(group.groupId, 2);
-    if (names.length) return `${names.join('、')} 等人的群`;
-    return `群 ${group.groupId}`;
-  };
-  const groupSignal = (group) => {
-    const last = latestMessage(group.groupId);
-    if (!last) return '';
-    const who = last.role === 'assistant' ? '机器人' : (last.nickname || last.userId || '群友');
-    const text = String(last.text || '').replace(/\s+/g, ' ').slice(0, 34);
-    return `最后活跃: ${who} ${new Date(last.createdAt).toLocaleString('zh-CN')}${text ? ' · ' + text : ''}`;
-  };
-  const groupTags = (group) => {
-    const tags = [];
-    tags.push({ label: group.enabled ? '启用' : '停用', cls: group.enabled ? 'badge-memory' : 'badge-blocked' });
-    if (group.mode === 'natural') tags.push({ label: '自然', cls: 'badge-priority' });
-    if (group.mode === 'light') tags.push({ label: '轻度', cls: 'badge-cmd' });
-    if (group.mode === 'mention') tags.push({ label: '@回复', cls: 'badge-note' });
-    if (group.mode === 'silent') tags.push({ label: '静默', cls: 'badge-blocked' });
-    if (hasManualGroupName(group)) tags.push({ label: '备注', cls: 'badge-custom' });
-    const gp = groupProfiles.find((p) => String(p.groupId) === String(group.groupId));
-    if (gp && gp.enabled !== false && hasGroupProfileContent(gp)) tags.push({ label: '画像', cls: 'badge-memory' });
-    return tags;
-  };
-  const fillAutoName = () => {
-    const names = recentNames(form.groupId, 2);
-    if (!names.length) return;
-    setForm({ ...form, name: `${names.join('、')} 等人的群` });
-  };
-  const sortedGroups = [...(db.groups || [])].filter((group) => {
-    if (!search.trim()) return true;
-    const q = search.trim().toLowerCase();
-    const name = displayGroupName(group).toLowerCase();
-    const manual = String(group.name || '').toLowerCase();
-    const id = String(group.groupId || '');
-    const members = recentNames(group.groupId, 8).join(' ').toLowerCase();
-    const latest = String(latestMessage(group.groupId)?.text || '').toLowerCase();
-    return name.includes(q) || manual.includes(q) || id.includes(q) || members.includes(q) || latest.includes(q);
-  }).sort((a, b) => {
-    if (sortBy === 'name') return displayGroupName(a).localeCompare(displayGroupName(b), 'zh-CN');
-    if (sortBy === 'enabled') return Number(b.enabled === true) - Number(a.enabled === true);
-    const aTime = latestMessage(a.groupId)?.createdAt ? new Date(latestMessage(a.groupId).createdAt).getTime() : 0;
-    const bTime = latestMessage(b.groupId)?.createdAt ? new Date(latestMessage(b.groupId).createdAt).getTime() : 0;
-    return bTime - aTime;
-  });
-  const formSuggestion = form.groupId && !hasManualGroupName(form) ? recentNames(form.groupId, 2) : [];
-  return (
-    <>
-      <section className="panel" style={{ marginBottom: 16, display: 'flex', gap: 16, alignItems: 'center', flexWrap: 'wrap' }}>
-        <label className="switch" style={{ margin: 0 }}>
-          <input type="checkbox" checked={db.settings.groupProfileAutoUpdate !== false} onChange={(e) => saveSettings({ groupProfileAutoUpdate: e.target.checked })} />
-          群聊画像自动更新
-        </label>
-        <span style={{ fontSize: 14, color: '#66716c' }}>每</span>
-        <input type="number" value={db.settings.groupProfileThreshold || 80} onChange={(e) => saveSettings({ groupProfileThreshold: Math.max(20, Math.min(500, Number(e.target.value) || 80)) })} style={{ width: 70, textAlign: 'center' }} />
-        <span style={{ fontSize: 14, color: '#66716c' }}>条消息自动更新一次</span>
-      </section>
-      <section className="grid two">
-      <div className="panel">
-        <h2>{db.groups.some((group) => group.groupId === form.groupId) ? '编辑群设置' : '添加白名单群'}</h2>
-        <Text label="QQ群号" value={form.groupId} onChange={(groupId) => setForm({ ...form, groupId })} />
-        <Text label="群名称 / 备注" value={form.name} onChange={(name) => setForm({ ...form, name })} />
-        <p className="hint">不填备注时，右侧会根据最近发言的群名片和成员记录自动辅助辨认。</p>
-        {formSuggestion.length > 0 && (
-          <button type="button" className="wide" onClick={fillAutoName}>用最近活跃成员生成备注</button>
-        )}
-        <Select label="回复模式" value={form.mode} onChange={(mode) => setForm({ ...form, mode })} options={modeLabels} />
-        <Slider label="每小时最多回复" min={1} max={80} value={form.maxPerHour} onChange={(maxPerHour) => setForm({ ...form, maxPerHour })} />
-        <Slider label="发言冷却秒数" min={0} max={180} value={form.cooldownSec} onChange={(cooldownSec) => setForm({ ...form, cooldownSec })} />
-        <label className="switch"><input type="checkbox" checked={form.enabled} onChange={(e) => setForm({ ...form, enabled: e.target.checked })} /> 启用这个群</label>
-        <button className="primary wide" onClick={() => save(form)}>保存群设置</button>
-      </div>
-      <div className="panel">
-        <h2>已配置群 ({sortedGroups.length})</h2>
-        <div className="filterBar">
-          <input placeholder="搜索群名/群号/活跃成员..." value={search} onChange={(e) => setSearch(e.target.value)} />
-          <select value={sortBy} onChange={(e) => setSortBy(e.target.value)}>
-            <option value="recent">最近活跃</option>
-            <option value="enabled">启用优先</option>
-            <option value="name">名称排序</option>
-          </select>
-        </div>
-        <div className="cards">
-          {sortedGroups.map((group) => {
-            const name = displayGroupName(group);
-            const names = recentNames(group.groupId, 4);
-            const memberCount = configuredMembers(group.groupId).length;
-            const memoryCount = memoryMembers(group.groupId).length;
-            const signal = groupSignal(group);
-            const gp = groupProfiles.find((p) => String(p.groupId) === String(group.groupId));
-            const gpHasContent = hasGroupProfileContent(gp);
-            const showProfile = expandedProfiles[group.groupId] || false;
-            const toggleProfile = () => setExpandedProfiles({ ...expandedProfiles, [group.groupId]: !showProfile });
-            const editing = editingProfiles[group.groupId] || false;
-            const gpDraft = gpDrafts[group.groupId] || gp;
-            const setGpDraftLocal = (update) => setGpDrafts({ ...gpDrafts, [group.groupId]: typeof update === 'function' ? update(gpDraft) : update });
-            const gpToggle = async (enabled) => { await api(`/api/group-profiles/${group.groupId}`, { method: 'PATCH', body: { enabled } }); refresh(); };
-            const gpUpdate = async () => { await api(`/api/group-profiles/${group.groupId}/update`, { method: 'POST' }); refresh(); };
-            const gpClear = async () => { if (window.confirm('确定清除群画像？')) { await api(`/api/group-profiles/${group.groupId}`, { method: 'DELETE' }); refresh(); } };
-            const gpSave = async () => { await api(`/api/group-profiles/${group.groupId}`, { method: 'PATCH', body: { atmosphere: gpDraft.atmosphere, topics: gpDraft.topics, humorStyle: gpDraft.humorStyle, pace: gpDraft.pace, boundaries: gpDraft.boundaries, botStrategy: gpDraft.botStrategy } }); setEditingProfiles({ ...editingProfiles, [group.groupId]: false }); refresh(); };
-            const startEdit = () => { setGpDraftLocal({ ...gp }); setEditingProfiles({ ...editingProfiles, [group.groupId]: true }); };
-            return (
-              <article className="item" key={group.groupId} style={{ flexDirection: 'column', alignItems: 'stretch' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12 }}>
-                  <div>
-                    <strong>{name}</strong>
-                    {name !== String(group.groupId) && <span className="qq-sub">群号 {group.groupId}</span>}
-                    <div className="badges">{groupTags(group).map((tag) => <span key={tag.label} className={tag.cls}>{tag.label}</span>)}</div>
-                    <span>{modeLabels[group.mode] || group.mode} · 每小时 {group.maxPerHour || 0} 次 · 冷却 {group.cooldownSec || 0} 秒</span>
-                    <span>已设成员 {memberCount} · 有记忆成员 {memoryCount}</span>
-                    {(() => {
-                      const gbc = (db.groupBotConfig || {})[group.groupId] || { yumu: true, kanon: true, hydrant: true, lazybot: true };
-                      const local = botToggles[group.groupId] || {};
-                      const effectiveGbc = { ...gbc, ...local };
-                      const toggleGroupBot = async (botId, enabled) => {
-                        setBotToggles(prev => ({ ...prev, [group.groupId]: { ...(prev[group.groupId] || {}), [botId]: enabled } }));
-                        await api('/api/group-bot-config', { method: 'POST', body: { groupId: group.groupId, botId, enabled } });
-                        refresh();
-                      };
-                      const botNames = { yumu: '雨沐', kanon: '猫猫', hydrant: '消防栓', lazybot: 'LazyBot' };
-                      const botColors = { yumu: '#FF6B8A', kanon: '#F7B731', hydrant: '#45AAF2', lazybot: '#A55EEA' };
-                      return (
-                        <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginTop: 4, flexWrap: 'wrap' }}>
-                          <span style={{ fontSize: 12, color: '#999' }}>Bot 开关（切换时自动发送群指令给对应 Bot）：</span>
-                          {Object.entries(botNames).map(([botId, name]) => (
-                            <label key={botId} style={{ fontSize: 12, display: 'flex', alignItems: 'center', gap: 3, cursor: 'pointer', padding: '2px 6px', borderRadius: 4, background: effectiveGbc[botId] !== false ? (botColors[botId] || '#aaa') + '22' : '#f5f5f5', border: '1px solid ' + (effectiveGbc[botId] !== false ? (botColors[botId] || '#aaa') : '#ddd') }}>
-                              <input type="checkbox" checked={effectiveGbc[botId] !== false} onChange={e => toggleGroupBot(botId, e.target.checked)} style={{ width: 14, height: 14 }} />
-                              {name}
-                            </label>
-                          ))}
-                        </div>
-                      );
-                    })()}
-                    {/* Group member experience levels */}
-                    {(() => {
-                      const groupExp = Object.entries(db.groupExperience || {})
-                        .filter(([key]) => key.startsWith(group.groupId + ':'))
-                        .map(([, v]) => v)
-                        .sort((a, b) => (b.xpInGroup || 0) - (a.xpInGroup || 0))
-                        .slice(0, 5);
-                      if (!groupExp.length) return null;
-                      return (
-                        <span className="signal">成员等级：{groupExp.map((ge) => {
-                          const exp = (db.experience || {})[ge.userId] || {};
-                          const user = db.users?.find((u) => String(u.userId) === ge.userId);
-                          const name = user?.customName || user?.nickname || ge.userId;
-                          return `${levelPpLabel(exp)} ${name}`;
-                        }).join(' · ')}</span>
-                      );
-                    })()}
-                    {names.length > 0 && <span className="signal">自动辨认: 最近活跃 {names.join('、')}</span>}
-                    {signal && <span className="signal">{signal}</span>}
-                  </div>
-                  <div className="itemActions">
-                    <button onClick={() => setForm({ ...group })}>编辑</button>
-                    <button onClick={() => save({ ...group, enabled: !group.enabled })}>{group.enabled ? '停用' : '启用'}</button>
-                    <button onClick={() => clearContext(group)} title="只清空本群聊天记录和决策日志，不影响设置、成员策略和画像">清空上下文</button>
-                    <button className="danger" onClick={() => deleteGroup(group)} title="删除群配置及其全部群内数据，不可恢复">删除群</button>
-                  </div>
-                </div>
-                {gp && (
-                  <div style={{ marginTop: 8, padding: '8px 0', borderTop: '1px solid #ece9df' }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
-                      <span style={{ fontSize: 13, fontWeight: 600, cursor: 'pointer' }} onClick={toggleProfile}>
-                        {showProfile ? '▾' : '▸'} {gpHasContent ? `群聊画像 · 置信${Math.round((gp.confidence || 0) * 100)}% · ${gp.evidenceCount || 0}条依据` : `群聊画像待生成 · 已累计${gp.pendingMessageCount || 0}条`}
-                      </span>
-                      <div style={{ display: 'flex', gap: 6 }}>
-                        <button onClick={() => gpToggle(!gp.enabled)} style={{ fontSize: 12, padding: '4px 8px' }}>{gp.enabled !== false ? '停用注入' : '启用注入'}</button>
-                        {editing ? (
-                          <>
-                            <button onClick={gpSave} style={{ fontSize: 12, padding: '4px 8px' }} className="primary">保存</button>
-                            <button onClick={() => setEditingProfiles({ ...editingProfiles, [group.groupId]: false })} style={{ fontSize: 12, padding: '4px 8px' }}>取消</button>
-                          </>
-                        ) : (
-                          <>
-                            <button onClick={startEdit} style={{ fontSize: 12, padding: '4px 8px' }}>手动编辑</button>
-                            <button onClick={gpUpdate} style={{ fontSize: 12, padding: '4px 8px' }}>LLM更新</button>
-                            <button onClick={gpClear} style={{ fontSize: 12, padding: '4px 8px' }}>清除</button>
-                          </>
-                        )}
-                      </div>
-                    </div>
-                    {showProfile && (
-                      editing ? (
-                        <div style={{ display: 'grid', gap: 8, marginTop: 8 }}>
-                          {['atmosphere', 'topics', 'humorStyle', 'pace', 'botStrategy', 'boundaries'].map((field) => {
-                            const labels = { atmosphere: '整体氛围', topics: '常见话题', humorStyle: '玩笑方式', pace: '聊天节奏', botStrategy: '说话策略', boundaries: '注意边界' };
-                            return <label key={field} className="field" style={{ marginBottom: 0 }}>
-                              <span>{labels[field] || field}</span>
-                              <textarea rows={2} value={gpDraft[field] || ''} onChange={(e) => setGpDraftLocal({ ...gpDraft, [field]: e.target.value })} />
-                            </label>;
-                          })}
-                        </div>
-                      ) : (
-                        <div style={{ fontSize: 13, lineHeight: 1.8, color: '#52605a' }}>
-                          {!gpHasContent && <div>还没有有效群聊画像。自动更新会继续累计真实聊天；也可以点 LLM更新 手动重试。</div>}
-                          {gp.lastUpdateStatus === 'failed' && gp.lastUpdateError && <div>上次更新失败：{gp.lastUpdateError}</div>}
-                          {gp.atmosphere && <div>氛围：{gp.atmosphere}</div>}
-                          {gp.topics && <div>话题：{gp.topics}</div>}
-                          {gp.humorStyle && <div>玩笑：{gp.humorStyle}</div>}
-                          {gp.pace && <div>节奏：{gp.pace}</div>}
-                          {gp.botStrategy && <div>策略：{gp.botStrategy}</div>}
-                          {gp.boundaries && <div>边界：{gp.boundaries}</div>}
-                          <div style={{ marginTop: 4, color: '#999', fontSize: 12 }}>更新于 {gp.updatedAt ? new Date(gp.updatedAt).toLocaleString('zh-CN') : '未知'}</div>
-                        </div>
-                      )
-                    )}
-                  </div>
-                )}
-              </article>
-            );
-          })}
-          {db.groups.length > 0 && !sortedGroups.length && <p className="empty">没有匹配的群。换个群号、备注或活跃成员再搜。</p>}
-          {!db.groups.length && <p className="empty">还没有白名单群。先填一个内部小群的 QQ 群号。</p>}
-        </div>
-      </div>
-    </section>
-    </>
   );
 }
 
@@ -1918,83 +1175,6 @@ function Permissions({ db, saveSettings, refresh }) {
   );
 }
 
-function Connect({ db, oneBot, saveSettings, refresh }) {
-  const [draft, setDraft] = useState(db.settings);
-  const [detecting, setDetecting] = useState(false);
-  const [detectResult, setDetectResult] = useState(null);
-  const connect = async () => {
-    await saveSettings(draft);
-    await api('/api/onebot/connect', { method: 'POST' });
-    refresh();
-  };
-  const autoDetect = async () => {
-    setDetecting(true);
-    setDetectResult(null);
-    try {
-      const data = await api('/api/onebot/autodetect');
-      setDetectResult(data);
-      if (data.detected) {
-        setDraft({ ...draft, oneBotHttpUrl: data.detected.httpUrl, oneBotWsUrl: data.detected.wsUrl });
-      }
-    } catch {
-      setDetectResult({ results: [], detected: null });
-    } finally {
-      setDetecting(false);
-    }
-  };
-  const friendlyError = oneBot.lastError?.includes('ECONNREFUSED')
-    ? '没有连上 OneBot WebSocket。通常是 NapCat/Lagrange 还没启动，或没有开启 WebSocket 服务端，或端口填错了。'
-    : oneBot.lastError || '无';
-  const overallStatus = oneBot.accountOnline === false
-    ? '账号离线'
-    : oneBot.transportConnected === false
-      ? '未连接'
-      : oneBot.apiReachable === false
-        ? 'API 不可达'
-        : '已连接';
-  return (
-    <section className="grid two">
-      <div className="panel">
-        <h2>NapCat / OneBot 连接</h2>
-        <p className="hint">先启动 NapCat 并扫码登录 QQ 小号，然后点"自动检测"自动填入地址。如果检测不到，再看下面手动教程填。</p>
-        <div className="row" style={{ gap: 8, marginBottom: 12 }}>
-          <button className="primary" onClick={autoDetect} disabled={detecting}>
-            {detecting ? '检测中...' : '自动检测'}
-          </button>
-          {detectResult?.detected && <span style={{ color: '#4ade80', fontSize: 14 }}>已检测到端口 {detectResult.detected.bestPort}</span>}
-          {detectResult && !detectResult.detected && <span style={{ color: '#f87171', fontSize: 14 }}>未检测到 NapCat，请确认已启动</span>}
-        </div>
-        <Text label="OneBot HTTP 地址" value={draft.oneBotHttpUrl} onChange={(oneBotHttpUrl) => setDraft({ ...draft, oneBotHttpUrl })} />
-        <Text label="OneBot WebSocket 地址" value={draft.oneBotWsUrl} onChange={(oneBotWsUrl) => setDraft({ ...draft, oneBotWsUrl })} />
-        <Password label="Access Token，没有就留空" value={draft.oneBotAccessToken} onChange={(oneBotAccessToken) => setDraft({ ...draft, oneBotAccessToken })} />
-        <Text label="机器人自己的 QQ号" value={draft.selfQq} onChange={(selfQq) => setDraft({ ...draft, selfQq })} />
-        <Text label="你的 QQ号（Owner）" value={draft.ownerQq} onChange={(ownerQq) => setDraft({ ...draft, ownerQq })} />
-        <Text label="其他 Bot QQ（逗号分隔，可选）" value={draft.externalBotQqs || ''} onChange={(externalBotQqs) => setDraft({ ...draft, externalBotQqs })} />
-        <button className="primary" onClick={connect}>保存并连接 QQ</button>
-      </div>
-      <div className="panel">
-        <h2>连接状态</h2>
-        <Row label="总状态" value={overallStatus} />
-        <Row label="WebSocket" value={oneBot.transportConnected ? '已连接' : '断开'} />
-        <Row label="NapCat API" value={oneBot.apiReachable === true ? '可达' : oneBot.apiReachable === false ? '不可达' : '探测中'} />
-        <Row label="QQ Session" value={oneBot.accountOnline === true ? '在线' : oneBot.accountOnline === false ? '离线' : '未知'} />
-        <Row label="Heartbeat" value={oneBot.heartbeatFresh ? '正常' : oneBot.lastHeartbeatAt ? '超时' : '无数据'} />
-        <Row label="最近事件" value={oneBot.lastEventAt || '暂无'} />
-        <Row label="重连次数" value={oneBot.reconnectCount ?? 0} />
-        <Row label="错误" value={friendlyError} />
-        <p className="guide">NapCat 或 Lagrange 开启 OneBot 后，把 HTTP 和 WebSocket 地址填到这里。</p>
-        <div className="steps">
-          <strong>NapCat 新手指南</strong>
-          <p>1. 下载 NapCat（推荐 Windows 一键包），解压后启动。</p>
-          <p>2. NapCat 会弹出二维码，用机器人的 QQ 小号扫码登录。</p>
-          <p>3. 登录成功后，点本页的"自动检测"按钮，地址会自动填入。</p>
-          <p>4. 如果检测不到，可能是端口换了。打开 NapCat WebUI（默认 http://127.0.0.1:6099/webui），在网络配置里查看 HTTP 和 WebSocket 的实际端口。</p>
-        </div>
-      </div>
-    </section>
-  );
-}
-
 function Logs({ db }) {
   const [logSearch, setLogSearch] = useState('');
   const filterLogs = (items) => {
@@ -2257,5 +1437,3 @@ function Slider({ label, min, max, step = 1, value, onChange }) {
     </label>
   );
 }
-
-createRoot(document.getElementById('root')).render(<App />);
