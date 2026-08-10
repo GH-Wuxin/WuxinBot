@@ -484,7 +484,7 @@ async function main() {
         groupId: '10001',
         userId: 'REDACTED_QQ_001',
         nickname: 'Owner',
-        raw: { self_id: REDACTED_QQ_002 }
+        raw: { self_id: 'REDACTED_QQ_002' }
       },
       async (event, text, options) => {
         reportCalls.push({ event, text, options });
