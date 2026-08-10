@@ -11,6 +11,11 @@
 // Usage:
 //   node tools/prepare-public-export.mjs --out G:/path/to/export
 // Default output: <repo>/.public-export (gitignored).
+//
+// Private denylist:
+//   If .private/public-export-denylist.txt exists, each non-empty non-comment
+//   line is treated as a literal string that must NOT appear in the export.
+//   This file is gitignored and never committed. The tool works without it.
 import { spawnSync } from 'node:child_process';
 import crypto from 'node:crypto';
 import fs from 'node:fs';
@@ -78,51 +83,50 @@ function isTextFile(file) {
     || base === '.ENV.EXAMPLE';
 }
 
-// Deterministic sanitization map: local paths first (longest first), then
-// real QQ/group identifiers. Fake placeholders are stable across exports.
-const SANITIZE_MAP = [
-  ['REDACTED_REPO_ROOT\\', '<repo-root>/'],
-  ['REDACTED_REPO_ROOT/', '<repo-root>/'],
-  ['REDACTED_REPO_ROOT', '<repo-root>'],
-  ['REDACTED_REPO_ROOT', '<repo-root>'],
-  ['REDACTED_BOTS_ROOT', '<BOTS_ROOT>'],
-  ['REDACTED_BOTS_ROOT', '<BOTS_ROOT>'],
-  ['REDACTED_WORKSPACE', '<WORKSPACE>'],
-  ['REDACTED_WORKSPACE', '<WORKSPACE>'],
-  ['REDACTED_USERPROFILE', '<USERPROFILE>'],
-  ['REDACTED_USERPROFILE', '<USERPROFILE>'],
-  ['REDACTED_DATA_DIR', '<DATA_DIR>'],
-  ['REDACTED_DATA_DIR', '<DATA_DIR>'],
-  ['REDACTED_NAPCAT_DIR', '<NAPCAT_USER_DATA_DIR>'],
-  ['REDACTED_NAPCAT_DIR', '<NAPCAT_USER_DATA_DIR>'],
-  ['REDACTED_QQ_001', '1000000001'],
-  ['REDACTED_QQ_002', '1000000002'],
-  ['REDACTED_QQ_003', '1000000003'],
-  ['REDACTED_GROUP_001', '200000001'],
-  ['REDACTED_QQ_004', '1000000004'],
-  ['REDACTED_QQ_005', '1000000005'],
-  ['REDACTED_GROUP_002', '200000002'],
-  ['REDACTED_GROUP_003', '200000003'],
-  ['REDACTED_QQ_006', '1000000006'],
-  ['REDACTED_QQ_007', '1000000007'],
-  ['REDACTED_QQ_008', '1000000008'],
-  ['REDACTED_GROUP_004', '200000004'],
-  ['REDACTED_GROUP_005', '200000005'],
-  ['REDACTED_GROUP_006', '200000006'],
+// ── Generic sanitization patterns ──
+// These replace common local-machine artifacts with stable placeholders.
+// No real private values are stored here.
+
+const GENERIC_SANITIZE = [
+  // Windows absolute paths (drive letter)
+  [/[A-Z]:\\Users\\[^\\/:*?"<>|\s]+/gi, '<USERPROFILE>'],
+  [/[A-Z]:\\Users\\[^\\/:*?"<>|\s]+/gi, '<USERPROFILE>'],
+  // Common Windows workspace patterns
+  [/[A-Z]:\\[A-Za-z0-9_ -]+\\[A-Za-z0-9_ -]+\\[A-Za-z0-9_ -]+/g, '<LOCAL_PATH>'],
+  // Unix/macOS home paths
+  [/\/home\/[a-z][a-z0-9_-]{0,31}\b/gi, '<USER_HOME>'],
+  [/\/Users\/[a-z][a-z0-9_-]{0,31}\b/gi, '<USER_HOME>'],
 ];
 
-const FORBIDDEN = [
-  'REDACTED_REPO_ROOT', 'REDACTED_REPO_ROOT',
-  'REDACTED_WORKSPACE', 'REDACTED_WORKSPACE',
-  'REDACTED_USERPROFILE', 'REDACTED_USERPROFILE',
-  'REDACTED_DATA_DIR', 'REDACTED_DATA_DIR',
-  'REDACTED_NAPCAT_DIR', 'REDACTED_NAPCAT_DIR',
-  'REDACTED_QQ_001', 'REDACTED_QQ_002', 'REDACTED_QQ_003',
-  'REDACTED_GROUP_001', 'REDACTED_QQ_004', 'REDACTED_QQ_005',
-  'REDACTED_GROUP_002', 'REDACTED_GROUP_003',
-  'REDACTED_QQ_006', 'REDACTED_QQ_007', 'REDACTED_QQ_008', 'REDACTED_GROUP_004',
-  'REDACTED_GROUP_005', 'REDACTED_GROUP_006',
+// ── Generic forbidden patterns ──
+// These detect patterns that should never appear in a public export,
+// regardless of specific values.
+
+const GENERIC_FORBIDDEN = [
+  // Windows absolute paths
+  { pattern: /[A-Z]:\\Users\\/i, label: 'Windows user profile path' },
+  { pattern: /[A-Z]:\\[A-Za-z]:/, label: 'Windows absolute path' },
+  // Common secret patterns
+  { pattern: /(?:api[_-]?key|token|secret|password|private[_-]?key)\s*[:=]\s*\S{8,}/i, label: 'Possible secret/credential' },
+  // .env files (not .env.example)
+  { pattern: /\.env(?:\.|$)/i, label: '.env file reference' },
 ];
+
+// ── Optional private denylist ──
+// Loaded from .private/public-export-denylist.txt if it exists.
+// Each non-empty, non-# line is a literal string that must NOT appear.
+
+function loadPrivateDenylist(repoRoot) {
+  const denylistPath = path.join(repoRoot, '.private', 'public-export-denylist.txt');
+  if (!fs.existsSync(denylistPath)) {
+    return { loaded: false, entries: [], path: denylistPath };
+  }
+  const text = fs.readFileSync(denylistPath, 'utf8');
+  const entries = text.split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter((line) => line && !line.startsWith('#'));
+  return { loaded: true, entries, path: denylistPath };
+}
 
 // Files that carry the open-source preparation patch and must be taken from
 // the working tree (everything else comes from git HEAD).
@@ -202,6 +206,14 @@ async function main() {
       fs.copyFileSync(src, dest);
     }
 
+    // Load optional private denylist.
+    const denylist = loadPrivateDenylist(root);
+    if (!denylist.loaded) {
+      console.warn('[info] Private denylist not configured (expected at .private/public-export-denylist.txt). Generic scanners still active.');
+    } else {
+      console.log(`[info] Private denylist loaded: ${denylist.entries.length} entries`);
+    }
+
     // Sanitize text files (skipped in --no-sanitize review mode).
     let sanitizedFiles = 0;
     if (sanitize) {
@@ -211,12 +223,26 @@ async function main() {
         if (stat.size > MAX_TEXT_BYTES || stat.size === 0) return;
         let text = fs.readFileSync(file, 'utf8');
         let changed = false;
-        for (const [from, to] of SANITIZE_MAP) {
-          if (text.includes(from)) {
-            text = text.split(from).join(to);
+
+        // Apply generic sanitization patterns.
+        for (const [pattern, replacement] of GENERIC_SANITIZE) {
+          const newText = text.replace(pattern, replacement);
+          if (newText !== text) {
+            text = newText;
             changed = true;
           }
         }
+
+        // Apply private denylist replacements.
+        if (denylist.loaded) {
+          for (const entry of denylist.entries) {
+            if (text.includes(entry)) {
+              text = text.split(entry).join('***REMOVED_PRIVATE***');
+              changed = true;
+            }
+          }
+        }
+
         if (changed) {
           fs.writeFileSync(file, text, 'utf8');
           sanitizedFiles++;
@@ -234,12 +260,24 @@ async function main() {
       fileCount++;
       totalBytes += fs.statSync(file).size;
       if (!isTextFile(file)) return;
+      const stat = fs.statSync(file);
+      if (stat.size > MAX_TEXT_BYTES || stat.size === 0) return;
       const text = fs.readFileSync(file, 'utf8');
       if (sanitize) {
-        for (const needle of FORBIDDEN) {
-          if (text.includes(needle)) {
-            violations.push(`${path.relative(baseDir, file)}: ${needle}`);
+        // Check generic forbidden patterns.
+        for (const { pattern, label } of GENERIC_FORBIDDEN) {
+          if (pattern.test(text)) {
+            violations.push(`${path.relative(baseDir, file)}: ${label}`);
             break;
+          }
+        }
+        // Check private denylist.
+        if (denylist.loaded) {
+          for (const entry of denylist.entries) {
+            if (text.includes(entry)) {
+              violations.push(`${path.relative(baseDir, file)}: private denylist entry found`);
+              break;
+            }
           }
         }
       }
@@ -276,8 +314,9 @@ async function main() {
         docs: 'internal audits/handover notes (only EXTERNAL_INTEGRATION.md and KNOWLEDGE_BASE_V41.md are public)',
       },
       sanitization: {
-        note: 'Deterministic replacement applied to text files. Local machine paths were replaced with generic placeholders (<repo-root>, <BOTS_ROOT>, <WORKSPACE>, <USERPROFILE>, <DATA_DIR>, <NAPCAT_USER_DATA_DIR>); real QQ/group identifiers were replaced with stable 10-digit placeholders (1000000001+ / 200000001+). The private values are intentionally not recorded in this manifest.',
+        note: 'Generic sanitization applied (Windows paths, user profiles, secret patterns). Private denylist entries replaced if configured. No real private values recorded.',
         sanitizedFiles: sanitize ? sanitizedFiles : 'SKIPPED (--no-sanitize review mode)',
+        privateDenylist: denylist.loaded ? `${denylist.entries.length} entries` : 'not configured',
       },
       verification: 'pass',
       };
