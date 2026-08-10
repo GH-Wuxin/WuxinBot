@@ -1,6 +1,12 @@
-// MatchRating — TS port of yumu-bot's MatchRating.kt (osu! multiplayer rating
-// model). Output is serialized with snake_case keys so yumu-image's panel_E7 /
-// panel_F3 renderers can consume it unchanged.
+// SPDX-License-Identifier: Apache-2.0
+//
+// Derived from yumu-bot (https://github.com/yumu-bot/yumu-bot) commit
+// 420ed650fa41ed8193e9fa1dc4c675cb4923a841:
+//   src/main/java/com/now/nowbot/model/match/MatchRating.kt
+// Licensed under the Apache License, Version 2.0. See LICENSE.yumu-bot
+// and THIRD_PARTY_NOTICES.md. This file is a TypeScript port with Wuxin-side
+// modifications; output is serialized with snake_case keys so yumu-image's
+// panel_E7 / panel_F3 renderers can consume it unchanged.
 
 import type {
   OsuMatch,
