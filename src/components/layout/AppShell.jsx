@@ -25,6 +25,7 @@ export function AppShell({ page, onNavigate, db, oneBot, onPauseToggle, onStopAl
 
   useEffect(() => {
     setNavigationOpen(false);
+    window.scrollTo({ top: 0, left: 0, behavior: 'auto' });
   }, [page]);
 
   useEffect(() => {

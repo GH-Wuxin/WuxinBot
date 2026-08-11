@@ -5,9 +5,49 @@ body,
 }
 
 body {
+  margin: 0;
   background: var(--v2-bg);
   color: var(--v2-text);
   font-family: "Segoe UI", "Microsoft YaHei", system-ui, sans-serif;
+}
+
+.boot {
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  gap: 12px;
+  padding: 24px;
+  text-align: center;
+  color: var(--v2-text);
+  background: var(--v2-bg);
+}
+
+.boot p { margin: 0; font-size: 18px; }
+.boot button {
+  min-height: 38px;
+  padding: 0 13px;
+  color: var(--v2-text);
+  font: inherit;
+  background: var(--v2-surface-3);
+  border: 1px solid var(--v2-border-strong);
+  border-radius: var(--v2-radius-sm);
+  cursor: pointer;
+}
+.boot button:hover { background: var(--v2-surface-hover); }
+
+.toast {
+  position: fixed;
+  z-index: 80;
+  top: 20px;
+  right: 26px;
+  max-width: min(360px, calc(100vw - 32px));
+  padding: 10px 14px;
+  color: var(--v2-text);
+  background: var(--v2-surface-3);
+  border: 1px solid var(--v2-border-strong);
+  border-left: 3px solid var(--v2-accent);
+  border-radius: var(--v2-radius-sm);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.28);
 }
 
 .console-v2 {
@@ -59,4 +99,3 @@ body {
     animation-iteration-count: 1 !important;
   }
 }
-
