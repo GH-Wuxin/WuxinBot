@@ -158,15 +158,18 @@ Normal save actions must never share the same visual weight as deletion or data 
 ### Detail panels
 
 - Desktop uses list + detail split layout.
+- Heavy editor workspaces (Members, Memory, Relationships and Permissions) stack below 1240 px, before their minimum columns can create document overflow.
 - Narrow layouts stack detail after the list or use a full-width drawer.
 - Selection, loading, empty and error states must be explicit.
+- Large relationship, permission and log collections keep their own bounded scrolling region; they must not turn the whole document into an unbounded record dump.
 
 ## Responsive behavior
 
 - 1440p: full grouped sidebar and two-column working layouts.
-- 1080p: full navigation remains usable; metric grids reduce columns; list/detail widths remain practical.
+- 1200px-class desktop: full navigation remains usable; heavy editor workspaces stack before their minimum widths overflow.
+- 1080p: metric grids reduce columns; list/detail widths remain practical.
 - At 900 px and below: navigation becomes a top bar plus drawer, list/detail stacks and action groups wrap.
-- Below approximately 640 px: metrics become one or two columns, dialogs fit the viewport and primary actions remain reachable.
+- Below approximately 640 px: metrics become one column where needed, settings controls stack, dialogs fit the viewport and primary actions remain reachable.
 - No page-level horizontal scrolling is allowed for normal content.
 
 ## Forbidden directions
