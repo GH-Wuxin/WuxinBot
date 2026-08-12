@@ -230,6 +230,17 @@ export function parseOsuArgs(def: RawQuickCommandDef, args: string): ParsedOsuAr
     }
     return parseBpArgs(args, def.id === 'bs');
   }
+  if (def.capability === 'recent') {
+    // `!pr #2` / `!re #2`：裸 `#N` 是成绩序号，不是用户名。保留原始 args，
+    // 桥接时会重建成 `!pr <绑定的用户名> #2`，避免把命令丢给 Kanon 后触发
+    // 它自己的 desu.life 绑定检查。
+    const value = String(args || '').trim();
+    if (!value) return { username: '' };
+    if (/^[#＃]\s*\d{1,3}$/.test(value)) return { username: '' };
+    const trailingIndex = /^(.+?)\s+[#＃]\s*\d{1,3}$/.exec(value);
+    if (trailingIndex) return { username: trailingIndex[1].trim() };
+    return { username: value };
+  }
   return { username: String(args || '').trim() };
 }
 

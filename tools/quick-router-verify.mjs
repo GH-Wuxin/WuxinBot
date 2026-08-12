@@ -200,6 +200,24 @@ console.log('\n=== Unit: score args ===');
   ok('score-empty', Boolean(empty.error), JSON.stringify(empty));
 }
 
+console.log('\n=== Unit: recent args ===');
+
+{
+  const recentDef = { id: 'recent', source: 'kanon', capability: 'recent', bridge: true };
+  const bare = parseOsuArgs(recentDef, '#2');
+  ok('recent-index', bare.username === '', JSON.stringify(bare));
+  const fullwidth = parseOsuArgs(recentDef, '＃2');
+  ok('recent-fullwidth-index', fullwidth.username === '', JSON.stringify(fullwidth));
+  const withUser = parseOsuArgs(recentDef, 'BetaPlayer #2');
+  ok('recent-user-index', withUser.username === 'BetaPlayer', JSON.stringify(withUser));
+  const usernameOnly = parseOsuArgs(recentDef, 'BetaPlayer');
+  ok('recent-username', usernameOnly.username === 'BetaPlayer', JSON.stringify(usernameOnly));
+  const empty = parseOsuArgs(recentDef, '');
+  ok('recent-empty', empty.username === '', JSON.stringify(empty));
+  const numericUsername = parseOsuArgs(recentDef, '159263748abc');
+  ok('recent-numeric-username', numericUsername.username === '159263748abc', JSON.stringify(numericUsername));
+}
+
 // ── 2b. Image-first delivery ──
 
 console.log('\n=== Unit: quickPayload (image-only delivery) ===');
