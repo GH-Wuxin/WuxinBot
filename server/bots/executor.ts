@@ -1995,17 +1995,24 @@ export async function executeInternalBotCommand(
         ? `BP${actualStart}`
         : `BP${actualStart}-${actualEnd}`;
 
-      // SS 估算 + pp 组成 + 密度：仅 LLM 工具路径启用（快速指令保持原渲染与延迟）。
-      let ssEnrichments: Array<{ ssPp: number | null; breakdown: string | null } | null> | null = null;
+      // SS 估算 + pp 构成 + 密度：仅 LLM 工具路径启用（快速指令保持原渲染与延迟）。
+      let ssEnrichments: Array<any> | null = null;
       let enrichmentHelpers: { beatmapDensity: any; formatBpEnrichmentSuffix: any } | null = null;
       if (options?.enrichBpEstimates) {
         const helpers = await import('./beatmapCapabilities.js');
         enrichmentHelpers = helpers;
         ssEnrichments = await helpers.enrichBpScoresWithSs(
-          rankedScores.map((entry) => ({
-            beatmapId: Number(entry.score.beatmap?.id || 0),
-            mods: scoreModAcronyms(entry.score),
-          })),
+          rankedScores.map((entry) => {
+            const score = entry.score;
+            const statistics = (score as any).statistics || {};
+            return {
+              beatmapId: Number(score.beatmap?.id || 0),
+              mods: scoreModAcronyms(score),
+              accuracy: Number(score.accuracy || 0) > 0 ? Number(score.accuracy) * 100 : 100,
+              combo: Number(score.max_combo) > 0 ? Number(score.max_combo) : null,
+              misses: Number(statistics.miss || 0),
+            };
+          }),
         );
       }
 
@@ -2032,10 +2039,17 @@ export async function executeInternalBotCommand(
         try {
           if (rankedScores.length === 1) {
             const { renderScoreCard } = await import('./render.js');
+            const enrichment = ssEnrichments?.[0] ?? null;
             const rendered = await renderScoreCard(
               scoreForRenderer(rankedScores[0].score),
               user,
               rankedScores[0].rank,
+              enrichment
+                ? {
+                    attributes: enrichment.attributes ?? null,
+                    density26: enrichment.density26 ?? null,
+                  }
+                : undefined,
             );
             if (rendered) {
               return { content, images: [rendered.cqCode] };
