@@ -117,7 +117,7 @@ export async function runPpCalc(args: Record<string, unknown>): Promise<string> 
     `${accuracy}% acc / ${comboText} / ${misses} miss → 估算约 ${calc.estimated_pp.toFixed(2)}pp`,
     '（rosu 估算值，不是官方精确 pp；仅 osu!std，lazer 语义与正式成绩可能有差异）',
     breakdown ? `构成: ${breakdown}` : '',
-    `带 mod 星数 ${calc.stars.toFixed(2)}★ | AR ${calc.ar ?? '?'} | OD ${calc.od ?? '?'} | HP ${calc.hp ?? '?'} | max combo ${calc.max_combo}`,
+    `带 mod 星数 ${calc.stars.toFixed(2)}★ | AR ${calc.ar != null ? calc.ar.toFixed(2) : '?'} | OD ${calc.od != null ? calc.od.toFixed(2) : '?'} | HP ${calc.hp != null ? calc.hp.toFixed(2) : '?'} | max combo ${calc.max_combo}`,
     ladder ? `FC acc 阶梯: ${ladder}` : '',
   ].filter(Boolean).join('\n');
 }
