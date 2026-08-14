@@ -71,6 +71,7 @@ const YUMU_JSON = {
     effective_miss_count: 0, estimated_unstable_rate: null,
     fc_ladder: { '1.00': 201.31, '0.99': 188.93, '0.98': 169.79, '0.96': 147.31, '0.94': 133.14, '0.92': 125.63 },
   },
+  density_26: [3, 5, 8, 6, 4, 7, 9, 6, 5, 8, 4, 6, 7, 9, 5, 6, 8, 4, 7, 5, 9, 6, 4, 5, 8, 6],
 };
 
 // ── Mock servers ──
@@ -156,16 +157,25 @@ function expectContains(label, text, markers) {
 {
   const { enrichBpScoresWithSs, formatBpEnrichmentSuffix, beatmapDensity } = await import('../server/bots/beatmapCapabilities.ts');
   const results = await enrichBpScoresWithSs([
-    { beatmapId: 5518740, mods: ['HD', 'HR'] },
+    { beatmapId: 5518740, mods: ['HD', 'HR'], accuracy: 95.2, combo: 196, misses: 1 },
     { beatmapId: 999999, mods: [] },
   ]);
-  if (results[0]?.ssPp != null && String(results[0].breakdown || '').includes('aim') && results[1] === null) {
+  const first = results[0];
+  if (
+    first?.ssPp === 201.31
+    && String(first.breakdown || '').includes('aim')
+    && Array.isArray(first.density26) && first.density26.length === 26
+    && first.attributes?.perfect_pp === 201.31
+    && first.attributes?.full_pp === 147.31 // closest ladder bucket to 95.2% → 0.96
+    && first.attributes?.pp === 201.31
+    && results[1] === null
+  ) {
     pass('enrich-ss-bp');
   } else {
     fail('enrich-ss-bp', JSON.stringify(results));
   }
   const suffix = formatBpEnrichmentSuffix(201.3, 'aim 145.2/speed 12.1/acc 28.9', 4.5);
-  if (suffix.includes('SS≈201.3pp') && suffix.includes('密度 4.5/s')) pass('enrich-suffix-format');
+  if (suffix.includes('SS≈201.3pp') && suffix.includes('构成 aim 145.2/speed 12.1/acc 28.9') && suffix.includes('密度 4.5/s')) pass('enrich-suffix-format');
   else fail('enrich-suffix-format', suffix);
   const density = beatmapDensity({ count_circles: 113, count_sliders: 33, count_spinners: 1, hit_length: 31 });
   if (density !== null && Math.abs(density - 147 / 31) < 1e-9) pass('enrich-density');

@@ -149,15 +149,36 @@ export function beatmapDensity(beatmap: {
 const BP_SS_ENRICH_CONCURRENCY = 4;
 
 export interface BpScoreEnrichment {
-  /** SS（100% acc FC）rosu 估算 pp；失败时 null。 */
+  /** SS（100% acc、FC、0 miss）rosu 估算 pp；失败时 null。 */
   ssPp: number | null;
-  /** aim/speed/acc 分解文本；失败时 null。 */
+  /** 本成绩的 pp 构成（aim/speed/acc，1 位小数）；失败时 null。 */
   breakdown: string | null;
+  /** yumu 26 段物件密度数组（面板密度折线用）；失败时 null。 */
+  density26: number[] | null;
+  /** 面板 E5/E7 需要的 pp 分解属性（含 full_pp/perfect_pp）；失败时 null。 */
+  attributes: Record<string, number> | null;
 }
 
-/** 批量拉取每张 BP 的 SS 估算与 pp 组成（雨沐 rosu，有界并发）。 */
+interface BpEnrichInput {
+  beatmapId: number;
+  mods: string[];
+  /** 0-100；缺省 100（即按 SS 拉取）。 */
+  accuracy?: number;
+  /** null = FC；缺省 null。 */
+  combo?: number | null;
+  /** 缺省 0。 */
+  misses?: number;
+}
+
+const ACC_LADDER_KEYS = ['1.00', '0.99', '0.98', '0.96', '0.94', '0.92'];
+
+/**
+ * 批量拉取每张 BP 的 SS 估算、本成绩 pp 构成与密度（雨沐 rosu，有界并发）。
+ * 每张谱面只请求一次：请求参数是本成绩的 acc/combo/misses，SS 值取
+ * fc_ladder["1.00"]（雨沐阶梯固定按 FC/0 miss 计算）。
+ */
 export async function enrichBpScoresWithSs(
-  scores: Array<{ beatmapId: number; mods: string[] }>,
+  scores: BpEnrichInput[],
   concurrency: number = BP_SS_ENRICH_CONCURRENCY,
 ): Promise<Array<BpScoreEnrichment | null>> {
   const results: Array<BpScoreEnrichment | null> = new Array(scores.length).fill(null);
@@ -165,18 +186,56 @@ export async function enrichBpScoresWithSs(
   const worker = async () => {
     while (cursor < scores.length) {
       const index = cursor++;
-      const { beatmapId, mods } = scores[index];
+      const { beatmapId, mods, accuracy, combo, misses } = scores[index];
       try {
-        const body = await fetchPpCalcJson(beatmapId, mods, 100);
+        const body = await fetchPpCalcJson(
+          beatmapId,
+          mods,
+          accuracy ?? 100,
+          combo ?? null,
+          misses ?? 0,
+        );
         const calc = body.calculation;
+        const ladder: Record<string, number> = calc.fc_ladder || {};
+        const ssPp = Number(ladder['1.00']);
+        const accKeys = ACC_LADDER_KEYS.filter((key) => Number.isFinite(Number(ladder[key])));
+        const requestAcc = (accuracy ?? 100) / 100;
+        const closest = accKeys.length
+          ? accKeys.reduce((best, key) =>
+              Math.abs(Number(key) - requestAcc) < Math.abs(Number(best) - requestAcc) ? key : best,
+            )
+          : null;
+        const fullPp = closest ? Number(ladder[closest]) : null;
+        const attributes: Record<string, number> = {};
+        if (Number.isFinite(Number(calc.estimated_pp))) attributes.pp = Number(calc.estimated_pp);
+        for (const [key, value] of Object.entries({
+          pp_aim: calc.pp_aim,
+          pp_speed: calc.pp_speed,
+          pp_accuracy: calc.pp_accuracy,
+          pp_reading: calc.pp_reading,
+          pp_flashlight: calc.pp_flashlight,
+          effective_miss_count: calc.effective_miss_count,
+          stars: calc.stars,
+        })) {
+          if (value !== null && value !== undefined && Number.isFinite(Number(value))) {
+            attributes[key] = Number(value);
+          }
+        }
+        if (fullPp !== null) attributes.full_pp = fullPp;
+        if (Number.isFinite(ssPp)) attributes.perfect_pp = ssPp;
         const parts = [
           calc.pp_aim != null ? `aim ${Number(calc.pp_aim).toFixed(1)}` : null,
           calc.pp_speed != null ? `speed ${Number(calc.pp_speed).toFixed(1)}` : null,
           calc.pp_accuracy != null ? `acc ${Number(calc.pp_accuracy).toFixed(1)}` : null,
         ].filter(Boolean);
+        const density26 = Array.isArray(body.density_26)
+          ? body.density_26.map((value: unknown) => Number(value)).filter((value: number) => Number.isFinite(value))
+          : null;
         results[index] = {
-          ssPp: Number.isFinite(Number(calc.estimated_pp)) ? Number(calc.estimated_pp) : null,
+          ssPp: Number.isFinite(ssPp) ? ssPp : null,
           breakdown: parts.length ? parts.join('/') : null,
+          density26: density26 && density26.length ? density26 : null,
+          attributes: Object.keys(attributes).length ? attributes : null,
         };
       } catch {
         results[index] = null;
@@ -187,14 +246,15 @@ export async function enrichBpScoresWithSs(
   return results;
 }
 
-/** 附加到 BP 行尾的富信息：SS 估算 + pp 组成 + 密度。 */
+/** 附加到 BP 行尾的富信息：SS 估算 + 本成绩 pp 构成 + 密度。 */
 export function formatBpEnrichmentSuffix(
   ssPp: number | null,
   breakdown: string | null,
   density: number | null,
 ): string {
   const parts: string[] = [];
-  if (ssPp !== null) parts.push(`SS≈${ssPp.toFixed(1)}pp${breakdown ? `（${breakdown}）` : ''}`);
+  if (ssPp !== null) parts.push(`SS≈${ssPp.toFixed(1)}pp`);
+  if (breakdown) parts.push(`构成 ${breakdown}`);
   if (density !== null) parts.push(`密度 ${density.toFixed(1)}/s`);
   return parts.length ? ` | ${parts.join(' | ')}` : '';
 }

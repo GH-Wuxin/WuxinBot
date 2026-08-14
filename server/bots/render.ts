@@ -865,22 +865,37 @@ export async function renderPlayerInfo(
   }
 }
 
+export interface ScoreCardEnrichment {
+  /** rosu pp 分解（pp_aim/pp_speed/pp_accuracy/…、full_pp/perfect_pp、stars 等）。 */
+  attributes?: Record<string, number> | null;
+  /** 雨沐 26 段物件密度数组（E5 密度折线）。 */
+  density26?: number[] | null;
+}
+
 export async function renderScoreCard(
   apiScore: any,
   apiUser: any,
-  position?: number | null
+  position?: number | null,
+  enrichment?: ScoreCardEnrichment,
 ): Promise<{ buffer: Buffer; cqCode: string } | null> {
   if (!getRenderServer().hasClients()) return null;
 
   try {
     const score = await buildYumuScore(apiScore, apiUser);
     const baseBeatmap = apiScore?.beatmap || {};
+    const attributes = {
+      ...scoreAttributes(apiScore, score),
+      ...(enrichment?.attributes || {}),
+    };
     const payload: Record<string, unknown> = {
       panel: '',
       user: buildYumuUser(apiUser),
       history_user: null,
       score,
-      density: {},
+      // yumu-image 的 E5 密度折线直接吃数组（26 段物件分组）；没有数据时留空。
+      density: Array.isArray(enrichment?.density26) && enrichment.density26.length > 0
+        ? enrichment.density26
+        : {},
       progress: 1,
       original: {
         cs: finiteNumber(baseBeatmap.cs),
@@ -888,7 +903,7 @@ export async function renderScoreCard(
         od: finiteNumber(baseBeatmap.od, baseBeatmap.accuracy),
         hp: finiteNumber(baseBeatmap.drain, baseBeatmap.hp)
       },
-      attributes: scoreAttributes(apiScore, score),
+      attributes,
       position: position ?? 0,
       health: { time: [], percent: [] }
     };
