@@ -70,19 +70,19 @@ GET /pub/map/calculate?bid=5518740&accuracy=95.2  → request.accuracy=0.952（1
 | 检查 | 结果 |
 |---|---|
 | `tools/query-osu-policy-verify.mjs` | 63/63（新增 beatmap 合法/非法参数 20 项） |
-| `tools/agent-capability-verify.mjs`（新） | 29/29（一致性门 + 派生 schema + meta 纪律） |
+| `tools/agent-capability-verify.mjs`（新） | **32/32**（一致性门 + 派生 schema + meta 纪律 + 遥测三态写入断言） |
 | `tools/beatmap-capability-verify.mjs`（新） | 6/6（真实句子 replay：这图多少星 / hr之后多少星 / 99acc fc多少pp / 95.2acc 1miss / 榜一多少 / 前十是谁） |
 | `tools/natural-chat-delivery-verify.mjs` | 10/10 |
 | `tools/quick-router-verify.mjs` | 121/121 |
 | `tools/kb-verify.mjs` | 56/56（persona 变更后基线已重固化） |
 | `tsc --noEmit` | PASS |
-| `npm run verify-all` | **69/69 PASS**（94.7s，最终一轮；67 旧项 + 2 新 verify） |
+| `npm run verify-all` | **69/69 PASS**（含 2 个新 verify；遥测修复后最终一轮见下文） |
 
 ## 6. 部署边界与红线
 
 - **yumu**：已提交（`f6b513b`）+ 已部署（19:54 起新 jar 运行中）。
-- **Wuxin**：代码在工作区未提交；**运行中进程仍是 Phase B 前代码**——pp_calc 等三个 capability 在重启前不可用。
-- 流程：提交（等用户确认后执行）→ 重启 Wuxin（`tools/restart-wuxin.ps1` 或 `启动Wuxin.bat`）→ 健康核查。
+- **Wuxin**：已提交（`f25999f` + `ebcaca7` + 遥测修复提交）；**运行中进程仍是 Phase B 前代码**——pp_calc 等三个 capability 在重启前不可用。
+- 流程：重启 Wuxin（`tools/restart-wuxin.ps1` 或 `启动Wuxin.bat`，需用户确认）→ 健康核查。
 - 部署后建议在群里实测一次："这图多少星 / 99acc fc 多少 pp / 榜一多少"。
 
 ## 7. 已知边界
