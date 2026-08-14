@@ -784,7 +784,11 @@ async function executeToolCallInner(
             oUsername || '',
             context,
             oBpSelection,
-            capability === 'recommend' ? { translateRecommendFilters: true } : undefined,
+            capability === 'recommend'
+              ? { translateRecommendFilters: true }
+              : (capability === 'bp' || capability === 'bplist')
+                ? { enrichBpEstimates: true }
+                : undefined,
           );
           if (recommendKey) inFlightRecommends.set(recommendKey, run);
           try {
@@ -1644,7 +1648,7 @@ export async function executeInternalBotCommand(
   username: string,
   context: { db: any; userId: string; groupId?: string; event?: any; isOwner?: boolean; beatmapId?: number },
   bpSelection?: BpQuerySelection,
-  options?: { translateRecommendFilters?: boolean },
+  options?: { translateRecommendFilters?: boolean; enrichBpEstimates?: boolean },
 ): Promise<string | InternalBotCommandResult> {
   const { db, userId } = context;
 
@@ -1990,13 +1994,38 @@ export async function executeInternalBotCommand(
       const label = actualStart === actualEnd
         ? `BP${actualStart}`
         : `BP${actualStart}-${actualEnd}`;
+
+      // SS 估算 + pp 组成 + 密度：仅 LLM 工具路径启用（快速指令保持原渲染与延迟）。
+      let ssEnrichments: Array<{ ssPp: number | null; breakdown: string | null } | null> | null = null;
+      let enrichmentHelpers: { beatmapDensity: any; formatBpEnrichmentSuffix: any } | null = null;
+      if (options?.enrichBpEstimates) {
+        const helpers = await import('./beatmapCapabilities.js');
+        enrichmentHelpers = helpers;
+        ssEnrichments = await helpers.enrichBpScoresWithSs(
+          rankedScores.map((entry) => ({
+            beatmapId: Number(entry.score.beatmap?.id || 0),
+            mods: scoreModAcronyms(entry.score),
+          })),
+        );
+      }
+
       const lines = [`${user.username} 的 ${label}：`];
-      for (const entry of rankedScores) {
+      rankedScores.forEach((entry, index) => {
+        const enrichment = ssEnrichments?.[index] ?? null;
+        let suffix = '';
+        if (ssEnrichments && enrichmentHelpers) {
+          const density = entry.score.beatmap ? enrichmentHelpers.beatmapDensity(entry.score.beatmap) : null;
+          suffix = enrichmentHelpers.formatBpEnrichmentSuffix(
+            enrichment?.ssPp ?? null,
+            enrichment?.breakdown ?? null,
+            density,
+          );
+        }
         lines.push(`  ${formatInternalScoreLine(entry.score, {
           index: entry.rank,
           includeWeight: true,
-        })}`);
-      }
+        })}${suffix}`);
+      });
       const content = lines.join('\n');
 
       if (getRenderServer().hasClients()) {

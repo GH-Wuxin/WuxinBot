@@ -93,7 +93,9 @@ const yumuServer = http.createServer((req, res) => {
   const url = new URL(req.url, `http://127.0.0.1:${YUMU_PORT}`);
   if (url.pathname === '/pub/map/calculate') {
     res.writeHead(200, { 'Content-Type': 'application/json' });
-    res.end(JSON.stringify(YUMU_JSON));
+    // Only the fixture beatmap is available; other bids must fail closed.
+    if (url.searchParams.get('bid') === '5518740') res.end(JSON.stringify(YUMU_JSON));
+    else res.end(JSON.stringify({ unavailable: true }));
     return;
   }
   res.writeHead(404);
@@ -148,6 +150,26 @@ function expectContains(label, text, markers) {
 {
   const text = await runLeaderboard({ beatmap_id: 5518740 });
   expectContains('replay-前十是谁', text, ['#1 [SHK]SARRTY_awa', '#2 other_player', '+HDDT', '前 2 条']);
+}
+
+// 7. BP 富信息：SS 估算 + pp 组成 + 密度（LLM 工具路径的 bp 结果增强）。
+{
+  const { enrichBpScoresWithSs, formatBpEnrichmentSuffix, beatmapDensity } = await import('../server/bots/beatmapCapabilities.ts');
+  const results = await enrichBpScoresWithSs([
+    { beatmapId: 5518740, mods: ['HD', 'HR'] },
+    { beatmapId: 999999, mods: [] },
+  ]);
+  if (results[0]?.ssPp != null && String(results[0].breakdown || '').includes('aim') && results[1] === null) {
+    pass('enrich-ss-bp');
+  } else {
+    fail('enrich-ss-bp', JSON.stringify(results));
+  }
+  const suffix = formatBpEnrichmentSuffix(201.3, 'aim 145.2/speed 12.1/acc 28.9', 4.5);
+  if (suffix.includes('SS≈201.3pp') && suffix.includes('密度 4.5/s')) pass('enrich-suffix-format');
+  else fail('enrich-suffix-format', suffix);
+  const density = beatmapDensity({ count_circles: 113, count_sliders: 33, count_spinners: 1, hit_length: 31 });
+  if (density !== null && Math.abs(density - 147 / 31) < 1e-9) pass('enrich-density');
+  else fail('enrich-density', `density=${density}`);
 }
 
 apiServer.close();
