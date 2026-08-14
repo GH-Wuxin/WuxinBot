@@ -1,5 +1,6 @@
 // Bot registry: loads bot definitions from db config, builds LLM tool schemas.
 import type { BotCommand, BotCommandParam, BotDefinition, BotRegistry, LlmTool } from './types.js';
+import { buildQueryOsuDescription, callableCapabilities } from './agentCapabilities.js';
 
 function bpQueryParams(): BotCommandParam[] {
   return [
@@ -111,6 +112,9 @@ export const INTERNAL_CAPABILITIES = [
   { name: 'skill', description: '玩家技能雷达' },
   { name: 'recommend', description: '谱面推荐（协同过滤：与你同分段的玩家在打的图；玩家要求推图/推荐谱面/打什么图/有没有适合我的图时调用，数据来自 osu! API v2）' },
   { name: 'match', description: 'osu! 多人比赛观战（!ml <matchID> 开始监听对局并推送开局/回合成绩；玩家说“观战/比赛直播/!ml”时引导使用快捷指令）' },
+  { name: 'beatmap_lookup', description: '谱面信息与星数（玩家问“这图多少星/多少 AR/多久/谁做的”时调用；beatmap_id 必填；可选 mods 返回官方带 mod 星数）' },
+  { name: 'pp_calc', description: '估算某张图给定 acc/combo/miss 的 pp（rosu 估算，不是官方精确值；beatmap_id 必填，可选 mods/accuracy(0-100)/combo/misses；回复时必须说明是估算值）' },
+  { name: 'leaderboard', description: '谱面全球榜单（玩家问“榜一多少/前几是谁”时调用；beatmap_id 必填，可选 mods/limit(1-50)）' },
 ] as const;
 
 export function internalCapabilitySupported(name: string): boolean {
@@ -156,18 +160,17 @@ export function buildBotToolSchemas(registry: BotRegistry): LlmTool[] {
   const tools: LlmTool[] = [];
 
   if (hasInternal) {
-    const capList = INTERNAL_CAPABILITIES.map((c) => `${c.name}（${c.description}）`).join('；');
     tools.push({
       type: 'function',
       function: {
         name: 'query_osu',
-        description: `查询 osu! 数据（Wuxin 内部：osu! API v2、PP+、skill store；图片由 yumu-image 渲染）。可用查询：${capList}。玩家要求推图/推荐谱面/打什么图时使用 capability=recommend，username 可填任意 osu! 用户名（不需要提问者已绑定）。数据来自真实 API，不是你凭记忆编的。本工具没有 pp 计算能力（无法按指定 acc/combo 估算某张图的 pp）；没有 beatmap_id/mods/acc/combo 参数，禁止编造这些参数。不要在你的回复正文里输出任何 XML/DSML/tool_calls 格式的调用文本，工具调用只通过结构化 tool_calls 执行。`,
+        description: buildQueryOsuDescription(),
         parameters: {
           type: 'object',
           properties: {
             capability: {
               type: 'string',
-              enum: INTERNAL_CAPABILITIES.map((c) => c.name),
+              enum: callableCapabilities(),
               description: '查询类型'
             },
             username: {
@@ -190,6 +193,30 @@ export function buildBotToolSchemas(registry: BotRegistry): LlmTool[] {
             bp_end: {
               type: 'integer', minimum: 1, maximum: 100,
               description: 'BP 范围结束（含）。'
+            },
+            beatmap_id: {
+              type: 'integer', minimum: 1,
+              description: '谱面 ID（beatmap_lookup / pp_calc / leaderboard 必填）。'
+            },
+            mods: {
+              type: 'string',
+              description: 'mod 组合，成对双字母，如 HDHR / HDDT（beatmap_lookup / pp_calc / leaderboard 可选）。'
+            },
+            accuracy: {
+              type: 'number', minimum: 0.01, maximum: 100,
+              description: 'acc 百分比（pp_calc 用，0-100；不填按 100 算）。'
+            },
+            combo: {
+              type: 'integer', minimum: 0,
+              description: '连击数（pp_calc 用；不填按 FC/max combo 算）。'
+            },
+            misses: {
+              type: 'integer', minimum: 0, maximum: 999,
+              description: 'miss 数（pp_calc 用；不填按 0 算）。'
+            },
+            limit: {
+              type: 'integer', minimum: 1, maximum: 50,
+              description: '榜单条数（leaderboard 用；不填 10 条）。'
             }
           },
           required: ['capability']

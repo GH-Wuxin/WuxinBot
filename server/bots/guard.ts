@@ -38,7 +38,7 @@ const BLOCKED_PATTERNS: ReadonlyArray<{ pattern: RegExp; reason: string }> = [
 // ── Validation ──
 
 const PARAM_KEYS: Readonly<Record<AllowedOperationType, ReadonlySet<string>>> = {
-  query_osu: new Set(['capability', 'username', 'bp_rank', 'bp_start', 'bp_end', 'compact', 'bot']),
+  query_osu: new Set(['capability', 'username', 'bp_rank', 'bp_start', 'bp_end', 'compact', 'bot', 'beatmap_id', 'mods', 'accuracy', 'combo', 'misses', 'limit']),
   query_external_bot: new Set(['bot', 'command']),
   query_bot: new Set(['bot', 'command', 'username', 'bp_rank', 'bp_start', 'bp_end']),
   get_player_skill: new Set(['player']),
@@ -136,6 +136,53 @@ export function validateOperation(op: AllowedOperation): { ok: true } | { ok: fa
       const username = String(op.params.username || '').trim();
       const usernameError = validatePlayerText(username, '玩家名', false);
       if (usernameError) return { ok: false, reason: usernameError };
+
+      // Beatmap-centric capabilities (Phase B): beatmap-scoped params only.
+      const BEATMAP_CAPABILITIES = new Set(['beatmap_lookup', 'pp_calc', 'leaderboard']);
+      if (BEATMAP_CAPABILITIES.has(capability)) {
+        const beatmapId = parseBpRankParam(op.params.beatmap_id);
+        if (beatmapId === null || beatmapId < 1) {
+          return { ok: false, reason: `${capability} 需要有效的 beatmap_id` };
+        }
+        for (const key of ['username', 'bp_rank', 'bp_start', 'bp_end', 'compact']) {
+          if (hasOwnParam(op.params, key)) return { ok: false, reason: `${key} 不能与 ${capability} 一起使用` };
+        }
+        if (hasOwnParam(op.params, 'mods')) {
+          const modsValue = String(op.params.mods || '');
+          if (modsValue.length > 16 || !/^[A-Za-z]*$/.test(modsValue)) {
+            return { ok: false, reason: 'mods 必须是成对双字母组合' };
+          }
+        }
+        if (capability === 'pp_calc') {
+          if (hasOwnParam(op.params, 'accuracy')) {
+            const acc = Number(op.params.accuracy);
+            if (!Number.isFinite(acc) || acc <= 0 || acc > 100) return { ok: false, reason: 'accuracy 必须是 0-100 的数字' };
+          }
+          if (hasOwnParam(op.params, 'combo')) {
+            const combo = Number(op.params.combo);
+            if (!Number.isFinite(combo) || combo < 0 || !Number.isInteger(combo)) return { ok: false, reason: 'combo 必须是非负整数' };
+          }
+          if (hasOwnParam(op.params, 'misses')) {
+            const misses = Number(op.params.misses);
+            if (!Number.isInteger(misses) || misses < 0 || misses > 999) return { ok: false, reason: 'misses 必须是 0-999 的整数' };
+          }
+        } else {
+          for (const key of ['accuracy', 'combo', 'misses']) {
+            if (hasOwnParam(op.params, key)) return { ok: false, reason: `${key} 不能与 ${capability} 一起使用` };
+          }
+        }
+        if (capability !== 'leaderboard' && hasOwnParam(op.params, 'limit')) {
+          return { ok: false, reason: `limit 不能与 ${capability} 一起使用` };
+        }
+        if (capability === 'leaderboard' && hasOwnParam(op.params, 'limit')) {
+          const limit = Number(op.params.limit);
+          if (!Number.isInteger(limit) || limit < 1 || limit > 50) return { ok: false, reason: 'limit 必须是 1-50 的整数' };
+        }
+      } else {
+        for (const key of ['beatmap_id', 'accuracy', 'combo', 'misses', 'limit']) {
+          if (hasOwnParam(op.params, key)) return { ok: false, reason: `${key} 不能与 ${capability} 一起使用` };
+        }
+      }
       return validateBpSelectionParams(op);
     }
     case 'query_bot': {

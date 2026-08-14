@@ -1,4 +1,5 @@
 // Tool executor: handles LLM tool calls, runs the tool loop, manages bot communication.
+import { createHash } from 'node:crypto';
 import type { LlmToolCall, ToolResult, BotResponse, LlmTool, BotCommand } from './types.js';
 import {
   validateOperation,
@@ -706,6 +707,41 @@ async function executeToolCallInner(
         return { toolCallId: toolCall.id, ok: false, content: `未知的 osu! 查询类型 "${capability}"。支持：${INTERNAL_CAPABILITIES.map((c) => c.name).join('、')}`, error: `unsupported_capability: ${capability}` };
       }
 
+      // Beatmap-centric capabilities (Phase B): separate plumbing from the
+      // player-centric internal bot commands.
+      if (capability === 'beatmap_lookup' || capability === 'pp_calc' || capability === 'leaderboard') {
+        try {
+          const { runBeatmapLookup, runPpCalc, runLeaderboard } = await import('./beatmapCapabilities.js');
+          const content = capability === 'beatmap_lookup'
+            ? await runBeatmapLookup(args)
+            : capability === 'pp_calc'
+              ? await runPpCalc(args)
+              : await runLeaderboard(args);
+          return {
+            toolCallId: toolCall.id,
+            ok: true,
+            content,
+            metadata: {
+              requestId: toolCall.id,
+              requestedCapability: capability,
+              actualExecutor: 'wuxin_internal',
+              dataSource: capability === 'pp_calc' ? 'yumu_rosu' : 'osu_api',
+              renderer: 'none',
+              command: capability,
+              args: { capability, beatmap_id: args.beatmap_id, mods: args.mods },
+              success: true,
+            },
+          };
+        } catch (err) {
+          return {
+            toolCallId: toolCall.id,
+            ok: false,
+            content: `${capability} 查询失败: ${String((err as Error)?.message || err)}`,
+            error: String((err as Error)?.message || err),
+          };
+        }
+      }
+
       const oIsBp = capability === 'bp';
       const oHasBpRank = hasQueryParam(args, 'bp_rank') && !hasQueryParam(args, 'bp_start');
       const oHasBpRange = hasQueryParam(args, 'bp_start') || hasQueryParam(args, 'bp_end');
@@ -1140,8 +1176,7 @@ async function executeToolCallInner(
 // Every query_osu invocation (including deterministic required-tool routes)
 // is recorded so "did the tool actually run" can be answered from the DB
 // instead of inferred from reply text. Audit writes are non-fatal.
-function writeToolCallAudit(
-  toolCall: LlmToolCall,
+function writeToolCallAudit(  toolCall: LlmToolCall,
   context: {
     db: any;
     userId: string;
@@ -1184,6 +1219,47 @@ function writeToolCallAudit(
   }
 }
 
+// ── Unmet-capability telemetry (Phase D) ──
+// When the model tried to do something no tool supports, record it so future
+// capability decisions come from observed demand instead of manual log mining.
+const MAX_UNMET_LOGS = 2000;
+
+type UnmetReason = 'NO_TOOL_MATCH' | 'TOOL_NOT_CAPABLE' | 'TOOL_ARGUMENT_UNRESOLVED' | 'TOOL_PERMISSION_DENIED';
+
+function recordUnmetCapability(
+  toolCall: LlmToolCall,
+  context: { db: any; userId: string; groupId?: string; event?: any },
+  reason: UnmetReason,
+): void {
+  try {
+    let args: Record<string, unknown> = {};
+    try {
+      args = JSON.parse(toolCall.function?.arguments || '{}');
+    } catch {
+      // Malformed args still carry the tool name.
+    }
+    const text = String(context.event?.text ?? '');
+    const userTextHash = createHash('sha256').update(text).digest('hex').slice(0, 16);
+    const event = context.event || {};
+    updateDb((draft) => {
+      draft.unmetCapabilities = draft.unmetCapabilities || [];
+      draft.unmetCapabilities.push({
+        id: crypto.randomUUID(),
+        createdAt: nowIso(),
+        groupId: String(event.groupId ?? context.groupId ?? ''),
+        userId: String(event.userId ?? context.userId ?? ''),
+        toolName: String(toolCall.function?.name || ''),
+        intent: String(args.capability || toolCall.function?.name || ''),
+        reason,
+        userTextHash,
+      });
+      draft.unmetCapabilities = draft.unmetCapabilities.slice(-MAX_UNMET_LOGS);
+    });
+  } catch {
+    // Telemetry must never break the chat path.
+  }
+}
+
 /**
  * Public tool executor: wraps the inner dispatcher so every query_osu call is
  * audited with capability/user/timing even when the inner path returns early.
@@ -1205,6 +1281,21 @@ export async function executeToolCall(
     };
     writeToolCallAudit(toolCall, context, result, Date.now() - startedAt);
     throw error;
+  }
+  if (!result.ok) {
+    let args: Record<string, unknown> = {};
+    try {
+      args = JSON.parse(toolCall.function?.arguments || '{}');
+    } catch { /* non-fatal */ }
+    const capability = String(args.capability || '').trim();
+    const errorText = String(result.error || '');
+    if (errorText.startsWith('unknown_tool')) {
+      recordUnmetCapability(toolCall, context, 'NO_TOOL_MATCH');
+    } else if (String(toolCall.function?.name || '') === 'query_osu' && capability && !internalCapabilitySupported(capability)) {
+      recordUnmetCapability(toolCall, context, 'TOOL_NOT_CAPABLE');
+    } else if (String(toolCall.function?.name || '') === 'query_osu' && capability) {
+      recordUnmetCapability(toolCall, context, 'TOOL_ARGUMENT_UNRESOLVED');
+    }
   }
   writeToolCallAudit(toolCall, context, result, Date.now() - startedAt);
   return result;

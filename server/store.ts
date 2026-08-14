@@ -74,6 +74,7 @@ const MAX_MESSAGES = 12_000;
 const MAX_DECISIONS = 30_000;
 const MAX_COMMAND_LOGS = 2_000;
 export const MAX_TOOL_LOGS = 5_000;
+export const MAX_UNMET_LOGS = 2_000;
 const MAX_ADMIN_ACTIONS = 1_000;
 let lastAutoBackupAt = 0;
 let lastDbReadFailureAt = 0;
@@ -88,6 +89,7 @@ export function applyRetention(db) {
   if ((db.decisions || []).length > MAX_DECISIONS) db.decisions = db.decisions.slice(-MAX_DECISIONS);
   if ((db.commandLogs || []).length > MAX_COMMAND_LOGS) db.commandLogs = db.commandLogs.slice(-MAX_COMMAND_LOGS);
   if ((db.toolCallLogs || []).length > MAX_TOOL_LOGS) db.toolCallLogs = db.toolCallLogs.slice(-MAX_TOOL_LOGS);
+  if ((db.unmetCapabilities || []).length > MAX_UNMET_LOGS) db.unmetCapabilities = db.unmetCapabilities.slice(-MAX_UNMET_LOGS);
   if ((db.adminActions || []).length > MAX_ADMIN_ACTIONS) db.adminActions = db.adminActions.slice(-MAX_ADMIN_ACTIONS);
   return db;
 }
@@ -348,6 +350,7 @@ const initialDb = {
   decisions: [],
   commandLogs: [],
   toolCallLogs: [],
+  unmetCapabilities: [],
   adminActions: [],
   usageEvents: [],
   usage: {
@@ -432,6 +435,7 @@ export function normalizeDb(db) {
   db.decisions ||= [];
   db.commandLogs ||= [];
   db.toolCallLogs ||= [];
+  db.unmetCapabilities ||= [];
   db.adminActions ||= [];
   db.usageEvents ||= [];
   db.usage = {

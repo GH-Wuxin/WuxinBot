@@ -66,11 +66,30 @@ expectRejected('query_osu-bp-compact-not-bool', { type: 'query_osu', params: { c
 expectRejected('query_osu-unknown-capability-param', { type: 'query_osu', params: { capability: 'evil' } }, '无效');
 expectRejected('query_osu-unknown-param', { type: 'query_osu', params: { capability: 'bp', evil: 'x' } }, '不允许的参数');
 expectRejected('query_osu-unknown-type', { type: 'query_osu', params: { capability: 'delete', command: 'rm' } }, '不允许的参数');
-expectRejected('query_osu-pp-calc-unsupported', { type: 'query_osu', params: { capability: 'pp_calc' } }, '无效');
-expectRejected('query_osu-pp-calc-with-params', {
-  type: 'query_osu',
-  params: { capability: 'pp_calc', beatmap_id: 809469, mods: 'HD', acc: '99', combo: 'fc' },
-}, '不允许的参数');
+
+console.log('\n=== beatmap-centric capabilities (Phase B) ===');
+
+expectOk('query_osu-beatmap-lookup', { type: 'query_osu', params: { capability: 'beatmap_lookup', beatmap_id: 5518740 } });
+expectOk('query_osu-beatmap-lookup-mods', { type: 'query_osu', params: { capability: 'beatmap_lookup', beatmap_id: 5518740, mods: 'HDHR' } });
+expectOk('query_osu-pp-calc-min', { type: 'query_osu', params: { capability: 'pp_calc', beatmap_id: 5518740 } });
+expectOk('query_osu-pp-calc-full', { type: 'query_osu', params: { capability: 'pp_calc', beatmap_id: 5518740, mods: 'HD', accuracy: 99, combo: 1200, misses: 1 } });
+expectOk('query_osu-leaderboard', { type: 'query_osu', params: { capability: 'leaderboard', beatmap_id: 5518740, limit: 5 } });
+expectOk('query_osu-leaderboard-mods', { type: 'query_osu', params: { capability: 'leaderboard', beatmap_id: 5518740, mods: 'HDHR' } });
+
+expectRejected('query_osu-beatmap-no-bid', { type: 'query_osu', params: { capability: 'beatmap_lookup' } }, 'beatmap_id');
+expectRejected('query_osu-pp-calc-no-bid', { type: 'query_osu', params: { capability: 'pp_calc' } }, 'beatmap_id');
+expectRejected('query_osu-leaderboard-no-bid', { type: 'query_osu', params: { capability: 'leaderboard' } }, 'beatmap_id');
+expectRejected('query_osu-beatmap-with-username', { type: 'query_osu', params: { capability: 'beatmap_lookup', beatmap_id: 5518740, username: 'x' } }, 'username');
+expectRejected('query_osu-beatmap-with-bp-rank', { type: 'query_osu', params: { capability: 'beatmap_lookup', beatmap_id: 5518740, bp_rank: 1 } }, 'bp_rank');
+expectRejected('query_osu-pp-calc-bad-acc', { type: 'query_osu', params: { capability: 'pp_calc', beatmap_id: 5518740, accuracy: 101 } }, 'accuracy');
+expectRejected('query_osu-pp-calc-bad-acc-zero', { type: 'query_osu', params: { capability: 'pp_calc', beatmap_id: 5518740, accuracy: 0 } }, 'accuracy');
+expectRejected('query_osu-pp-calc-neg-combo', { type: 'query_osu', params: { capability: 'pp_calc', beatmap_id: 5518740, combo: -1 } }, 'combo');
+expectRejected('query_osu-pp-calc-many-miss', { type: 'query_osu', params: { capability: 'pp_calc', beatmap_id: 5518740, misses: 1000 } }, 'misses');
+expectRejected('query_osu-pp-calc-legacy-acc-param', { type: 'query_osu', params: { capability: 'pp_calc', beatmap_id: 5518740, acc: '99' } }, '不允许的参数');
+expectRejected('query_osu-leaderboard-bad-limit', { type: 'query_osu', params: { capability: 'leaderboard', beatmap_id: 5518740, limit: 60 } }, 'limit');
+expectRejected('query_osu-leaderboard-with-misses', { type: 'query_osu', params: { capability: 'leaderboard', beatmap_id: 5518740, misses: 1 } }, 'leaderboard');
+expectRejected('query_osu-bp-with-bid', { type: 'query_osu', params: { capability: 'bp', beatmap_id: 5518740 } }, 'beatmap_id');
+expectRejected('query_osu-profile-with-accuracy', { type: 'query_osu', params: { capability: 'profile', accuracy: 99 } }, 'accuracy');
 
 console.log('\n=== literal tool-call markup guard ===');
 
