@@ -1289,7 +1289,7 @@ export async function executeToolCall(
     } catch { /* non-fatal */ }
     const capability = String(args.capability || '').trim();
     const errorText = String(result.error || '');
-    if (errorText.startsWith('unknown_tool')) {
+    if (errorText.startsWith('unknown_tool') || errorText.includes('不允许的操作类型')) {
       recordUnmetCapability(toolCall, context, 'NO_TOOL_MATCH');
     } else if (String(toolCall.function?.name || '') === 'query_osu' && capability && !internalCapabilitySupported(capability)) {
       recordUnmetCapability(toolCall, context, 'TOOL_NOT_CAPABLE');

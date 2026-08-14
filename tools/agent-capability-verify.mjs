@@ -1,6 +1,12 @@
 // agent-capability-verify.mjs — Phase A consistency gate + derived-schema checks.
 // Verifies the agent capability meta table, the derived query_osu schema and the
 // unmet-capability telemetry. Exit 0 on all pass, non-zero on any failure.
+import { createTestDataDir, assertNotProduction, cleanupTestDir } from './test-isolation.mjs';
+
+const testDataDir = createTestDataDir('wuxin-agent-cap');
+process.env.DATA_DIR = testDataDir;
+assertNotProduction(testDataDir);
+
 import {
   AGENT_CAPABILITY_META,
   auditAgentCapabilityRegistry,
@@ -9,6 +15,8 @@ import {
 } from '../server/bots/agentCapabilities.ts';
 import { INTERNAL_CAPABILITIES, buildBotToolSchemas } from '../server/bots/registry.ts';
 import { validateOperation } from '../server/bots/guard.ts';
+import { executeToolCall } from '../server/bots/executor.ts';
+import { ensureStore, readDb, updateDb } from '../server/store.ts';
 
 let passed = 0;
 let failed = 0;
@@ -79,6 +87,57 @@ for (const entry of AGENT_CAPABILITY_META) {
   if (result.ok) pass(`validated-${entry.capability}`);
   else fail(`validated-${entry.capability}`, result.reason || 'rejected');
 }
+
+console.log('\n=== Phase D: unmet-capability telemetry ===');
+
+ensureStore();
+updateDb((db) => {
+  db.settings.ownerQq = 'REDACTED_QQ_001';
+  db.settings.selfQq = 'REDACTED_QQ_002';
+  db.unmetCapabilities = [];
+});
+
+const telemetryContext = {
+  db: readDb(),
+  userId: 'REDACTED_QQ_001',
+  groupId: '770001',
+  event: { userId: 'REDACTED_QQ_001', groupId: '770001', text: '帮我算一下这张图的pp', nickname: 'Tester' },
+};
+
+// 1. query_osu with an unsupported capability → TOOL_NOT_CAPABLE.
+{
+  const result = await executeToolCall(
+    { id: 't1', type: 'function', function: { name: 'query_osu', arguments: JSON.stringify({ capability: 'pp_calc_v2', beatmap_id: 1 }) } },
+    telemetryContext,
+  );
+  const entries = (readDb().unmetCapabilities || []).filter((e) => e.toolName === 'query_osu' && e.intent === 'pp_calc_v2');
+  if (!result.ok && entries.length === 1 && entries[0].reason === 'TOOL_NOT_CAPABLE') pass('telemetry-not-capable');
+  else fail('telemetry-not-capable', `result.ok=${result.ok} entries=${JSON.stringify(entries)}`);
+}
+
+// 2. Unknown tool name → NO_TOOL_MATCH.
+{
+  const result = await executeToolCall(
+    { id: 't2', type: 'function', function: { name: 'osu_magic_tool', arguments: '{}' } },
+    telemetryContext,
+  );
+  const entries = (readDb().unmetCapabilities || []).filter((e) => e.toolName === 'osu_magic_tool');
+  if (!result.ok && entries.length === 1 && entries[0].reason === 'NO_TOOL_MATCH') pass('telemetry-no-tool-match');
+  else fail('telemetry-no-tool-match', `result.ok=${result.ok} entries=${JSON.stringify(entries)}`);
+}
+
+// 3. Supported capability with a bad argument → TOOL_ARGUMENT_UNRESOLVED.
+{
+  const result = await executeToolCall(
+    { id: 't3', type: 'function', function: { name: 'query_osu', arguments: JSON.stringify({ capability: 'pp_calc' }) } },
+    telemetryContext,
+  );
+  const entries = (readDb().unmetCapabilities || []).filter((e) => e.intent === 'pp_calc' && e.reason === 'TOOL_ARGUMENT_UNRESOLVED');
+  if (!result.ok && entries.length === 1) pass('telemetry-argument-unresolved');
+  else fail('telemetry-argument-unresolved', `result.ok=${result.ok} entries=${JSON.stringify(entries)}`);
+}
+
+cleanupTestDir(testDataDir);
 
 console.log(`\nPassed: ${passed}, Failed: ${failed}`);
 if (failed > 0) {
