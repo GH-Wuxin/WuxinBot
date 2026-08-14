@@ -62,14 +62,13 @@ export async function runBeatmapLookup(args: Record<string, unknown>): Promise<s
 }
 
 /** capability=pp_calc：rosu 估算 pp（雨沐 /pub/map/calculate）。 */
-export async function runPpCalc(args: Record<string, unknown>): Promise<string> {
-  const beatmapId = Number(args.beatmap_id);
-  const mods = parseModsString(args.mods);
-  const hasAccuracy = args.accuracy !== undefined && args.accuracy !== null && args.accuracy !== '';
-  const accuracy = hasAccuracy ? Number(args.accuracy) : 100;
-  const combo = args.combo !== undefined && args.combo !== null && args.combo !== '' ? Number(args.combo) : null;
-  const misses = args.misses !== undefined && args.misses !== null && args.misses !== '' ? Number(args.misses) : 0;
-
+export async function fetchPpCalcJson(
+  beatmapId: number,
+  mods: string[],
+  accuracy: number,
+  combo: number | null = null,
+  misses: number = 0,
+): Promise<any> {
   const query = new URLSearchParams({ bid: String(beatmapId), mode: 'osu' });
   query.set('accuracy', String(accuracy));
   if (combo !== null) query.set('combo', String(combo));
@@ -98,6 +97,18 @@ export async function runPpCalc(args: Record<string, unknown>): Promise<string> 
   if (body?.unavailable || !body?.calculation) {
     throw new Error('这张图暂时算不了 pp（可能是未上架/模式不支持）。');
   }
+  return body;
+}
+
+export async function runPpCalc(args: Record<string, unknown>): Promise<string> {
+  const beatmapId = Number(args.beatmap_id);
+  const mods = parseModsString(args.mods);
+  const hasAccuracy = args.accuracy !== undefined && args.accuracy !== null && args.accuracy !== '';
+  const accuracy = hasAccuracy ? Number(args.accuracy) : 100;
+  const combo = args.combo !== undefined && args.combo !== null && args.combo !== '' ? Number(args.combo) : null;
+  const misses = args.misses !== undefined && args.misses !== null && args.misses !== '' ? Number(args.misses) : 0;
+
+  const body = await fetchPpCalcJson(beatmapId, mods, accuracy, combo, misses);
 
   const calc = body.calculation;
   const beatmap = body.beatmap;
@@ -120,6 +131,72 @@ export async function runPpCalc(args: Record<string, unknown>): Promise<string> 
     `带 mod 星数 ${calc.stars.toFixed(2)}★ | AR ${calc.ar != null ? calc.ar.toFixed(2) : '?'} | OD ${calc.od != null ? calc.od.toFixed(2) : '?'} | HP ${calc.hp != null ? calc.hp.toFixed(2) : '?'} | max combo ${calc.max_combo}`,
     ladder ? `FC acc 阶梯: ${ladder}` : '',
   ].filter(Boolean).join('\n');
+}
+
+/** 物件密度：物件数 / 有效游玩时长（秒）。 */
+export function beatmapDensity(beatmap: {
+  count_circles: number;
+  count_sliders: number;
+  count_spinners: number;
+  hit_length: number;
+}): number | null {
+  const objects = Number(beatmap.count_circles || 0) + Number(beatmap.count_sliders || 0) + Number(beatmap.count_spinners || 0);
+  const seconds = Number(beatmap.hit_length || 0);
+  if (objects <= 0 || seconds <= 0) return null;
+  return objects / seconds;
+}
+
+const BP_SS_ENRICH_CONCURRENCY = 4;
+
+export interface BpScoreEnrichment {
+  /** SS（100% acc FC）rosu 估算 pp；失败时 null。 */
+  ssPp: number | null;
+  /** aim/speed/acc 分解文本；失败时 null。 */
+  breakdown: string | null;
+}
+
+/** 批量拉取每张 BP 的 SS 估算与 pp 组成（雨沐 rosu，有界并发）。 */
+export async function enrichBpScoresWithSs(
+  scores: Array<{ beatmapId: number; mods: string[] }>,
+  concurrency: number = BP_SS_ENRICH_CONCURRENCY,
+): Promise<Array<BpScoreEnrichment | null>> {
+  const results: Array<BpScoreEnrichment | null> = new Array(scores.length).fill(null);
+  let cursor = 0;
+  const worker = async () => {
+    while (cursor < scores.length) {
+      const index = cursor++;
+      const { beatmapId, mods } = scores[index];
+      try {
+        const body = await fetchPpCalcJson(beatmapId, mods, 100);
+        const calc = body.calculation;
+        const parts = [
+          calc.pp_aim != null ? `aim ${Number(calc.pp_aim).toFixed(1)}` : null,
+          calc.pp_speed != null ? `speed ${Number(calc.pp_speed).toFixed(1)}` : null,
+          calc.pp_accuracy != null ? `acc ${Number(calc.pp_accuracy).toFixed(1)}` : null,
+        ].filter(Boolean);
+        results[index] = {
+          ssPp: Number.isFinite(Number(calc.estimated_pp)) ? Number(calc.estimated_pp) : null,
+          breakdown: parts.length ? parts.join('/') : null,
+        };
+      } catch {
+        results[index] = null;
+      }
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(Math.max(1, concurrency), scores.length) }, () => worker()));
+  return results;
+}
+
+/** 附加到 BP 行尾的富信息：SS 估算 + pp 组成 + 密度。 */
+export function formatBpEnrichmentSuffix(
+  ssPp: number | null,
+  breakdown: string | null,
+  density: number | null,
+): string {
+  const parts: string[] = [];
+  if (ssPp !== null) parts.push(`SS≈${ssPp.toFixed(1)}pp${breakdown ? `（${breakdown}）` : ''}`);
+  if (density !== null) parts.push(`密度 ${density.toFixed(1)}/s`);
+  return parts.length ? ` | ${parts.join(' | ')}` : '';
 }
 
 /** capability=leaderboard：官方全球榜前 N。 */
