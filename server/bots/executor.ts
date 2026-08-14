@@ -1,4 +1,5 @@
 // Tool executor: handles LLM tool calls, runs the tool loop, manages bot communication.
+import { createHash } from 'node:crypto';
 import type { LlmToolCall, ToolResult, BotResponse, LlmTool, BotCommand } from './types.js';
 import {
   validateOperation,
@@ -706,6 +707,41 @@ async function executeToolCallInner(
         return { toolCallId: toolCall.id, ok: false, content: `未知的 osu! 查询类型 "${capability}"。支持：${INTERNAL_CAPABILITIES.map((c) => c.name).join('、')}`, error: `unsupported_capability: ${capability}` };
       }
 
+      // Beatmap-centric capabilities (Phase B): separate plumbing from the
+      // player-centric internal bot commands.
+      if (capability === 'beatmap_lookup' || capability === 'pp_calc' || capability === 'leaderboard') {
+        try {
+          const { runBeatmapLookup, runPpCalc, runLeaderboard } = await import('./beatmapCapabilities.js');
+          const content = capability === 'beatmap_lookup'
+            ? await runBeatmapLookup(args)
+            : capability === 'pp_calc'
+              ? await runPpCalc(args)
+              : await runLeaderboard(args);
+          return {
+            toolCallId: toolCall.id,
+            ok: true,
+            content,
+            metadata: {
+              requestId: toolCall.id,
+              requestedCapability: capability,
+              actualExecutor: 'wuxin_internal',
+              dataSource: capability === 'pp_calc' ? 'yumu_rosu' : 'osu_api',
+              renderer: 'none',
+              command: capability,
+              args: { capability, beatmap_id: args.beatmap_id, mods: args.mods },
+              success: true,
+            },
+          };
+        } catch (err) {
+          return {
+            toolCallId: toolCall.id,
+            ok: false,
+            content: `${capability} 查询失败: ${String((err as Error)?.message || err)}`,
+            error: String((err as Error)?.message || err),
+          };
+        }
+      }
+
       const oIsBp = capability === 'bp';
       const oHasBpRank = hasQueryParam(args, 'bp_rank') && !hasQueryParam(args, 'bp_start');
       const oHasBpRange = hasQueryParam(args, 'bp_start') || hasQueryParam(args, 'bp_end');
@@ -748,7 +784,11 @@ async function executeToolCallInner(
             oUsername || '',
             context,
             oBpSelection,
-            capability === 'recommend' ? { translateRecommendFilters: true } : undefined,
+            capability === 'recommend'
+              ? { translateRecommendFilters: true }
+              : (capability === 'bp' || capability === 'bplist')
+                ? { enrichBpEstimates: true }
+                : undefined,
           );
           if (recommendKey) inFlightRecommends.set(recommendKey, run);
           try {
@@ -1140,8 +1180,7 @@ async function executeToolCallInner(
 // Every query_osu invocation (including deterministic required-tool routes)
 // is recorded so "did the tool actually run" can be answered from the DB
 // instead of inferred from reply text. Audit writes are non-fatal.
-function writeToolCallAudit(
-  toolCall: LlmToolCall,
+function writeToolCallAudit(  toolCall: LlmToolCall,
   context: {
     db: any;
     userId: string;
@@ -1184,6 +1223,47 @@ function writeToolCallAudit(
   }
 }
 
+// ── Unmet-capability telemetry (Phase D) ──
+// When the model tried to do something no tool supports, record it so future
+// capability decisions come from observed demand instead of manual log mining.
+const MAX_UNMET_LOGS = 2000;
+
+type UnmetReason = 'NO_TOOL_MATCH' | 'TOOL_NOT_CAPABLE' | 'TOOL_ARGUMENT_UNRESOLVED' | 'TOOL_PERMISSION_DENIED';
+
+function recordUnmetCapability(
+  toolCall: LlmToolCall,
+  context: { db: any; userId: string; groupId?: string; event?: any },
+  reason: UnmetReason,
+): void {
+  try {
+    let args: Record<string, unknown> = {};
+    try {
+      args = JSON.parse(toolCall.function?.arguments || '{}');
+    } catch {
+      // Malformed args still carry the tool name.
+    }
+    const text = String(context.event?.text ?? '');
+    const userTextHash = createHash('sha256').update(text).digest('hex').slice(0, 16);
+    const event = context.event || {};
+    updateDb((draft) => {
+      draft.unmetCapabilities = draft.unmetCapabilities || [];
+      draft.unmetCapabilities.push({
+        id: crypto.randomUUID(),
+        createdAt: nowIso(),
+        groupId: String(event.groupId ?? context.groupId ?? ''),
+        userId: String(event.userId ?? context.userId ?? ''),
+        toolName: String(toolCall.function?.name || ''),
+        intent: String(args.capability || toolCall.function?.name || ''),
+        reason,
+        userTextHash,
+      });
+      draft.unmetCapabilities = draft.unmetCapabilities.slice(-MAX_UNMET_LOGS);
+    });
+  } catch {
+    // Telemetry must never break the chat path.
+  }
+}
+
 /**
  * Public tool executor: wraps the inner dispatcher so every query_osu call is
  * audited with capability/user/timing even when the inner path returns early.
@@ -1205,6 +1285,21 @@ export async function executeToolCall(
     };
     writeToolCallAudit(toolCall, context, result, Date.now() - startedAt);
     throw error;
+  }
+  if (!result.ok) {
+    let args: Record<string, unknown> = {};
+    try {
+      args = JSON.parse(toolCall.function?.arguments || '{}');
+    } catch { /* non-fatal */ }
+    const capability = String(args.capability || '').trim();
+    const errorText = String(result.error || '');
+    if (errorText.startsWith('unknown_tool') || errorText.includes('不允许的操作类型')) {
+      recordUnmetCapability(toolCall, context, 'NO_TOOL_MATCH');
+    } else if (String(toolCall.function?.name || '') === 'query_osu' && capability && !internalCapabilitySupported(capability)) {
+      recordUnmetCapability(toolCall, context, 'TOOL_NOT_CAPABLE');
+    } else if (String(toolCall.function?.name || '') === 'query_osu' && capability) {
+      recordUnmetCapability(toolCall, context, 'TOOL_ARGUMENT_UNRESOLVED');
+    }
   }
   writeToolCallAudit(toolCall, context, result, Date.now() - startedAt);
   return result;
@@ -1553,7 +1648,7 @@ export async function executeInternalBotCommand(
   username: string,
   context: { db: any; userId: string; groupId?: string; event?: any; isOwner?: boolean; beatmapId?: number },
   bpSelection?: BpQuerySelection,
-  options?: { translateRecommendFilters?: boolean },
+  options?: { translateRecommendFilters?: boolean; enrichBpEstimates?: boolean },
 ): Promise<string | InternalBotCommandResult> {
   const { db, userId } = context;
 
@@ -1899,23 +1994,62 @@ export async function executeInternalBotCommand(
       const label = actualStart === actualEnd
         ? `BP${actualStart}`
         : `BP${actualStart}-${actualEnd}`;
+
+      // SS 估算 + pp 构成 + 密度：仅 LLM 工具路径启用（快速指令保持原渲染与延迟）。
+      let ssEnrichments: Array<any> | null = null;
+      let enrichmentHelpers: { beatmapDensity: any; formatBpEnrichmentSuffix: any } | null = null;
+      if (options?.enrichBpEstimates) {
+        const helpers = await import('./beatmapCapabilities.js');
+        enrichmentHelpers = helpers;
+        ssEnrichments = await helpers.enrichBpScoresWithSs(
+          rankedScores.map((entry) => {
+            const score = entry.score;
+            const statistics = (score as any).statistics || {};
+            return {
+              beatmapId: Number(score.beatmap?.id || 0),
+              mods: scoreModAcronyms(score),
+              accuracy: Number(score.accuracy || 0) > 0 ? Number(score.accuracy) * 100 : 100,
+              combo: Number(score.max_combo) > 0 ? Number(score.max_combo) : null,
+              misses: Number(statistics.miss || 0),
+            };
+          }),
+        );
+      }
+
       const lines = [`${user.username} 的 ${label}：`];
-      for (const entry of rankedScores) {
+      rankedScores.forEach((entry, index) => {
+        const enrichment = ssEnrichments?.[index] ?? null;
+        let suffix = '';
+        if (ssEnrichments && enrichmentHelpers) {
+          const density = entry.score.beatmap ? enrichmentHelpers.beatmapDensity(entry.score.beatmap) : null;
+          suffix = enrichmentHelpers.formatBpEnrichmentSuffix(
+            enrichment?.ssPp ?? null,
+            enrichment?.breakdown ?? null,
+            density,
+          );
+        }
         lines.push(`  ${formatInternalScoreLine(entry.score, {
           index: entry.rank,
           includeWeight: true,
-        })}`);
-      }
+        })}${suffix}`);
+      });
       const content = lines.join('\n');
 
       if (getRenderServer().hasClients()) {
         try {
           if (rankedScores.length === 1) {
             const { renderScoreCard } = await import('./render.js');
+            const enrichment = ssEnrichments?.[0] ?? null;
             const rendered = await renderScoreCard(
               scoreForRenderer(rankedScores[0].score),
               user,
               rankedScores[0].rank,
+              enrichment
+                ? {
+                    attributes: enrichment.attributes ?? null,
+                    density26: enrichment.density26 ?? null,
+                  }
+                : undefined,
             );
             if (rendered) {
               return { content, images: [rendered.cqCode] };

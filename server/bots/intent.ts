@@ -44,7 +44,7 @@ function extractBpRange(text: string): { bp_rank?: number; bp_start?: number; bp
 // We return null so the LLM handles it normally (may still choose to call tools).
 
 const EXCLUDE_RE =
-  /为什么|怎么(?:回事|办|样|搞|了)?|如何|分析|结构|原因|偏科|记得|记住|回忆|知道吗|知不知道|教(?:我|你)|推荐|建议|帮忙选|该不该|要不要|能不能|可以(?:吗|不)|算(?:了|吧)|不用|别查|不要查|不会|不行|不对|不准/;
+  /为什么|怎么(?:回事|办|样|搞|了)?|如何|分析|结构|原因|偏科|记得|记住|回忆|知道吗|知不知道|教(?:我|你)|推荐|建议|帮忙选|该不该|要不要|能不能|可以(?:吗|不)|算(?:了|吧)|不用|别查|不要查|不会|不行|不对|不准|如果|假设|要是|假如|预计|估计|能有多少|大概多少|大约多少|多少pp/;
 
 function excluded(text: string): boolean {
   return EXCLUDE_RE.test(text);
