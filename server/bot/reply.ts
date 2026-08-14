@@ -4,6 +4,7 @@
 import { completeChat, thinkingParamsForLevel } from './llm.js';
 import { modelSupportsVision } from './prompt.js';
 import { emptyTurnState, reasoningEnabledFor, reasoningInput } from './reasoningRouter.js';
+import { looksLikeToolCallMarkup, stripToolCallMarkup } from '../bots/guard.js';
 
 export function sanitizeReply(text, settings) {
   let cleaned = String(text || '').trim();
@@ -26,6 +27,10 @@ export function sanitizeReply(text, settings) {
     }
     cleaned = cleaned.replace(/^\s*(助手|群友|AI群友)\s*[:：,，]\s*/i, '');
     if (cleaned === before) break;
+  }
+
+  if (looksLikeToolCallMarkup(cleaned)) {
+    cleaned = stripToolCallMarkup(cleaned);
   }
 
   return cleaned.trim();

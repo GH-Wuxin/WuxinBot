@@ -161,7 +161,7 @@ export function buildBotToolSchemas(registry: BotRegistry): LlmTool[] {
       type: 'function',
       function: {
         name: 'query_osu',
-        description: `查询 osu! 数据（Wuxin 内部：osu! API v2、PP+、skill store；图片由 yumu-image 渲染）。可用查询：${capList}。玩家要求推图/推荐谱面/打什么图时使用 capability=recommend，username 可填任意 osu! 用户名（不需要提问者已绑定）。数据来自真实 API，不是你凭记忆编的。`,
+        description: `查询 osu! 数据（Wuxin 内部：osu! API v2、PP+、skill store；图片由 yumu-image 渲染）。可用查询：${capList}。玩家要求推图/推荐谱面/打什么图时使用 capability=recommend，username 可填任意 osu! 用户名（不需要提问者已绑定）。数据来自真实 API，不是你凭记忆编的。本工具没有 pp 计算能力（无法按指定 acc/combo 估算某张图的 pp）；没有 beatmap_id/mods/acc/combo 参数，禁止编造这些参数。不要在你的回复正文里输出任何 XML/DSML/tool_calls 格式的调用文本，工具调用只通过结构化 tool_calls 执行。`,
         parameters: {
           type: 'object',
           properties: {

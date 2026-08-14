@@ -1,6 +1,13 @@
 // Tool executor: handles LLM tool calls, runs the tool loop, manages bot communication.
 import type { LlmToolCall, ToolResult, BotResponse, LlmTool, BotCommand } from './types.js';
-import { validateOperation, sanitizeToolResult, isSafeToolResult } from './guard.js';
+import {
+  validateOperation,
+  sanitizeToolResult,
+  isSafeToolResult,
+  looksLikeToolCallMarkup,
+  stripToolCallMarkup,
+  parseToolCallMarkup,
+} from './guard.js';
 import { updateDb, nowIso, MAX_TOOL_LOGS } from '../store.js';
 import { loadRegistry, enabledBots, findBot, findCommand, availableCommands, internalCapabilitySupported, INTERNAL_CAPABILITIES } from './registry.js';
 import { lookupSkill, lookupSkillByQQ } from './skills.js';
@@ -2096,6 +2103,27 @@ function sanitizeDirectDeliveryContent(content: string): string {
     .trim();
 }
 
+/**
+ * Model responses that write tool invocations as literal XML/DSML text must
+ * never reach the chat. When a direct payload (panel/image) already exists,
+ * the lead is cosmetic and pure markup is dropped so the caller uses its
+ * deterministic fallback lead. Without a payload, pure markup becomes a
+ * neutral fallback instead of a silent failure.
+ */
+const TOOL_MARKUP_FALLBACK_TEXT = '这个问题我暂时答不上来，你换个说法，或者让我查点具体数据试试？';
+
+function sanitizeToolReplyText(text: string): string {
+  const raw = String(text || '');
+  if (!looksLikeToolCallMarkup(raw)) return raw;
+  return stripToolCallMarkup(raw);
+}
+
+function finalReplyText(text: string): string {
+  const raw = String(text || '');
+  if (!looksLikeToolCallMarkup(raw)) return raw;
+  return stripToolCallMarkup(raw) || TOOL_MARKUP_FALLBACK_TEXT;
+}
+
 export async function runToolLoop(
   completeChatFn: (db: any, options: any) => Promise<{
     text: string;
@@ -2310,8 +2338,39 @@ export async function runToolLoop(
       totalUsage.completion_tokens += leadResponse.usage.completion_tokens || 0;
     }
 
+    let leadText = sanitizeToolReplyText(leadResponse.text);
+    const noDirectPayload = collectedImages.length === 0 && collectedDirectContent.length === 0;
+    if (!leadText && looksLikeToolCallMarkup(String(leadResponse.text || '')) && noDirectPayload) {
+      // The lead came back as pure tool-call markup and there is no direct
+      // payload to fall back on: retry once with an explicit corrective turn
+      // so the query result is not silently lost behind "查好了。"-style text.
+      currentMessages.push({
+        role: 'user',
+        content: '[系统] 你上一条只输出了工具调用标记，用户什么都没收到。请直接用自然语言给出简短评价或说明，禁止输出任何 XML/DSML/tool_calls/invoke/parameter 文本。',
+      });
+      try {
+        const retryResponse = await completeChatFn(db, {
+          messages: currentMessages,
+          temperature,
+          maxTokens,
+          model,
+          ...wireForLevel(leadDecision.level),
+          label: label ? `${label} [required lead retry]` : undefined,
+        });
+        recordCall('decorative_lead', leadInput, retryResponse?.meta || null, leadDecision);
+        if (retryResponse.usage) {
+          totalUsage.total_tokens += retryResponse.usage.total_tokens || 0;
+          totalUsage.prompt_tokens += retryResponse.usage.prompt_tokens || 0;
+          totalUsage.completion_tokens += retryResponse.usage.completion_tokens || 0;
+        }
+        leadText = sanitizeToolReplyText(retryResponse.text);
+      } catch {
+        leadText = '';
+      }
+    }
+
     return {
-      text: leadResponse.text,
+      text: leadText,
       usage: totalUsage,
       toolCallsMade,
       iterations,
@@ -2393,7 +2452,7 @@ export async function runToolLoop(
     // the complete direct payload has already been obtained.
     if (hasDirectPayload) {
       return {
-        text: response.text,
+        text: sanitizeToolReplyText(response.text),
         usage: totalUsage,
         toolCallsMade,
         iterations,
@@ -2403,10 +2462,36 @@ export async function runToolLoop(
       };
     }
 
-    // If no tool calls, we have the final answer
-    if (!message?.tool_calls?.length) {
+    // Structured tool calls are the primary protocol. Some providers also (or
+    // instead) emit the invocation as XML/DSML text in `content`; parse that
+    // markup so it goes through the same validated executor instead of being
+    // returned to the user verbatim.
+    let toolCalls: LlmToolCall[] = message?.tool_calls || [];
+    if (!toolCalls.length && looksLikeToolCallMarkup(response.text || '')) {
+      const parsed = parseToolCallMarkup(response.text || '');
+      if (parsed.length) {
+        // Only tool names exposed in this round's schema may be routed from
+        // text markup. Unknown names are dropped: a model cannot summon a tool
+        // that was never offered in this loop.
+        const exposedNames = new Set(
+          (tools || []).map((tool: LlmTool) => tool?.function?.name).filter((name: unknown): name is string => Boolean(name)),
+        );
+        const allowed = parsed.filter((call) => exposedNames.has(call.name));
+        toolCalls = allowed.map((call, index) => ({
+          id: `dsml_${Date.now()}_${index}_${Math.random().toString(36).slice(2, 7)}`,
+          type: 'function',
+          function: {
+            name: call.name,
+            arguments: JSON.stringify(call.args || {})
+          }
+        }));
+      }
+    }
+
+    // If no tool calls (structured or parsed), we have the final answer.
+    if (!toolCalls.length) {
       return {
-        text: response.text,
+        text: finalReplyText(response.text),
         usage: totalUsage,
         toolCallsMade,
         iterations,
@@ -2415,18 +2500,15 @@ export async function runToolLoop(
         directContent: collectedDirectContent.join('\n\n')
       };
     }
-
-    // Process tool calls
-    const toolCalls: LlmToolCall[] = message.tool_calls;
 
     // Add assistant message with tool calls
     currentMessages.push({
       role: 'assistant',
-      content: message.content || '',
+      content: message?.content || '',
       tool_calls: toolCalls,
       // DeepSeek thinking contract: preserve reasoning_content on the
       // assistant tool_calls message so the next tool-result round carries it.
-      ...(typeof message.reasoning_content === 'string' && message.reasoning_content
+      ...(typeof message?.reasoning_content === 'string' && message.reasoning_content
         ? { reasoning_content: message.reasoning_content }
         : {})
     });
@@ -2604,7 +2686,7 @@ export async function runToolLoop(
   }
 
   return {
-    text: finalResponse.text,
+    text: finalReplyText(finalResponse.text),
     usage: totalUsage,
     toolCallsMade,
     iterations,
