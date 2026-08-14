@@ -46,8 +46,8 @@ function ok(label, cond, msg) {
 // ── Fixture ──
 
 updateDb((db) => {
-  db.settings.ownerQq = '1000000001';
-  db.settings.selfQq = '900000029';
+  db.settings.ownerQq = 'REDACTED_QQ_001';
+  db.settings.selfQq = 'REDACTED_QQ_002';
   db.settings.llmProvider = 'fixture';
   db.settings.apiKey = 'fixture-key';
   db.settings.thinkingNoticeMode = 'off';
@@ -60,7 +60,7 @@ updateDb((db) => {
   db.groupBotConfig = db.groupBotConfig || {};
   db.groupBotConfig['900000007'] = { quick: true };
   db.osuBindings = db.osuBindings || {};
-  db.osuBindings['1000000001'] = { id: 1234567, username: '[TST]Alpha' };
+  db.osuBindings['REDACTED_QQ_001'] = { id: 1234567, username: '[TST]Alpha' };
 });
 
 const groupEvent = (text, extra = {}) => ({

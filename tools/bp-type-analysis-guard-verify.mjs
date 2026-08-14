@@ -82,8 +82,8 @@ const llmPort = llmServer.address().port;
 
 function setupFixture() {
   updateDb(db => {
-    db.settings.ownerQq = '1000000001';
-    db.settings.selfQq = '900000029';
+    db.settings.ownerQq = 'REDACTED_QQ_001';
+    db.settings.selfQq = 'REDACTED_QQ_002';
     db.settings.llmProvider = 'deepseek';
     db.settings.apiKey = 'fixture-key';
     db.settings.deepseekApiKey = 'fixture-key';
@@ -106,7 +106,7 @@ function setupFixture() {
       }]
     };
     db.osuBindings = db.osuBindings || {};
-    db.osuBindings['1000000001'] = 1234567;
+    db.osuBindings['REDACTED_QQ_001'] = 1234567;
     db.messages = [];
     db.decisions = [];
     db.commandLogs = [];
@@ -118,14 +118,14 @@ function setupFixture() {
   });
 }
 
-async function send(userText, userId = '1000000001') {
+async function send(userText, userId = 'REDACTED_QQ_001') {
   setupFixture();
   llmCalls = 0;
   return processIncoming({
     source: 'gui', type: 'group',
     messageId: 'bta-' + Date.now() + '-' + Math.random().toString(36).slice(2, 6),
     groupId: 'test-group', userId, nickname: 'Owner',
-    text: '[CQ:at,qq=900000029] ' + userText,
+    text: '[CQ:at,qq=REDACTED_QQ_002] ' + userText,
     atTargets: [], images: [], raw: {}
   }, async () => {});
 }
@@ -268,9 +268,9 @@ console.log('\n=== E2E: bp_type intent forces deterministic tool ===');
   const r = await processIncoming({
     source: 'gui', type: 'private',
     messageId: 'bta-at-' + Date.now(),
-    groupId: 'private', userId: '1000000001', nickname: 'Owner',
-    text: '查 [CQ:at,qq=1000000004] 的 BP 类型',
-    atTargets: ['1000000004'], images: [], raw: {},
+    groupId: 'private', userId: 'REDACTED_QQ_001', nickname: 'Owner',
+    text: '查 [CQ:at,qq=REDACTED_QQ_004] 的 BP 类型',
+    atTargets: ['REDACTED_QQ_004'], images: [], raw: {},
   }, async () => {});
   const audit = (readDb().toolCallLogs || []).slice(-1)[0];
   if (!audit || audit.capability !== 'bp_type') {

@@ -224,10 +224,10 @@ const result = await executeToolCall(
   }),
   {
     db: qqDb,
-    userId: '1000000001',
+    userId: 'REDACTED_QQ_001',
     // Explicit tool parameters have priority even if the model-facing event
     // text contains a different rank.
-    event: { type: 'private', userId: '1000000001', text: '看看我 BP1' },
+    event: { type: 'private', userId: 'REDACTED_QQ_001', text: '看看我 BP1' },
     sendMessage: async (_event, text) => {
       sentCommand = String(text);
       assert(tryResolveBotResponse(qqDb, {
@@ -254,8 +254,8 @@ const fallbackResult = await executeToolCall(
   }),
   {
     db: qqDb,
-    userId: '1000000001',
-    event: { type: 'private', userId: '1000000001', text: '看看我BP1' },
+    userId: 'REDACTED_QQ_001',
+    event: { type: 'private', userId: 'REDACTED_QQ_001', text: '看看我BP1' },
     sendMessage: async (_event, text) => {
       fallbackCommand = String(text);
       assert(tryResolveBotResponse(qqDb, {

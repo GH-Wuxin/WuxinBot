@@ -61,8 +61,8 @@ const llmPort = llmServer.address().port;
 
 function setupFixture() {
   updateDb(db => {
-    db.settings.ownerQq = '1000000001';
-    db.settings.selfQq = '900000029';
+    db.settings.ownerQq = 'REDACTED_QQ_001';
+    db.settings.selfQq = 'REDACTED_QQ_002';
     db.settings.llmProvider = 'deepseek';
     db.settings.apiKey = 'fixture-key';
     db.settings.deepseekApiKey = 'fixture-key';
@@ -74,7 +74,7 @@ function setupFixture() {
     // All four default bots registered (all internal) so named-bot detection works.
     db.settings.botRegistry = { updatedAt: new Date().toISOString(), bots: DEFAULT_BOTS };
     db.osuBindings = db.osuBindings || {};
-    db.osuBindings['1000000001'] = 1234567;
+    db.osuBindings['REDACTED_QQ_001'] = 1234567;
     db.groupBotConfig = db.groupBotConfig || {};
   });
 }
@@ -85,7 +85,7 @@ async function send(userText) {
   return processIncoming({
     source: 'gui', type: 'private',
     messageId: 'sr-' + Date.now() + '-' + Math.random().toString(36).slice(2, 6),
-    groupId: 'private', userId: '1000000001', nickname: 'Owner',
+    groupId: 'private', userId: 'REDACTED_QQ_001', nickname: 'Owner',
     text: userText,
     atTargets: [], images: [], raw: {}
   }, async () => {});

@@ -96,20 +96,20 @@ assert(ordinaryToolAnswer.ok, 'ordinary informational tools must still execute')
 assert(!ordinaryToolAnswer.directContent, 'ordinary tool Q&A must remain available for LLM summarization');
 
 const bindingTarget = resolveInternalPlayerTarget(
-  { osuBindings: { '1000000001': 1234567 } },
-  '1000000001',
+  { osuBindings: { 'REDACTED_QQ_001': 1234567 } },
+  'REDACTED_QQ_001',
   '',
 );
 assert(bindingTarget?.kind === 'id' && bindingTarget.value === 1234567, 'numeric osuBindings value must resolve as osu! user ID');
 const stringBindingTarget = resolveInternalPlayerTarget(
-  { osuBindings: { '1000000001': '1234567' } },
-  '1000000001',
+  { osuBindings: { 'REDACTED_QQ_001': '1234567' } },
+  'REDACTED_QQ_001',
   '',
 );
 assert(stringBindingTarget?.kind === 'id' && stringBindingTarget.value === 1234567, 'serialized numeric binding must resolve as osu! user ID');
 const explicitTarget = resolveInternalPlayerTarget(
-  { osuBindings: { '1000000001': 1234567 } },
-  '1000000001',
+  { osuBindings: { 'REDACTED_QQ_001': 1234567 } },
+  'REDACTED_QQ_001',
   '[TST]Alpha',
 );
 assert(explicitTarget?.kind === 'username' && explicitTarget.value === '[TST]Alpha', 'explicit username must override binding');
@@ -206,7 +206,7 @@ const qqBot = {
   id: 'fixturebot',
   name: 'Fixture Bot',
   description: 'fixture',
-  qq: '900000029',
+  qq: 'REDACTED_QQ_002',
   channel: 'qq_private',
   enabled: true,
   commands: [{
@@ -254,8 +254,8 @@ const loopResult = await runToolLoop(
     db: qqDb,
     messages: [{ role: 'user', content: 'show score' }],
     tools: buildBotToolSchemas(qqDb.settings.botRegistry),
-    userId: '1000000001',
-    event: { type: 'private', userId: '1000000001', text: 'show score' },
+    userId: 'REDACTED_QQ_001',
+    event: { type: 'private', userId: 'REDACTED_QQ_001', text: 'show score' },
     sendMessage: async () => {
       const resolved = tryResolveBotResponse(qqDb, {
         type: 'private',
@@ -346,8 +346,8 @@ const directListResult = await runToolLoop(
     db: listDb,
     messages: [{ role: 'user', content: '看看我的 BP' }],
     tools: buildBotToolSchemas(listDb.settings.botRegistry),
-    userId: '1000000001',
-    event: { type: 'private', userId: '1000000001', text: '看看我的 BP' },
+    userId: 'REDACTED_QQ_001',
+    event: { type: 'private', userId: 'REDACTED_QQ_001', text: '看看我的 BP' },
     sendMessage: async () => {
       const resolved = tryResolveBotResponse(listDb, {
         type: 'private',
@@ -400,8 +400,8 @@ const directResultAfterLeadFailure = await runToolLoop(
     db: listDb,
     messages: [{ role: 'user', content: '看看我的 BP' }],
     tools: buildBotToolSchemas(listDb.settings.botRegistry),
-    userId: '1000000001',
-    event: { type: 'private', userId: '1000000001', text: '看看我的 BP' },
+    userId: 'REDACTED_QQ_001',
+    event: { type: 'private', userId: 'REDACTED_QQ_001', text: '看看我的 BP' },
     sendMessage: async () => {
       const resolved = tryResolveBotResponse(listDb, {
         type: 'private',
@@ -560,9 +560,9 @@ const busyRouteResult = await executeToolCall(
   }),
   {
     db: busyDb,
-    userId: '1000000001',
+    userId: 'REDACTED_QQ_001',
     groupId: '400',
-    event: { type: 'group', groupId: '400', userId: '1000000001', text: 'query' },
+    event: { type: 'group', groupId: '400', userId: 'REDACTED_QQ_001', text: 'query' },
     sendMessage: async () => { busyRouteSends += 1; },
   },
 );

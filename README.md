@@ -48,39 +48,14 @@ WuxinBot 支持按群和成员设置交互策略，并把近期上下文、长�
 
 ### osu! workflows
 
-osu! 是 WuxinBot 当前最完整的垂直能力，但这里需要区分 **WuxinBot 自身的 osu! 运行层** 与 **可选的社区 Bot / 外部服务集成**。WuxinBot 并不是把所有 osu! 功能都从零重新实现了一遍。
+osu! 是当前最完整的垂直能力：
 
-#### WuxinBot 内部能力
-
-WuxinBot 在自身运行时中提供统一的 osu! tool surface，并负责账号绑定、数据获取、分析、推荐和 Agent 调度。当前包括：
-
-- QQ 与 osu! 账号绑定；
-- 基于 osu! API v2 的玩家资料、BP 与 Recent 数据获取；
-- 玩家综合分析、近期成绩对照与历史能力快照；
-- BP 谱面类型分析；
-- PP+ 与 skill 数据的统一查询和对话接入；
+- QQ 与 osu! 账号绑定和玩家档案；
+- BP、Recent、PP+、skill 与谱面类型分析；
 - 基于实际游玩数据的谱面推荐；
-- multiplayer 比赛监听、回合事件推送与比赛 rating；
-- 将上述能力作为结构化工具提供给 Agent，在需要真实 osu! 数据时由运行时调用。
+- multiplayer 监听、回合事件推送与比赛 rating。
 
-其中谱面推荐系统由 WuxinBot 自身实现。部分能力还会使用独立的本地服务或上游组件，例如 PP+ 数据服务和图片渲染器；`match.ts` / `matchRating.ts` 的部分实现包含经过明确 attribution 的 YumuBot Apache-2.0 派生代码。
-
-因此，这里的“内部能力”表示 **由 WuxinBot 仓库中的运行时统一提供和维护**，不表示所有算法、数据源和底层组件均由 WuxinBot 从零原创。
-
-#### 可选社区 Bot 集成
-
-WuxinBot 还支持连接独立运行的 osu! 社区 Bot：
-
-- [YumuBot](https://github.com/yumu-bot/yumu-bot)（雨沐）
-- [KanonBot](https://github.com/desu-life/Bot)（猫猫）
-- [OsuQqBotForNewbieGroup](https://github.com/b11p/OsuQqBotForNewbieGroup)（消防栓 / Hydrant）
-- [LazyBot](https://github.com/Apeuriox/lazybot-renewal)
-
-这些项目均为独立软件，**其源码不包含在 WuxinBot 仓库中，也不属于 WuxinBot 本体**。WuxinBot 可以通过统一的工具接口和消息桥接调用它们，在用户明确指定某个 Bot 时也可以把请求交给对应的外部服务。
-
-外部 Bot 并不是 WuxinBot 基本聊天和核心 Agent Runtime 的前置条件；没有部署这些服务时，WuxinBot 仍可使用自身已经配置完成的 osu! 数据与分析能力。具体可用功能取决于本地配置的数据源、渲染服务和外部集成。
-
-LLM 主要负责理解请求、选择适当的工具以及解释结果。玩家资料、成绩、谱面、PP+、比赛数据等事实性信息来自实际 API、确定性计算或对应的外部服务，而不是由模型凭记忆生成。
+LLM 负责解释和表达，玩家数据、成绩、星数与工具结果来自实际接口或确定性计算。外部 Bot 和图片渲染属于可选集成，不是核心运行时的前置条件。
 
 ## Quick Start
 
@@ -125,6 +100,18 @@ Windows 下也可以使用仓库中的 `启动Wuxin.bat`、`停止Wuxin.bat` 和
 - [`docs/KNOWLEDGE_BASE_V41.md`](./docs/KNOWLEDGE_BASE_V41.md)：知识库构建、开关、路由与验证
 
 运行数据默认位于 Windows 的 `%APPDATA%\Wuxin\db.json`，可通过 `DATA_DIR` 改到其他目录。
+
+## Deployment
+
+| 级别 | 范围 | 文档 |
+|------|------|------|
+| **Core** | WuxinBot + OneBot + LLM | [Quick Start](#quick-start) |
+| **Full Feature** | + osu! API、PP+、渲染、KB、外部 Bot | [Full Deployment Guide](./docs/FULL_DEPLOYMENT.md) |
+| **Reference** | + 维护者兼容的组件版本与补丁 | [Full Deployment Guide](./docs/FULL_DEPLOYMENT.md#3-reference-component-matrix) |
+
+- [Full Deployment Guide](./docs/FULL_DEPLOYMENT.md)：从空环境到完整功能的部署流程
+- [External Integration](./docs/EXTERNAL_INTEGRATION.md)：外部 Bot 与渲染器集成细节
+- [reference-stack.json](./docs/reference-stack.json)：组件版本与依赖的 machine-readable 记录
 
 ## 开发与验证
 

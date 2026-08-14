@@ -11,7 +11,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { ensureStore, updateDb, readDb } from '../server/store.ts';
 
-const BOTS_ROOT = '<BOTS_ROOT>';
+const BOTS_ROOT = 'REDACTED_BOTS_ROOT';
 const PSQL = path.join(BOTS_ROOT, 'runtime/postgresql-16.10/pgsql/bin/psql.exe');
 const MYSQL = path.join(BOTS_ROOT, 'runtime/mariadb-11.4.12-winx64/bin/mysql.exe');
 const YUMU_CFG = path.join(BOTS_ROOT, 'configs/private/yumu/application.yaml');

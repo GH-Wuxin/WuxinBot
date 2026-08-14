@@ -59,7 +59,7 @@ function Test-PortListen([int]$port) {
 
 $loaderUrl = 'file:///' + (($root -replace '\\', '/') + '/node_modules/tsx/dist/loader.mjs')
 $portableNode = Join-Path $root 'portable-node\node.exe'
-$nodeExe = if (Test-Path $portableNode) { $portableNode } else { 'C:\Program Files\nodejs\node.exe' }
+$nodeExe = if (Test-Path $portableNode) { $portableNode } else { '<LOCAL_PATH>.exe' }
 
 Write-Log "guard started (interval ${IntervalSeconds}s)"
 

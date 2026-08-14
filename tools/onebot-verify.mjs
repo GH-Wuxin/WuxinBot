@@ -32,8 +32,8 @@ async function main() {
   updateDb((db) => {
     db.settings.oneBotHttpUrl = `http://127.0.0.1:${port}`;
     db.settings.oneBotAccessToken = '';
-    db.settings.ownerQq = '1000000001';
-    db.settings.selfQq = '900000029';
+    db.settings.ownerQq = 'REDACTED_QQ_001';
+    db.settings.selfQq = 'REDACTED_QQ_002';
     // Keep route drain windows short so repeated fixture calls on the same
     // bot route can be exercised without waiting for production defaults.
     db.settings.botResponseImageDrainMs = 30;
@@ -115,7 +115,7 @@ async function main() {
       type: 'group',
       messageId: 'onebot-dedupe-test-1',
       groupId: '10001',
-      userId: '1000000001',
+      userId: 'REDACTED_QQ_001',
       nickname: 'Owner',
       text: '/w ping',
       atTargets: [],
@@ -142,7 +142,7 @@ async function main() {
       type: 'private',
       messageId: 'private-owner-command-reply',
       groupId: 'private',
-      userId: '1000000001',
+      userId: 'REDACTED_QQ_001',
       nickname: 'Owner',
       text: '/w ping',
       atTargets: [],
@@ -282,7 +282,7 @@ async function main() {
       };
       // QQ → osu! binding for deterministic routing
       db.osuBindings = db.osuBindings || {};
-      db.osuBindings['1000000001'] = 1234567;
+      db.osuBindings['REDACTED_QQ_001'] = 1234567;
     });
 
     const finalSends = [];
@@ -293,7 +293,7 @@ async function main() {
       type: 'private',
       messageId: 'tool-det-route-output',
       groupId: 'private',
-      userId: '1000000001',
+      userId: 'REDACTED_QQ_001',
       nickname: 'Owner',
       text: '查一下我的bp1',
       atTargets: [],
@@ -341,7 +341,7 @@ async function main() {
       type: 'private',
       messageId: 'tool-loop-llm-output',
       groupId: 'private',
-      userId: '1000000001',
+      userId: 'REDACTED_QQ_001',
       nickname: 'Owner',
       text: '帮我调一下osu机器人',
       atTargets: [],
@@ -432,7 +432,7 @@ async function main() {
       type: 'private',
       messageId: 'tool-direct-list-final-output',
       groupId: 'private',
-      userId: '1000000001',
+      userId: 'REDACTED_QQ_001',
       nickname: 'Owner',
       text: '帮我调一下bp机器人',
       atTargets: [],
@@ -482,9 +482,9 @@ async function main() {
       {
         type: 'group',
         groupId: '10001',
-        userId: '1000000001',
+        userId: 'REDACTED_QQ_001',
         nickname: 'Owner',
-        raw: { self_id: 900000029 }
+        raw: { self_id: 'REDACTED_QQ_002' }
       },
       async (event, text, options) => {
         reportCalls.push({ event, text, options });

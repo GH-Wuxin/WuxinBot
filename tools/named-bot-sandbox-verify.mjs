@@ -73,8 +73,8 @@ const BOTS = ['yumu', 'kanon', 'hydrant', 'lazybot'].map((id, index) => ({
 
 function setupFixture() {
   updateDb((db) => {
-    db.settings.ownerQq = '1000000001';
-    db.settings.selfQq = '900000029';
+    db.settings.ownerQq = 'REDACTED_QQ_001';
+    db.settings.selfQq = 'REDACTED_QQ_002';
     db.settings.botNames = '小深,bot,pippi';
     db.settings.llmProvider = 'deepseek';
     db.settings.apiKey = 'fixture-key';
@@ -104,7 +104,7 @@ async function send(text, userId = 'unbound-user') {
     source: 'gui', type: 'group',
     messageId: 'nb-' + Date.now() + '-' + Math.random().toString(36).slice(2, 6),
     groupId: 'test-group', userId, nickname: 'Tester',
-    text: '[CQ:at,qq=900000029] ' + text,
+    text: '[CQ:at,qq=REDACTED_QQ_002] ' + text,
     atTargets: [], images: [], raw: {}
   }, async () => {});
 }

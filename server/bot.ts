@@ -82,7 +82,7 @@ import {
   hasFallbackRecommendIntent,
   looksLikeRecommendationReply,
 } from './bots/intent.js';
-import { validateOperation } from './bots/guard.js';
+import { validateOperation, looksLikeToolCallMarkup } from './bots/guard.js';
 import { runToolLoop, tryResolveBotResponse } from './bots/executor.js';
 import {
   claimInboundEvent,
@@ -223,6 +223,7 @@ export function compactDirectToolLead(text, directContent = '', hasImages = fals
     .replace(/```$/i, '')
     .trim();
   if (!cleaned) return fallback;
+  if (looksLikeToolCallMarkup(cleaned)) return fallback;
 
   // Must contain at least one letter or digit — pure punctuation/emoji → fallback
   if (!/[\p{L}\p{N}]/u.test(cleaned)) return fallback;
@@ -789,6 +790,7 @@ async function processIncomingInner(event, sendMessage = undefined, queuedDecisi
     let ai;
     let toolImages = [];
     let toolDirectContent = '';
+    let requiredToolLed = false;
     if (useTools) {
       const registry = loadRegistry(liveDb);
       const tools = buildBotToolSchemas(registry);
@@ -857,6 +859,7 @@ async function processIncomingInner(event, sendMessage = undefined, queuedDecisi
         reasoningRouter,
       };
       let toolResult = await runToolLoop(harnessChat, loopOptions);
+      requiredToolLed = Boolean(requiredTool);
 
       // Hard guard: when the user clearly asked for recommendations but the
       // model answered WITHOUT ever running the recommend tool, any map names
@@ -929,7 +932,18 @@ async function processIncomingInner(event, sendMessage = undefined, queuedDecisi
         }
       }
     }
-    if (!replyText && imageCqCodes.length === 0) throw new Error('模型返回了空内容。');
+    if (!replyText && imageCqCodes.length === 0) {
+      // The required-tool cosmetic lead can legitimately end up empty when the
+      // model only emitted tool-call markup (sanitized away before this point)
+      // and no direct payload exists to deliver. Do not claim a result exists
+      // ("查好了") — admit the reply failed so the user can retry. Plain
+      // conversation replies keep the strict empty-content guard.
+      if (requiredToolLed) {
+        replyText = '这次查询我这边没整理好，你稍后再试一次？';
+      } else {
+        throw new Error('模型返回了空内容。');
+      }
+    }
     if (!replyText) replyText = imageCqCodes.length > 0 ? '查好了，结果在图里。' : '查好了。';
 
     // Deliver a queued level-up phrase as part of this reply (never standalone).

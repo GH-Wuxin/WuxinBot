@@ -24,7 +24,7 @@ async function main() {
   ensureStore();
 
   const base = {
-    userId: '1000000001',
+    userId: 'REDACTED_QQ_001',
     osuUsername: '[TST]Alpha',
     osuUserId: 1234567,
     pp: 10285.6,
@@ -58,9 +58,9 @@ async function main() {
 
   let records = readDb().skillStore.records;
   assert(records.length === 2, 'one QQ must retain separate std and mania records');
-  assert(lookupSkills('1000000001').length === 2, 'QQ lookup must return every stored mode');
-  assert(lookupSkill('1000000001')?.mode === 'osu', 'QQ lookup should prefer std when mode is omitted');
-  assert(lookupSkill('1000000001', 'mania')?.pp === 4321, 'QQ + mode lookup must select mania');
+  assert(lookupSkills('REDACTED_QQ_001').length === 2, 'QQ lookup must return every stored mode');
+  assert(lookupSkill('REDACTED_QQ_001')?.mode === 'osu', 'QQ lookup should prefer std when mode is omitted');
+  assert(lookupSkill('REDACTED_QQ_001', 'mania')?.pp === 4321, 'QQ + mode lookup must select mania');
   assert(lookupSkill('[tst]alpha')?.osuUserId === 1234567, 'username lookup must be case-insensitive');
   assert(lookupSkill('1234567')?.osuUsername === '[TST]Alpha', 'osu user ID lookup must work');
   assert(lookupSkill('definitely-missing') === undefined, 'unknown player must not fall back to another record');
@@ -70,7 +70,7 @@ async function main() {
     updateRecentSkillRecordInDb(db, {
       osuUserId: 1234567,
       mode: 'osu',
-      userId: '1000000001',
+      userId: 'REDACTED_QQ_001',
     }, 'Recent 50 次：平均 7.20★、Acc 96.50%。');
   });
   const withRecent = lookupSkill('1234567', 'osu');
@@ -88,7 +88,7 @@ async function main() {
   updateDb(db => {
     updateRecentSkillRecordInDb(db, {
       osuUserId: 1234567,
-      userId: '1000000001',
+      userId: 'REDACTED_QQ_001',
       mode: 'osu',
     }, '只应更新指定 osu ID');
   });
@@ -190,7 +190,7 @@ async function main() {
     summary: '对比对象',
   }));
   const bounded = relevantPlayersSkillBlock({
-    userId: '1000000001',
+    userId: 'REDACTED_QQ_001',
     text: '比较一下我和 RivalPlayer 的bp',
     maxRecords: 2,
   });
@@ -200,7 +200,7 @@ async function main() {
   assert((bounded.match(/^- /gm) || []).length <= 2, 'bounded context must honor maxRecords');
 
   const offTopic = relevantPlayersSkillBlock({
-    userId: '1000000001',
+    userId: 'REDACTED_QQ_001',
     text: '晚上吃什么好',
     maxRecords: 2,
   });
@@ -208,7 +208,7 @@ async function main() {
   assert(!offTopic.includes('RivalPlayer'), 'off-topic chat must not inject mention/name skill memory');
 
   const osuTopic = relevantPlayersSkillBlock({
-    userId: '1000000001',
+    userId: 'REDACTED_QQ_001',
     text: '手感回来了，最近准度好多了',
     maxRecords: 2,
   });

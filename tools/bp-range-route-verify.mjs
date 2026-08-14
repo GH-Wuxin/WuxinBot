@@ -90,8 +90,8 @@ const llmPort = llmServer.address().port;
 
 function setupFixture() {
   updateDb(db => {
-    db.settings.ownerQq = '1000000001';
-    db.settings.selfQq = '900000029';
+    db.settings.ownerQq = 'REDACTED_QQ_001';
+    db.settings.selfQq = 'REDACTED_QQ_002';
     db.settings.llmProvider = 'deepseek';
     db.settings.apiKey = 'fixture-key';
     db.settings.deepseekApiKey = 'fixture-key';
@@ -118,9 +118,9 @@ function setupFixture() {
       }]
     };
     db.osuBindings = db.osuBindings || {};
-    db.osuBindings['1000000001'] = 1234567;
+    db.osuBindings['REDACTED_QQ_001'] = 1234567;
     db.groupBotConfig = db.groupBotConfig || {};
-    db.groupBotConfig['200000001'] = { yumu: true };
+    db.groupBotConfig['REDACTED_GROUP_001'] = { yumu: true };
   });
 }
 
@@ -133,7 +133,7 @@ async function runRangeE2E(label, userText, expectedArgs, expectQuick = false) {
   const result = await processIncoming({
     source: 'gui', type: 'private',
     messageId: 'bpr-' + Date.now() + '-' + Math.random().toString(36).slice(2, 6),
-    groupId: 'private', userId: '1000000001', nickname: 'Owner',
+    groupId: 'private', userId: 'REDACTED_QQ_001', nickname: 'Owner',
     text: userText,
     atTargets: [], images: [], raw: {}
   }, async () => {});

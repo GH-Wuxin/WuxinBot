@@ -8,7 +8,7 @@ import os from 'node:os';
 
 const API = 'http://127.0.0.1:8787';
 const BOTS = ['yumu', 'kanon', 'hydrant', 'lazybot'];
-const SHARED_CONFIG = '<BOTS_ROOT>/configs/group-bot-config.json';
+const SHARED_CONFIG = 'REDACTED_BOTS_ROOT/configs/group-bot-config.json';
 
 const groupId = process.argv[2];
 const mode = process.argv[3];

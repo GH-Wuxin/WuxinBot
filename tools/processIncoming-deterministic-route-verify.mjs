@@ -83,8 +83,8 @@ const llmPort = llmServer.address().port;
 
 function setupFixture() {
   updateDb(db => {
-    db.settings.ownerQq = '1000000001';
-    db.settings.selfQq = '900000029';
+    db.settings.ownerQq = 'REDACTED_QQ_001';
+    db.settings.selfQq = 'REDACTED_QQ_002';
     db.settings.llmProvider = 'deepseek';
     db.settings.apiKey = 'fixture-key';
     db.settings.deepseekApiKey = 'fixture-key';
@@ -107,10 +107,10 @@ function setupFixture() {
     };
     // QQ → osu! binding so resolveInternalPlayerTarget works
     db.osuBindings = db.osuBindings || {};
-    db.osuBindings['1000000001'] = 1234567;
+    db.osuBindings['REDACTED_QQ_001'] = 1234567;
     // Group allows yumu
     db.groupBotConfig = db.groupBotConfig || {};
-    db.groupBotConfig['200000001'] = { yumu: true };
+    db.groupBotConfig['REDACTED_GROUP_001'] = { yumu: true };
   });
 }
 
@@ -131,7 +131,7 @@ async function testDeterministicRoute(label, userText, expectedCapability) {
     type: 'private',
     messageId: 'det-' + Date.now() + '-' + Math.random().toString(36).slice(2, 6),
     groupId: 'private',
-    userId: '1000000001',
+    userId: 'REDACTED_QQ_001',
     nickname: 'Owner',
     text: userText,
     atTargets: [],
@@ -211,9 +211,9 @@ console.log('\n=== Explicit network-search requests still intercepted ===');
   const result = await processIncoming({
     source: 'gui', type: 'private',
     messageId: 'det-search-' + Date.now(),
-    groupId: 'private', userId: '1000000001', nickname: 'Owner',
+    groupId: 'private', userId: 'REDACTED_QQ_001', nickname: 'Owner',
     text: '帮我联网搜索一下今天天气',
-    atTargets: ['900000029'], images: [], raw: { self_id: '900000029' }
+    atTargets: ['REDACTED_QQ_002'], images: [], raw: { self_id: 'REDACTED_QQ_002' }
   }, async () => {});
 
   if (!result.reason || !result.reason.includes('搜索')) {
@@ -229,9 +229,9 @@ console.log('\n=== Explicit network-search requests still intercepted ===');
   const result = await processIncoming({
     source: 'gui', type: 'private',
     messageId: 'det-nosearch-' + Date.now(),
-    groupId: 'private', userId: '1000000001', nickname: 'Owner',
+    groupId: 'private', userId: 'REDACTED_QQ_001', nickname: 'Owner',
     text: '帮我查一下今天天气',
-    atTargets: ['900000029'], images: [], raw: { self_id: '900000029' }
+    atTargets: ['REDACTED_QQ_002'], images: [], raw: { self_id: 'REDACTED_QQ_002' }
   }, async () => {});
 
   // Bare 查一下 must NOT be intercepted as web search (routes to normal LLM).
@@ -254,9 +254,9 @@ console.log('\n=== Casual chat not forced ===');
   const result = await processIncoming({
     source: 'gui', type: 'private',
     messageId: 'det-chat-' + Date.now(),
-    groupId: 'private', userId: '1000000001', nickname: 'Owner',
+    groupId: 'private', userId: 'REDACTED_QQ_001', nickname: 'Owner',
     text: 'pippi你好啊',
-    atTargets: ['900000029'], images: [], raw: { self_id: '900000029' }
+    atTargets: ['REDACTED_QQ_002'], images: [], raw: { self_id: 'REDACTED_QQ_002' }
   }, async () => {});
 
   const intent = detectRequiredOsuTool('pippi你好啊');
@@ -281,8 +281,8 @@ console.log('\n=== osu! data intent with no bots → system error ===');
 {
   // Set up fixture with NO bots in registry
   updateDb(db => {
-    db.settings.ownerQq = '1000000001';
-    db.settings.selfQq = '900000029';
+    db.settings.ownerQq = 'REDACTED_QQ_001';
+    db.settings.selfQq = 'REDACTED_QQ_002';
     db.settings.llmProvider = 'deepseek';
     db.settings.apiKey = 'fixture-key';
     db.settings.deepseekApiKey = 'fixture-key';
@@ -309,7 +309,7 @@ console.log('\n=== osu! data intent with no bots → system error ===');
   const result = await processIncoming({
     source: 'gui', type: 'private',
     messageId: 'det-nobots-' + Date.now(),
-    groupId: 'private', userId: '1000000001', nickname: 'Owner',
+    groupId: 'private', userId: 'REDACTED_QQ_001', nickname: 'Owner',
     text: '查一下我的bp1',
     atTargets: [], images: [], raw: {}
   }, async () => {});

@@ -22,7 +22,7 @@
  * 用法：
  *   node tools/corpus-build.mjs
  *   node tools/corpus-build.mjs --groups <groupId>,<groupId>
- *   node tools/corpus-build.mjs --exports C:\path\to\export1,C:\path\to\export2
+ *   node tools/corpus-build.mjs --exports <LOCAL_PATH>,<LOCAL_PATH>
  */
 
 import fs from 'node:fs';
@@ -36,7 +36,7 @@ const SCRIPT_DIR = path.dirname(fileURLToPath(import.meta.url));
 const DEFAULT_OUTPUT_DIR = path.join(SCRIPT_DIR, '..', 'data', 'corpus');
 
 // pippi 自己的 QQ 账号：她的历史消息是旧模板风格，不是玩家社区交流语料。
-const DEFAULT_EXCLUDED_UINS = new Set(['900000029', '1000000005']);
+const DEFAULT_EXCLUDED_UINS = new Set(['REDACTED_QQ_002', 'REDACTED_QQ_005']);
 
 const PURE_MEDIA_PLACEHOLDER = /^\[(图片|动画表情|表情|视频|语音|文件|回复)[：:][^\]]*\]([\s\S]*)$/;
 const MEDIA_PLACEHOLDER_GLOBAL = /\[(图片|动画表情|表情|视频|语音|文件|链接)[：:][^\]]*\]/g;

@@ -219,3 +219,146 @@ export function isSafeToolResult(content: string): boolean {
   ];
   return !dangerPatterns.some((p) => p.test(content));
 }
+
+// ── Tool-call markup guard ──
+// Some providers/models write tool invocations as literal text in `content`
+// (XML or DSML with ASCII/full-width brackets and pipe decorations) instead
+// of (or in addition to) the structured `tool_calls` field. That text is NOT
+// executed by the harness and must NEVER reach the user as a final reply.
+// These helpers detect, strip, and parse that markup so the loop can either
+// route it through the normal validated executor or drop it safely.
+
+const TOOL_MARKUP_TAG = '(?:tool_calls?|tool_call|invoke|parameter|function_call)';
+const TOOL_MARKUP_PIPE = '[｜|]';
+const TOOL_MARKUP_OPEN_RE = new RegExp(
+  `(?:<|＜)\\s*(?:[\\\\/]\\s*)?(?:${TOOL_MARKUP_PIPE}{1,2}\\s*DSML\\s*${TOOL_MARKUP_PIPE}{1,2}\\s*)?(?:${TOOL_MARKUP_PIPE}{1,2}\\s*)?[\\\\/]?\\s*${TOOL_MARKUP_TAG}\\b`,
+  'i'
+);
+const DSML_PIPE_RE = new RegExp(
+  `${TOOL_MARKUP_PIPE}{1,2}\\s*DSML\\s*${TOOL_MARKUP_PIPE}{1,2}|(?:<|＜)\\s*(?:[\\\\/]\\s*)?(?:${TOOL_MARKUP_PIPE}{1,2}\\s*)?DSML\\b`,
+  'i'
+);
+
+function markupAscii(value: string): string {
+  return value.replace(/＜/g, '<').replace(/＞/g, '>').replace(/｜/g, '|');
+}
+
+export function looksLikeToolCallMarkup(text: string): boolean {
+  const value = String(text || '');
+  if (!value) return false;
+  // Test both the raw text and its ASCII-normalised form so that ASCII pipes
+  // (`<|DSML|tool_calls>`) are detected too, not only full-width decorations.
+  const ascii = markupAscii(value);
+  if (TOOL_MARKUP_OPEN_RE.test(value) || TOOL_MARKUP_OPEN_RE.test(ascii)) return true;
+  // DSML-decorated blocks (＜｜DSML｜＞ ...) that also name a call tag.
+  if ((DSML_PIPE_RE.test(value) || DSML_PIPE_RE.test(ascii)) && new RegExp(TOOL_MARKUP_TAG, 'i').test(value)) return true;
+  return false;
+}
+
+// The real production leak decorates tags in several observed ways:
+//   `<｜DSML｜/parameter>`  (DSML keyword + single pipes, before the slash)
+//   `<｜｜/tool_calls>`     (bare doubled pipes, full-width brackets)
+//   `<|DSML|tool_calls>`   (ASCII pipes)
+// After markupAscii these become `<|DSML|/parameter>`, `<||/tool_calls>` and
+// `<|DSML|tool_calls>`. Normalise those decorations inside tag brackets so the
+// plain-XML pair regexes below match the observed shapes instead of only
+// `</parameter>`.
+function normalizeDsmlTags(value: string): string {
+  return value
+    .replace(/<([^>]*?)\|{1,2}\s*DSML\s*\|{1,2}([^>]*?)>/gi, '<$1$2>')
+    .replace(/<(\s*)\|{1,2}/g, '<$1')
+    .replace(/\|{1,2}\s*>/g, '>');
+}
+
+// Structural validator: walk every tool-markup tag in order and verify that
+// closing tags match the currently open tag by name (LIFO). Self-closing tags
+// (`<parameter …/>`) are accepted. Any mismatch, extra close, or unclosed tag
+// means the block is corrupt/truncated and must fail closed. A pure
+// open/close COUNT is not enough: `<parameter>pp_calc</invoke>` has equal
+// counts but would still leak the parameter value after pair-wise removal.
+const TOOL_TAG_SCAN_RE = new RegExp(`<\\s*(\\/?)\\s*(${TOOL_MARKUP_TAG})\\b([^>]*)>`, 'gi');
+
+function validateToolMarkupStructure(ascii: string): boolean {
+  TOOL_TAG_SCAN_RE.lastIndex = 0;
+  const stack: string[] = [];
+  let match: RegExpExecArray | null;
+  while ((match = TOOL_TAG_SCAN_RE.exec(ascii)) !== null) {
+    const closing = Boolean(match[1]);
+    // `tool_calls` and `tool_call` are one family; the pair regexes treat them
+    // the same, so the structural check must too.
+    const name = String(match[2] || '').replace(/^tool_call$/, 'tool_calls');
+    const rest = match[3] || '';
+    if (!closing) {
+      if (rest.trim().endsWith('/')) continue; // self-closing
+      stack.push(name);
+      continue;
+    }
+    const open = stack.pop();
+    if (open !== name) return false;
+  }
+  return stack.length === 0;
+}
+
+export function stripToolCallMarkup(text: string): string {
+  const original = String(text || '');
+  if (!looksLikeToolCallMarkup(original)) return original;
+  const ascii = normalizeDsmlTags(markupAscii(original));
+  // Fail closed on truncated, unbalanced or mismatched markup: stream
+  // interruption or budget exhaustion can cut a block mid-parameter, and
+  // mis-nested tags would otherwise leave raw parameter values (e.g.
+  // `pp_calc`) behind after pair-wise removal.
+  if (!validateToolMarkupStructure(ascii)) return '';
+  const keyword = '(?:tool_calls?|invoke|parameter|function_call|DSML)';
+  let cleaned = ascii
+    // Whole tool_calls blocks (including closing tag).
+    .replace(new RegExp(`<\\s*(?!\\/)[^>]*?tool_calls?[^>]*>[\\s\\S]*?<\\s*\\/\\s*[^>]*?tool_calls?[^>]*>`, 'gi'), '')
+    // invoke blocks.
+    .replace(new RegExp(`<\\s*(?!\\/)[^>]*?invoke[^>]*>[\\s\\S]*?<\\s*\\/\\s*[^>]*?invoke[^>]*>`, 'gi'), '')
+    // parameter pairs and leftovers.
+    .replace(new RegExp(`<\\s*(?!\\/)[^>]*?parameter[^>]*>[\\s\\S]*?<\\s*\\/\\s*[^>]*?parameter[^>]*>`, 'gi'), '')
+    .replace(new RegExp(`<\\s*(?:\\/\\s*)?[^>]*?parameter[^>]*>`, 'gi'), '')
+    // Any remaining tool_calls / DSML fragments.
+    .replace(new RegExp(`<[^>]*?${keyword}[^>]*>`, 'gi'), '');
+  cleaned = cleaned
+    .replace(/[ \t]+\n/g, '\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+  return cleaned;
+}
+
+export interface ParsedToolMarkupCall {
+  name: string;
+  args: Record<string, unknown>;
+}
+
+export function parseToolCallMarkup(text: string): ParsedToolMarkupCall[] {
+  const value = String(text || '');
+  if (!looksLikeToolCallMarkup(value)) return [];
+  const ascii = normalizeDsmlTags(markupAscii(value));
+  // Structural gate: mis-nested / mismatched / truncated markup must never be
+  // routed to the executor, even though a naive pair scan could still find a
+  // plausible <invoke>…</invoke> substring inside the corrupt block.
+  if (!validateToolMarkupStructure(ascii)) return [];
+  const calls: ParsedToolMarkupCall[] = [];
+  const invokeRe = /<[^>]*?invoke\b[^>]*>([\s\S]*?)<\/[^>]*?invoke\b[^>]*>/gi;
+  let invokeMatch: RegExpExecArray | null;
+  while ((invokeMatch = invokeRe.exec(ascii)) !== null) {
+    const body = invokeMatch[1] || '';
+    const nameMatch = String(invokeMatch[0] || '').match(/name\s*=\s*["']([^"']+)["']/i);
+    if (!nameMatch) continue;
+    const name = String(nameMatch[1] || '').trim();
+    const args: Record<string, unknown> = {};
+    const paramRe = /<[^>]*?parameter\s+name\s*=\s*["']([^"']+)["'][^>]*>([\s\S]*?)<\/[^>]*?parameter\s*>/gi;
+    let paramMatch: RegExpExecArray | null;
+    while ((paramMatch = paramRe.exec(body)) !== null) {
+      const key = String(paramMatch[1] || '').trim();
+      const raw = String(paramMatch[2] || '').trim();
+      let parsedValue: unknown = raw;
+      if (raw === 'true') parsedValue = true;
+      else if (raw === 'false') parsedValue = false;
+      args[key] = parsedValue;
+    }
+    if (name) calls.push({ name, args });
+  }
+  return calls;
+}

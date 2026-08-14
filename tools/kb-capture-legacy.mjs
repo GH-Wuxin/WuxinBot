@@ -18,8 +18,8 @@ const { buildPrompt } = await import('../server/bot/prompt.ts');
 
 ensureStore();
 updateDb((db) => {
-  db.settings.ownerQq = '1000000001';
-  db.settings.selfQq = '900000029';
+  db.settings.ownerQq = 'REDACTED_QQ_001';
+  db.settings.selfQq = 'REDACTED_QQ_002';
   db.settings.llmProvider = 'fixture';
   db.settings.apiKey = 'fixture-key';
   db.settings.visionMode = 'off';

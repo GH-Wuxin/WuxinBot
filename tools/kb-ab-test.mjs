@@ -118,8 +118,8 @@ const kbDisabledSettings = {
 };
 
 updateDb((db) => {
-  db.settings.ownerQq = '1000000001';
-  db.settings.selfQq = '900000029';
+  db.settings.ownerQq = 'REDACTED_QQ_001';
+  db.settings.selfQq = 'REDACTED_QQ_002';
   db.settings.visionMode = 'off';
   db.settings.memoryEnabled = false;
   db.settings.contextLimit = 30;
