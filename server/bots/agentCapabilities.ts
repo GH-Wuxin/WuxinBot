@@ -28,7 +28,7 @@ export const AGENT_CAPABILITY_META: readonly AgentCapabilityMeta[] = [
   { capability: 'recommend', callable: true, sideEffects: 'readonly', rollout: 'all', description: '谱面推荐（协同过滤：与你同分段的玩家在打的图；玩家要求推图/推荐谱面/打什么图/有没有适合我的图时调用，数据来自 osu! API v2）' },
   { capability: 'match', callable: true, sideEffects: 'readonly', rollout: 'all', description: 'osu! 多人比赛观战（!ml <matchID> 开始监听对局并推送开局/回合成绩；玩家说“观战/比赛直播/!ml”时引导使用快捷指令）' },
   { capability: 'beatmap_lookup', callable: true, sideEffects: 'readonly', rollout: 'all', description: '谱面信息与星数（玩家问“这图多少星/多少 AR/多久/谁做的”时调用；beatmap_id 必填；可选 mods 返回官方带 mod 星数）' },
-  { capability: 'pp_calc', callable: true, sideEffects: 'readonly', rollout: 'all', description: '估算某张图给定 acc/combo/miss 的 pp（rosu 估算，不是官方精确值；beatmap_id 必填，可选 mods/accuracy(0-100)/combo/misses；回复时必须说明是估算值）' },
+  { capability: 'pp_calc', callable: true, sideEffects: 'readonly', rollout: 'all', description: '估算某张图给定 acc/combo/miss 的 pp（rosu 估算，不是官方精确值；beatmap_id 必填，可选 mods/accuracy(0-100)/combo/misses；回复时必须说明是估算值）。用户说“我bp1/我bp几”时没有 beatmap_id：先调 capability=bp 取该 BP 的谱面（beatmap_id），再用它调本 capability；不要把假设问题只答成查成绩' },
   { capability: 'leaderboard', callable: true, sideEffects: 'readonly', rollout: 'all', description: '谱面全球榜单（玩家问“榜一多少/前几是谁”时调用；beatmap_id 必填，可选 mods/limit(1-50)）' },
 ] as const;
 
