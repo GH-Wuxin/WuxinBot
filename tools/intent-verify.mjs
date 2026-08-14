@@ -164,6 +164,18 @@ expectNull('analysis-4', '为什么这张图打不好');
 expectNull('analysis-5', '你觉得我适合打什么图');
 expectNull('analysis-6', '帮我分析一下我的bp分布');
 
+console.log('\n=== Must NOT match (hypothetical estimation → LLM decides) ===');
+expectNull('estimate-1', '我bp1如果SS了，能有多少pp');
+expectNull('estimate-2', '这图99acc fc大概多少pp');
+expectNull('estimate-3', '假设我bp1全连能有多少pp');
+expectNull('estimate-4', '要是1miss会掉多少pp');
+expectNull('estimate-5', '我bp1大概多少pp');
+
+console.log('\n=== Plain BP lookups still forced (regression) ===');
+expectMatch('bp-still-forced-1', '看看我bp1', 'bp');
+expectMatch('bp-still-forced-2', '查一下我bp10', 'bp');
+expectMatch('bp-still-forced-3', '我的bp', 'bp');
+
 console.log('\n=== BP type analysis intent (must match) ===');
 
 const bpTypeTrue = [

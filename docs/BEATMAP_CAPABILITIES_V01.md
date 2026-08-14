@@ -85,7 +85,17 @@ GET /pub/map/calculate?bid=5518740&accuracy=95.2  → request.accuracy=0.952（1
 - 流程：重启 Wuxin（`tools/restart-wuxin.ps1` 或 `启动Wuxin.bat`，需用户确认）→ 健康核查。
 - 部署后建议在群里实测一次："这图多少星 / 99acc fc 多少 pp / 榜一多少"。
 
-## 7. 已知边界
+## 8. 部署后实测补丁（2026-08-14 晚）
+
+群内实测发现：**"我bp1如果SS了，能有多少pp"** 被确定性路由截胡成 `capability=bp`（只回了 BP1 面板图，没有估算）。修法遵循"工具选择交给 LLM"原则——**不加工具选择硬编码**，只把"假设估算"加入路由的排除清单（与"分析/意见"同类）：
+
+- `intent.ts` EXCLUDE_RE 增加：`如果|假设|要是|假如|预计|估计|能有多少|大概多少|大约多少|多少pp` → 这类消息返回 null，进入带全工具的自然语言循环（LLM 可自行 bp→pp_calc 两步链）；
+- `pp_calc` 工具描述加链条提示："用户说我bp1/我bp几时，先调 bp 取 beatmap_id 再调本 capability"；
+- `intent-verify` 新增 5 个假设估算 null 断言 + 3 个纯 BP 查询仍强制的回归（**100/100**）。
+
+部署边界：该补丁提交后需再重启 Wuxin 才生效。
+
+## 9. 已知边界
 
 - `beatmap_lookup` 的带 mod AR/OD/CS 不在 osu attributes 响应内（只有星数/max_combo）；需要时用 pp_calc（rosu 给 ar/od/hp）。
 - pp_calc 只支持 osu!std（yumu 端点 mode=osu 固定）；其他模式后续按需求扩展。
