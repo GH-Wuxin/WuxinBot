@@ -88,11 +88,11 @@ async function main() {
     assert(!mentionsBot('这bot疯了', db.settings), 'generic bot alias should not match inside a sentence');
     assert(mentionsBot('bot 在吗', db.settings), 'generic bot alias should still match at word boundary');
     assert(
-      normalizeMessage('/w osu analyze &#91;SHK&#93;Wuxin') === '/w osu analyze [TST]Alpha',
+      normalizeMessage('/w osu analyze &#91;TST&#93;Alpha') === '/w osu analyze [TST]Alpha',
       'raw_message should decode CQ-escaped brackets in osu! usernames'
     );
     assert(
-      normalizeMessage([{ type: 'text', data: { text: '&#91;SHK&#93;Wuxin' } }]) === '[TST]Alpha',
+      normalizeMessage([{ type: 'text', data: { text: '&#91;TST&#93;Alpha' } }]) === '[TST]Alpha',
       'array text segments should decode CQ-escaped brackets'
     );
 
