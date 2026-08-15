@@ -11,6 +11,7 @@ import {
 } from './guard.js';
 import { updateDb, nowIso, MAX_TOOL_LOGS } from '../store.js';
 import { loadRegistry, enabledBots, findBot, findCommand, availableCommands, internalCapabilitySupported, INTERNAL_CAPABILITIES } from './registry.js';
+import { normalizeCapabilityName } from './capabilityCatalog.js';
 import { lookupSkill, lookupSkillByQQ } from './skills.js';
 import { getRenderServer } from './renderServer.js';
 import { scoreStarRating } from '../osu/scoreMetrics.js';
@@ -1651,6 +1652,10 @@ export async function executeInternalBotCommand(
   options?: { translateRecommendFilters?: boolean; enrichBpEstimates?: boolean },
 ): Promise<string | InternalBotCommandResult> {
   const { db, userId } = context;
+  // Command-side alias normalization: quick.meta uses the legacy two-p alias
+  // `pplus`; the canonical capability catalog and LLM enum use three-p
+  // `ppplus`. Normalizing here keeps the two spellings behavior-identical.
+  commandName = normalizeCapabilityName(commandName);
 
   // Match watching does not need a resolved player (the command carries a
   // match id); handle it before the player resolution below.
@@ -2079,7 +2084,6 @@ export async function executeInternalBotCommand(
       return content;
     }
 
-    case 'pplus':
     case 'ppplus':
     case 'skill': {
       // PP+ dimensions — try to fetch from PP+ service
