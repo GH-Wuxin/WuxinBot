@@ -40,7 +40,7 @@ const DSML_LEAK_TEXT = [
   '<｜｜DSML｜｜tool_calls>',
   '<｜｜DSML｜｜invoke name="query_osu">',
   '<｜｜DSML｜｜parameter name="capability" string="true">pp_calc<｜｜DSML｜｜/parameter>',
-  '<｜｜DSML｜｜parameter name="username" string="true">[SHK]Wuxin<｜｜DSML｜｜/parameter>',
+  '<｜｜DSML｜｜parameter name="username" string="true">[TST]Alpha<｜｜DSML｜｜/parameter>',
   '<｜｜DSML｜｜parameter name="beatmap_id" string="true">809469<｜｜DSML｜｜/parameter>',
   '<｜｜DSML｜｜parameter name="mods" string="true">HD<｜｜DSML｜｜/parameter>',
   '<｜｜DSML｜｜parameter name="acc" string="true">99<｜｜DSML｜｜/parameter>',

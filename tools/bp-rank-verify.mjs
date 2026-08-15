@@ -219,7 +219,7 @@ const result = await executeToolCall(
   toolCall('bp10-offline', {
     bot: qqBot.id,
     command: 'bp',
-    username: '[SHK]Wuxin',
+    username: '[TST]Alpha',
     bp_rank: 10,
   }),
   {
@@ -241,7 +241,7 @@ const result = await executeToolCall(
   },
 );
 assert(result.ok, 'ranked BP tool call must complete');
-assert(sentCommand === '/bp [SHK]Wuxin #10', 'ranked BP selector must be carried in the bot command');
+assert(sentCommand === '/bp [TST]Alpha #10', 'ranked BP selector must be carried in the bot command');
 assert(result.metadata?.bpStart === 10 && result.metadata?.bpEnd === 10, 'BP ranks must remain in tool metadata');
 assert(result.directContent === '#10 Fixture BP', 'text fallback must be delivered verbatim');
 
@@ -250,7 +250,7 @@ const fallbackResult = await executeToolCall(
   toolCall('bp1-event-fallback', {
     bot: qqBot.id,
     command: 'bp',
-    username: '[SHK]Wuxin',
+    username: '[TST]Alpha',
   }),
   {
     db: qqDb,
@@ -269,7 +269,7 @@ const fallbackResult = await executeToolCall(
   },
 );
 assert(fallbackResult.ok, 'event-text BP1 fallback must complete');
-assert(fallbackCommand === '/bp [SHK]Wuxin #1', 'event-text BP1 must survive a model call that omitted bp_rank');
+assert(fallbackCommand === '/bp [TST]Alpha #1', 'event-text BP1 must survive a model call that omitted bp_rank');
 assert(
   fallbackResult.metadata?.bpStart === 1 && fallbackResult.metadata?.bpEnd === 1,
   'event-derived BP1 must remain in tool metadata',

@@ -33,7 +33,7 @@ import { ok as assert } from 'node:assert/strict';
 
 const fixture = {
   user: {
-    id: 19244792, username: '[SHK]Wuxin', country_code: 'CN',
+    id: 10000001, username: '[TST]Alpha', country_code: 'CN',
     join_date: '2023-01-15T00:00:00+00:00',
     grade_counts: { ssh: 12, ss: 85, sh: 23, s: 340, a: 1200 },
     statistics: {
@@ -51,44 +51,44 @@ const fixture = {
       statistics: { count_50: 0, count_100: 12, count_300: 345, count_geki: 23, count_katsu: 5, count_miss: 0 },
       beatmap: { id: 1001, difficulty_rating: 6.60, version: 'Insane', mode: 'osu', ar: 9.5, bpm: 200, cs: 4, total_length: 240, hit_length: 180, count_circles: 300, count_sliders: 80, count_spinners: 5 },
       beatmapset: { id: 5001, title: 'Humiliation Supreme', artist: 'Camellia', creator: 'Mapper1' },
-      created_at: '2026-06-15T00:00:00Z', user_id: 19244792, mode: 'osu' },
+      created_at: '2026-06-15T00:00:00Z', user_id: 10000001, mode: 'osu' },
     { id: 2, accuracy: 0.9812, max_combo: 987, mods: ['HD'], pp: 541.6, score: 14200000, rank: 'S',
       statistics: { count_50: 1, count_100: 18, count_300: 290, count_geki: 18, count_katsu: 8, count_miss: 1 },
       beatmap: { id: 1002, difficulty_rating: 6.86, version: 'Another', mode: 'osu', ar: 9.8, bpm: 240, cs: 4.2, total_length: 200, hit_length: 150, count_circles: 250, count_sliders: 60, count_spinners: 3 },
       beatmapset: { id: 5002, title: 'Sidetracked Day', artist: 'DJ Sharpnel', creator: 'Mapper2' },
-      created_at: '2026-06-10T00:00:00Z', user_id: 19244792, mode: 'osu' },
+      created_at: '2026-06-10T00:00:00Z', user_id: 10000001, mode: 'osu' },
     { id: 3, accuracy: 0.9650, max_combo: 1567, mods: ['HD','DT'], pp: 315.2, score: 13500000, rank: 'A',
       statistics: { count_50: 3, count_100: 28, count_300: 410, count_geki: 30, count_katsu: 12, count_miss: 2 },
       beatmap: { id: 1003, difficulty_rating: 5.89, version: 'Expert', mode: 'osu', ar: 9, bpm: 180, cs: 4, total_length: 300, hit_length: 220, count_circles: 400, count_sliders: 90, count_spinners: 8 },
       beatmapset: { id: 5003, title: 'Dragon Night', artist: 'ZUN', creator: 'Mapper3' },
-      created_at: '2026-05-20T00:00:00Z', user_id: 19244792, mode: 'osu' },
+      created_at: '2026-05-20T00:00:00Z', user_id: 10000001, mode: 'osu' },
     { id: 4, accuracy: 0.9934, max_combo: 423, mods: [], pp: 298.7, score: 9800000, rank: 'SS',
       statistics: { count_50: 0, count_100: 5, count_300: 150, count_geki: 8, count_katsu: 2, count_miss: 0 },
       beatmap: { id: 1004, difficulty_rating: 4.85, version: 'Hard', mode: 'osu', ar: 8, bpm: 160, cs: 3.5, total_length: 180, hit_length: 120, count_circles: 150, count_sliders: 30, count_spinners: 2 },
       beatmapset: { id: 5004, title: 'Blue Zenith', artist: 'xi', creator: 'Mapper4' },
-      created_at: '2026-04-01T00:00:00Z', user_id: 19244792, mode: 'osu' },
+      created_at: '2026-04-01T00:00:00Z', user_id: 10000001, mode: 'osu' },
     { id: 5, accuracy: 0.9490, max_combo: 890, mods: ['HR'], pp: 285.3, score: 12200000, rank: 'A',
       statistics: { count_50: 5, count_100: 45, count_300: 320, count_geki: 15, count_katsu: 20, count_miss: 3 },
       beatmap: { id: 1005, difficulty_rating: 5.20, version: 'Insane', mode: 'osu', ar: 9.2, bpm: 175, cs: 4, total_length: 250, hit_length: 190, count_circles: 320, count_sliders: 70, count_spinners: 4 },
       beatmapset: { id: 5005, title: 'The Pretender', artist: 'Foo Fighters', creator: 'Mapper5' },
-      created_at: '2026-03-15T00:00:00Z', user_id: 19244792, mode: 'osu' },
+      created_at: '2026-03-15T00:00:00Z', user_id: 10000001, mode: 'osu' },
   ],
   recentScores: [
     { id: 10, accuracy: 0.8780, max_combo: 876, mods: ['HD','HR'], pp: null, score: 11200000, rank: 'A',
       statistics: { count_50: 5, count_100: 32, count_300: 250, count_geki: 12, count_katsu: 6, count_miss: 4 },
       beatmap: { id: 2001, difficulty_rating: 7.41, version: 'Expert', mode: 'osu', ar: 10, bpm: 220, cs: 4.5, total_length: 260, hit_length: 200, count_circles: 350, count_sliders: 75, count_spinners: 3 },
       beatmapset: { id: 6001, title: 'Through The Fire', artist: 'DragonForce', creator: 'Mapper6' },
-      created_at: '2026-07-05T10:00:00Z', user_id: 19244792, mode: 'osu' },
+      created_at: '2026-07-05T10:00:00Z', user_id: 10000001, mode: 'osu' },
     { id: 11, accuracy: 0.8610, max_combo: 654, mods: ['HD','HR'], pp: null, score: 8700000, rank: 'A',
       statistics: { count_50: 8, count_100: 45, count_300: 230, count_geki: 5, count_katsu: 10, count_miss: 6 },
       beatmap: { id: 2002, difficulty_rating: 7.41, version: 'Insane', mode: 'osu', ar: 10.3, bpm: 250, cs: 4.8, total_length: 210, hit_length: 160, count_circles: 280, count_sliders: 55, count_spinners: 2 },
       beatmapset: { id: 6002, title: 'Freedom Dive', artist: 'xi', creator: 'Mapper7' },
-      created_at: '2026-07-04T22:00:00Z', user_id: 19244792, mode: 'osu' },
+      created_at: '2026-07-04T22:00:00Z', user_id: 10000001, mode: 'osu' },
   ],
   mode: 'osu'
 };
 
-// Real [SHK]Wuxin PP+ data for normalization testing
+// Real [TST]Alpha PP+ data for normalization testing
 const playerBars = ppToBars({
   pp: 10597, ppAim: 5982,
   ppJumpAim: 3046, ppFlowAim: 5796,
@@ -105,16 +105,16 @@ console.log('  Flow:', playerBars.flow.toFixed(2), 'Jump:', playerBars.jump.toFi
 
 // Binding compatibility: old numeric/string values and the current object
 // format must all resolve without leaking "[object Object]" into API calls.
-assert(resolveOsuBindingValue(19244792) === 19244792);
-assert(resolveOsuBindingValue('19244792') === 19244792);
-assert(resolveOsuBindingValue('[SHK]Wuxin') === '[SHK]Wuxin');
-assert(resolveOsuBindingValue({ id: 19244792, username: '[SHK]Wuxin' }) === 19244792);
-assert(resolveOsuBindingValue({ username: '[SHK]Wuxin' }) === '[SHK]Wuxin');
+assert(resolveOsuBindingValue(10000001) === 10000001);
+assert(resolveOsuBindingValue('10000001') === 10000001);
+assert(resolveOsuBindingValue('[TST]Alpha') === '[TST]Alpha');
+assert(resolveOsuBindingValue({ id: 10000001, username: '[TST]Alpha' }) === 10000001);
+assert(resolveOsuBindingValue({ username: '[TST]Alpha' }) === '[TST]Alpha');
 assert(resolveOsuBindingValue({}) === null);
-assert(osuBindingMatchesUser(19244792, fixture.user));
-assert(osuBindingMatchesUser('19244792', fixture.user));
-assert(osuBindingMatchesUser('[shk]wuxin', fixture.user));
-assert(osuBindingMatchesUser({ id: 19244792, username: '[SHK]Wuxin' }, fixture.user));
+assert(osuBindingMatchesUser(10000001, fixture.user));
+assert(osuBindingMatchesUser('10000001', fixture.user));
+assert(osuBindingMatchesUser('[tst]alpha', fixture.user));
+assert(osuBindingMatchesUser({ id: 10000001, username: '[TST]Alpha' }, fixture.user));
 assert(!osuBindingMatchesUser({ id: 1, username: 'someone else' }, fixture.user));
 console.log('Test 1c PASS: all osu binding formats resolve and self-match');
 
@@ -143,7 +143,7 @@ assert(output.pplusSection.includes('LazyBot'), 'pplusSection should mention Laz
 console.log('Test 3 PASS: PP+ section content');
 
 // Test 4: profile contains expected fields
-assert(output.profile.includes('[SHK]Wuxin'), 'profile should contain username');
+assert(output.profile.includes('[TST]Alpha'), 'profile should contain username');
 assert(output.profile.includes('10285.6'), 'profile should contain PP');
 assert(output.profile.includes('6,210'), 'profile should contain rank');
 assert(output.profile.includes('98.80%'), 'profile should contain hit_accuracy as percentage');
@@ -151,7 +151,7 @@ assert(output.profile.includes('48%'), 'profile should contain level progress');
 console.log('Test 4 PASS: profile fields');
 
 // Test 5: buildAnalysisPrompt (now returns { system, user })
-const prompt = buildAnalysisPrompt(output, '自然、简短', { playerName: '[SHK]Wuxin', perspective: 'self' });
+const prompt = buildAnalysisPrompt(output, '自然、简短', { playerName: '[TST]Alpha', perspective: 'self' });
 assert(typeof prompt.system === 'string', 'should have system prompt');
 assert(typeof prompt.user === 'string', 'should have user prompt');
 assert(prompt.system.includes('pippi'), 'system prompt should contain pippi identity');
@@ -183,7 +183,7 @@ assert(refPrompt.user.includes('参考'), 'prompt should include reference data'
 console.log('Test 7 PASS: reference player handling');
 
 // Test 8: editor prompt + deterministic validation/fallback
-const editorPrompt = buildAnalysisEditorPrompt(output, { playerName: '[SHK]Wuxin', perspective: 'self' });
+const editorPrompt = buildAnalysisEditorPrompt(output, { playerName: '[TST]Alpha', perspective: 'self' });
 assert(editorPrompt.system.includes('只输出【结论】节点'), 'editor prompt should only request the final conclusion node');
 assert(
   editorPrompt.system.includes('pippi 是一名活泼、自信、反应很快的少女')
@@ -483,7 +483,7 @@ assert(specialModOut.safeFacts.includes('EZ 2张｜BP5 中 2张｜平均'), 'EZ 
 assert(specialModOut.safeFacts.includes('FL 1张｜BP5 中 1张｜平均'), 'FL count, BP5 count and averages should be verified');
 assert(specialModOut.knowledgeContext.includes('EZ 会降低 AR、OD、CS 和 HP'), 'analysis should receive EZ semantics');
 assert(specialModOut.knowledgeContext.includes('FL 会限制可见区域'), 'analysis should receive FL semantics');
-const specialPrompt = buildAnalysisSectionCommentsPrompt(specialModOut, { playerName: '[SHK]Wuxin', perspective: 'self' });
+const specialPrompt = buildAnalysisSectionCommentsPrompt(specialModOut, { playerName: '[TST]Alpha', perspective: 'self' });
 assert(specialPrompt.system.includes('rank、pp、BP 体量和成绩结构'), 'rank and pp scale must reach section generation');
 assert(specialPrompt.user.includes('BP 特殊 Mod 信号'), 'special Mod facts must reach section generation');
 console.log('Test 13 PASS: special Mod statistics and prompt injection');
@@ -515,14 +515,14 @@ assert(findAnalysisStyleReuse('Flow 和 Accuracy 拉开六维差距，串图留�
 assert.equal(findAnalysisStyleReuse('这组数据很整齐，记住了。', avoidance).length, 0, 'style preferences belong to generation/review, not a hard cross-run gate');
 const excludedAvoidance = buildAnalysisStyleAvoidance(styleDb, 20, { osuUserId: 7562902, displayName: 'mrekk' });
 assert.equal(excludedAvoidance.recentExpressions.length, 0, 'same-player reruns must also be independent');
-const cooledPrompt = buildAnalysisEditorPrompt(output, { playerName: '[SHK]Wuxin', perspective: 'self' }, '', avoidance);
+const cooledPrompt = buildAnalysisEditorPrompt(output, { playerName: '[TST]Alpha', perspective: 'self' }, '', avoidance);
 assert(!cooledPrompt.system.includes('全球第一还把两万多 pp 摆在这里'), 'other-player output must never enter the current prompt');
 assert(!cooledPrompt.system.includes('mrekk'), 'other-player identity must never enter the current prompt');
 console.log('Test 14 PASS: Analyze independence without cross-run style state');
 
 // Test 15: the independent reviewer is factual-only. Literary preferences are
 // evaluated by the batch harness, not fed back into production rewrites.
-const reviewerPrompt = buildAnalysisReviewerPrompt(output, output.safeFallback, { playerName: '[SHK]Wuxin', perspective: 'self' });
+const reviewerPrompt = buildAnalysisReviewerPrompt(output, output.safeFallback, { playerName: '[TST]Alpha', perspective: 'self' });
 assert(reviewerPrompt.system.includes('事实质检员'), 'reviewer must identify its factual-only role');
 assert(reviewerPrompt.system.includes('只查可证明的基本事实错误'), 'reviewer must not act as a prose editor');
 assert(reviewerPrompt.system.includes('基于数据的常识推断'), 'reviewer must allow data-grounded light inference');
@@ -570,47 +570,47 @@ const baseComments = {
   classification: '第一类与第二类都保留了分量，当前分类只描述这批 BP。',
 };
 const onlineTimeComments = { ...baseComments, profile: '这个账号已经积累了很长的在线时长，其他字段也很完整。' };
-assert(!validateAnalysisSectionComments(output, onlineTimeComments, { playerName: '[SHK]Wuxin', perspective: 'self' }).ok, 'play_time must not be renamed online time');
+assert(!validateAnalysisSectionComments(output, onlineTimeComments, { playerName: '[TST]Alpha', perspective: 'self' }).ok, 'play_time must not be renamed online time');
 const roundedPlayCountComments = { ...baseComments, profile: '全球排名和 6万次游玩一起看，账号体量已经很清楚。' };
-assert(!validateAnalysisSectionComments(output, roundedPlayCountComments, { playerName: '[SHK]Wuxin', perspective: 'self' }).ok, 'exact play count must not be compressed into Arabic ten-thousand shorthand');
+assert(!validateAnalysisSectionComments(output, roundedPlayCountComments, { playerName: '[TST]Alpha', perspective: 'self' }).ok, 'exact play count must not be compressed into Arabic ten-thousand shorthand');
 // 2026-08-02 减法：PP+ 能力化/偏好/机制类语义判断从机械 validator 移除，
 // 交由 LLM reviewer 审计。以下表达不再触发机械拒绝。
 const pplusAbilityComments = { ...baseComments, pplus: 'Speed 是六维最低项，所以速度不是这人的菜。' };
-assert(validateAnalysisSectionComments(output, pplusAbilityComments, { playerName: '[SHK]Wuxin', perspective: 'self' }).ok, 'PP+ ability-style prose is reviewer territory, not a word-list gate');
+assert(validateAnalysisSectionComments(output, pplusAbilityComments, { playerName: '[TST]Alpha', perspective: 'self' }).ok, 'PP+ ability-style prose is reviewer territory, not a word-list gate');
 const pplusTranslatedAbilityComments = { ...baseComments, pplus: 'Jump 和 Accuracy 是六维最高项，所以这是个擅长单点跳跃、点得准的玩家。' };
-assert(validateAnalysisSectionComments(output, pplusTranslatedAbilityComments, { playerName: '[SHK]Wuxin', perspective: 'self' }).ok, 'PP+ translation is reviewer territory');
+assert(validateAnalysisSectionComments(output, pplusTranslatedAbilityComments, { playerName: '[TST]Alpha', perspective: 'self' }).ok, 'PP+ translation is reviewer territory');
 const pplusMetaphorAbilityComments = { ...baseComments, pplus: '这个六维形状很像短图准、长串吃力的玩家。' };
-assert(validateAnalysisSectionComments(output, pplusMetaphorAbilityComments, { playerName: '[SHK]Wuxin', perspective: 'self' }).ok, 'PP+ shape metaphors are reviewer territory');
+assert(validateAnalysisSectionComments(output, pplusMetaphorAbilityComments, { playerName: '[TST]Alpha', perspective: 'self' }).ok, 'PP+ shape metaphors are reviewer territory');
 const pplusLiveAbilityComments = { ...baseComments, pplus: 'Jump 一柱擎天，Accuracy 垫底，这形状在说爆发优先、容错靠边。' };
-assert(validateAnalysisSectionComments(output, pplusLiveAbilityComments, { playerName: '[SHK]Wuxin', perspective: 'self' }).ok, 'PP+ mechanism prose is reviewer territory');
+assert(validateAnalysisSectionComments(output, pplusLiveAbilityComments, { playerName: '[TST]Alpha', perspective: 'self' }).ok, 'PP+ mechanism prose is reviewer territory');
 const wrongBoundPplusValueComments = { ...baseComments, pplus: 'Accuracy 12.01 是六维最高项，Flow 11.39 紧随其后。' };
-assert(!validateAnalysisSectionComments(output, wrongBoundPplusValueComments, { playerName: '[SHK]Wuxin', perspective: 'self' }).ok, 'a valid PP+ number must not be reassigned to another dimension');
+assert(!validateAnalysisSectionComments(output, wrongBoundPplusValueComments, { playerName: '[TST]Alpha', perspective: 'self' }).ok, 'a valid PP+ number must not be reassigned to another dimension');
 const derivedPplusRatioComments = { ...baseComments, pplus: 'Flow 比 Speed 高出近 3 倍，六维形状并不均匀。' };
-assert(!validateAnalysisSectionComments(output, derivedPplusRatioComments, { playerName: '[SHK]Wuxin', perspective: 'self' }).ok, 'PP+ prose must not invent a ratio absent from verified facts');
+assert(!validateAnalysisSectionComments(output, derivedPplusRatioComments, { playerName: '[TST]Alpha', perspective: 'self' }).ok, 'PP+ prose must not invent a ratio absent from verified facts');
 const modMotivationComments = { ...baseComments, mods: 'NM 是主食，少量 HR 像是偶尔开着玩，至少愿意加压。' };
-assert(validateAnalysisSectionComments(output, modMotivationComments, { playerName: '[SHK]Wuxin', perspective: 'self' }).ok, 'Mod motivation prose is reviewer territory');
+assert(validateAnalysisSectionComments(output, modMotivationComments, { playerName: '[TST]Alpha', perspective: 'self' }).ok, 'Mod motivation prose is reviewer territory');
 const nfPurposeComments = { ...baseComments, mods: '这些 NF 像是开着不死去够更高难度的图。' };
-assert(validateAnalysisSectionComments(output, nfPurposeComments, { playerName: '[SHK]Wuxin', perspective: 'self' }).ok, 'NF purpose prose is reviewer territory');
+assert(validateAnalysisSectionComments(output, nfPurposeComments, { playerName: '[TST]Alpha', perspective: 'self' }).ok, 'NF purpose prose is reviewer territory');
 const historyInferenceComments = { ...baseComments, profile: '这个体量下还能长期保持 98.80% Acc，准确率没有被时间磨掉。' };
-assert(validateAnalysisSectionComments(output, historyInferenceComments, { playerName: '[SHK]Wuxin', perspective: 'self' }).ok, 'history-style prose is reviewer territory');
+assert(validateAnalysisSectionComments(output, historyInferenceComments, { playerName: '[TST]Alpha', perspective: 'self' }).ok, 'history-style prose is reviewer territory');
 const derivedYearComments = { ...baseComments, profile: '这个 1 年多的账号已经进入活跃玩家中坚。' };
-assert(!validateAnalysisSectionComments(output, derivedYearComments, { playerName: '[SHK]Wuxin', perspective: 'self' }).ok, 'account age must not be converted into an unverified year shorthand');
+assert(!validateAnalysisSectionComments(output, derivedYearComments, { playerName: '[TST]Alpha', perspective: 'self' }).ok, 'account age must not be converted into an unverified year shorthand');
 const levelHistoryComments = { ...baseComments, profile: '等级 101（48%）说明这个账号还在持续往前推，不是打完就扔的号。' };
-assert(validateAnalysisSectionComments(output, levelHistoryComments, { playerName: '[SHK]Wuxin', perspective: 'self' }).ok, 'level persistence prose is reviewer territory');
+assert(validateAnalysisSectionComments(output, levelHistoryComments, { playerName: '[TST]Alpha', perspective: 'self' }).ok, 'level persistence prose is reviewer territory');
 const gradeAccRelationComments = { ...baseComments, profile: 'A 有 1200 张、S 只有 340 张，这和总 Acc 98.80% 形成反差。' };
-assert(validateAnalysisSectionComments(output, gradeAccRelationComments, { playerName: '[SHK]Wuxin', perspective: 'self' }).ok, 'grade/Acc relation prose is reviewer territory');
+assert(validateAnalysisSectionComments(output, gradeAccRelationComments, { playerName: '[TST]Alpha', perspective: 'self' }).ok, 'grade/Acc relation prose is reviewer territory');
 const top5StateStoryComments = { ...baseComments, top5: 'BP5 的分数靠得很近，看起来不像同一次状态打出来的。' };
-assert(validateAnalysisSectionComments(output, top5StateStoryComments, { playerName: '[SHK]Wuxin', perspective: 'self' }).ok, 'BP5 state story is reviewer territory');
+assert(validateAnalysisSectionComments(output, top5StateStoryComments, { playerName: '[TST]Alpha', perspective: 'self' }).ok, 'BP5 state story is reviewer territory');
 const top5MasteryComments = { ...baseComments, top5: 'BP5 最高星那张 Acc 较低，看来还没有完全吃透。' };
-assert(validateAnalysisSectionComments(output, top5MasteryComments, { playerName: '[SHK]Wuxin', perspective: 'self' }).ok, 'BP5 mastery prose is reviewer territory');
+assert(validateAnalysisSectionComments(output, top5MasteryComments, { playerName: '[TST]Alpha', perspective: 'self' }).ok, 'BP5 mastery prose is reviewer territory');
 const topAccCorrelationComments = { ...baseComments, top: '这批 BP 里更高难度的几张 Acc 明显下降。' };
-assert(!validateAnalysisSectionComments(output, topAccCorrelationComments, { playerName: '[SHK]Wuxin', perspective: 'self' }).ok, 'aggregate star and Acc summaries must not become a per-band correlation');
+assert(!validateAnalysisSectionComments(output, topAccCorrelationComments, { playerName: '[TST]Alpha', perspective: 'self' }).ok, 'aggregate star and Acc summaries must not become a per-band correlation');
 const leakedJsonComments = { ...baseComments, top: '{"evidence":"BP100","judgment":"覆盖","comment":"内部 JSON 不应显示"}' };
-assert(!validateAnalysisSectionComments(output, leakedJsonComments, { playerName: '[SHK]Wuxin', perspective: 'self' }).ok, 'internal planned JSON must never appear as a visible comment');
+assert(!validateAnalysisSectionComments(output, leakedJsonComments, { playerName: '[TST]Alpha', perspective: 'self' }).ok, 'internal planned JSON must never appear as a visible comment');
 const bodyMechanismComments = { ...baseComments, profile: '才玩了一小会儿就已经手不抖、眼不花，起步很稳。' };
 assert(!validateAnalysisSectionComments(sparseOut, bodyMechanismComments, { playerName: 'SparsePlayer', perspective: 'other' }).ok, 'sparse accounts must not receive invented body-mechanism praise');
 const falsePplusBenchmarkComments = { ...baseComments, pplus: 'Accuracy 11.39 连同最低项一起越过了 15 基准线，六维整体很高。' };
-assert(!validateAnalysisSectionComments(output, falsePplusBenchmarkComments, { playerName: '[SHK]Wuxin', perspective: 'self' }).ok, 'PP+ values below 15 must not be described as over the benchmark');
+assert(!validateAnalysisSectionComments(output, falsePplusBenchmarkComments, { playerName: '[TST]Alpha', perspective: 'self' }).ok, 'PP+ values below 15 must not be described as over the benchmark');
 const falseStableSparseComments = { ...baseComments, top: '这批 BP 成绩已经相当扎实，整个列表都收稳了。' };
 assert(validateAnalysisSectionComments(sparseOut, falseStableSparseComments, { playerName: 'SparsePlayer', perspective: 'other' }).ok, 'stability claims are reviewer territory');
 const missedLowAccFocusComments = { ...baseComments, top: '这批 BP 从 3.55★ 到 4.12★，难度范围已经列得很清楚。' };
@@ -626,7 +626,7 @@ assert(validateAnalysisSectionComments(sparseOut, sparseAdviceComments, { player
 const unknownTargetPronounComments = { ...baseComments, profile: '数据说明他已经站在当前排名位置，账号字段也很完整。' };
 assert(!validateAnalysisSectionComments(output, unknownTargetPronounComments, { playerName: 'SomeoneElse', perspective: 'unknown' }).ok, 'unknown target gender must not leak through mid-sentence pronouns');
 const bp5ScaledCountConclusion = '【结论】\n\n全球排名 #1，总 PP 32138.7pp。两股力量在 BP5 里各占 83 张中的 83%，谁也不肯让谁。这个账号的 BP 结构相当极端，Mod 覆盖也很夸张。';
-assert(!validatePippiComment(output, bp5ScaledCountConclusion, { playerName: '[SHK]Wuxin', perspective: 'self' }).ok, 'BP-level counts must not be attached to BP5 (only 5 scores exist)');
+assert(!validatePippiComment(output, bp5ScaledCountConclusion, { playerName: '[TST]Alpha', perspective: 'self' }).ok, 'BP-level counts must not be attached to BP5 (only 5 scores exist)');
 const emptyRecentAdviceComments = { ...baseComments, recent: 'Recent 目前没有记录，多打几场让数据开口说话吧。' };
 assert(validateAnalysisSectionComments(sparseOut, emptyRecentAdviceComments, { playerName: 'SparsePlayer', perspective: 'other' }).ok, 'play-more advice is reviewer territory');
 const emptyRecentStoryComments = { ...baseComments, recent: 'Recent 一条都没有，是没在打还是没同步，目前看不出来。' };
@@ -634,25 +634,25 @@ assert(validateAnalysisSectionComments(sparseOut, emptyRecentStoryComments, { pl
 const emptyRecentReservedStoryComments = { ...baseComments, recent: '最近记录是空的，看不出是歇着还是压根没打。' };
 assert(validateAnalysisSectionComments(sparseOut, emptyRecentReservedStoryComments, { playerName: 'SparsePlayer', perspective: 'other' }).ok, 'empty Recent reserved inference is reviewer territory');
 const sameBandRecentComments = { ...baseComments, recent: 'Recent 和 BP 落在同一批难度区间，Acc 差异仍然没有已知原因。' };
-assert(!validateAnalysisSectionComments(output, sameBandRecentComments, { playerName: '[SHK]Wuxin', perspective: 'self' }).ok, 'similar aggregate stars must not become the same difficulty band');
+assert(!validateAnalysisSectionComments(output, sameBandRecentComments, { playerName: '[TST]Alpha', perspective: 'self' }).ok, 'similar aggregate stars must not become the same difficulty band');
 const emptyRecentTraceComments = { ...baseComments, recent: 'Recent 暂时没留下新痕迹，看起来也不急着追新成绩。' };
 assert(validateAnalysisSectionComments(sparseOut, emptyRecentTraceComments, { playerName: 'SparsePlayer', perspective: 'other' }).ok, 'empty Recent trace/attitude prose is reviewer territory');
 const pileCountHistoryComments = { ...baseComments, profile: '这个位置不是靠堆次数能摸到的，15420 次游玩慢慢积累出了家底。' };
 assert(validateAnalysisSectionComments(sparseOut, pileCountHistoryComments, { playerName: 'SparsePlayer', perspective: 'other' }).ok, 'pile-volume prose is reviewer territory');
 const starAttitudeComments = { ...baseComments, top: 'BP 的难度下限本身就是一种态度，6.60★ 已经成了日常。' };
-assert(validateAnalysisSectionComments(output, starAttitudeComments, { playerName: '[SHK]Wuxin', perspective: 'self' }).ok, 'star attitude prose is reviewer territory');
+assert(validateAnalysisSectionComments(output, starAttitudeComments, { playerName: '[TST]Alpha', perspective: 'self' }).ok, 'star attitude prose is reviewer territory');
 const nmMainGroundComments = { ...baseComments, mods: '纯 NM 是绝对主场，不带 Mod 硬打才看得出真实底子。' };
-assert(validateAnalysisSectionComments(output, nmMainGroundComments, { playerName: '[SHK]Wuxin', perspective: 'self' }).ok, 'NM main-ground prose is reviewer territory');
+assert(validateAnalysisSectionComments(output, nmMainGroundComments, { playerName: '[TST]Alpha', perspective: 'self' }).ok, 'NM main-ground prose is reviewer territory');
 const pplusAimAbilityComments = { ...baseComments, pplus: 'Flow 和 Jump 的形状说明这份账号靠稳定瞄准撑起来，加速也按得住。' };
-assert(validateAnalysisSectionComments(output, pplusAimAbilityComments, { playerName: '[SHK]Wuxin', perspective: 'self' }).ok, 'PP+ ability prose is reviewer territory');
+assert(validateAnalysisSectionComments(output, pplusAimAbilityComments, { playerName: '[TST]Alpha', perspective: 'self' }).ok, 'PP+ ability prose is reviewer territory');
 const top5RhythmStoryComments = { ...baseComments, top5: 'BP5 像两种状态，同一种节奏里还能稳定输出。' };
-assert(validateAnalysisSectionComments(output, top5RhythmStoryComments, { playerName: '[SHK]Wuxin', perspective: 'self' }).ok, 'BP5 state prose is reviewer territory');
+assert(validateAnalysisSectionComments(output, top5RhythmStoryComments, { playerName: '[TST]Alpha', perspective: 'self' }).ok, 'BP5 state prose is reviewer territory');
 const fanActionComments = { ...baseComments, classification: '这个分布真迷人，我都想凑过去看看屏幕了。' };
-assert(validateAnalysisSectionComments(output, fanActionComments, { playerName: '[SHK]Wuxin', perspective: 'self' }).ok, 'fan/stage-action prose is style territory');
+assert(validateAnalysisSectionComments(output, fanActionComments, { playerName: '[TST]Alpha', perspective: 'self' }).ok, 'fan/stage-action prose is style territory');
 const translatedClassificationComments = { ...baseComments, classification: 'aim 是跳跃主菜，stream 是耐力配菜，这就是纯跳跃玩家。' };
-assert(validateAnalysisSectionComments(output, translatedClassificationComments, { playerName: '[SHK]Wuxin', perspective: 'self' }).ok, 'classification ability prose is reviewer territory');
+assert(validateAnalysisSectionComments(output, translatedClassificationComments, { playerName: '[TST]Alpha', perspective: 'self' }).ok, 'classification ability prose is reviewer territory');
 const classificationFoodComments = { ...baseComments, classification: 'stream 是主食，其他分类只是零星点缀。' };
-assert(validateAnalysisSectionComments(output, classificationFoodComments, { playerName: '[SHK]Wuxin', perspective: 'self' }).ok, 'classification food metaphors are reviewer territory');
+assert(validateAnalysisSectionComments(output, classificationFoodComments, { playerName: '[TST]Alpha', perspective: 'self' }).ok, 'classification food metaphors are reviewer territory');
 const unsettledOut = analyzeData({
   ...sparseFixture,
   bestScores: [
@@ -666,15 +666,15 @@ assert(validateAnalysisSectionComments(unsettledOut, unsettledButCleanBp1Comment
 const falseOverallStableComments = { ...baseComments, top: '这个账号底子很稳，整体成绩已经收稳。' };
 assert(validateAnalysisSectionComments(unsettledOut, falseOverallStableComments, { playerName: 'SparsePlayer', perspective: 'other' }).ok, 'stability wording is reviewer territory, not a mechanical gate');
 const groupTierComments = { ...baseComments, profile: '全球排名已经进入活跃玩家中坚，还超过了绝大多数活跃玩家。' };
-assert(!validateAnalysisSectionComments(output, groupTierComments, { playerName: '[SHK]Wuxin', perspective: 'self' }).ok, 'rank must not invent active-player population tiers');
+assert(!validateAnalysisSectionComments(output, groupTierComments, { playerName: '[TST]Alpha', perspective: 'self' }).ok, 'rank must not invent active-player population tiers');
 const accPlayCountRelationComments = { ...baseComments, profile: '总 Acc 98.80% 配着 15,420 次游玩还能保持，数字本身很耐看。' };
-assert(validateAnalysisSectionComments(output, accPlayCountRelationComments, { playerName: '[SHK]Wuxin', perspective: 'self' }).ok, 'Acc/play-count relation prose is reviewer territory');
+assert(validateAnalysisSectionComments(output, accPlayCountRelationComments, { playerName: '[TST]Alpha', perspective: 'self' }).ok, 'Acc/play-count relation prose is reviewer territory');
 const falseBp1FullComments = { ...baseComments, top5: 'BP1 那张 98.75% 低星图打满得很干净。' };
-assert(!validateAnalysisSectionComments(output, falseBp1FullComments, { playerName: '[SHK]Wuxin', perspective: 'self' }).ok, 'sub-100 BP1 must not be described as full accuracy');
+assert(!validateAnalysisSectionComments(output, falseBp1FullComments, { playerName: '[TST]Alpha', perspective: 'self' }).ok, 'sub-100 BP1 must not be described as full accuracy');
 const chinesePplusDecimalComments = { ...baseComments, pplus: 'Flow 十二点零一站在六维最前面，和 Accuracy 的形状拉开了距离。' };
-assert(!validateAnalysisSectionComments(output, chinesePplusDecimalComments, { playerName: '[SHK]Wuxin', perspective: 'self' }).ok, 'PP+ exact decimals must stay machine-auditable Arabic numerals');
+assert(!validateAnalysisSectionComments(output, chinesePplusDecimalComments, { playerName: '[TST]Alpha', perspective: 'self' }).ok, 'PP+ exact decimals must stay machine-auditable Arabic numerals');
 const wrongExactModComments = { ...baseComments, mods: '精确组合 HD 有 2 张，另外几种组合也保留了分量。' };
-assert(!validateAnalysisSectionComments(output, wrongExactModComments, { playerName: '[SHK]Wuxin', perspective: 'self' }).ok, 'exact Mod counts must not be confused with containment counts');
+assert(!validateAnalysisSectionComments(output, wrongExactModComments, { playerName: '[TST]Alpha', perspective: 'self' }).ok, 'exact Mod counts must not be confused with containment counts');
 const noNmOut = analyzeData({
   ...fixture,
   bestScores: fixture.bestScores.map((score, index) => makeScore(score, { mods: index % 2 === 0 ? ['HD', 'HR'] : ['HD'] })),
@@ -685,47 +685,47 @@ const truthfulNoNmComments = {
   ...baseComments,
   mods: '五张全部含 HD，其中 3 张含 HR；纯 NM 一张都没有。',
 };
-const truthfulNoNmValidation = validateAnalysisSectionComments(noNmOut, truthfulNoNmComments, { playerName: '[SHK]Wuxin', perspective: 'self' });
+const truthfulNoNmValidation = validateAnalysisSectionComments(noNmOut, truthfulNoNmComments, { playerName: '[TST]Alpha', perspective: 'self' });
 if (!truthfulNoNmValidation.ok) console.error('truthful no-NM reasons:', truthfulNoNmValidation.reasons);
 assert(truthfulNoNmValidation.ok, 'a truthful no-NM sentence must not be misread as claiming there is no HR');
 const classificationOut = analyzeData({ ...fixture, classification: { distribution: { aim: 3, stream: 1, alt: 1 }, source: 'fixture' } });
 const falseAllClassificationComments = { ...baseComments, pplus: 'Jump 在六维里靠前，BP 里全是 aim，两个现象摆在一起很显眼。' };
-assert(!validateAnalysisSectionComments(classificationOut, falseAllClassificationComments, { playerName: '[SHK]Wuxin', perspective: 'self' }).ok, 'classification totals must be enforced even when referenced from the PP+ section');
+assert(!validateAnalysisSectionComments(classificationOut, falseAllClassificationComments, { playerName: '[TST]Alpha', perspective: 'self' }).ok, 'classification totals must be enforced even when referenced from the PP+ section');
 const wrongEachClassificationComments = { ...baseComments, classification: 'aim、stream、alt 各有 3 张，当前分类很平均。' };
-assert(!validateAnalysisSectionComments(classificationOut, wrongEachClassificationComments, { playerName: '[SHK]Wuxin', perspective: 'self' }).ok, 'each-count phrasing must respect every classification label');
+assert(!validateAnalysisSectionComments(classificationOut, wrongEachClassificationComments, { playerName: '[TST]Alpha', perspective: 'self' }).ok, 'each-count phrasing must respect every classification label');
 assert(validatePippiComment(
   output,
   '【结论】\n全球排名 #6,210。BP 的星数上限与 Acc 覆盖有可见对照，HD 构成、PP+ 六维和 Recent 也各有信息。这份账号把几组差异摆得很清楚，值得认真看。',
-  { playerName: '[SHK]Wuxin', perspective: 'self' }
+  { playerName: '[TST]Alpha', perspective: 'self' }
 ).ok, 'a beatmap star upper bound must not be confused with the PP+ 15 baseline');
 assert(!validatePippiComment(mrekkOut, '【结论】\n全球 #1 的分量当然特殊，全世界只有这个人的 Jump 能到这种高度。', { playerName: 'mrekk', perspective: 'other' }).ok, 'global rank must not become an unsupported PP+ single-dimension world record');
 assert(!validatePippiComment(mrekkOut, '【结论】\n全球 #1、32138.7pp 已经站在塔尖，别人一辈子也够不到这里的一张图。', { playerName: 'mrekk', perspective: 'other' }).ok, 'top-player praise must not belittle everyone else');
-assert(!validatePippiComment(output, '【结论】\nHD 与高 Acc 构成了当前 BP 的主要形状，其他部分仍然保持未知。', { playerName: '[SHK]Wuxin', perspective: 'self' }).ok, 'conclusion must include rank or pp in its weight judgement');
-assert(!validatePippiComment(output, '【结论】\nBP5 的跨度为 43.3pp，HD 与高 Acc 构成当前主要形状。', { playerName: '[SHK]Wuxin', perspective: 'self' }).ok, 'a BP score or gap must not masquerade as account total pp weight');
-assert(!validatePippiComment(output, '【结论】\n全球 #6,210。Recent 的星数和 BP 接近，Acc 有可见落差，原因未知。', { playerName: '[SHK]Wuxin', perspective: 'self' }).ok, 'rank plus Recent alone must not masquerade as a cross-section conclusion');
+assert(!validatePippiComment(output, '【结论】\nHD 与高 Acc 构成了当前 BP 的主要形状，其他部分仍然保持未知。', { playerName: '[TST]Alpha', perspective: 'self' }).ok, 'conclusion must include rank or pp in its weight judgement');
+assert(!validatePippiComment(output, '【结论】\nBP5 的跨度为 43.3pp，HD 与高 Acc 构成当前主要形状。', { playerName: '[TST]Alpha', perspective: 'self' }).ok, 'a BP score or gap must not masquerade as account total pp weight');
+assert(!validatePippiComment(output, '【结论】\n全球 #6,210。Recent 的星数和 BP 接近，Acc 有可见落差，原因未知。', { playerName: '[TST]Alpha', perspective: 'self' }).ok, 'rank plus Recent alone must not masquerade as a cross-section conclusion');
 assert(validatePippiComment(sparseOut, '【结论】\n210.5pp 的账号，这批 BP 里只有 2 张，星数在 3.55★ 到 4.12★ 之间。等记录再多一点，再看会往 alt 深处还是难度高处走。', { playerName: 'SparsePlayer', perspective: 'other' }).ok, 'future-direction prose is reviewer territory');
 const correctExactModCount = { ...baseComments, top5: 'BP5 里只有 1 张 HDDT；其余成绩的 pp 与 Acc 仍要逐张比较。' };
-assert(validateAnalysisSectionComments(output, correctExactModCount, { playerName: '[SHK]Wuxin', perspective: 'self' }).ok, 'exact HDDT count must not be confused with all scores containing HD');
+assert(validateAnalysisSectionComments(output, correctExactModCount, { playerName: '[TST]Alpha', perspective: 'self' }).ok, 'exact HDDT count must not be confused with all scores containing HD');
 const wrongExactModCount = { ...baseComments, top5: 'BP5 里有 2 张 HDDT；其余成绩的 pp 与 Acc 仍要逐张比较。' };
-assert(!validateAnalysisSectionComments(output, wrongExactModCount, { playerName: '[SHK]Wuxin', perspective: 'self' }).ok, 'wrong exact BP5 Mod count must be rejected');
+assert(!validateAnalysisSectionComments(output, wrongExactModCount, { playerName: '[TST]Alpha', perspective: 'self' }).ok, 'wrong exact BP5 Mod count must be rejected');
 const wrongContainedHrCount = { ...baseComments, top5: 'BP5 里四张都带 HR，内部 Acc 还需要逐张比较。' };
-assert(!validateAnalysisSectionComments(output, wrongContainedHrCount, { playerName: '[SHK]Wuxin', perspective: 'self' }).ok, 'top-five containment counts must recognize 都带 phrasing');
+assert(!validateAnalysisSectionComments(output, wrongContainedHrCount, { playerName: '[TST]Alpha', perspective: 'self' }).ok, 'top-five containment counts must recognize 都带 phrasing');
 console.log('Test 17 PASS: first-batch factual regressions are mechanically gated');
 
 // 2026-08-02 减法后补充的硬门回归：
 // - "连1张 98% 以上都没撑住" 与简报（2 张）矛盾
 const noAbove98Variant = { ...baseComments, top: '这批 BP 里连1张 98% 以上 Acc 都没撑住，整体结构还需要再看。' };
-assert(!validateAnalysisSectionComments(output, noAbove98Variant, { playerName: '[SHK]Wuxin', perspective: 'self' }).ok, 'claiming zero 98% scores must still fail when verified facts show some');
+assert(!validateAnalysisSectionComments(output, noAbove98Variant, { playerName: '[TST]Alpha', perspective: 'self' }).ok, 'claiming zero 98% scores must still fail when verified facts show some');
 // - 精确组合覆盖全部 BP 断言（NM 89 张不能写成覆盖全部 100 张）
 const nmCoversAll = { ...baseComments, mods: 'NM 覆盖了 BP 全部 100 张，其他组合只是零星点缀。' };
-assert(!validateAnalysisSectionComments(output, nmCoversAll, { playerName: '[SHK]Wuxin', perspective: 'self' }).ok, 'an exact Mod combo below the BP count must not be claimed to cover all BP');
+assert(!validateAnalysisSectionComments(output, nmCoversAll, { playerName: '[TST]Alpha', perspective: 'self' }).ok, 'an exact Mod combo below the BP count must not be claimed to cover all BP');
 // - normalizeChineseQuantities 不得损坏阿拉伯数字后的“万”
 const mixedWanComments = { ...baseComments, profile: '近 3 万 pp 的体量就摆在这，账号字段也很完整。' };
-const mixedWanSanitized = sanitizeAnalysisSectionComments(mixedWanComments, { playerName: '[SHK]Wuxin', perspective: 'self' }, output);
+const mixedWanSanitized = sanitizeAnalysisSectionComments(mixedWanComments, { playerName: '[TST]Alpha', perspective: 'self' }, output);
 assert(mixedWanSanitized.profile.includes('3 万'), 'Arabic digit followed by 万 must survive quantity normalization');
 // - “隐身”不得作为 HD 的称呼
 const hiddenNickname = { ...baseComments, mods: 'HD 和 HDHR 占了 96 张，这人对隐身的偏爱挺明显。' };
-assert(!validateAnalysisSectionComments(output, hiddenNickname, { playerName: '[SHK]Wuxin', perspective: 'self' }).ok, 'HD must not be renamed to 隐身 in any context');
+assert(!validateAnalysisSectionComments(output, hiddenNickname, { playerName: '[TST]Alpha', perspective: 'self' }).ok, 'HD must not be renamed to 隐身 in any context');
 
 // Test 18: v80 relationship gates and conclusion architecture. The conclusion
 // may reuse compact facts, but it must not receive or copy full section prose.
@@ -742,7 +742,7 @@ const inventedNfPfRelationship = {
   mods: 'NF 那张 PF 成绩很显眼，两种 Mod 在同一张记录里碰面。',
 };
 assert(
-  !validateAnalysisSectionComments(modRelationshipOut, inventedNfPfRelationship, { playerName: '[SHK]Wuxin', perspective: 'self' }).ok,
+  !validateAnalysisSectionComments(modRelationshipOut, inventedNfPfRelationship, { playerName: '[TST]Alpha', perspective: 'self' }).ok,
   'separate NF and PF scores must not be merged into one score',
 );
 const genuineNfPfOut = analyzeData({
@@ -757,12 +757,12 @@ const genuineNfPfRelationship = {
   mods: 'NF 和 PF 在同一张 NFPF 成绩里出现，精确组合与其他记录仍然分开统计。',
 };
 assert(
-  validateAnalysisSectionComments(genuineNfPfOut, genuineNfPfRelationship, { playerName: '[SHK]Wuxin', perspective: 'self' }).ok,
+  validateAnalysisSectionComments(genuineNfPfOut, genuineNfPfRelationship, { playerName: '[TST]Alpha', perspective: 'self' }).ok,
   'a real NFPF exact combination must not be rejected',
 );
 const multiStyleAbility = { ...baseComments, mods: 'HD、HR 和 DT 三种玩法都站得住，当前构成很全面。' };
 assert(
-  validateAnalysisSectionComments(output, multiStyleAbility, { playerName: '[SHK]Wuxin', perspective: 'self' }).ok,
+  validateAnalysisSectionComments(output, multiStyleAbility, { playerName: '[TST]Alpha', perspective: 'self' }).ok,
   'playstyle-ability prose is reviewer territory',
 );
 const pplusTowerAbility = { ...baseComments, pplus: '速度和耐力把塔尖撑高，稳定准度又把这个位置托住了。' };
@@ -822,7 +822,7 @@ assert(
 const factualReviewerPrompt = buildAnalysisReviewerPrompt(
   output,
   `${output.safeBody}\n\n【结论】\n全球排名 #6,210。`,
-  { playerName: '[SHK]Wuxin', perspective: 'self' },
+  { playerName: '[TST]Alpha', perspective: 'self' },
 );
 assert(factualReviewerPrompt.system.includes('只查可证明的基本事实错误'), 'reviewer must stay factual-only');
 assert(!factualReviewerPrompt.system.includes('kind=quality'), 'reviewer must not drive literary rewrites');
@@ -835,7 +835,7 @@ const repairPrompt = buildAnalysisRepairPrompt(
   'top',
   'BP 里 68 张在 6★ 以上。',
   ['top 短评：数字与核准值不符'],
-  { playerName: '[SHK]Wuxin', perspective: 'self' },
+  { playerName: '[TST]Alpha', perspective: 'self' },
 );
 assert(repairPrompt.system.includes('硬错误修复员'), 'repairer must identify its hard-error-only role');
 assert(repairPrompt.system.includes('最小改动'), 'repairer must prefer surgical edits over rewrites');

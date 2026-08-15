@@ -1,0 +1,478 @@
+{
+  "comment": "Synthetic fixture for osu! match 9000001 (Test Cup 1), 2026-08-08. games 1-2 team-vs scorev2. All identifiers are fictional.",
+  "match": {
+    "id": 9000001,
+    "name": "Test Cup 1: (Team Alpha) vs (Team Beta)",
+    "start_time": "2026-08-08T11:44:53+00:00",
+    "end_time": "2026-08-08T12:33:13+00:00"
+  },
+  "events": [
+    {
+      "id": 9000001,
+      "detail": {
+        "type": "game-end",
+        "text": "round 1 ended"
+      },
+      "timestamp": "2026-08-08T12:07:40+00:00",
+      "user_id": null,
+      "game": {
+        "id": 9000001,
+        "beatmap_id": 1000,
+        "start_time": "2026-08-08T12:07:40Z",
+        "end_time": "2026-08-08T12:11:27Z",
+        "mode_int": 0,
+        "mods": [
+          "NF",
+          "HD"
+        ],
+        "team_type": "team-vs",
+        "scoring_type": "scorev2",
+        "scores": [
+          {
+            "id": null,
+            "user_id": 9000008,
+            "score": 168995,
+            "max_combo": 278,
+            "mods": [
+              "NF",
+              "HD"
+            ],
+            "passed": true,
+            "perfect": false,
+            "rank": "C",
+            "accuracy": 0.8084133516232281,
+            "statistics": {
+              "count_100": 189,
+              "count_300": 525,
+              "count_50": 8,
+              "count_geki": 72,
+              "count_katu": 88,
+              "count_miss": 7
+            },
+            "match": {
+              "slot": 0,
+              "team": "red",
+              "pass": true
+            }
+          },
+          {
+            "id": null,
+            "user_id": 9000009,
+            "score": 782788,
+            "max_combo": 943,
+            "mods": [
+              "NF",
+              "HD"
+            ],
+            "passed": true,
+            "perfect": false,
+            "rank": "SH",
+            "accuracy": 0.984453589391861,
+            "statistics": {
+              "count_100": 17,
+              "count_300": 712,
+              "count_50": 0,
+              "count_geki": 159,
+              "count_katu": 13,
+              "count_miss": 0
+            },
+            "match": {
+              "slot": 1,
+              "team": "red",
+              "pass": true
+            }
+          },
+          {
+            "id": null,
+            "user_id": 9000007,
+            "score": 316871,
+            "max_combo": 383,
+            "mods": [
+              "NF",
+              "HD"
+            ],
+            "passed": true,
+            "perfect": false,
+            "rank": "B",
+            "accuracy": 0.9215820759030635,
+            "statistics": {
+              "count_100": 72,
+              "count_300": 647,
+              "count_50": 5,
+              "count_geki": 107,
+              "count_katu": 57,
+              "count_miss": 5
+            },
+            "match": {
+              "slot": 2,
+              "team": "red",
+              "pass": true
+            }
+          },
+          {
+            "id": null,
+            "user_id": 9000006,
+            "score": 991341,
+            "max_combo": 1165,
+            "mods": [
+              "NF",
+              "HD"
+            ],
+            "passed": true,
+            "perfect": false,
+            "rank": "SH",
+            "accuracy": 0.9805669867398262,
+            "statistics": {
+              "count_100": 20,
+              "count_300": 708,
+              "count_50": 1,
+              "count_geki": 156,
+              "count_katu": 15,
+              "count_miss": 0
+            },
+            "match": {
+              "slot": 3,
+              "team": "blue",
+              "pass": true
+            }
+          },
+          {
+            "id": null,
+            "user_id": 9000005,
+            "score": 1030580,
+            "max_combo": 1162,
+            "mods": [
+              "NF",
+              "HD"
+            ],
+            "passed": true,
+            "perfect": false,
+            "rank": "SH",
+            "accuracy": 0.9917695473251029,
+            "statistics": {
+              "count_100": 9,
+              "count_300": 720,
+              "count_50": 0,
+              "count_geki": 163,
+              "count_katu": 9,
+              "count_miss": 0
+            },
+            "match": {
+              "slot": 4,
+              "team": "blue",
+              "pass": true
+            }
+          },
+          {
+            "id": null,
+            "user_id": 9000001,
+            "score": 537168,
+            "max_combo": 708,
+            "mods": [
+              "NF",
+              "HD"
+            ],
+            "passed": true,
+            "perfect": false,
+            "rank": "A",
+            "accuracy": 0.9364426154549611,
+            "statistics": {
+              "count_100": 68,
+              "count_300": 660,
+              "count_50": 0,
+              "count_geki": 127,
+              "count_katu": 44,
+              "count_miss": 1
+            },
+            "match": {
+              "slot": 5,
+              "team": "blue",
+              "pass": true
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": 9000002,
+      "detail": {
+        "type": "game-end",
+        "text": "round 2 ended"
+      },
+      "timestamp": "2026-08-08T12:14:00+00:00",
+      "user_id": null,
+      "game": {
+        "id": 9000002,
+        "beatmap_id": 1000,
+        "start_time": "2026-08-08T12:14:00Z",
+        "end_time": "2026-08-08T12:16:24Z",
+        "mode_int": 0,
+        "mods": [
+          "NF",
+          "DT"
+        ],
+        "team_type": "team-vs",
+        "scoring_type": "scorev2",
+        "scores": [
+          {
+            "id": null,
+            "user_id": 9000008,
+            "score": 1017580,
+            "max_combo": 690,
+            "mods": [
+              "NF",
+              "DT"
+            ],
+            "passed": true,
+            "perfect": false,
+            "rank": "S",
+            "accuracy": 0.9517265680056378,
+            "statistics": {
+              "count_100": 33,
+              "count_300": 439,
+              "count_50": 1,
+              "count_geki": 77,
+              "count_katu": 24,
+              "count_miss": 0
+            },
+            "match": {
+              "slot": 0,
+              "team": "red",
+              "pass": true
+            }
+          },
+          {
+            "id": null,
+            "user_id": 9000009,
+            "score": 751793,
+            "max_combo": 359,
+            "mods": [
+              "NF",
+              "DT"
+            ],
+            "passed": true,
+            "perfect": false,
+            "rank": "A",
+            "accuracy": 0.9880197322057788,
+            "statistics": {
+              "count_100": 7,
+              "count_300": 465,
+              "count_50": 0,
+              "count_geki": 94,
+              "count_katu": 7,
+              "count_miss": 1
+            },
+            "match": {
+              "slot": 1,
+              "team": "red",
+              "pass": true
+            }
+          },
+          {
+            "id": null,
+            "user_id": 9000007,
+            "score": 609301,
+            "max_combo": 351,
+            "mods": [
+              "NF",
+              "DT"
+            ],
+            "passed": true,
+            "perfect": false,
+            "rank": "A",
+            "accuracy": 0.9718111346018323,
+            "statistics": {
+              "count_100": 14,
+              "count_300": 455,
+              "count_50": 0,
+              "count_geki": 84,
+              "count_katu": 14,
+              "count_miss": 4
+            },
+            "match": {
+              "slot": 2,
+              "team": "red",
+              "pass": true
+            }
+          },
+          {
+            "id": null,
+            "user_id": 9000006,
+            "score": 1159149,
+            "max_combo": 692,
+            "mods": [
+              "NF",
+              "DT"
+            ],
+            "passed": true,
+            "perfect": false,
+            "rank": "S",
+            "accuracy": 0.9901338971106413,
+            "statistics": {
+              "count_100": 7,
+              "count_300": 466,
+              "count_50": 0,
+              "count_geki": 96,
+              "count_katu": 6,
+              "count_miss": 0
+            },
+            "match": {
+              "slot": 3,
+              "team": "blue",
+              "pass": true
+            }
+          },
+          {
+            "id": null,
+            "user_id": 9000002,
+            "score": 815979,
+            "max_combo": 515,
+            "mods": [
+              "NF",
+              "DT"
+            ],
+            "passed": true,
+            "perfect": false,
+            "rank": "A",
+            "accuracy": 0.9795630725863284,
+            "statistics": {
+              "count_100": 13,
+              "count_300": 459,
+              "count_50": 0,
+              "count_geki": 89,
+              "count_katu": 12,
+              "count_miss": 1
+            },
+            "match": {
+              "slot": 4,
+              "team": "blue",
+              "pass": true
+            }
+          },
+          {
+            "id": null,
+            "user_id": 9000005,
+            "score": 1179092,
+            "max_combo": 692,
+            "mods": [
+              "NF",
+              "DT"
+            ],
+            "passed": true,
+            "perfect": false,
+            "rank": "S",
+            "accuracy": 0.9943622269203665,
+            "statistics": {
+              "count_100": 4,
+              "count_300": 469,
+              "count_50": 0,
+              "count_geki": 98,
+              "count_katu": 4,
+              "count_miss": 0
+            },
+            "match": {
+              "slot": 5,
+              "team": "blue",
+              "pass": true
+            }
+          }
+        ]
+      }
+    }
+  ],
+  "users": [
+    {
+      "id": 9000001,
+      "username": "Player A",
+      "country_code": "MY",
+      "avatar_url": "",
+      "is_online": false,
+      "is_bot": false,
+      "is_deleted": false,
+      "is_supporter": false
+    },
+    {
+      "id": 9000002,
+      "username": "Player B",
+      "country_code": "HK",
+      "avatar_url": "",
+      "is_online": false,
+      "is_bot": false,
+      "is_deleted": false,
+      "is_supporter": true
+    },
+    {
+      "id": 9000003,
+      "username": "Player C",
+      "country_code": "CN",
+      "avatar_url": "",
+      "is_online": false,
+      "is_bot": false,
+      "is_deleted": false,
+      "is_supporter": false
+    },
+    {
+      "id": 9000004,
+      "username": "Player D",
+      "country_code": "MY",
+      "avatar_url": "",
+      "is_online": true,
+      "is_bot": false,
+      "is_deleted": false,
+      "is_supporter": true
+    },
+    {
+      "id": 9000005,
+      "username": "Player E",
+      "country_code": "MY",
+      "avatar_url": "",
+      "is_online": true,
+      "is_bot": false,
+      "is_deleted": false,
+      "is_supporter": true
+    },
+    {
+      "id": 9000006,
+      "username": "Player F",
+      "country_code": "SG",
+      "avatar_url": "",
+      "is_online": true,
+      "is_bot": false,
+      "is_deleted": false,
+      "is_supporter": true
+    },
+    {
+      "id": 9000007,
+      "username": "Player G",
+      "country_code": "CN",
+      "avatar_url": "",
+      "is_online": false,
+      "is_bot": false,
+      "is_deleted": false,
+      "is_supporter": false
+    },
+    {
+      "id": 9000008,
+      "username": "Player H",
+      "country_code": "CN",
+      "avatar_url": "",
+      "is_online": true,
+      "is_bot": false,
+      "is_deleted": false,
+      "is_supporter": true
+    },
+    {
+      "id": 9000009,
+      "username": "Player I",
+      "country_code": "CN",
+      "avatar_url": "",
+      "is_online": true,
+      "is_bot": false,
+      "is_deleted": false,
+      "is_supporter": true
+    }
+  ],
+  "first_event_id": 9000003,
+  "latest_event_id": 9000004,
+  "current_game_id": 9000003
+}

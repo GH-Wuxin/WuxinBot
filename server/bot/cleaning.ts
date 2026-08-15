@@ -177,7 +177,7 @@ export function normalizeMessage(message) {
     .replace(/\[CQ:file[^\]]*\]/g, '[文件]')
     .trim();
   // NapCat escapes literal CQ-reserved characters in raw_message, including
-  // brackets in valid usernames such as "[SHK]Wuxin". Decode only after real
+  // brackets in valid usernames such as "[TST]Alpha". Decode only after real
   // CQ segments have been handled so escaped user text cannot become a
   // synthetic control segment during normalization.
   return decodeCqValue(normalized).trim();

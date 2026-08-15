@@ -22,7 +22,7 @@ console.log('[isolation] production db snapshot: ' + (prodBefore ? prodBefore.sh
 
 // ── Offline osu! API mock ────────────────────────────────────────────────
 // Synthetic world:
-//   Wuxin(19244792) / tan-X(24657559) / playable-user(26880346) have top plays
+//   Wuxin(10000001) / BetaPlayer(10000002) / playable-user(10000003) have top plays
 //   on maps 1001-1003 / 1004-1006. Twelve "similar" players (90001..90012)
 //   share those leaderboards and also play candidate maps 1007/1008 (NM) and
 //   1009 (DT), which the targets have not played. Candidate pp (205/195/185)
@@ -111,10 +111,10 @@ function fixtureUser(id, username, pp) {
 }
 
 const USERS = new Map([
-  [19244792, fixtureUser(19244792, '[SHK]Wuxin', 8700)],
-  [24657559, fixtureUser(24657559, 'tan-X', 7600)],
+  [10000001, fixtureUser(10000001, '[TST]Alpha', 8700)],
+  [10000002, fixtureUser(10000002, 'BetaPlayer', 7600)],
   [37645378, fixtureUser(37645378, 'sparse-user', 1200)],
-  [26880346, fixtureUser(26880346, 'playable-user', 5000)],
+  [10000003, fixtureUser(10000003, 'playable-user', 5000)],
 ]);
 for (let i = 1; i <= 12; i++) {
   USERS.set(90000 + i, fixtureUser(90000 + i, `similar-${String(i).padStart(2, '0')}`, 8000 + i * 10));
@@ -146,15 +146,15 @@ function best(entries) {
 
 // Per-user best-score lists (returned by /users/:id/scores/best).
 const BEST = new Map();
-BEST.set(19244792, best([
-  [19244792, 1001, 300, 'S'], [19244792, 1002, 280, 'S'], [19244792, 1003, 260, 'S'],
+BEST.set(10000001, best([
+  [10000001, 1001, 300, 'S'], [10000001, 1002, 280, 'S'], [10000001, 1003, 260, 'S'],
 ]));
-BEST.set(24657559, best([
-  [24657559, 1004, 300, 'S'], [24657559, 1005, 280, 'S'], [24657559, 1006, 260, 'S'],
+BEST.set(10000002, best([
+  [10000002, 1004, 300, 'S'], [10000002, 1005, 280, 'S'], [10000002, 1006, 260, 'S'],
 ]));
 BEST.set(37645378, []);
-BEST.set(26880346, best([
-  [26880346, 1001, 200, 'S'], [26880346, 1002, 190, 'S'], [26880346, 1003, 180, 'S'],
+BEST.set(10000003, best([
+  [10000003, 1001, 200, 'S'], [10000003, 1002, 190, 'S'], [10000003, 1003, 180, 'S'],
 ]));
 for (let i = 1; i <= 12; i++) {
   const uid = 90000 + i;
@@ -169,12 +169,12 @@ const LEADERBOARDS = new Map();
 function leaderboard(beatmapId, entries) {
   LEADERBOARDS.set(beatmapId, entries.map(([uid, pp]) => score(scoreId++, uid, beatmapId, pp, 'S', uid >= 90000 && beatmapId === 1009 ? ['DT'] : [])));
 }
-leaderboard(1001, [[19244792, 300], [26880346, 200], ...Array.from({ length: 12 }, (_, i) => [90001 + i, 299 + i])]);
-leaderboard(1002, [[19244792, 280], [26880346, 190], ...Array.from({ length: 12 }, (_, i) => [90001 + i, 279 + i])]);
-leaderboard(1003, [[19244792, 260], [26880346, 180], ...Array.from({ length: 12 }, (_, i) => [90001 + i, 259 + i])]);
-leaderboard(1004, [[24657559, 300], ...Array.from({ length: 12 }, (_, i) => [90001 + i, 299 + i])]);
-leaderboard(1005, [[24657559, 280], ...Array.from({ length: 12 }, (_, i) => [90001 + i, 279 + i])]);
-leaderboard(1006, [[24657559, 260], ...Array.from({ length: 12 }, (_, i) => [90001 + i, 259 + i])]);
+leaderboard(1001, [[10000001, 300], [10000003, 200], ...Array.from({ length: 12 }, (_, i) => [90001 + i, 299 + i])]);
+leaderboard(1002, [[10000001, 280], [10000003, 190], ...Array.from({ length: 12 }, (_, i) => [90001 + i, 279 + i])]);
+leaderboard(1003, [[10000001, 260], [10000003, 180], ...Array.from({ length: 12 }, (_, i) => [90001 + i, 259 + i])]);
+leaderboard(1004, [[10000002, 300], ...Array.from({ length: 12 }, (_, i) => [90001 + i, 299 + i])]);
+leaderboard(1005, [[10000002, 280], ...Array.from({ length: 12 }, (_, i) => [90001 + i, 279 + i])]);
+leaderboard(1006, [[10000002, 260], ...Array.from({ length: 12 }, (_, i) => [90001 + i, 259 + i])]);
 leaderboard(1007, Array.from({ length: 12 }, (_, i) => [90001 + i, 205]));
 leaderboard(1008, Array.from({ length: 12 }, (_, i) => [90001 + i, 195]));
 leaderboard(1009, Array.from({ length: 12 }, (_, i) => [90001 + i, 185]));
@@ -275,7 +275,7 @@ function assert(cond, label, msg) {
 const db = readDb();
 
 // ── 1. Engine: mid/high players ──
-for (const [name, osuId] of [['[SHK]Wuxin', 19244792], ['tan-X', 24657559]]) {
+for (const [name, osuId] of [['[TST]Alpha', 10000001], ['BetaPlayer', 10000002]]) {
   const label = `engine:${name}`;
   try {
     const res = await recommendForPlayer({ kind: 'id', value: osuId }, db, {
@@ -326,7 +326,7 @@ for (const [name, osuId] of [['[SHK]Wuxin', 19244792], ['tan-X', 24657559]]) {
   const parsed = parseRecommendStatement(statement);
   assert(parsed.ok, `${label}:parse`, JSON.stringify(parsed));
   if (parsed.ok) {
-    const res = await recommendForPlayer({ kind: 'id', value: 19244792 }, db, {
+    const res = await recommendForPlayer({ kind: 'id', value: 10000001 }, db, {
       count: 3,
       excludeBeatmapsetIds: new Set(),
       bypassCache: true,
@@ -342,7 +342,7 @@ for (const [name, osuId] of [['[SHK]Wuxin', 19244792], ['tan-X', 24657559]]) {
         outOfRange.map((c) => ({ title: c.title, bpm: c.bpm, ar: c.ar })),
       ));
     }
-    const impossible = await recommendForPlayer({ kind: 'id', value: 19244792 }, db, {
+    const impossible = await recommendForPlayer({ kind: 'id', value: 10000001 }, db, {
       count: 3,
       excludeBeatmapsetIds: new Set(),
       bypassCache: true,
@@ -355,7 +355,7 @@ for (const [name, osuId] of [['[SHK]Wuxin', 19244792], ['tan-X', 24657559]]) {
       `expected filtered honest failure, got ${JSON.stringify(impossible).slice(0, 200)}`,
     );
     // Cache-hit path: same-tier player-count filter + no-DT must hold.
-    const hot = await recommendForPlayer({ kind: 'id', value: 19244792 }, db, {
+    const hot = await recommendForPlayer({ kind: 'id', value: 10000001 }, db, {
       count: 3,
       excludeBeatmapsetIds: new Set(),
       filters: parseRecommendStatement('similar>=10 no_dt').filters,
@@ -372,7 +372,7 @@ for (const [name, osuId] of [['[SHK]Wuxin', 19244792], ['tan-X', 24657559]]) {
     }
     // "playable": cap candidates at the player's Top star × 1.1 (base domain)
     // and keep mod-adjusted display values (DT maps must show modded stars).
-    const playable = await recommendForPlayer({ kind: 'id', value: 26880346 }, db, {
+    const playable = await recommendForPlayer({ kind: 'id', value: 10000003 }, db, {
       count: 3,
       excludeBeatmapsetIds: new Set(),
       bypassCache: true,
@@ -399,7 +399,7 @@ for (const [name, osuId] of [['[SHK]Wuxin', 19244792], ['tan-X', 24657559]]) {
 // ── 4. Cooldown + anti-repeat persistence ──
 {
   const label = 'cooldown';
-  const osuId = 24657559; // tan-X (do not touch production binding)
+  const osuId = 10000002; // BetaPlayer (do not touch production binding)
   const before = checkRecommendCooldown(db, osuId);
   assert(before === 0, `${label}:fresh`, `expected 0, got ${before}`);
 
@@ -423,7 +423,7 @@ for (const [name, osuId] of [['[SHK]Wuxin', 19244792], ['tan-X', 24657559]]) {
 {
   const label = 'internal-command';
   try {
-    const result = await executeInternalBotCommand('yumu', 'recommend', '[SHK]Wuxin', { db, userId: 'verify-user', groupId: 'test-group' });
+    const result = await executeInternalBotCommand('yumu', 'recommend', '[TST]Alpha', { db, userId: 'verify-user', groupId: 'test-group' });
     const text = typeof result === 'string' ? result : result.content;
     const images = typeof result === 'string' ? [] : (result.images || []);
     assert(String(text).includes('谱面推荐'), `${label}:content`, text.slice(0, 200));

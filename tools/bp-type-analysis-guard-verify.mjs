@@ -177,7 +177,7 @@ console.log('\n=== Unit: tool schema exposes bp_type, not query_external_bot ===
     !schemas.some((tool) => tool.function.name === 'query_external_bot'),
     'query_external_bot must NOT be offered to the LLM',
   );
-  const op = validateOperation({ type: 'query_osu', params: { capability: 'bp_type', username: '[SHK]Wuxin' } });
+  const op = validateOperation({ type: 'query_osu', params: { capability: 'bp_type', username: '[TST]Alpha' } });
   assert(op.ok, 'bp_type operation must pass the security guard');
   pass('tool-schema-bp_type');
 }

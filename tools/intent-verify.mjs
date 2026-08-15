@@ -179,9 +179,9 @@ expectMatch('bp-still-forced-3', '我的bp', 'bp');
 console.log('\n=== BP type analysis intent (must match) ===');
 
 const bpTypeTrue = [
-  '调用osu_oracle检查[SHK]Boring的bp组成',
-  '调用osu_oracle分析Nakanooooo的bp100',
-  '检查box1n的bp组成',
+  '调用osu_oracle检查[TST]Hotel的bp组成',
+  '调用osu_oracle分析EchoPlayer的bp100',
+  '检查CharliePlayer的bp组成',
   '分析我的bp类型',
   '串图占比如何',
 ];
@@ -197,7 +197,7 @@ for (const t of bpTypeTrue) {
 
 const bpTypeFalse = [
   '查一下我的bp1到bp10',
-  '锐评[SHK]Boring',
+  '锐评[TST]Hotel',
   '你好',
   '今天天气不错',
 ];
@@ -224,13 +224,13 @@ function expectBpUsername(label, text, expected) {
   }
 }
 
-expectBpUsername('bp-user-1', '调用osu_oracle检查[SHK]Boring的bp组成', '[SHK]Boring');
-expectBpUsername('bp-user-2', '调用osu_oracle分析Nakanooooo的bp100', 'Nakanooooo');
-expectBpUsername('bp-user-3', '检查box1n的bp组成', 'box1n');
+expectBpUsername('bp-user-1', '调用osu_oracle检查[TST]Hotel的bp组成', '[TST]Hotel');
+expectBpUsername('bp-user-2', '调用osu_oracle分析EchoPlayer的bp100', 'EchoPlayer');
+expectBpUsername('bp-user-3', '检查CharliePlayer的bp组成', 'CharliePlayer');
 expectBpUsername('bp-user-4', '分析我的bp类型', '');
 expectBpUsername('bp-user-5', '串图占比如何', '');
-expectBpUsername('bp-user-6', '调用osu_oracle检查Akari Date的bp组成', 'Akari Date');
-expectBpUsername('bp-user-7', '检查[SHK] Pain boy的bp构成', '[SHK] Pain boy');
+expectBpUsername('bp-user-6', '调用osu_oracle检查Juliet Player的bp组成', 'Juliet Player');
+expectBpUsername('bp-user-7', '检查[TST]Foxtrot的bp构成', '[TST]Foxtrot');
 
 console.log(`\n${'='.repeat(40)}`);
 console.log(`Passed: ${passed}, Failed: ${failed}`);

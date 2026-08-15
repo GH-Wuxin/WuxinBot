@@ -51,8 +51,8 @@ const SCORES = {
   scores: [
     { id: 1, accuracy: 0.952, max_combo: 196, mods: ['HD', 'HR'], pp: 465.2, rank: 'SH', score: 1000000,
       statistics: { count_50: 0, count_100: 2, count_300: 190, count_geki: 0, count_katsu: 0, count_miss: 1 },
-      beatmap: BEATMAP, beatmapset: BEATMAP.beatmapset, created_at: '2026-01-01T00:00:00Z', mode: 'osu', user_id: 36444011,
-      user: { id: 36444011, username: '[SHK]SARRTY_awa' } },
+      beatmap: BEATMAP, beatmapset: BEATMAP.beatmapset, created_at: '2026-01-01T00:00:00Z', mode: 'osu', user_id: 10000004,
+      user: { id: 10000004, username: '[TST]Delta' } },
     { id: 2, accuracy: 0.94, max_combo: 150, mods: ['HD', 'DT'], pp: 410.1, rank: 'S', score: 900000,
       statistics: { count_50: 0, count_100: 5, count_300: 180, count_geki: 0, count_katsu: 0, count_miss: 2 },
       beatmap: BEATMAP, beatmapset: BEATMAP.beatmapset, created_at: '2026-01-01T00:00:00Z', mode: 'osu', user_id: 2,
@@ -144,13 +144,13 @@ function expectContains(label, text, markers) {
 // 5. "榜一多少" → leaderboard limit=1
 {
   const text = await runLeaderboard({ beatmap_id: 5518740, limit: 1 });
-  expectContains('replay-榜一多少', text, ['【榜单】', '#1 [SHK]SARRTY_awa', '465.2pp', '95.20%', '+HDHR']);
+  expectContains('replay-榜一多少', text, ['【榜单】', '#1 [TST]Delta', '465.2pp', '95.20%', '+HDHR']);
 }
 
 // 6. "前十是谁" → leaderboard default limit (mock has 2 scores)
 {
   const text = await runLeaderboard({ beatmap_id: 5518740 });
-  expectContains('replay-前十是谁', text, ['#1 [SHK]SARRTY_awa', '#2 other_player', '+HDDT', '前 2 条']);
+  expectContains('replay-前十是谁', text, ['#1 [TST]Delta', '#2 other_player', '+HDDT', '前 2 条']);
 }
 
 // 7. BP 富信息：SS 估算 + pp 组成 + 密度（LLM 工具路径的 bp 结果增强）。

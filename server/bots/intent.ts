@@ -309,11 +309,11 @@ function matchBotByIdOrName(
 // These are deterministic routes: the LLM must never answer proportions from
 // context when the user explicitly asked for osu_oracle.
 const BP_TYPE_ORACLE_PATTERNS: RegExp[] = [
-  // "调用osu_oracle检查[SHK]Boring的bp组成" / "用oracle看下Boring的bp占比"
+  // "调用osu_oracle检查[TST]Hotel的bp组成" / "用oracle看下Boring的bp占比"
   /(?:osu_?oracle|oracle).{0,60}?\s*(?:bp|best\s*performance)\s*(?:组成|构成|结构|占比|类型|分布|分类)/i,
-  // "检查[SHK]Boring的bp组成" / "锐评Boring的bp构成"（未点名 oracle 也属于 BP 结构问题）
+  // "检查[TST]Hotel的bp组成" / "锐评Boring的bp构成"（未点名 oracle 也属于 BP 结构问题）
   /(?:检查|分析|锐评|看看|查看|查询|查|统计|评估)[^\n，。]{1,60}?\s*的\s*(?:bp|best\s*performance)\s*(?:组成|构成|结构|占比|类型|分布|分类)/i,
-  // "调用osu_oracle分析Nakanooooo的bp100"（历史用户话术）
+  // "调用osu_oracle分析EchoPlayer的bp100"（历史用户话术）
   /(?:osu_?oracle|oracle)[^\n。]{0,60}?\s*的\s*bp\s*\d{0,3}/i,
 ];
 

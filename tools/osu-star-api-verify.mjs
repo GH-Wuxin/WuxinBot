@@ -29,10 +29,10 @@ const assert = (cond, label, msg) => (cond ? pass(label) : fail(label, msg));
 // 1. User lookup by username and id.
 let user;
 try {
-  user = await getUser('[SHK]Wuxin', 'osu');
-  assert(user.id === 19244792, 'user:username', `id=${user.id}`);
-  const byId = await getUserByIdSafe(19244792);
-  assert(byId.id === 19244792, 'user:by-id', `id=${byId.id}`);
+  user = await getUser('[TST]Alpha', 'osu');
+  assert(user.id === 10000001, 'user:username', `id=${user.id}`);
+  const byId = await getUserByIdSafe(10000001);
+  assert(byId.id === 10000001, 'user:by-id', `id=${byId.id}`);
 } catch (e) {
   fail('user', e.message);
 }
