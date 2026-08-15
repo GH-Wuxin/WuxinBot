@@ -99,7 +99,7 @@ const WUXIN_SELF = [
       '把当前 QQ 绑定到 osu! 账号，之后查成绩、分析、推图默认使用该账号。绑定前需要用户提供正确的 osu! 用户名；不要绑定他人账号。解绑用 /w osu clear bind。',
     ].join('\n'),
     commandExamples: [
-      { command: '/w osu bind ElicyAnn', verifier: 'wuxin' },
+      { command: '/w osu bind LimaPlayer', verifier: 'wuxin' },
       { command: '/w osu clear bind', verifier: 'wuxin' },
     ],
     implementationRefs: [
@@ -155,8 +155,8 @@ const WUXIN_SELF = [
       '普通群友只能清除自己的绑定和分析历史；冷却与推图历史清除涉及他人，仅 owner 可执行。',
     ].join('\n'),
     commandExamples: [
-      { command: '/w osu clear cooldown ElicyAnn', verifier: 'wuxin' },
-      { command: '/w osu clear recommend ElicyAnn', verifier: 'wuxin' },
+      { command: '/w osu clear cooldown LimaPlayer', verifier: 'wuxin' },
+      { command: '/w osu clear recommend LimaPlayer', verifier: 'wuxin' },
     ],
     implementationRefs: [
       { path: 'server/osu/commands.ts', symbol: 'handleOsuCommand' },
@@ -409,14 +409,14 @@ function concreteCommandExample(entry) {
     nick: '/w nick 阿然',
     style: '/w style 简洁',
     me: '/w me',
-    osuBind: '/w osu bind ElicyAnn',
+    osuBind: '/w osu bind LimaPlayer',
     osuAnalyze: '/w osu analyze',
     osuRecent: '/w osu recent',
     osuHelp: '/w osu help',
     'clear.bind': '/w osu clear bind',
     'clear.history': '/w osu clear history',
-    'clear.cooldown': '/w osu clear cooldown ElicyAnn',
-    'clear.recommend': '/w osu clear recommend ElicyAnn',
+    'clear.cooldown': '/w osu clear cooldown LimaPlayer',
+    'clear.recommend': '/w osu clear recommend LimaPlayer',
     'clear.cache': '/w osu clear cache',
   };
   if (byId[entry.id]) return byId[entry.id];
@@ -432,7 +432,7 @@ function concreteQuickExample(entry) {
     unbind: ['!unbind'],
     dice: ['!dice 6'],
     self_profile: ['~'],
-    where: ['where ElicyAnn'],
+    where: ['where LimaPlayer'],
   };
   const specials = quickById[entry.id] || [];
   const domain = entry.source === 'lazybot' ? '/' : entry.source === 'hydrant' ? 'none' : '!';
@@ -454,9 +454,9 @@ function transformSyntax(syntax) {
     .replace(/<名次\/范围>/g, '5')
     .replace(/<谱面BID>/g, '4270382')
     .replace(/\[玩家名\]/g, '')
-    .replace(/<osu用户名>/g, 'ElicyAnn')
-    .replace(/<用户名>/g, 'ElicyAnn')
-    .replace(/<玩家>/g, 'ElicyAnn')
+    .replace(/<osu用户名>/g, 'LimaPlayer')
+    .replace(/<用户名>/g, 'LimaPlayer')
+    .replace(/<玩家>/g, 'LimaPlayer')
     .replace(/<QQ号>/g, '1234567')
     .replace(/\[群名\]/g, '测试群')
     .replace(/\[ms\]/g, '')

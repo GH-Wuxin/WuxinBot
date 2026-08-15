@@ -74,7 +74,7 @@ async function main() {
               arguments: JSON.stringify({
                 bot: 'fixture-private-bot',
                 command: llmFixtureMode === 'bp-list' ? 'bp' : 'recent',
-                username: '[SHK]Wuxin'
+                username: '[TST]Alpha'
               })
             }
           }]
@@ -349,7 +349,7 @@ async function main() {
     }, async (targetEvent, text, options) => {
       if (String(targetEvent.userId || '') === '900000002') {
         llBotCommandsSent += 1;
-        assert(String(text).includes('/r [SHK]Wuxin'), 'tool loop must send the selected bot command');
+        assert(String(text).includes('/r [TST]Alpha'), 'tool loop must send the selected bot command');
         const resolved = tryResolveBotResponse(
           readDb(),
           {
@@ -397,7 +397,7 @@ async function main() {
 
     llmFixtureMode = 'bp-list';
     const completeBpList = [
-      '[SHK]Wuxin 的前 10 个最佳成绩：',
+      '[TST]Alpha 的前 10 个最佳成绩：',
       ...Array.from({ length: 10 }, (_, index) =>
         `  #${index + 1} ${index === 1 ? 'Sidetracked Day' : `Fixture Song ${index + 1}`} | 7.${String(index).padStart(2, '0')}★ | HD | 99.00% | ${560 - index}.0pp`
       ),
@@ -440,7 +440,7 @@ async function main() {
     }, async (targetEvent, text, options) => {
       if (String(targetEvent.userId || '') === '900000002') {
         bpCommandsSent += 1;
-        assert(String(text).includes('/bp [SHK]Wuxin'), 'direct-list query must send the selected BP command');
+        assert(String(text).includes('/bp [TST]Alpha'), 'direct-list query must send the selected BP command');
         const resolved = tryResolveBotResponse(
           readDb(),
           {
@@ -461,7 +461,7 @@ async function main() {
     assert(llmCalls - llmCallsBeforeDirectList === 2, 'direct-list flow must make one tool turn and one short-lead turn');
     assert(directListSends.length === 1, `direct BP result must be sent exactly once, got ${directListSends.length}`);
     assert(
-      directListSends[0].text.startsWith('查好了，完整结果放在下面。\n\n[SHK]Wuxin 的前 10 个最佳成绩：'),
+      directListSends[0].text.startsWith('查好了，完整结果放在下面。\n\n[TST]Alpha 的前 10 个最佳成绩：'),
       `data-like LLM fragments must be replaced with a deterministic lead: ${directListSends[0].text}`
     );
     assert(directListSends[0].text.includes('#10 Fixture Song 10'), 'QQ delivery must retain the final BP row');

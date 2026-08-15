@@ -11,7 +11,7 @@
 // off, so E7/F3 meta cards silently lost match title/round list.
 //
 // This suite is fully offline: it imports only the pure MatchRating port and
-// feeds it a trimmed production fixture (osu! match 121655602) plus synthetic
+// feeds it a synthetic fixture (osu! match 9000001) plus synthetic
 // TeamVS scenarios. It must FAIL on the pre-fix serializers.
 
 import fs from 'node:fs';
@@ -21,7 +21,7 @@ import { buildMatchRating, serializeRound } from '../server/osu/matchRating.ts';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const prodFixture = JSON.parse(
-  fs.readFileSync(path.join(root, 'tools/fixtures/match-f3-production-121655602.json'), 'utf8'),
+  fs.readFileSync(path.join(root, 'tools/fixtures/match-f3-synthetic-9000001.json'), 'utf8'),
 );
 
 let passed = 0;
@@ -140,12 +140,12 @@ const users = [1, 2, 3, 4, 5, 6, 7].map((id) => ({
 }));
 const users8 = [...users, { id: 8, username: 'player-8', country_code: 'CN', avatar_url: '', is_online: true }];
 
-// ── 1. Production fixture (match 121655602, rounds 1-2) ──
+// ── 1. Production fixture (match 9000001, rounds 1-2) ──
 
 {
   const { json, rounds } = buildMatchRating(prodFixture);
   assert(rounds.length === 2, 'prod:round-count', `${rounds.length} != 2`);
-  assert(json.match?.match?.id === 121655602, 'prod:f3-inner-match-id', JSON.stringify(json.match?.match).slice(0, 120));
+  assert(json.match?.match?.id === 9000001, 'prod:f3-inner-match-id', JSON.stringify(json.match?.match).slice(0, 120));
   assert(Array.isArray(json.match?.events), 'prod:e7-rounds-array', 'match.match.events must be an array');
   assert(typeof json.match?.match?.name === 'string', 'prod:a2-match-name', JSON.stringify(json.match?.match?.name));
   assert(typeof json.match?.is_match_end === 'boolean', 'prod:match-end-flag', String(json.match?.is_match_end));

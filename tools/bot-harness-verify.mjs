@@ -31,16 +31,16 @@ function toolCall(id, name, args) {
 
 const safeByName = validateOperation({
   type: 'query_bot',
-  params: { bot: 'yumu', command: 'recent', username: '[SHK]Wuxin' },
+  params: { bot: 'yumu', command: 'recent', username: '[TST]Alpha' },
 });
 assert(safeByName.ok, 'query_bot command key/name must not trip the system-command guard');
 assert(validateOperation({
   type: 'query_bot',
-  params: { bot: 'yumu', command: 'profile', username: '[SHK]Wuxin' },
+  params: { bot: 'yumu', command: 'profile', username: '[TST]Alpha' },
 }).ok, 'the legitimate profile command must not be mistaken for a file-system operation');
 assert(!validateOperation({
   type: 'query_bot',
-  params: { bot: 'yumu', command: 'read_file', username: '[SHK]Wuxin' },
+  params: { bot: 'yumu', command: 'read_file', username: '[TST]Alpha' },
 }).ok, 'file-system operation tokens separated by underscores must remain blocked');
 
 const safeByTrigger = validateOperation({
@@ -110,13 +110,13 @@ assert(stringBindingTarget?.kind === 'id' && stringBindingTarget.value === 12345
 const explicitTarget = resolveInternalPlayerTarget(
   { osuBindings: { 'REDACTED_QQ_001': 1234567 } },
   'REDACTED_QQ_001',
-  '[SHK]Wuxin',
+  '[TST]Alpha',
 );
-assert(explicitTarget?.kind === 'username' && explicitTarget.value === '[SHK]Wuxin', 'explicit username must override binding');
+assert(explicitTarget?.kind === 'username' && explicitTarget.value === '[TST]Alpha', 'explicit username must override binding');
 
 const userFixture = {
   id: 2,
-  username: '[SHK]Wuxin',
+  username: '[TST]Alpha',
   country_code: 'CN',
   country: { name: 'China' },
   avatar_url: '',
@@ -276,7 +276,7 @@ assert(!completionCalls[1].tools?.length, 'final completion after the cap must h
 assert(!JSON.stringify(completionCalls[1].messages).includes('example.invalid'), 'image paths/URLs must not be exposed to the LLM');
 
 const completeBpList = [
-  '[SHK]Wuxin 的前 10 个最佳成绩：',
+  '[TST]Alpha 的前 10 个最佳成绩：',
   ...Array.from({ length: 10 }, (_, index) =>
     `  #${index + 1} ${index === 1 ? 'Sidetracked Day' : `Fixture Song ${index + 1}`} | 7.${String(index).padStart(2, '0')}★ | HD | 99.00% | ${560 - index}.0pp`
   ),
@@ -314,7 +314,7 @@ const directListResult = await runToolLoop(
               tool_calls: [toolCall('qq-bp-list', 'query_bot', {
                 bot: listBot.id,
                 command: 'bp',
-                username: '[SHK]Wuxin',
+                username: '[TST]Alpha',
               })],
             },
           }],
@@ -335,7 +335,7 @@ const directListResult = await runToolLoop(
             tool_calls: [toolCall('ignored-repeat-query', 'query_bot', {
               bot: listBot.id,
               command: 'bp',
-              username: '[SHK]Wuxin',
+              username: '[TST]Alpha',
             })],
           },
         }],
@@ -389,7 +389,7 @@ const directResultAfterLeadFailure = await runToolLoop(
             tool_calls: [toolCall('qq-bp-list-lead-failure', 'query_bot', {
               bot: listBot.id,
               command: 'bp',
-              username: '[SHK]Wuxin',
+              username: '[TST]Alpha',
             })],
           },
         }],
@@ -556,7 +556,7 @@ const busyRouteResult = await executeToolCall(
   toolCall('busy-route-call', 'query_bot', {
     bot: busyBot.id,
     command: 'recent',
-    username: '[SHK]Wuxin',
+    username: '[TST]Alpha',
   }),
   {
     db: busyDb,

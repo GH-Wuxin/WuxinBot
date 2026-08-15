@@ -50,13 +50,13 @@ console.log('=== query_osu must be allowed (readonly) ===');
 
 expectOk('query_osu-recent', { type: 'query_osu', params: { capability: 'recent' } });
 expectOk('query_osu-bp-rank', { type: 'query_osu', params: { capability: 'bp', bp_rank: 1 } });
-expectOk('query_osu-bp_type', { type: 'query_osu', params: { capability: 'bp_type', username: '[SHK]Wuxin' } });
+expectOk('query_osu-bp_type', { type: 'query_osu', params: { capability: 'bp_type', username: '[TST]Alpha' } });
 expectOk('query_osu-bp-range', { type: 'query_osu', params: { capability: 'bp', bp_start: 1, bp_end: 10 } });
 expectOk('query_osu-bp-range-20', { type: 'query_osu', params: { capability: 'bp', bp_start: 1, bp_end: 20 } });
 expectOk('query_osu-bp-range-100', { type: 'query_osu', params: { capability: 'bp', bp_start: 1, bp_end: 100 } });
 expectOk('query_osu-bp-compact', { type: 'query_osu', params: { capability: 'bp', bp_start: 1, bp_end: 100, compact: true } });
 expectOk('query_osu-info', { type: 'query_osu', params: { capability: 'info' } });
-expectOk('query_osu-username', { type: 'query_osu', params: { capability: 'recent', username: '[SHK]Wuxin' } });
+expectOk('query_osu-username', { type: 'query_osu', params: { capability: 'recent', username: '[TST]Alpha' } });
 
 console.log('\n=== query_osu invalid params still rejected ===');
 
@@ -234,7 +234,7 @@ expectRejected('query_external_bot-lazybot', { type: 'query_external_bot', param
 console.log('\n=== legacy operations still gated correctly ===');
 
 expectRejected('unknown-op', { type: 'rm_rf', params: {} }, '不允许的操作类型');
-expectOk('get_player_skill', { type: 'get_player_skill', params: { player: '[SHK]Wuxin' } });
+expectOk('get_player_skill', { type: 'get_player_skill', params: { player: '[TST]Alpha' } });
 expectOk('list_bots', { type: 'list_bots', params: {} });
 
 console.log(`\n${'='.repeat(40)}`);

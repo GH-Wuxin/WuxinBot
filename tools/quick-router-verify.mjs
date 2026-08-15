@@ -60,7 +60,7 @@ updateDb((db) => {
   db.groupBotConfig = db.groupBotConfig || {};
   db.groupBotConfig['770001'] = { quick: true };
   db.osuBindings = db.osuBindings || {};
-  db.osuBindings['REDACTED_QQ_001'] = { id: 1234567, username: '[SHK]Wuxin' };
+  db.osuBindings['REDACTED_QQ_001'] = { id: 1234567, username: '[TST]Alpha' };
 });
 
 const groupEvent = (text, extra = {}) => ({
@@ -113,7 +113,7 @@ console.log('=== Unit: matchQuickCommand ===');
     ['查', 'at_profile', '', { atTargets: ['123'] }],
     ['where qq=123', 'where', 'qq=123', {}],
     ['where Cookiezi', 'where', 'Cookiezi', {}],
-    ['+ ElicyAnn', 'pplus', 'ElicyAnn', {}],
+    ['+ LimaPlayer', 'pplus', 'LimaPlayer', {}],
     ['今日高光', 'highlight', '', {}],
     ['我的年度osu!', 'annual', '', {}],
     // Cut / removed / non-command messages must not match:
@@ -208,10 +208,10 @@ console.log('\n=== Unit: recent args ===');
   ok('recent-index', bare.username === '', JSON.stringify(bare));
   const fullwidth = parseOsuArgs(recentDef, '＃2');
   ok('recent-fullwidth-index', fullwidth.username === '', JSON.stringify(fullwidth));
-  const withUser = parseOsuArgs(recentDef, 'tan-X #2');
-  ok('recent-user-index', withUser.username === 'tan-X', JSON.stringify(withUser));
-  const usernameOnly = parseOsuArgs(recentDef, 'tan-X');
-  ok('recent-username', usernameOnly.username === 'tan-X', JSON.stringify(usernameOnly));
+  const withUser = parseOsuArgs(recentDef, 'BetaPlayer #2');
+  ok('recent-user-index', withUser.username === 'BetaPlayer', JSON.stringify(withUser));
+  const usernameOnly = parseOsuArgs(recentDef, 'BetaPlayer');
+  ok('recent-username', usernameOnly.username === 'BetaPlayer', JSON.stringify(usernameOnly));
   const empty = parseOsuArgs(recentDef, '');
   ok('recent-empty', empty.username === '', JSON.stringify(empty));
   const numericUsername = parseOsuArgs(recentDef, '159263748abc');

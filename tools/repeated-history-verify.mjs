@@ -146,7 +146,7 @@ console.log('\n=== 3. requiredTool: 10 repeated calls all execute ===');
           { role: 'user', content: '看看我bp1' },
           // Simulate accumulated history from previous calls
           ...Array.from({ length: i - 1 }, (_, j) => [
-            { role: 'user', content: `[${String(j + 12).padStart(2, '0')}:00] Wux1n: [CQ:at,qq=REDACTED_QQ_002] 看看我bp1` },
+            { role: 'user', content: `[${String(j + 12).padStart(2, '0')}:00] Tester: [CQ:at,qq=REDACTED_QQ_002] 看看我bp1` },
             { role: 'assistant', content: `[${String(j + 12).padStart(2, '0')}:01] 机器人: HDHR 98.94%, 563.9pp...` },
           ]).flat(),
         ],
@@ -288,9 +288,9 @@ console.log('\n=== 8. /w osu analyze path is separate ===');
 
 {
   // /w osu commands should NOT trigger requiredTool (they go through handleOwnerCommand)
-  assert(detectRequiredOsuTool('/w osu analyze [SHK]Wuxin') === null, '/w osu analyze must not trigger requiredTool');
+  assert(detectRequiredOsuTool('/w osu analyze [TST]Alpha') === null, '/w osu analyze must not trigger requiredTool');
   assert(detectRequiredOsuTool('/w osu recent') === null, '/w osu recent must not trigger requiredTool');
-  assert(detectRequiredOsuTool('/w osu bind [SHK]Wuxin') === null, '/w osu bind must not trigger requiredTool');
+  assert(detectRequiredOsuTool('/w osu bind [TST]Alpha') === null, '/w osu bind must not trigger requiredTool');
   pass('w-osu-commands-not-captured');
 }
 

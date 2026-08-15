@@ -1413,8 +1413,8 @@ export interface TargetResolutionResult {
  *
  * Order of trust:
  * 1. Requester's own binding when the requested name matches it (clan-tag
- *    insensitive) — never let `Pain boy` hit a different account than the
- *    bound `[SHK] Pain boy`.
+ *    insensitive) — never let `foxtrot` hit a different account than the
+ *    bound `[TST]Foxtrot`.
  * 2. @-mentioned QQ's binding.
  * 3. Requester using their own unbound QQ nickname as an osu username is
  *    blocked — guessing by nickname misattributes other people's data.

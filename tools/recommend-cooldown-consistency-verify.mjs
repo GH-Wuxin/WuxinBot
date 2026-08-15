@@ -113,12 +113,12 @@ function fixtureUser(id, username, pp) {
   };
 }
 
-const WUXIN_OSU_ID = 19244792;
+const WUXIN_OSU_ID = 10000001;
 const USERS = new Map([
-  [WUXIN_OSU_ID, fixtureUser(WUXIN_OSU_ID, '[SHK]Wuxin', 8700)],
-  [24657559, fixtureUser(24657559, 'tan-X', 7600)],
+  [WUXIN_OSU_ID, fixtureUser(WUXIN_OSU_ID, '[TST]Alpha', 8700)],
+  [10000002, fixtureUser(10000002, 'BetaPlayer', 7600)],
   [37645378, fixtureUser(37645378, 'sparse-user', 1200)],
-  [26880346, fixtureUser(26880346, 'playable-user', 5000)],
+  [10000003, fixtureUser(10000003, 'playable-user', 5000)],
 ]);
 for (let i = 1; i <= 12; i++) {
   USERS.set(90000 + i, fixtureUser(90000 + i, `similar-${String(i).padStart(2, '0')}`, 8000 + i * 10));
@@ -152,12 +152,12 @@ const BEST = new Map();
 BEST.set(WUXIN_OSU_ID, best([
   [WUXIN_OSU_ID, 1001, 300, 'S'], [WUXIN_OSU_ID, 1002, 280, 'S'], [WUXIN_OSU_ID, 1003, 260, 'S'],
 ]));
-BEST.set(24657559, best([
-  [24657559, 1004, 300, 'S'], [24657559, 1005, 280, 'S'], [24657559, 1006, 260, 'S'],
+BEST.set(10000002, best([
+  [10000002, 1004, 300, 'S'], [10000002, 1005, 280, 'S'], [10000002, 1006, 260, 'S'],
 ]));
 BEST.set(37645378, []);
-BEST.set(26880346, best([
-  [26880346, 1001, 200, 'S'], [26880346, 1002, 190, 'S'], [26880346, 1003, 180, 'S'],
+BEST.set(10000003, best([
+  [10000003, 1001, 200, 'S'], [10000003, 1002, 190, 'S'], [10000003, 1003, 180, 'S'],
 ]));
 for (let i = 1; i <= 12; i++) {
   const uid = 90000 + i;
@@ -171,12 +171,12 @@ const LEADERBOARDS = new Map();
 function leaderboard(beatmapId, entries) {
   LEADERBOARDS.set(beatmapId, entries.map(([uid, pp]) => score(scoreId++, uid, beatmapId, pp, 'S', uid >= 90000 && beatmapId === 1009 ? ['DT'] : [])));
 }
-leaderboard(1001, [[WUXIN_OSU_ID, 300], [26880346, 200], ...Array.from({ length: 12 }, (_, i) => [90001 + i, 299 + i])]);
-leaderboard(1002, [[WUXIN_OSU_ID, 280], [26880346, 190], ...Array.from({ length: 12 }, (_, i) => [90001 + i, 279 + i])]);
-leaderboard(1003, [[WUXIN_OSU_ID, 260], [26880346, 180], ...Array.from({ length: 12 }, (_, i) => [90001 + i, 259 + i])]);
-leaderboard(1004, [[24657559, 300], ...Array.from({ length: 12 }, (_, i) => [90001 + i, 299 + i])]);
-leaderboard(1005, [[24657559, 280], ...Array.from({ length: 12 }, (_, i) => [90001 + i, 279 + i])]);
-leaderboard(1006, [[24657559, 260], ...Array.from({ length: 12 }, (_, i) => [90001 + i, 259 + i])]);
+leaderboard(1001, [[WUXIN_OSU_ID, 300], [10000003, 200], ...Array.from({ length: 12 }, (_, i) => [90001 + i, 299 + i])]);
+leaderboard(1002, [[WUXIN_OSU_ID, 280], [10000003, 190], ...Array.from({ length: 12 }, (_, i) => [90001 + i, 279 + i])]);
+leaderboard(1003, [[WUXIN_OSU_ID, 260], [10000003, 180], ...Array.from({ length: 12 }, (_, i) => [90001 + i, 259 + i])]);
+leaderboard(1004, [[10000002, 300], ...Array.from({ length: 12 }, (_, i) => [90001 + i, 299 + i])]);
+leaderboard(1005, [[10000002, 280], ...Array.from({ length: 12 }, (_, i) => [90001 + i, 279 + i])]);
+leaderboard(1006, [[10000002, 260], ...Array.from({ length: 12 }, (_, i) => [90001 + i, 259 + i])]);
 leaderboard(1007, Array.from({ length: 12 }, (_, i) => [90001 + i, 205]));
 leaderboard(1008, Array.from({ length: 12 }, (_, i) => [90001 + i, 195]));
 leaderboard(1009, Array.from({ length: 12 }, (_, i) => [90001 + i, 185]));
@@ -234,7 +234,7 @@ updateDb((draft) => {
   draft.settings.osuClientId = 'fixture-client';
   draft.settings.osuClientSecret = 'fixture-secret';
   draft.osuBindings = draft.osuBindings || {};
-  draft.osuBindings['verify-user'] = { osuUserId: WUXIN_OSU_ID, osuUsername: '[SHK]Wuxin' };
+  draft.osuBindings['verify-user'] = { osuUserId: WUXIN_OSU_ID, osuUsername: '[TST]Alpha' };
   draft.osuRecommendCooldowns = draft.osuRecommendCooldowns || {};
 });
 
@@ -257,7 +257,7 @@ function assert(cond, label, msg) {
 
 // ── Shared scenario fixtures ──
 const PREV_REC_TEXT = [
-  '[SHK]Wuxin 的推荐（按你的要求筛选）：',
+  '[TST]Alpha 的推荐（按你的要求筛选）：',
   '1. [FLHD] Alpha Fixture [Insane] BID 7001 (https://osu.ppy.sh/beatmaps/1001)',
   '2. [HDHR] Beta Fixture [Hard] BID 7002 (https://osu.ppy.sh/beatmaps/1002)',
   '3. [HDHR] Gamma Fixture [Insane] BID 7003 (https://osu.ppy.sh/beatmaps/1003)',
@@ -271,7 +271,7 @@ const messagesWithHistory = [
   { role: 'assistant', content: PREV_REC_TEXT },
   { role: 'user', content: `[10:05] 玩家（QQ:123）：${CURRENT_TEXT}` },
 ];
-const recommendArgs = JSON.stringify({ capability: 'recommend', username: '[SHK]Wuxin' });
+const recommendArgs = JSON.stringify({ capability: 'recommend', username: '[TST]Alpha' });
 const recommendToolCall = {
   id: 'call_recommend',
   type: 'function',
@@ -310,7 +310,7 @@ function clearCooldown() {
     groupId: 'test-group',
     event: { userId: 'verify-user', text: CURRENT_TEXT },
     maxIterations: 4,
-    requiredTool: { toolName: 'query_osu', args: { capability: 'recommend', username: '[SHK]Wuxin' } },
+    requiredTool: { toolName: 'query_osu', args: { capability: 'recommend', username: '[TST]Alpha' } },
     deliverDirectContent: true,
   });
   assert(leadCalls === 0, `${label}:lead-skipped`, `lead LLM called ${leadCalls} time(s)`);
@@ -378,7 +378,7 @@ function clearCooldown() {
     groupId: 'test-group',
     event: { userId: 'verify-user', text: '再推荐三张' },
     maxIterations: 4,
-    requiredTool: { toolName: 'query_osu', args: { capability: 'recommend', username: '[SHK]Wuxin' } },
+    requiredTool: { toolName: 'query_osu', args: { capability: 'recommend', username: '[TST]Alpha' } },
     deliverDirectContent: true,
   });
   assert(leadCalls === 1, `${label}:lead-called`, `lead LLM called ${leadCalls} time(s)`);

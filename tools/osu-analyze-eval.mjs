@@ -12,21 +12,21 @@ const GOLDEN_PLAYERS = [
   { key: 'mrekk', id: 7562902 },
   { key: 'cryshina', id: 14715160 },
   { key: 'oliwakami', id: 3046750 },
-  { key: 'wuxin', id: 19244792 },
+  { key: 'wuxin', id: 10000001 },
   { key: 'ben-jiang', id: 7983528 },
   { key: 'nakanooooo', id: 36077706 },
   { key: 'elicyann', id: 37673654 },
   { key: '13451b', id: 0, username: '13451b' },
-  { key: 'ahahhaha', id: 39873822 },
+  { key: 'KiloPlayer', id: 39873822 },
 ];
 
 // User-provided generalization pool. Names are resolved through the existing
 // local osu! search route at run time; they are test inputs only and never
 // enter any generation prompt as examples or special cases.
 const PROVIDED_PLAYERS = [
-  { key: 'akari-date', id: 0, username: 'Akari Date' },
+  { key: 'juliet-player', id: 0, username: 'Juliet Player' },
   { key: 'windpipeey', id: 0, username: 'windpipeey' },
-  { key: 'shk-mriyu', id: 0, username: '[SHK]Mriyu' },
+  { key: 'shk-golf', id: 0, username: '[TST]Golf' },
   { key: 'maliszewski', id: 0, username: 'MALISZEWSKI' },
   { key: 'junmoyan', id: 0, username: 'Junmoyan' },
   { key: 'miko-parsley', id: 0, username: 'Miko_Parsley' },

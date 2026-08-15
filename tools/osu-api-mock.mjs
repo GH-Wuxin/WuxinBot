@@ -115,8 +115,8 @@ function fixtureScore(id, userId, beatmapId, pp, rank = 'S', mods = []) {
 
 function buildDefaultFixture() {
   const users = new Map([
-    [19244792, fixtureUser(19244792, '[SHK]Wuxin', 8700)],
-    [24657559, fixtureUser(24657559, 'tan-X', 7600)],
+    [10000001, fixtureUser(10000001, '[TST]Alpha', 8700)],
+    [10000002, fixtureUser(10000002, 'BetaPlayer', 7600)],
     [1234567, fixtureUser(1234567, 'fixture-user', 5000)],
     [37645378, fixtureUser(37645378, 'sparse-user', 1200)],
     [80001, fixtureUser(80001, 'match-a', 5000)],
@@ -126,21 +126,21 @@ function buildDefaultFixture() {
 
   let scoreId = 1;
   const best = new Map();
-  best.set(19244792, [
-    fixtureScore(scoreId++, 19244792, 1001, 300, 'S'),
-    fixtureScore(scoreId++, 19244792, 1002, 280, 'S'),
-    fixtureScore(scoreId++, 19244792, 1003, 260, 'S'),
-    fixtureScore(scoreId++, 19244792, 1004, 340, 'S', ['DT']),
-    fixtureScore(scoreId++, 19244792, 1005, 310, 'S', ['HR']),
-    fixtureScore(scoreId++, 19244792, 1006, 250, 'S', ['HD']),
-    fixtureScore(scoreId++, 19244792, 1007, 240, 'S', ['NF', 'SO']),
+  best.set(10000001, [
+    fixtureScore(scoreId++, 10000001, 1001, 300, 'S'),
+    fixtureScore(scoreId++, 10000001, 1002, 280, 'S'),
+    fixtureScore(scoreId++, 10000001, 1003, 260, 'S'),
+    fixtureScore(scoreId++, 10000001, 1004, 340, 'S', ['DT']),
+    fixtureScore(scoreId++, 10000001, 1005, 310, 'S', ['HR']),
+    fixtureScore(scoreId++, 10000001, 1006, 250, 'S', ['HD']),
+    fixtureScore(scoreId++, 10000001, 1007, 240, 'S', ['NF', 'SO']),
   ]);
-  best.set(24657559, [
-    fixtureScore(scoreId++, 24657559, 1004, 300, 'S'),
-    fixtureScore(scoreId++, 24657559, 1005, 280, 'S'),
-    fixtureScore(scoreId++, 24657559, 1006, 260, 'S'),
-    fixtureScore(scoreId++, 24657559, 1007, 320, 'S', ['HD']),
-    fixtureScore(scoreId++, 24657559, 1008, 290, 'S', ['HR']),
+  best.set(10000002, [
+    fixtureScore(scoreId++, 10000002, 1004, 300, 'S'),
+    fixtureScore(scoreId++, 10000002, 1005, 280, 'S'),
+    fixtureScore(scoreId++, 10000002, 1006, 260, 'S'),
+    fixtureScore(scoreId++, 10000002, 1007, 320, 'S', ['HD']),
+    fixtureScore(scoreId++, 10000002, 1008, 290, 'S', ['HR']),
   ]);
   best.set(1234567, Array.from({ length: 20 }, (_, i) => {
     const beatmapId = 1001 + (i % 10);
@@ -153,7 +153,7 @@ function buildDefaultFixture() {
   best.set(80003, [fixtureScore(scoreId++, 80003, 1001, 260, 'S')]);
 
   const recent = new Map();
-  recent.set(19244792, [fixtureScore(scoreId++, 19244792, 1008, 290, 'S')]);
+  recent.set(10000001, [fixtureScore(scoreId++, 10000001, 1008, 290, 'S')]);
   recent.set(1234567, [fixtureScore(scoreId++, 1234567, 1009, 240, 'S', ['DT'])]);
 
   const round = {
@@ -210,8 +210,8 @@ function buildDefaultFixture() {
   const leaderboards = new Map();
   for (const [bid] of MAPS) {
     leaderboards.set(bid, [
-      { user_id: 19244792, pp: 300 },
-      { user_id: 24657559, pp: 280 },
+      { user_id: 10000001, pp: 300 },
+      { user_id: 10000002, pp: 280 },
       { user_id: 1234567, pp: 260 },
     ].map(({ user_id, pp }) => fixtureScore(scoreId++, user_id, bid, pp, 'S', bid === 1009 ? ['DT'] : [])));
   }
