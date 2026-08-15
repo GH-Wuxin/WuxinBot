@@ -101,6 +101,10 @@ console.log('\n=== WS close code/reason recorded, no auto-recovery ===');
   const s = status.markTransportClosed(1006, 'socket hang up');
   assertEqual(s.transportConnected, false, 'WS close -> transportConnected false');
   assertEqual(s.connected, false, 'WS close -> compat connected false');
+  assertEqual(s.accountOnline, null, 'WS close resets stale accountOnline to unknown');
+  assertEqual(s.apiReachable, true, 'WS close keeps independent get_status evidence');
+  assertEqual(s.heartbeatGood, null, 'WS close resets stale heartbeatGood to unknown');
+  assertEqual(s.heartbeatFresh, false, 'WS close clears stale heartbeat freshness');
   const closeEvents = status.getEvents().filter((e) => e.kind === 'transport_close');
   assert(closeEvents.length >= 1, 'transport_close event recorded');
   assertEqual(closeEvents[closeEvents.length - 1].detail.code, 1006, 'close code recorded');
@@ -108,8 +112,25 @@ console.log('\n=== WS close code/reason recorded, no auto-recovery ===');
   status.markTransportOpen();
 }
 
+console.log('\n=== transport changes preserve the HTTP observer fail streak ===');
+{
+  const status4 = createConnectionStatus({
+    now: () => fakeNow,
+    dumpDir: path.join(tmpRoot, 'flight4'),
+  });
+  status4.applyGetStatus({ ok: true, online: true, good: true });
+  status4.applyGetStatus({ ok: false, error: 'mock timeout 1' });
+  status4.markTransportClosed(1006, 'socket hang up');
+  const afterClose = status4.snapshot();
+  assertEqual(afterClose.apiReachable, true, 'first probe failure stays below threshold across WS close');
+  status4.applyGetStatus({ ok: false, error: 'mock timeout 2' });
+  assertEqual(status4.snapshot().apiReachable, false, 'second failure after WS close flips apiReachable (streak was not reset)');
+}
+
 console.log('\n=== account online -> offline dumps flight recorder ===');
 {
+  // Re-establish session evidence first: a fresh transport starts unknown.
+  status.handleHeartbeat({ online: true, good: true });
   const before = status.snapshot();
   const s = status.handleHeartbeat({ online: false, good: false });
   assertEqual(s.accountOnline, false, 'heartbeat online=false -> accountOnline false');
