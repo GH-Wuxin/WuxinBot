@@ -2,7 +2,18 @@
 // The LLM can ONLY request whitelisted operations. Everything else is rejected.
 // NO file system access, NO shell execution, NO config modification.
 import type { AllowedOperation, AllowedOperationType } from './types.js';
-import { internalCapabilitySupported } from './registry.js';
+import {
+  BEATMAP_CAPABILITY_NAMES,
+  BEATMAP_ID_PARAM,
+  isCallableCapability,
+  LEADERBOARD_CAPABILITY,
+  PLAYER_CAPABILITY_NAMES,
+  PP_CALC_CAPABILITY,
+  queryOsuParam,
+  queryOsuParamAllowed,
+  queryOsuParamNames,
+  queryOsuParamRequiredFor,
+} from './capabilityCatalog.js';
 
 // ── Whitelist ──
 
@@ -37,8 +48,13 @@ const BLOCKED_PATTERNS: ReadonlyArray<{ pattern: RegExp; reason: string }> = [
 
 // ── Validation ──
 
+const QUERY_OSU_PARAM_KEYS: ReadonlySet<string> = new Set([
+  'capability',
+  ...queryOsuParamNames(),
+]);
+
 const PARAM_KEYS: Readonly<Record<AllowedOperationType, ReadonlySet<string>>> = {
-  query_osu: new Set(['capability', 'username', 'bp_rank', 'bp_start', 'bp_end', 'compact', 'bot', 'beatmap_id', 'mods', 'accuracy', 'combo', 'misses', 'limit']),
+  query_osu: QUERY_OSU_PARAM_KEYS,
   query_external_bot: new Set(['bot', 'command']),
   query_bot: new Set(['bot', 'command', 'username', 'bp_rank', 'bp_start', 'bp_end']),
   get_player_skill: new Set(['player']),
@@ -115,6 +131,29 @@ function validateBpSelectionParams(op: AllowedOperation): { ok: true } | { ok: f
   return { ok: true };
 }
 
+/**
+ * Reject present parameters whose applicability family differs from the
+ * requested capability. Ordering follows the capability catalog so validation
+ * messages stay stable and match the pre-catalog behavior.
+ */
+function rejectFamilyDisallowedParams(
+  params: Record<string, unknown>,
+  capability: string,
+  familyNames: ReadonlySet<string>,
+): { ok: true } | { ok: false; reason: string } {
+  for (const paramName of queryOsuParamNames()) {
+    if (!hasOwnParam(params, paramName)) continue;
+    const param = queryOsuParam(paramName);
+    if (!param?.allowedFor) continue;
+    const belongsToFamily = param.allowedFor.some((name) => familyNames.has(name));
+    if (!belongsToFamily) continue;
+    if (!queryOsuParamAllowed(param, capability)) {
+      return { ok: false, reason: `${paramName} 不能与 ${capability} 一起使用` };
+    }
+  }
+  return { ok: true };
+}
+
 export function validateOperation(op: AllowedOperation): { ok: true } | { ok: false; reason: string } {
   if (!ALLOWED_OPERATIONS.has(op.type)) {
     return { ok: false, reason: `不允许的操作类型: ${op.type}` };
@@ -127,7 +166,7 @@ export function validateOperation(op: AllowedOperation): { ok: true } | { ok: fa
   switch (op.type) {
     case 'query_osu': {
       const capability = String(op.params.capability || '').trim();
-      if (!capability || !internalCapabilitySupported(capability)) {
+      if (!capability || !isCallableCapability(capability)) {
         return { ok: false, reason: `无效的查询类型: ${capability || '(空)'}` };
       }
       if (hasOwnParam(op.params, 'compact') && typeof op.params.compact !== 'boolean') {
@@ -137,23 +176,41 @@ export function validateOperation(op: AllowedOperation): { ok: true } | { ok: fa
       const usernameError = validatePlayerText(username, '玩家名', false);
       if (usernameError) return { ok: false, reason: usernameError };
 
-      // Beatmap-centric capabilities (Phase B): beatmap-scoped params only.
-      const BEATMAP_CAPABILITIES = new Set(['beatmap_lookup', 'pp_calc', 'leaderboard']);
-      if (BEATMAP_CAPABILITIES.has(capability)) {
-        const beatmapId = parseBpRankParam(op.params.beatmap_id);
-        if (beatmapId === null || beatmapId < 1) {
-          return { ok: false, reason: `${capability} 需要有效的 beatmap_id` };
+      // Parameter applicability is derived from the capability catalog.
+      // Player-family params and beatmap-family params are rejected separately
+      // so the error ordering matches the pre-catalog behavior exactly.
+      if (BEATMAP_CAPABILITY_NAMES.has(capability)) {
+        // Required parameters are declared in the catalog; today only
+        // beatmap_id is required for the three beatmap capabilities.
+        for (const paramName of queryOsuParamNames()) {
+          const param = queryOsuParam(paramName);
+          if (
+            param?.missingMessage &&
+            queryOsuParamRequiredFor(param, capability) &&
+            !hasOwnParam(op.params, paramName)
+          ) {
+            return { ok: false, reason: `${capability} ${param.missingMessage}` };
+          }
         }
-        for (const key of ['username', 'bp_rank', 'bp_start', 'bp_end', 'compact']) {
-          if (hasOwnParam(op.params, key)) return { ok: false, reason: `${key} 不能与 ${capability} 一起使用` };
+        if (hasOwnParam(op.params, BEATMAP_ID_PARAM)) {
+          const beatmapId = parseBpRankParam(op.params[BEATMAP_ID_PARAM]);
+          if (beatmapId === null || beatmapId < 1) {
+            return { ok: false, reason: `${capability} 需要有效的 beatmap_id` };
+          }
         }
+        const familyRejection = rejectFamilyDisallowedParams(
+          op.params,
+          capability,
+          PLAYER_CAPABILITY_NAMES,
+        );
+        if (!familyRejection.ok) return familyRejection;
         if (hasOwnParam(op.params, 'mods')) {
           const modsValue = String(op.params.mods || '');
           if (modsValue.length > 16 || !/^[A-Za-z]*$/.test(modsValue)) {
             return { ok: false, reason: 'mods 必须是成对双字母组合' };
           }
         }
-        if (capability === 'pp_calc') {
+        if (capability === PP_CALC_CAPABILITY) {
           if (hasOwnParam(op.params, 'accuracy')) {
             const acc = Number(op.params.accuracy);
             if (!Number.isFinite(acc) || acc <= 0 || acc > 100) return { ok: false, reason: 'accuracy 必须是 0-100 的数字' };
@@ -167,21 +224,29 @@ export function validateOperation(op: AllowedOperation): { ok: true } | { ok: fa
             if (!Number.isInteger(misses) || misses < 0 || misses > 999) return { ok: false, reason: 'misses 必须是 0-999 的整数' };
           }
         } else {
-          for (const key of ['accuracy', 'combo', 'misses']) {
-            if (hasOwnParam(op.params, key)) return { ok: false, reason: `${key} 不能与 ${capability} 一起使用` };
-          }
+          // accuracy/combo/misses are pp_calc-only; other beatmap capabilities
+          // must reject them (pre-catalog behavior).
+          const ppCalcRejection = rejectFamilyDisallowedParams(
+            op.params,
+            capability,
+            new Set([PP_CALC_CAPABILITY]),
+          );
+          if (!ppCalcRejection.ok) return ppCalcRejection;
         }
-        if (capability !== 'leaderboard' && hasOwnParam(op.params, 'limit')) {
+        if (capability !== LEADERBOARD_CAPABILITY && hasOwnParam(op.params, 'limit')) {
           return { ok: false, reason: `limit 不能与 ${capability} 一起使用` };
         }
-        if (capability === 'leaderboard' && hasOwnParam(op.params, 'limit')) {
+        if (capability === LEADERBOARD_CAPABILITY && hasOwnParam(op.params, 'limit')) {
           const limit = Number(op.params.limit);
           if (!Number.isInteger(limit) || limit < 1 || limit > 50) return { ok: false, reason: 'limit 必须是 1-50 的整数' };
         }
       } else {
-        for (const key of ['beatmap_id', 'accuracy', 'combo', 'misses', 'limit']) {
-          if (hasOwnParam(op.params, key)) return { ok: false, reason: `${key} 不能与 ${capability} 一起使用` };
-        }
+        const familyRejection = rejectFamilyDisallowedParams(
+          op.params,
+          capability,
+          BEATMAP_CAPABILITY_NAMES,
+        );
+        if (!familyRejection.ok) return familyRejection;
       }
       return validateBpSelectionParams(op);
     }
