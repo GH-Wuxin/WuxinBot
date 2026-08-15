@@ -165,6 +165,18 @@ export function createConnectionStatus(opts: ConnectionStatusOptions = {}): Conn
     }
   }
 
+  // A transport change makes the WS/QQ-session evidence from the old socket
+  // stale: heartbeat state and account state observed through that socket must
+  // not be reported as if they still held. HTTP get_status is an independent
+  // observer with its own fail-streak recovery, so apiReachable /
+  // lastGetStatusError / getStatusFailStreak are deliberately preserved across
+  // transport close/error.
+  function markSessionUnknown(): void {
+    accountOnline = null;
+    heartbeatGood = null;
+    lastHeartbeatAt = '';
+  }
+
   function markTransportOpen(): ConnectionSnapshot {
     transportConnected = true;
     lastError = '';
@@ -174,6 +186,7 @@ export function createConnectionStatus(opts: ConnectionStatusOptions = {}): Conn
 
   function markTransportClosed(code?: number, reason?: string): ConnectionSnapshot {
     transportConnected = false;
+    markSessionUnknown();
     pushEvent('transport_close', {
       code: typeof code === 'number' ? code : null,
       reason: String(reason || ''),
@@ -183,6 +196,7 @@ export function createConnectionStatus(opts: ConnectionStatusOptions = {}): Conn
 
   function markTransportError(message: string): ConnectionSnapshot {
     transportConnected = false;
+    markSessionUnknown();
     lastError = String(message || '');
     pushEvent('transport_error', { error: String(message || '').slice(0, 300) });
     return snapshot();
