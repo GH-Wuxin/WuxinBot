@@ -24,9 +24,9 @@ const GOLDEN_PLAYERS = [
 // local osu! search route at run time; they are test inputs only and never
 // enter any generation prompt as examples or special cases.
 const PROVIDED_PLAYERS = [
-  { key: 'akari-date', id: 0, username: 'Juliet Player' },
+  { key: 'juliet-player', id: 0, username: 'Juliet Player' },
   { key: 'windpipeey', id: 0, username: 'windpipeey' },
-  { key: 'shk-mriyu', id: 0, username: '[TST]Golf' },
+  { key: 'shk-golf', id: 0, username: '[TST]Golf' },
   { key: 'maliszewski', id: 0, username: 'MALISZEWSKI' },
   { key: 'junmoyan', id: 0, username: 'Junmoyan' },
   { key: 'miko-parsley', id: 0, username: 'Miko_Parsley' },
