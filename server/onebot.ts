@@ -19,8 +19,17 @@ import { tryResolveBotResponse } from './bots/executor.js';
 let ws;
 let reconnectTimer = null;
 let reconnectEnabled = false;
+let reconnectAttempt = 0;
+let reconnectStableTimer = null;
 let statusProbeTimer = null;
 let statusSampleTimer = null;
+
+const RECONNECT_BASE_DELAY_MS = 1_000;
+const RECONNECT_MAX_DELAY_MS = 30_000;
+// Backoff only resets after the connection proved itself stable. Resetting on
+// every 'open' would let a server that accepts and immediately closes (e.g. an
+// auth rejection) drive a fixed 1s accept-close storm forever.
+const RECONNECT_STABLE_AFTER_MS = 30_000;
 
 // P0-A: four-dimensional connection observer (transport / NapCat API /
 // QQ session / heartbeat). It never reconnects or restarts anything; it only
@@ -39,12 +48,58 @@ export function getOneBotStatus() {
 
 function scheduleReconnect() {
   if (!reconnectEnabled || reconnectTimer) return;
+  const attempt = reconnectAttempt;
+  reconnectAttempt += 1;
+  // Exponential backoff with jitter prevents a fixed 5s loop from turning a
+  // NapCat outage into an endless reconnect storm, while keeping the first
+  // retry fast for a routine close. Jitter only applies while ramping up:
+  // once the backoff reaches the 30s cap the delay is exactly the cap.
+  const backoff = Math.min(RECONNECT_MAX_DELAY_MS, RECONNECT_BASE_DELAY_MS * 2 ** attempt);
+  const delay = Math.min(RECONNECT_MAX_DELAY_MS, backoff + Math.floor(Math.random() * 500));
   reconnectTimer = setTimeout(() => {
     reconnectTimer = null;
     connectionStatus.markReconnect();
     syncHealth();
     connectOneBot();
-  }, 5000);
+  }, delay);
+}
+
+function closeSocketQuietly(socket) {
+  if (!socket) return;
+  // A WebSocket closed while CONNECTING still emits an 'error' event. Without
+  // a listener that EventEmitter error is an uncaught exception that kills the
+  // process, so install a no-op error handler after detaching real handlers.
+  socket.removeAllListeners();
+  socket.on('error', () => {});
+  try {
+    socket.close();
+  } catch {
+    // Ignore close errors during replacement/shutdown.
+  }
+}
+
+function oneBotHeaders(db) {
+  const headers = { 'Content-Type': 'application/json' };
+  if (db?.settings?.oneBotAccessToken) {
+    headers.Authorization = `Bearer ${db.settings.oneBotAccessToken}`;
+  }
+  return headers;
+}
+
+function clearReconnectStableTimer() {
+  if (reconnectStableTimer) {
+    clearTimeout(reconnectStableTimer);
+    reconnectStableTimer = null;
+  }
+}
+
+function armReconnectStableTimer() {
+  clearReconnectStableTimer();
+  reconnectStableTimer = setTimeout(() => {
+    reconnectStableTimer = null;
+    reconnectAttempt = 0;
+  }, RECONNECT_STABLE_AFTER_MS);
+  reconnectStableTimer.unref?.();
 }
 
 async function fetchWithTimeout(url, options, timeoutMs = 12_000) {
@@ -88,8 +143,7 @@ async function sendOneBotMessageInner(event, text, options = {}) {
   const db = readDb();
   const baseUrl = db.settings.oneBotHttpUrl;
   if (!baseUrl) throw new Error('OneBot HTTP 地址未配置。');
-  const headers = { 'Content-Type': 'application/json' };
-  if (db.settings.oneBotAccessToken) headers.Authorization = `Bearer ${db.settings.oneBotAccessToken}`;
+  const headers = oneBotHeaders(db);
 
   // Long command output, such as /w help and /w prompt show, is sent as a QQ
   // merged-forward card so it does not occupy the whole group chat screen.
@@ -156,7 +210,7 @@ function syncHealth() {
   setOneBotError(s.lastError || '');
 }
 
-async function probeGetStatus() {
+export async function probeGetStatus() {
   let db;
   try {
     db = readDb();
@@ -172,7 +226,7 @@ async function probeGetStatus() {
     try {
       response = await fetch(`${String(baseUrl).replace(/\/$/, '')}/get_status`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: oneBotHeaders(db),
         body: '{}',
         signal: controller.signal,
       });
@@ -248,22 +302,87 @@ export function connectOneBot() {
     clearTimeout(reconnectTimer);
     reconnectTimer = null;
   }
-  const db = readDb();
+  clearReconnectStableTimer();
+
+  let db;
+  try {
+    db = readDb();
+  } catch (error) {
+    connectionStatus.markTransportError(`读取配置失败：${String(error?.message || error)}`);
+    syncHealth();
+    scheduleReconnect();
+    return;
+  }
+
   const url = db.settings.oneBotWsUrl;
   if (!url) {
-    connectionStatus.markTransportError('没有填写 OneBot WebSocket 地址');
-    setOneBotConnected(false);
-    setOneBotError('没有填写 OneBot WebSocket 地址');
+    // Close a stale socket too: reporting "disconnected" while the old WS is
+    // still open and receiving events would make health lie in both directions.
+    if (ws) {
+      const previous = ws;
+      ws = null;
+      closeSocketQuietly(previous);
+      connectionStatus.markTransportClosed(1000, 'connect called without WS URL');
+    } else {
+      connectionStatus.markTransportError('没有填写 OneBot WebSocket 地址');
+    }
+    syncHealth();
+    return;
+  }
+
+  let parsedUrl;
+  try {
+    parsedUrl = new URL(url);
+  } catch {
+    if (ws) {
+      const previous = ws;
+      ws = null;
+      closeSocketQuietly(previous);
+      connectionStatus.markTransportClosed(1000, 'connect called with invalid WS URL');
+    } else {
+      connectionStatus.markTransportError(`OneBot WebSocket 地址无效：${url}`);
+    }
+    syncHealth();
+    return;
+  }
+  if (parsedUrl.protocol !== 'ws:' && parsedUrl.protocol !== 'wss:') {
+    if (ws) {
+      const previous = ws;
+      ws = null;
+      closeSocketQuietly(previous);
+      connectionStatus.markTransportClosed(1000, 'connect called with unsupported WS protocol');
+    } else {
+      connectionStatus.markTransportError(`OneBot WebSocket 地址必须使用 ws:// 或 wss://（当前：${parsedUrl.protocol}）`);
+    }
+    syncHealth();
     return;
   }
 
   if (ws) {
-    ws.removeAllListeners();
-    ws.close();
+    const previous = ws;
+    ws = null;
+    closeSocketQuietly(previous);
+    connectionStatus.markTransportClosed(1000, 'replaced by new connection');
+    syncHealth();
   }
-  ws = new WebSocket(url, db.settings.oneBotAccessToken ? { headers: { Authorization: `Bearer ${db.settings.oneBotAccessToken}` } } : undefined);
+
+  try {
+    ws = new WebSocket(
+      url,
+      db.settings.oneBotAccessToken
+        ? { headers: { Authorization: `Bearer ${db.settings.oneBotAccessToken}` } }
+        : undefined,
+    );
+  } catch (error) {
+    ws = null;
+    connectionStatus.markTransportError(`OneBot WebSocket 创建失败：${String(error?.message || error)}`);
+    syncHealth();
+    scheduleReconnect();
+    return;
+  }
 
   ws.on('open', () => {
+    armReconnectStableTimer();
     connectionStatus.markTransportOpen();
     syncHealth();
     ensureStatusProbe();
@@ -298,12 +417,14 @@ export function connectOneBot() {
   });
 
   ws.on('close', (code, reason) => {
+    clearReconnectStableTimer();
     connectionStatus.markTransportClosed(code, reason?.toString?.());
     syncHealth();
     scheduleReconnect();
   });
 
   ws.on('error', (error) => {
+    clearReconnectStableTimer();
     connectionStatus.markTransportError(error.message);
     syncHealth();
     scheduleReconnect();
@@ -311,6 +432,13 @@ export function connectOneBot() {
 }
 
 export function shutdownOneBot() {
+  reconnectEnabled = false;
+  reconnectAttempt = 0;
+  if (reconnectTimer) {
+    clearTimeout(reconnectTimer);
+    reconnectTimer = null;
+  }
+  clearReconnectStableTimer();
   if (statusProbeTimer) {
     clearInterval(statusProbeTimer);
     statusProbeTimer = null;
@@ -320,13 +448,11 @@ export function shutdownOneBot() {
     statusSampleTimer = null;
   }
   if (ws) {
-    ws.removeAllListeners();
-    try {
-      ws.close();
-    } catch {
-      // Ignore close errors during shutdown.
-    }
+    const previous = ws;
     ws = null;
+    closeSocketQuietly(previous);
+    connectionStatus.markTransportClosed(1000, 'shutdown');
   }
   connectionStatus.recordEvent('shutdown', {});
+  syncHealth();
 }

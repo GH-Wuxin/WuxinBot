@@ -27,7 +27,10 @@ import { sharedGroupBotConfigPath } from './bots/externalPaths.js';
 // ── Process guards (P0-A) ──
 // These exist to leave a stack + exit reason behind, NOT to swallow errors
 // and keep running. uncaughtException / unhandledRejection still terminate
-// the process; SIGINT/SIGTERM shut the WS down cleanly first.
+// the process. Before exiting they make a best-effort request to close the
+// OneBot WS (listeners are detached and ws.close() is called, but process.exit
+// may not wait for the close handshake to finish). SIGINT/SIGTERM use the same
+// cleanup plus a short 200ms grace period.
 function writeCrashLog(kind, error) {
   try {
     const dir = path.join(process.cwd(), 'logs');
@@ -44,6 +47,11 @@ function writeCrashLog(kind, error) {
 process.on('uncaughtException', (error) => {
   console.error('[crash] uncaughtException:', error);
   writeCrashLog('uncaughtException', error);
+  try {
+    shutdownOneBot();
+  } catch (shutdownError) {
+    console.error('[crash] shutdownOneBot failed:', String(shutdownError?.message || shutdownError));
+  }
   process.exit(1);
 });
 
@@ -51,16 +59,23 @@ process.on('unhandledRejection', (reason) => {
   const error = reason instanceof Error ? reason : new Error(String(reason));
   console.error('[crash] unhandledRejection:', error);
   writeCrashLog('unhandledRejection', error);
+  try {
+    shutdownOneBot();
+  } catch (shutdownError) {
+    console.error('[crash] shutdownOneBot failed:', String(shutdownError?.message || shutdownError));
+  }
   process.exit(1);
 });
 
 function gracefulShutdown(signal) {
-  console.log(`[shutdown] ${signal} received, closing OneBot connection`);
+  console.log(`[shutdown] ${signal} received, requesting OneBot connection close`);
   try {
     shutdownOneBot();
   } catch (error) {
     console.error('[shutdown] shutdownOneBot failed:', String(error?.message || error));
   }
+  // Best effort only: ws.close() is requested but a 200ms grace period cannot
+  // guarantee the close handshake completes before process exit.
   setTimeout(() => process.exit(0), 200);
 }
 
