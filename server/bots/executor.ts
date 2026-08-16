@@ -2207,6 +2207,22 @@ export type ToolExecutor = (
   context: ToolExecutionContext,
 ) => Promise<ToolResult>;
 
+// AGENT_TOOL_SURFACE_HARDENING_V01 A2 — hard tool-call budget.
+// maxIterations only bounds LLM rounds. These two bounds are the real
+// executor-side limits:
+//   - per response: a single assistant message may dispatch at most 4 calls;
+//   - per turn: a whole user/processIncoming turn may dispatch at most 8 calls
+//     TOTAL across every runToolLoop invoked for that turn (bot.ts can run a
+//     second requiredTool=recommend loop after the first; callers carry the
+//     budget with toolCallsExecutedBeforeLoop).
+// Evidence for the conservative values: replay fixtures and production seams
+// observe 0..2 settled calls per turn (recommend/bp chains); 4/8 keeps every
+// legitimate chain while bounding a malicious 100-call response. Excess calls
+// are never executed: they receive a synthetic tool result and the loop goes
+// straight to safe synthesis, preserving any direct payload already collected.
+export const AGENT_MAX_TOOL_CALLS_PER_RESPONSE = 4;
+export const AGENT_MAX_TOOL_CALLS_PER_TURN = 8;
+
 export interface ToolLoopOptions {
   db: any;
   messages: Array<{ role: string; content: string; tool_calls?: any[]; tool_call_id?: string }>;
@@ -2238,6 +2254,12 @@ export interface ToolLoopOptions {
   reasoningRouter?: ReasoningShadowSink;
   /** Test seam for fully offline replay. Production defaults to executeToolCall. */
   executeToolCallFn?: ToolExecutor;
+  /**
+   * Tool calls already executed earlier in the SAME user/processIncoming turn
+   * by a previous runToolLoop. bot.ts passes this when the recommendation hard
+   * guard runs a second loop. Charged against AGENT_MAX_TOOL_CALLS_PER_TURN.
+   */
+  toolCallsExecutedBeforeLoop?: number;
 }
 
 export interface ToolLoopResult {
@@ -2251,6 +2273,12 @@ export interface ToolLoopResult {
   images: string[];
   /** Structured text that the caller must append verbatim after the short LLM lead. */
   directContent: string;
+  /** A2 accounting: calls not executed because a hard cap was reached. */
+  toolCallsSkippedByCap?: number;
+  /** A2 accounting: true when either hard cap stopped execution this turn. */
+  hardCapReached?: boolean;
+  /** Total executed tool calls across all runToolLoop invocations of this turn. */
+  toolCallsMadeThisTurn?: number;
 }
 
 function sanitizeDirectDeliveryContent(content: string): string {
@@ -2312,12 +2340,24 @@ export async function runToolLoop(
   } = options;
   const executeToolCallFn = options.executeToolCallFn || executeToolCall;
 
+  // Shared user-turn budget. The recommendation hard guard in bot.ts may run a
+  // second runToolLoop after the first; each loop reports the turn total and
+  // the caller feeds it back through toolCallsExecutedBeforeLoop.
+  const parsedPriorCalls = Number(options.toolCallsExecutedBeforeLoop || 0);
+  const toolCallsExecutedBeforeLoop = Number.isFinite(parsedPriorCalls)
+    ? Math.max(0, Math.min(AGENT_MAX_TOOL_CALLS_PER_TURN, Math.floor(parsedPriorCalls)))
+    : 0;
+  const turnToolCallsMade = (): number =>
+    Math.min(AGENT_MAX_TOOL_CALLS_PER_TURN, toolCallsExecutedBeforeLoop + toolCallsMade);
+
   let currentMessages = [...messages];
   let totalUsage = { total_tokens: 0, prompt_tokens: 0, completion_tokens: 0 };
   let toolCallsMade = 0;
   let iterations = 0;
   let recommendToolCalled = false;
   let lastToolFailed = false;
+  let toolCallsSkippedByCap = 0;
+  let hardCapReached = false;
   const collectedImages: string[] = [];
   const collectedDirectContent: string[] = [];
   const turnId = options.turnId || `turn_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
@@ -2357,6 +2397,29 @@ export async function runToolLoop(
 
   // ── Required tool: execute before LLM, LLM only writes lead ──
   if (requiredTool) {
+    // The required call is part of the SAME user-turn budget. When a previous
+    // loop already consumed the turn cap (recommendation hard guard case), the
+    // deterministic tool must NOT execute and must not ask the LLM for a
+    // fabricated answer.
+    if (turnToolCallsMade() >= AGENT_MAX_TOOL_CALLS_PER_TURN) {
+      console.warn(
+        `[agent] requiredTool "${requiredTool.toolName}" refused: user-turn tool budget exhausted ` +
+        `(${turnToolCallsMade()}/${AGENT_MAX_TOOL_CALLS_PER_TURN})`,
+      );
+      return {
+        text: '本轮工具调用已达上限，这次查询没有执行，请稍后再试。',
+        usage: totalUsage,
+        toolCallsMade: 0,
+        iterations: 0,
+        recommendToolCalled: false,
+        images: [],
+        directContent: '',
+        toolCallsSkippedByCap: 1,
+        hardCapReached: true,
+        toolCallsMadeThisTurn: turnToolCallsMade(),
+      };
+    }
+
     iterations = 1;
     toolCallsMade = 1;
 
@@ -2391,6 +2454,9 @@ export async function runToolLoop(
         recommendToolCalled,
         images: [],
         directContent: sanitizeDirectDeliveryContent(result.directContent || result.content),
+        toolCallsSkippedByCap: 0,
+        hardCapReached: false,
+        toolCallsMadeThisTurn: turnToolCallsMade(),
       };
     }
 
@@ -2404,7 +2470,10 @@ export async function runToolLoop(
         iterations: 1,
         recommendToolCalled,
         images: [],
-        directContent: ''
+        directContent: '',
+        toolCallsSkippedByCap: 0,
+        hardCapReached: false,
+        toolCallsMadeThisTurn: turnToolCallsMade(),
       };
     }
 
@@ -2497,7 +2566,10 @@ export async function runToolLoop(
         iterations,
         recommendToolCalled,
         images: collectedImages,
-        directContent: collectedDirectContent.join('\n\n')
+        directContent: collectedDirectContent.join('\n\n'),
+        toolCallsSkippedByCap: 0,
+        hardCapReached: false,
+        toolCallsMadeThisTurn: turnToolCallsMade(),
       };
     }
 
@@ -2547,13 +2619,24 @@ export async function runToolLoop(
       iterations,
       recommendToolCalled,
       images: collectedImages,
-      directContent: collectedDirectContent.join('\n\n')
+      directContent: collectedDirectContent.join('\n\n'),
+      toolCallsSkippedByCap: 0,
+      hardCapReached: false,
+      toolCallsMadeThisTurn: turnToolCallsMade(),
     };
   }
 
   while (iterations < maxIterations) {
     iterations++;
     const hasDirectPayload = collectedDirectContent.length > 0 || collectedImages.length > 0;
+
+    // A5 — previousToolFailed is batch/turn-level sticky: it means "at least
+    // one tool failed since the last planner decision", not "the single most
+    // recent tool failed". Consume the snapshot for this planner input, then
+    // reset; the executor loop below re-accumulates failures for the next
+    // planner round.
+    const previousToolFailed = lastToolFailed;
+    lastToolFailed = false;
 
     const plannerInput = reasoningInput(hasDirectPayload ? 'decorative_lead' : 'tool_planner', {
       requiredTool: false,
@@ -2562,7 +2645,7 @@ export async function runToolLoop(
       iterations,
       maxIterations,
       hasDirectPayload,
-      previousToolFailed: lastToolFailed,
+      previousToolFailed,
     });
     const plannerDecision = decideCall(plannerInput.callRole, plannerInput);
     const plannerWire = wireForLevel(plannerDecision.level);
@@ -2598,7 +2681,10 @@ export async function runToolLoop(
           iterations,
           recommendToolCalled,
           images: collectedImages,
-          directContent: collectedDirectContent.join('\n\n')
+          directContent: collectedDirectContent.join('\n\n'),
+          toolCallsSkippedByCap,
+          hardCapReached,
+          toolCallsMadeThisTurn: turnToolCallsMade()
         };
       }
       throw error;
@@ -2629,7 +2715,10 @@ export async function runToolLoop(
         iterations,
         recommendToolCalled,
         images: collectedImages,
-        directContent: collectedDirectContent.join('\n\n')
+        directContent: collectedDirectContent.join('\n\n'),
+        toolCallsSkippedByCap,
+        hardCapReached,
+        toolCallsMadeThisTurn: turnToolCallsMade()
       };
     }
 
@@ -2668,7 +2757,10 @@ export async function runToolLoop(
         iterations,
         recommendToolCalled,
         images: collectedImages,
-        directContent: collectedDirectContent.join('\n\n')
+        directContent: collectedDirectContent.join('\n\n'),
+        toolCallsSkippedByCap,
+        hardCapReached,
+        toolCallsMadeThisTurn: turnToolCallsMade()
       };
     }
 
@@ -2684,8 +2776,38 @@ export async function runToolLoop(
         : {})
     });
 
+    // A2 — hard tool-call budget. Never trust maxIterations to bound the work:
+    // a single response may contain an arbitrary number of tool_calls. The
+    // executable allowance for this batch is min(per-response cap, remaining
+    // SHARED turn budget); everything beyond it gets a synthetic "not executed"
+    // result so the assistant/tool message alternation stays balanced.
+    const turnRemaining = Math.max(0, AGENT_MAX_TOOL_CALLS_PER_TURN - turnToolCallsMade());
+    const executableThisResponse = Math.min(AGENT_MAX_TOOL_CALLS_PER_RESPONSE, turnRemaining);
+    const overflowThisResponse = Math.max(0, toolCalls.length - executableThisResponse);
+    if (overflowThisResponse > 0) {
+      toolCallsSkippedByCap += overflowThisResponse;
+      hardCapReached = true;
+      console.warn(
+        `[agent] tool-call hard cap reached: ${toolCalls.length} call(s) in this response, ` +
+        `executed ${turnToolCallsMade()}/${AGENT_MAX_TOOL_CALLS_PER_TURN} this user turn so far, ` +
+        `executing ${executableThisResponse}, skipping ${overflowThisResponse} ` +
+        `(per-response ${AGENT_MAX_TOOL_CALLS_PER_RESPONSE}, per-turn ${AGENT_MAX_TOOL_CALLS_PER_TURN})`,
+      );
+    }
+
     // Execute each tool call
-    for (const tc of toolCalls) {
+    for (let callIndex = 0; callIndex < toolCalls.length; callIndex++) {
+      const tc = toolCalls[callIndex];
+      if (callIndex >= executableThisResponse) {
+        const skippedByResponse = callIndex >= AGENT_MAX_TOOL_CALLS_PER_RESPONSE;
+        currentMessages.push({
+          role: 'tool',
+          tool_call_id: tc.id,
+          content: `[系统] 达到工具调用上限（${skippedByResponse ? '单轮响应' : '本轮总计'}），此调用未执行。`
+        });
+        continue;
+      }
+
       let callDeliversDirect = deliverDirectContent;
       if (!callDeliversDirect) {
         try {
@@ -2704,7 +2826,7 @@ export async function runToolLoop(
       // returned content is safe enough to expose to the LLM. Reaching this
       // line means one tool call actually executed and settled with a result.
       toolCallsMade++;
-      lastToolFailed = !result.ok;
+      lastToolFailed = lastToolFailed || !result.ok;
       if (result.ok && !recommendToolCalled) {
         try {
           const callArgs = JSON.parse(String((tc as any).function?.arguments || '{}'));
@@ -2731,6 +2853,9 @@ export async function runToolLoop(
           recommendToolCalled,
           images: collectedImages,
           directContent: [...collectedDirectContent, finalDirect].filter(Boolean).join('\n\n'),
+          toolCallsSkippedByCap,
+          hardCapReached,
+          toolCallsMadeThisTurn: turnToolCallsMade()
         };
       }
 
@@ -2793,6 +2918,12 @@ export async function runToolLoop(
         content: toolNote ? `${safeContent}\n\n${toolNote}` : safeContent
       });
     }
+
+    // A2 — once either hard cap has been tripped, stop accepting model
+    // decisions. All outstanding calls in this batch already received a
+    // synthetic "not executed" result, so the message history stays balanced
+    // and we fall straight through to final synthesis.
+    if (hardCapReached) break;
   }
 
   // Max iterations reached — ask LLM for final answer
@@ -2842,7 +2973,10 @@ export async function runToolLoop(
         iterations,
         recommendToolCalled,
         images: collectedImages,
-        directContent: collectedDirectContent.join('\n\n')
+        directContent: collectedDirectContent.join('\n\n'),
+        toolCallsSkippedByCap,
+        hardCapReached,
+        toolCallsMadeThisTurn: turnToolCallsMade()
       };
     }
     throw error;
@@ -2863,6 +2997,9 @@ export async function runToolLoop(
     iterations,
     recommendToolCalled,
     images: collectedImages,
-    directContent: collectedDirectContent.join('\n\n')
+    directContent: collectedDirectContent.join('\n\n'),
+    toolCallsSkippedByCap,
+    hardCapReached,
+    toolCallsMadeThisTurn: turnToolCallsMade()
   };
 }
