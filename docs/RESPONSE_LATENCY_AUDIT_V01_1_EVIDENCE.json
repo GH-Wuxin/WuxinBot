@@ -1,0 +1,98 @@
+{
+  "audit": "RESPONSE_LATENCY_AUDIT_V01_1",
+  "generatedAt": "2026-08-15T16:10:00.000Z",
+  "branch": "fix/onebot-connection-lifecycle",
+  "head": "1658292",
+  "node": "repo portable node (G:/QQ-AI-ChatBot/portable-node)",
+  "environment": {
+    "os": "Windows",
+    "tracing": "BRIDGE_TIMELINE=1 (default-off) + PERF_TRACE=1",
+    "data_dir": "isolated temp",
+    "sendMessage": "in-process capture only, no QQ send",
+    "kanonEndpoint": "ws://127.0.0.1:7700/",
+    "targetUsername": "[SHK]Wuxin"
+  },
+  "calls": [
+    {
+      "id": "bridge_healthy",
+      "kind": "wuxin_bridge_e2e",
+      "senderQq": "900000099",
+      "command": "!re [SHK]Wuxin",
+      "outcome": "bridge_success",
+      "elapsedMs": 8570.72,
+      "visibleSendMs": 8562.06,
+      "timelineMs": {
+        "endpoint_lookup_done": 0.4952,
+        "ws_construction_start": 1.0536,
+        "ws_constructed": 4.436,
+        "ws_open": 9.6044,
+        "command_sent": 10.9872,
+        "first_frame": 5539.1811,
+        "first_api_action_frame": 5540.0774,
+        "ack_sent": 5540.9753,
+        "first_reply_action_frame": 5541.65,
+        "reply_extracted": 5546.5508,
+        "settle_start": 5547.5573,
+        "settle_done": 8553.4309
+      },
+      "frames": {
+        "total": 1,
+        "types": ["send_msg api-action with echo"],
+        "bytes": 314921,
+        "messageShape": "array",
+        "segmentTypes": "image",
+        "textBytes": 0,
+        "imageCount": 1,
+        "extracted": true
+      },
+      "kanonLogEvidence": "log-20260816.log 00:05:34.363 received message from 900000099; reply frame observed by bridge at +5539ms",
+      "kanonSideNote": "post-reply background BeatmapTechDataProcess logs duplicate key 2126752; non-blocking"
+    },
+    {
+      "id": "bridge_selfid_collision",
+      "kind": "wuxin_bridge_e2e",
+      "senderQq": "1000000003",
+      "command": "!re [SHK]Wuxin",
+      "outcome": "bridge_timeout_60s",
+      "elapsedMs": 60036.42,
+      "reason": "recent_error",
+      "fallbackSendMs": 60029.8278,
+      "timelineMs": {
+        "endpoint_lookup_done": 0.6426,
+        "ws_construction_start": 1.2394,
+        "ws_constructed": 4.1224,
+        "ws_open": 10.0099,
+        "command_sent": 11.179,
+        "timeout": 60014.0824
+      },
+      "frames": {
+        "total": 0,
+        "types": []
+      },
+      "kanonLogEvidence": "log-20260816.log 00:06:32.698 data receiver started; 00:07:32.706 close received (60.008s); NO message-received line"
+    },
+    {
+      "id": "native_direct",
+      "kind": "direct_kanon_onebot_ws",
+      "senderQq": "990012",
+      "selfId": "990011",
+      "command": "!re [SHK]Wuxin",
+      "outcome": "reply_received",
+      "openMs": 62.7125,
+      "sendAfterOpenMs": 0.5349,
+      "firstFrameAfterSendMs": 5335.2341,
+      "firstReplyActionAfterSendMs": 5336.4605,
+      "totalAfterSendMs": 6541.6,
+      "frames": {
+        "total": 1,
+        "types": ["send_msg api-action with echo"],
+        "messageShape": "array",
+        "segmentTypes": "image"
+      },
+      "kanonLogEvidence": "log-20260816.log 00:08:26.540 received message from 990012"
+    }
+  ],
+  "timeoutClassification": "CONNECTED_NO_FRAMES",
+  "recommendedFirstOptimizationCategory": "BRIDGE_PROTOCOL_FIX",
+  "secondBridgeAttemptReachability": "CONDITIONAL"
+}

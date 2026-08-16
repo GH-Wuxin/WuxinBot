@@ -12,6 +12,7 @@ import {
 import { updateDb, nowIso, MAX_TOOL_LOGS } from '../store.js';
 import { loadRegistry, enabledBots, findBot, findCommand, availableCommands, internalCapabilitySupported, INTERNAL_CAPABILITIES } from './registry.js';
 import { normalizeCapabilityName } from './capabilityCatalog.js';
+import { markLatencySpan } from '../perf/latencyTrace.js';
 import { lookupSkill, lookupSkillByQQ } from './skills.js';
 import { getRenderServer } from './renderServer.js';
 import { scoreStarRating } from '../osu/scoreMetrics.js';
@@ -1649,7 +1650,17 @@ export async function executeInternalBotCommand(
   username: string,
   context: { db: any; userId: string; groupId?: string; event?: any; isOwner?: boolean; beatmapId?: number },
   bpSelection?: BpQuerySelection,
-  options?: { translateRecommendFilters?: boolean; enrichBpEstimates?: boolean },
+  options?: {
+    translateRecommendFilters?: boolean;
+    enrichBpEstimates?: boolean;
+    /** Request-scoped: the caller already attempted a local bridge for THIS
+     *  top-level request with this bot id (quickRouter bridge #1). The recent
+     *  case then skips its duplicate same-target bridge and goes internal.
+     *  A different bot id does not suppress a deliberate cross-target
+     *  compatibility fallback (e.g. lazybot recent -> yumu). */
+    bridgeAlreadyAttemptedFor?: string;
+  },
+  traceId?: string | null,
 ): Promise<string | InternalBotCommandResult> {
   const { db, userId } = context;
   // Command-side alias normalization: quick.meta uses the legacy two-p alias
@@ -1715,8 +1726,17 @@ export async function executeInternalBotCommand(
       const bridgeCommand = bridgeBot === 'kanon'
         ? `!re ${user.username}`
         : `!r ${user.username}`;
-      if (hasLocalEndpoint(bridgeBot)) {
+      const bridgeAlreadyAttempted = options?.bridgeAlreadyAttemptedFor === bridgeBot;
+      if (bridgeAlreadyAttempted) {
+        // QUICK_BRIDGE_FIX_P0_2: quickRouter already tried this exact
+        // same-target bridge for this top-level quick command and it failed.
+        // Blindly retrying can hit target-side same-sender/same-command dedup
+        // (Kanon) or repeat expensive recent work (Yumu). Skip straight to
+        // the internal osu! recent implementation.
+        if (traceId) markLatencySpan(traceId, 'recent_bridge_skipped', { bot: bridgeBot, reason: 'bridge_already_attempted' });
+      } else if (hasLocalEndpoint(bridgeBot)) {
         try {
+          if (traceId) markLatencySpan(traceId, 'recent_bridge_start', { bot: bridgeBot });
           const bridgeReply = await callLocalBot(
             bridgeBot,
             bridgeCommand,
@@ -1728,6 +1748,7 @@ export async function executeInternalBotCommand(
             },
             60_000,
           );
+          if (traceId) markLatencySpan(traceId, 'recent_bridge_done', { bot: bridgeBot });
           if (bridgeReply && (bridgeReply.text || bridgeReply.images.length > 0)) {
             return {
               content: bridgeReply.text || `${user.username} 最近一次 osu! 成绩：`,
@@ -1735,32 +1756,44 @@ export async function executeInternalBotCommand(
             };
           }
         } catch {
+          if (traceId) markLatencySpan(traceId, 'recent_bridge_failed', { bot: bridgeBot });
           // Fall through to the internal renderer.
         }
       }
 
       const { getUserRecentScores } = await import('../osu/api.js');
+      if (traceId) markLatencySpan(traceId, 'osu_api_request_start', { scope: 'recent' });
       const rawScores = await getUserRecentScores(user.id, 'osu', 1);
+      if (traceId) markLatencySpan(traceId, 'osu_api_request_done', { scope: 'recent' });
       if (!Array.isArray(rawScores) || rawScores.length === 0) {
         return `${user.username} 最近没有 osu! 成绩记录（osu! API 未返回，可能最近没有提交成绩，或新成绩尚未同步）。`;
       }
 
+      if (traceId) markLatencySpan(traceId, 'enrichment_start');
       const [score] = (await enrichScoreStarRatings(rawScores, 'osu')).scores;
+      if (traceId) markLatencySpan(traceId, 'enrichment_done');
+      if (traceId) markLatencySpan(traceId, 'result_build_start');
       const scoreLine = formatInternalScoreLine(score, { includeCombo: true });
+      if (traceId) markLatencySpan(traceId, 'result_build_done');
 
       // Try to render a score image via yumu-image
       if (getRenderServer().hasClients()) {
         try {
           // 雨沐 original single-score panel (E5), same as its !r/!p output.
           const { renderScoreCard } = await import('./render.js');
+          if (traceId) markLatencySpan(traceId, 'render_start');
           const rendered = await renderScoreCard(scoreForRenderer(score), user, null);
+          if (traceId) markLatencySpan(traceId, 'render_done', { rendered: Boolean(rendered) });
           if (rendered) {
             return {
               content: `${user.username} 最近一次 osu! 成绩：\n${scoreLine}`,
               images: [rendered.cqCode]
             };
           }
-        } catch { /* fall through to text */ }
+        } catch {
+          if (traceId) markLatencySpan(traceId, 'render_failed');
+          /* fall through to text */
+        }
       }
 
       return `${user.username} 最近一次 osu! 成绩：\n${scoreLine}`;

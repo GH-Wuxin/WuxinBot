@@ -1,0 +1,960 @@
+{
+  "audit": "QUICK_BRIDGE_RELIABILITY_AUDIT_V01",
+  "generatedAt": "2026-08-15T16:55:24.600Z",
+  "branch": "fix/onebot-connection-lifecycle",
+  "head": "1658292",
+  "phases": "B+F+G+I+J",
+  "botFamilies": {
+    "yumu": {
+      "endpoint": "ws://127.0.0.1:8388/pub/onebotSocket",
+      "framework": "Spring Boot + com.mikuac:shiro 2.5.3 reverse WebSocket",
+      "handshakeRequirements": [
+        "numeric X-Self-ID (Long.parseLong; missing/non-numeric -> handshake refused)",
+        "Authorization optional (shiro.ws.access-token unset in deployment)",
+        "X-Client-Role not checked"
+      ],
+      "duplicateSelfId": "second socket with same x-self-id is closed (shiro.wait-bot-connect=0); random per-call Wuxin id avoids this",
+      "eventRouting": "events routed to Bot by session x-self-id; self_id JSON field not used for routing",
+      "replyProtocol": "action=send_group_msg; params.message = JSON array; echo = incrementing integer; ACK wait 10s; ACK validation none (echo lookup only); data.message_id null-tolerant for send path",
+      "ackNote": "Wuxin generic ACK {status:ok,retcode:0,data:{message_id:0},echo} is sufficient for message sends; NOT sufficient for list-returning actions (get_friend_list/get_group_list)",
+      "silentDropPredicates": [
+        "post_type != \"message\"",
+        "message_type != \"group\"",
+        "botContainer.robots[x-self-id] == null",
+        "duplicate(time, group_id, sender.user_id) within 5000ms (group-event-filter enabled)",
+        "groupSelfBotEventFilter && sender.user_id in robots.keys",
+        "message field neither string nor array",
+        "now - event.time > 30s",
+        "YumuGroupConfig.isGroupDisabled(group_id) (shared config, fail-open)",
+        "idempotency cache contains \"[group|sender]subType(messageId)\"",
+        "no prefix in {!,！,?,？,#,＃,/,\\} and not dice pattern",
+        "no MessageService.isHandle match",
+        "matched service blocked and sender not super",
+        "LogException/IllegalArgumentException/DecodingException; other exception for non-super sender",
+        "pending AsyncMessageUtil prompt/lock for (group, sender) consumes the message"
+      ],
+      "zeroFrameAfterAccept": "yes, many paths (see predicates)",
+      "upstreamTimeouts": "osu API 30s per call with 3 retries; render WS 20s; no command-level deadline; socket stays open"
+    },
+    "kanon": {
+      "endpoint": "ws://127.0.0.1:7700/",
+      "framework": "C# WatsonWebsocket reverse WebSocket server",
+      "handshakeRequirements": [
+        "X-Client-Role exactly \"Universal\"",
+        "X-Self-ID non-null (any string accepted, no uniqueness check)"
+      ],
+      "duplicateSelfId": "allowed; multiple clients with same X-Self-ID coexist; replies route by client Guid",
+      "eventRouting": "event self_id field ignored; identity = X-Self-ID header",
+      "replyProtocol": "action=send_msg; params.message = JSON array; echo = Guid string; ACK wait unbounded; requires status==\"ok\" and data.message_id numeric",
+      "ackNote": "Wuxin generic ACK satisfies reply sends. Frame recognized as ACK iff both echo and retcode present. Unsolicited ACK echo -> exception -> client disconnected.",
+      "silentDropPredicates": [
+        "X-Client-Role missing or != Universal (disconnect)",
+        "X-Self-ID missing (disconnect)",
+        "non-text frame",
+        "frame has both echo and retcode (consumed as ACK)",
+        "post_type missing or != message",
+        "GetRawText(user_id) == any connected client X-Self-ID (SELF-MESSAGE FILTER)",
+        "message_type not private/group",
+        "deserialize failure or segment data missing (disconnect)",
+        "IsGroupDisabled(source id) via shared config (private uses sender id as group key)",
+        "pending Target.Waiters (platform,sender) consumes message",
+        "message lacks !/！ prefix",
+        "dedup: same sender + identical message while command in flight",
+        "command not matched / executes without reply",
+        "ACK status != ok on reply"
+      ],
+      "zeroFrameAfterAccept": "yes, many paths (see predicates)",
+      "upstreamTimeouts": "Flurl default (HttpClient 100s) per direct call; IAM/Kagami wrapped in try-catch returning null; ACK wait unbounded"
+    },
+    "hydrant": {
+      "endpoint": "ws://127.0.0.1:8800/",
+      "framework": "C# Sisters.WudiLib reverse WebSocket (HttpListener)",
+      "handshakeRequirements": [
+        "WebSocket handshake else HTTP 400",
+        "X-Client-Role exactly \"Universal\" else 400",
+        "X-Self-ID long else 400",
+        "Authorization token via CreateAuthenticationFunction (auth raw) else 401"
+      ],
+      "duplicateSelfId": "allowed; each connection gets its own Hydrant instance and per-connection ApiClient",
+      "eventRouting": "reply routing by connection, not self id; event self_id optional",
+      "replyProtocol": "action=send_msg; params.message = JSON array (SendingMessage overload); echo = int; ACK wait 60s; response classified iff status+retcode present; retcode==0 + non-null data = success",
+      "ackNote": "Wuxin generic ACK succeeds (message_id 0); data:null with retcode 0 triggers Puppeteer screenshot fallback. Echo must round-trip as int.",
+      "silentDropPredicates": [
+        "private duplicate message_id in MemoryCache",
+        "IsGroupDisabled(group_id,\"hydrant\") via shared config (fail-open)",
+        "WudiLib: post_type/message_type/sub_type unknown",
+        "query trigger invalid mode string",
+        "query trigger no QQId and no name",
+        "妈船? without binding",
+        "owner-only commands accept but send nothing",
+        "ExecutingException with empty message",
+        "ApiAccessException handler empty (no recovery frame)"
+      ],
+      "zeroFrameAfterAccept": "yes",
+      "upstreamTimeouts": "osu API default HttpClient 100s; no timeout on Chrome/Puppeteer; Npgsql 30s; socket stays open"
+    },
+    "lazybot": {
+      "endpoint": "ws://127.0.0.1:1145/lazybot",
+      "framework": "Spring Boot + com.mikuac:shiro reverse WebSocket",
+      "handshakeRequirements": [
+        "numeric X-Self-ID (missing/non-numeric -> refused)",
+        "Authorization optional (access-token unset)",
+        "X-Client-Role not checked"
+      ],
+      "duplicateSelfId": "second same x-self-id closed (wait-bot-connect=0)",
+      "eventRouting": "session x-self-id -> Bot; event self_id not validated",
+      "replyProtocol": "action=send_group_msg; params.message = CQ STRING; echo = int; ACK wait 10s; LazyBot ignores ActionData so generic ACK sufficient",
+      "ackNote": "Generic ACK fine for all five bridged commands; NOT fine for get_group_member_list (used by /rank, /name)",
+      "silentDropPredicates": [
+        "raw_message null (NPE)",
+        "time null or stale (>25s)",
+        "group_id null or group-bot-config lazybot=false",
+        "message null or not starting with /",
+        "dedup: sender:group:message in flight",
+        "unknown command token",
+        "Shiro outbound rate limiter token timeout 10s -> action never sent"
+      ],
+      "zeroFrameAfterAccept": "yes",
+      "upstreamTimeouts": "Hutool HTTP no explicit timeout (indefinite); Shiro ACK 10s; rate limiter 10s; socket stays open"
+    }
+  },
+  "identityModels": [
+    {
+      "bot": "yumu",
+      "bridgeHeaderSelfId": "per-call random: 8_800_000_000 + crypto.randomInt(0,100_000_000) -> \"8800000000\"..\"8899999999\" (localBridge bridgeSelfId)",
+      "bridgeEnvOverride": "BRIDGE_SELF_ID ignored for yumu",
+      "eventSelfId": "Number(header) = same 10-digit number",
+      "eventUserId": "Number(context.userId) || 0",
+      "eventGroupId": "Number(context.groupId) || 770099",
+      "senderUserId": "same as event.user_id",
+      "messageShape": "string; array iff atTargets.length > 0 (text + at segments)",
+      "constantOrDerived": "derived per call",
+      "targetSelfMessageFilter": "YUMU: sender.user_id in botContainer.robots.keys -> silent drop (Shiro group-self-bot-event-filter default true)",
+      "targetConnectedSet": "robots keyed by x-self-id (ConcurrentHashMap<Long,Bot>)",
+      "concurrentBridgeCollision": "self-id collision chance 1/100,000,000 per pair; if collides newer socket is CLOSED -> callLocalBot rejects fast (无回复), not 60s",
+      "realQqCollision": "real sender QQ equals any connected bridge/real self id; per-call fake ids are 8800000000+ so practically no",
+      "harnessCollision": "possible if harness reuses same x-self-id (then second call fast-fails)",
+      "dropPredicate": "YUMU_DROP_IF sender.user_id in robots.keys OR duplicate(time,group_id,sender.user_id) within 5s OR group disabled OR idempotency dup OR pending prompt OR stale>30s OR no-service-match"
+    },
+    {
+      "bot": "kanon",
+      "bridgeHeaderSelfId": "1000000003 (BRIDGE_SELF_ID env override, constant per process)",
+      "bridgeEnvOverride": "BRIDGE_SELF_ID (env) or 1000000003",
+      "eventSelfId": "Number(header)",
+      "eventUserId": "Number(context.userId) || 0",
+      "eventGroupId": "Number(context.groupId) || 770099",
+      "senderUserId": "same as event.user_id",
+      "messageShape": "always array (endpoint.messageArray=true); atTargets append at segments",
+      "constantOrDerived": "constant per process",
+      "targetSelfMessageFilter": "KANON: GetRawText(event.user_id) == any connected client X-Self-ID -> silent drop (Server.cs:225-227)",
+      "targetConnectedSet": "Clients dictionary values selfID strings; iterated live on every message",
+      "concurrentBridgeCollision": "two Wuxin processes/threads share 1000000003; both connections accepted; their injected user_ids do NOT match each other unless a real sender QQ = 1000000003",
+      "realQqCollision": "YES if any sender QQ is exactly 1000000003 (valid 10-digit QQ); also sender QQ == any other connected client self id (e.g. NapCat 3861208813)",
+      "harnessCollision": "CONFIRMED V01_1: event.user_id=1000000003 reproduced 60s zero-frame timeout",
+      "dropPredicate": "KANON_DROP_IF GetRawText(user_id) in connected_client_self_ids (string-compare; JSON string \"123\" with quotes does NOT match header \"123\")"
+    },
+    {
+      "bot": "hydrant",
+      "bridgeHeaderSelfId": "1000000003 (BRIDGE_SELF_ID env override, constant per process)",
+      "bridgeEnvOverride": "BRIDGE_SELF_ID (env) or 1000000003",
+      "eventSelfId": "Number(header)",
+      "eventUserId": "Number(context.userId) || 0",
+      "eventGroupId": "Number(context.groupId) || 770099",
+      "senderUserId": "same as event.user_id",
+      "messageShape": "string; array iff atTargets.length > 0",
+      "constantOrDerived": "constant per process",
+      "targetSelfMessageFilter": "none found in Hydrant/WudiLib for normal group messages (no self-bot drop on event path)",
+      "targetConnectedSet": "no global self-id set; per-connection instances",
+      "concurrentBridgeCollision": "no self-id uniqueness; replies per connection; safe",
+      "realQqCollision": "none known",
+      "harnessCollision": "none known",
+      "dropPredicate": "HYDRANT_DROP_IF group disabled in shared config OR private message_id duplicate OR invalid mode OR ApiAccessException before any send"
+    },
+    {
+      "bot": "lazybot",
+      "bridgeHeaderSelfId": "1000000003 (BRIDGE_SELF_ID env override, constant per process)",
+      "bridgeEnvOverride": "BRIDGE_SELF_ID (env) or 1000000003",
+      "eventSelfId": "Number(header)",
+      "eventUserId": "Number(context.userId) || 0",
+      "eventGroupId": "Number(context.groupId) || 770099",
+      "senderUserId": "same as event.user_id",
+      "messageShape": "string; array iff atTargets.length > 0 (note: Shiro accepts both)",
+      "constantOrDerived": "constant per process",
+      "targetSelfMessageFilter": "Shiro group-self-bot filter inactive (group-event-filter not configured)",
+      "targetConnectedSet": "robots keyed by x-self-id",
+      "concurrentBridgeCollision": "same self-id second connection closed by Shiro (wait-bot-connect=0)",
+      "realQqCollision": "none known",
+      "harnessCollision": "none known",
+      "dropPredicate": "LAZYBOT_DROP_IF raw_message/time/group_id/message null OR stale>25s OR group-bot-config lazybot=false OR message not starting \"/\" OR in-flight dedup OR unknown command OR outbound limiter timeout"
+    }
+  ],
+  "timeoutSilentMatrix": [
+    {
+      "family": "yumu",
+      "quickBridgeTimeoutMs": 60000,
+      "wsConnectFailure": "reject fast on error/close (no 60s wait)",
+      "openButSilent": "0 frames -> full 60000ms timeout then fallback",
+      "actionOnlyNoReply": "action frames ACKed; no extracted reply -> full 60000ms",
+      "noReplyAfterAction": "full 60000ms",
+      "closeWithoutReply": "fast reject 无回复",
+      "malformedReply": "ignored; if nothing else -> full 60000ms (or fast reject if bot closes)",
+      "replyWithinLast3s": "extracted but overall timer wins -> rejection at 60000ms (settle needs 3000ms)",
+      "fallback": "internal recent may attempt SECOND bridge (60s) for recent; other capabilities internal HTTP",
+      "worstVisibleMs": "60000 + getUser<=30000 + 60000 + recent 15000 + enrich<=47400 + render(variable) + send ≈ 212400+render",
+      "worstContextReadyMs": "worstVisible + shadow getUser<=30000 + shadow recent 15000 ≈ 257400+render"
+    },
+    {
+      "family": "kanon",
+      "quickBridgeTimeoutMs": 60000,
+      "wsConnectFailure": "reject fast",
+      "openButSilent": "identity collision / dedup / group-disable -> 0 frames full 60000ms",
+      "actionOnlyNoReply": "full 60000ms",
+      "noReplyAfterAction": "full 60000ms",
+      "closeWithoutReply": "fast reject 无回复",
+      "malformedReply": "ignored -> full 60000ms unless bot disconnects",
+      "replyWithinLast3s": "discarded by timeout (fixture-14 confirmed)",
+      "fallback": "internal recent SECOND bridge 60s; bp/bplist/info internal HTTP; update -> LLM fallthrough",
+      "worstVisibleMs": "60000 + getUser<=30000 + 60000 + recent 15000 + enrich<=47400 + render + send ≈ 212400+render",
+      "worstContextReadyMs": "≈ 257400+render"
+    },
+    {
+      "family": "hydrant",
+      "quickBridgeTimeoutMs": 60000,
+      "wsConnectFailure": "reject fast (400/401 surfaces as close/error)",
+      "openButSilent": "group config / invalid mode / ApiAccessException -> full 60000ms",
+      "actionOnlyNoReply": "full 60000ms",
+      "noReplyAfterAction": "full 60000ms",
+      "closeWithoutReply": "fast reject",
+      "malformedReply": "ignored -> full 60000ms unless closed",
+      "fallback": "internal profile (getUser HTTP), no second bridge",
+      "worstVisibleMs": "60000 + getUser<=30000 + send ≈ 90000",
+      "worstContextReadyMs": "worstVisible + shadow getUser<=30000 ≈ 120000"
+    },
+    {
+      "family": "lazybot",
+      "quickBridgeTimeoutMs": 30000,
+      "wsConnectFailure": "reject fast",
+      "openButSilent": "stale/null fields / group disabled / dedup / unknown cmd / limiter timeout -> full 30000ms",
+      "actionOnlyNoReply": "full 30000ms",
+      "noReplyAfterAction": "full 30000ms",
+      "closeWithoutReply": "fast reject",
+      "malformedReply": "ignored -> full 30000ms unless closed",
+      "fallback": "internal capability (getUser + getBestScores/getPlayerBars/...); no second bridge",
+      "worstVisibleMs": "bp/bplist chain: 30000 + getUser<=30000 + bestScores 15000 + enrich<=47400 ≈ 122400+render; /plus chain: 30000 + getUser<=30000 + pplus 10000 ≈ 70000",
+      "worstContextReadyMs": "worstVisible + shadow refetch (getUser + domain fetch) ≈ +45000"
+    }
+  ],
+  "worstCaseLatencyNotes": {
+    "perCallBridgeTimeout": "kanon/yumu/hydrant 60000; lazybot 30000 (quickRouter); executor second bridge always 60000",
+    "wuxinOsuHttp": "fetchWithTimeout 15000 per request; getUser may 401-retry = 30000; attributes up to 3 attempts = 47400; pplus local aggregate 10000",
+    "thresholdExceeded": {
+      "gt30s": "any single 60s bridge timeout; any silent bridge",
+      "gt60s": "bridge 60s + any fallback HTTP; kanon recent collision double bridge = 120000+",
+      "gt90s": "kanon/yumu recent double-bridge chains; hydrant 60s + getUser 30s",
+      "gt120s": "kanon/yumu recent worst chain ≈ 212400+render visible, ≈ 257400+render context-ready"
+    }
+  },
+  "observationClasses": [
+    {
+      "key": "common:help",
+      "aliases": [
+        "h",
+        "help",
+        "helps",
+        "帮助",
+        "文档",
+        "完整帮助"
+      ],
+      "classification": "F_NO_OBSERVATION (quick path returns before bot.ts records user message or reply)"
+    },
+    {
+      "key": "common:ping",
+      "aliases": [
+        "ping",
+        "pi",
+        "探测"
+      ],
+      "classification": "F_NO_OBSERVATION (quick path returns before bot.ts records user message or reply)"
+    },
+    {
+      "key": "common:bind",
+      "aliases": [
+        "bind",
+        "bi",
+        "绑定"
+      ],
+      "classification": "F_NO_OBSERVATION (quick path returns before bot.ts records user message or reply)"
+    },
+    {
+      "key": "common:unbind",
+      "aliases": [
+        "unbind",
+        "ub",
+        "解绑",
+        "解除绑定"
+      ],
+      "classification": "F_NO_OBSERVATION (quick path returns before bot.ts records user message or reply)"
+    },
+    {
+      "key": "yumu:recent",
+      "aliases": [
+        "p",
+        "pass",
+        "通过成绩",
+        "pr",
+        "re",
+        "recent",
+        "r",
+        "最近成绩",
+        "ps",
+        "passes",
+        "rs",
+        "recents",
+        "pw",
+        "rw",
+        "pass show",
+        "recent show"
+      ],
+      "classification": "B_or_C: returned bridge text recorded; image-only -> fire-and-forget shadow refetch (C)"
+    },
+    {
+      "key": "yumu:score",
+      "aliases": [
+        "s",
+        "score",
+        "成绩",
+        "sw",
+        "show score",
+        "ss",
+        "scores",
+        "多成绩"
+      ],
+      "classification": "A: structured internal result recorded synchronously (content + images)"
+    },
+    {
+      "key": "yumu:bp",
+      "aliases": [
+        "bp",
+        "b",
+        "best",
+        "bestperformance",
+        "最成绩",
+        "最佳成绩",
+        "bpw",
+        "best show"
+      ],
+      "classification": "B_or_C: returned bridge text recorded; image-only -> fire-and-forget shadow refetch (C)"
+    },
+    {
+      "key": "yumu:bs",
+      "aliases": [
+        "bs",
+        "bps",
+        "bests"
+      ],
+      "classification": "B_or_C: returned bridge text recorded; image-only -> fire-and-forget shadow refetch (C)"
+    },
+    {
+      "key": "yumu:pm",
+      "aliases": [
+        "pm",
+        "pp-",
+        "ppminus",
+        "表现分减",
+        "pv",
+        "ppminus vs",
+        "pl",
+        "ppminus legacy"
+      ],
+      "classification": "B_or_D: returned text recorded; image-only without capability -> generic \"查询完成（source 面板，结果见图片）\" record"
+    },
+    {
+      "key": "yumu:pplus",
+      "aliases": [
+        "pp",
+        "px",
+        "p+",
+        "pp+",
+        "plus",
+        "pppvs",
+        "plusvs"
+      ],
+      "classification": "A: structured internal result recorded synchronously (content + images)"
+    },
+    {
+      "key": "yumu:skill",
+      "aliases": [
+        "k",
+        "skill",
+        "skills",
+        "技能",
+        "技巧"
+      ],
+      "classification": "A: structured internal result recorded synchronously (content + images)"
+    },
+    {
+      "key": "yumu:etx",
+      "aliases": [
+        "ex",
+        "et",
+        "etx",
+        "elite",
+        "eliteronix",
+        "精英分数",
+        "ev",
+        "etx vs",
+        "elite vs"
+      ],
+      "classification": "B_or_D: returned text recorded; image-only without capability -> generic \"查询完成（source 面板，结果见图片）\" record"
+    },
+    {
+      "key": "yumu:info",
+      "aliases": [
+        "i",
+        "info",
+        "information",
+        "玩家信息",
+        "个人信息",
+        "玩家",
+        "ic",
+        "infocard",
+        "信息卡片",
+        "玩家卡片"
+      ],
+      "classification": "A: structured internal result recorded synchronously (content + images)"
+    },
+    {
+      "key": "yumu:recommend",
+      "aliases": [
+        "rec",
+        "recommend",
+        "recommended",
+        "j",
+        "推荐",
+        "推荐谱面"
+      ],
+      "classification": "A: structured internal result recorded synchronously (content + images)"
+    },
+    {
+      "key": "yumu:match",
+      "aliases": [
+        "ml",
+        "li",
+        "match listen",
+        "match listener",
+        "make love",
+        "观战"
+      ],
+      "classification": "A: structured internal result recorded synchronously (content + images)"
+    },
+    {
+      "key": "yumu:rating",
+      "aliases": [
+        "ra",
+        "rating",
+        "mra",
+        "ym rating",
+        "sa",
+        "sra",
+        "series",
+        "series rating"
+      ],
+      "classification": "B_or_D: returned text recorded; image-only without capability -> generic \"查询完成（source 面板，结果见图片）\" record"
+    },
+    {
+      "key": "yumu:dice",
+      "aliases": [
+        "d",
+        "dice",
+        "roll",
+        "骰子"
+      ],
+      "classification": "F_NO_OBSERVATION (quick path returns before bot.ts records user message or reply)"
+    },
+    {
+      "key": "kanon:recent",
+      "aliases": [
+        "re",
+        "recent",
+        "pr"
+      ],
+      "classification": "B_or_C: returned bridge text recorded; image-only -> fire-and-forget shadow refetch (C)"
+    },
+    {
+      "key": "kanon:bp",
+      "aliases": [
+        "bp"
+      ],
+      "classification": "B_or_C: returned bridge text recorded; image-only -> fire-and-forget shadow refetch (C)"
+    },
+    {
+      "key": "kanon:bplist",
+      "aliases": [
+        "bplist",
+        "get bplist"
+      ],
+      "classification": "B_or_C: returned bridge text recorded; image-only -> fire-and-forget shadow refetch (C)"
+    },
+    {
+      "key": "kanon:score",
+      "aliases": [
+        "score"
+      ],
+      "classification": "A: structured internal result recorded synchronously (content + images)"
+    },
+    {
+      "key": "kanon:info",
+      "aliases": [
+        "info"
+      ],
+      "classification": "B_or_C: returned bridge text recorded; image-only -> fire-and-forget shadow refetch (C)"
+    },
+    {
+      "key": "kanon:update",
+      "aliases": [
+        "update"
+      ],
+      "classification": "B_or_D: returned text recorded; image-only without capability -> generic \"查询完成（source 面板，结果见图片）\" record"
+    },
+    {
+      "key": "lazybot:pplus",
+      "aliases": [
+        "plus",
+        "ppp"
+      ],
+      "classification": "B_or_C: returned bridge text recorded; image-only -> fire-and-forget shadow refetch (C)"
+    },
+    {
+      "key": "lazybot:bp",
+      "aliases": [
+        "bp",
+        "best",
+        "pbp",
+        "b",
+        "bsm"
+      ],
+      "classification": "B_or_C: returned bridge text recorded; image-only -> fire-and-forget shadow refetch (C)"
+    },
+    {
+      "key": "lazybot:bplist",
+      "aliases": [
+        "bplist"
+      ],
+      "classification": "B_or_C: returned bridge text recorded; image-only -> fire-and-forget shadow refetch (C)"
+    },
+    {
+      "key": "lazybot:recent",
+      "aliases": [
+        "pr",
+        "rp",
+        "playrecent",
+        "re",
+        "recent",
+        "p",
+        "r",
+        "ppr",
+        "pre"
+      ],
+      "classification": "B_or_C: returned bridge text recorded; image-only -> fire-and-forget shadow refetch (C)"
+    },
+    {
+      "key": "lazybot:score",
+      "aliases": [
+        "score",
+        "s",
+        "pscore"
+      ],
+      "classification": "A: structured internal result recorded synchronously (content + images)"
+    },
+    {
+      "key": "lazybot:profile",
+      "aliases": [
+        "profile",
+        "info"
+      ],
+      "classification": "B_or_C: returned bridge text recorded; image-only -> fire-and-forget shadow refetch (C)"
+    },
+    {
+      "key": "lazybot:card",
+      "aliases": [
+        "card"
+      ],
+      "classification": "B_or_C: returned bridge text recorded; image-only -> fire-and-forget shadow refetch (C)"
+    },
+    {
+      "key": "lazybot:rd",
+      "aliases": [
+        "rd",
+        "recommenddifficulty"
+      ],
+      "classification": "A: structured internal result recorded synchronously (content + images)"
+    },
+    {
+      "key": "lazybot:help",
+      "aliases": [
+        "help"
+      ],
+      "classification": "F_NO_OBSERVATION (quick path returns before bot.ts records user message or reply)"
+    },
+    {
+      "key": "hydrant:self_profile",
+      "aliases": [
+        "~"
+      ],
+      "classification": "B_or_C: bridge text or profile shadow refetch (getUser)"
+    },
+    {
+      "key": "hydrant:at_profile",
+      "aliases": [
+        "查"
+      ],
+      "classification": "B_or_C: bridge text or profile shadow refetch (getUser)"
+    },
+    {
+      "key": "hydrant:where",
+      "aliases": [
+        "where"
+      ],
+      "classification": "B_or_C: bridge text or profile shadow refetch (getUser)"
+    },
+    {
+      "key": "hydrant:pplus",
+      "aliases": [
+        "+"
+      ],
+      "classification": "A: structured internal result recorded synchronously (content + images)"
+    },
+    {
+      "key": "hydrant:recommend",
+      "aliases": [
+        "荐图"
+      ],
+      "classification": "A: structured internal result recorded synchronously (content + images)"
+    },
+    {
+      "key": "hydrant:help",
+      "aliases": [
+        "帮助"
+      ],
+      "classification": "F_NO_OBSERVATION (quick path returns before bot.ts records user message or reply)"
+    }
+  ],
+  "observationFindings": [
+    {
+      "id": "OBS-01",
+      "title": "VISIBLE_CONTEXT_RACE",
+      "severity": "S2",
+      "confidence": "CONFIRMED",
+      "affected": "all bridged image-only commands",
+      "detail": "recordShadow is a fire-and-forget void IIFE launched after visible send; buildQuickShadowSummary runs getUser + domain fetch serially; immediate natural-language follow-up can arrive before context_ready. Route returns before shadow finishes.",
+      "fixCategory": "OBSERVATION_SEMANTICS",
+      "blocksIdentityFix": false
+    },
+    {
+      "id": "OBS-02",
+      "title": "shadow refetch can observe newer data than panel",
+      "severity": "S2",
+      "confidence": "STRONG",
+      "affected": "recent/bp shadow",
+      "detail": "panel rendered at T0 from bot data; shadow refetch at T1>T0 may return a newer play/BP, so conversation context can describe data the user never saw.",
+      "fixCategory": "OBSERVATION_SEMANTICS",
+      "blocksIdentityFix": false
+    },
+    {
+      "id": "OBS-03",
+      "title": "help/ping/dice/bind replies invisible to context",
+      "severity": "S2",
+      "confidence": "CONFIRMED",
+      "affected": "!help !h !ping !pi !dice !bind !unbind ...",
+      "detail": "handlers send reply and return handled without recordQuickContext; quick path runs before bot.ts history recording, so neither user message nor reply enters db.messages.",
+      "fixCategory": "OBSERVATION_SEMANTICS",
+      "blocksIdentityFix": false
+    },
+    {
+      "id": "OBS-04",
+      "title": "failure replies recorded as successful context",
+      "severity": "S3",
+      "confidence": "CONFIRMED",
+      "affected": "all internal-capability quick commands",
+      "detail": "catch path sends error text and records \"【快捷查询】... 查询失败：<error>\" into db.messages as assistant context.",
+      "fixCategory": "OBSERVATION_SEMANTICS",
+      "blocksIdentityFix": false
+    },
+    {
+      "id": "OBS-05",
+      "title": "bridge pm/etx/rating/update image-only context is generic",
+      "severity": "S3",
+      "confidence": "CONFIRMED",
+      "affected": "yumu pm/etx/rating, kanon update",
+      "detail": "no capability/shadow user -> record(\"快捷指令查询完成（source 面板，结果见图片）\", images); source kept but no domain facts.",
+      "fixCategory": "OBSERVATION_SEMANTICS",
+      "blocksIdentityFix": false
+    },
+    {
+      "id": "OBS-06",
+      "title": "command ownership partially lost in bridge text record",
+      "severity": "S3",
+      "confidence": "CONFIRMED",
+      "affected": "bridge text replies",
+      "detail": "record prefix is [source] text; alias/command id not stored, so ownership=bot family only.",
+      "fixCategory": "OBSERVATION_SEMANTICS",
+      "blocksIdentityFix": false
+    }
+  ],
+  "resourceFindings": [
+    {
+      "id": "RES-01",
+      "title": "bridge base64 image files never cleaned",
+      "severity": "S2",
+      "confidence": "CONFIRMED",
+      "detail": "imageSourceToCq saves base64 replies to data/bot-bridge with flag wx and no retention. Measured 2026-08-16: 279 files, 112,318,262 bytes in G:/QQ-AI-ChatBot/data/bot-bridge.",
+      "fixCategory": "RESOURCE_HYGIENE",
+      "blocksIdentityFix": false
+    },
+    {
+      "id": "RES-02",
+      "title": "Wuxin bridge timers/sockets clean across 24 offline fixtures",
+      "severity": "S3",
+      "confidence": "CONFIRMED",
+      "detail": "tools/quick-bridge-reliability-verify.mjs: Timeout handle deltas all 0; single settlement on all paths; server observed socket close on resolve/reject; no unhandled rejections.",
+      "fixCategory": "NONE",
+      "blocksIdentityFix": false
+    },
+    {
+      "id": "RES-03",
+      "title": "Kanon target-side unbounded ACK wait + callback leak",
+      "severity": "S2",
+      "confidence": "STRONG",
+      "detail": "kanon API.Send waits AsyncManualResetEvent with no timeout; if Wuxin never ACKs (or malformed ACK deserializes to null), command task and CallbackList entry stay forever. Unsolicited ACK echo throws and disconnects client.",
+      "fixCategory": "TARGET_BOT",
+      "blocksIdentityFix": false
+    },
+    {
+      "id": "RES-04",
+      "title": "Kanon target-side lock-free client registry race",
+      "severity": "S3",
+      "confidence": "STRONG",
+      "detail": "Clients.Get/Iter are unlocked over mutating Dictionary; message during connect/disconnect can NRE -> spurious disconnect.",
+      "fixCategory": "TARGET_BOT",
+      "blocksIdentityFix": false
+    },
+    {
+      "id": "RES-05",
+      "title": "Yumu target-side unbounded Bot registry",
+      "severity": "S3",
+      "confidence": "STRONG",
+      "detail": "each unique x-self-id creates a Bot that stays until socket disconnect; no cap. Bridge bug could open unbounded sessions.",
+      "fixCategory": "TARGET_BOT",
+      "blocksIdentityFix": false
+    },
+    {
+      "id": "RES-06",
+      "title": "LazyBot upstream HTTP has no timeout",
+      "severity": "S2",
+      "confidence": "STRONG",
+      "detail": "ApiRequestExecutor/TemplateRenderer use Hutool with no explicit timeout -> stalled upstream can occupy command virtual thread indefinitely while WS stays open. Bot currently paused.",
+      "fixCategory": "TARGET_BOT",
+      "blocksIdentityFix": false
+    },
+    {
+      "id": "RES-07",
+      "title": "Hydrant per-connection instance disposed on disconnect",
+      "severity": "S3",
+      "confidence": "STRONG",
+      "detail": "SocketDisconnected disposes Hydrant instance; no cross-call leak found.",
+      "fixCategory": "NONE",
+      "blocksIdentityFix": false
+    },
+    {
+      "id": "RES-08",
+      "title": "recordShadow fire-and-forget tasks can outlive route",
+      "severity": "S3",
+      "confidence": "CONFIRMED",
+      "detail": "shadow IIFE not awaited; in shutdown/stress these tasks may still run. V01 documented instrumentation visibility only; behavior unchanged.",
+      "fixCategory": "OBSERVATION_SEMANTICS",
+      "blocksIdentityFix": false
+    }
+  ],
+  "risks": [
+    {
+      "id": "QB-01",
+      "title": "Kanon self-message identity collision silent drop",
+      "severity": "S1",
+      "confidence": "CONFIRMED",
+      "affectedCommands": "!re !pr !recent !bp !bplist !info !update -> kanon",
+      "family": "kanon",
+      "trigger": "injected event.user_id raw text equals any connected client X-Self-ID; with default Wuxin config, sender QQ exactly 1000000003 (or any other live client self id such as NapCat 3861208813)",
+      "observed": "WS opens, command sent, 0 frames, full 60s timeout; V01_1 live reproduction with event.user_id=1000000003; Kanon log shows connection only",
+      "codeEvidence": "localBridge SPIKE_SELF_ID=1000000003; kanon Server.cs:225-227 GetRawText(user_id) == selfID -> silent return",
+      "runtimeEvidence": "V01_1 docs + Kanon log-20260816.log 00:06:32/00:07:32",
+      "worstLatencyMs": "60000 (or 120000+ with recent double bridge)",
+      "userVisible": "command times out then internal fallback; may produce error or LLM path",
+      "dataDiverge": false,
+      "fixCategory": "BRIDGE_PROTOCOL_FIX",
+      "fixCorrectnessRisk": "low-medium (identity semantics change; must keep yumu isolation and Kanon header contract)",
+      "blocksIdentityFix": "this is the primary target of the bridge identity fix"
+    },
+    {
+      "id": "QB-02",
+      "title": "Kanon dedup lock makes second bridge attempt after timeout drop again",
+      "severity": "S1",
+      "confidence": "STRONG",
+      "affectedCommands": "!re/!pr/!recent recent fallback",
+      "family": "kanon",
+      "trigger": "first bridge times out while Kanon still executing same sender+message; quickRouter falls back; executor bridge attempt #2 reuses same userId and same \"!re <user>\" while Kanon dedup lock still holds",
+      "observed": "not live-tested this audit (offline derivation); Kanon Universal.cs dedup + executor.ts recent second bridge",
+      "codeEvidence": "kanon Universal.cs:204-207 + executor.ts:1710-1744",
+      "runtimeEvidence": "V01_1 showed second bridge unreachable without OAuth; with OAuth it is reachable (CONDITIONAL)",
+      "worstLatencyMs": "60000 + 60000 = 120000 before HTTP fallback",
+      "userVisible": "double 60s hang on one !re",
+      "dataDiverge": false,
+      "fixCategory": "BRIDGE_PROTOCOL_FIX (unique self/sender identity or dedup-aware retry)",
+      "fixCorrectnessRisk": "medium",
+      "blocksIdentityFix": true
+    },
+    {
+      "id": "QB-03",
+      "title": "Zero-frame silence burns full timeout with no execution evidence",
+      "severity": "S1",
+      "confidence": "CONFIRMED",
+      "affectedCommands": "every bridged command",
+      "family": "all",
+      "trigger": "any target-side silent drop predicate (identity collision, group config false, dedup, stale time, pending prompt, unknown command, limiter timeout)",
+      "observed": "V01/V01_1 kanon samples; offline fixtures confirm callLocalBot waits the full timeoutMs on open-but-silent",
+      "codeEvidence": "localBridge overallTimer only; no first-frame watchdog",
+      "runtimeEvidence": "fixture-15 action-only -> timeout; fixture-14 boundary behavior",
+      "worstLatencyMs": "60000 (kanon/yumu/hydrant) / 30000 (lazybot) per attempt",
+      "userVisible": "visible hang then fallback",
+      "dataDiverge": false,
+      "fixCategory": "BRIDGE_PROTOCOL_FIX or FAIL_FAST (decision deferred; evidence does not prescribe a fixed watchdog because slow-but-valid commands exist: yumu p95 35s V01)",
+      "fixCorrectnessRisk": "high for naive fail-fast",
+      "blocksIdentityFix": false
+    },
+    {
+      "id": "QB-04",
+      "title": "Reply arriving within final 3s of timeout is discarded",
+      "severity": "S2",
+      "confidence": "CONFIRMED",
+      "affectedCommands": "all bridged commands",
+      "family": "all",
+      "trigger": "valid reply frame arrives after timeoutMs-3000 (settle needs 3000ms more)",
+      "observed": "offline fixture-14: reply at 270ms with timeout 300ms -> ACK sent, frame extracted, promise still rejected at timeout",
+      "codeEvidence": "localBridge overallTimer vs 3000ms settle",
+      "runtimeEvidence": "quick-bridge-reliability-verify f14",
+      "worstLatencyMs": "adds full fallback chain for a reply that actually existed",
+      "userVisible": "valid slow panel discarded; fallback duplicate work",
+      "dataDiverge": false,
+      "fixCategory": "BRIDGE_PROTOCOL_FIX (settle-vs-timeout arbitration)",
+      "fixCorrectnessRisk": "low-medium",
+      "blocksIdentityFix": false
+    },
+    {
+      "id": "QB-05",
+      "title": "Yumu duplicate group-event filter drops same-second bridge calls",
+      "severity": "S2",
+      "confidence": "STRONG",
+      "affectedCommands": "!r !p !pr !bp !bs etc. -> yumu",
+      "family": "yumu",
+      "trigger": "two bridge events with same (time, group_id, sender.user_id) within 5s; Wuxin buildEvent time has 1-second resolution, so rapid repeated calls from same sender collide",
+      "observed": "source-level predicate; not live-tested (respecting live-call limits)",
+      "codeEvidence": "Shiro MessageEvent.process + GroupMessageFilterUtils time+group+user key; yumu application.yaml group-event-filter:true / 5000ms",
+      "runtimeEvidence": "none live this audit",
+      "worstLatencyMs": "60000 per dropped call",
+      "userVisible": "second rapid !r silently ignored -> timeout/fallback",
+      "dataDiverge": false,
+      "fixCategory": "BRIDGE_PROTOCOL_FIX (unique time or per-call sender identity)",
+      "fixCorrectnessRisk": "low",
+      "blocksIdentityFix": false
+    },
+    {
+      "id": "QB-06",
+      "title": "Yumu pending prompt/lock can consume injected command",
+      "severity": "S2",
+      "confidence": "STRONG",
+      "affectedCommands": "all yumu bridged commands",
+      "family": "yumu",
+      "trigger": "a yumu interactive prompt/lock waiter exists for (group 770099, sender QQ) when bridge injects a command",
+      "observed": "source-level mechanism; live state unknown",
+      "codeEvidence": "yumu PermissionImplement.kt:80 AsyncMessageUtil.put before command filtering",
+      "runtimeEvidence": "none",
+      "worstLatencyMs": "60000",
+      "userVisible": "command swallowed as prompt answer",
+      "dataDiverge": false,
+      "fixCategory": "ROUTING or BRIDGE_PROTOCOL_FIX (bridge-specific sender/group identity)",
+      "fixCorrectnessRisk": "medium",
+      "blocksIdentityFix": false
+    },
+    {
+      "id": "QB-07",
+      "title": "Duplicate bridge attempt and triple recent fetch",
+      "severity": "S2",
+      "confidence": "CONFIRMED",
+      "affectedCommands": "kanon:recent, yumu:recent",
+      "family": "kanon/yumu",
+      "trigger": "bridge #1 fails/empty + internal player resolution succeeds -> bridge #2 same bot same target, then third recent fetch + enrich + render",
+      "observed": "code-derived graph; V01 measured internal fallback unreachable without OAuth; reachable in production",
+      "codeEvidence": "executor.ts case recent 1710-1744",
+      "runtimeEvidence": "fallback graph JSON",
+      "worstLatencyMs": "60000 + getUser 30000 + 60000 + recent 15000 + enrich 47400 + render",
+      "userVisible": "duplicate external work; double-panel risk mitigated because bridge#2 result returned instead of internal if it succeeds",
+      "dataDiverge": true,
+      "fixCategory": "BRIDGE_PROTOCOL_FIX",
+      "fixCorrectnessRisk": "medium",
+      "blocksIdentityFix": true
+    },
+    {
+      "id": "QB-08",
+      "title": "VISIBLE_CONTEXT_RACE + shadow can observe newer data",
+      "severity": "S2",
+      "confidence": "CONFIRMED",
+      "affectedCommands": "bridged recent/bp/bplist/info/profile/card/pplus image-only replies",
+      "family": "all",
+      "trigger": "image-only bridge success; shadow refetch is fire-and-forget after send",
+      "observed": "V01 measurement: shadow spans after route done; follow-up LLM turn can miss context",
+      "codeEvidence": "quickRouter recordShadow void IIFE; quickMemory buildQuickShadowSummary",
+      "runtimeEvidence": "V01 baseline observation_persist spans",
+      "worstLatencyMs": "context ready up to +45000ms after visible",
+      "userVisible": "follow-up question may not see prior result",
+      "dataDiverge": true,
+      "fixCategory": "OBSERVATION_SEMANTICS",
+      "fixCorrectnessRisk": "medium",
+      "blocksIdentityFix": false
+    },
+    {
+      "id": "QB-09",
+      "title": "help/ping/dice/bind replies leave no conversation context",
+      "severity": "S2",
+      "confidence": "CONFIRMED",
+      "affectedCommands": "!help !h !ping !pi !dice !bind !unbind etc.",
+      "family": "common",
+      "trigger": "quick path returns handled before bot.ts records user message/reply",
+      "observed": "code-derived",
+      "codeEvidence": "quickRouter.ts handlers 667-695; bot.ts returns at 440-448 before history recording",
+      "runtimeEvidence": "quick-router-verify uses isolated db; no context assertions",
+      "worstLatencyMs": "n/a",
+      "userVisible": "follow-up cannot refer to those replies",
+      "dataDiverge": true,
+      "fixCategory": "OBSERVATION_SEMANTICS",
+      "fixCorrectnessRisk": "low",
+      "blocksIdentityFix": false
+    },
+    {
+      "id": "QB-10",
+      "title": "Hydrant ACK data:null triggers Puppeteer screenshot fallback",
+      "severity": "S2",
+      "confidence": "STRONG",
+      "affectedCommands": "~ 查 where -> hydrant",
+      "family": "hydrant",
+      "trigger": "Wuxin ever ACKs send_msg with data:null or retcode!=0 (current code always data:{message_id:0})",
+      "observed": "source-level; current Wuxin ACK avoids it",
+      "codeEvidence": "QueryTrigger.cs screenshot fallback on null sendResponse",
+      "runtimeEvidence": "offline fixtures f06/f19 confirm current ACK shape",
+      "worstLatencyMs": "+ render (unbounded) on fallback",
+      "userVisible": "screenshot instead of text (semantic change only under ACK regression)",
+      "dataDiverge": false,
+      "fixCategory": "NONE_TODAY (guard ACK shape in future changes)",
+      "fixCorrectnessRisk": "low",
+      "blocksIdentityFix": false
+    }
+  ]
+}

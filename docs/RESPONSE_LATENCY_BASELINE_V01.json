@@ -1,0 +1,172 @@
+{
+  "audit": "RESPONSE_LATENCY_AUDIT_V01",
+  "generatedAt": "2026-08-15T15:37:25.003Z",
+  "branch": "fix/onebot-connection-lifecycle",
+  "head": "1658292",
+  "node": "v24.19.0",
+  "environment": {
+    "os": "Windows 11 Home CN",
+    "tracing": "PERF_TRACE=1",
+    "trace_dir": "isolated temp",
+    "data_dir": "isolated temp",
+    "sendMessage": "in-process capture only, no QQ send"
+  },
+  "preflight": {
+    "tcp_8388": "open",
+    "yumu_ping_local_bridge": {
+      "ok": true,
+      "durationMs": 3108.4,
+      "textPresent": false,
+      "imageCount": 1,
+      "frames": 1
+    }
+  },
+  "routing_observation": {
+    "input": "!re",
+    "actual_match": "kanon/recent (KANON_DEFS precedes YUMU_DEFS in EXCLAMATION_DEFS tie order)",
+    "actual_bridge": "callLocalBot('kanon', '!re <user>')",
+    "measured_outcome": "kanon bridge timed out after 60000ms; then internal fallback failed at loadInternalOsuUser because harness had no OSU OAuth credentials"
+  },
+  "samples": {
+    "yumu_bridge_success_command": "!r",
+    "yumu_count": 8,
+    "control_ping_count": 8,
+    "actual_re_count": 1,
+    "note": "!re could not be sampled 30 times without waiting 60s per sample for the kanon timeout; single real !re sample recorded, !r used for live bridge-success timing."
+  },
+  "e2e_stats_ms": {
+    "yumu_r": {
+      "parse": {"n": 8, "p50": 0.41, "p95": 0.67, "max": 0.67},
+      "route": {"n": 8, "p50": 8995.58, "p95": 35046.57, "max": 35046.57},
+      "e2e_visible": {"n": 8, "p50": 8990.30, "p95": 35037.82, "max": 35037.82},
+      "e2e_context_ready": {"n": 8, "p50": 8997.29, "p95": 35047.70, "max": 35047.70}
+    },
+    "control_ping": {
+      "route": {"n": 8, "p50": 7.14, "p95": 25.49, "max": 25.49},
+      "e2e_visible": {"n": 8, "p50": 2.90, "p95": 21.55, "max": 21.55},
+      "e2e_context_ready": {"n": 8, "p50": 8.05, "p95": 26.73, "max": 26.73}
+    },
+    "actual_re_single": {
+      "route": 60028.21,
+      "e2e_visible": 60022.88,
+      "e2e_context_ready": 60029.36,
+      "reason": "recent_error",
+      "failure_stage": "kanon local WS timeout + OAuth-less internal user resolution"
+    }
+  },
+  "stage_stats_ms_yumu_r": {
+    "route_start": {"n": 8, "p50": 0.57, "p95": 1.09, "max": 1.09},
+    "subject_resolution_start": {"n": 8, "p50": 0.49, "p95": 1.46, "max": 1.46},
+    "subject_resolution_done": {"n": 8, "p50": 0.44, "p95": 0.84, "max": 0.84},
+    "bridge_request_start": {"n": 8, "p50": 0.41, "p95": 0.63, "max": 0.63},
+    "bridge_response": {"n": 8, "p50": 8985.60, "p95": 35032.83, "max": 35032.83},
+    "send_start": {"n": 8, "p50": 0.91, "p95": 1.14, "max": 1.14},
+    "send_resolved": {"n": 8, "p50": 0.53, "p95": 0.72, "max": 0.72},
+    "observation_build_start": {"n": 7, "p50": 3.63, "p95": 4.28, "max": 4.28},
+    "observation_persist_start": {"n": 2, "p50": 3.51, "p95": 3.51, "max": 3.51},
+    "observation_persist_done": {"n": 2, "p50": 3.58, "p95": 3.58, "max": 3.58},
+    "route_done": {"n": 8, "p50": 1.26, "p95": 2.08, "max": 2.08},
+    "unavailable": {
+      "queue_wait": "0: quick route runs in bot.ts before replyQueues",
+      "secondary_enrichment": "not executed in bridge-success path",
+      "result_build": "not executed in bridge-success path",
+      "render": "not executed in bridge-success path",
+      "observation_build_done": "shadow IIFE resolves after route finish; finishLatencyTrace drops late spans",
+      "observation_persist_done": "partially missing for same finish race"
+    }
+  },
+  "io_counts_code_derived": {
+    "bridge_success_yumu_r": {
+      "LLM_REQUEST_COUNT": 0,
+      "HTTP_REQUEST_COUNT_VISIBLE": 0,
+      "HTTP_REQUEST_COUNT_SHADOW_AFTER_SEND": 2,
+      "WS_REQUEST_COUNT": 1,
+      "STORE_READ_COUNT": 3,
+      "STORE_WRITE_COUNT": 2,
+      "FILESYSTEM_IO_COUNT": 1,
+      "RENDER_INVOCATION_COUNT": 0,
+      "CACHE_LOOKUP_COUNT": 0,
+      "SERIAL_EXTERNAL_AWAITS_VISIBLE": 1,
+      "SERIAL_EXTERNAL_AWAITS_SHADOW": 2,
+      "PARALLEL_EXTERNAL_AWAITS": 0
+    },
+    "bridge_fail_actual_re": {
+      "LLM_REQUEST_COUNT": 0,
+      "HTTP_REQUEST_COUNT_VISIBLE": 0,
+      "WS_REQUEST_COUNT_VISIBLE": 1,
+      "WS_TIMEOUT_MS": 60000,
+      "STORE_READ_COUNT": 3,
+      "STORE_WRITE_COUNT": 2,
+      "FILESYSTEM_IO_COUNT": 0,
+      "RENDER_INVOCATION_COUNT": 0,
+      "CACHE_LOOKUP_COUNT": 0,
+      "SERIAL_EXTERNAL_AWAITS_VISIBLE": 1,
+      "PARALLEL_EXTERNAL_AWAITS": 0,
+      "note": "internal user resolution failed before executor recent could re-attempt bridge because harness had no OSU OAuth credentials"
+    }
+  },
+  "duplicates": [
+    {
+      "id": "DUP_SHADOW_RECENT",
+      "producer": "quickRouter bridge !r success",
+      "first_consumer": "visible sendMessage payload",
+      "repeated_consumer": "buildQuickShadowSummary re-fetches getUser + getUserRecentScores after send",
+      "reason": "context memory needs factual summary because bridge image-only result carries no text",
+      "measured_cost": "shadow did not reach second HTTP in harness due missing OAuth; code path is 2 serial HTTP calls after visible send",
+      "verdict": "not fixed"
+    },
+    {
+      "id": "DUP_BRIDGE_FALLBACK",
+      "producer": "quickRouter bridge attempt",
+      "first_consumer": "quickRouter visible path",
+      "repeated_consumer": "executor.executeInternalBotCommand recent case retries callLocalBot when quickRouter bridge fails",
+      "reason": "internal engine fallback preserves original rendering precedence",
+      "measured_cost": "not realized in single !re sample because loadInternalOsuUser failed before executor bridge; code-derived potential is a second WS request",
+      "verdict": "not fixed"
+    }
+  ],
+  "observation_race": {
+    "mechanism": "recordShadow fires void IIFE; handleQuickCommand returns and finishLatencyTrace removes active state; any markLatencySpan from observation_build_done/persist after finish is ignored",
+    "production_impact": "none (tracing default-off); race is instrumentation visibility only",
+    "e2e_context_measurement": "harness polls isolated db.messages independently and captured context_ready"
+  },
+  "top5_stages": [
+    {"rank": 1, "stage": "PRIMARY_RECENT_FETCH (bridge_response)", "p50_ms": 8985.60, "p95_ms": 35032.83},
+    {"rank": 2, "stage": "E2E_VISIBLE", "p50_ms": 8990.30, "p95_ms": 35037.82},
+    {"rank": 3, "stage": "E2E_CONTEXT_READY", "p50_ms": 8997.29, "p95_ms": 35047.70},
+    {"rank": 4, "stage": "OBSERVATION_BUILD (shadow, after send)", "p50_start_after_route": 3.63},
+    {"rank": 5, "stage": "SEND (captured sendMessage)", "p50_ms": 0.53}
+  ],
+  "top_candidates": [
+    {
+      "id": "CAND_BRIDGE_CACHE",
+      "stage": "PRIMARY_RECENT_FETCH",
+      "contribution": "~99% of visible latency",
+      "removable_cost": "up to 8.9-35s p50/p95 in live bridge sample",
+      "risk": "stale panels; cache key must include bot/command/user and invalidation semantics",
+      "complexity": "medium",
+      "recommended_first": true,
+      "note": "DO NOT IMPLEMENT in this audit. Only cache after observing production bridge variance."
+    },
+    {
+      "id": "CAND_SHADOW_BATCH",
+      "stage": "OBSERVATION_BUILD",
+      "contribution": "post-send async; not visible",
+      "removable_cost": "0 visible; reduced duplicate work",
+      "risk": "low but changes context freshness",
+      "complexity": "low",
+      "recommended_first": false
+    },
+    {
+      "id": "CAND_ALIAS_ROUTING",
+      "stage": "!re routing",
+      "contribution": "60s timeout in actual !re",
+      "removable_cost": "up to 60s failure path",
+      "risk": "changes visible bot semantics; not allowed",
+      "complexity": "low but behavior change",
+      "recommended_first": false
+    }
+  ],
+  "first_recommended_optimization": "Cache yumu/kannon bridge panel results keyed by (botId, command, resolvedUsername, mode) with a short TTL and explicit stale-on-error fallback. Do not implement in this audit; validate against production bridge variance first.",
+  "no_optimization_implemented": true
+}

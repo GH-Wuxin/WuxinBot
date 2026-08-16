@@ -1,0 +1,426 @@
+{
+  "phase": "QUICK_BRIDGE_QB05_YUMU_DEDUP_DESIGN_V01",
+  "generatedAt": "2026-08-16T14:30:00+08:00",
+  "decision": "SAFE_WUXIN_ONLY_FIX_EXISTS",
+  "recommendedDesign": "A' (deterministic safe-slot allocator, time%1000 in 0..99, 100 slots/sec fail-fast)",
+  "implementationStatus": "IMPLEMENTED in server/bots/localBridge.ts (QB-05 scope only)",
+  "targetChangeRequired": false,
+  "productionBehaviorChanged": true,
+  "productionBehaviorChangedScope": "yumu synthetic event.time allocation only (A' safe-slot allocator, pre-WebSocket allocation and rejection path, bridge timeline marks)",
+  "committed": false,
+  "pushed": false,
+  "target": {
+    "bot": "yumu",
+    "app": "yumu-bot (nowbot-windows-v0.8.3-source-build.jar)",
+    "appCommit": "420ed650fa41ed8193e9fa1dc4c675cb4923a841",
+    "shiroVersion": "2.5.3",
+    "shiroArtifact": "runtime/m2/com/mikuac/shiro/2.5.3/shiro-2.5.3.jar",
+    "wsUrl": "ws://127.0.0.1:8388/pub/onebotSocket"
+  },
+  "dedupPredicate": {
+    "keyExpression": "String.valueOf(event.time) + String.valueOf(event.group_id) + String.valueOf(event.user_id)",
+    "keySeparators": "none (plain concatenation)",
+    "keyFields": ["event.time", "event.group_id", "event.user_id (top-level user_id field)"],
+    "crossFieldAmbiguity": "TRUE AND EXPLOITABLE: because the key is delimiter-free, digit strings do not align to fields. Constructed collision key(1786861450123,770099,900000099) === key(1786861450,123770099,900000099) === '1786861450123770099900000099'. The earlier wording '13-digit synthetic ms keys and 10-digit real-second keys are disjoint' is FALSE and has been corrected.",
+    "timePrecision": "exact Long value as serialized in the OneBot payload; Shiro does no rounding. Wuxin currently sends Math.floor(Date.now()/1000), so effective production precision is 1 second.",
+    "windowMs": 5000,
+    "windowBasis": "arrival wall clock: second event is dropped iff storedArrivalMs + 5000 >= nowArrivalMs",
+    "windowBoundary": "equality drops (>=), first pass only after storedArrivalMs + 5000 < nowArrivalMs",
+    "cacheLifetimeMs": 5000,
+    "cacheCleanup": "lazy: before every insert, entries with storedExpiry < now are removed (strictly less-than)",
+    "cacheScope": "static process-global ConcurrentHashMap<String,Long> shared by every WebSocket session in the Yumu JVM",
+    "messageParticipates": false,
+    "rawMessageParticipates": false,
+    "messageIdParticipates": false,
+    "selfIdParticipates": false,
+    "nonceFieldParticipates": false,
+    "senderUserIdRole": "NOT in the dedup key. sender.user_id is used by the separate group-self-bot-event filter that runs only AFTER dedup passes (drops when sender.user_id is a connected robot self id).",
+    "collisionBehavior": "insertMessage returns false; MessageEvent.process returns immediately; Yumu listener and reply pipeline never run; zero reply frames; no exception",
+    "collisionLogged": false,
+    "explicitBypass": "none in Shiro 2.5.3 (no per-sender/per-header/per-field exemption; only the global shiro.group-event-filter boolean)",
+    "concurrency": "contains-then-put is not atomic; two truly simultaneous same-key inserts can both pass and overwrite the expiry (race window is microscopic and benign for correctness)",
+    "evidence": [
+      "javap -c -p of GroupMessageFilterUtils.class and handler/event/MessageEvent.class in shiro-2.5.3.jar (exact bytecode)",
+      "upstream cross-check: https://raw.githubusercontent.com/MisakaTAT/Shiro/master/src/main/java/com/mikuac/shiro/common/utils/GroupMessageFilterUtils.java",
+      "live reproduction QB05_PHASE_D (see liveReproduction)"
+    ]
+  },
+  "runtimeConfig": {
+    "packagedApplicationYaml": "sources/yumu-bot/src/main/resources/application.yaml lines 84-85: shiro.group-event-filter: true, shiro.group-event-filter-time: 5000; identical content in BOOT-INF/classes/application.yaml of the running jar",
+    "privateOverlay": "configs/private/yumu/application.yaml contains only shiro.ws.server.*; it does NOT define group-event-filter or group-event-filter-time",
+    "springPrecedence": "Spring Boot: properties loaded from spring.config.additional-location can override those in the default locations; keys absent from the additional file fall through to the packaged classpath application.yaml. Effective values therefore remain true / 5000.",
+    "springDocsRef": "https://docs.spring.io/spring-boot/reference/features/external-config.html",
+    "effective": {
+      "groupEventFilter": true,
+      "groupEventFilterTimeMs": 5000,
+      "groupSelfBotEventFilter": true,
+      "groupSelfBotEventFilterNote": "not set anywhere; ShiroProperties default is true"
+    },
+    "runtimeConfirmation": "live probe: second event with identical time/group/user dropped (see liveReproduction)"
+  },
+  "semantics": {
+    "binding": "Yumu binding resolution uses event.sender.contactID (sender.user_id) via BindDao.getBindFromQQOrNull / UserIDUtil; top-level event.user_id is NOT used for group-message binding. Changing sender.user_id would break binding.",
+    "permission": "PermissionImplement.isBlock and CheckAspect use event.sender.contactID + event.group.contactID (group_id). Sender identity mutation would break permission/admin checks.",
+    "pendingPromptWaiter": "AsyncMessageUtil keys are group:<group.contactID>:<sender.contactID> and are notified by AsyncMessageUtil.put(event) which runs inside PermissionImplement.onMessage — i.e. only after the Shiro dedup filter passes. A dropped event can never notify a waiter.",
+    "promptWaiterInCurrentBridgeDefs": "the six bridged Yumu commands (recent/bp/bs/pm/etx/rating) do not use doubleCheck/getLock; this is a latent surface, not an exercised path",
+    "cooldown": "Yumu @ServiceLimit cooldowns are per-service global maps, not per-sender; sender identity does not affect them",
+    "commandHistory": "QQMessageCacheProvider keys are (message_id, group_id, sender.user_id) with 2-minute/24-hour TTLs; sender identity mutation would corrupt history attribution",
+    "userState": "GroupDao mode/state uses group_id; per-user state (bindings, permissions) uses sender.user_id",
+    "replyRouting": "group replies route via Group(bot, group_id).sendMessage over the same WS session; top-level event.user_id is not used as a reply target for group messages",
+    "eventTimeConsumers": "exactly two consumers of event.time in the Yumu app: (1) Shiro 2.5.3 dedup key, (2) OneBotListener.kt stale gate (time<1e10 branch; drop when now-time>30). The Yumu event wrapper API (qq/event/Event.kt, qq/event/MessageEvent.kt) does not expose time, so application services cannot read it.",
+    "verdictOnSenderMutation": "REJECTED: any design that changes sender.user_id breaks binding, permissions, waiters, history and user state.",
+    "verdictOnTimeMutation": "ALLOWED with constraints: synthetic event time is consumed only by the stale gate and the dedup key; the fix must stay inside the stale gate tolerance for the yumu target."
+  },
+  "collisionSurfaces": [
+    {
+      "id": 1,
+      "surface": "two concurrent Wuxin bridge calls",
+      "possible": true,
+      "detail": "same virtual group 770099, same logical sender, same epoch second -> identical key; second arrival within 5s drops silently. contains-then-put is not atomic, so an exact-simultaneous race can let both pass; the normal outcome is a drop.",
+      "evidence": "source predicate + live sequential confirmation; concurrency race modeled offline"
+    },
+    {
+      "id": 2,
+      "surface": "two rapid sequential Wuxin bridge calls",
+      "possible": true,
+      "detail": "any two yumu bridge sends landing in the same second collide (same-second sends are always <5s apart).",
+      "evidence": "LIVE CONFIRMED: 300ms apart, identical time -> call2 got zero frames"
+    },
+    {
+      "id": 3,
+      "surface": "Wuxin bridge call vs a real QQ event",
+      "possible": true,
+      "detail": "the cache is a static JVM-wide map shared by all WS sessions. quickRouter bridges always use group 770099; executor recent fallback uses context.groupId (real group). A real event from the same sender in the same group with the same second-level time arriving within 5s collides in either direction.",
+      "evidence": "source + localBridge.ts group selection"
+    },
+    {
+      "id": 4,
+      "surface": "bridge retry/fallback call vs original call",
+      "possible": "same-request same-target: NO (P0_2 bridgeAlreadyAttemptedFor suppresses); cross-target lazybot->yumu: POSSIBLE against any prior 5s yumu key; different requests: see surfaces 1/2",
+      "evidence": "quickRouter.ts:542/631, executor.ts:1729-1762"
+    },
+    {
+      "id": 5,
+      "surface": "different commands in same second",
+      "possible": true,
+      "detail": "message and raw_message are not in the key; different commands with same time+group+user collide.",
+      "evidence": "LIVE CONFIRMED: call1 !ymd20 replied, call2 !ymd6 silently dropped"
+    },
+    {
+      "id": 6,
+      "surface": "same command in same second",
+      "possible": true,
+      "detail": "same key by construction; identical outcome to surface 5.",
+      "evidence": "source predicate; offline fixture scenario 1"
+    },
+    {
+      "id": 7,
+      "surface": "different groups",
+      "possible": false,
+      "detail": "group_id is part of the key.",
+      "evidence": "source + offline fixture scenario 4"
+    },
+    {
+      "id": 8,
+      "surface": "different users",
+      "possible": false,
+      "detail": "top-level user_id is part of the key; logical sender (sender.user_id) equals top-level user_id in Wuxin payloads today.",
+      "evidence": "source + offline fixture scenario 3"
+    },
+    {
+      "id": 9,
+      "surface": "pending prompt / waiter paths",
+      "possible": true,
+      "detail": "a follow-up event dropped by dedup never reaches AsyncMessageUtil.put, so a pending doubleCheck/getLock waiter for that group:sender key is never notified and times out. None of the six currently bridged Yumu commands opens a waiter, so this is latent for today's bridge surface.",
+      "evidence": "AsyncMessageUtil.kt:236-252, PermissionImplement.kt:79-80, OneBotListener.kt"
+    }
+  ],
+  "candidateMatrix": [
+    {
+      "id": "A",
+      "name": "change synthetic event.time (recommended variant: yumu-only millisecond time with future margin + strictly-monotonic guard + 30s drift cap)",
+      "avoidsDedup": "Wuxin-Wuxin: YES, provably (strictly increasing distinct 13-digit times with fixed group/user yield distinct keys). Wuxin-vs-real: NOT structurally disjoint (delimiter-free key); residual collision classes are enumerated in hardenings.residualRisk with a <=1/1000 conditional bound per coincident second.",
+      "preservesLogicalSender": "YES",
+      "preservesBinding": "YES",
+      "preservesPermissions": "YES",
+      "preservesPromptWaiterSemantics": "YES",
+      "preservesEventTimeSemantics": "CONSTRAINED: yumu stale gate explicitly supports the >=1e10 ms branch; with a 2000ms future margin the send must reach yumu within 2030ms of time generation for the first call of a burst (later same-ms burst calls get +1ms budget each). Future timestamp is tolerated by current target (gate has no future bound) but drift is capped at 30000ms in the revised allocator.",
+      "wuxinOnly": "YES",
+      "targetChangeRequired": "NO",
+      "compatibilityRisk": "LOW for deployed yumu-bot@420ed650 + shiro 2.5.3 (ms branch is first-class in OneBotListener); MEDIUM if Yumu later adds future-time rejection or other event.time consumers",
+      "concurrencySafety": "YES: strictly-monotonic per-process guard guarantees distinct keys even for calls built in the same millisecond",
+      "replayIdempotencyRisk": "LOW: unique time removes the accidental same-second dedup safety net, but Wuxin already randomizes message_id per call and Yumu's own 30s idempotency still covers exact message_id replays; P0_2 still suppresses same-request same-target retries",
+      "recommendation": "SUPERSEDED by A' (kept for comparison; A' is the final implementation spec)"
+    },
+    {
+      "id": "A'",
+      "name": "deterministic safe-slot allocator (final spec): yumu event.time = 13-digit ms with time%1000 in [0,99]",
+      "avoidsDedup": "Wuxin-Wuxin: YES, provably (process-wide strictly monotonic slot assignment, no slot reuse). Wuxin-vs-real: YES, STRICTLY (leading-zero lemma: char 11 of the synthetic key is always '0', and no valid real decimal Long triple can split it; verifier found 0 valid real splits over all tested group/user digit lengths).",
+      "preservesLogicalSender": "YES",
+      "preservesBinding": "YES",
+      "preservesPermissions": "YES",
+      "preservesPromptWaiterSemantics": "YES",
+      "preservesEventTimeSemantics": "CONSTRAINED: slot-0 future margin 2000..2999ms, slot-99 margin 2099..3098ms, so every call has >=2030ms flight budget under Yumu's ms stale gate; future timestamps are tolerated by the current target; drift is bounded by the safe-pool window, and the 30s guard is defensive/future-proof (effectively unreachable in current control flow)",
+      "wuxinOnly": "YES",
+      "targetChangeRequired": "NO",
+      "compatibilityRisk": "LOW for deployed yumu-bot@420ed650 + shiro 2.5.3; MEDIUM only if a future Yumu adds future-time rejection",
+      "concurrencySafety": "YES: single-threaded allocator + strictly increasing last watermark; exactly 100 unique slots per pool second",
+      "replayIdempotencyRisk": "LOW: same rationale as A; cross-process restart within the 5s target cache window is the only same-slot reuse path (same-process uniqueness is guaranteed)",
+      "throughput": "hard cap 100 yumu bridge events/sec; the 101st call in a pool second fails BEFORE any send and uses the existing bridge fallback (no waiting, no out-of-range time)",
+      "recommendation": "ADOPTED as the final QB-05 implementation spec"
+    },
+    {
+      "id": "B",
+      "name": "per-call synthetic sender/user identity",
+      "avoidsDedup": "YES (changes top-level user_id and/or sender.user_id)",
+      "preservesLogicalSender": "NO if sender.user_id changes; PARTIAL (fragile) if only top-level user_id changes",
+      "preservesBinding": "NO for full sender change; CURRENTLY YES for top-level-only split (group path reads sender.user_id), but it violates the OneBot user_id==sender.user_id invariant and breaks as soon as any code reads groupEvent.userId",
+      "preservesPermissions": "same split as binding",
+      "preservesPromptWaiterSemantics": "NO for full sender change; currently yes for top-level-only split",
+      "preservesEventTimeSemantics": "YES",
+      "wuxinOnly": "YES",
+      "targetChangeRequired": "NO",
+      "compatibilityRisk": "HIGH (protocol invariant violation, latent top-level user_id consumers in Shiro DTO/private-message branch)",
+      "concurrencySafety": "YES",
+      "replayIdempotencyRisk": "LOW-MEDIUM (same as A plus identity spoofing semantics)",
+      "recommendation": "REJECTED as primary design (logical QQ sender must not be lost or split); top-level-only split kept as a fallback with explicit warning"
+    },
+    {
+      "id": "C",
+      "name": "change only bridge self identity",
+      "avoidsDedup": "NO — self_id is not in the key and the cache is process-global",
+      "preservesLogicalSender": "YES",
+      "preservesBinding": "YES",
+      "preservesPermissions": "YES",
+      "preservesPromptWaiterSemantics": "YES",
+      "preservesEventTimeSemantics": "YES",
+      "wuxinOnly": "YES",
+      "targetChangeRequired": "NO",
+      "compatibilityRisk": "N/A (no dedup effect)",
+      "concurrencySafety": "already per-call random 8.8e9 pool for yumu; irrelevant to dedup",
+      "replayIdempotencyRisk": "unchanged",
+      "recommendation": "REJECTED for QB-05 (self identity randomization already exists for session routing and does not avoid the filter)"
+    },
+    {
+      "id": "D",
+      "name": "bridge-specific nonce/request id consumed by Yumu",
+      "avoidsDedup": "NO — no nonce/request-id field is read by the Shiro 2.5.3 filter",
+      "preservesLogicalSender": "YES",
+      "preservesBinding": "YES",
+      "preservesPermissions": "YES",
+      "preservesPromptWaiterSemantics": "YES",
+      "preservesEventTimeSemantics": "YES",
+      "wuxinOnly": "NO (would require target code)",
+      "targetChangeRequired": "YES (Shiro/Yumu must learn to read and honor the field)",
+      "compatibilityRisk": "HIGH (fork/upgrade of Shiro)",
+      "concurrencySafety": "N/A",
+      "replayIdempotencyRisk": "N/A",
+      "recommendation": "REJECTED as Wuxin-only; only viable as part of a target-side change"
+    },
+    {
+      "id": "E",
+      "name": "target-side filter exemption / protocol change",
+      "avoidsDedup": "YES",
+      "preservesLogicalSender": "YES",
+      "preservesBinding": "YES",
+      "preservesPermissions": "YES",
+      "preservesPromptWaiterSemantics": "YES",
+      "preservesEventTimeSemantics": "YES",
+      "wuxinOnly": "NO",
+      "targetChangeRequired": "YES",
+      "compatibilityRisk": "disabling shiro.group-event-filter globally also removes real-event dedup for NapCat traffic; a per-sender exemption (synthetic self-id range or Universal client role) is narrower but is a Yumu-side code change",
+      "concurrencySafety": "YES",
+      "replayIdempotencyRisk": "removes the same safety net as A, target-wide",
+      "recommendation": "NOT NEEDED while A exists; fallback if A were ever rejected"
+    },
+    {
+      "id": "F",
+      "name": "leave behavior unchanged",
+      "avoidsDedup": "NO",
+      "preservesLogicalSender": "YES",
+      "preservesBinding": "YES",
+      "preservesPermissions": "YES",
+      "preservesPromptWaiterSemantics": "YES (but dropped follow-ups starve waiters)",
+      "preservesEventTimeSemantics": "YES",
+      "wuxinOnly": "YES",
+      "targetChangeRequired": "NO",
+      "compatibilityRisk": "NONE",
+      "concurrencySafety": "unchanged",
+      "replayIdempotencyRisk": "current accidental dedup safety net retained",
+      "recommendation": "REJECTED: live-confirmed silent 60s full-timeout failure remains"
+    }
+  ],
+  "liveReproduction": {
+    "ran": true,
+    "maxCallsUsed": 2,
+    "script": "G:/My pack/Agent Work/codex_work/tmp/qb05-live-probe.cjs",
+    "resultFile": "G:/My pack/Agent Work/codex_work/tmp/qb05-live-probe-result.json.txt",
+    "fixedEventTimeSeconds": 1786861450,
+    "wallClockStartMs": 1786861450584,
+    "sendOffsetMs": 300,
+    "observeWindowMs": 9000,
+    "call1": {
+      "command": "!ymd20",
+      "selfId": "8800000001",
+      "messageId": 2147000001,
+      "groupId": 770099,
+      "senderId": 900000099,
+      "openLatencyMs": 11,
+      "firstFrameLatencyMs": 11,
+      "frameCount": 1,
+      "replyActionCount": 1,
+      "replyTextPreview": "2",
+      "outcome": "reply_observed"
+    },
+    "call2": {
+      "command": "!ymd6",
+      "selfId": "8800000002",
+      "messageId": 2147000002,
+      "groupId": 770099,
+      "senderId": 900000099,
+      "openLatencyMs": 6,
+      "frameCount": 0,
+      "replyActionCount": 0,
+      "outcome": "silence_window_expired"
+    },
+    "yumuLog": {
+      "connected": "Account 8800000001 connected / Account 8800000002 connected (INFO)",
+      "droppedEvent": "no log line at all for call2 (silent drop confirmed at runtime)",
+      "disconnectWarn": "normal probe teardown warnings"
+    },
+    "attribution": "CONFIRMED (source + deployment config + live runtime): filter enabled, 5000ms window, second identical-key event silently discarded with zero reply frames"
+  },
+  "offlineRegression": {
+    "verifier": "tools/quick-bridge-qb05-dedup-verify.mjs",
+    "checks": 66,
+    "failures": 0,
+    "scenarios": [
+      { "name": "same sender / same group / same second / same command", "baseline": "second dropped", "candidateA": "second passes" },
+      { "name": "same sender / same group / same second / different command", "baseline": "second dropped", "candidateA": "second passes" },
+      { "name": "different sender (same digit length)", "baseline": "second passes", "candidateA": "second passes" },
+      { "name": "different group (same digit length)", "baseline": "second passes", "candidateA": "second passes" },
+      { "name": "adjacent second", "baseline": "second passes", "candidateA": "second passes" },
+      { "name": "concurrent requests (sequential arrival model + same-ms monotonic guard)", "baseline": "second dropped", "candidateA": "second passes" }
+    ],
+    "hardeningAdded": "cross-field collision proof, structural split classification, leading-zero lemma, residual Wuxin-vs-real risk bounds, allocator same-ms burst / wall rollback / forward jump stress, bounded-allocator cap tests, final A' safe-slot allocator verification and A-vs-A' comparison",
+    "candidateProbes": {
+      "B_split": "per-call top-level user_id -> distinct keys, passes",
+      "C_selfIdOnly": "self_id change -> still collides",
+      "D_nonceOnly": "nonce field -> still collides",
+      "E_filterOff": "filter-disabled model -> both pass",
+      "F_unchanged": "baseline drop"
+    },
+    "staleGateBoundary": {
+      "candidateMarginMs": 2000,
+      "receivePlus0Ms": "pass",
+      "receivePlus100Ms": "pass",
+      "receivePlus2029Ms": "pass",
+      "receivePlus2030Ms": "pass (30 boundary is not > 30)",
+      "receivePlus2031Ms": "drop (31 > 30)"
+    }
+  },
+  "hardenings": {
+    "generatedAt": "2026-08-16T15:00:00+08:00",
+    "request": "harden two assumptions before implementing candidate A; no production changes",
+    "crossFieldCollision": {
+      "claimTested": "13-digit synthetic millisecond keys and 10-digit real-second keys are disjoint",
+      "verdict": "FALSE",
+      "constructedCollision": "key(1786861450123,770099,900000099) === key(1786861450,123770099,900000099) === '1786861450123770099900000099'",
+      "bothOrdersDrop": true,
+      "correctedClaim": "strictly increasing distinct 13-digit times guarantee Wuxin-Wuxin key uniqueness; they do NOT make the synthetic key space disjoint from real-event keys because the delimiter-free concatenation lets the group/user fields shift across digit boundaries",
+      "structuralClassification": {
+        "method": "for a synthetic key S, every real triple that can equal S has T_r = first 10 chars of S (10-digit epoch seconds), then G_r = S[10..10+gl) and U_r = S[10+gl..) for some gl in 1..10; a split is valid only when neither G_r nor U_r starts with '0' and U_r has <=10 digits",
+        "quickRouterPath_Gs_770099": [
+          "same-user class: T_r = T_s div 1000, G_r = dec(X)+'770099' (9 digits, X = T_s mod 1000, X in 100..999 -> groups 100770099..999770099), U_r = U_s",
+          "different-user class: T_r = T_s div 1000, G_r = dec(X)+'77009' (8 digits), U_r = '9'+dec(U_s) (10 digits) when |U_s|<=9"
+        ],
+        "executorSameGroupPath": [
+          "same-user: impossible for any user length (13-digit T_s vs 10-digit T_r with identical G suffix)",
+          "different-user: possible only when G_r is 3-periodic and starts with X (e.g. 123123 or 123123123 with X=123) AND |U_s|<=7, so U_r = dec(X)+dec(U_s) fits 10 digits"
+        ]
+      },
+      "leadingZeroLemma": {
+        "statement": "if X = T_s mod 1000 < 100, the first digit of any forced real-group split is '0'; for a real group message group_id > 0 and group/user ids use canonical decimal representations without leading zeros, so no valid real triple can equal the synthetic key for any group/user digit length",
+        "proof": "key equality forces T_r = first10(S) (real epoch seconds are exactly 10 digits); G_r starts at char 11, which is the first char of X; a positive canonical decimal group_id string starts with 1..9",
+        "verifiedExhaustively": "all X in 0..99 over user lengths 6..12: zero valid splits",
+        "costIfEnforced": "only 100 unique synthetic times per aligned second -> would require per-second queueing/fallback under >100 bridge calls/sec; NOT selected"
+      },
+      "practicalRiskAssessment": {
+        "quickRouterVirtualGroupPath": "collision requires a real event from the same user, in one of 900 nine-digit groups ending 770099 whose 3-digit prefix equals the call's millisecond residue, at wall second T_s div 1000 (two seconds after the call second with margin 2000), within the 5s cache window; conditional probability <=1/1000 per same-second coincident real event; expected incidence negligible at this deployment's volume",
+        "executorSameGroupPath": "same-user collision impossible; different-user collision requires a 3-periodic real group id AND a <=7-digit sender id (QQ ids are normally 9-10 digits)",
+        "conclusion": "candidate A remains safe with the corrected wording and these explicit bounds; it eliminates the live-confirmed Wuxin-Wuxin failure and reduces Wuxin-vs-real risk by >=1000x versus baseline seconds"
+      }
+    },
+    "allocatorStress": {
+      "gate": "Yumu OneBotListener ms branch: drop iff receiveNow - eventTime > 30; there is NO future bound",
+      "sameMsBurst5000": "monotonic, never past, all pass gate at +10ms receive delay; future drift = margin + N - 1 = 6999ms; drift decays 1ms per wall-ms",
+      "wallRollback5000": "next time stays strictly increasing; drift 7001ms; gate passes (diff negative); drift fully decays after ~5002 wall-ms",
+      "wallForwardJump": "only gate failure mode: in-flight forward jump F drops the first call of a burst iff F > 2030ms (F=2030 passes, F=2031 drops)",
+      "burstBudget": "call i in a same-ms burst has budget 2030+i ms (first call 2030ms; 6th call 2035ms)",
+      "naiveAllocatorVsCap": "naive allocator CAN exceed any fixed semantic future cap (40k same-ms burst -> drift 41999ms > 30000ms; large rollback likewise)",
+      "revisedAllocator": "adds a hard 30000ms future-drift guard; in the current control flow rollback fail-fast is actually enforced by the safe-pool boundary (poolLast check fires before the drift check), and the 30s guard is effectively unreachable because safe-slot values are only 2000..3098ms ahead. It is kept as a defensive/future-proof guard, not as the current rollback mechanism.",
+      "maximumSafeDrift": "gate-derived bound: past drift <=30ms at Yumu receipt, and allocator past drift <=0 at allocation (never trips); future drift is gate-unbounded but the safe-pool window bounds normal drift to <=3098ms. The 30000ms check is defensive/future-proof and dominated by the pool boundary check in current control flow.",
+      "allocatorExceedsBound": "naive: yes (unbounded burst/rollback); revised: no, it rejects instead"
+    },
+    "safeSlotAllocator": {
+      "finalSpec": "A' adopted as the implementation spec",
+      "rule": "poolBase = ceil((now + 2000)/1000); pool = [poolBase*1000, poolBase*1000+99]; t = poolFirst or last+1 under the monotonic watermark; reject if t > poolLast (100 slots/sec exhausted) or t - now > 30000",
+      "verified": [
+        "slot-0 future window 2000..2999ms for every wall-ms phase; 13-digit values; time%1000 always in 0..99",
+        "3s sequential sweep: exactly 301 successes (1+100+100+100) and 2699 fail-fast rejections, all emitted values strictly increasing and unique",
+        "leading-zero disjointness: char 11 always '0'; 0 valid real splits across tested group/user digit lengths",
+        "same-ms burst: 100 unique slots in one pool second, 101st rejects before send; next wall second opens fresh slot 0",
+        "stale gate: slot-0 budget = margin+30 (>=2030ms), slot-99 budget = margin+99+30; exact boundary pass/drop verified",
+        "wall rollback 5s: fail-fast while wall is behind the watermark, then recovery with only new strictly-increasing slots (no reuse)"
+      ],
+      "capacity": "hard cap 100 yumu bridge events per pool second; excess calls fail before any WS send and use the existing bridge fallback",
+      "knownBoundary": "same-process uniqueness guaranteed; a process restart inside the target's 5s cache window could in principle reuse a slot (acceptable, out of stated scope)"
+    },
+    "comparisonAtoAPrime": {
+      "wuxinWuxinCollision": { "A": "zero (strictly increasing distinct 13-digit times)", "APrime": "zero (same, plus per-second slot uniqueness)" },
+      "wuxinRealCollision": { "A": "nonzero residual: <=1/1000 conditional per coincident second (same-user class) plus periodic-group different-user class", "APrime": "ZERO, proven by leading-zero lemma (no valid real triple can split a key whose char 11 is '0')" },
+      "throughput": { "A": "effectively unlimited (40k same-ms burst before the 30s cap)", "APrime": "hard cap 100 bridge events/sec; 101st fails before send and falls back" },
+      "wallClockRollback": { "A": "keeps allocating with growing drift; rejects only past ~28-30s", "APrime": "same-pool rollback continues without reuse; cross-pool rollback fails fast until the wall catches up; never reuses a slot" },
+      "burst": { "A": "same-ms 5000 accepted, drift = margin+N-1", "APrime": "same-second 100 accepted, 101st rejected immediately" },
+      "staleGate": { "A": "first-call budget 2030ms, +1ms per burst index", "APrime": "slot-0 budget margin+30 in [2030,3029]ms; slot-99 adds 99ms; identical gate semantics" },
+      "implementationComplexity": { "A": "~8 lines, allocation inside buildEvent", "APrime": "~12 lines, allocation moved to the top of callLocalBot before new WebSocket (required for fail-before-send)" },
+      "decision": "A' ADOPTED: at the cost of a 100/s hard cap, it removes the residual real-key collision class completely with roughly the same code size"
+    }
+  },
+  "futurePatch": {
+    "status": "IMPLEMENTED (server/bots/localBridge.ts)",
+    "file": "server/bots/localBridge.ts",
+    "scope": "yumu endpoint branch only; kanon/hydrant/lazybot event.time unchanged",
+    "implementedAs": "export function yumuSafeTimeMs(nowMs = Date.now()) at module scope; callLocalBot allocates for botId==='yumu' before new WebSocket, rejects immediately on pool exhaustion / drift error with bridge timeline marks yumu_safe_slot_allocated / yumu_safe_slot_alloc_failed, and passes the value into buildEvent via an optional eventTimeMs parameter.",
+    "design": "Deterministic safe-slot allocator (A'). poolBase = ceil((now+2000)/1000); pool = [poolBase*1000, poolBase*1000+99]; emit poolFirst, or last+1 under the strictly-monotonic guard; reject before any WebSocket when the value would exceed poolLast (100 slots/sec exhausted — this is the actual rollback fail-fast mechanism). A 30000ms future-drift guard is additionally present as a Wuxin defensive/future-proof policy and is effectively unreachable in the current control flow.",
+    "why": "Every emitted value has time%1000 in [0,99], so char 11 of the delimiter-free Shiro key is always '0'. Real event keys begin with a 10-digit epoch second followed by a positive group_id and user decimal strings in canonical no-leading-zero form (first group digit 1..9), therefore no valid real triple can ever equal a safe-slot synthetic key (leading-zero lemma). Wuxin-Wuxin uniqueness follows from the strictly-monotonic process-wide watermark.",
+    "codeSketch": "see QUICK_BRIDGE_QB05_YUMU_DEDUP_DESIGN_V01.md section 24 for the exact implemented code",
+    "allocatorInvariant": "every emitted T: 13 digits, T%1000 in [0,99], 2000 <= T-wallAtAlloc <= 3098 (normal path), strictly increasing process-wide; 100 slots per pool second, 101st rejects before send; gate passes iff yumuReceiptWall - T <= 30 so flight budget >= 2030ms for slot 0 (slot 99: margin+99+30); wall rollback never reuses a slot and fails fast via the safe-pool boundary (the 30000ms drift guard is defensive/future-proof and dominated by the pool check in current control flow); forward wall jumps remain the only unavoidable in-flight gate failure.",
+    "preservedInvariants": "P0_1 kanon identity pool untouched; P0_2 bridgeAlreadyAttemptedFor untouched; P0_3/P0_3_1 timers untouched; routing/group selection untouched; timeout/retry/watchdog untouched",
+    "runtimeValidation": "DONE (exactly two live Yumu calls, one wall second, different fast commands): event times 1786866914000 and 1786866914001 (13-digit, X=0/1), both entered Yumu and replied with one dice frame each."
+  },
+  "evidenceClassification": "CONFIRMED (source + deployment config + live drop reproduction); A' implementation is live-validated with exactly two same-second bridge calls and fully covered by quick-bridge-qb05-safeslot-verify",
+  "relatedOpenItems": [
+    "QB-03 remains DEFER (protocol limitation, unchanged)",
+    "QB-06 pending prompt/lock swallowing remains a separate item",
+    "executor recent fallback uses real group id for yumu bridge (pre-existing group-disable surface, not modified here)"
+  ],
+  "filesAdded": [
+    "docs/QUICK_BRIDGE_QB05_YUMU_DEDUP_DESIGN_V01.md",
+    "docs/QUICK_BRIDGE_QB05_YUMU_DEDUP_MATRIX_V01.json",
+    "docs/QUICK_BRIDGE_FIX_QB05.md",
+    "tools/quick-bridge-qb05-dedup-verify.mjs (spec verifier, 66/66)",
+    "tools/quick-bridge-qb05-safeslot-verify.mjs (implementation verifier: unit/blackbox/quickrouter-fallback/executor-fallback/live)"
+  ],
+  "filesModified": [
+    "server/bots/localBridge.ts (QB-05 A' allocator + pre-WebSocket allocation + buildEvent eventTimeMs parameter + timeline marks; prior P0_1/P0_3/P0_3_1 edits remain in the same file)"
+  ],
+  "regression": {
+    "offlineVerifierSpec": "quick-bridge-qb05-dedup-verify: 66/66 pass",
+    "offlineVerifierImplementation": "quick-bridge-qb05-safeslot-verify: unit 9/9, blackbox 9/9, quickrouter-fallback 5/5, executor-fallback 4/4; live phase 6/6 (exactly two Yumu calls)",
+    "priorFixVerifiers": "P0_1 166/166; P0_2 23/23; P0_3 settle 34/34, deadline 23/23, deadline-race 6/6; QB-03 policy 33/33; quick-router 121/121",
+    "npmRunCheck": "PASS (typecheck + vite build + sanity + security)",
+    "verifyAll": "81/82 passed (251.7s); only known baseline reasoning-wire-verify.mjs UV_HANDLE_CLOSING/3221226505, standalone rerun shows all 24 checks pass before the teardown assertion",
+    "gitDiffCheck": "clean (exit 0)"
+  }
+}

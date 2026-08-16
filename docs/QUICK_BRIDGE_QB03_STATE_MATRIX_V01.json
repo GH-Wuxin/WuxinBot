@@ -1,0 +1,652 @@
+{
+  "audit": "QUICK_BRIDGE_QB03_POLICY_AUDIT_V01",
+  "generatedAt": "2026-08-16T05:33:51.073Z",
+  "branch": "fix/onebot-connection-lifecycle",
+  "head": "1658292",
+  "progressSignals": [
+    {
+      "id": 1,
+      "name": "TCP/WS connect started",
+      "kanon": "WUXIN_OBSERVABLE",
+      "yumu": "WUXIN_OBSERVABLE",
+      "hydrant": "WUXIN_OBSERVABLE",
+      "lazybot": "WUXIN_OBSERVABLE",
+      "notes": "ws construction begins (localBridge ws_construction_start)"
+    },
+    {
+      "id": 2,
+      "name": "WS open",
+      "kanon": "WUXIN_OBSERVABLE",
+      "yumu": "WUXIN_OBSERVABLE",
+      "hydrant": "WUXIN_OBSERVABLE",
+      "lazybot": "WUXIN_OBSERVABLE",
+      "notes": "open event; proves TCP+handshake success only"
+    },
+    {
+      "id": 3,
+      "name": "synthetic OneBot event sent",
+      "kanon": "WUXIN_OBSERVABLE",
+      "yumu": "WUXIN_OBSERVABLE",
+      "hydrant": "WUXIN_OBSERVABLE",
+      "lazybot": "WUXIN_OBSERVABLE",
+      "notes": "command_sent marker; proves bytes handed to socket, NOT target receipt"
+    },
+    {
+      "id": 4,
+      "name": "any inbound WS frame",
+      "kanon": "WUXIN_OBSERVABLE",
+      "yumu": "WUXIN_OBSERVABLE",
+      "hydrant": "WUXIN_OBSERVABLE",
+      "lazybot": "WUXIN_OBSERVABLE",
+      "notes": "first_frame; may be reply, action, or noise"
+    },
+    {
+      "id": 5,
+      "name": "ACK/API action frame",
+      "kanon": "WUXIN_OBSERVABLE",
+      "yumu": "WUXIN_OBSERVABLE",
+      "hydrant": "WUXIN_OBSERVABLE",
+      "lazybot": "WUXIN_OBSERVABLE",
+      "notes": "action with echo; proves target socket is alive and target code sent an action"
+    },
+    {
+      "id": 6,
+      "name": "unrelated/non-reply frame",
+      "kanon": "WUXIN_OBSERVABLE",
+      "yumu": "WUXIN_OBSERVABLE",
+      "hydrant": "WUXIN_OBSERVABLE",
+      "lazybot": "WUXIN_OBSERVABLE",
+      "notes": "meta_event etc.; no command progress"
+    },
+    {
+      "id": 7,
+      "name": "valid reply frame",
+      "kanon": "WUXIN_OBSERVABLE",
+      "yumu": "WUXIN_OBSERVABLE",
+      "hydrant": "WUXIN_OBSERVABLE",
+      "lazybot": "WUXIN_OBSERVABLE",
+      "notes": "send_msg/send_group_msg/send_private_msg with text/image"
+    },
+    {
+      "id": 8,
+      "name": "socket close",
+      "kanon": "WUXIN_OBSERVABLE",
+      "yumu": "WUXIN_OBSERVABLE",
+      "hydrant": "WUXIN_OBSERVABLE",
+      "lazybot": "WUXIN_OBSERVABLE",
+      "notes": "close with no content is strong failure evidence; with content resolves"
+    },
+    {
+      "id": 9,
+      "name": "socket error",
+      "kanon": "WUXIN_OBSERVABLE",
+      "yumu": "WUXIN_OBSERVABLE",
+      "hydrant": "WUXIN_OBSERVABLE",
+      "lazybot": "WUXIN_OBSERVABLE",
+      "notes": "strong failure evidence"
+    },
+    {
+      "id": 10,
+      "name": "target-bot log confirms message receipt",
+      "kanon": "TARGET_ONLY",
+      "yumu": "TARGET_ONLY",
+      "hydrant": "TARGET_ONLY",
+      "lazybot": "TARGET_ONLY",
+      "notes": "Kanon logs received message; Yumu logs Account connected only; Hydrant/LazyBot have their own log levels"
+    },
+    {
+      "id": 11,
+      "name": "target-bot command dispatch started",
+      "kanon": "TARGET_ONLY",
+      "yumu": "TARGET_ONLY",
+      "hydrant": "TARGET_ONLY",
+      "lazybot": "TARGET_ONLY",
+      "notes": "internal logs/source traces only"
+    },
+    {
+      "id": 12,
+      "name": "target-bot external API/backend request started",
+      "kanon": "TARGET_ONLY",
+      "yumu": "TARGET_ONLY",
+      "hydrant": "TARGET_ONLY",
+      "lazybot": "TARGET_ONLY",
+      "notes": "osu/IAM/Kagami HTTP logs"
+    },
+    {
+      "id": 13,
+      "name": "target-bot backend returned",
+      "kanon": "TARGET_ONLY",
+      "yumu": "TARGET_ONLY",
+      "hydrant": "TARGET_ONLY",
+      "lazybot": "TARGET_ONLY",
+      "notes": "internal state only"
+    },
+    {
+      "id": 14,
+      "name": "target-bot send_msg/action generated",
+      "kanon": "WUXIN_OBSERVABLE",
+      "yumu": "WUXIN_OBSERVABLE",
+      "hydrant": "WUXIN_OBSERVABLE",
+      "lazybot": "WUXIN_OBSERVABLE",
+      "notes": "arrives as inbound action frame"
+    },
+    {
+      "id": 15,
+      "name": "Wuxin ACK sent",
+      "kanon": "WUXIN_OBSERVABLE",
+      "yumu": "WUXIN_OBSERVABLE",
+      "hydrant": "WUXIN_OBSERVABLE",
+      "lazybot": "WUXIN_OBSERVABLE",
+      "notes": "ack_sent marker"
+    },
+    {
+      "id": 16,
+      "name": "settle started",
+      "kanon": "WUXIN_OBSERVABLE",
+      "yumu": "WUXIN_OBSERVABLE",
+      "hydrant": "WUXIN_OBSERVABLE",
+      "lazybot": "WUXIN_OBSERVABLE",
+      "notes": "settle_start after valid reply"
+    },
+    {
+      "id": 17,
+      "name": "timeout",
+      "kanon": "WUXIN_OBSERVABLE",
+      "yumu": "WUXIN_OBSERVABLE",
+      "hydrant": "WUXIN_OBSERVABLE",
+      "lazybot": "WUXIN_OBSERVABLE",
+      "notes": "no-reply deadline fired"
+    }
+  ],
+  "silentStateTaxonomy": [
+    {
+      "state": "S0 CONNECTING",
+      "wuxinObservable": true,
+      "definition": "WebSocket constructed but not open"
+    },
+    {
+      "state": "S1 OPEN_NOT_SENT",
+      "wuxinObservable": true,
+      "definition": "open fired, command not yet handed to socket"
+    },
+    {
+      "state": "S2 SENT_ZERO_FRAMES",
+      "wuxinObservable": true,
+      "definition": "command sent; zero inbound frames"
+    },
+    {
+      "state": "S3 SENT_ACK_ONLY",
+      "wuxinObservable": true,
+      "definition": "only action frames with echo (ACKed); no valid reply"
+    },
+    {
+      "state": "S4 SENT_UNRELATED_FRAMES",
+      "wuxinObservable": true,
+      "definition": "only non-action frames"
+    },
+    {
+      "state": "S5 TARGET_RECEIPT_CONFIRMED_NO_REPLY",
+      "wuxinObservable": false,
+      "definition": "TARGET_ONLY (logs)"
+    },
+    {
+      "state": "S6 TARGET_EXECUTION_STARTED_NO_REPLY",
+      "wuxinObservable": false,
+      "definition": "TARGET_ONLY"
+    },
+    {
+      "state": "S7 TARGET_BACKEND_PENDING",
+      "wuxinObservable": false,
+      "definition": "TARGET_ONLY"
+    },
+    {
+      "state": "S8 TARGET_BACKEND_FINISHED_NO_REPLY",
+      "wuxinObservable": false,
+      "definition": "TARGET_ONLY"
+    },
+    {
+      "state": "S9 VALID_REPLY_RECEIVED",
+      "wuxinObservable": true,
+      "definition": "valid reply extracted; P0_3 bounded settle"
+    },
+    {
+      "state": "S10 CLOSED_NO_REPLY",
+      "wuxinObservable": true,
+      "definition": "close before content"
+    },
+    {
+      "state": "S11 ERROR_NO_REPLY",
+      "wuxinObservable": true,
+      "definition": "socket error"
+    }
+  ],
+  "perBotSilentCauses": {
+    "kanon": [
+      {
+        "cause": "self-message identity collision",
+        "trigger": "event.user_id == connected client X-Self-ID",
+        "wsOpens": true,
+        "targetReceives": false,
+        "frames": 0,
+        "logReceipt": false,
+        "eventualReply": false,
+        "cls": "abnormal",
+        "wuxinEvidence": "S2; P0_1 fixed the Wuxin-side occurrence",
+        "earliest": "pre-P0_1: only target log",
+        "falsePositiveRisk": "n/a fixed"
+      },
+      {
+        "cause": "same-sender/same-command dedup",
+        "trigger": "identical in-flight command from same sender",
+        "wsOpens": true,
+        "targetReceives": true,
+        "frames": 0,
+        "logReceipt": true,
+        "eventualReply": "previous call may reply on its own socket",
+        "cls": "normal-but-pathological",
+        "wuxinEvidence": "S2",
+        "earliest": "target log only",
+        "falsePositiveRisk": "HIGH if killed early: concurrent identical call is dropped by design"
+      },
+      {
+        "cause": "group-bot-config disabled",
+        "trigger": "shared config kanon:false for group",
+        "wsOpens": true,
+        "targetReceives": true,
+        "frames": 0,
+        "logReceipt": false,
+        "eventualReply": false,
+        "cls": "config",
+        "wuxinEvidence": "S2",
+        "earliest": "Wuxin knows its own group config (not target file state)",
+        "falsePositiveRisk": "LOW if Wuxin checks same file; target caches 5s"
+      },
+      {
+        "cause": "command not matched / silent execute path",
+        "trigger": "e.g. !search empty, !su non-admin",
+        "wsOpens": true,
+        "targetReceives": true,
+        "frames": 0,
+        "logReceipt": true,
+        "eventualReply": false,
+        "cls": "silent command",
+        "wuxinEvidence": "S2",
+        "earliest": "target log",
+        "falsePositiveRisk": "MEDIUM"
+      },
+      {
+        "cause": "slow upstream osu/IAM/Kagami",
+        "trigger": "osu API up to ~100s; IAM null-return paths",
+        "wsOpens": true,
+        "targetReceives": true,
+        "frames": 0,
+        "logReceipt": true,
+        "eventualReply": true,
+        "cls": "legitimate slow",
+        "wuxinEvidence": "S2 for minutes-scale duration",
+        "earliest": "none in Wuxin",
+        "falsePositiveRisk": "VERY HIGH for time-based watchdog"
+      },
+      {
+        "cause": "reply ACK status!=ok / missing ACK",
+        "trigger": "Wuxin ACK regression",
+        "wsOpens": true,
+        "targetReceives": true,
+        "frames": 0,
+        "logReceipt": true,
+        "eventualReply": false,
+        "cls": "protocol failure",
+        "wuxinEvidence": "S3/S2 depending on whether action frame arrived",
+        "earliest": "action frame arrival then no reply",
+        "falsePositiveRisk": "LOW but current ACK shape is correct"
+      }
+    ],
+    "yumu": [
+      {
+        "cause": "self-bot filter",
+        "trigger": "sender.user_id in robots.keys",
+        "wsOpens": true,
+        "targetReceives": false,
+        "frames": 0,
+        "logReceipt": false,
+        "eventualReply": false,
+        "cls": "abnormal",
+        "wuxinEvidence": "S2",
+        "earliest": "target log (Account connected only)",
+        "falsePositiveRisk": "LOW probability with random bridge ids"
+      },
+      {
+        "cause": "same-second duplicate filter",
+        "trigger": "same (time,group,sender) within 5000ms",
+        "wsOpens": true,
+        "targetReceives": false,
+        "frames": 0,
+        "logReceipt": false,
+        "eventualReply": false,
+        "cls": "normal-but-pathological",
+        "wuxinEvidence": "S2",
+        "earliest": "target log",
+        "falsePositiveRisk": "HIGH for time watchdog; duplicate is deliberate"
+      },
+      {
+        "cause": "group config / stale time / idempotency",
+        "trigger": "yumu:false, event older 30s, duplicate message id",
+        "wsOpens": true,
+        "targetReceives": false,
+        "frames": 0,
+        "logReceipt": false,
+        "eventualReply": false,
+        "cls": "config/normal",
+        "wuxinEvidence": "S2",
+        "earliest": "Wuxin group config knowledge partial",
+        "falsePositiveRisk": "MEDIUM"
+      },
+      {
+        "cause": "pending prompt/waiter consumes message",
+        "trigger": "AsyncMessageUtil waiter same group+sender",
+        "wsOpens": true,
+        "targetReceives": true,
+        "frames": 0,
+        "logReceipt": true,
+        "eventualReply": false,
+        "cls": "normal-but-pathological",
+        "wuxinEvidence": "S2",
+        "earliest": "target log",
+        "falsePositiveRisk": "HIGH for time watchdog"
+      },
+      {
+        "cause": "no service match / blocked / error-silent",
+        "trigger": "permission or no isHandle match",
+        "wsOpens": true,
+        "targetReceives": true,
+        "frames": 0,
+        "logReceipt": true,
+        "eventualReply": false,
+        "cls": "silent",
+        "wuxinEvidence": "S2",
+        "earliest": "target log",
+        "falsePositiveRisk": "MEDIUM"
+      },
+      {
+        "cause": "legitimately slow execution",
+        "trigger": "osu API 30s x retries + render 20s + no command deadline",
+        "wsOpens": true,
+        "targetReceives": true,
+        "frames": 0,
+        "logReceipt": true,
+        "eventualReply": true,
+        "cls": "legitimate slow",
+        "wuxinEvidence": "S2 for minutes",
+        "earliest": "none in Wuxin",
+        "falsePositiveRisk": "VERY HIGH"
+      },
+      {
+        "cause": "outbound action limiter / ACK timeout",
+        "trigger": "Shiro limiter or Wuxin ACK >10s late",
+        "wsOpens": true,
+        "targetReceives": true,
+        "frames": 0,
+        "logReceipt": true,
+        "eventualReply": "possible but delayed",
+        "cls": "protocol",
+        "wuxinEvidence": "S2",
+        "earliest": "none",
+        "falsePositiveRisk": "HIGH"
+      }
+    ],
+    "hydrant": [
+      {
+        "cause": "group-bot-config disabled",
+        "trigger": "hydrant:false",
+        "wsOpens": true,
+        "targetReceives": false,
+        "frames": 0,
+        "logReceipt": false,
+        "eventualReply": false,
+        "cls": "config",
+        "wuxinEvidence": "S2",
+        "earliest": "Wuxin group config knowledge partial",
+        "falsePositiveRisk": "LOW-MEDIUM"
+      },
+      {
+        "cause": "invalid mode / no binding / silent paths",
+        "trigger": "mode parse error, 妈船? unbound, owner-only no-op",
+        "wsOpens": true,
+        "targetReceives": true,
+        "frames": 0,
+        "logReceipt": true,
+        "eventualReply": false,
+        "cls": "silent",
+        "wuxinEvidence": "S2",
+        "earliest": "target log",
+        "falsePositiveRisk": "MEDIUM"
+      },
+      {
+        "cause": "ApiAccessException before any send",
+        "trigger": "Wuxin ACK regression >60s or bad ACK",
+        "wsOpens": true,
+        "targetReceives": true,
+        "frames": 0,
+        "logReceipt": true,
+        "eventualReply": false,
+        "cls": "protocol",
+        "wuxinEvidence": "S2",
+        "earliest": "none",
+        "falsePositiveRisk": "MEDIUM"
+      },
+      {
+        "cause": "long upstream osu API (100s) + Puppeteer screenshot fallback",
+        "trigger": "normal slow upstream or ACK data:null regression",
+        "wsOpens": true,
+        "targetReceives": true,
+        "frames": 0,
+        "logReceipt": true,
+        "eventualReply": true,
+        "cls": "legitimate slow",
+        "wuxinEvidence": "S2 for minutes",
+        "earliest": "none",
+        "falsePositiveRisk": "VERY HIGH"
+      }
+    ],
+    "lazybot": [
+      {
+        "cause": "group-bot-config disabled",
+        "trigger": "lazybot:false",
+        "wsOpens": true,
+        "targetReceives": false,
+        "frames": 0,
+        "logReceipt": false,
+        "eventualReply": false,
+        "cls": "config",
+        "wuxinEvidence": "S2",
+        "earliest": "Wuxin group config knowledge partial",
+        "falsePositiveRisk": "LOW-MEDIUM"
+      },
+      {
+        "cause": "null/stale fields / non-slash / unknown command",
+        "trigger": "bad synthetic event or typo",
+        "wsOpens": true,
+        "targetReceives": false,
+        "frames": 0,
+        "logReceipt": false,
+        "eventualReply": false,
+        "cls": "event shape",
+        "wuxinEvidence": "S2",
+        "earliest": "Wuxin can self-check event shape before send (not implemented)",
+        "falsePositiveRisk": "LOW if event fixed"
+      },
+      {
+        "cause": "in-flight dedup",
+        "trigger": "same sender+group+message executing",
+        "wsOpens": true,
+        "targetReceives": true,
+        "frames": 0,
+        "logReceipt": true,
+        "eventualReply": false,
+        "cls": "normal-but-pathological",
+        "wuxinEvidence": "S2",
+        "earliest": "target log",
+        "falsePositiveRisk": "HIGH"
+      },
+      {
+        "cause": "outbound limiter token timeout (10s)",
+        "trigger": "rate limit exhaustion",
+        "wsOpens": true,
+        "targetReceives": true,
+        "frames": 0,
+        "logReceipt": true,
+        "eventualReply": false,
+        "cls": "target-side",
+        "wuxinEvidence": "S2",
+        "earliest": "none",
+        "falsePositiveRisk": "HIGH"
+      },
+      {
+        "cause": "upstream HTTP no timeout",
+        "trigger": "stalled osu/renderer endpoint",
+        "wsOpens": true,
+        "targetReceives": true,
+        "frames": 0,
+        "logReceipt": true,
+        "eventualReply": true,
+        "cls": "legitimate slow (indefinite)",
+        "wuxinEvidence": "S2 indefinitely",
+        "earliest": "none",
+        "falsePositiveRisk": "VERY HIGH"
+      }
+    ]
+  },
+  "latencyEvidence": {
+    "kanon": {
+      "samples": [
+        {
+          "source": "V01_1 native/direct !re [SHK]Wuxin",
+          "n": 1,
+          "firstValidFrameMs": 5336.46,
+          "visibleMs": null,
+          "fullSettleMs": 6541.6,
+          "note": "direct OneBot WS probe; total window includes deliberate 1.2s hold"
+        },
+        {
+          "source": "V01_1 Wuxin bridge healthy !re",
+          "n": 1,
+          "firstValidFrameMs": 5539.18,
+          "visibleMs": 8562.06,
+          "fullSettleMs": 8570.72,
+          "note": "314,921B image reply"
+        },
+        {
+          "source": "P0_1 live collision-case after fix",
+          "n": 1,
+          "firstValidFrameMs": 3160.18,
+          "visibleMs": 6183.45,
+          "fullSettleMs": 6193.48,
+          "note": "image reply"
+        },
+        {
+          "source": "P0_1 live control after fix",
+          "n": 1,
+          "firstValidFrameMs": null,
+          "visibleMs": 5370.33,
+          "fullSettleMs": 5376.57,
+          "note": "first-frame not captured in trimmed output; same command"
+        }
+      ],
+      "note": "n=3-4 successful measurements; min first frame 3160ms, max 5539ms. No successful >6s first-frame sample exists, but Kanon upstream Flurl default is ~100s, so long silent execution is structurally possible."
+    },
+    "yumu": {
+      "samples": [
+        {
+          "source": "V01 bridge-success !r",
+          "n": 8,
+          "firstValidFrameMs": "not directly recorded; approx bridge_response - settle(3000): p50 ~5986, p95 ~32033",
+          "visibleMs": {
+            "p50": 8990.3,
+            "p95": 35037.82,
+            "max": 35037.82
+          },
+          "fullSettleMs": {
+            "p50": 8995.58,
+            "p95": 35046.57,
+            "max": 35046.57
+          },
+          "note": "bridge_response p50 8985.60 / p95 35032.83 / max 35032.83"
+        },
+        {
+          "source": "P0_3_1 audit live yumu duplicate probe",
+          "n": 2,
+          "firstValidFrameMs": null,
+          "visibleMs": [
+            9693,
+            10539
+          ],
+          "fullSettleMs": [
+            9693,
+            10539
+          ],
+          "note": "same command, staggered senders"
+        }
+      ],
+      "note": "Successful first-valid-frame can reach ~35s (p95). A 30s no-frame watchdog would sit at the edge of observed p95; a 5/10/15s watchdog would kill a large fraction of legitimate yumu calls."
+    },
+    "hydrant": {
+      "samples": [
+        {
+          "source": "QB03 policy audit live probe where [SHK]Wuxin",
+          "n": 1,
+          "firstValidFrameMs": 3346.54,
+          "visibleMs": 6360,
+          "fullSettleMs": 6360,
+          "note": "text reply (204 text bytes); BOTS_ROOT required for token"
+        },
+        {
+          "source": "pre-probe without BOTS_ROOT",
+          "n": 1,
+          "firstValidFrameMs": null,
+          "visibleMs": null,
+          "fullSettleMs": null,
+          "note": "401 error at 942ms - auth misconfiguration fails fast, not silently"
+        }
+      ],
+      "note": "n=1 success. Upstream osu API default ~100s + Puppeteer screenshot fallback means slow >10s Hydrant replies are structurally possible."
+    },
+    "lazybot": {
+      "samples": [],
+      "note": "No live bridge samples (deployment paused). Source audit: upstream HTTP has no timeout (indefinite); Shiro outbound limiter can suppress reply up to 10s. Any time-based policy is INSUFFICIENT_EVIDENCE."
+    }
+  },
+  "ackFrameSemantics": {
+    "kanon": {
+      "transportLiveness": "any action frame",
+      "commandReceipt": "TARGET_LOG only",
+      "commandExecution": "TARGET_LOG only",
+      "commandCompletion": "send_msg frame",
+      "immediateReceiptAck": "none",
+      "notes": "No heartbeat/meta frames generated by target. ACK-only traffic cannot occur for the bridged commands except when Wuxin receives the reply action itself (which is already valid)."
+    },
+    "yumu": {
+      "transportLiveness": "any action frame",
+      "commandReceipt": "TARGET_LOG only",
+      "commandExecution": "TARGET_LOG only",
+      "commandCompletion": "send_group_msg frame",
+      "immediateReceiptAck": "none",
+      "notes": "No target-generated heartbeat. Action frames can be suppressed by Shiro limiter; send_group_msg is completion, not progress."
+    },
+    "hydrant": {
+      "transportLiveness": "any action frame",
+      "commandReceipt": "TARGET_LOG only",
+      "commandExecution": "TARGET_LOG only",
+      "commandCompletion": "send_msg frame",
+      "immediateReceiptAck": "none",
+      "notes": "send_msg is completion. No progress frames in bridged path."
+    },
+    "lazybot": {
+      "transportLiveness": "any action frame",
+      "commandReceipt": "TARGET_LOG only",
+      "commandExecution": "TARGET_LOG only",
+      "commandCompletion": "send_group_msg frame",
+      "immediateReceiptAck": "none",
+      "notes": "Same as Yumu/Shiro; bridged commands use send_group_msg only."
+    }
+  }
+}

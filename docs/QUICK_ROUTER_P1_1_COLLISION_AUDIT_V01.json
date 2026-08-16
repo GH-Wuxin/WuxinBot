@@ -1,0 +1,313 @@
+{
+  "audit": "QUICK_ROUTER_P1_1_EVIDENCE_CORRECTION",
+  "generatedAt": "2026-08-16T05:59:20.978Z",
+  "branch": "fix/onebot-connection-lifecycle",
+  "head": "1658292",
+  "conclusion": "NO_PRODUCTION_BUG_NO_FIX_REQUIRED",
+  "totals": {
+    "normalizedCollisions": 11,
+    "EXECUTABLE_EXECUTABLE": 6,
+    "NONEXEC_EXECUTABLE": 0,
+    "NONEXEC_NONEXEC": 4,
+    "INTRA_DEFINITION_NORMALIZATION_DUPLICATE": 1
+  },
+  "collisions": [
+    {
+      "domain": "!",
+      "normalizedAlias": "badge",
+      "classification": "NONEXEC_NONEXEC",
+      "candidates": [
+        {
+          "registryIndex": 0,
+          "source": "kanon",
+          "id": "badge",
+          "rawAlias": "badge",
+          "executable": false,
+          "executionKind": "documentation_only",
+          "targetBot": null
+        },
+        {
+          "registryIndex": 1,
+          "source": "yumu",
+          "id": "badge",
+          "rawAlias": "badge",
+          "executable": false,
+          "executionKind": "documentation_only",
+          "targetBot": null
+        }
+      ],
+      "winner": "kanon:badge",
+      "winnerExecutable": false
+    },
+    {
+      "domain": "!",
+      "normalizedAlias": "bp",
+      "classification": "EXECUTABLE_EXECUTABLE",
+      "candidates": [
+        {
+          "registryIndex": 0,
+          "source": "kanon",
+          "id": "bp",
+          "rawAlias": "bp",
+          "executable": true,
+          "executionKind": "proxy",
+          "targetBot": "kanon"
+        },
+        {
+          "registryIndex": 1,
+          "source": "yumu",
+          "id": "bp",
+          "rawAlias": "bp",
+          "executable": true,
+          "executionKind": "proxy",
+          "targetBot": "yumu"
+        }
+      ],
+      "winner": "kanon:bp",
+      "winnerExecutable": true
+    },
+    {
+      "domain": "!",
+      "normalizedAlias": "get bg",
+      "classification": "NONEXEC_NONEXEC",
+      "candidates": [
+        {
+          "registryIndex": 0,
+          "source": "kanon",
+          "id": "getbg",
+          "rawAlias": "get bg",
+          "executable": false,
+          "executionKind": "documentation_only",
+          "targetBot": null
+        },
+        {
+          "registryIndex": 1,
+          "source": "yumu",
+          "id": "getbg",
+          "rawAlias": "get bg",
+          "executable": false,
+          "executionKind": "documentation_only",
+          "targetBot": null
+        }
+      ],
+      "winner": "kanon:getbg",
+      "winnerExecutable": false
+    },
+    {
+      "domain": "!",
+      "normalizedAlias": "info",
+      "classification": "EXECUTABLE_EXECUTABLE",
+      "candidates": [
+        {
+          "registryIndex": 0,
+          "source": "kanon",
+          "id": "info",
+          "rawAlias": "info",
+          "executable": true,
+          "executionKind": "proxy",
+          "targetBot": "kanon"
+        },
+        {
+          "registryIndex": 1,
+          "source": "yumu",
+          "id": "info",
+          "rawAlias": "info",
+          "executable": true,
+          "executionKind": "local",
+          "targetBot": null
+        }
+      ],
+      "winner": "kanon:info",
+      "winnerExecutable": true
+    },
+    {
+      "domain": "!",
+      "normalizedAlias": "pr",
+      "classification": "EXECUTABLE_EXECUTABLE",
+      "candidates": [
+        {
+          "registryIndex": 0,
+          "source": "kanon",
+          "id": "recent",
+          "rawAlias": "pr",
+          "executable": true,
+          "executionKind": "proxy",
+          "targetBot": "kanon"
+        },
+        {
+          "registryIndex": 1,
+          "source": "yumu",
+          "id": "recent",
+          "rawAlias": "pr",
+          "executable": true,
+          "executionKind": "proxy",
+          "targetBot": "yumu"
+        }
+      ],
+      "winner": "kanon:recent",
+      "winnerExecutable": true
+    },
+    {
+      "domain": "!",
+      "normalizedAlias": "re",
+      "classification": "EXECUTABLE_EXECUTABLE",
+      "candidates": [
+        {
+          "registryIndex": 0,
+          "source": "kanon",
+          "id": "recent",
+          "rawAlias": "re",
+          "executable": true,
+          "executionKind": "proxy",
+          "targetBot": "kanon"
+        },
+        {
+          "registryIndex": 1,
+          "source": "yumu",
+          "id": "recent",
+          "rawAlias": "re",
+          "executable": true,
+          "executionKind": "proxy",
+          "targetBot": "yumu"
+        }
+      ],
+      "winner": "kanon:recent",
+      "winnerExecutable": true
+    },
+    {
+      "domain": "!",
+      "normalizedAlias": "recent",
+      "classification": "EXECUTABLE_EXECUTABLE",
+      "candidates": [
+        {
+          "registryIndex": 0,
+          "source": "kanon",
+          "id": "recent",
+          "rawAlias": "recent",
+          "executable": true,
+          "executionKind": "proxy",
+          "targetBot": "kanon"
+        },
+        {
+          "registryIndex": 1,
+          "source": "yumu",
+          "id": "recent",
+          "rawAlias": "recent",
+          "executable": true,
+          "executionKind": "proxy",
+          "targetBot": "yumu"
+        }
+      ],
+      "winner": "kanon:recent",
+      "winnerExecutable": true
+    },
+    {
+      "domain": "!",
+      "normalizedAlias": "score",
+      "classification": "EXECUTABLE_EXECUTABLE",
+      "candidates": [
+        {
+          "registryIndex": 0,
+          "source": "kanon",
+          "id": "score",
+          "rawAlias": "score",
+          "executable": true,
+          "executionKind": "local",
+          "targetBot": null
+        },
+        {
+          "registryIndex": 1,
+          "source": "yumu",
+          "id": "score",
+          "rawAlias": "score",
+          "executable": true,
+          "executionKind": "local",
+          "targetBot": null
+        }
+      ],
+      "winner": "kanon:score",
+      "winnerExecutable": true
+    },
+    {
+      "domain": "!",
+      "normalizedAlias": "search",
+      "classification": "NONEXEC_NONEXEC",
+      "candidates": [
+        {
+          "registryIndex": 0,
+          "source": "kanon",
+          "id": "search",
+          "rawAlias": "search",
+          "executable": false,
+          "executionKind": "documentation_only",
+          "targetBot": null
+        },
+        {
+          "registryIndex": 1,
+          "source": "yumu",
+          "id": "explore",
+          "rawAlias": "search",
+          "executable": false,
+          "executionKind": "documentation_only",
+          "targetBot": null
+        }
+      ],
+      "winner": "kanon:search",
+      "winnerExecutable": false
+    },
+    {
+      "domain": "!",
+      "normalizedAlias": "todaybp",
+      "classification": "NONEXEC_NONEXEC",
+      "candidates": [
+        {
+          "registryIndex": 0,
+          "source": "kanon",
+          "id": "todaybp",
+          "rawAlias": "todaybp",
+          "executable": false,
+          "executionKind": "documentation_only",
+          "targetBot": null
+        },
+        {
+          "registryIndex": 1,
+          "source": "yumu",
+          "id": "todaybp",
+          "rawAlias": "todaybp",
+          "executable": false,
+          "executionKind": "documentation_only",
+          "targetBot": null
+        }
+      ],
+      "winner": "kanon:todaybp",
+      "winnerExecutable": false
+    },
+    {
+      "domain": "none",
+      "normalizedAlias": "我的年度osu!",
+      "classification": "INTRA_DEFINITION_NORMALIZATION_DUPLICATE",
+      "candidates": [
+        {
+          "registryIndex": 0,
+          "source": "hydrant",
+          "id": "annual",
+          "rawAlias": "我的年度osu!",
+          "executable": false,
+          "executionKind": "documentation_only",
+          "targetBot": null
+        },
+        {
+          "registryIndex": 1,
+          "source": "hydrant",
+          "id": "annual",
+          "rawAlias": "我的年度osu！",
+          "executable": false,
+          "executionKind": "documentation_only",
+          "targetBot": null
+        }
+      ],
+      "winner": "hydrant:annual",
+      "winnerExecutable": false
+    }
+  ]
+}
