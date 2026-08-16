@@ -27,6 +27,11 @@ import {
   type RawQuickCommandDef,
 } from './commands/quick.meta.js';
 import { normalizeAlias } from './commands/alias.js';
+import {
+  beginLatencyTrace,
+  finishLatencyTrace,
+  markLatencySpan,
+} from '../perf/latencyTrace.js';
 
 export type { QuickCommandDef, RawQuickCommandDef } from './commands/quick.meta.js';
 export { EXCLAMATION_DEFS, SLASH_DEFS, HYDRANT_DEFS, ALL_QUICK_DEFS, QUICK_DEFS } from './commands/quick.meta.js';
@@ -396,6 +401,41 @@ export async function handleQuickCommand(
   match: QuickMatch,
   permissions: QuickRoutePermissions,
 ): Promise<{ handled: boolean; replied?: boolean; reason?: string }> {
+  const traceId = beginLatencyTrace('quick_command', {
+    command: match.def.id,
+    source: match.def.source,
+    prefix: match.prefix,
+    capability: match.def.capability || '',
+    handler: match.def.handler || '',
+    bridge: Boolean(match.def.bridge),
+  });
+  if (traceId) markLatencySpan(traceId, 'route_start', { parseAlreadyCompleted: true });
+  try {
+    const result = await handleQuickCommandInner(event, sendMessage, db, match, permissions, traceId);
+    if (traceId) {
+      markLatencySpan(traceId, 'route_done', {
+        handled: Boolean(result?.handled),
+        replied: Boolean(result?.replied),
+      });
+    }
+    return result;
+  } finally {
+    finishLatencyTrace(traceId, {
+      command: match.def.id,
+      source: match.def.source,
+      prefix: match.prefix,
+    });
+  }
+}
+
+async function handleQuickCommandInner(
+  event: any,
+  sendMessage: any,
+  db: any,
+  match: QuickMatch,
+  permissions: QuickRoutePermissions,
+  traceId?: string | null,
+): Promise<{ handled: boolean; replied?: boolean; reason?: string }> {
   const { def, args, atTargets } = match;
 
   // Global/group/user gates shared with the main pipeline.
@@ -442,11 +482,14 @@ export async function handleQuickCommand(
   const requester = String(event.nickname || event.userId || '未知用户');
   const record = (content: string, images: string[] = []) => {
     try {
+      if (traceId) markLatencySpan(traceId, 'observation_persist_start');
       recordQuickContext(
         event,
         `【快捷查询】${requester}：${String(content || '').trim()}`,
         images,
+        traceId,
       );
+      if (traceId) markLatencySpan(traceId, 'observation_persist_done');
     } catch { /* memory is non-fatal */ }
   };
   const recordShadow = (
@@ -461,8 +504,10 @@ export async function handleQuickCommand(
           capability,
           username,
           bpSelection,
+          traceId,
         );
         record(summary || `快捷指令查询完成（${def.source} 面板，结果见图片）`, images);
+        if (traceId) markLatencySpan(traceId, 'context_ready');
       } catch { /* memory is non-fatal */ }
     })();
   };
@@ -490,7 +535,13 @@ export async function handleQuickCommand(
   // engine; on any bridge failure we fall through to the internal handler.
   let bridgeUser = '';
   let parsedArgs: ParsedOsuArgs | undefined;
+  // Request-scoped marker for QUICK_BRIDGE_FIX_P0_2: set only when a local
+  // bridge call was actually issued for THIS top-level quick command. It is
+  // consumed by executeInternalBotCommand so its recent case does not repeat
+  // the same-target bridge after the fallback.
+  let bridgeAlreadyAttemptedFor = '';
   if (def.bridge && hasLocalEndpoint(def.source)) {
+    if (traceId) markLatencySpan(traceId, 'subject_resolution_start');
     let bridgeCommand = buildBridgeCommand(match);
     const bridgeContext = {
       // Bridge traffic always uses the dedicated virtual group 770099, whose
@@ -573,16 +624,22 @@ export async function handleQuickCommand(
         bridgeUser = parsed.username;
       }
     }
+    if (traceId) markLatencySpan(traceId, 'subject_resolution_done', { resolved: Boolean(bridgeUser) });
     try {
       const bridgeTimeout = def.source === 'lazybot' ? 30_000 : 60_000;
+      if (traceId) markLatencySpan(traceId, 'bridge_request_start', { source: def.source });
+      bridgeAlreadyAttemptedFor = def.source;
       const reply = await callLocalBot(def.source, bridgeCommand, bridgeContext, bridgeTimeout);
+      if (traceId) markLatencySpan(traceId, 'bridge_response', { source: def.source, frames: reply?.frames });
       // Bridge replies are the original bot's own output: keep text and images
       // exactly as produced (the internal engine is the one that needed the
       // image-only rule to avoid duplicating its panel text).
       const payload = [reply.text, ...reply.images].filter(Boolean).join('\n');
       if (payload) {
         try {
+          if (traceId) markLatencySpan(traceId, 'send_start', { channel: 'bridge' });
           if (sendMessage) await sendMessage(event, payload);
+          if (traceId) markLatencySpan(traceId, 'send_resolved', { channel: 'bridge' });
         } catch (deliveryError: any) {
           console.error(`[quick] bridge ${def.source} 发送失败（面板可能已发出）:`, deliveryError?.message || deliveryError);
         }
@@ -607,6 +664,7 @@ export async function handleQuickCommand(
       }
       console.error(`[quick] bridge ${def.source} 返回空回复，回退内部引擎`);
     } catch (error: any) {
+      if (traceId) markLatencySpan(traceId, 'bridge_failed', { source: def.source });
       console.error(`[quick] bridge ${def.source} 失败，回退内部引擎:`, error?.message || error);
     }
   }
@@ -764,20 +822,33 @@ export async function handleQuickCommand(
     }
     let result: Awaited<ReturnType<typeof executeInternalBotCommand>>;
     try {
+      if (traceId && def.capability === 'recent') {
+        markLatencySpan(traceId, 'recent_execution_start', { path: 'internal_engine' });
+      }
       result = await executeInternalBotCommand(
         botId,
         def.capability,
         username,
         { db, userId: String(event.userId), groupId: event.groupId, event, isOwner: permissions.isOwner, beatmapId: parsed.scoreBeatmapId },
         parsed.bpSelection,
+        bridgeAlreadyAttemptedFor ? { bridgeAlreadyAttemptedFor } : undefined,
+        traceId,
       );
+      if (traceId && def.capability === 'recent') {
+        markLatencySpan(traceId, 'recent_execution_done', { path: 'internal_engine' });
+      }
     } catch (error: any) {
+      if (traceId && def.capability === 'recent') {
+        markLatencySpan(traceId, 'recent_execution_done', { path: 'internal_engine', failed: true });
+      }
       if (sendMessage) await sendMessage(event, String(error?.message || error));
       record(`查询失败：${String(error?.message || error)}`);
       return { handled: true, replied: true, reason: `${def.capability}_error` };
     }
     try {
+      if (traceId) markLatencySpan(traceId, 'send_start', { channel: 'internal' });
       if (sendMessage) await sendMessage(event, quickPayload(result));
+      if (traceId) markLatencySpan(traceId, 'send_resolved', { channel: 'internal' });
     } catch (deliveryError: any) {
       console.error(`[quick] ${def.id} 发送失败（面板可能已发出）:`, deliveryError?.message || deliveryError);
     }
