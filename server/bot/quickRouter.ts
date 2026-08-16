@@ -16,8 +16,11 @@ import {
 import { callLocalBot, hasLocalEndpoint } from '../bots/localBridge.js';
 import {
   recordQuickContext,
+  recordQuickContextPending,
+  hydrateQuickContextPending,
   buildQuickShadowSummary,
 } from './quickMemory.js';
+import { registerPendingQuickObservation } from './quickContext.js';
 import {
   EXCLAMATION_DEFS,
   SLASH_DEFS,
@@ -498,7 +501,16 @@ async function handleQuickCommandInner(
     images: string[],
     bpSelection?: BpQuerySelection,
   ) => {
-    void (async () => {
+    // QUICK_CONTEXT_FIX_QB08: write the placeholder context slot NOW (the
+    // visible reply was already sent) so later hydration can never reorder
+    // two consecutive quick commands. The shadow fetch still runs
+    // fire-and-forget and hydrates the SAME record in place; the next
+    // conversational turn drains the registered pending promise before
+    // building its LLM context.
+    const fallback = `快捷指令查询完成（${def.source} 面板，结果见图片）`;
+    const placeholder = `【快捷查询】${requester}：${fallback}`;
+    const pendingId = recordQuickContextPending(event, placeholder, images, traceId);
+    void registerPendingQuickObservation(event, async () => {
       try {
         const summary = await buildQuickShadowSummary(
           capability,
@@ -506,10 +518,17 @@ async function handleQuickCommandInner(
           bpSelection,
           traceId,
         );
-        record(summary || `快捷指令查询完成（${def.source} 面板，结果见图片）`, images);
+        const content = summary
+          ? `【快捷查询】${requester}：${summary}`
+          : placeholder;
+        hydrateQuickContextPending(event, pendingId, content, images, traceId);
         if (traceId) markLatencySpan(traceId, 'context_ready');
-      } catch { /* memory is non-fatal */ }
-    })();
+      } catch {
+        // Hydration failure keeps the already-persisted placeholder; the
+        // pending entry always settles so a later turn can never hang.
+        hydrateQuickContextPending(event, pendingId, placeholder, images, traceId);
+      }
+    });
   };
 
   // Per-group bot toggle: when a specific bot is disabled for this group, its
@@ -636,14 +655,10 @@ async function handleQuickCommandInner(
       // image-only rule to avoid duplicating its panel text).
       const payload = [reply.text, ...reply.images].filter(Boolean).join('\n');
       if (payload) {
-        try {
-          if (traceId) markLatencySpan(traceId, 'send_start', { channel: 'bridge' });
-          if (sendMessage) await sendMessage(event, payload);
-          if (traceId) markLatencySpan(traceId, 'send_resolved', { channel: 'bridge' });
-        } catch (deliveryError: any) {
-          console.error(`[quick] bridge ${def.source} 发送失败（面板可能已发出）:`, deliveryError?.message || deliveryError);
-        }
-        log('bridge', `${def.source}:${bridgeCommand}`);
+        // QUICK_CONTEXT_QB08 A1: the conversation record (text) or placeholder
+        // + pending registration (image-only shadow) MUST exist BEFORE the
+        // visible send can be observed by a follow-up. Never register after
+        // await sendMessage.
         const bridgeText = String(reply.text || '').trim();
         if (bridgeText) {
           record(`[${def.source}] ${bridgeText}`, reply.images);
@@ -660,6 +675,14 @@ async function handleQuickCommandInner(
             record(`快捷指令查询完成（${def.source} 面板，结果见图片）`, reply.images);
           }
         }
+        try {
+          if (traceId) markLatencySpan(traceId, 'send_start', { channel: 'bridge' });
+          if (sendMessage) await sendMessage(event, payload);
+          if (traceId) markLatencySpan(traceId, 'send_resolved', { channel: 'bridge' });
+        } catch (deliveryError: any) {
+          console.error(`[quick] bridge ${def.source} 发送失败（面板可能已发出）:`, deliveryError?.message || deliveryError);
+        }
+        log('bridge', `${def.source}:${bridgeCommand}`);
         return { handled: true, replied: true, reason: `bridge:${def.source}` };
       }
       console.error(`[quick] bridge ${def.source} 返回空回复，回退内部引擎`);

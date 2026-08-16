@@ -119,6 +119,7 @@ import {
 } from './bot/gate.js';
 import { handleOwnerCommand } from './bot/ownerCommands.js';
 import { matchQuickCommand, handleQuickCommand, quickRouterEnabled } from './bot/quickRouter.js';
+import { settlePendingQuickObservations } from './bot/quickContext.js';
 
 function escapeCqParam(value) {
   return String(value || '')
@@ -615,6 +616,11 @@ async function processIncomingInner(event, sendMessage = undefined, queuedDecisi
 
   let thinkingTimer = null;
   try {
+    // QUICK_CONTEXT_FIX_QB08: before building this conversational turn's
+    // context, drain any pending quick observation whose visible reply already
+    // completed for THIS group+user. Bounded by QUICK_CONTEXT_PENDING_WAIT_MS;
+    // no pending work means zero added latency.
+    await settlePendingQuickObservations(event);
     const liveDb = readDb();
     const liveGroup = getGroup(liveDb, event.groupId) || { groupId: event.groupId, name: '私聊' };
     const liveUserPolicy = getUserPolicy(liveDb, event.groupId, event.userId);

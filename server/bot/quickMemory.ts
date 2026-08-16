@@ -35,6 +35,66 @@ export function recordQuickContext(
   images: string[] = [],
   traceId?: string | null,
 ): void {
+  persistQuickContext(event, content, images, undefined, traceId);
+}
+
+/**
+ * Write the user message plus a PLACEHOLDER assistant record synchronously and
+ * return its pending id. The placeholder holds the conversation slot so later
+ * shadow hydration can never reorder two quick commands (QB-08 candidate C).
+ */
+export function recordQuickContextPending(
+  event: any,
+  content: string,
+  images: string[] = [],
+  traceId?: string | null,
+): string {
+  const pendingId = crypto.randomUUID();
+  persistQuickContext(event, content, images, pendingId, traceId);
+  return pendingId;
+}
+
+/**
+ * Hydrate a pending assistant record in place. Never appends a new record, so
+ * it cannot overwrite or reorder the conversation.
+ */
+export function hydrateQuickContextPending(
+  event: any,
+  pendingId: string,
+  content: string,
+  images: string[] = [],
+  traceId?: string | null,
+): void {
+  try {
+    if (traceId) markLatencySpan(traceId, 'observation_hydrate_start');
+    const cleanContent = textWithoutControlPlaceholders(
+      String(content || '').trim(),
+    ).slice(0, SUMMARY_LIMIT);
+    updateDb((draft) => {
+      if (!Array.isArray(draft.messages)) return;
+      const target = draft.messages.find(
+        (m: any) => m.role === 'assistant' && m.pendingQuickId === pendingId,
+      );
+      if (!target) return;
+      target.content = cleanContent;
+      target.media = images.length > 0
+        ? { images: images.slice(0, ASSISTANT_IMAGES_LIMIT) }
+        : undefined;
+      delete target.pendingQuickId;
+    });
+    if (traceId) markLatencySpan(traceId, 'observation_hydrate_done');
+  } catch (error: any) {
+    console.error('[quickMemory] 快捷指令上下文 hydration 失败:', error?.message || error);
+  }
+}
+
+function persistQuickContext(
+  event: any,
+  content: string,
+  images: string[],
+  pendingQuickId: string | undefined,
+  traceId?: string | null,
+): void {
   try {
     if (traceId) markLatencySpan(traceId, 'observation_persist_start');
     const createdAt = nowIso();
@@ -66,7 +126,7 @@ export function recordQuickContext(
       });
 
       if (cleanContent || images.length > 0) {
-        draft.messages.push({
+        const assistant: any = {
           id: crypto.randomUUID(),
           role: 'assistant',
           type: event.type,
@@ -80,7 +140,9 @@ export function recordQuickContext(
               : undefined,
           inContext: true,
           createdAt,
-        });
+        };
+        if (pendingQuickId) assistant.pendingQuickId = pendingQuickId;
+        draft.messages.push(assistant);
       }
     });
     if (traceId) markLatencySpan(traceId, 'observation_persist_done');
