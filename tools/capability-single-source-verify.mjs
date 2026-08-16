@@ -22,7 +22,7 @@ import {
   QUERY_OSU_PARAMS,
   queryOsuParamJsonSchema,
 } from '../server/bots/capabilityCatalog.ts';
-import { buildBotToolSchemas, INTERNAL_CAPABILITIES } from '../server/bots/registry.ts';
+import { buildBotToolSchemas, INTERNAL_CAPABILITIES, internalCapabilitySupported } from '../server/bots/registry.ts';
 import { validateOperation } from '../server/bots/guard.ts';
 
 let passed = 0;
@@ -80,9 +80,14 @@ const BASELINE_CAPABILITIES = [
   'leaderboard',
 ];
 
+// A1 — match stays in INTERNAL_CAPABILITIES for the command-side !ml route,
+// but it is no longer an LLM-callable capability and must disappear from the
+// query_osu enum, tool description and guard acceptance.
+const BASELINE_CALLABLE_CAPABILITIES = BASELINE_CAPABILITIES.filter((name) => name !== 'match');
+
 const BASELINE_DESCRIPTION =
   '查询 osu! 数据（Wuxin 内部：osu! API v2、PP+、skill store、rosu pp 估算；图片由 yumu-image 渲染）。可用查询：' +
-  BASELINE_CAPABILITIES.map((capability) => {
+  BASELINE_CALLABLE_CAPABILITIES.map((capability) => {
     const entry = {
       bp: 'bp（最佳成绩（单张 #N 或范围 N-M，最多 100 张，一张图））',
       bp_type: 'bp_type（BP 谱面类型分析（用户问 BP 类型/占比/结构/构成/串图/跳图/aim/alt/tech/stream 时调用；osu!oracle 对 Top100 分类，仅 osu!std，训练范围约 5★-9★，结果按真实分布回复，禁止编造））',
@@ -106,35 +111,36 @@ const BASELINE_QUERY_OSU_SCHEMA = {
   properties: {
     capability: {
       type: 'string',
-      enum: BASELINE_CAPABILITIES,
+      enum: BASELINE_CALLABLE_CAPABILITIES,
       description: '查询类型',
     },
     username: {
       type: 'string',
+      maxLength: 128,
       description: 'osu! 用户名。不填则用提问玩家的绑定账号。',
     },
     bot: {
       type: 'string',
-      enum: ['yumu', 'kanon', 'hydrant', 'lazybot'],
-      description: '用户点名要用的 bot（雨沐/猫猫/消防栓/LazyBot）时填对应 id；不填默认用雨沐渲染。',
+      enum: ['yumu', 'kanon'],
+      description: '用户点名要用的 bot 时填对应 id。仅 capability=recent 使用：yumu → !r，kanon → !re；其他 bot 点名会由系统明确提示并降级为内部查询。其他查询类型请勿填写。',
     },
     bp_rank: {
       type: 'integer',
       minimum: 1,
       maximum: 100,
-      description: 'BP 单张名次，与 bp_start/bp_end 互斥。',
+      description: 'BP 单张名次，与 bp_start/bp_end 互斥。仅 capability=bp 使用。',
     },
     bp_start: {
       type: 'integer',
       minimum: 1,
       maximum: 100,
-      description: 'BP 范围起始（含），与 bp_end 同时填，最多 20 张。与 bp_rank 互斥。',
+      description: 'BP 范围起始（含），与 bp_end 同时填，最多 100 张。与 bp_rank 互斥。仅 capability=bp 使用。',
     },
     bp_end: {
       type: 'integer',
       minimum: 1,
       maximum: 100,
-      description: 'BP 范围结束（含）。',
+      description: 'BP 范围结束（含）。仅 capability=bp 使用。',
     },
     beatmap_id: {
       type: 'integer',
@@ -143,7 +149,9 @@ const BASELINE_QUERY_OSU_SCHEMA = {
     },
     mods: {
       type: 'string',
-      description: 'mod 组合，成对双字母，如 HDHR / HDDT（beatmap_lookup / pp_calc / leaderboard 可选）。',
+      maxLength: 16,
+      pattern: '^([A-Za-z]{2})*$',
+      description: 'mod 组合，成对双字母，如 HDHR / HDDT（仅 beatmap_lookup / pp_calc / leaderboard 使用）。',
     },
     accuracy: {
       type: 'number',
@@ -182,16 +190,28 @@ assertEqual(
 );
 
 console.log('\n=== capability inventory identical ===');
-assertEqual(callableCapabilities(), BASELINE_CAPABILITIES, 'callable capability inventory');
+assertEqual(callableCapabilities(), BASELINE_CALLABLE_CAPABILITIES, 'callable capability inventory');
 assertEqual(
   INTERNAL_CAPABILITIES.map((entry) => entry.name),
   BASELINE_CAPABILITIES,
-  'executor registry capability inventory',
+  'executor registry capability inventory (match stays command-side)',
 );
 assertEqual(
   AGENT_CAPABILITY_META.map((entry) => entry.capability),
   BASELINE_CAPABILITIES,
   'agent capability meta inventory',
+);
+const matchMeta = AGENT_CAPABILITY_META.find((entry) => entry.capability === 'match');
+assertEqual(matchMeta?.callable, false, 'match is declared command-side only');
+assertEqual(
+  internalCapabilitySupported('match'),
+  true,
+  'match stays reachable through the command-side internal executor (!ml)',
+);
+assertEqual(
+  validateOperation({ type: 'query_osu', params: { capability: 'match' } }).ok,
+  false,
+  'guard rejects match for the Agent tool surface',
 );
 
 console.log('\n=== pplus/ppplus alias cleanup without behavior change ===');

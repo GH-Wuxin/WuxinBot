@@ -8,6 +8,7 @@ import {
   callableCapabilityNames,
   capabilityDescription,
   capabilityNames,
+  findCapability,
   type CapabilityName,
 } from './capabilityCatalog.js';
 
@@ -15,20 +16,29 @@ export interface AgentCapabilityMeta {
   capability: string;
   callable: boolean;
   description: string;
-  /** Every capability here is a readonly data query; writes stay command-only. */
-  sideEffects: 'readonly';
+  /**
+   * Agent-callable capabilities must be readonly data queries; command-only
+   * entries may be stateful (match listens/polls/pushes).
+   */
+  sideEffects: 'readonly' | 'stateful';
   /** Deployment rollout. owner_canary = only the owner's turns may trigger it. */
   rollout: 'all' | 'owner_canary';
 }
 
-export const AGENT_CAPABILITY_META: readonly AgentCapabilityMeta[] = callableCapabilityNames().map(
-  (name: CapabilityName) => ({
-    capability: name,
-    callable: true,
-    description: capabilityDescription(name),
-    sideEffects: 'readonly',
-    rollout: 'all',
-  }),
+// Meta covers EVERY catalog capability (callable and command-only) so the
+// consistency audit can enforce both directions. callable/rollout/sideEffects
+// are derived from the catalog; nothing is duplicated by hand.
+export const AGENT_CAPABILITY_META: readonly AgentCapabilityMeta[] = capabilityNames().map(
+  (name: CapabilityName) => {
+    const capability = findCapability(name);
+    return {
+      capability: name,
+      callable: Boolean(capability?.callable),
+      description: capabilityDescription(name),
+      sideEffects: (capability?.sideEffects || 'readonly') as 'readonly' | 'stateful',
+      rollout: (capability?.rollout || 'all') as 'all' | 'owner_canary',
+    };
+  },
 );
 
 export function agentCapabilityMeta(capability: string): AgentCapabilityMeta | undefined {
@@ -65,7 +75,13 @@ export function auditAgentCapabilityRegistry(): CapabilityAuditViolation[] {
     if (entry.callable && entry.rollout !== 'all' && entry.rollout !== 'owner_canary') {
       violations.push({ code: 'INVALID_ROLLOUT', message: `capability "${entry.capability}" has invalid rollout "${entry.rollout}"` });
     }
-    if (entry.sideEffects !== 'readonly') {
+    // Rollout is currently metadata/documentation, not a runtime security
+    // boundary. Until enforcement exists, no LLM-callable capability may use
+    // owner_canary because a model would otherwise be able to trigger it.
+    if (entry.callable && entry.rollout === 'owner_canary') {
+      violations.push({ code: 'OWNER_CANARY_WITHOUT_ENFORCEMENT', message: `callable capability "${entry.capability}" uses owner_canary but rollout is not runtime-enforced` });
+    }
+    if (entry.callable && entry.sideEffects !== 'readonly') {
       violations.push({ code: 'NON_READONLY_AGENT_CAPABILITY', message: `capability "${entry.capability}" must stay readonly for agent exposure` });
     }
   }

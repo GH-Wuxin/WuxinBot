@@ -5,6 +5,7 @@ import type { AllowedOperation, AllowedOperationType } from './types.js';
 import {
   BEATMAP_CAPABILITY_NAMES,
   BEATMAP_ID_PARAM,
+  RECENT_BOT_SELECTOR_IDS,
   isCallableCapability,
   LEADERBOARD_CAPABILITY,
   PLAYER_CAPABILITY_NAMES,
@@ -176,6 +177,16 @@ export function validateOperation(op: AllowedOperation): { ok: true } | { ok: fa
       const usernameError = validatePlayerText(username, '玩家名', false);
       if (usernameError) return { ok: false, reason: usernameError };
 
+      // The LLM schema exposes bot as the supported recent selectors only
+      // (yumu/kanon). Any other value must be rejected, never silently
+      // coerced to a compatibility backend.
+      if (hasOwnParam(op.params, 'bot')) {
+        const botValue = String(op.params.bot || '').trim();
+        if (!(RECENT_BOT_SELECTOR_IDS as readonly string[]).includes(botValue)) {
+          return { ok: false, reason: `bot 必须是 ${RECENT_BOT_SELECTOR_IDS.join('/')} 之一` };
+        }
+      }
+
       // Parameter applicability is derived from the capability catalog.
       // Player-family params and beatmap-family params are rejected separately
       // so the error ordering matches the pre-catalog behavior exactly.
@@ -206,7 +217,7 @@ export function validateOperation(op: AllowedOperation): { ok: true } | { ok: fa
         if (!familyRejection.ok) return familyRejection;
         if (hasOwnParam(op.params, 'mods')) {
           const modsValue = String(op.params.mods || '');
-          if (modsValue.length > 16 || !/^[A-Za-z]*$/.test(modsValue)) {
+          if (modsValue.length > 16 || !/^([A-Za-z]{2})*$/.test(modsValue)) {
             return { ok: false, reason: 'mods 必须是成对双字母组合' };
           }
         }
@@ -247,6 +258,16 @@ export function validateOperation(op: AllowedOperation): { ok: true } | { ok: fa
           BEATMAP_CAPABILITY_NAMES,
         );
         if (!familyRejection.ok) return familyRejection;
+        // Player-family parameters are applicability-scoped too: bp_rank /
+        // bp_start / bp_end / compact belong to capability=bp, so present-on-
+        // wrong-player-capability must be rejected instead of silently ignored
+        // by the executor.
+        const intraFamilyRejection = rejectFamilyDisallowedParams(
+          op.params,
+          capability,
+          PLAYER_CAPABILITY_NAMES,
+        );
+        if (!intraFamilyRejection.ok) return intraFamilyRejection;
       }
       return validateBpSelectionParams(op);
     }

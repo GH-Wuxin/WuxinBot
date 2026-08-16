@@ -13,13 +13,22 @@
 export const INTERNAL_BOT_IDS = ['yumu', 'kanon', 'hydrant', 'lazybot'] as const;
 export type InternalBotId = (typeof INTERNAL_BOT_IDS)[number];
 
+/**
+ * The only bot selector values whose recent execution path is truly distinct:
+ * yumu → !r bridge, kanon → !re bridge. hydrant/lazybot have no supported
+ * recent selection; bot.ts must degrade those named requests explicitly
+ * instead of silently mapping them to yumu.
+ */
+export const RECENT_BOT_SELECTOR_IDS = ['yumu', 'kanon'] as const;
+
 export interface CapabilityDescriptor {
   /** Canonical capability name. This is exactly the value exposed to the LLM. */
   name: string;
   /** Long description used in query_osu tool description and capability meta. */
   description: string;
   callable: boolean;
-  sideEffects: 'readonly';
+  /** Agent-callable capabilities must be readonly; command-only may be stateful. */
+  sideEffects: 'readonly' | 'stateful';
   rollout: 'all' | 'owner_canary';
   /** Command-side aliases. `pplus` is the legacy quick-router spelling. */
   aliases?: readonly string[];
@@ -96,8 +105,13 @@ export const CAPABILITY_CATALOG: readonly CapabilityDescriptor[] = [
   {
     name: 'match',
     description: 'osu! 多人比赛观战（!ml <matchID> 开始监听对局并推送开局/回合成绩；玩家说“观战/比赛直播/!ml”时引导使用快捷指令）',
-    callable: true,
-    sideEffects: 'readonly',
+    // Command-side only. matchManager writes osuMatchListeners, creates a
+    // MatchListener and starts continuous polling that later pushes messages
+    // to the group, so it violates the Agent readonly contract. It must stay
+    // reachable through executeInternalBotCommand / !ml but NOT in the LLM
+    // query_osu enum (guard.ts rejects non-callable capabilities).
+    callable: false,
+    sideEffects: 'stateful',
     rollout: 'all',
     family: 'player',
   },
@@ -194,6 +208,9 @@ export interface CapabilityParamSpec {
   schemaEnum?: readonly string[];
   minimum?: number;
   maximum?: number;
+  maxLength?: number;
+  /** ECMAScript pattern mirroring the guard lexical gate. */
+  pattern?: string;
   /**
    * Capabilities this parameter may accompany. When undefined the parameter
    * is allowed for every capability.
@@ -214,41 +231,43 @@ export const QUERY_OSU_PARAMS: readonly CapabilityParamSpec[] = [
     schemaType: 'string',
     schemaDescription: 'osu! 用户名。不填则用提问玩家的绑定账号。',
     exposed: true,
+    maxLength: 128,
     allowedFor: [...PLAYER_CAPABILITY_NAMES] as readonly CapabilityName[],
   },
   {
     name: 'bot',
     schemaType: 'string',
-    schemaDescription: '用户点名要用的 bot（雨沐/猫猫/消防栓/LazyBot）时填对应 id；不填默认用雨沐渲染。',
+    schemaDescription: '用户点名要用的 bot 时填对应 id。仅 capability=recent 使用：yumu → !r，kanon → !re；其他 bot 点名会由系统明确提示并降级为内部查询。其他查询类型请勿填写。',
     exposed: true,
-    schemaEnum: INTERNAL_BOT_IDS,
+    schemaEnum: RECENT_BOT_SELECTOR_IDS,
+    allowedFor: ['recent'] as readonly CapabilityName[],
   },
   {
     name: 'bp_rank',
     schemaType: 'integer',
-    schemaDescription: 'BP 单张名次，与 bp_start/bp_end 互斥。',
+    schemaDescription: 'BP 单张名次，与 bp_start/bp_end 互斥。仅 capability=bp 使用。',
     exposed: true,
     minimum: 1,
     maximum: 100,
-    allowedFor: [...PLAYER_CAPABILITY_NAMES] as readonly CapabilityName[],
+    allowedFor: ['bp'] as readonly CapabilityName[],
   },
   {
     name: 'bp_start',
     schemaType: 'integer',
-    schemaDescription: 'BP 范围起始（含），与 bp_end 同时填，最多 20 张。与 bp_rank 互斥。',
+    schemaDescription: 'BP 范围起始（含），与 bp_end 同时填，最多 100 张。与 bp_rank 互斥。仅 capability=bp 使用。',
     exposed: true,
     minimum: 1,
     maximum: 100,
-    allowedFor: [...PLAYER_CAPABILITY_NAMES] as readonly CapabilityName[],
+    allowedFor: ['bp'] as readonly CapabilityName[],
   },
   {
     name: 'bp_end',
     schemaType: 'integer',
-    schemaDescription: 'BP 范围结束（含）。',
+    schemaDescription: 'BP 范围结束（含）。仅 capability=bp 使用。',
     exposed: true,
     minimum: 1,
     maximum: 100,
-    allowedFor: [...PLAYER_CAPABILITY_NAMES] as readonly CapabilityName[],
+    allowedFor: ['bp'] as readonly CapabilityName[],
   },
   {
     name: 'beatmap_id',
@@ -263,8 +282,11 @@ export const QUERY_OSU_PARAMS: readonly CapabilityParamSpec[] = [
   {
     name: 'mods',
     schemaType: 'string',
-    schemaDescription: 'mod 组合，成对双字母，如 HDHR / HDDT（beatmap_lookup / pp_calc / leaderboard 可选）。',
+    schemaDescription: 'mod 组合，成对双字母，如 HDHR / HDDT（仅 beatmap_lookup / pp_calc / leaderboard 使用）。',
     exposed: true,
+    maxLength: 16,
+    pattern: '^([A-Za-z]{2})*$',
+    allowedFor: [...BEATMAP_CAPABILITY_NAMES] as readonly CapabilityName[],
   },
   {
     name: 'accuracy',
@@ -302,13 +324,14 @@ export const QUERY_OSU_PARAMS: readonly CapabilityParamSpec[] = [
     allowedFor: [LEADERBOARD_CAPABILITY],
   },
   // compact is accepted by the runtime/guard for BP list rendering but is
-  // deliberately not exposed in the LLM schema.
+  // deliberately not exposed in the LLM schema. Runtime consumes it only for
+  // capability=bp.
   {
     name: 'compact',
     schemaType: 'boolean',
     schemaDescription: '',
     exposed: false,
-    allowedFor: [...PLAYER_CAPABILITY_NAMES] as readonly CapabilityName[],
+    allowedFor: ['bp'] as readonly CapabilityName[],
   },
 ] as const;
 
@@ -343,5 +366,7 @@ export function queryOsuParamJsonSchema(param: CapabilityParamSpec): Record<stri
   if (param.schemaEnum) schema.enum = [...param.schemaEnum];
   if (param.minimum !== undefined) schema.minimum = param.minimum;
   if (param.maximum !== undefined) schema.maximum = param.maximum;
+  if (param.maxLength !== undefined) schema.maxLength = param.maxLength;
+  if (param.pattern) schema.pattern = param.pattern;
   return schema;
 }
