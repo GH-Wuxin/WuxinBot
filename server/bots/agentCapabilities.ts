@@ -49,12 +49,16 @@ export function callableCapabilities(): string[] {
   return [...callableCapabilityNames()];
 }
 
-export function buildQueryOsuDescription(): string {
-  const capList = AGENT_CAPABILITY_META
+export function buildQueryOsuDescriptionFromMeta(meta: readonly AgentCapabilityMeta[]): string {
+  const capList = meta
     .filter((entry) => entry.callable)
     .map((entry) => `${entry.capability}（${entry.description}）`)
     .join('；');
   return `查询 osu! 数据（Wuxin 内部：osu! API v2、PP+、skill store、rosu pp 估算；图片由 yumu-image 渲染）。可用查询：${capList}。玩家要求推图/推荐谱面/打什么图时使用 capability=recommend，username 可填任意 osu! 用户名（不需要提问者已绑定）。数据来自真实 API，不是你凭记忆编的。pp_calc 返回的是 rosu 估算值，引用时说明是估算。没有 capability 枚举之外的查询类型，禁止编造参数。回答中出现的任何 pp/星数/acc/排名数字都必须来自工具返回：玩家要精确计算而你还没调用对应工具时，必须先调用工具再答；工具没返回或失败时禁止报数（哪怕标注“大概”），只能说明还没算出来或服务不可用。玩家上轮说“要/好/算/帮我算”确认时，先真的调用工具计算再回复，不能只查一次成绩就说“算好了”。不要在你的回复正文里输出任何 XML/DSML/tool_calls 格式的调用文本，工具调用只通过结构化 tool_calls 执行。`;
+}
+
+export function buildQueryOsuDescription(): string {
+  return buildQueryOsuDescriptionFromMeta(AGENT_CAPABILITY_META);
 }
 
 export interface CapabilityAuditViolation {
