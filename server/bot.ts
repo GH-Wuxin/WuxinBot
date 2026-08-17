@@ -64,6 +64,7 @@ import {
   isIdentityQuestion,
   neutralIdentityReply
 } from './bot/reply.js';
+import { buildRewriteEntry, recordRewriteTelemetry } from './bot/rewriteTelemetry.js';
 import { recordMemoryObservation, maybeUpdateMemoryProfile, maybeRecordImageMemorySummary, updateMemoryProfile, commitMemoryProfileResult, maybeSweepDueMemoryProfiles } from './bot/memory.js';
 import { getGroupProfile, updateGroupProfile, clearGroupProfile, incrementGroupProfilePending, hasGroupProfileContent } from './bot/groupProfile.js';
 import { getRelationshipProfile, updateRelationshipProfile, clearRelationshipProfile, incrementPairPending } from './bot/relationshipProfile.js';
@@ -85,6 +86,7 @@ import {
 import { validateOperation, looksLikeToolCallMarkup } from './bots/guard.js';
 import { RECENT_BOT_SELECTOR_IDS } from './bots/capabilityCatalog.js';
 import { runToolLoop, tryResolveBotResponse } from './bots/executor.js';
+import { buildToolGuidance } from './bots/toolGuidance.js';
 import {
   claimInboundEvent,
   getQueueState,
@@ -837,11 +839,6 @@ async function processIncomingInner(event, sendMessage = undefined, queuedDecisi
     if (useTools) {
       const registry = loadRegistry(liveDb);
       const tools = buildBotToolSchemas(registry);
-      // Add tool availability note to system prompt
-      if (messages[0]?.role === 'system') {
-        messages[0].content += '\n\n【可用工具】你可以调用 query_osu 获取真实 osu! 数据（BP、最近成绩、玩家信息、PP+ 等）。数据来自 osu! API v2 和 PP+ 服务，不是你凭记忆编造的。涉及 osu! 数据时必须调用工具，不准用聊天记录或上下文中的旧数据。当玩家问"我是谁"等身份问题时也必须调工具查绑定。日常闲聊不需要使用工具。如果玩家问的是分析/判断类问题（为什么偏科、怎么提升），也需要先查数据再做分析。涉及 BP 谱面类型或占比（串图/跳图比例、bp 类型）的分析必须调用 query_osu 的 bp_type 能力（osu!oracle 真实分类，仅支持 osu!std 的 aim/alt/tech/stream 四类）。用户提到串图/跳图/占比/BP结构/BP类型/aim图/stream图/tech图/alt图时一律调用该工具，禁止用上下文猜测或跳过工具；未调用工具前不得给出任何比例。本 bot 只支持 osu!std 查询，用户问 taiko/catch/mania 时如实说明暂不支持，禁止拿 std 数据冒充。玩家要求推图/推荐谱面/打什么图时，必须调用 query_osu capability=recommend 获取真实候选后再推荐；推荐对象可以是任意 osu! 用户名（如 给 mrekk 推图），不需要对方已绑定；工具没返回候选时如实说推不了，禁止凭记忆编图。 如果 recommend 工具调用失败或没有返回候选，你只能如实说明失败原因（如同分段数据太少、服务暂时不可用），绝对禁止编造任何谱面名、难度或 BID 数字。推图时最终回复的文本里必须包含每张推荐图的完整标题和 BID（直接用工具返回的 BID 行，例如 BID 3743551），不能只发图片省略 BID。推图支持自然语言筛选：玩家提出 BPM/AR/CS/OD/HP/星数/时长等限制时，正常调用 recommend 即可，系统会自动解析限制，并按带 Mod 后的实际数值筛选和展示；推荐时必须说明按什么条件筛的，禁止无视条件硬推；筛选结果为空时如实告知玩家可以放宽条件，禁止用不满足条件的图充数。注意：雨沐/猫猫/消防栓/LazyBot 是 QQ 群里的独立机器人，不是你可以调用的工具——你应该用 query_osu 获取数据。涉及"最近成绩/最近没玩/多久没打/最近状态"时必须调用 query_osu capability=recent 实时查询；profile、info、skill、get_player_skill 的结果都不包含 recent，工具没返回 recent 字段绝不等于玩家没有最近成绩。历史对话和技能快照中的 osu! 数据可能过时，以实时查询为准。 引用任何 osu! 查询结果时必须先说玩家名（如 Naaahida 的最近成绩：），禁止把某位玩家的数据说成另一位玩家的；不确定数据归属时如实说不知道，不要猜测。 用户点名用某个 bot 时（雨沐/猫猫/消防栓/LazyBot），若查询的是最近成绩（capability=recent），只有雨沐/猫猫是支持的 selector：把 bot 参数填成对应 id（yumu/kanon）；点名消防栓/LazyBot 时不要填 bot，系统会自动明确提示降级并给内部结果。其他查询类型不要填 bot，因为该参数不会被使用。';
-      }
-
       // ── Deterministic osu! data routing ──
       // When the user's intent is an unambiguous data lookup, we execute the
       // tool before the LLM sees the context. This prevents context poisoning
@@ -872,6 +869,20 @@ async function processIncomingInner(event, sendMessage = undefined, queuedDecisi
           await drainReplyQueue(replyLockKey, processIncoming);
           return { replied: true, text: errorText, reason };
         }
+      }
+
+      // P1B conditional tool-guidance injection. The deterministic required
+      // tool path is the only runtime state that narrows the exposed
+      // capability set for this turn; otherwise the unified query_osu tool
+      // exposes the full callable catalog and guidance stays full.
+      const requiredCapability = requiredTool?.toolName === 'query_osu' && requiredTool.args?.capability
+        ? String(requiredTool.args.capability)
+        : null;
+      if (messages[0]?.role === 'system') {
+        const toolGuidance = requiredCapability
+          ? buildToolGuidance({ exposedCapabilities: [requiredCapability] })
+          : buildToolGuidance();
+        if (toolGuidance) messages[0].content += '\n\n' + toolGuidance;
       }
 
       const harnessChat = (db: any, opts: any) => completeChat(db, {
@@ -967,10 +978,47 @@ async function processIncomingInner(event, sendMessage = undefined, queuedDecisi
     let replyText = sanitizeReply(ai.text, liveDb.settings);
     const imageCqCodes = toolImages.map(toolImageToCq).filter(Boolean);
     const hasDirectToolDelivery = Boolean(toolDirectContent || imageCqCodes.length > 0);
+    const rewriteEligible = isWeirdReply(replyText);
+    let rewriteSkipReason = null;
+    if (rewriteEligible) {
+      rewriteSkipReason = hasDirectToolDelivery
+        ? 'direct_tool_delivery'
+        : (responseOptions.longForm ? 'long_form' : null);
+    }
+    if (rewriteEligible && rewriteSkipReason) {
+      void recordRewriteTelemetry(liveDb, buildRewriteEntry({
+        event,
+        turnId,
+        eligible: true,
+        invoked: false,
+        skipReason: rewriteSkipReason,
+        provider: ai.provider,
+        model: ai.model,
+        usageAvailable: false,
+        latencyMs: null,
+        result: 'SKIPPED',
+        originalText: replyText,
+        rewrittenText: replyText,
+      }));
+    }
     if (hasDirectToolDelivery) {
       replyText = compactDirectToolLead(replyText, toolDirectContent, imageCqCodes.length > 0);
-    } else if (!responseOptions.longForm && isWeirdReply(replyText)) {
+    } else if (!responseOptions.longForm && rewriteEligible) {
       if (isIdentityQuestion(event.text)) {
+        void recordRewriteTelemetry(liveDb, buildRewriteEntry({
+          event,
+          turnId,
+          eligible: true,
+          invoked: false,
+          skipReason: 'identity_question_deterministic',
+          provider: ai.provider,
+          model: ai.model,
+          usageAvailable: false,
+          latencyMs: null,
+          result: 'SKIPPED',
+          originalText: replyText,
+          rewrittenText: replyText,
+        }));
         replyText = neutralIdentityReply(event, liveDb.settings);
       } else {
         const rewrite = await rewriteNormalReply(liveDb, replyText, event, { reasoningRouter, turnId });
@@ -1095,4 +1143,3 @@ async function processIncomingInner(event, sendMessage = undefined, queuedDecisi
     void drainReplyQueue(replyLockKey, processIncoming);
   }
 }
-

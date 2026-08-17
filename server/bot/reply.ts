@@ -2,6 +2,8 @@
 // Reply output: sanitization, segmentation, merged-forward, rewrite guard.
 // Extracted from bot.ts.
 import { completeChat, thinkingParamsForLevel } from './llm.js';
+import { buildRewriteEntry, classifyTimeout, recordRewriteTelemetry, textChanged } from './rewriteTelemetry.js';
+import { updateDb } from '../store.js';
 import { modelSupportsVision } from './prompt.js';
 import { emptyTurnState, reasoningEnabledFor, reasoningInput } from './reasoningRouter.js';
 import { looksLikeToolCallMarkup, stripToolCallMarkup } from '../bots/guard.js';
@@ -137,7 +139,7 @@ export function neutralIdentityReply(event, settings = {}) {
 }
 
 export async function rewriteNormalReply(db, originalText, event, options = {}) {
-  const { reasoningRouter, turnId } = options;
+  const { reasoningRouter, turnId, completeChatFn = completeChat, telemetryWriteFn } = options;
   const rewriteInput = reasoningInput('rewrite', { previousFastFailure: true });
   let rewriteTurn = emptyTurnState();
   const rewriteDecision = reasoningRouter
@@ -145,12 +147,16 @@ export async function rewriteNormalReply(db, originalText, event, options = {}) 
     : { level: 'off', source: 'rule', reasonCode: 'fast_default' };
   if (reasoningRouter) rewriteTurn = reasoningRouter.mergeTurn(rewriteTurn, rewriteDecision);
   const rewriteWire = thinkingParamsForLevel(rewriteDecision.level, reasoningEnabledFor(db));
-  const response = await completeChat(db, {
-    model: db.settings.model || 'deepseek-v4-flash',
-    messages: [
-      {
-        role: 'system',
-        content: `把下面这句 QQ 群聊回复改写成正常、克制、自然的群友语气。
+  const startedAt = Date.now();
+  let response;
+  let telemetryResult = 'ERROR_FALLBACK';
+  try {
+    response = await completeChatFn(db, {
+      model: db.settings.model || 'deepseek-v4-flash',
+      messages: [
+        {
+          role: 'system',
+          content: `把下面这句 QQ 群聊回复改写成正常、克制、自然的群友语气。
 要求：
 - 只输出改写后的回复
 - 1 到 2 句
@@ -162,18 +168,28 @@ export async function rewriteNormalReply(db, originalText, event, options = {}) 
 - 如果是在回答"我是谁"，只平静说明昵称和 QQ，不要反问或调侃
 - 如果对方是 owner，也只是更稳重一点，不要谄媚
 - 保留大意即可`
-      },
-      {
-        role: 'user',
-        content: `当前发言者：${event.nickname || event.userId}（QQ:${event.userId}）
+        },
+        {
+          role: 'user',
+          content: `当前发言者：${event.nickname || event.userId}（QQ:${event.userId}）
 原回复：${originalText}`
-      }
-    ],
-    temperature: 0.25,
-    maxTokens: 180,
-    ...rewriteWire,
-    label: '回复改写'
-  });
+        }
+      ],
+      temperature: 0.25,
+      maxTokens: 180,
+      ...rewriteWire,
+      label: '回复改写'
+    });
+    const rewrittenText = String(response.text || originalText);
+    const changed = textChanged(originalText, rewrittenText);
+    telemetryResult = response.text
+      ? (changed ? 'CHANGED' : 'UNCHANGED')
+      : 'EMPTY_FALLBACK';
+    response = { ...response, text: response.text || originalText };
+  } catch (error) {
+    telemetryResult = classifyTimeout(error) ? 'TIMEOUT_FALLBACK' : 'ERROR_FALLBACK';
+    response = { text: originalText, usage: {} };
+  }
   if (reasoningRouter && turnId) {
     reasoningRouter.record({
       turnId,
@@ -184,9 +200,30 @@ export async function rewriteNormalReply(db, originalText, event, options = {}) 
       actual: response?.meta || null,
     });
   }
+  const usage = response?.usage || {};
+  const usageAvailable = Boolean(
+    Number.isFinite(usage.prompt_tokens ?? usage.input_tokens)
+    || Number.isFinite(usage.completion_tokens ?? usage.output_tokens),
+  );
+  const telemetry = buildRewriteEntry({
+    event,
+    turnId,
+    eligible: true,
+    invoked: true,
+    provider: response?.provider,
+    model: response?.model,
+    usage,
+    usageAvailable,
+    latencyMs: Date.now() - startedAt,
+    result: telemetryResult,
+    originalText,
+    rewrittenText: response?.text || originalText,
+  });
+  await recordRewriteTelemetry(db, telemetry, telemetryWriteFn || updateDb);
   return {
-    text: response.text || originalText,
-    usage: response.usage || {}
+    text: response?.text || originalText,
+    usage,
+    telemetry,
   };
 }
 
