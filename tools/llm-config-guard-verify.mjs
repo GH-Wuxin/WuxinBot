@@ -1,5 +1,10 @@
 import assert from 'node:assert/strict';
 import { createLLMClient, llmProvider, normalizeLlmMessages } from '../server/bot/llm.ts';
+import {
+  DEEPSEEK_FLASH_VISION_MODEL,
+  isDeepSeekVisionModel,
+  resolveDeepSeekWireModel,
+} from '../server/modelConfig.ts';
 
 const baseSettings = {
   apiKey: 'sk-test',
@@ -7,6 +12,14 @@ const baseSettings = {
   apiBaseUrl: 'https://api.deepseek.com',
   model: 'deepseek-v4-flash'
 };
+
+assert.equal(
+  resolveDeepSeekWireModel('deepseek-v4-flash'),
+  DEEPSEEK_FLASH_VISION_MODEL,
+  'the stable Flash id must resolve to the Vision wire model'
+);
+assert.equal(resolveDeepSeekWireModel('deepseek-v4-pro'), 'deepseek-v4-pro', 'Pro must remain unchanged');
+assert.equal(isDeepSeekVisionModel('deepseek-v4-flash'), true, 'the Flash alias must advertise vision');
 
 assert.equal(
   llmProvider({ settings: { ...baseSettings, apiBaseUrl: 'https://token-plan-cn.xiaomimimo.com/v1' } }),

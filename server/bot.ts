@@ -56,6 +56,7 @@ import {
 import {
   sanitizeReply,
   sendReplySegments,
+  replyToCurrentMessageOptions,
   isWeirdReply,
   rewriteNormalReply,
   visualLimitationReply,
@@ -123,6 +124,14 @@ import {
 import { handleOwnerCommand } from './bot/ownerCommands.js';
 import { matchQuickCommand, handleQuickCommand, quickRouterEnabled } from './bot/quickRouter.js';
 import { settlePendingQuickObservations } from './bot/quickContext.js';
+
+function replyTargetMetadata(event) {
+  return {
+    replyToMessageId: String(event.messageId || ''),
+    replyToUserId: String(event.userId || ''),
+    replyToNickname: String(event.nickname || event.userId || ''),
+  };
+}
 
 function escapeCqParam(value) {
   return String(value || '')
@@ -261,13 +270,18 @@ export async function decideReply({ db, group, userPolicy, text, mentioned, user
   if (db.settings.onlyMentionMode && !mentioned) return { shouldReply: false, reason: '全局设置为只在 @ 时回复' };
   const visionCapable = modelSupportsVision(db);
   const hasVisionImages = visionCapable && Array.isArray(images) && images.length > 0;
-  if (text.length < 1) return { shouldReply: false, reason: '空消息或无法识别的消息' };
+  if (text.length < 1) {
+    if (hasVisionImages) return { shouldReply: false, reason: '真实纯图片已记录，未点名机器人时不主动回复' };
+    return { shouldReply: false, reason: '空消息或无法识别的消息' };
+  }
   if (!textWithoutControlPlaceholders(text)) {
     if (hasVisionImages && mentioned) return { shouldReply: true, reason: '用户 @ 机器人并发送图片，交给视觉模型回答' };
+    if (hasVisionImages) return { shouldReply: false, reason: '真实纯图片已记录，未点名机器人时不主动回复' };
     return { shouldReply: false, reason: '只有 @/媒体/卡片占位，没有可回复的文字', inContext: false };
   }
   if (onlyVisualMessage(text)) {
     if (hasVisionImages && mentioned) return { shouldReply: true, reason: '用户 @ 机器人并发送纯图片，交给视觉模型回答' };
+    if (hasVisionImages) return { shouldReply: false, reason: '真实纯图片已记录，未点名机器人时不主动回复' };
     return { shouldReply: false, reason: visionCapable ? '纯图片或表情包消息，默认不抢话' : '图片或表情包消息，当前默认忽略', inContext: false };
   }
   if (asksToInspectVisual(text)) {
@@ -319,15 +333,22 @@ export function oneBotToInternal(event) {
   const text = normalizeMessage(event.raw_message || event.message);
   let images = extractImageInputs(event.message || event.raw_message);
   const replyMessageId = extractReplyMessageId(event.message || event.raw_message);
+  let quotedMessage;
 
   // If the user quoted a message, try to include images from the quoted message.
   // This handles: user replies to an image message and @bots.
   if (replyMessageId && images.length === 0) {
     try {
       const db = readDb();
-      const quoted = db.messages.find((m) => String(m.id) === replyMessageId);
-      if (quoted?.media?.images?.length) {
-        images = quoted.media.images;
+      const quoted = db.messages.find((m) => String(m.sourceMessageId || m.messageId || m.id) === replyMessageId);
+      if (quoted) {
+        quotedMessage = {
+          messageId: replyMessageId,
+          text: String(quoted.content || ''),
+          images: quoted.media?.images || [],
+          userId: String(quoted.userId || ''),
+          nickname: String(quoted.nickname || ''),
+        };
       }
     } catch { /* DB read failure is non-fatal */ }
   }
@@ -342,10 +363,25 @@ export function oneBotToInternal(event) {
     text,
     images,
     replyMessageId,
+    quotedMessage,
     senderRole: event.sender?.role || 'member',
     atTargets: extractAtTargets(event.message || event.raw_message),
     raw: event
   };
+}
+
+export function collectEventVisionImages(event) {
+  const all = [
+    ...(Array.isArray(event?.images) ? event.images : []),
+    ...(Array.isArray(event?.quotedMessage?.images) ? event.quotedMessage.images : []),
+  ];
+  const seen = new Set();
+  return all.filter((image) => {
+    const key = String(image?.url || image?.file || '');
+    if (!key || seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
 }
 
 export async function processIncoming(event, sendMessage = undefined, queuedDecision = undefined, isFromDrain = false) {
@@ -454,17 +490,19 @@ async function processIncomingInner(event, sendMessage = undefined, queuedDecisi
   const group = getGroup(db, event.groupId);
   const userPolicy = getUserPolicy(db, event.groupId, event.userId);
   const mentioned = mentionsBot(event.text, settings);
+  const eventVisionImages = collectEventVisionImages(event);
   // On the first pass the message + decision are recorded and side effects
   // (memory, XP, pair/profile pending) run exactly once. Drained replays use
   // the stored decision and must NOT duplicate history or side effects.
   const decision = queuedDecision || (event.type === 'private'
     ? { shouldReply: String(event.userId) === String(settings.ownerQq || event.userId), reason: '私聊消息' }
-    : await decideReply({ db, group, userPolicy, text: event.text, mentioned, userId: event.userId, images: event.images || [] }));
+    : await decideReply({ db, group, userPolicy, text: event.text, mentioned, userId: event.userId, images: eventVisionImages }));
 
   if (!isFromDrain) {
     updateDb((draft) => {
       draft.messages.push({
         id: crypto.randomUUID(),
+        sourceMessageId: event.messageId,
         role: 'user',
         type: event.type,
         groupId: event.groupId,
@@ -564,6 +602,7 @@ async function processIncomingInner(event, sendMessage = undefined, queuedDecisi
     updateDb((draft) => {
       draft.messages.push({
         id: crypto.randomUUID(),
+        ...replyTargetMetadata(event),
         role: 'assistant',
         type: event.type,
         groupId: event.groupId,
@@ -691,7 +730,7 @@ async function processIncomingInner(event, sendMessage = undefined, queuedDecisi
     if (namedBotDowngradeNotice) {
       if (sendMessage) await sendMessage(event, namedBotDowngradeNotice);
       updateDb((draft) => {
-        draft.messages.push({ id: crypto.randomUUID(), role: 'assistant', type: event.type, groupId: event.groupId, userId: 'bot', nickname: '机器人', content: namedBotDowngradeNotice, inContext: true, createdAt: nowIso() });
+        draft.messages.push({ id: crypto.randomUUID(), ...replyTargetMetadata(event), role: 'assistant', type: event.type, groupId: event.groupId, userId: 'bot', nickname: '机器人', content: namedBotDowngradeNotice, inContext: true, createdAt: nowIso() });
         draft.usage.replies += 1;
       });
     }
@@ -704,7 +743,7 @@ async function processIncomingInner(event, sendMessage = undefined, queuedDecisi
       const replyText = `${namedBotRequest.botName}目前没有接入 Harness 的真实调用通道。无心内部 osu! 查询可以提供类似数据。`;
       if (sendMessage) await sendMessage(event, replyText);
       updateDb((draft) => {
-        draft.messages.push({ id: crypto.randomUUID(), role: 'assistant', type: event.type, groupId: event.groupId, userId: 'bot', nickname: '机器人', content: replyText, inContext: true, createdAt: nowIso() });
+        draft.messages.push({ id: crypto.randomUUID(), ...replyTargetMetadata(event), role: 'assistant', type: event.type, groupId: event.groupId, userId: 'bot', nickname: '机器人', content: replyText, inContext: true, createdAt: nowIso() });
         draft.usage.replies += 1;
       });
       await drainReplyQueue(replyLockKey, processIncoming);
@@ -717,7 +756,7 @@ async function processIncomingInner(event, sendMessage = undefined, queuedDecisi
       const replyText = '当前还没有接入真实联网搜索源。可以在控制台「模型」页配置 SearXNG 或其他搜索服务。';
       if (sendMessage) await sendMessage(event, replyText);
       updateDb((draft) => {
-        draft.messages.push({ id: crypto.randomUUID(), role: 'assistant', type: event.type, groupId: event.groupId, userId: 'bot', nickname: '机器人', content: replyText, inContext: true, createdAt: nowIso() });
+        draft.messages.push({ id: crypto.randomUUID(), ...replyTargetMetadata(event), role: 'assistant', type: event.type, groupId: event.groupId, userId: 'bot', nickname: '机器人', content: replyText, inContext: true, createdAt: nowIso() });
         draft.usage.replies += 1;
       });
       await drainReplyQueue(replyLockKey, processIncoming);
@@ -733,6 +772,7 @@ async function processIncomingInner(event, sendMessage = undefined, queuedDecisi
         updateDb((draft) => {
           draft.messages.push({
             id: crypto.randomUUID(),
+            ...replyTargetMetadata(event),
             role: 'assistant',
             type: event.type,
             groupId: event.groupId,
@@ -759,6 +799,7 @@ async function processIncomingInner(event, sendMessage = undefined, queuedDecisi
         updateDb((draft) => {
           draft.messages.push({
             id: crypto.randomUUID(),
+            ...replyTargetMetadata(event),
             role: 'assistant',
             type: event.type,
             groupId: event.groupId,
@@ -804,7 +845,7 @@ async function processIncomingInner(event, sendMessage = undefined, queuedDecisi
     // If user asks to look at images but none attached, attach only the most
     // recent relevant image. This keeps vision on-demand and avoids paying for
     // every image posted in an active group.
-    let visionImages = modelSupportsVision(liveDb) ? (event.images || []) : [];
+    let visionImages = modelSupportsVision(liveDb) ? collectEventVisionImages(event) : [];
     if (visionImages.length === 0 && shouldUseRecentVisionImage(liveDb, event)) {
       const contextImages = recentVisionImageMessages(liveDb, event, 10);
       if (contextImages.length > 0) {
@@ -821,7 +862,7 @@ async function processIncomingInner(event, sendMessage = undefined, queuedDecisi
       if (sendMessage) await sendMessage(event, errorText);
       updateDb((draft) => {
         draft.messages.push({
-          id: crypto.randomUUID(), role: 'assistant', type: event.type,
+          id: crypto.randomUUID(), ...replyTargetMetadata(event), role: 'assistant', type: event.type,
           groupId: event.groupId, userId: 'bot', nickname: '机器人',
           content: errorText, inContext: true, createdAt: nowIso()
         });
@@ -860,7 +901,7 @@ async function processIncomingInner(event, sendMessage = undefined, queuedDecisi
           if (sendMessage) await sendMessage(event, errorText);
           updateDb((draft) => {
             draft.messages.push({
-              id: crypto.randomUUID(), role: 'assistant', type: event.type,
+              id: crypto.randomUUID(), ...replyTargetMetadata(event), role: 'assistant', type: event.type,
               groupId: event.groupId, userId: 'bot', nickname: '机器人',
               content: errorText, inContext: true, createdAt: nowIso()
             });
@@ -1074,7 +1115,7 @@ async function processIncomingInner(event, sendMessage = undefined, queuedDecisi
       // three-segment/merged-forward paths. NapCat receives one complete,
       // deterministic message with any images appended structurally.
       const outboundText = [deliveredText, ...imageCqCodes].filter(Boolean).join('\n');
-      if (sendMessage) await sendMessage(event, outboundText);
+      if (sendMessage) await sendMessage(event, outboundText, replyToCurrentMessageOptions(event));
       segments = [outboundText];
     } else if (isLongReply && sendMessage) {
       await sendForwardText(sendMessage, event, 'Wuxin 回复', deliveredText);
@@ -1086,6 +1127,7 @@ async function processIncomingInner(event, sendMessage = undefined, queuedDecisi
     updateDb((draft) => {
       draft.messages.push({
         id: crypto.randomUUID(),
+        ...replyTargetMetadata(event),
         role: 'assistant',
         type: event.type,
         groupId: event.groupId,

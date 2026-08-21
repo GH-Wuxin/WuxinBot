@@ -17,6 +17,13 @@ export interface BotEvent {
   atTargets: string[];
   images?: { type: 'image'; url?: string; file?: string }[];
   replyMessageId?: string;
+  quotedMessage?: {
+    messageId: string;
+    text: string;
+    images: { type: 'image'; url?: string; file?: string }[];
+    userId?: string;
+    nickname?: string;
+  };
   senderRole?: 'owner' | 'admin' | 'member';
   raw?: Record<string, unknown>;
 }
@@ -53,6 +60,10 @@ export interface DbSettings {
   maxTokens: number;
   contextLimit: number;
   ownerPrivateContextCharBudget: number;
+  groupContextSearchEnabled?: boolean;
+  groupContextSearchPoolSize?: number;
+  groupContextSearchMaxExtra?: number;
+  groupContextSearchCharBudget?: number;
   botNames: string;
   personalityPrompt: string;
   baselinePersonalityPrompt?: string;
@@ -174,6 +185,10 @@ export interface MemorySample {
 
 export interface MessageRecord {
   id: string;
+  sourceMessageId?: string;
+  replyToMessageId?: string;
+  replyToUserId?: string;
+  replyToNickname?: string;
   role: 'user' | 'assistant';
   type: 'group' | 'private';
   groupId: string;

@@ -9,8 +9,9 @@
  */
 
 import { extractReplyMessageId, asksToInspectVisual, extractImageInputs } from '../server/bot/cleaning.ts';
-import { decideReply } from '../server/bot.ts';
-import { buildPrompt } from '../server/bot/prompt.ts';
+import { collectEventVisionImages, decideReply } from '../server/bot.ts';
+import { completeChat } from '../server/bot/llm.ts';
+import { buildPrompt, modelSupportsVision, responseOptionsFor } from '../server/bot/prompt.ts';
 
 function assert(cond, msg) {
   if (!cond) throw new Error(`FAIL: ${msg}`);
@@ -93,6 +94,56 @@ async function main() {
   };
   const group = { groupId: 'g1', enabled: true, mode: 'natural', maxPerHour: 20, cooldownSec: 30 };
   const ownerPolicy = { policy: 'owner', attentionLevel: 5, allowCommands: true };
+  const deepseekFlashVisionDb = {
+    settings: {
+      globalPaused: false, onlyMentionMode: false, selfQq: '999', botNames: '小深,bot',
+      model: 'deepseek-v4-flash', llmProvider: 'deepseek', apiBaseUrl: 'https://api.deepseek.com',
+      visionMode: 'auto', maxTokens: 300, enableAutoModel: true,
+    },
+    messages: [],
+  };
+  assert(modelSupportsVision(deepseekFlashVisionDb) === true, 'DeepSeek V4 Flash alias should support vision');
+  const flashVisualOptions = responseOptionsFor(
+    { text: '小深 看看这张[图片]', images: [{ type: 'image', url: 'http://example.com/a.jpg' }] },
+    deepseekFlashVisionDb,
+    ownerPolicy,
+  );
+  assert(flashVisualOptions.overrideModel === 'deepseek-v4-flash', 'visual owner turn must not auto-upgrade to text-only Pro');
+  const pureFlashImage = await decideReply({
+    db: deepseekFlashVisionDb, group, userPolicy: { policy: 'normal', attentionLevel: 3, allowCommands: false },
+    text: '[图片]', mentioned: false, userId: 'u1',
+    images: [{ type: 'image', url: 'http://example.com/pure.jpg' }],
+  });
+  assert(pureFlashImage.shouldReply === false, 'a real pure image must not trigger an unsolicited reply without mention');
+  assert(pureFlashImage.inContext !== false, 'a real pure image should enter conversation context');
+  const mentionedFlashImage = await decideReply({
+    db: deepseekFlashVisionDb, group, userPolicy: { policy: 'normal', attentionLevel: 3, allowCommands: false },
+    text: '[CQ:at,qq=999][图片]', mentioned: true, userId: 'u1',
+    images: [{ type: 'image', url: 'http://example.com/mentioned.jpg' }],
+  });
+  assert(mentionedFlashImage.shouldReply === true, 'a real image explicitly mentioning Pippi should trigger Vision');
+  const placeholderOnly = await decideReply({
+    db: deepseekFlashVisionDb, group, userPolicy: { policy: 'normal', attentionLevel: 3, allowCommands: false },
+    text: '[图片]', mentioned: false, userId: 'u1', images: [],
+  });
+  assert(placeholderOnly.shouldReply === false, 'an image placeholder without payload must stay silent');
+  assert(placeholderOnly.inContext === false, 'an image placeholder without payload must not enter context');
+  const quotedVisionEvent = {
+    type: 'group', groupId: 'g1', userId: 'u1', nickname: '提问者',
+    text: '@Pippi 这个图是什么', atTargets: [], images: [],
+    replyMessageId: 'quoted-1',
+    quotedMessage: {
+      messageId: 'quoted-1', text: '被引用的原图', nickname: '原发送者',
+      images: [{ type: 'image', url: 'data:image/png;base64,iVBORw0KGgo=' }],
+    },
+  };
+  const quotedVisionImages = collectEventVisionImages(quotedVisionEvent);
+  assert(quotedVisionImages.length === 1, 'quoted image must join the current Vision input');
+  const quotedPrompt = buildPrompt({
+    ...deepseekFlashVisionDb,
+    users: [], memories: [], groupProfiles: [], relationshipProfiles: [],
+  }, { groupId: 'g1', name: '测试群' }, quotedVisionEvent, { policy: 'normal' });
+  assert(String(quotedPrompt.at(-1)?.content).includes('【所回复的 QQ 消息｜原发送者】被引用的原图'), 'quoted text must be explicit in the current user prompt');
 
   // Case A: vision capable + ask to inspect + no images → should reply
   const d3a = await decideReply({
@@ -114,7 +165,7 @@ async function main() {
   const noVisionDb = {
     settings: {
       globalPaused: false, onlyMentionMode: false, selfQq: '999', botNames: '小深,bot',
-      model: 'deepseek-v4-flash', llmProvider: 'deepseek', apiBaseUrl: 'https://api.deepseek.com',
+      model: 'deepseek-chat', llmProvider: 'deepseek', apiBaseUrl: 'https://api.deepseek.com',
     },
     messages: [],
   };
@@ -147,6 +198,49 @@ async function main() {
   assert(extractImageInputs('').length === 0, 'should return empty for empty string');
 
   console.log('PASS: Test 4 — extractImageInputs');
+
+  // ============================================================
+  // Test 5: Flash alias wire mapping + DeepSeek image transport
+  // ============================================================
+  console.log('Test 5: DeepSeek Flash Vision wire request');
+
+  const originalFetch = globalThis.fetch;
+  let capturedBody = null;
+  globalThis.fetch = async (input, init) => {
+    const rawBody = init?.body ?? (typeof input?.clone === 'function' ? await input.clone().text() : '');
+    capturedBody = JSON.parse(String(rawBody || '{}'));
+    return new Response(JSON.stringify({
+      id: 'vision-test',
+      object: 'chat.completion',
+      created: 1,
+      model: 'deepseek-v4-flash-vision-exp',
+      choices: [{ index: 0, finish_reason: 'stop', message: { role: 'assistant', content: '看到了' } }],
+      usage: { prompt_tokens: 10, completion_tokens: 2, total_tokens: 12 },
+    }), { status: 200, headers: { 'content-type': 'application/json' } });
+  };
+  try {
+    await completeChat({
+      settings: {
+        ...deepseekFlashVisionDb.settings,
+        apiKey: 'sk-offline-test',
+        deepseekApiKey: 'sk-offline-test',
+        deepseekApiBaseUrl: 'https://api.deepseek.com',
+        visionImageTransport: 'auto',
+      },
+    }, {
+      messages: quotedPrompt,
+      visionImages: quotedVisionImages,
+      requestMaxRetries: 0,
+    });
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+  assert(capturedBody?.model === 'deepseek-v4-flash-vision-exp', 'wire model must be DeepSeek Flash Vision');
+  const wireParts = capturedBody?.messages?.at(-1)?.content;
+  assert(Array.isArray(wireParts), 'DeepSeek Vision user content must be multipart');
+  assert(wireParts.some((part) => part?.type === 'image_url'), 'DeepSeek Vision request must include image_url');
+
+  console.log('PASS: Test 5 — DeepSeek Flash alias sends image to Vision endpoint');
 
   // ============================================================
   console.log('\nAll vision verification tests PASSED.');

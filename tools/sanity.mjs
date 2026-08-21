@@ -58,7 +58,9 @@ async function main() {
     db.settings.onlyMentionMode = false;
     db.settings.llmProvider = 'deepseek';
     db.settings.apiBaseUrl = 'https://api.deepseek.com';
-    db.settings.model = 'deepseek-v4-flash';
+    // Keep this fixture on a genuinely text-only model so the deterministic
+    // visual-limitation branch remains covered now that V4 Flash is visual.
+    db.settings.model = 'deepseek-chat';
     db.settings.apiKey = 'sanity-secret';
     db.settings.visionMode = 'auto';
     db.groups = [

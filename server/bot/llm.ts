@@ -9,8 +9,10 @@ import { recordLlmSuccess, recordLlmError } from '../health.js';
 import {
   activateModelProfile,
   DEEPSEEK_BASE_URL,
+  isDeepSeekVisionModel,
   looksLikeMimoApiKey,
-  looksLikeMimoEndpoint
+  looksLikeMimoEndpoint,
+  resolveDeepSeekWireModel
 } from '../modelConfig.js';
 
 export { looksLikeMimoApiKey, looksLikeMimoEndpoint } from '../modelConfig.js';
@@ -135,7 +137,7 @@ function requestModelForProvider(db, provider, baseURL, options = {}) {
   if (provider === 'deepseek' && /^mimo-/i.test(model)) {
     throw new Error(`LLM 配置错配：DeepSeek 供应商不能使用 Mimo 模型名 ${model}。请切换供应商或模型。`);
   }
-  return model;
+  return provider === 'deepseek' ? resolveDeepSeekWireModel(model) : model;
 }
 
 export function mergeUsage(...items) {
@@ -288,7 +290,10 @@ async function resolveVisionImageUrl(db, image, options = {}) {
 }
 
 async function attachVisionImages(db, messages, images = [], options = {}) {
-  if (!images?.length || llmProvider(db) === 'deepseek') return messages;
+  if (!images?.length) return messages;
+  const provider = llmProvider(db);
+  const requestedModel = options.model || options.overrideModel || db.settings.model;
+  if (provider === 'deepseek' && !isDeepSeekVisionModel(requestedModel)) return messages;
   const maxImages = Math.max(1, Math.min(6, Number(db.settings.visionMaxImages || 3)));
   const usable = [];
   const errors = [];

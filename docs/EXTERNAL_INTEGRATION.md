@@ -67,6 +67,9 @@ LLM_API_BASE_URL=https://api.deepseek.com
 LLM_MODEL=deepseek-v4-flash
 ```
 
+`deepseek-v4-flash` 是 WuxinBot 的稳定配置名；实际请求会映射到
+`deepseek-v4-flash-vision-exp`，因此已有设置与固定模型调用无需迁移即可获得图片输入能力。
+
 可选 `MIMO_API_KEY` / `MIMO_API_BASE_URL` 作为第二供应商。注意「自动模型切换」
 开启时，复杂任务可能调用更强（也更贵）的模型。
 
