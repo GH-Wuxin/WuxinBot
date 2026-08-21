@@ -16,6 +16,7 @@ import { relevantPlayersSkillBlock } from '../bots/skills.js';
 import { retrieveKnowledgeForPrompt } from './knowledgeBase.js';
 import { toPromptBlocks } from './kbPrompt.js';
 import { selectAdaptiveGroupContext } from './contextSearch.js';
+import { traceEvent } from '../requestTrace.js';
 
 export function describePolicy(policy) {
   const labels = {
@@ -448,6 +449,11 @@ export function buildPrompt(db, group, event, userPolicy, options = {}) {
     contextMessages: context,
     settings: db.settings?.kb,
     permissions: { isOwner: Boolean(isOwner), isAdmin: Boolean(isAdmin) },
+  });
+  traceEvent('KB', 'knowledge_retrieval_completed', {
+    status: kbRetrieval.blocks.length > 0 ? 'ok' : 'skipped',
+    route: kbRetrieval.route,
+    blockCount: kbRetrieval.blocks.length,
   });
   const kbBlocks = kbRetrieval.blocks.length > 0 ? toPromptBlocks(kbRetrieval.blocks, kbRetrieval.route) : [];
 

@@ -7,6 +7,7 @@ import { updateDb } from '../store.js';
 import { modelSupportsVision } from './prompt.js';
 import { emptyTurnState, reasoningEnabledFor, reasoningInput } from './reasoningRouter.js';
 import { looksLikeToolCallMarkup, stripToolCallMarkup } from '../bots/guard.js';
+import { traceEvent } from '../requestTrace.js';
 
 export function sanitizeReply(text, settings) {
   let cleaned = String(text || '').trim();
@@ -161,6 +162,10 @@ export async function rewriteNormalReply(db, originalText, event, options = {}) 
   if (reasoningRouter) rewriteTurn = reasoningRouter.mergeTurn(rewriteTurn, rewriteDecision);
   const rewriteWire = thinkingParamsForLevel(rewriteDecision.level, reasoningEnabledFor(db));
   const startedAt = Date.now();
+  traceEvent('REWRITE', 'reply_rewrite_started', {
+    status: 'running',
+    originalLength: String(originalText || '').length,
+  });
   let response;
   let telemetryResult = 'ERROR_FALLBACK';
   try {
@@ -191,7 +196,9 @@ export async function rewriteNormalReply(db, originalText, event, options = {}) 
       temperature: 0.25,
       maxTokens: 180,
       ...rewriteWire,
-      label: '回复改写'
+      label: '回复改写',
+      traceRole: 'rewrite',
+      tracePurpose: 'reply_rewrite',
     });
     const rewrittenText = String(response.text || originalText);
     const changed = textChanged(originalText, rewrittenText);
@@ -233,6 +240,12 @@ export async function rewriteNormalReply(db, originalText, event, options = {}) 
     rewrittenText: response?.text || originalText,
   });
   await recordRewriteTelemetry(db, telemetry, telemetryWriteFn || updateDb);
+  traceEvent('REWRITE', 'reply_rewrite_completed', {
+    status: telemetryResult,
+    durationMs: Date.now() - startedAt,
+    changed: textChanged(originalText, response?.text || originalText),
+    outputLength: String(response?.text || originalText).length,
+  });
   return {
     text: response?.text || originalText,
     usage,

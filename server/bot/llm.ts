@@ -4,8 +4,10 @@
 // this module instead of depending on DeepSeek-specific names.
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import crypto from 'node:crypto';
 import OpenAI from 'openai';
 import { recordLlmSuccess, recordLlmError } from '../health.js';
+import { extractProviderResponseTrace, traceEvent } from '../requestTrace.js';
 import {
   activateModelProfile,
   DEEPSEEK_BASE_URL,
@@ -398,11 +400,27 @@ export async function completeChat(db, options = {}) {
     params.response_format = options.responseFormat;
   }
 
+  let providerAttempt = 0;
   const runCompletion = async (nextParams) => {
+    providerAttempt += 1;
+    const invocationId = crypto.randomUUID();
+    const invocationStarted = Date.now();
     const requestTimeoutMs = Number(options.timeoutMs || 45_000);
     const requestMaxRetries = Math.max(0, Number(options.requestMaxRetries ?? 2));
     const outerTimeoutMs = requestTimeoutMs + 1000;
     const label = options.label || `${llmProviderName(provider)} 调用`;
+    traceEvent('MODEL', 'model_call_started', {
+      status: 'running',
+      invocationId,
+      attempt: providerAttempt,
+      role: options.traceRole || 'assistant',
+      purpose: options.tracePurpose || label,
+      provider,
+      model: nextParams.model,
+      messageCount: nextParams.messages?.length || 0,
+      toolCount: nextParams.tools?.length || 0,
+      streaming: false,
+    });
     // The outer timeout must do more than stop waiting: abort the SDK's
     // in-flight fetch AND cancel its pending retries. SDK v6 propagates
     // `signal` to the per-attempt fetch and re-checks it before every attempt,
@@ -419,12 +437,35 @@ export async function completeChat(db, options = {}) {
         outerTimeoutMs,
         label
       );
+      traceEvent('MODEL', 'model_call_completed', {
+        status: 'ok',
+        durationMs: Date.now() - invocationStarted,
+        invocationId,
+        attempt: providerAttempt,
+        role: options.traceRole || 'assistant',
+        purpose: options.tracePurpose || label,
+        provider,
+        model: nextParams.model,
+        streaming: false,
+        response: extractProviderResponseTrace(response),
+      });
       return {
         text: response.choices?.[0]?.message?.content?.trim() || '',
         usage: response.usage || {},
         raw: response
       };
     } catch (error) {
+      traceEvent('MODEL', 'model_call_failed', {
+        status: 'error',
+        durationMs: Date.now() - invocationStarted,
+        invocationId,
+        attempt: providerAttempt,
+        role: options.traceRole || 'assistant',
+        purpose: options.tracePurpose || label,
+        provider,
+        model: nextParams.model,
+        error: error?.message || String(error),
+      });
       // The abort fires at the same instant the outer timer rejects, so the
       // SDK usually settles first with APIUserAbortError. Normalize it back to
       // the same user-facing timeout message callers saw before.
