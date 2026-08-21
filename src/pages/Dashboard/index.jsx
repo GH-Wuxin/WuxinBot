@@ -5,7 +5,7 @@ import { api } from '../../lib/api.js';
 import { Button, Card, ErrorState, LoadingState, MetricCard, SegmentedControl, SectionHeader, StatusBadge, Switch } from '../../components/ui/index.jsx';
 
 const modelLabels = {
-  'deepseek-v4-flash': 'V4 Flash',
+  'deepseek-v4-flash': 'V4 Flash（视觉）',
   'deepseek-v4-pro': 'V4 Pro',
   'deepseek-chat': 'Chat',
   'deepseek-reasoner': 'Reasoner'

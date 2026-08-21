@@ -21,7 +21,7 @@ const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 async function main() {
   const { ensureStore, readDb, updateDb } = await import('../server/store.ts');
-  const { handleOneBotEvent, sendOneBotMessage } = await import('../server/onebot.ts');
+  const { handleOneBotEvent, hydrateQuotedMessage, sendOneBotMessage } = await import('../server/onebot.ts');
   const { compactDirectToolLead, processIncoming } = await import('../server/bot.ts');
   const {
     registerPendingBotCall,
@@ -42,8 +42,20 @@ async function main() {
   });
 
   let mode = 'failed';
-  const server = http.createServer((_req, res) => {
+  let getMsgFixture = null;
+  const oneBotRequests = [];
+  const server = http.createServer(async (req, res) => {
+    let raw = '';
+    for await (const chunk of req) raw += chunk;
+    const body = raw ? JSON.parse(raw) : {};
+    oneBotRequests.push({ url: req.url, body });
     res.writeHead(200, { 'Content-Type': 'application/json' });
+    if (req.url === '/get_msg') {
+      res.end(JSON.stringify(getMsgFixture
+        ? { status: 'ok', retcode: 0, data: getMsgFixture }
+        : { status: 'failed', retcode: 404, message: 'fixture message missing' }));
+      return;
+    }
     res.end(JSON.stringify(mode === 'failed'
       ? { status: 'failed', retcode: 100, message: 'mock failure' }
       : { status: 'ok', retcode: 0, data: { message_id: 1 } }));
@@ -107,7 +119,32 @@ async function main() {
 
     mode = 'ok';
     await sendOneBotMessage({ type: 'group', groupId: '1', userId: '2' }, 'test');
+    await sendOneBotMessage(
+      { source: 'onebot', type: 'group', groupId: '1', userId: '2', messageId: '7788' },
+      '引用回复',
+      { replyToMessageId: '7788', mentionSender: true },
+    );
+    const quotedSend = oneBotRequests.at(-1)?.body?.message || '';
+    assert(quotedSend.startsWith('[CQ:reply,id=7788][CQ:at,qq=2] '), 'group reply must quote the source message and mention its sender');
+
+    getMsgFixture = {
+      message_id: 9911,
+      user_id: 42,
+      sender: { user_id: 42, nickname: 'quoted-user' },
+      message: [
+        { type: 'text', data: { text: '被引用的原图' } },
+        { type: 'image', data: { file: 'quoted.jpg', url: 'https://example.invalid/quoted.jpg' } },
+      ],
+      raw_message: '被引用的原图[CQ:image,file=quoted.jpg,url=https://example.invalid/quoted.jpg]',
+    };
+    const hydrated = await hydrateQuotedMessage({
+      source: 'onebot', type: 'group', groupId: '1', userId: '2', messageId: '9922',
+      replyMessageId: '9911', text: '@Pippi 这个图是什么', images: [],
+    });
+    assert(hydrated.quotedMessage?.text.includes('被引用的原图'), 'quoted text must be loaded through OneBot get_msg');
+    assert(hydrated.quotedMessage?.images?.[0]?.url === 'https://example.invalid/quoted.jpg', 'quoted image URL must be loaded through OneBot get_msg');
     console.log('PASS: OneBot HTTP business status verification');
+    console.log('PASS: QQ reply segment output and quoted-message hydration');
 
     const sent = [];
     const duplicateEvent = {

@@ -233,8 +233,8 @@ export function hasVisualPlaceholder(text) {
 }
 
 export function asksToInspectVisual(text) {
-  // Pure [图片]/[表情包] messages should be ignored. Only explain the visual
-  // limitation when the user adds real text asking the bot to inspect it.
+  // A pure placeholder is not itself an explicit inspection request. The
+  // reply gate handles it separately when a real image payload is available.
   const raw = String(text || '').replace(/\[CQ:(?:at|reply)[^\]]+\]/g, ' ');
   // Pattern 2: "看上文图片/看上面的图/看看之前的图" — no [图片] placeholder but
   // user explicitly asks to look at images in context or quoted messages.

@@ -733,6 +733,29 @@ export function computeTopicWeights(clusters) {
   return weights;
 }
 
+export function formatMemorySampleBlocks(memory, promptSamples) {
+  return promptSamples.map((s, i) => {
+    const ctx = s.context;
+    let block = `[样本 #${i + 1}]\n目标发言者：${memory.nickname || memory.userId}（QQ:${memory.userId}）\n目标本人内容：${s.content}`;
+    block += `\n样本类型：${s.type || 'text'}`;
+    if (ctx && ctx.nearby && ctx.nearby.length > 0) {
+      block += '\n附近对话（只帮助理解语境；不是目标本人的画像证据，也不能算作独立样本）：';
+      for (const m of ctx.nearby.slice(-5)) {
+        const who = m.role === 'assistant' ? 'Wuxin' : (m.nickname || m.userId);
+        const ownership = String(m.userId) === String(memory.userId) ? '目标本人附近发言' : '其他说话人';
+        block += `\n  - [${ownership}] ${who}（QQ:${m.userId || 'bot'}）：${m.content}`;
+      }
+    }
+    if (ctx) {
+      block += `\n@了谁：${ctx.atTargets.length ? ctx.atTargets.join(',') : '无'}`;
+      block += `\n是否@了bot：${ctx.mentionedBot ? '是' : '否'}`;
+    }
+    block += `\n当前风险等级：${s.riskLevel || 'normal'}`;
+    block += `\n当前分类理由：${s.reason}`;
+    return block;
+  }).join('\n\n');
+}
+
 export async function updateMemoryProfile(db, memory) {
   const runId = newRunId();
   const sourceSamples = collectProfileSamples(db, memory);
@@ -760,25 +783,7 @@ export async function updateMemoryProfile(db, memory) {
 
   // Format samples as context blocks instead of isolated lines
   const promptSamples = selectDiverseSamples(usedSamples, 24);
-  const sampleBlocks = promptSamples.map((s, i) => {
-    const ctx = s.context;
-    let block = `[样本 #${i + 1}]\n发言者：${memory.nickname || memory.userId}\n内容：${s.content}`;
-    block += `\n样本类型：${s.type || 'text'}`;
-    if (ctx && ctx.nearby && ctx.nearby.length > 0) {
-      block += '\n上下文对话：';
-      for (const m of ctx.nearby.slice(-5)) {
-        const who = m.role === 'assistant' ? 'Wuxin' : (m.nickname || m.userId);
-        block += `\n  - ${who}：${m.content}`;
-      }
-    }
-    if (ctx) {
-      block += `\n@了谁：${ctx.atTargets.length ? ctx.atTargets.join(',') : '无'}`;
-      block += `\n是否@了bot：${ctx.mentionedBot ? '是' : '否'}`;
-    }
-    block += `\n当前风险等级：${s.riskLevel || 'normal'}`;
-    block += `\n当前分类理由：${s.reason}`;
-    return block;
-  }).join('\n\n');
+  const sampleBlocks = formatMemorySampleBlocks(memory, promptSamples);
 
   // Check if old profile was generated without context awareness (legacy)
   const hasContextSamples = usedSamples.some((s) => s.context && s.context.nearby && s.context.nearby.length > 0);
@@ -818,6 +823,7 @@ export async function updateMemoryProfile(db, memory) {
 6. 同一晚、同一话题的多条消息合并计算，不能线性放大。
 7. 禁止侮辱性标签。禁止推断身份/取向/心理状态。
 8. image-summary 是用户发图后的视觉摘要，只能作为低权重兴趣/话题背景；不能单独据此推断性格、身份、心理状态或现实关系。只有图片摘要与用户真实文本或跨天多图主题互相支持时，才能写入长期画像。
+9. 每个样本中只有“目标本人内容”属于被画像的 QQ。“附近对话”无论是谁说的都只用于消歧，绝不能把其他说话人的经历、成绩、偏好、观点或第一人称陈述写进目标画像，也不能把附近对话重复计算为独立证据。
 ${isLegacyProfile ? '- 旧版画像缺上下文，与上下文样本一致的保留，单薄矛盾的覆盖。' : ''}
 ${memory.profilingRule ? `- 【硬性约束】${memory.profilingRule}` : ''}` },
         { role: 'user', content: `QQ号：${memory.userId}\n昵称：${memory.nickname || memory.userId}\n\n样本统计：真实文本 ${usedSamples.length} 条，覆盖 ${sampleDayCount} 天 / ${sampleGroupCount} 个群。提示：统计来自长期历史与最近上下文混合取样，不只是最近几十条。\n\n已有长期画像：\n${existing}${useV2 ? `\n已有近期动态：\n${JSON.stringify((memory.recentDynamics || []).slice(-5).map((d) => d.topic + ': ' + d.summary))}\n\n话题聚类分析：\n${longTermBlock || '无跨场景长期候选'}\n${recentDynamicsBlock || '无短期高频话题'}` : ''}\n\n样本与上下文：\n${sampleBlocks}\n\n低权重背景：\n${cardText}` }

@@ -23,7 +23,7 @@ const providerOptions = [
 const baseModelOptions = [
   { value: 'deepseek-chat', label: 'DeepSeek Chat（日常聊天）' },
   { value: 'deepseek-reasoner', label: 'DeepSeek Reasoner（更慢更会想）' },
-  { value: 'deepseek-v4-flash', label: 'DeepSeek V4 Flash' },
+  { value: 'deepseek-v4-flash', label: 'DeepSeek V4 Flash（视觉）' },
   { value: 'deepseek-v4-pro', label: 'DeepSeek V4 Pro' },
   { value: 'mimo-v2.5-pro', label: 'MiMo-V2.5-Pro（多模态）' },
   { value: 'mimo-v2.5', label: 'MiMo-V2.5' },
@@ -115,7 +115,13 @@ export function ModelsPage({ db, saveSettings }) {
         <SettingGroup title="生成参数" description="控制回复风格、长度和上下文预算。">
           <Slider label="创造性" min={0} max={1.5} step={0.05} value={draft.temperature} onChange={(temperature) => updateDraft({ temperature })} />
           <Slider label="单次回复长度" min={80} max={1200} step={20} value={draft.maxTokens} onChange={(maxTokens) => updateDraft({ maxTokens })} />
-          <Slider label="带入最近消息数" min={5} max={80} value={draft.contextLimit} onChange={(contextLimit) => updateDraft({ contextLimit })} />
+          <Slider label="基础最近消息数" min={5} max={80} value={draft.contextLimit} onChange={(contextLimit) => updateDraft({ contextLimit })} />
+          <SettingRow title="按需扩展群聊历史" description="发现引用旧话题时，从更早记录中检索相关片段" control={<Switch checked={draft.groupContextSearchEnabled !== false} onChange={(event) => updateDraft({ groupContextSearchEnabled: event.target.checked })} />} />
+          {draft.groupContextSearchEnabled !== false && <>
+            <Slider label="旧历史搜索范围" min={50} max={2000} step={50} value={draft.groupContextSearchPoolSize || 400} onChange={(groupContextSearchPoolSize) => updateDraft({ groupContextSearchPoolSize })} hint="条" />
+            <Slider label="最多补入旧消息" min={3} max={80} value={draft.groupContextSearchMaxExtra || 24} onChange={(groupContextSearchMaxExtra) => updateDraft({ groupContextSearchMaxExtra })} hint="条" />
+            <Slider label="旧历史补入预算" min={2000} max={40000} step={1000} value={draft.groupContextSearchCharBudget || 12000} onChange={(groupContextSearchCharBudget) => updateDraft({ groupContextSearchCharBudget })} hint="字符" />
+          </>}
           <Slider label="Owner 私聊上下文软上限" min={4000} max={60000} step={1000} value={draft.ownerPrivateContextCharBudget || 24000} onChange={(ownerPrivateContextCharBudget) => updateDraft({ ownerPrivateContextCharBudget })} hint="字符" />
           <SettingRow title="自动选择模型" description="复杂任务允许升级到更强模型" control={<Switch checked={draft.enableAutoModel !== false} onChange={(event) => updateDraft({ enableAutoModel: event.target.checked })} />} />
           <SettingRow title="纯人设模式" description="忽略系统事实注入" control={<Switch checked={draft.ignoreSystemFacts === true} onChange={(event) => updateDraft({ ignoreSystemFacts: event.target.checked })} />} />
@@ -125,7 +131,7 @@ export function ModelsPage({ db, saveSettings }) {
       </div>
 
       <div className="console-setting-stack">
-        <SettingGroup title="视觉输入" description="DeepSeek 官方接口按纯文字处理；兼容多模态接口可传图片。">
+        <SettingGroup title="视觉输入" description="DeepSeek V4 Flash 使用 Vision 实验端点；其他纯文字模型不会传入图片。">
           <SettingRow title="视觉能力" control={<Select value={draft.visionMode || 'auto'} onChange={(event) => updateDraft({ visionMode: event.target.value })} options={[{ value: 'auto', label: '自动识别（推荐）' }, { value: 'on', label: '按多模态模型处理' }, { value: 'off', label: '按纯文字模型处理' }]} />} />
           <SettingRow title="图片传输方式" description="本地/内网图片可转换为 data URL" control={<Select value={draft.visionImageTransport || 'auto'} onChange={(event) => updateDraft({ visionImageTransport: event.target.value })} options={[{ value: 'auto', label: '自动' }, { value: 'url', label: '只传 URL' }, { value: 'data', label: '转成 data URL' }]} />} />
           <Slider label="单次最多传入图片数" min={1} max={6} value={draft.visionMaxImages || 3} onChange={(visionMaxImages) => updateDraft({ visionMaxImages })} />

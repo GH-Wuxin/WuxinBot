@@ -1,7 +1,22 @@
 export const DEEPSEEK_BASE_URL = 'https://api.deepseek.com';
+export const DEEPSEEK_FLASH_MODEL = 'deepseek-v4-flash';
+export const DEEPSEEK_FLASH_VISION_MODEL = 'deepseek-v4-flash-vision-exp';
 export const MIMO_BASE_URL = 'https://token-plan-cn.xiaomimimo.com/v1';
 
 export type ModelFamily = 'deepseek' | 'mimo' | null;
+
+/**
+ * Keep the stable Wuxin-facing Flash id while routing it to DeepSeek's
+ * image-capable experimental endpoint on the wire.
+ */
+export function resolveDeepSeekWireModel(value: unknown) {
+  const model = String(value || '').trim();
+  return model === DEEPSEEK_FLASH_MODEL ? DEEPSEEK_FLASH_VISION_MODEL : model;
+}
+
+export function isDeepSeekVisionModel(value: unknown) {
+  return resolveDeepSeekWireModel(value) === DEEPSEEK_FLASH_VISION_MODEL;
+}
 
 export function looksLikeMimoEndpoint(value: unknown) {
   return /(mimo|xiaomimimo|token-plan-cn)/i.test(String(value || ''));

@@ -83,11 +83,24 @@ function wait(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+export function replyToCurrentMessageOptions(event, extra = {}) {
+  if (event?.source !== 'onebot' || event?.type !== 'group' || !event?.messageId) return extra;
+  return {
+    ...extra,
+    replyToMessageId: String(event.messageId),
+    mentionSender: true,
+  };
+}
+
 export async function sendReplySegments(sendMessage, event, replyText) {
   const segments = splitReplySegments(replyText).slice(0, 3);
   if (!sendMessage) return segments;
   for (let index = 0; index < segments.length; index += 1) {
-    await sendMessage(event, segments[index]);
+    await sendMessage(
+      event,
+      segments[index],
+      index === 0 ? replyToCurrentMessageOptions(event) : undefined,
+    );
     if (index < segments.length - 1) await wait(700 + Math.floor(Math.random() * 600));
   }
   return segments;

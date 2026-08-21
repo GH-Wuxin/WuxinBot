@@ -2,6 +2,7 @@
 import WebSocket from 'ws';
 import { readDb } from './store.js';
 import { oneBotToInternal, processIncoming } from './bot.js';
+import { extractImageInputs, normalizeMessage } from './bot/cleaning.js';
 import {
   setOneBotConnected,
   setOneBotEvent,
@@ -139,6 +140,55 @@ async function assertOneBotSuccess(response, label) {
   return payload;
 }
 
+function dedupeImages(images) {
+  const seen = new Set();
+  return images.filter((image) => {
+    const key = String(image?.url || image?.file || '');
+    if (!key || seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+export async function hydrateQuotedMessage(event) {
+  const replyMessageId = String(event?.replyMessageId || '').trim();
+  if (!replyMessageId) return event;
+  const db = readDb();
+  const baseUrl = String(db.settings.oneBotHttpUrl || '').replace(/\/$/, '');
+  if (!baseUrl) return event;
+
+  try {
+    const messageId = /^\d+$/.test(replyMessageId) ? Number(replyMessageId) : replyMessageId;
+    const response = await fetchWithTimeout(`${baseUrl}/get_msg`, {
+      method: 'POST',
+      headers: oneBotHeaders(db),
+      body: JSON.stringify({ message_id: messageId }),
+    });
+    const payload = await assertOneBotSuccess(response, '读取 QQ 引用消息失败');
+    const data = payload?.data || {};
+    const structured = data.message;
+    const raw = data.raw_message;
+    const text = normalizeMessage(structured ?? raw ?? '');
+    const images = dedupeImages([
+      ...extractImageInputs(structured),
+      ...extractImageInputs(raw),
+    ]);
+    return {
+      ...event,
+      quotedMessage: {
+        messageId: replyMessageId,
+        text,
+        images,
+        userId: String(data.sender?.user_id || data.user_id || ''),
+        nickname: String(data.sender?.card || data.sender?.nickname || data.nickname || ''),
+      },
+    };
+  } catch (error) {
+    console.warn('[onebot] 无法读取引用消息，保留本地回退内容:', error?.message || error);
+    return event;
+  }
+}
+
 async function sendOneBotMessageInner(event, text, options = {}) {
   const db = readDb();
   const baseUrl = db.settings.oneBotHttpUrl;
@@ -163,9 +213,16 @@ async function sendOneBotMessageInner(event, text, options = {}) {
   }
 
   const endpoint = event.type === 'private' ? '/send_private_msg' : '/send_group_msg';
+  const replyToMessageId = String(options.replyToMessageId || '').trim();
+  const shouldQuote = event.type === 'group' && replyToMessageId;
+  const senderQq = String(event.userId || '').trim();
+  const alreadyMentionsSender = senderQq && String(text || '').includes(`[CQ:at,qq=${senderQq}]`);
+  const message = shouldQuote
+    ? `[CQ:reply,id=${replyToMessageId}]${options.mentionSender !== false && senderQq && !alreadyMentionsSender ? `[CQ:at,qq=${senderQq}] ` : ''}${text}`
+    : text;
   const body = event.type === 'private'
-    ? { user_id: Number(event.userId), message: text }
-    : { group_id: Number(event.groupId), message: text };
+    ? { user_id: Number(event.userId), message }
+    : { group_id: Number(event.groupId), message };
 
   const response = await fetchWithTimeout(`${baseUrl.replace(/\/$/, '')}${endpoint}`, {
     method: 'POST',
@@ -279,7 +336,8 @@ export async function handleOneBotEvent(event, sendMessage = sendOneBotMessage) 
   // Normalize once before either routing path. Bot replies can arrive in a
   // private chat or in the configured group, and their image segments must be
   // preserved for the pending tool call instead of being discarded.
-  const normalized = oneBotToInternal(event);
+  let normalized = oneBotToInternal(event);
+  normalized = await hydrateQuotedMessage(normalized);
   const resolved = tryResolveBotResponse(readDb(), {
     userId: normalized.userId,
     type: normalized.type,
