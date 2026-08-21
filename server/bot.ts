@@ -71,7 +71,14 @@ import { getGroupProfile, updateGroupProfile, clearGroupProfile, incrementGroupP
 import { getRelationshipProfile, updateRelationshipProfile, clearRelationshipProfile, incrementPairPending } from './bot/relationshipProfile.js';
 import { processTrustSignal, evaluateTrustScores, trustInteractionBonus, isTrustedMember } from './bot/trust.js';
 import { processXpGain, getExperience, getXpBonus, formatXpBar, getUnlockedFeatures, getLevelInfo, getNextLevelInfo, levelToPp, decayInactiveUsers } from './bot/experience.js';
-import { isSearchAvailable, searchWeb, formatSearchResults, getLastSearchStatus, extractSearchQuery } from './bot/search.js';
+import {
+  SEARCH_TOOL_NAME,
+  buildSearchToolGuidance,
+  buildSearchToolSchema,
+  executeSearchToolCall,
+  extractSearchQuery,
+  isSearchAvailable,
+} from './bot/search.js';
 import { setBotPaused, getRecalcProgress, startRecalc, tickRecalc, finishRecalc, markActiveProcessing } from './health.js';
 import { activateModelProfile, activeProviderLabel } from './modelConfig.js';
 import { handleOsuCommand } from './osu/commands.js';
@@ -86,10 +93,11 @@ import {
 } from './bots/intent.js';
 import { validateOperation, looksLikeToolCallMarkup } from './bots/guard.js';
 import { RECENT_BOT_SELECTOR_IDS } from './bots/capabilityCatalog.js';
-import { runToolLoop, tryResolveBotResponse } from './bots/executor.js';
+import { executeToolCall, runToolLoop, tryResolveBotResponse } from './bots/executor.js';
 import { buildToolGuidance } from './bots/toolGuidance.js';
 import {
   claimInboundEvent,
+  persistedInboundDuplicate,
   getQueueState,
   drainReplyQueue,
   REPLY_QUEUE_LIMIT
@@ -499,7 +507,12 @@ async function processIncomingInner(event, sendMessage = undefined, queuedDecisi
     : await decideReply({ db, group, userPolicy, text: event.text, mentioned, userId: event.userId, images: eventVisionImages }));
 
   if (!isFromDrain) {
+    let persistedDuplicate = false;
     updateDb((draft) => {
+      if (persistedInboundDuplicate(draft, event)) {
+        persistedDuplicate = true;
+        return;
+      }
       draft.messages.push({
         id: crypto.randomUUID(),
         sourceMessageId: event.messageId,
@@ -523,6 +536,9 @@ async function processIncomingInner(event, sendMessage = undefined, queuedDecisi
         createdAt: nowIso()
       });
     });
+    if (persistedDuplicate) {
+      return { replied: false, reason: '忽略已持久化的重复 OneBot message_id', duplicate: true };
+    }
 
     const memoryRecord = recordMemoryObservation(event, userPolicy);
     if (memoryRecord.shouldUpdate) {
@@ -750,7 +766,8 @@ async function processIncomingInner(event, sendMessage = undefined, queuedDecisi
       return { replied: true, text: replyText, reason: 'named_bot_no_adapter' };
     }
 
-    // Real search: if explicitly requested, run searchWeb and inject results
+    // Explicit search still has a deterministic availability guard. Query
+    // planning and execution happen later through the LLM tool loop.
     if (explicitSearch && !osuDataIntent && !namedBotRequest && !isSearchAvailable(liveDb)) {
       // Search requested but no real provider configured — don't let LLM fake it
       const replyText = '当前还没有接入真实联网搜索源。可以在控制台「模型」页配置 SearXNG 或其他搜索服务。';
@@ -763,61 +780,20 @@ async function processIncomingInner(event, sendMessage = undefined, queuedDecisi
       return { replied: true, text: replyText, reason: '搜索请求但未接入真实搜索源' };
     }
 
-    let searchBlock = '';
-    if (explicitSearch && !osuDataIntent && !namedBotRequest && isSearchAvailable(liveDb)) {
-      const searchQuery = extractSearchQuery(event.text);
-      if (!searchQuery || searchQuery.length < 2) {
-        const replyText = '你想让我搜什么？给我一个关键词或问题就行。';
-        if (sendMessage) await sendMessage(event, replyText);
-        updateDb((draft) => {
-          draft.messages.push({
-            id: crypto.randomUUID(),
-            ...replyTargetMetadata(event),
-            role: 'assistant',
-            type: event.type,
-            groupId: event.groupId,
-            userId: 'bot',
-            nickname: '机器人',
-            content: replyText,
-            inContext: true,
-            createdAt: nowIso()
-          });
-          draft.usage.replies += 1;
-        });
-        await drainReplyQueue(replyLockKey, processIncoming);
-        return { replied: true, text: replyText, reason: '搜索请求缺少关键词' };
-      }
-      if (sendMessage) await sendMessage(event, `正在搜索：${searchQuery.slice(0, 60)}…`);
-      const searchResult = await searchWeb(liveDb, searchQuery);
-      if (searchResult.ok && searchResult.results.length > 0) {
-        searchBlock = `【搜索结果】\n${formatSearchResults(searchResult.results)}\n\n请基于以上搜索结果回答，不确定就说没查到。`;
-        messages[messages.length - 1].content += '\n\n' + searchBlock;
-      } else {
-        const detail = searchResult.error ? `原因：${searchResult.error}` : '没有拿到可用结果';
-        const replyText = `我这次没有搜到可靠结果，先不硬编。${detail}`;
-        if (sendMessage) await sendMessage(event, replyText);
-        updateDb((draft) => {
-          draft.messages.push({
-            id: crypto.randomUUID(),
-            ...replyTargetMetadata(event),
-            role: 'assistant',
-            type: event.type,
-            groupId: event.groupId,
-            userId: 'bot',
-            nickname: '机器人',
-            content: replyText,
-            inContext: true,
-            createdAt: nowIso()
-          });
-          draft.usage.replies += 1;
-        });
-        await drainReplyQueue(replyLockKey, processIncoming);
-        return { replied: true, text: replyText, reason: '搜索失败或无结果' };
-      }
-    }
-    const searchMode = responseOptions.searchMode;
-    // Always offer tools when bots are enabled — the LLM decides when to use them
-    const useTools = enabledBots(loadRegistry(liveDb)).length > 0;
+    const searchMode = responseOptions.searchMode || liveDb.settings.webSearchMode || 'balanced';
+    const maxSearchCalls = searchMode === 'deep' ? 3 : (searchMode === 'fast' ? 1 : 2);
+    const registryForTurn = loadRegistry(liveDb);
+    const hasEnabledBots = enabledBots(registryForTurn).length > 0;
+    const botTools = hasEnabledBots ? buildBotToolSchemas(registryForTurn) : [];
+    // Clear osu! data intents keep their deterministic domain tool. Other
+    // conversational turns receive search_web and let the LLM decide whether,
+    // what and how to search.
+    const searchToolEnabled = isSearchAvailable(liveDb) && !osuDataIntent;
+    const toolsForTurn = [
+      ...botTools,
+      ...(searchToolEnabled ? [buildSearchToolSchema()] : []),
+    ];
+    const useTools = toolsForTurn.length > 0;
 
     // Thinking notice — configurable per thinkingNoticeMode
     const thinkingMode = useTools ? 'off' : (liveDb.settings.thinkingNoticeMode || 'slow');
@@ -857,7 +833,7 @@ async function processIncomingInner(event, sendMessage = undefined, queuedDecisi
     // osuDataIntent is computed above (before search interception). If the user
     // is clearly asking for osu! data but no bots are enabled, fail explicitly
     // instead of falling through to the LLM with no tool access.
-    if (osuDataIntent && !useTools) {
+    if (osuDataIntent && !hasEnabledBots) {
       const errorText = '[系统] osu! 数据查询不可用：当前没有已启用的机器人，无法查询 osu! 数据。';
       if (sendMessage) await sendMessage(event, errorText);
       updateDb((draft) => {
@@ -878,8 +854,8 @@ async function processIncomingInner(event, sendMessage = undefined, queuedDecisi
     let toolDirectContent = '';
     let requiredToolLed = false;
     if (useTools) {
-      const registry = loadRegistry(liveDb);
-      const tools = buildBotToolSchemas(registry);
+      const registry = registryForTurn;
+      const tools = toolsForTurn;
       // ── Deterministic osu! data routing ──
       // When the user's intent is an unambiguous data lookup, we execute the
       // tool before the LLM sees the context. This prevents context poisoning
@@ -920,11 +896,34 @@ async function processIncomingInner(event, sendMessage = undefined, queuedDecisi
         ? String(requiredTool.args.capability)
         : null;
       if (messages[0]?.role === 'system') {
-        const toolGuidance = requiredCapability
-          ? buildToolGuidance({ exposedCapabilities: [requiredCapability] })
-          : buildToolGuidance();
-        if (toolGuidance) messages[0].content += '\n\n' + toolGuidance;
+        const guidanceBlocks = [];
+        if (botTools.length > 0) {
+          guidanceBlocks.push(requiredCapability
+            ? buildToolGuidance({ exposedCapabilities: [requiredCapability] })
+            : buildToolGuidance());
+        }
+        if (searchToolEnabled) {
+          guidanceBlocks.push(buildSearchToolGuidance({ explicitSearch, maxCalls: maxSearchCalls }));
+        }
+        if (guidanceBlocks.filter(Boolean).length > 0) {
+          messages[0].content += '\n\n' + guidanceBlocks.filter(Boolean).join('\n\n');
+        }
       }
+
+      let webSearchCalls = 0;
+      const executeConversationTool = async (toolCall, context) => {
+        if (String(toolCall?.function?.name || '') !== SEARCH_TOOL_NAME) {
+          return executeToolCall(toolCall, context);
+        }
+        if (!searchToolEnabled) {
+          return { toolCallId: toolCall.id, ok: false, content: '当前未开放网页搜索', error: 'search_unavailable' };
+        }
+        if (webSearchCalls >= maxSearchCalls) {
+          return { toolCallId: toolCall.id, ok: false, content: `本轮网页搜索已达到 ${maxSearchCalls} 次上限`, error: 'search_call_limit' };
+        }
+        webSearchCalls += 1;
+        return executeSearchToolCall(toolCall, context);
+      };
 
       const harnessChat = (db: any, opts: any) => completeChat(db, {
         ...opts,
@@ -952,6 +951,7 @@ async function processIncomingInner(event, sendMessage = undefined, queuedDecisi
         deliverDirectContent: requiredTool?.args.capability === 'recommend',
         turnId,
         reasoningRouter,
+        executeToolCallFn: executeConversationTool,
       };
       // One user message is one shared tool budget, even when the
       // recommendation hard guard below runs a second runToolLoop.
@@ -962,6 +962,26 @@ async function processIncomingInner(event, sendMessage = undefined, queuedDecisi
       });
       requiredToolLed = Boolean(requiredTool);
       turnToolCallsMade = Number(toolResult.toolCallsMadeThisTurn ?? toolResult.toolCallsMade) || 0;
+
+      // Explicit search is a hard user requirement. Normally the first LLM
+      // planner chooses a better query and calls search_web itself. If it
+      // ignores the tool contract, execute one bounded fallback search using
+      // the cleaned user request, then let the LLM synthesize the result.
+      const fallbackSearchQuery = explicitSearch ? extractSearchQuery(event.text) : '';
+      if (
+        explicitSearch &&
+        searchToolEnabled &&
+        webSearchCalls === 0 &&
+        fallbackSearchQuery.length >= 2
+      ) {
+        toolResult = await runToolLoop(harnessChat, {
+          ...loopOptions,
+          toolCallsExecutedBeforeLoop: turnToolCallsMade,
+          requiredTool: { toolName: SEARCH_TOOL_NAME, args: { query: fallbackSearchQuery } },
+        });
+        requiredToolLed = true;
+        turnToolCallsMade = Number(toolResult.toolCallsMadeThisTurn ?? toolResult.toolCallsMade) || 0;
+      }
 
       // Hard guard: when the user clearly asked for recommendations but the
       // model answered WITHOUT ever running the recommend tool, any map names

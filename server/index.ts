@@ -23,6 +23,14 @@ import { updateProviderSettings } from './modelConfig.js';
 import { getRenderServer, startRenderServer } from './bots/renderServer.js';
 import { removeLazybotBinding, syncLazybotBinding } from './bots/bindingSync.js';
 import { sharedGroupBotConfigPath } from './bots/externalPaths.js';
+import { acquireInstanceLock } from './instanceLock.js';
+
+const port = Number(process.env.PORT || 8787);
+let releaseInstanceLock = () => {};
+
+function releaseServerInstanceLock() {
+  try { releaseInstanceLock(); } catch { /* best-effort process cleanup */ }
+}
 
 // ── Process guards (P0-A) ──
 // These exist to leave a stack + exit reason behind, NOT to swallow errors
@@ -52,6 +60,7 @@ process.on('uncaughtException', (error) => {
   } catch (shutdownError) {
     console.error('[crash] shutdownOneBot failed:', String(shutdownError?.message || shutdownError));
   }
+  releaseServerInstanceLock();
   process.exit(1);
 });
 
@@ -64,6 +73,7 @@ process.on('unhandledRejection', (reason) => {
   } catch (shutdownError) {
     console.error('[crash] shutdownOneBot failed:', String(shutdownError?.message || shutdownError));
   }
+  releaseServerInstanceLock();
   process.exit(1);
 });
 
@@ -74,6 +84,7 @@ function gracefulShutdown(signal) {
   } catch (error) {
     console.error('[shutdown] shutdownOneBot failed:', String(error?.message || error));
   }
+  releaseServerInstanceLock();
   // Best effort only: ws.close() is requested but a 200ms grace period cannot
   // guarantee the close handshake completes before process exit.
   setTimeout(() => process.exit(0), 200);
@@ -81,6 +92,7 @@ function gracefulShutdown(signal) {
 
 process.on('SIGINT', () => gracefulShutdown('SIGINT'));
 process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
+process.on('exit', releaseServerInstanceLock);
 
 // Node 20.11.1 crashes with ERR_INTERNAL_ASSERTION in internalConnectMultiple
 // when many outbound sockets race IPv4/IPv6 auto-selection (happy eyeballs).
@@ -91,7 +103,16 @@ try {
   // Older/other runtimes simply keep the default.
 }
 
+releaseInstanceLock = acquireInstanceLock(port);
 ensureStore();
+
+// Authentication is consulted on every API request. Keep this one scalar in
+// memory instead of synchronously parsing the entire (currently ~34 MB) JSON
+// store for health/state polling. Mutating restore/settings routes refresh it.
+let cachedAdminPassword = String(readDb().settings.adminPassword || '');
+function refreshCachedAdminPassword(db = readDb()) {
+  cachedAdminPassword = String(db?.settings?.adminPassword || '');
+}
 
 const app = express();
 app.use(express.json({ limit: '2mb' }));
@@ -109,7 +130,7 @@ function safeSecretEqual(actual, expected) {
 // The GUI remains open when no password is configured. Once ADMIN_PASSWORD or
 // the GUI password field is set, every API call must authenticate.
 app.use('/api', (req, res, next) => {
-  const expected = String(readDb().settings.adminPassword || '');
+  const expected = cachedAdminPassword;
   if (!expected) return next();
   const supplied = req.get('x-wuxin-admin-password') || '';
   if (!safeSecretEqual(supplied, expected)) {
@@ -696,7 +717,7 @@ app.get('/api/diagnostics', (_req, res) => {
 });
 
 app.post('/api/settings', (req, res) => {
-  updateDb((db) => {
+  const updatedDb = updateDb((db) => {
     saveConfigSnapshot(db);
     const incoming = Object.fromEntries(
       Object.entries(req.body || {}).filter(([key]) => Object.prototype.hasOwnProperty.call(db.settings, key))
@@ -725,11 +746,12 @@ app.post('/api/settings', (req, res) => {
       ));
     }
   });
-  res.json(ok({ db: publicDb() }));
+  refreshCachedAdminPassword(updatedDb);
+  res.json(ok({ db: publicDb(updatedDb) }));
 });
 
 app.post('/api/search/test-local', async (_req, res) => {
-  const testUrl = 'http://127.0.0.1:8080/search?q=test&format=json';
+  const testUrl = 'http://127.0.0.1:8080/search?q=test&format=json&language=zh-CN&safesearch=1';
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), 5000);
   try {
@@ -739,7 +761,7 @@ app.post('/api/search/test-local', async (_req, res) => {
     });
     if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
     const data = await resp.json();
-    if (!data || (!data.results && !data.query && data.results === undefined)) {
+    if (!data || !Array.isArray(data.results)) {
       throw new Error('响应格式不符合 SearXNG');
     }
     res.json(ok({ baseUrl: 'http://127.0.0.1:8080' }));
@@ -1234,6 +1256,7 @@ app.post('/api/backups', (req, res) => {
 app.post('/api/backups/:name/restore', (req, res) => {
   const result = restoreBackup(req.params.name);
   if (!result.ok) return res.status(400).json({ ok: false, error: result.error });
+  refreshCachedAdminPassword();
   res.json(ok({ restored: result.name }));
 });
 
@@ -1252,7 +1275,6 @@ setInterval(() => { evaluateTrustScores(); }, 4 * 60 * 60 * 1000);
 // Decay XP for inactive users every 6 hours
 setInterval(() => { decayInactiveUsers(); }, 6 * 60 * 60 * 1000);
 
-const port = Number(process.env.PORT || 8787);
 // Recalc progress
 app.get('/api/recalc-status', (_req, res) => { res.json(ok(getRecalcProgress())); });
 
@@ -1312,10 +1334,13 @@ app.get('/api/config-snapshots', (_req, res) => {
 
 app.post('/api/config-snapshots/:index/restore', (req, res) => {
   const index = parseInt(req.params.index, 10);
-  updateDb((db) => {
-    if (!restoreConfigSnapshot(db, index)) return res.status(400).json({ ok: false, error: '无效的快照索引' });
-    res.json(ok({ restored: true }));
+  let restored = false;
+  const updatedDb = updateDb((db) => {
+    restored = restoreConfigSnapshot(db, index);
   });
+  if (!restored) return res.status(400).json({ ok: false, error: '无效的快照索引' });
+  refreshCachedAdminPassword(updatedDb);
+  res.json(ok({ restored: true }));
 });
 
 // JSON error handler — never return HTML error pages to the GUI

@@ -297,7 +297,7 @@ export async function ownerSearchHandler(ctx: OwnerHandlerContext): Promise<Owne
       ? `真实搜索源：${db.settings.searchProvider} (${db.settings.searchBaseUrl})`
       : '未接入真实搜索源，显式搜索会拒绝（避免瞎编）';
     const lastLine = lastSearch
-      ? `最近搜索：${lastSearch.query?.slice(0, 30)} · ${lastSearch.resultCount}条结果 · ${lastSearch.latencyMs}ms${lastSearch.error ? ' · 错误：' + lastSearch.error : ''}`
+      ? `最近搜索：${lastSearch.resultCount}条结果 · ${lastSearch.latencyMs}ms${lastSearch.error ? ' · 错误：' + lastSearch.error : ''}`
       : '暂无搜索记录';
     const reply = `联网搜索：${statusLine}，模式：${db.settings.webSearchMode || 'balanced'}。${searchInfo}。${lastLine}。`;
     if (ctx.sendMessage) await ctx.sendMessage(ctx.event, reply);
