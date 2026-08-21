@@ -137,11 +137,12 @@ export function ModelsPage({ db, saveSettings }) {
           <Slider label="单次最多传入图片数" min={1} max={6} value={draft.visionMaxImages || 3} onChange={(visionMaxImages) => updateDraft({ visionMaxImages })} />
         </SettingGroup>
 
-        <SettingGroup title="联网搜索" description="显式搜索只有在真实搜索服务可用时才会执行。">
-          <SettingRow title="启用联网搜索" description="由模型判断是否需要搜索" control={<Switch checked={draft.enableWebSearch === true} onChange={(event) => updateDraft({ enableWebSearch: event.target.checked })} />} />
+        <SettingGroup title="联网搜索" description="Pippi 会根据问题的时效性和不确定性自行决定是否搜索；用户明确要求时则保证执行。">
+          <SettingRow title="启用联网搜索" description="只把模型改写后的检索词发送给搜索服务，不发送整段群聊历史" control={<Switch checked={draft.enableWebSearch === true} onChange={(event) => updateDraft({ enableWebSearch: event.target.checked })} />} />
           {draft.enableWebSearch === true && <>
-            <SettingRow title="搜索模式" control={<Select value={draft.webSearchMode || 'balanced'} onChange={(event) => updateDraft({ webSearchMode: event.target.value })} options={[{ value: 'fast', label: '快速' }, { value: 'balanced', label: '平衡（推荐）' }, { value: 'deep', label: '深度' }]} />} />
+            <SettingRow title="搜索模式" description="限制单轮最多搜索次数：快速 1 次、平衡 2 次、深度 3 次；模型可少搜或不搜" control={<Select value={draft.webSearchMode || 'balanced'} onChange={(event) => updateDraft({ webSearchMode: event.target.value })} options={[{ value: 'fast', label: '快速' }, { value: 'balanced', label: '平衡（推荐）' }, { value: 'deep', label: '深度' }]} />} />
             <SettingRow title="真实搜索源" control={<Select value={draft.searchProvider || 'disabled'} onChange={(event) => updateDraft({ searchProvider: event.target.value })} options={[{ value: 'disabled', label: '未接入（关闭）' }, { value: 'searxng', label: 'SearXNG' }]} />} />
+            {draft.searchProvider === 'disabled' && <InlineHelp tone="warning">联网开关已打开，但真实搜索源仍未接入；显式搜索会被拒绝。</InlineHelp>}
             {draft.searchProvider === 'searxng' && <SettingRow title="SearXNG 地址" control={<Input value={draft.searchBaseUrl || ''} onChange={(event) => updateDraft({ searchBaseUrl: event.target.value })} />} />}
             <div className="console-actions"><Button icon={Globe2} loading={testingLocal} onClick={testLocalSearch}>{testingLocal ? '检测中…' : '检测本地搜索服务'}</Button>{localSearchStatus && <InlineHelp tone={localSearchStatus.ok ? 'normal' : 'warning'}>{localSearchStatus.message}</InlineHelp>}</div>
           </>}

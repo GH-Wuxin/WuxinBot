@@ -183,10 +183,20 @@ export function taskComplexityScore(event, userPolicy) {
   return score;
 }
 
+function hasConfiguredSearch(db) {
+  const settings = db?.settings || {};
+  return Boolean(
+    settings.enableWebSearch !== false &&
+    settings.searchProvider &&
+    settings.searchProvider !== 'disabled' &&
+    String(settings.searchBaseUrl || '').trim()
+  );
+}
+
 export function autoModelForTask(score, db) {
   const provider = llmProvider(db);
-  const providerCanSearch = supportsProviderSearch(provider);
-  const fallbackSearchMode = providerCanSearch ? (db.settings.webSearchMode || 'balanced') : null;
+  const canSearch = supportsProviderSearch(provider) || hasConfiguredSearch(db);
+  const fallbackSearchMode = canSearch ? (db.settings.webSearchMode || 'balanced') : null;
   if (!db.settings.enableAutoModel) {
     return { model: null, searchMode: fallbackSearchMode, maxTokens: null };
   }
@@ -213,7 +223,7 @@ export function responseOptionsFor(event, db, userPolicy) {
   const score = taskComplexityScore(event, userPolicy);
   let auto = autoModelForTask(score, db);
   const longForm = isLongFormRequest(event.text);
-  const canSearch = supportsProviderSearch(llmProvider(db));
+  const canSearch = supportsProviderSearch(llmProvider(db)) || hasConfiguredSearch(db);
   const strictSearch = canSearch && asksForExplicitSearch(event.text);
   // Owner always gets upgraded handling, but the specific model/search
   // choices only apply under DeepSeek provider.
@@ -374,8 +384,8 @@ export function buildPrompt(db, group, event, userPolicy, options = {}) {
   const speakerIdentity = `${event.nickname || event.userId}（QQ:${event.userId}，身份:${describePolicy(userPolicy.policy)}）`;
   const memoryBlock = includeMemory ? memoryPromptBlock(db, event.userId) : '';
   const provider = llmProvider(db);
-  const providerCanSearch = supportsProviderSearch(provider);
-  const strictSearch = providerCanSearch && asksForExplicitSearch(event.text);
+  const canSearch = supportsProviderSearch(provider) || hasConfiguredSearch(db);
+  const strictSearch = canSearch && asksForExplicitSearch(event.text);
   const longForm = isLongFormRequest(event.text);
   const ownerContextNotice = ownerContext.truncated
     ? `\n【owner 私聊上下文预算】\nowner 私聊会尽量多带历史，但本次只带入最近 ${ownerContext.selected} 条，较早的 ${ownerContext.total - ownerContext.selected} 条因上下文预算被省略。不要声称自己拥有完整无限历史；如果需要更早内容，可以自然说明需要对方补一句。`

@@ -325,13 +325,28 @@ export function validateOperation(op: AllowedOperation): { ok: true } | { ok: fa
 // ── LLM tool result sanitization ──
 
 export function sanitizeToolResult(content: string): string {
+  const safeUrls: string[] = [];
+  const withUrlPlaceholders = String(content || '').replace(/https?:\/\/[^\s<>"'`]+/gi, (candidate) => {
+    try {
+      const parsed = new URL(candidate);
+      if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return '[链接已隐藏]';
+      parsed.username = '';
+      parsed.password = '';
+      const safe = parsed.toString().slice(0, 1000);
+      safeUrls.push(safe);
+      return `__SAFE_TOOL_URL_${safeUrls.length - 1}__`;
+    } catch {
+      return '[链接已隐藏]';
+    }
+  });
   // Strip anything that looks like a file path
-  let cleaned = content
+  let cleaned = withUrlPlaceholders
     .replace(/[A-Za-z]:[\\/][^\s,，。]*/g, '[路径已隐藏]')
     // Only treat forward-slash tokens as paths when they contain a dot or a
     // file extension; plain word lists like "aim/alt/tech/stream" must survive.
     .replace(/\/[^\s,，。]*\.[^\s,，。]+/g, '[路径已隐藏]')
-    .replace(/\\[^\s,，。]+\\[^\s,，。]+/g, '[路径已隐藏]');
+    .replace(/\\[^\s,，。]+\\[^\s,，。]+/g, '[路径已隐藏]')
+    .replace(/__SAFE_TOOL_URL_(\d+)__/g, (_, index) => safeUrls[Number(index)] || '[链接已隐藏]');
 
   // Truncate if too long
   if (cleaned.length > 4000) {
