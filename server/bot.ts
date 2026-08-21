@@ -80,6 +80,14 @@ import {
   isSearchAvailable,
 } from './bot/search.js';
 import { setBotPaused, getRecalcProgress, startRecalc, tickRecalc, finishRecalc, markActiveProcessing } from './health.js';
+import {
+  currentRequestTraceId,
+  finishRequestTrace,
+  requestTraceIdFor,
+  startRequestTrace,
+  traceEvent,
+  withRequestTrace,
+} from './requestTrace.js';
 import { activateModelProfile, activeProviderLabel } from './modelConfig.js';
 import { handleOsuCommand } from './osu/commands.js';
 import { loadRegistry, buildBotToolSchemas, enabledBots, findBot } from './bots/registry.js';
@@ -393,12 +401,33 @@ export function collectEventVisionImages(event) {
 }
 
 export async function processIncoming(event, sendMessage = undefined, queuedDecision = undefined, isFromDrain = false) {
-  markActiveProcessing(1);
-  try {
-    return await processIncomingInner(event, sendMessage, queuedDecision, isFromDrain);
-  } finally {
-    markActiveProcessing(-1);
-  }
+  const requestId = requestTraceIdFor(event);
+  startRequestTrace(event, requestId);
+  return withRequestTrace(requestId, async () => {
+    traceEvent('INGRESS', 'onebot_message_received', {
+      messageId: event?.messageId,
+      groupId: event?.groupId,
+      userId: event?.userId,
+      messageType: event?.type,
+      imageCount: event?.images?.length || 0,
+      replayedFromQueue: Boolean(isFromDrain),
+    });
+    markActiveProcessing(1);
+    try {
+      const result = await processIncomingInner(event, sendMessage, queuedDecision, isFromDrain);
+      finishRequestTrace(result?.error ? 'failed' : 'completed', {
+        replied: Boolean(result?.replied),
+        queued: Boolean(result?.queued),
+        reason: result?.reason || '',
+      });
+      return result;
+    } catch (error) {
+      finishRequestTrace('failed', { error: error?.message || String(error) });
+      throw error;
+    } finally {
+      markActiveProcessing(-1);
+    }
+  });
 }
 
 async function processIncomingInner(event, sendMessage = undefined, queuedDecision = undefined, isFromDrain = false) {
@@ -505,6 +534,15 @@ async function processIncomingInner(event, sendMessage = undefined, queuedDecisi
   const decision = queuedDecision || (event.type === 'private'
     ? { shouldReply: String(event.userId) === String(settings.ownerQq || event.userId), reason: '私聊消息' }
     : await decideReply({ db, group, userPolicy, text: event.text, mentioned, userId: event.userId, images: eventVisionImages }));
+  traceEvent('GATE', 'reply_gate_decided', {
+    status: decision.shouldReply ? 'reply' : 'silent',
+    shouldReply: Boolean(decision.shouldReply),
+    reason: decision.reason,
+    inContext: decision.inContext !== false,
+    visualLimitation: Boolean(decision.visualLimitation),
+    mentioned,
+    atTargets: event?.atTargets || [],
+  });
 
   if (!isFromDrain) {
     let persistedDuplicate = false;
@@ -515,6 +553,7 @@ async function processIncomingInner(event, sendMessage = undefined, queuedDecisi
       }
       draft.messages.push({
         id: crypto.randomUUID(),
+        requestId: currentRequestTraceId(),
         sourceMessageId: event.messageId,
         role: 'user',
         type: event.type,
@@ -528,6 +567,7 @@ async function processIncomingInner(event, sendMessage = undefined, queuedDecisi
       });
       draft.decisions.push({
         id: crypto.randomUUID(),
+        requestId: currentRequestTraceId(),
         messageId: event.messageId,
         groupId: event.groupId,
         userId: event.userId,
@@ -614,10 +654,13 @@ async function processIncomingInner(event, sendMessage = undefined, queuedDecisi
 
   if (decision.visualLimitation) {
     const replyText = visualLimitationReply(event, db);
+    traceEvent('SEND', 'deterministic_visual_reply_started', { contentLength: replyText.length });
     const segments = await sendReplySegments(sendMessage, event, replyText);
+    traceEvent('SEND', 'deterministic_visual_reply_sent', { status: 'ok', segmentCount: segments.length });
     updateDb((draft) => {
       draft.messages.push({
         id: crypto.randomUUID(),
+        requestId: currentRequestTraceId(),
         ...replyTargetMetadata(event),
         role: 'assistant',
         type: event.type,
@@ -668,6 +711,7 @@ async function processIncomingInner(event, sendMessage = undefined, queuedDecisi
       });
     });
     queueState.queue.push({ event, sendMessage, decision, enqueuedAt: Date.now() });
+    traceEvent('QUEUE', 'reply_enqueued', { status: 'waiting', position: queueState.queue.length });
     return { replied: false, reason, queued: true, queuePosition: queueState.queue.length };
   }
   queueState.locked = true;
@@ -683,6 +727,12 @@ async function processIncomingInner(event, sendMessage = undefined, queuedDecisi
     const liveGroup = getGroup(liveDb, event.groupId) || { groupId: event.groupId, name: '私聊' };
     const liveUserPolicy = getUserPolicy(liveDb, event.groupId, event.userId);
     const messages = buildPrompt(liveDb, liveGroup, event, liveUserPolicy);
+    traceEvent('PROMPT', 'prompt_built', {
+      messageCount: messages.length,
+      roles: messages.map((message) => message.role),
+      totalCharacters: messages.reduce((sum, message) => sum + String(message.content || '').length, 0),
+      includesVision: Boolean(event?.images?.length),
+    });
     const responseOptions = responseOptionsFor(event, liveDb, liveUserPolicy);
     const turnId = String(event.messageId || crypto.randomUUID());
     const reasoningRouter = createShadowReasoningRouter();
@@ -705,6 +755,11 @@ async function processIncomingInner(event, sendMessage = undefined, queuedDecisi
     }
     const registryHere = loadRegistry(liveDb);
     const namedBotRequest = detectNamedBotRequest(event.text, registryHere.bots || []);
+    traceEvent('ROUTER', 'conversation_route_resolved', {
+      explicitSearch,
+      osuCapability: osuDataIntent?.args?.capability || '',
+      namedBotId: namedBotRequest?.botId || '',
+    });
     let namedBotDowngradeNotice = '';
 
     // If the user explicitly named a bot (猫猫/雨沐/etc.) AND asked for recent
@@ -794,6 +849,12 @@ async function processIncomingInner(event, sendMessage = undefined, queuedDecisi
       ...(searchToolEnabled ? [buildSearchToolSchema()] : []),
     ];
     const useTools = toolsForTurn.length > 0;
+    traceEvent('ROUTER', 'execution_path_selected', {
+      route: useTools ? 'tool_loop' : 'direct_model',
+      enabledToolNames: toolsForTurn.map((tool) => tool?.function?.name).filter(Boolean),
+      explicitSearch,
+      requiredOsuCapability: osuDataIntent?.args?.capability || '',
+    });
 
     // Thinking notice — configurable per thinkingNoticeMode
     const thinkingMode = useTools ? 'off' : (liveDb.settings.thinkingNoticeMode || 'slow');
@@ -1024,6 +1085,8 @@ async function processIncomingInner(event, sendMessage = undefined, queuedDecisi
         maxTokens: responseOptions.maxTokens,
         overrideModel: responseOptions.overrideModel,
         visionImages,
+        traceRole: 'conversation',
+        tracePurpose: 'conversation_reply',
         ...convWire
       });
       reasoningRouter.record({
@@ -1130,6 +1193,11 @@ async function processIncomingInner(event, sendMessage = undefined, queuedDecisi
     const withinMergeFloor = deliveredText.length <= MERGE_FORWARD_MIN_CHARS;
     const isLongReply = responseOptions.longForm || (!withinMergeFloor && segmentCount >= 2);
     let segments;
+    traceEvent('SEND', 'qq_delivery_started', {
+      contentLength: deliveredText.length,
+      imageCount: imageCqCodes.length,
+      deliveryMode: hasDirectToolDelivery ? 'direct-tool' : (isLongReply ? 'forward' : 'segments'),
+    });
     if (hasDirectToolDelivery) {
       // Structured tool output bypasses both the LLM restatement and the
       // three-segment/merged-forward paths. NapCat receives one complete,
@@ -1143,10 +1211,12 @@ async function processIncomingInner(event, sendMessage = undefined, queuedDecisi
     } else {
       segments = await sendReplySegments(sendMessage, event, deliveredText);
     }
+    traceEvent('SEND', 'qq_delivery_completed', { status: 'ok', segmentCount: segments.length });
 
     updateDb((draft) => {
       draft.messages.push({
         id: crypto.randomUUID(),
+        requestId: currentRequestTraceId(),
         ...replyTargetMetadata(event),
         role: 'assistant',
         type: event.type,
@@ -1191,6 +1261,7 @@ async function processIncomingInner(event, sendMessage = undefined, queuedDecisi
       draft.usage.errors += 1;
       draft.decisions.push({
         id: crypto.randomUUID(),
+        requestId: currentRequestTraceId(),
         messageId: event.messageId,
         groupId: event.groupId,
         userId: event.userId,

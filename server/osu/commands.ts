@@ -2,6 +2,7 @@
 
 import { readDb, updateDb, nowIso } from '../store.js';
 import { completeChat } from '../bot/llm.js';
+import { traceEvent } from '../requestTrace.js';
 import { collectPlayerData, collectRecentPlayerData } from './collector.js';
 import {
   analyzeData,
@@ -851,6 +852,13 @@ async function reviewFullReport(
   const prompt = buildAnalysisReviewerPrompt(analysis, report, narrative);
   let lastRaw = '';
   for (let attempt = 1; attempt <= 2; attempt += 1) {
+    const reviewStartedAt = Date.now();
+    traceEvent('REVIEW', 'reviewer_started', {
+      status: 'running',
+      reviewer: 'osu_full_report',
+      attempt,
+      model: OSU_REVIEW_MODEL,
+    });
     try {
       const result = await completeChat(db, {
         model: OSU_REVIEW_MODEL,
@@ -865,12 +873,37 @@ async function reviewFullReport(
         timeoutMs: 60000,
         requestMaxRetries: 0,
         label: attempt === 1 ? 'osu分析独立审查' : 'osu分析独立审查重试',
+        traceRole: 'reviewer',
+        tracePurpose: attempt === 1 ? 'osu_full_report_review' : 'osu_full_report_review_retry',
       });
       lastRaw = String(result.text || '').trim();
       const verdicts = parseReviewerVerdicts(lastRaw);
-      if (verdicts) return { verdicts, raw: lastRaw };
+      if (verdicts) {
+        traceEvent('REVIEW', 'reviewer_completed', {
+          status: 'ok',
+          durationMs: Date.now() - reviewStartedAt,
+          reviewer: 'osu_full_report',
+          attempt,
+          verdictCount: verdicts.length,
+          rejectedSections: verdicts.filter((verdict) => verdict.result === 'REJECT').map((verdict) => verdict.section),
+        });
+        return { verdicts, raw: lastRaw };
+      }
+      traceEvent('REVIEW', 'reviewer_invalid_result', {
+        status: 'error',
+        durationMs: Date.now() - reviewStartedAt,
+        reviewer: 'osu_full_report',
+        attempt,
+      });
       console.error(`[osu analyze] 独立审查第 ${attempt} 次未返回完整八段判决。`);
     } catch (error) {
+      traceEvent('REVIEW', 'reviewer_failed', {
+        status: 'error',
+        durationMs: Date.now() - reviewStartedAt,
+        reviewer: 'osu_full_report',
+        attempt,
+        error: error?.message || String(error),
+      });
       console.error(`[osu analyze] 独立审查第 ${attempt} 次调用失败：`, error?.message || error);
     }
   }

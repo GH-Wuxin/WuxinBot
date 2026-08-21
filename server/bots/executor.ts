@@ -13,6 +13,7 @@ import { updateDb, nowIso, MAX_TOOL_LOGS } from '../store.js';
 import { loadRegistry, enabledBots, findBot, findCommand, availableCommands, internalCapabilitySupported, INTERNAL_CAPABILITIES } from './registry.js';
 import { normalizeCapabilityName } from './capabilityCatalog.js';
 import { markLatencySpan } from '../perf/latencyTrace.js';
+import { traceEvent } from '../requestTrace.js';
 import { lookupSkill, lookupSkillByQQ } from './skills.js';
 import { getRenderServer } from './renderServer.js';
 import { scoreStarRating } from '../osu/scoreMetrics.js';
@@ -2339,6 +2340,41 @@ export async function runToolLoop(
     requiredTool, deliverDirectContent = false
   } = options;
   const executeToolCallFn = options.executeToolCallFn || executeToolCall;
+  const executeTracedToolCall = async (toolCall: any, toolContext: any) => {
+    const startedAt = Date.now();
+    const toolName = String(toolCall?.function?.name || 'unknown');
+    let traceArguments = toolCall?.function?.arguments || {};
+    try { traceArguments = JSON.parse(String(traceArguments)); } catch { /* redactor handles raw text */ }
+    traceEvent('TOOL', 'tool_call_started', {
+      status: 'running',
+      toolCallId: toolCall?.id,
+      toolName,
+      arguments: traceArguments,
+    });
+    try {
+      const result = await executeToolCallFn(toolCall, toolContext);
+      traceEvent('TOOL', 'tool_call_completed', {
+        status: result?.ok ? 'ok' : 'error',
+        durationMs: Date.now() - startedAt,
+        toolCallId: toolCall?.id,
+        toolName,
+        ok: Boolean(result?.ok),
+        error: result?.error || '',
+        contentLength: String(result?.content || '').length,
+        imageCount: result?.images?.length || 0,
+      });
+      return result;
+    } catch (error) {
+      traceEvent('TOOL', 'tool_call_failed', {
+        status: 'error',
+        durationMs: Date.now() - startedAt,
+        toolCallId: toolCall?.id,
+        toolName,
+        error: error?.message || String(error),
+      });
+      throw error;
+    }
+  };
 
   // Shared user-turn budget. The recommendation hard guard in bot.ts may run a
   // second runToolLoop after the first; each loop reports the turn total and
@@ -2432,7 +2468,7 @@ export async function runToolLoop(
       }
     };
 
-    const result = await executeToolCallFn(syntheticCall, {
+    const result = await executeTracedToolCall(syntheticCall, {
       db, userId, groupId, sendMessage, event, selfQq
     });
     if (
@@ -2555,7 +2591,9 @@ export async function runToolLoop(
         maxTokens,
         model,
         ...wireForLevel(leadDecision.level),
-        label: label ? `${label} [required lead]` : undefined
+        label: label ? `${label} [required lead]` : undefined,
+        traceRole: 'decorative_lead',
+        tracePurpose: 'required_tool_lead',
       });
     } catch {
       // Lead is cosmetic — return the direct payload without it
@@ -2599,6 +2637,8 @@ export async function runToolLoop(
           model,
           ...wireForLevel(leadDecision.level),
           label: label ? `${label} [required lead retry]` : undefined,
+          traceRole: 'decorative_lead',
+          tracePurpose: 'required_tool_lead_retry',
         });
         recordCall('decorative_lead', leadInput, retryResponse?.meta || null, leadDecision);
         if (retryResponse.usage) {
@@ -2665,7 +2705,9 @@ export async function runToolLoop(
         temperature,
         maxTokens,
         model,
-        label: label ? `${label} [工具循环 ${iterations}]` : undefined
+        label: label ? `${label} [工具循环 ${iterations}]` : undefined,
+        traceRole: plannerInput.callRole,
+        tracePurpose: hasDirectPayload ? 'tool_result_lead' : 'tool_planning',
       });
     } catch (error) {
       // Once a trusted direct payload has been collected, the follow-up LLM is
@@ -2819,7 +2861,7 @@ export async function runToolLoop(
         }
       }
 
-      const result = await executeToolCallFn(tc, {
+      const result = await executeTracedToolCall(tc, {
         db, userId, groupId, sendMessage, event, selfQq
       });
       // Accounting is tied to the executor boundary, not to whether its
@@ -2962,7 +3004,9 @@ export async function runToolLoop(
       temperature,
       maxTokens,
       model,
-      label: label ? `${label} [最终回答]` : undefined
+      label: label ? `${label} [最终回答]` : undefined,
+      traceRole: 'tool_synthesis',
+      tracePurpose: 'tool_result_synthesis',
     });
   } catch (error) {
     if (collectedDirectContent.length > 0 || collectedImages.length > 0) {

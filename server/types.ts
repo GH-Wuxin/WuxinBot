@@ -185,6 +185,7 @@ export interface MemorySample {
 
 export interface MessageRecord {
   id: string;
+  requestId?: string;
   sourceMessageId?: string;
   replyToMessageId?: string;
   replyToUserId?: string;
@@ -202,6 +203,7 @@ export interface MessageRecord {
 
 export interface DecisionRecord {
   id: string;
+  requestId?: string;
   messageId: string;
   groupId: string;
   userId: string;

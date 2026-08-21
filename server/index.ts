@@ -24,6 +24,7 @@ import { getRenderServer, startRenderServer } from './bots/renderServer.js';
 import { removeLazybotBinding, syncLazybotBinding } from './bots/bindingSync.js';
 import { sharedGroupBotConfigPath } from './bots/externalPaths.js';
 import { acquireInstanceLock } from './instanceLock.js';
+import { listRequestTraces } from './requestTrace.js';
 
 const port = Number(process.env.PORT || 8787);
 let releaseInstanceLock = () => {};
@@ -170,6 +171,10 @@ function ok(data = {}) {
 
 app.get('/api/state', (_req, res) => {
   res.json(ok({ db: publicDb(), oneBot: getOneBotStatus() }));
+});
+
+app.get('/api/request-traces', (req, res) => {
+  res.json(ok({ traces: listRequestTraces(Number(req.query.limit || 80)) }));
 });
 
 // KB v4.1 status — admin-only via the global /api password guard. Exposes
