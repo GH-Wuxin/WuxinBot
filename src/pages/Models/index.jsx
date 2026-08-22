@@ -124,6 +124,7 @@ export function ModelsPage({ db, saveSettings }) {
           </>}
           <Slider label="Owner 私聊上下文软上限" min={4000} max={60000} step={1000} value={draft.ownerPrivateContextCharBudget || 24000} onChange={(ownerPrivateContextCharBudget) => updateDraft({ ownerPrivateContextCharBudget })} hint="字符" />
           <SettingRow title="自动选择模型" description="复杂任务允许升级到更强模型" control={<Switch checked={draft.enableAutoModel !== false} onChange={(event) => updateDraft({ enableAutoModel: event.target.checked })} />} />
+          <SettingRow title="启用模型思考" description="允许复杂调用开启 DeepSeek thinking；会增加延迟与 Token，供应商 raw CoT 将实时显示在日志页" control={<Switch checked={draft.reasoningEnabled === true} onChange={(event) => updateDraft({ reasoningEnabled: event.target.checked })} />} />
           <SettingRow title="纯人设模式" description="忽略系统事实注入" control={<Switch checked={draft.ignoreSystemFacts === true} onChange={(event) => updateDraft({ ignoreSystemFacts: event.target.checked })} />} />
           <SettingRow title="画像 V2 防近因" description="长期画像与近期动态分层（实验性）" control={<Switch checked={draft.profileAntiRecencyV2 === true} onChange={(event) => updateDraft({ profileAntiRecencyV2: event.target.checked })} />} />
           <SettingRow title="升级恭喜通知" description="群内自动祝贺" control={<Switch checked={draft.levelUpNotifyEnabled !== false} onChange={(event) => updateDraft({ levelUpNotifyEnabled: event.target.checked })} />} />

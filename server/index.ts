@@ -24,7 +24,7 @@ import { getRenderServer, startRenderServer } from './bots/renderServer.js';
 import { removeLazybotBinding, syncLazybotBinding } from './bots/bindingSync.js';
 import { sharedGroupBotConfigPath } from './bots/externalPaths.js';
 import { acquireInstanceLock } from './instanceLock.js';
-import { listRequestTraces } from './requestTrace.js';
+import { listRequestTraces, subscribeRequestTraces } from './requestTrace.js';
 
 const port = Number(process.env.PORT || 8787);
 let releaseInstanceLock = () => {};
@@ -175,6 +175,43 @@ app.get('/api/state', (_req, res) => {
 
 app.get('/api/request-traces', (req, res) => {
   res.json(ok({ traces: listRequestTraces(Number(req.query.limit || 80)) }));
+});
+
+app.get('/api/request-traces/stream', (req, res) => {
+  res.status(200);
+  res.setHeader('Content-Type', 'text/event-stream; charset=utf-8');
+  res.setHeader('Cache-Control', 'no-cache, no-transform');
+  res.setHeader('Connection', 'keep-alive');
+  res.setHeader('X-Accel-Buffering', 'no');
+  res.flushHeaders?.();
+
+  const send = (payload) => {
+    try {
+      if (!res.writableEnded) res.write(`data: ${JSON.stringify(payload)}\n\n`);
+    } catch {
+      // Connection cleanup below handles disconnected console clients.
+    }
+  };
+  send({ type: 'snapshot', traces: listRequestTraces(Number(req.query.limit || 80)) });
+  const unsubscribe = subscribeRequestTraces((trace) => send({ type: 'upsert', trace }));
+  if (!unsubscribe) {
+    send({ type: 'error', error: 'trace_stream_capacity' });
+    res.end();
+    return;
+  }
+  const heartbeat = setInterval(() => {
+    try { if (!res.writableEnded) res.write(': heartbeat\n\n'); } catch { /* close handler cleans up */ }
+  }, 15_000);
+  heartbeat.unref?.();
+  let cleaned = false;
+  const cleanup = () => {
+    if (cleaned) return;
+    cleaned = true;
+    clearInterval(heartbeat);
+    unsubscribe();
+  };
+  req.once('close', cleanup);
+  res.once('close', cleanup);
 });
 
 // KB v4.1 status — admin-only via the global /api password guard. Exposes

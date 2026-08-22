@@ -7,7 +7,12 @@ import path from 'node:path';
 import crypto from 'node:crypto';
 import OpenAI from 'openai';
 import { recordLlmSuccess, recordLlmError } from '../health.js';
-import { extractProviderResponseTrace, traceEvent } from '../requestTrace.js';
+import {
+  currentRequestTraceId,
+  extractProviderResponseTrace,
+  traceEvent,
+  traceModelStream,
+} from '../requestTrace.js';
 import {
   activateModelProfile,
   DEEPSEEK_BASE_URL,
@@ -84,6 +89,67 @@ export function thinkingParamsForLevel(level, enabled = true) {
   if (!enabled || level === 'off') return { thinking: { type: 'disabled' } };
   if (level === 'max') return { thinking: { type: 'enabled' }, reasoning_effort: 'max' };
   return { thinking: { type: 'enabled' }, reasoning_effort: 'high' };
+}
+
+export async function collectChatCompletionStream(stream, fallbackModel = '', onProgress = undefined) {
+  const message = { role: 'assistant', content: '', tool_calls: [] };
+  let reasoningContent = '';
+  let finishReason = null;
+  let usage;
+  let id = '';
+  let created;
+  let model = fallbackModel;
+  let systemFingerprint;
+
+  for await (const chunk of stream) {
+    id = chunk?.id || id;
+    created = chunk?.created ?? created;
+    model = chunk?.model || model;
+    systemFingerprint = chunk?.system_fingerprint ?? systemFingerprint;
+    usage = chunk?.usage || usage;
+    const choice = chunk?.choices?.[0];
+    const delta = choice?.delta || {};
+    if (typeof delta.role === 'string') message.role = delta.role;
+    if (typeof delta.content === 'string') message.content += delta.content;
+    const reasoningDelta = ['reasoning_content', 'reasoning', 'thinking']
+      .map((key) => typeof delta?.[key] === 'string' ? delta[key] : '')
+      .find(Boolean) || '';
+    reasoningContent += reasoningDelta;
+    for (const [position, callDelta] of (delta.tool_calls || []).entries()) {
+      const index = Number.isInteger(callDelta?.index) ? callDelta.index : position;
+      const call = message.tool_calls[index] || {
+        id: '',
+        type: 'function',
+        function: { name: '', arguments: '' },
+      };
+      if (typeof callDelta?.id === 'string') call.id = callDelta.id;
+      if (typeof callDelta?.type === 'string') call.type = callDelta.type;
+      if (typeof callDelta?.function?.name === 'string') call.function.name += callDelta.function.name;
+      if (typeof callDelta?.function?.arguments === 'string') call.function.arguments += callDelta.function.arguments;
+      message.tool_calls[index] = call;
+    }
+    if (choice?.finish_reason != null) finishReason = choice.finish_reason;
+    if (onProgress && (reasoningDelta || delta.content || delta.tool_calls?.length)) {
+      onProgress({
+        content: message.content,
+        reasoning: reasoningContent,
+        reasoningExposed: Boolean(reasoningContent),
+        toolCallsPending: message.tool_calls.length,
+      });
+    }
+  }
+
+  if (reasoningContent) message.reasoning_content = reasoningContent;
+  if (message.tool_calls.length === 0) message.tool_calls = null;
+  return {
+    id,
+    object: 'chat.completion',
+    ...(created != null ? { created } : {}),
+    model,
+    ...(systemFingerprint != null ? { system_fingerprint: systemFingerprint } : {}),
+    choices: [{ index: 0, message, finish_reason: finishReason }],
+    ...(usage ? { usage } : {}),
+  };
 }
 
 export function llmProvider(db) {
@@ -409,6 +475,9 @@ export async function completeChat(db, options = {}) {
     const requestMaxRetries = Math.max(0, Number(options.requestMaxRetries ?? 2));
     const outerTimeoutMs = requestTimeoutMs + 1000;
     const label = options.label || `${llmProviderName(provider)} 调用`;
+    const streaming = provider === 'deepseek'
+      && Boolean(currentRequestTraceId())
+      && options.traceStreaming !== false;
     traceEvent('MODEL', 'model_call_started', {
       status: 'running',
       invocationId,
@@ -419,7 +488,8 @@ export async function completeChat(db, options = {}) {
       model: nextParams.model,
       messageCount: nextParams.messages?.length || 0,
       toolCount: nextParams.tools?.length || 0,
-      streaming: false,
+      streaming,
+      thinkingEnabled,
     });
     // The outer timeout must do more than stop waiting: abort the SDK's
     // in-flight fetch AND cancel its pending retries. SDK v6 propagates
@@ -428,15 +498,76 @@ export async function completeChat(db, options = {}) {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), outerTimeoutMs);
     try {
-      const response = await withTimeout(
-        client.chat.completions.create(nextParams, {
-          timeout: requestTimeoutMs,
-          maxRetries: requestMaxRetries,
-          signal: controller.signal,
-        }),
-        outerTimeoutMs,
-        label
-      );
+      let response;
+      if (streaming) {
+        let lastPublishedAt = 0;
+        let latestProgress;
+        let lastPublishedSignature = '';
+        const publishProgress = (force = false) => {
+          if (!latestProgress) return;
+          const now = Date.now();
+          const signature = `${latestProgress.reasoning.length}:${latestProgress.content.length}:${latestProgress.toolCallsPending}`;
+          if (!force && lastPublishedAt > 0 && now - lastPublishedAt < 120) return;
+          if (signature === lastPublishedSignature) return;
+          lastPublishedAt = now;
+          lastPublishedSignature = signature;
+          traceModelStream(invocationId, {
+            status: 'running',
+            durationMs: now - invocationStarted,
+            purpose: options.tracePurpose || label,
+            attempt: providerAttempt,
+            provider,
+            model: nextParams.model,
+            response: latestProgress,
+            streaming: true,
+          });
+        };
+        const stream = await withTimeout(
+          client.chat.completions.create({
+            ...nextParams,
+            stream: true,
+            stream_options: { include_usage: true },
+          }, {
+            timeout: requestTimeoutMs,
+            maxRetries: requestMaxRetries,
+            signal: controller.signal,
+          }),
+          outerTimeoutMs,
+          label
+        );
+        const remainingMs = Math.max(1, outerTimeoutMs - (Date.now() - invocationStarted));
+        response = await withTimeout(
+          collectChatCompletionStream(stream, nextParams.model, (progress) => {
+            latestProgress = progress;
+            publishProgress(false);
+          }),
+          remainingMs,
+          label
+        );
+        publishProgress(true);
+        traceModelStream(invocationId, {
+          status: 'ok',
+          durationMs: Date.now() - invocationStarted,
+          purpose: options.tracePurpose || label,
+          attempt: providerAttempt,
+          provider,
+          model: nextParams.model,
+          response: latestProgress || {
+            content: '', reasoning: '', reasoningExposed: false, toolCallsPending: 0,
+          },
+          streaming: true,
+        });
+      } else {
+        response = await withTimeout(
+          client.chat.completions.create(nextParams, {
+            timeout: requestTimeoutMs,
+            maxRetries: requestMaxRetries,
+            signal: controller.signal,
+          }),
+          outerTimeoutMs,
+          label
+        );
+      }
       traceEvent('MODEL', 'model_call_completed', {
         status: 'ok',
         durationMs: Date.now() - invocationStarted,
@@ -446,7 +577,7 @@ export async function completeChat(db, options = {}) {
         purpose: options.tracePurpose || label,
         provider,
         model: nextParams.model,
-        streaming: false,
+        streaming,
         response: extractProviderResponseTrace(response),
       });
       return {
