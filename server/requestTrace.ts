@@ -40,6 +40,8 @@ const MAX_STRING = 12_000;
 const context = new AsyncLocalStorage<{ requestId: string }>();
 const traces = new Map<string, RequestTrace>();
 const order: string[] = [];
+const subscribers = new Set<(trace: unknown) => void>();
+const MAX_SUBSCRIBERS = 32;
 const secretKey = /authorization|api[-_]?key|access[-_]?token|refresh[-_]?token|cookie|password|passwd|secret/i;
 const secretValue = /\bBearer\s+[A-Za-z0-9._~+\/-]+=*|\b(?:sk|sess|key)-[A-Za-z0-9_-]{12,}/gi;
 
@@ -80,6 +82,28 @@ export function requestTraceIdFor(event: any) {
   return `qq:${groupId}:${messageId}`;
 }
 
+function publishTrace(trace: RequestTrace) {
+  try {
+    if (subscribers.size === 0) return;
+    const snapshot = redactTraceValue(trace);
+    for (const subscriber of subscribers) {
+      try { subscriber(snapshot); } catch { /* A broken console client is isolated. */ }
+    }
+  } catch {
+    // Publishing diagnostics must never affect the QQ path.
+  }
+}
+
+export function subscribeRequestTraces(listener: (trace: unknown) => void) {
+  try {
+    if (subscribers.size >= MAX_SUBSCRIBERS) return null;
+    subscribers.add(listener);
+    return () => subscribers.delete(listener);
+  } catch {
+    return null;
+  }
+}
+
 export function startRequestTrace(event: any, requestId = requestTraceIdFor(event)) {
   try {
     const trace: RequestTrace = {
@@ -102,6 +126,7 @@ export function startRequestTrace(event: any, requestId = requestTraceIdFor(even
       const expired = order.shift();
       if (expired) traces.delete(expired);
     }
+    publishTrace(trace);
     return requestId;
   } catch {
     return requestId;
@@ -134,8 +159,50 @@ export function traceEvent(phase: TracePhase, name: string, detail: Record<strin
       ...(Object.keys(data).length ? { data: redactTraceValue(data) } : {}),
     });
     trace.events = trace.events.slice(-MAX_EVENTS_PER_REQUEST);
+    publishTrace(trace);
   } catch {
     // Console observability must never affect the QQ message path.
+  }
+}
+
+export function traceModelStream(invocationId: string, detail: Record<string, unknown> = {}) {
+  try {
+    const trace = traces.get(currentRequestTraceId());
+    if (!trace || trace.status !== 'active') return;
+    const safeInvocationId = safeString(invocationId, 160);
+    let existing: RequestTraceEvent | undefined;
+    for (let index = trace.events.length - 1; index >= 0; index -= 1) {
+      const event = trace.events[index];
+      const data = event.data as Record<string, unknown> | undefined;
+      if (event.phase === 'MODEL' && event.name === 'model_call_streaming' && data?.invocationId === safeInvocationId) {
+        existing = event;
+        break;
+      }
+    }
+    const { status, durationMs, ...data } = detail;
+    const next = { invocationId: safeInvocationId, ...data };
+    if (existing) {
+      existing.at = new Date().toISOString();
+      if (status) existing.status = safeString(status, 40);
+      if (Number.isFinite(Number(durationMs))) existing.durationMs = Number(durationMs);
+      existing.data = redactTraceValue(next);
+    } else {
+      trace.eventCount += 1;
+      trace.events.push({
+        id: crypto.randomUUID(),
+        seq: trace.eventCount,
+        at: new Date().toISOString(),
+        phase: 'MODEL',
+        name: 'model_call_streaming',
+        ...(status ? { status: safeString(status, 40) } : {}),
+        ...(Number.isFinite(Number(durationMs)) ? { durationMs: Number(durationMs) } : {}),
+        data: redactTraceValue(next),
+      });
+      trace.events = trace.events.slice(-MAX_EVENTS_PER_REQUEST);
+    }
+    publishTrace(trace);
+  } catch {
+    // Streaming diagnostics must never affect the model request.
   }
 }
 
@@ -149,6 +216,7 @@ export function finishRequestTrace(status: Exclude<TraceStatus, 'active'>, detai
     });
     trace.status = status;
     trace.finishedAt = new Date().toISOString();
+    publishTrace(trace);
   } catch {
     // Fail open.
   }
@@ -194,4 +262,5 @@ export function extractProviderResponseTrace(response: any) {
 export function clearRequestTracesForTest() {
   traces.clear();
   order.splice(0, order.length);
+  subscribers.clear();
 }
