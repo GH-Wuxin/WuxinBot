@@ -24,6 +24,7 @@ import {
 const prodBefore = productionDbSnapshot();
 const testDataDir = createTestDataDir('wuxin-agent-cross-run');
 process.env.DATA_DIR = testDataDir;
+process.env.PIPPI_AGENT_RUNTIME_MODE = 'legacy';
 assertNotProduction(testDataDir);
 
 const {

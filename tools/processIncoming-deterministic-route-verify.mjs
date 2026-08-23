@@ -11,6 +11,7 @@ import { createTestDataDir, assertNotProduction, productionDbSnapshot, verifyPro
 
 const testDataDir = createTestDataDir('wuxin-detroute');
 process.env.DATA_DIR = testDataDir;
+process.env.PIPPI_AGENT_RUNTIME_MODE = 'legacy';
 assertNotProduction(testDataDir);
 
 // Record production state BEFORE any server module is loaded

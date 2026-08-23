@@ -8,6 +8,7 @@ import { createTestDataDir, assertNotProduction, productionDbSnapshot, verifyPro
 
 const testDataDir = createTestDataDir('wuxin-namedbot');
 process.env.DATA_DIR = testDataDir;
+process.env.PIPPI_AGENT_RUNTIME_MODE = 'legacy';
 assertNotProduction(testDataDir);
 const prodBefore = productionDbSnapshot();
 console.log('[isolation] production db snapshot: ' + (prodBefore ? prodBefore.sha256.slice(0, 12) + '...' : 'N/A'));

@@ -10,7 +10,7 @@
     "web": "vite --host 127.0.0.1 --port 5173 --strictPort",
     "build": "vite build",
     "typecheck": "tsc --noEmit",
-    "check": "npm run typecheck && npm run build && npm run sanity && npm run security && npm run search:verify && npm run search:agent:verify && npm run runtime:safety:verify && npm run request:trace:verify",
+    "check": "npm run typecheck && npm run build && npm run sanity && npm run security && npm run search:verify && npm run search:agent:verify && npm run agent:v2:verify && npm run runtime:safety:verify && npm run request:trace:verify",
     "start": "tsx server/index.ts",
     "sanity": "tsx tools/sanity.mjs",
     "security": "tsx tools/security-verify.mjs",
@@ -23,7 +23,8 @@
     "agent:replay": "node --import tsx tools/agent-replay.ts",
     "agent:campaign:c1": "node --import tsx tools/agent-runtime-campaign.ts",
     "agent:campaign:c2": "node --import tsx tools/agent-runtime-c2-campaign.ts",
-    "agent:counterfactual": "node --import tsx tools/agent-counterfactual.ts"
+    "agent:counterfactual": "node --import tsx tools/agent-counterfactual.ts",
+    "agent:v2:verify": "node --import tsx tools/agent-runtime-v2-contract-verify.mjs && node --import tsx tools/agent-runtime-v2-process-verify.mjs"
   },
   "keywords": [],
   "author": "",
