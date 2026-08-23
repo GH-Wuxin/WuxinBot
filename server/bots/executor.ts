@@ -1562,10 +1562,12 @@ export function formatInternalScoreLine(
   const accuracy = scoreAccuracyPercent(score);
   const mods = scoreModAcronyms(score);
   const beatmap = score.beatmap || ({} as OsuScore['beatmap']);
+  const beatmapId = Number(beatmap.id || (score as any).beatmap_id || 0);
   const prefix = options.index ? `#${options.index} ` : '';
   const difficulty = beatmap.version ? ` [${beatmap.version}]` : '';
   const fields = [
     `[${score.rank || 'F'}] ${scoreTitle(score)}${difficulty}`,
+    beatmapId > 0 ? `BID ${beatmapId}` : 'BID 暂不可用',
     stars > 0 ? `${stars.toFixed(2)}★` : '星数暂不可用',
     mods.length ? mods.join('') : 'NM',
     accuracy === null ? 'Acc ?' : `${accuracy.toFixed(2)}%`,
@@ -1762,8 +1764,28 @@ export async function executeInternalBotCommand(
           );
           if (traceId) markLatencySpan(traceId, 'recent_bridge_done', { bot: bridgeBot });
           if (bridgeReply && (bridgeReply.text || bridgeReply.images.length > 0)) {
+            // A rendered third-party panel is useful presentation, but its
+            // prose/image may omit the beatmap ID. Re-fetch one structured
+            // score so the Agent can chain recent -> beatmap/skill tools
+            // without OCR or title matching. Failure stays explicit; never
+            // fabricate an ID from the panel.
+            let identityLine = 'BID 暂不可用（桥接结果未提供，且结构化 recent 补查失败）';
+            try {
+              const { getUserRecentScores } = await import('../osu/api.js');
+              const identityScores = await getUserRecentScores(user.id, 'osu', 1);
+              if (Array.isArray(identityScores) && identityScores.length > 0) {
+                const [identityScore] = (await enrichScoreStarRatings(identityScores, 'osu')).scores;
+                identityLine = formatInternalScoreLine(identityScore, { includeCombo: true });
+              }
+            } catch {
+              // The bridge result is still deliverable, but the missing BID
+              // must remain visible instead of being silently omitted.
+            }
             return {
-              content: bridgeReply.text || `${user.username} 最近一次 osu! 成绩：`,
+              content: [
+                bridgeReply.text || `${user.username} 最近一次 osu! 成绩：`,
+                `结构化谱面标识：${identityLine}`,
+              ].join('\n'),
               images: bridgeReply.images,
             };
           }

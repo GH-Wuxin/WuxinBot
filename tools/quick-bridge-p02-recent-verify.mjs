@@ -135,7 +135,13 @@ async function runQuick(text) {
   );
   const after = snapshot();
   ok('p02-direct:bridge-preserved', delta(before, after, 'kanon') === 1, `kanon delta=${delta(before, after, 'kanon')}`);
-  ok('p02-direct:bridge-content', typeof result === 'object' && result.content === 'bridge:kanon:ok', JSON.stringify(result));
+  ok(
+    'p02-direct:bridge-content',
+    typeof result === 'object'
+      && result.content.startsWith('bridge:kanon:ok')
+      && result.content.includes('BID 1008'),
+    JSON.stringify(result),
+  );
 }
 
 // 4. FLAG_ONLY_SAME_TARGET (different-bot flag must NOT suppress kanon)
@@ -150,7 +156,13 @@ async function runQuick(text) {
   );
   const after = snapshot();
   ok('p02-flag-scope:kanon-still-attempted', delta(before, after, 'kanon') === 1, `kanon delta=${delta(before, after, 'kanon')}`);
-  ok('p02-flag-scope:content', typeof result === 'object' && result.content === 'bridge:kanon:ok', JSON.stringify(result));
+  ok(
+    'p02-flag-scope:content',
+    typeof result === 'object'
+      && result.content.startsWith('bridge:kanon:ok')
+      && result.content.includes('BID 1008'),
+    JSON.stringify(result),
+  );
 }
 
 // 5. AGENT / INTERNAL CALLER (executeToolCall query_osu recent)
@@ -163,7 +175,13 @@ async function runQuick(text) {
   );
   const after = snapshot();
   ok('p02-agent:bridge-preserved', delta(before, after, 'kanon') === 1, `kanon delta=${delta(before, after, 'kanon')}`);
-  ok('p02-agent:bridge-content', toolResult.ok === true && String(toolResult.content).includes('bridge:kanon:ok'), JSON.stringify({ ok: toolResult.ok, content: String(toolResult.content).slice(0, 80) }));
+  ok(
+    'p02-agent:bridge-content',
+    toolResult.ok === true
+      && String(toolResult.content).includes('bridge:kanon:ok')
+      && String(toolResult.content).includes('BID 1008'),
+    JSON.stringify({ ok: toolResult.ok, content: String(toolResult.content).slice(0, 160) }),
+  );
 }
 
 // 6. LAZYBOT_RECENT cross-target fallback preserved (lazybot fail -> yumu bridge)
@@ -173,7 +191,13 @@ async function runQuick(text) {
   const run = await runQuick('/pr');
   const after = snapshot();
   ok('p02-lazybot:matched-lazybot', run.match.def.source === 'lazybot' && run.match.def.id === 'recent');
-  ok('p02-lazybot:cross-target-yumu', run.result.reason === 'recent' && run.sends[0]?.includes('bridge:yumu:ok'), JSON.stringify({ result: run.result, sends: run.sends }));
+  ok(
+    'p02-lazybot:cross-target-yumu',
+    run.result.reason === 'recent'
+      && run.sends[0]?.includes('bridge:yumu:ok')
+      && run.sends[0]?.includes('BID 1008'),
+    JSON.stringify({ result: run.result, sends: run.sends }),
+  );
   ok('p02-lazybot:lazybot-count-1', delta(before, after, 'lazybot') === 1, `lazybot delta=${delta(before, after, 'lazybot')}`);
   ok('p02-lazybot:yumu-count-1', delta(before, after, 'yumu') === 1, `yumu delta=${delta(before, after, 'yumu')}`);
 }
