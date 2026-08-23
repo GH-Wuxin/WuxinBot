@@ -7,6 +7,7 @@ import {
   QUERY_OSU_PARAMS,
 } from './capabilityCatalog.js';
 import { buildV2OsuAgentToolSchemas, type AgentToolSurface } from './agentToolContracts.js';
+import { buildSkillProfilerToolSchema } from './skillProfiler.js';
 
 function bpQueryParams(): BotCommandParam[] {
   return [
@@ -161,6 +162,7 @@ export function buildBotToolSchemas(
   if (hasInternal) {
     if (options.surface === 'v2') {
       tools.push(...buildV2OsuAgentToolSchemas());
+      tools.push(buildSkillProfilerToolSchema());
     } else {
       tools.push({
         type: 'function',

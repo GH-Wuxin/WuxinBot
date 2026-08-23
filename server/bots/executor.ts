@@ -38,6 +38,7 @@ import type {
   ReasoningShadowSink,
   ReasoningTurnState,
 } from '../bot/reasoningRouter.js';
+import { executeSkillProfilerAnalysis } from './skillProfiler.js';
 
 // ── Pending bot responses (correlationId → resolver) ──
 
@@ -641,6 +642,10 @@ async function executeToolCallInner(
         ok: true,
         content: formatSkillResult(record)
       };
+    }
+
+    case 'osu_analyze_beatmap_skills': {
+      return executeSkillProfilerAnalysis(toolCall.id, args);
     }
 
     case 'get_recent_score': {
