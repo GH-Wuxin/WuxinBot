@@ -24,7 +24,7 @@
     "agent:campaign:c1": "node --import tsx tools/agent-runtime-campaign.ts",
     "agent:campaign:c2": "node --import tsx tools/agent-runtime-c2-campaign.ts",
     "agent:counterfactual": "node --import tsx tools/agent-counterfactual.ts",
-    "agent:v2:verify": "node --import tsx tools/agent-runtime-v2-contract-verify.mjs && node --import tsx tools/agent-runtime-v2-process-verify.mjs"
+    "agent:v2:verify": "node --import tsx tools/agent-runtime-v2-contract-verify.mjs && node --import tsx tools/agent-runtime-v2-process-verify.mjs && node --import tsx tools/skill-profiler-agent-verify.mjs"
   },
   "keywords": [],
   "author": "",

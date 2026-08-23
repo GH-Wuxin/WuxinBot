@@ -90,6 +90,14 @@ const v2Tools = buildBotToolSchemas(registry, { surface: 'v2' });
 assert.ok(!v2Tools.some((tool) => tool.function.name === 'query_osu'), 'V2 surface hides mega-tool');
 assert.ok(v2Tools.some((tool) => tool.function.name === 'osu_get_best_scores'), 'V2 surface exposes precise tools');
 assert.ok(v2Tools.some((tool) => tool.function.name === 'get_player_skill'), 'non-osu snapshot tool remains available');
+const profilerTool = v2Tools.find((tool) => tool.function.name === 'osu_analyze_beatmap_skills');
+assert.ok(profilerTool, 'V2 surface exposes the local beatmap Skill Profiler');
+assert.deepEqual(
+  Object.keys(profilerTool.function.parameters.properties),
+  ['beatmap_id', 'mods'],
+  'Skill Profiler exposes only BID and the supported Mod list',
+);
+assert.ok(!legacyTools.some((tool) => tool.function.name === 'osu_analyze_beatmap_skills'), 'legacy rollback surface remains unchanged');
 
 assert.equal(agentRuntimeModeFor({ settings: {} }), 'model_first', 'model-first runtime is the default');
 assert.equal(agentRuntimeModeFor({ settings: { agentRuntimeMode: 'legacy' } }), 'legacy', 'stored rollback mode is honored');

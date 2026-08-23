@@ -25,6 +25,7 @@ const ALLOWED_OPERATIONS: ReadonlySet<AllowedOperationType> = new Set([
   'query_osu',
   'query_bot',
   'get_player_skill',
+  'osu_analyze_beatmap_skills',
   'list_bots',
   'get_recent_score'
 ]);
@@ -59,6 +60,7 @@ const PARAM_KEYS: Readonly<Record<AllowedOperationType, ReadonlySet<string>>> = 
   query_external_bot: new Set(['bot', 'command']),
   query_bot: new Set(['bot', 'command', 'username', 'bp_rank', 'bp_start', 'bp_end']),
   get_player_skill: new Set(['player']),
+  osu_analyze_beatmap_skills: new Set(['beatmap_id', 'mods']),
   list_bots: new Set(),
   get_recent_score: new Set(['player']),
 };
@@ -305,6 +307,28 @@ export function validateOperation(op: AllowedOperation): { ok: true } | { ok: fa
       const player = String(op.params.player || '').trim();
       const playerError = validatePlayerText(player, '玩家标识', true);
       if (playerError) return { ok: false, reason: playerError };
+      break;
+    }
+    case 'osu_analyze_beatmap_skills': {
+      const beatmapId = op.params.beatmap_id;
+      if (!Number.isSafeInteger(beatmapId) || Number(beatmapId) < 1) {
+        return { ok: false, reason: 'beatmap_id 必须是正整数 BID' };
+      }
+      const mods = op.params.mods ?? [];
+      if (!Array.isArray(mods) || mods.length > 4) {
+        return { ok: false, reason: 'mods 必须是不超过 4 项的数组' };
+      }
+      const allowedMods = new Set(['NM', 'EZ', 'HD', 'HR', 'HT', 'DT']);
+      const normalized = mods.map((mod) => String(mod || '').trim().toUpperCase());
+      if (normalized.some((mod) => !allowedMods.has(mod))) {
+        return { ok: false, reason: 'Skill Profiler 仅支持 NM/EZ/HD/HR/HT/DT' };
+      }
+      if (new Set(normalized).size !== normalized.length) {
+        return { ok: false, reason: 'mods 不能重复' };
+      }
+      if (normalized.includes('NM') && normalized.length > 1) {
+        return { ok: false, reason: 'NM 不能和其他 Mod 同时使用' };
+      }
       break;
     }
     case 'get_recent_score': {
