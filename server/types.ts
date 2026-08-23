@@ -77,6 +77,8 @@ export interface DbSettings {
   enableWebSearch: boolean;
   webSearchMode: 'fast' | 'balanced' | 'deep';
   enableAutoModel: boolean;
+  /** Agent Runtime V2 is default; set legacy or env PIPPI_AGENT_RUNTIME_MODE=legacy for rollback. */
+  agentRuntimeMode?: 'legacy' | 'model_first';
   /** Phase 2 v1 master switch; env REASONING_ENABLED=false|0 is a hard veto. */
   reasoningEnabled: boolean;
   llmReplyGateMaxPerHour?: number;

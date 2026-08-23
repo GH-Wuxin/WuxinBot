@@ -12,6 +12,11 @@ import {
 import { updateDb, nowIso, MAX_TOOL_LOGS } from '../store.js';
 import { loadRegistry, enabledBots, findBot, findCommand, availableCommands, internalCapabilitySupported, INTERNAL_CAPABILITIES } from './registry.js';
 import { normalizeCapabilityName } from './capabilityCatalog.js';
+import {
+  buildV2ModelToolResult,
+  normalizeAgentToolCall,
+  osuCapabilityForToolCall,
+} from './agentToolContracts.js';
 import { markLatencySpan } from '../perf/latencyTrace.js';
 import { traceEvent } from '../requestTrace.js';
 import { lookupSkill, lookupSkillByQQ } from './skills.js';
@@ -1275,10 +1280,11 @@ export async function executeToolCall(
   toolCall: LlmToolCall,
   context: ToolExecutionContext,
 ): Promise<ToolResult> {
+  const canonicalToolCall = normalizeAgentToolCall(toolCall);
   const startedAt = Date.now();
   let result: ToolResult;
   try {
-    result = await executeToolCallInner(toolCall, context);
+    result = await executeToolCallInner(canonicalToolCall, context);
   } catch (error: any) {
     result = {
       toolCallId: toolCall.id,
@@ -1286,25 +1292,25 @@ export async function executeToolCall(
       content: '',
       error: String(error?.message || error),
     };
-    writeToolCallAudit(toolCall, context, result, Date.now() - startedAt);
+    writeToolCallAudit(canonicalToolCall, context, result, Date.now() - startedAt);
     throw error;
   }
   if (!result.ok) {
     let args: Record<string, unknown> = {};
     try {
-      args = JSON.parse(toolCall.function?.arguments || '{}');
+      args = JSON.parse(canonicalToolCall.function?.arguments || '{}');
     } catch { /* non-fatal */ }
     const capability = String(args.capability || '').trim();
     const errorText = String(result.error || '');
     if (errorText.startsWith('unknown_tool') || errorText.includes('不允许的操作类型')) {
-      recordUnmetCapability(toolCall, context, 'NO_TOOL_MATCH');
-    } else if (String(toolCall.function?.name || '') === 'query_osu' && capability && !internalCapabilitySupported(capability)) {
-      recordUnmetCapability(toolCall, context, 'TOOL_NOT_CAPABLE');
-    } else if (String(toolCall.function?.name || '') === 'query_osu' && capability) {
-      recordUnmetCapability(toolCall, context, 'TOOL_ARGUMENT_UNRESOLVED');
+      recordUnmetCapability(canonicalToolCall, context, 'NO_TOOL_MATCH');
+    } else if (String(canonicalToolCall.function?.name || '') === 'query_osu' && capability && !internalCapabilitySupported(capability)) {
+      recordUnmetCapability(canonicalToolCall, context, 'TOOL_NOT_CAPABLE');
+    } else if (String(canonicalToolCall.function?.name || '') === 'query_osu' && capability) {
+      recordUnmetCapability(canonicalToolCall, context, 'TOOL_ARGUMENT_UNRESOLVED');
     }
   }
-  writeToolCallAudit(toolCall, context, result, Date.now() - startedAt);
+  writeToolCallAudit(canonicalToolCall, context, result, Date.now() - startedAt);
   return result;
 }
 
@@ -2182,7 +2188,7 @@ function formatSkillResult(record: any): string {
     record.summary ? `- 分析摘要: ${record.summary}` : '',
     record.recentSummary
       ? `- 最近表现: ${record.recentSummary}（快照，最后更新: ${record.lastRecentAnalyzed || record.lastAnalyzed}）`
-      : '- 快照中无最近表现数据（不代表玩家最近没有成绩；实时最近成绩请用 query_osu capability=recent）',
+      : '- 快照中无最近表现数据（不代表玩家最近没有成绩；实时最近成绩请调用最近成绩工具）',
     `- 最后分析: ${record.lastAnalyzed}`,
   ].filter(Boolean).join('\n');
 }
@@ -2250,6 +2256,12 @@ export interface ToolLoopOptions {
    * into its own reply instead.
    */
   deliverDirectContent?: boolean;
+  /** Keep the model in the planning loop after collecting a panel/image. */
+  continueAfterDirectPayload?: boolean;
+  /** Skip an identical successful call if the model repeats it in one loop. */
+  deduplicateToolCalls?: boolean;
+  /** Return typed evidence envelopes to the model instead of prose blobs. */
+  structuredToolResults?: boolean;
   /** Shadow reasoning: per-turn id + router. Recording only; never applied. */
   turnId?: string;
   reasoningRouter?: ReasoningShadowSink;
@@ -2337,7 +2349,9 @@ export async function runToolLoop(
     db, messages, tools, userId, groupId,
     sendMessage, event, selfQq,
     maxIterations = 5, temperature, maxTokens, model, label,
-    requiredTool, deliverDirectContent = false
+    requiredTool, deliverDirectContent = false,
+    continueAfterDirectPayload = false, deduplicateToolCalls = false,
+    structuredToolResults = false
   } = options;
   const executeToolCallFn = options.executeToolCallFn || executeToolCall;
   const executeTracedToolCall = async (toolCall: any, toolContext: any) => {
@@ -2396,6 +2410,35 @@ export async function runToolLoop(
   let hardCapReached = false;
   const collectedImages: string[] = [];
   const collectedDirectContent: string[] = [];
+  const successfulToolCallSignatures = new Set<string>();
+
+  const toolCallSignature = (toolCall: LlmToolCall): string => {
+    const canonical = normalizeAgentToolCall(toolCall);
+    let args: unknown = canonical.function.arguments || '{}';
+    try {
+      const parsed = JSON.parse(String(args));
+      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+        args = Object.fromEntries(Object.entries(parsed).sort(([left], [right]) => left.localeCompare(right)));
+      } else {
+        args = parsed;
+      }
+    } catch { /* raw arguments remain part of the signature */ }
+    return `${canonical.function.name}:${JSON.stringify(args)}`;
+  };
+  const syntheticModelToolError = (toolCall: LlmToolCall, content: string, error: string): string =>
+    structuredToolResults
+      ? buildV2ModelToolResult(toolCall, {
+          toolCallId: toolCall.id,
+          ok: false,
+          content,
+          error,
+        }, {
+          safeContent: content,
+          imageCount: 0,
+          directContentAttached: false,
+          nextStepHint: '该调用没有产生新证据。请使用已有证据、修正参数、改用其他工具，或在无法继续时明确说明。',
+        })
+      : content;
   const turnId = options.turnId || `turn_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
   const reasoningRouter = options.reasoningRouter;
   let reasoningTurn: ReasoningTurnState = emptyTurnState();
@@ -2669,6 +2712,7 @@ export async function runToolLoop(
   while (iterations < maxIterations) {
     iterations++;
     const hasDirectPayload = collectedDirectContent.length > 0 || collectedImages.length > 0;
+    const directPayloadIsTerminal = hasDirectPayload && !continueAfterDirectPayload;
 
     // A5 — previousToolFailed is batch/turn-level sticky: it means "at least
     // one tool failed since the last planner decision", not "the single most
@@ -2678,9 +2722,9 @@ export async function runToolLoop(
     const previousToolFailed = lastToolFailed;
     lastToolFailed = false;
 
-    const plannerInput = reasoningInput(hasDirectPayload ? 'decorative_lead' : 'tool_planner', {
+    const plannerInput = reasoningInput(directPayloadIsTerminal ? 'decorative_lead' : 'tool_planner', {
       requiredTool: false,
-      toolSelectionRequired: !hasDirectPayload && Array.isArray(tools) && tools.length > 0,
+      toolSelectionRequired: !directPayloadIsTerminal && Array.isArray(tools) && tools.length > 0,
       toolCallsMade,
       iterations,
       maxIterations,
@@ -2697,17 +2741,17 @@ export async function runToolLoop(
         // A direct payload is already the requested product. The next model
         // turn is only a cosmetic lead, so tools must be disabled or some
         // providers will issue the same query_bot call again.
-        tools: hasDirectPayload ? undefined : tools,
+        tools: directPayloadIsTerminal ? undefined : tools,
         // Contract A: with tools present, auto is already the default, so
         // omit tool_choice on thinking calls; keep explicit auto on fast calls.
-        tool_choice: hasDirectPayload || thinkingOn ? undefined : 'auto',
+        tool_choice: directPayloadIsTerminal || thinkingOn ? undefined : 'auto',
         ...plannerWire,
         temperature,
         maxTokens,
         model,
         label: label ? `${label} [工具循环 ${iterations}]` : undefined,
         traceRole: plannerInput.callRole,
-        tracePurpose: hasDirectPayload ? 'tool_result_lead' : 'tool_planning',
+        tracePurpose: directPayloadIsTerminal ? 'tool_result_lead' : 'tool_planning',
       });
     } catch (error) {
       // Once a trusted direct payload has been collected, the follow-up LLM is
@@ -2749,7 +2793,7 @@ export async function runToolLoop(
     // Tools were intentionally absent on this cosmetic lead turn. Even if a
     // non-conforming provider still emits tool_calls, never execute them after
     // the complete direct payload has already been obtained.
-    if (hasDirectPayload) {
+    if (directPayloadIsTerminal) {
       return {
         text: sanitizeToolReplyText(response.text),
         usage: totalUsage,
@@ -2788,6 +2832,16 @@ export async function runToolLoop(
           }
         }));
       }
+    }
+
+    if (structuredToolResults) {
+      traceEvent('TOOL', 'agent_planner_decision', {
+        status: toolCalls.length > 0 ? 'running' : 'ok',
+        iteration: iterations,
+        decision: toolCalls.length > 0 ? 'call_tools' : 'finish',
+        toolNames: toolCalls.map((call) => call.function?.name || 'unknown'),
+        evidenceMessagesAvailable: currentMessages.filter((item) => item.role === 'tool').length,
+      });
     }
 
     // If no tool calls (structured or parsed), we have the final answer.
@@ -2842,23 +2896,34 @@ export async function runToolLoop(
       const tc = toolCalls[callIndex];
       if (callIndex >= executableThisResponse) {
         const skippedByResponse = callIndex >= AGENT_MAX_TOOL_CALLS_PER_RESPONSE;
+        const content = `[系统] 达到工具调用上限（${skippedByResponse ? '单轮响应' : '本轮总计'}），此调用未执行。`;
         currentMessages.push({
           role: 'tool',
           tool_call_id: tc.id,
-          content: `[系统] 达到工具调用上限（${skippedByResponse ? '单轮响应' : '本轮总计'}），此调用未执行。`
+          content: syntheticModelToolError(tc, content, 'TOOL_CALL_LIMIT_REACHED')
         });
         continue;
       }
 
       let callDeliversDirect = deliverDirectContent;
       if (!callDeliversDirect) {
-        try {
-          const callArgs = JSON.parse(String((tc as any).function?.arguments || '{}'));
-          callDeliversDirect = String(tc.function?.name || '') === 'query_osu' &&
-            String(callArgs?.capability || '').trim() === 'recommend';
-        } catch {
-          callDeliversDirect = false;
-        }
+        callDeliversDirect = osuCapabilityForToolCall(tc) === 'recommend';
+      }
+
+      const callSignature = toolCallSignature(tc);
+      if (deduplicateToolCalls && successfulToolCallSignatures.has(callSignature)) {
+        traceEvent('TOOL', 'tool_call_duplicate_skipped', {
+          status: 'skipped',
+          toolCallId: tc.id,
+          toolName: tc.function?.name || '',
+        });
+        const content = '[系统] 完全相同的工具调用本轮已经成功执行；本次未重复执行。请使用已有结果继续判断，或修改参数后再调用。';
+        currentMessages.push({
+          role: 'tool',
+          tool_call_id: tc.id,
+          content: syntheticModelToolError(tc, content, 'DUPLICATE_TOOL_CALL_SKIPPED'),
+        });
+        continue;
       }
 
       const result = await executeTracedToolCall(tc, {
@@ -2869,18 +2934,9 @@ export async function runToolLoop(
       // line means one tool call actually executed and settled with a result.
       toolCallsMade++;
       lastToolFailed = lastToolFailed || !result.ok;
+      if (result.ok && deduplicateToolCalls) successfulToolCallSignatures.add(callSignature);
       if (result.ok && !recommendToolCalled) {
-        try {
-          const callArgs = JSON.parse(String((tc as any).function?.arguments || '{}'));
-          if (
-            String(tc.function?.name || '') === 'query_osu' &&
-            String(callArgs?.capability || '').trim() === 'recommend'
-          ) {
-            recommendToolCalled = true;
-          }
-        } catch {
-          // Malformed args cannot be a successful recommend call.
-        }
+        recommendToolCalled = osuCapabilityForToolCall(tc) === 'recommend';
       }
 
       // Terminal deterministic reply: stop the loop immediately and deliver
@@ -2904,10 +2960,11 @@ export async function runToolLoop(
       // Sanitize and validate result
       const safeContent = sanitizeToolResult(result.content);
       if (!isSafeToolResult(safeContent)) {
+        const content = '[工具结果被安全过滤器拦截]';
         currentMessages.push({
           role: 'tool',
           tool_call_id: tc.id,
-          content: '[工具结果被安全过滤器拦截]'
+          content: syntheticModelToolError(tc, content, 'TOOL_RESULT_SAFETY_FILTERED')
         });
         continue;
       }
@@ -2948,17 +3005,40 @@ export async function runToolLoop(
       } else if (hasDirectDelivery) {
         toolNote = deliverDirectContent
           ? '[结果图片会由系统附上。请给出一句简短、自然的引导或短评，不要复述任何条目。]'
-          : '[结果图片会由系统附上。你可以自然点评这张图，但不要把工具返回的原始数据整段贴出来。]';
+          : continueAfterDirectPayload
+            ? '[结果图片会由系统附上。先判断任务是否还需要其他证据：需要就继续调用工具，足够了再自然回答；不要整段复述原始数据。]'
+            : '[结果图片会由系统附上。你可以自然点评这张图，但不要把工具返回的原始数据整段贴出来。]';
       } else if (result.ok) {
         toolNote = deliverDirectContent
           ? ''
           : '[数据仅供你参考：请把关键信息自然地融入回答，不要贴完整原始报表，也不要逐条复述条目；禁止用“查好了/看完了”之类的空话代替实际内容。结果图片（如有）会由系统附上。]';
       }
+      const modelToolContent = structuredToolResults
+        ? buildV2ModelToolResult(tc, result, {
+            safeContent,
+            imageCount: result.ok ? (result.images?.length || 0) : 0,
+            directContentAttached: Boolean(acceptedDirectContent),
+            nextStepHint: toolNote || undefined,
+          })
+        : toolNote ? `${safeContent}\n\n${toolNote}` : safeContent;
       currentMessages.push({
         role: 'tool',
         tool_call_id: tc.id,
-        content: toolNote ? `${safeContent}\n\n${toolNote}` : safeContent
+        content: modelToolContent
       });
+      if (structuredToolResults) {
+        traceEvent('TOOL', 'tool_evidence_returned_to_model', {
+          status: result.ok ? 'ok' : 'error',
+          iteration: iterations,
+          toolCallId: tc.id,
+          toolName: tc.function?.name || '',
+          capability: osuCapabilityForToolCall(tc) || null,
+          evidenceLength: safeContent.length,
+          imageCount: result.ok ? (result.images?.length || 0) : 0,
+          directContentAttached: Boolean(acceptedDirectContent),
+          modelWillDecideAgain: true,
+        });
+      }
     }
 
     // A2 — once either hard cap has been tripped, stop accepting model

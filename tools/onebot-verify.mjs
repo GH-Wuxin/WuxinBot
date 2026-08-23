@@ -6,6 +6,7 @@ import { createTestDataDir, assertNotProduction, productionDbSnapshot, verifyPro
 
 const testDataDir = createTestDataDir('wuxin-onebot');
 process.env.DATA_DIR = testDataDir;
+process.env.PIPPI_AGENT_RUNTIME_MODE = 'legacy';
 assertNotProduction(testDataDir);
 
 const prodBefore = productionDbSnapshot();

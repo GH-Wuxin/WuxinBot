@@ -305,6 +305,7 @@ const initialDb = {
     searchMaxResults: 5,
     searchTimeoutMs: 8000,
     enableAutoModel: true,
+    agentRuntimeMode: 'model_first',
     reasoningEnabled: false,
     llmReplyGateMaxPerHour: 0,
     llmReplyGateNaturalThreshold: 45,

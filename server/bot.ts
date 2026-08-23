@@ -104,6 +104,11 @@ import { RECENT_BOT_SELECTOR_IDS } from './bots/capabilityCatalog.js';
 import { executeToolCall, runToolLoop, tryResolveBotResponse } from './bots/executor.js';
 import { buildToolGuidance } from './bots/toolGuidance.js';
 import {
+  agentRuntimeModeFor,
+  buildAgentAutonomyGuidance,
+  rewriteLegacyToolReferencesForV2,
+} from './bots/agentToolContracts.js';
+import {
   claimInboundEvent,
   persistedInboundDuplicate,
   getQueueState,
@@ -837,13 +842,17 @@ async function processIncomingInner(event, sendMessage = undefined, queuedDecisi
 
     const searchMode = responseOptions.searchMode || liveDb.settings.webSearchMode || 'balanced';
     const maxSearchCalls = searchMode === 'deep' ? 3 : (searchMode === 'fast' ? 1 : 2);
+    const agentRuntimeMode = agentRuntimeModeFor(liveDb);
+    const modelFirstRuntime = agentRuntimeMode === 'model_first';
     const registryForTurn = loadRegistry(liveDb);
     const hasEnabledBots = enabledBots(registryForTurn).length > 0;
-    const botTools = hasEnabledBots ? buildBotToolSchemas(registryForTurn) : [];
+    const botTools = hasEnabledBots
+      ? buildBotToolSchemas(registryForTurn, { surface: modelFirstRuntime ? 'v2' : 'legacy' })
+      : [];
     // Clear osu! data intents keep their deterministic domain tool. Other
     // conversational turns receive search_web and let the LLM decide whether,
     // what and how to search.
-    const searchToolEnabled = isSearchAvailable(liveDb) && !osuDataIntent;
+    const searchToolEnabled = isSearchAvailable(liveDb) && (modelFirstRuntime || !osuDataIntent);
     const toolsForTurn = [
       ...botTools,
       ...(searchToolEnabled ? [buildSearchToolSchema()] : []),
@@ -854,6 +863,7 @@ async function processIncomingInner(event, sendMessage = undefined, queuedDecisi
       enabledToolNames: toolsForTurn.map((tool) => tool?.function?.name).filter(Boolean),
       explicitSearch,
       requiredOsuCapability: osuDataIntent?.args?.capability || '',
+      agentRuntimeMode,
     });
 
     // Thinking notice — configurable per thinkingNoticeMode
@@ -922,7 +932,7 @@ async function processIncomingInner(event, sendMessage = undefined, queuedDecisi
       // tool before the LLM sees the context. This prevents context poisoning
       // where repeated queries cause the model to skip tool calls.
       let requiredTool: { toolName: string; args: Record<string, unknown> } | undefined;
-      if (osuDataIntent) {
+      if (osuDataIntent && !modelFirstRuntime) {
         const internalBotsEnabled = enabledBots(registry).some((b) => b.channel === 'internal');
         const opValid = validateOperation({
           type: 'query_osu',
@@ -957,14 +967,21 @@ async function processIncomingInner(event, sendMessage = undefined, queuedDecisi
         ? String(requiredTool.args.capability)
         : null;
       if (messages[0]?.role === 'system') {
-        const guidanceBlocks = [];
-        if (botTools.length > 0) {
-          guidanceBlocks.push(requiredCapability
-            ? buildToolGuidance({ exposedCapabilities: [requiredCapability] })
-            : buildToolGuidance());
+        if (modelFirstRuntime) {
+          messages[0].content = rewriteLegacyToolReferencesForV2(messages[0].content);
         }
-        if (searchToolEnabled) {
-          guidanceBlocks.push(buildSearchToolGuidance({ explicitSearch, maxCalls: maxSearchCalls }));
+        const guidanceBlocks = [];
+        if (modelFirstRuntime) {
+          guidanceBlocks.push(buildAgentAutonomyGuidance({ searchEnabled: searchToolEnabled, maxSearchCalls }));
+        } else {
+          if (botTools.length > 0) {
+            guidanceBlocks.push(requiredCapability
+              ? buildToolGuidance({ exposedCapabilities: [requiredCapability] })
+              : buildToolGuidance());
+          }
+          if (searchToolEnabled) {
+            guidanceBlocks.push(buildSearchToolGuidance({ explicitSearch, maxCalls: maxSearchCalls }));
+          }
         }
         if (guidanceBlocks.filter(Boolean).length > 0) {
           messages[0].content += '\n\n' + guidanceBlocks.filter(Boolean).join('\n\n');
@@ -1010,6 +1027,9 @@ async function processIncomingInner(event, sendMessage = undefined, queuedDecisi
         // 自然聊天不回显工具原文：数据只供 LLM 参考并自然融入回答。
         // 显式指令（/w osu analyze、!p 等）走独立通道，不受此开关影响。
         deliverDirectContent: requiredTool?.args.capability === 'recommend',
+        continueAfterDirectPayload: modelFirstRuntime,
+        deduplicateToolCalls: modelFirstRuntime,
+        structuredToolResults: modelFirstRuntime,
         turnId,
         reasoningRouter,
         executeToolCallFn: executeConversationTool,

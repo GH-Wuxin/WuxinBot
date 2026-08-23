@@ -10,6 +10,14 @@ const phaseLabels = {
   INGRESS: '入口', NORMALIZE: '规范化', GATE: '回复闸门', ROUTER: '路由', KB: '知识库', TOOL: '工具',
   PROMPT: '提示构建', MODEL: '模型', REVIEW: '审查', REWRITE: '改写', QUEUE: '队列', SEND: '发送', COMPLETE: '完成', ERROR: '错误',
 };
+const traceEventLabels = {
+  agent_planner_decision: 'Agent 本轮决策',
+  tool_call_started: '开始执行工具',
+  tool_call_completed: '工具执行完成',
+  tool_call_failed: '工具执行失败',
+  tool_call_duplicate_skipped: '跳过重复调用',
+  tool_evidence_returned_to_model: '证据已返回模型',
+};
 
 function matchesSearch(item, query) {
   return !query || JSON.stringify(item || {}).toLowerCase().includes(query);
@@ -119,8 +127,18 @@ function TraceEvent({ event }) {
   const response = data.response || {};
   const isModelResult = event.phase === 'MODEL' && event.name === 'model_call_completed';
   const isModelStream = event.phase === 'MODEL' && event.name === 'model_call_streaming';
+  const isAgentDecision = event.phase === 'TOOL' && event.name === 'agent_planner_decision';
+  const isEvidenceReturn = event.phase === 'TOOL' && event.name === 'tool_evidence_returned_to_model';
   return <div className={`trace-event trace-event--${String(event.status || '').toLowerCase()}`}>
-    <div className="trace-event__head"><Pill>{phaseLabels[event.phase] || event.phase}</Pill><strong>{event.name}</strong><span>{event.durationMs != null ? `${event.durationMs}ms` : new Date(event.at).toLocaleTimeString()}</span></div>
+    <div className="trace-event__head"><Pill>{phaseLabels[event.phase] || event.phase}</Pill><strong>{traceEventLabels[event.name] || event.name}</strong><span>{event.durationMs != null ? `${event.durationMs}ms` : new Date(event.at).toLocaleTimeString()}</span></div>
+    {isAgentDecision && <div className="model-call-detail">
+      <strong>第 {data.iteration} 轮：{data.decision === 'call_tools' ? `模型决定调用 ${(data.toolNames || []).join('、')}` : '模型认为证据充足，开始作答'}</strong>
+      <small>当前上下文已有 {data.evidenceMessagesAvailable || 0} 条工具证据</small>
+    </div>}
+    {isEvidenceReturn && <div className="model-call-detail">
+      <strong>{data.toolName || '工具'} 的证据已交回模型</strong>
+      <small>{data.evidenceLength || 0} 字符 · 图片 {data.imageCount || 0} 张 · 模型将自主判断继续调用还是结束</small>
+    </div>}
     {(isModelResult || isModelStream) && <div className="model-call-detail">
       <span>{data.purpose} · {data.provider}/{data.model} · 第 {data.attempt} 次</span>
       {isModelStream && response.reasoningExposed && <details open><summary>供应商 raw CoT（实时）</summary><LivePre>{response.reasoning}</LivePre></details>}
@@ -131,7 +149,7 @@ function TraceEvent({ event }) {
       {isModelResult && response.toolCalls?.length > 0 && <details><summary>工具调用 ({response.toolCalls.length})</summary><pre>{JSON.stringify(response.toolCalls, null, 2)}</pre></details>}
       <small>{isModelStream ? `${event.status === 'ok' ? '流式接收完成' : '流式接收中'} · 待组装工具 ${response.toolCallsPending || 0}` : `tokens: ${response.usage?.totalTokens ?? 'n/a'} · reasoning: ${response.usage?.reasoningTokens ?? 'n/a'} · cache: ${response.usage?.cachedTokens ?? 'n/a'} · streaming: ${data.streaming ? 'yes' : 'no'}`}</small>
     </div>}
-    {!isModelResult && Object.keys(data).length > 0 && <details><summary>详情</summary><pre>{JSON.stringify(data, null, 2)}</pre></details>}
+    {!isModelResult && !isAgentDecision && !isEvidenceReturn && Object.keys(data).length > 0 && <details><summary>详情</summary><pre>{JSON.stringify(data, null, 2)}</pre></details>}
   </div>;
 }
 

@@ -28,6 +28,7 @@ const { WebSocketServer } = require('ws');
 
 const DATA_DIR = fs.mkdtempSync(path.join(os.tmpdir(), 'wuxin-namedbot-constraint-'));
 process.env.DATA_DIR = DATA_DIR;
+process.env.PIPPI_AGENT_RUNTIME_MODE = 'legacy';
 
 // osu API mock + synthetic bridge env must exist before server modules load.
 const { startOsuApiMock } = await import(pathToFileURL(path.join(REPO, 'tools/osu-api-mock.mjs')));

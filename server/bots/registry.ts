@@ -6,6 +6,7 @@ import {
   queryOsuParamJsonSchema,
   QUERY_OSU_PARAMS,
 } from './capabilityCatalog.js';
+import { buildV2OsuAgentToolSchemas, type AgentToolSurface } from './agentToolContracts.js';
 
 function bpQueryParams(): BotCommandParam[] {
   return [
@@ -150,34 +151,41 @@ export function findCommand(bot: BotDefinition, commandName: string): BotCommand
 // External bots (yumu/kanon/hydrant/lazybot) run independently on their QQ
 // channels. The harness uses a single unified internal tool for osu! data.
 
-export function buildBotToolSchemas(registry: BotRegistry): LlmTool[] {
+export function buildBotToolSchemas(
+  registry: BotRegistry,
+  options: { surface?: AgentToolSurface } = {},
+): LlmTool[] {
   const hasInternal = enabledBots(registry).some((b) => b.channel === 'internal');
   const tools: LlmTool[] = [];
 
   if (hasInternal) {
-    tools.push({
-      type: 'function',
-      function: {
-        name: 'query_osu',
-        description: buildQueryOsuDescription(),
-        parameters: {
-          type: 'object',
-          properties: {
-            capability: {
-              type: 'string',
-              enum: callableCapabilities(),
-              description: '查询类型'
+    if (options.surface === 'v2') {
+      tools.push(...buildV2OsuAgentToolSchemas());
+    } else {
+      tools.push({
+        type: 'function',
+        function: {
+          name: 'query_osu',
+          description: buildQueryOsuDescription(),
+          parameters: {
+            type: 'object',
+            properties: {
+              capability: {
+                type: 'string',
+                enum: callableCapabilities(),
+                description: '查询类型'
+              },
+              ...Object.fromEntries(
+                QUERY_OSU_PARAMS
+                  .filter((param) => param.exposed)
+                  .map((param) => [param.name, queryOsuParamJsonSchema(param)]),
+              )
             },
-            ...Object.fromEntries(
-              QUERY_OSU_PARAMS
-                .filter((param) => param.exposed)
-                .map((param) => [param.name, queryOsuParamJsonSchema(param)]),
-            )
-          },
-          required: ['capability']
+            required: ['capability']
+          }
         }
-      }
-    });
+      });
+    }
   }
 
   // R3 dead-path cleanup: query_external_bot must NEVER be emitted as an LLM
@@ -193,7 +201,9 @@ export function buildBotToolSchemas(registry: BotRegistry): LlmTool[] {
     type: 'function',
     function: {
       name: 'get_player_skill',
-      description: '获取已记录的玩家 osu! 技能水平快照（PP、排名、领域强弱、常用 Mods、分析摘要）。注意：这是之前分析时保存的快照，可能过时，且不含最近成绩。查询实时数据（最近成绩、最新 PP、当前状态）必须用 query_osu。',
+      description: options.surface === 'v2'
+        ? '获取已记录的玩家 osu! 技能水平快照（PP、排名、领域强弱、常用 Mods、分析摘要）。注意：这是之前分析时保存的快照，可能过时，且不含最近成绩；实时状态必须调用当前可见的实时玩家数据工具。'
+        : '获取已记录的玩家 osu! 技能水平快照（PP、排名、领域强弱、常用 Mods、分析摘要）。注意：这是之前分析时保存的快照，可能过时，且不含最近成绩。查询实时数据（最近成绩、最新 PP、当前状态）必须用 query_osu。',
       parameters: {
         type: 'object',
         properties: { player: { type: 'string', description: 'osu! 用户名或 QQ 号' } },
