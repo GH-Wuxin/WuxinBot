@@ -189,9 +189,17 @@ assert(requestedAttributes?.mods.join(',') === 'DT,HD', 'attributes request must
 assert(enrichedScore.star_rating_source === 'modded', 'Modded score must be marked as officially enriched');
 const scoreLine = formatInternalScoreLine(enrichedScore, { index: 1, includeWeight: true });
 assert(scoreLine.includes('测试曲 [Another]'), 'score line must read title from beatmapset');
+assert(scoreLine.includes('BID 1002'), 'score line must expose the beatmap ID for downstream tools');
 assert(scoreLine.includes('7.48★') && !scoreLine.includes('4.90★'), 'score line must use official Mod-adjusted stars');
 assert(scoreLine.includes('98.15%') && !scoreLine.includes('0.98%'), 'score accuracy must be converted from API ratio to percent');
 assert(scoreLine.includes('HDDT'), 'display must preserve the score Mod order');
+
+const topLevelBidLine = formatInternalScoreLine({
+  ...enrichedScore,
+  beatmap_id: 1003,
+  beatmap: { ...enrichedScore.beatmap, id: 0 },
+});
+assert(topLevelBidLine.includes('BID 1003'), 'score line must fall back to top-level beatmap_id');
 
 const [failedStarScore] = (await enrichScoreStarRatings(
   [scoreFixture],
