@@ -40,6 +40,7 @@ import {
 } from './system.js';
 import { ownerOsuHandler } from './osu.js';
 import { ownerMemberPolicyHandler } from './memberPolicy.js';
+import { ownerSkillFeedbackHandler, ownerSkillHandler } from './skill.js';
 
 export const OWNER_HANDLER_REGISTRY: Record<OwnerHandlerKey, OwnerHandler> = {
   lv: ownerLvHandler,
@@ -77,6 +78,8 @@ export const OWNER_HANDLER_REGISTRY: Record<OwnerHandlerKey, OwnerHandler> = {
   my: ownerMyHandler,
   recalc: ownerRecalcHandler,
   refresh: ownerRefreshHandler,
+  skill: ownerSkillHandler,
+  skillFeedback: ownerSkillFeedbackHandler,
   'osu.help': ownerOsuHandler,
   'osu.bind': ownerOsuHandler,
   'osu.analyze': ownerOsuHandler,

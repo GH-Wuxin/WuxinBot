@@ -255,7 +255,9 @@ export const defaultCommandPermissions = {
   osuClearCache: 'owner',
   osuClearCooldown: 'owner',
   osuClearRecommend: 'owner',
-  osuHelp: 'guest'
+  osuHelp: 'guest',
+  skill: 'guest',
+  skillFeedback: 'guest'
 };
 
 const initialDb = {
@@ -355,6 +357,7 @@ const initialDb = {
   decisions: [],
   commandLogs: [],
   toolCallLogs: [],
+  skillProfilerRuns: [],
   unmetCapabilities: [],
   adminActions: [],
   usageEvents: [],
@@ -440,6 +443,8 @@ export function normalizeDb(db) {
   db.decisions ||= [];
   db.commandLogs ||= [];
   db.toolCallLogs ||= [];
+  db.skillProfilerRuns ||= [];
+  if (db.skillProfilerRuns.length > 500) db.skillProfilerRuns = db.skillProfilerRuns.slice(-500);
   db.unmetCapabilities ||= [];
   db.adminActions ||= [];
   db.usageEvents ||= [];

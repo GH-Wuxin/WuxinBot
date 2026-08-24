@@ -63,6 +63,10 @@ export const OWNER_FALLBACK_HELP = `Wuxin 指令 · 都可以简写为 /w
 /w sysfacts on|off · 纯人设模式
 /w summarize 条数 · 总结群聊
 
+【osu! 谱面分析】
+/w skill <BP名次或BID> [+Mods] · BID 可指定 +HD/+HDDT；FL 暂不支持
+/w cd <BID> <反馈> · 提交谱面分析异议
+
 【系统】
 /w preset class|away|sleep|active|silent|debug · 场景预设
 /w usage · 今日用量
