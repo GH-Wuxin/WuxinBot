@@ -25,7 +25,7 @@ const renderedPanelCache = new Map<string, { at: number; cqCode: string }>();
 const MAX_SAVED_RENDERS = 512;
 const MAX_SAVED_RENDER_BYTES = 512 * 1024 * 1024;
 const MAX_RENDER_AGE_MS = 7 * 24 * 3600_000;
-const SAVED_RENDER_PATTERN = /^(?:info|score|bp)-\d{13}(?:-[0-9a-f]{8})?\.(?:jpe?g|png|webp)$/i;
+const SAVED_RENDER_PATTERN = /^(?:info|score|bp|skill)-\d{13}(?:-[0-9a-f]{8})?\.(?:jpe?g|png|webp)$/i;
 // Keep some headroom below renderServer.ts's hard 128 KiB limit so a slightly
 // larger score list still renders instead of silently degrading to text.
 const RENDER_PAYLOAD_SAFE_BYTES = 120 * 1024;
@@ -1093,7 +1093,7 @@ function pruneRenderOutput(): void {
   }
 }
 
-export function saveAndGetCqCode(buffer: Buffer, prefix: 'info' | 'score' | 'bp'): string {
+export function saveAndGetCqCode(buffer: Buffer, prefix: 'info' | 'score' | 'bp' | 'skill'): string {
   const extension = detectRenderedImageType(buffer);
   if (!extension) throw new Error('渲染器返回的内容不是 JPEG、PNG 或 WebP 图片');
 

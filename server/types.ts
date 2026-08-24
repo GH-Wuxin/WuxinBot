@@ -252,6 +252,17 @@ export interface ToolCallLogEntry {
   latencyMs: number;
 }
 
+export interface SkillProfilerRunEntry {
+  id: string;
+  beatmapId: number;
+  groupId: string;
+  userId: string;
+  sourceMessageId: string;
+  sourceLabel: string;
+  analysis: Record<string, unknown>;
+  createdAt: string;
+}
+
 export interface UsageEvent {
   id: string;
   groupId: string;

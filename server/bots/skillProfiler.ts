@@ -4,6 +4,8 @@ export const SKILL_PROFILER_TOOL_NAME = 'osu_analyze_beatmap_skills';
 const DEFAULT_SKILL_PROFILER_URL = 'http://127.0.0.1:8767';
 const DEFAULT_TIMEOUT_MS = 30_000;
 const MAX_RESPONSE_BYTES = 256 * 1024;
+const MAX_OSU_FILE_BYTES = 4 * 1024 * 1024;
+const DEFAULT_OSU_FILE_BASE_URL = 'https://osu.ppy.sh/osu/';
 
 const AXIS_LABELS: Readonly<Record<string, string>> = {
   aim_control: 'Aim Control',
@@ -74,6 +76,52 @@ async function postProfiler(pathname: string, payload: Record<string, unknown>):
   }
 }
 
+function beatmapFileBaseUrl(): URL {
+  const url = new URL(String(process.env.OSU_BEATMAP_FILE_BASE_URL || DEFAULT_OSU_FILE_BASE_URL).trim());
+  const loopback = url.protocol === 'http:' && ['127.0.0.1', 'localhost'].includes(url.hostname.toLowerCase());
+  const official = url.protocol === 'https:' && url.hostname.toLowerCase() === 'osu.ppy.sh';
+  if ((!loopback && !official) || url.username || url.password) {
+    throw new Error('OSU_BEATMAP_FILE_BASE_URL must be official osu! HTTPS or loopback HTTP');
+  }
+  if (!url.pathname.endsWith('/')) url.pathname += '/';
+  return url;
+}
+
+async function downloadOsuFile(beatmapId: number): Promise<string> {
+  const url = new URL(String(beatmapId), beatmapFileBaseUrl());
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 20_000);
+  timer.unref?.();
+  try {
+    const response = await fetch(url, {
+      headers: { Accept: 'text/plain, application/octet-stream;q=0.9' },
+      redirect: 'follow',
+      signal: controller.signal,
+    });
+    const finalUrl = new URL(response.url);
+    const finalLoopback = finalUrl.protocol === 'http:'
+      && ['127.0.0.1', 'localhost'].includes(finalUrl.hostname.toLowerCase());
+    const finalOfficial = finalUrl.protocol === 'https:'
+      && finalUrl.hostname.toLowerCase() === 'osu.ppy.sh';
+    if (!finalLoopback && !finalOfficial) throw new Error('OSU_FILE_DOWNLOAD_REDIRECT_REJECTED');
+    if (!response.ok) throw new Error(`OSU_FILE_DOWNLOAD_HTTP_${response.status}`);
+    const declaredLength = Number(response.headers.get('content-length') || 0);
+    if (declaredLength > MAX_OSU_FILE_BYTES) throw new Error('OSU_FILE_TOO_LARGE');
+    const bytes = Buffer.from(await response.arrayBuffer());
+    if (!bytes.length || bytes.length > MAX_OSU_FILE_BYTES) throw new Error('OSU_FILE_TOO_LARGE');
+    const text = bytes.toString('utf8').replace(/^\uFEFF/, '');
+    if (!text.startsWith('osu file format v')) throw new Error('OSU_FILE_INVALID_HEADER');
+    const embedded = /^BeatmapID\s*:\s*(\d+)\s*$/im.exec(text);
+    if (!embedded || Number(embedded[1]) !== beatmapId) throw new Error('OSU_FILE_BID_MISMATCH');
+    return text;
+  } catch (error: any) {
+    if (error?.name === 'AbortError') throw new Error('OSU_FILE_DOWNLOAD_TIMEOUT');
+    throw error;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 function finiteNumber(value: unknown): number | null {
   const number = Number(value);
   return Number.isFinite(number) ? number : null;
@@ -91,14 +139,18 @@ function formatBeatmapTitle(beatmap: any): string {
   ].filter(Boolean).join(' ');
 }
 
-function formatAnalysisEvidence(analysis: any): string {
+export function formatSkillProfilerAnalysis(analysis: any): string {
   if (analysis?.status !== 'OK' || !analysis?.axes || !analysis?.beatmap) {
     throw new Error(`SKILL_PROFILER_ANALYSIS_NOT_OK: ${String(analysis?.status || 'UNKNOWN')}`);
   }
   const beatmap = analysis.beatmap;
   const modContext = analysis.mod_context || {};
-  const mods = Array.isArray(modContext.effective_mods) && modContext.effective_mods.length
-    ? modContext.effective_mods.join('')
+  const requestedMods = Array.isArray(modContext.requested_mods) ? modContext.requested_mods : [];
+  const neutralMods = Array.isArray(modContext.neutral_mods) ? modContext.neutral_mods : [];
+  const mods = requestedMods.length
+    ? requestedMods.join('')
+    : Array.isArray(modContext.effective_mods) && modContext.effective_mods.length
+      ? modContext.effective_mods.join('')
     : 'NM';
   const difficulty = analysis.analysis_context?.difficulty || beatmap.metadata?.difficulty || {};
   const bpm = finiteNumber(analysis.analysis_context?.bpm_max);
@@ -107,7 +159,7 @@ function formatAnalysisEvidence(analysis: any): string {
   const lines = [
     'Skill Profiler 本地确定性谱面需求分析（实验性 V0.9；各维不是 osu! 官方总星数，也不是玩家能力评价）',
     `谱面：${formatBeatmapTitle(beatmap)}`,
-    `BID：${beatmap.beatmap_id} · Mods：${mods}`,
+    `BID：${beatmap.beatmap_id} · Mods：${mods}${neutralMods.length ? `（${neutralMods.join('/')} 对谱面需求分值无影响）` : ''}`,
     `环境：AR ${finiteNumber(difficulty.ApproachRate ?? difficulty.AR)?.toFixed(1) ?? '未知'} · OD ${finiteNumber(difficulty.OverallDifficulty ?? difficulty.OD)?.toFixed(1) ?? '未知'} · CS ${finiteNumber(difficulty.CircleSize ?? difficulty.CS)?.toFixed(1) ?? '未知'}${bpm === null ? '' : ` · BPM ${bpm.toFixed(1)}`}${durationMs === null ? '' : ` · 时长 ${(durationMs / 1000).toFixed(0)}s`}${localStars === null ? '' : ` · 本地 NM 总星数 ${localStars.toFixed(2)}★`}`,
     '九维需求：',
   ];
@@ -127,9 +179,33 @@ function formatAnalysisEvidence(analysis: any): string {
   }
   const warnings = Array.isArray(analysis.warnings) ? analysis.warnings.filter(Boolean).slice(0, 5) : [];
   if (warnings.length) lines.push(`警告：${warnings.map((warning: unknown) => String(warning)).join('；')}`);
-  lines.push(`算法身份：${String(analysis.identity?.algorithm_id || 'UNKNOWN')} / Map Demand ${String(analysis.identity?.map_demand_version || 'UNKNOWN')}`);
   lines.push('解释时优先描述“哪些维度相对突出/这张图难在哪里”；LOW 置信度和实验性分值必须保留不确定性，不要包装成官方定论。');
   return lines.join('\n');
+}
+
+export async function requestSkillProfilerAnalysis(
+  beatmapId: number,
+  mods: string[] = [],
+): Promise<any> {
+  return postProfiler('/api/analyze', {
+    beatmap_id: beatmapId,
+    mods,
+  });
+}
+
+export async function requestSkillProfilerAnalysisWithFetch(
+  beatmapId: number,
+  mods: string[] = [],
+): Promise<any> {
+  try {
+    return await requestSkillProfilerAnalysis(beatmapId, mods);
+  } catch (error: any) {
+    const message = String(error?.message || error);
+    if (!/^(?:BID_NOT_FOUND|OSU_FILE_MISSING):/.test(message)) throw error;
+    const content = await downloadOsuFile(beatmapId);
+    await postProfiler('/api/import', { beatmap_id: beatmapId, content });
+    return requestSkillProfilerAnalysis(beatmapId, mods);
+  }
 }
 
 export function buildSkillProfilerToolSchema(): LlmTool {
@@ -144,10 +220,10 @@ export function buildSkillProfilerToolSchema(): LlmTool {
           beatmap_id: { type: 'integer', minimum: 1, description: 'osu! beatmap ID（BID），不是 beatmapset ID' },
           mods: {
             type: 'array',
-            items: { type: 'string', enum: ['NM', 'EZ', 'HD', 'HR', 'HT', 'DT'] },
+            items: { type: 'string', enum: ['NM', 'NF', 'EZ', 'HD', 'HR', 'SD', 'HT', 'DT', 'NC', 'PF', 'DC'] },
             maxItems: 4,
             uniqueItems: true,
-            description: '要分析的 Mod 列表；不填表示 NM。只传用户明确指定的 Mod。',
+            description: '要分析的 Mod 列表；不填表示 NM。PF/SD/NF 会保留但不改变谱面需求分值；FL 暂不支持。只传用户明确指定的 Mod。',
           },
         },
         required: ['beatmap_id'],
@@ -161,14 +237,14 @@ export async function executeSkillProfilerAnalysis(
   args: Record<string, unknown>,
 ): Promise<ToolResult> {
   try {
-    const analysis = await postProfiler('/api/analyze', {
-      beatmap_id: args.beatmap_id,
-      mods: args.mods || [],
-    });
+    const analysis = await requestSkillProfilerAnalysis(
+      Number(args.beatmap_id),
+      Array.isArray(args.mods) ? args.mods.map((mod) => String(mod)) : [],
+    );
     return {
       toolCallId,
       ok: true,
-      content: formatAnalysisEvidence(analysis),
+      content: formatSkillProfilerAnalysis(analysis),
       metadata: {
         requestedCapability: 'beatmap_skill_profile',
         actualExecutor: 'osu_skill_profiler_v09',

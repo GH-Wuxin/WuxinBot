@@ -85,6 +85,8 @@ export const OWNER_PERMISSION_POLICY: Record<string, OwnerPermissionPolicy> = {
   osuClearCooldown: { defaultPermissionRole: 'owner', permission: 'owner', visibility: 'owner', discoverability: 'direct_only' },
   osuClearRecommend: { defaultPermissionRole: 'owner', permission: 'owner', visibility: 'owner', discoverability: 'direct_only' },
   osuHelp: { defaultPermissionRole: 'guest', permission: 'all', visibility: 'public', discoverability: 'listed' },
+  skill: { defaultPermissionRole: 'guest', permission: 'all', visibility: 'public', discoverability: 'listed' },
+  skillFeedback: { defaultPermissionRole: 'guest', permission: 'all', visibility: 'public', discoverability: 'listed' },
 };
 
 /** Pure mirror of store.ts defaultCommandPermissions for owner dispatch. */
@@ -150,6 +152,8 @@ export const OWNER_COMMANDS: OwnerCommandMeta[] = [
   { id: 'osuBind', commandPath: '/osu', group: 'osu!', syntax: '/w osu bind <osu用户名>', description: '绑定 osu! 账号', permissionKey: 'osuBind', ...P('osuBind'), status: 'active', execution: { kind: 'local', handlerKey: 'osu.bind' }, implementationRefs: [{ path: 'server/osu/commands.ts', symbol: 'handleOsuCommand' }] },
   { id: 'osuAnalyze', commandPath: '/osu', group: 'osu!', syntax: '/w osu analyze (@某人)', description: '完整玩家分析', permissionKey: 'osuAnalyze', ...P('osuAnalyze'), status: 'active', execution: { kind: 'local', handlerKey: 'osu.analyze' }, implementationRefs: [{ path: 'server/osu/commands.ts', symbol: 'handleOsuCommand' }] },
   { id: 'osuRecent', commandPath: '/osu', group: 'osu!', syntax: '/w osu recent (@某人)', description: '近期成绩短评', permissionKey: 'osuRecent', ...P('osuRecent'), status: 'active', execution: { kind: 'local', handlerKey: 'osu.recent' }, implementationRefs: [{ path: 'server/osu/commands.ts', symbol: 'handleOsuCommand' }] },
+  { id: 'skill', commandPath: '/skill', group: 'osu!', syntax: '/w skill <BP名次或BID> [+Mods]', description: '分析 BP 或 BID；BID 可指定 +HD/+HDDT，FL 暂不支持', permissionKey: 'skill', ...P('skill'), status: 'active', execution: { kind: 'local', handlerKey: 'skill' }, implementationRefs: [{ path: 'server/bot/owner/skill.ts', symbol: 'ownerSkillHandler' }] },
+  { id: 'skillFeedback', commandPath: '/cd', group: 'osu!', syntax: '/w cd <BID> <反馈>', description: '反馈 Skill Profiler 对指定谱面的判断', permissionKey: 'skillFeedback', ...P('skillFeedback'), status: 'active', execution: { kind: 'local', handlerKey: 'skillFeedback' }, implementationRefs: [{ path: 'server/bot/owner/skill.ts', symbol: 'ownerSkillFeedbackHandler' }] },
 ];
 
 export const OWNER_COMMANDS_BY_ID: Record<string, OwnerCommandMeta> = Object.fromEntries(
