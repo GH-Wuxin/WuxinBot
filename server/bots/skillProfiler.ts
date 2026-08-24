@@ -157,7 +157,7 @@ export function formatSkillProfilerAnalysis(analysis: any): string {
   const durationMs = finiteNumber(analysis.analysis_context?.duration_ms);
   const localStars = finiteNumber(beatmap.local_nm_stars);
   const lines = [
-    'Skill Profiler 本地确定性谱面需求分析（实验性 V0.9；各维不是 osu! 官方总星数，也不是玩家能力评价）',
+    'Skill Profiler 本地确定性谱面需求分析（V0.92.2；各维不是 osu! 官方总星数，也不是玩家能力评价）',
     `谱面：${formatBeatmapTitle(beatmap)}`,
     `BID：${beatmap.beatmap_id} · Mods：${mods}${neutralMods.length ? `（${neutralMods.join('/')} 对谱面需求分值无影响）` : ''}`,
     `环境：AR ${finiteNumber(difficulty.ApproachRate ?? difficulty.AR)?.toFixed(1) ?? '未知'} · OD ${finiteNumber(difficulty.OverallDifficulty ?? difficulty.OD)?.toFixed(1) ?? '未知'} · CS ${finiteNumber(difficulty.CircleSize ?? difficulty.CS)?.toFixed(1) ?? '未知'}${bpm === null ? '' : ` · BPM ${bpm.toFixed(1)}`}${durationMs === null ? '' : ` · 时长 ${(durationMs / 1000).toFixed(0)}s`}${localStars === null ? '' : ` · 本地 NM 总星数 ${localStars.toFixed(2)}★`}`,
@@ -247,7 +247,7 @@ export async function executeSkillProfilerAnalysis(
       content: formatSkillProfilerAnalysis(analysis),
       metadata: {
         requestedCapability: 'beatmap_skill_profile',
-        actualExecutor: 'osu_skill_profiler_v09',
+        actualExecutor: 'osu_skill_profiler_v0922',
         dataSource: 'local_osu_manifest',
         renderer: 'none',
         command: SKILL_PROFILER_TOOL_NAME,
@@ -263,7 +263,7 @@ export async function executeSkillProfilerAnalysis(
       error: message,
       metadata: {
         requestedCapability: 'beatmap_skill_profile',
-        actualExecutor: 'osu_skill_profiler_v09',
+        actualExecutor: 'osu_skill_profiler_v0922',
         dataSource: 'local_osu_manifest',
         renderer: 'none',
         command: SKILL_PROFILER_TOOL_NAME,
