@@ -70,7 +70,7 @@ const {
 const { parseOsuCommandText, OSU_SUBCOMMANDS, OSU_CLEAR_ACTIONS_META } = await import('../server/bot/commands/osu.meta.ts');
 const { parseOwnerCommandText, OWNER_COMMANDS } = await import('../server/bot/commands/owner.meta.ts');
 const { resolveQuickCommand, QUICK_DEFS, finalizeQuickDef } = await import('../server/bot/commands/quick.meta.ts');
-const { ANALYSIS_COOLDOWN, RECENT_COOLDOWN, RECOMMEND_COOLDOWN } = await import('../server/bot/commands/commandConstants.ts');
+const { ANALYSIS_COOLDOWN, RECOMMEND_COOLDOWN } = await import('../server/bot/commands/commandConstants.ts');
 const { quickCollisionKey } = await import('../server/bot/commands/alias.ts');
 
 ensureStore();
@@ -603,10 +603,6 @@ function knowledgeRootFor(knowledgeDirPath) {
     ok = false;
     console.error('  analyze cooldown is not the shared ANALYSIS_COOLDOWN object');
   }
-  if (OSU_SUBCOMMANDS.recent.cooldown !== RECENT_COOLDOWN) {
-    ok = false;
-    console.error('  recent cooldown is not the shared RECENT_COOLDOWN object');
-  }
   for (const def of QUICK_DEFS) {
     if ((def.id === 'recommend' || def.id === 'rd') && def.cooldown !== RECOMMEND_COOLDOWN) {
       ok = false;
@@ -665,7 +661,7 @@ function knowledgeRootFor(knowledgeDirPath) {
     ['owner', { isOwner: true, isAdmin: true }],
   ];
   const isWuxinOsuHelp = (entry) => entry.namespace === 'wuxin' && entry.family === 'osu';
-  const canonicalSubById = { osuBind: 'bind', osuAnalyze: 'analyze', osuRecent: 'recent', osuHelp: 'help' };
+  const canonicalSubById = { osuBind: 'bind', osuAnalyze: 'analyze', osuHelp: 'help' };
   let ok = true;
   for (const [label, perms] of audiences) {
     for (const entry of entries) {

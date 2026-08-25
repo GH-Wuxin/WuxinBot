@@ -71,7 +71,7 @@ function wuxinEntry(meta: (typeof OWNER_COMMANDS)[number]): CommandHelpEntry {
   const profileFamily = ['profile', 'note', 'me', 'nick', 'style'].includes(meta.id) ? 'profile' : 'administration';
   return {
     id: meta.id,
-    family: ['osuHelp', 'osuBind', 'osuAnalyze', 'osuRecent'].includes(meta.id) ? 'osu' : profileFamily,
+    family: ['osuHelp', 'osuBind', 'osuAnalyze'].includes(meta.id) ? 'osu' : profileFamily,
     group: meta.group,
     namespace: 'wuxin',
     canonicalSyntax: meta.syntax,

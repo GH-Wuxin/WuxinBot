@@ -4,10 +4,10 @@
 // numbers, scopes and reset permissions can never drift. This module is pure.
 import type { CooldownPolicy } from './types.js';
 
-/** Full analysis: 4h per requester/target/mode, owner can reset. */
+/** One-line review: 30min per requester/target/mode, owner can reset. */
 export const ANALYSIS_COOLDOWN = {
   kind: 'fixed',
-  ms: 4 * 3600 * 1000,
+  ms: 30 * 60 * 1000,
   scope: 'user_in_group',
   resettableBy: 'owner',
 } as const satisfies CooldownPolicy;

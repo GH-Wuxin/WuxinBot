@@ -20,10 +20,40 @@ export interface OsuBeatmapAttributes {
   max_combo?: number;
 }
 
-function fetchWithTimeout(url: string, opts: RequestInit, timeoutMs: number = 15000): Promise<Response> {
-  const ctrl = new AbortController();
-  const timer = setTimeout(() => ctrl.abort(), timeoutMs);
-  return fetch(url, { ...opts, signal: ctrl.signal }).finally(() => clearTimeout(timer));
+function isRetryableFetchError(error: unknown): boolean {
+  const name = String((error as { name?: string } | undefined)?.name || '');
+  const message = String((error as { message?: string } | undefined)?.message || error || '');
+  return name === 'AbortError' || /aborted|fetch failed|network|socket|ECONNRESET|ETIMEDOUT/i.test(message);
+}
+
+async function fetchWithTimeout(url: string, opts: RequestInit, timeoutMs: number = 15000): Promise<Response> {
+  // osu! API reads are idempotent. A cold TLS connection occasionally reaches
+  // this timeout, while an immediate manual retry succeeds. Retry GET once here
+  // so callers do not have to repeat the whole command themselves. Mutating
+  // requests (currently beatmap attributes POST) are never retried here.
+  const method = String(opts.method || 'GET').toUpperCase();
+  const maxAttempts = method === 'GET' ? 2 : 1;
+  let lastError: unknown;
+
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), timeoutMs);
+    try {
+      return await fetch(url, { ...opts, signal: ctrl.signal });
+    } catch (error) {
+      lastError = error;
+      if (attempt >= maxAttempts || !isRetryableFetchError(error)) break;
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+
+  const name = String((lastError as { name?: string } | undefined)?.name || '');
+  const message = String((lastError as { message?: string } | undefined)?.message || lastError || '未知错误');
+  if (name === 'AbortError' || /aborted/i.test(message)) {
+    throw new Error(`osu! API 请求超时${maxAttempts > 1 ? '（已自动重试 1 次）' : ''}`);
+  }
+  throw new Error(`osu! API 网络请求失败${maxAttempts > 1 ? '（已自动重试 1 次）' : ''}：${message}`);
 }
 
 async function osuFetch<T>(path: string, options: RequestInit = {}): Promise<T> {

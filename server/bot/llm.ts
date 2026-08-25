@@ -610,6 +610,7 @@ export async function completeChat(db, options = {}) {
   };
 
   const retryAfterEmpty = async (first) => {
+    if (options.retryOnEmpty === false) return first;
     const firstMeta = buildLlmCompletionMeta(first.raw, {
       model: params.model,
       provider,

@@ -44,11 +44,18 @@ const payload = buildSkillProfilerCardPayload({
     dominant_axes: ['flow_aim', 'reading'],
   },
   identity: { algorithm_id: 'MUST_NOT_RENDER', map_demand_version: 'MUST_NOT_RENDER' },
+}, {
+  beatmap: { bpm: 200, total_length: 180 },
+  starRating: 8.765,
 });
 
-assert.equal(payload.beatmap.coverUrl, 'https://assets.ppy.sh/beatmaps/1946744/covers/cover.jpg');
+assert.equal(payload.beatmap.coverUrl, 'https://assets.ppy.sh/beatmaps/1946744/covers/fullsize.jpg');
 assert.equal(payload.analysis.mods, 'HDDTPF');
+assert.deepEqual(payload.analysis.modList, ['HD', 'DT', 'PF']);
 assert.equal(payload.analysis.neutralMods, 'PF');
+assert.equal(payload.beatmap.stars, 8.765);
+assert.equal(payload.beatmap.bpm, 200, 'official BPM wins over the computed fallback');
+assert.equal(payload.beatmap.lengthSeconds, 180, 'official length wins over the computed fallback');
 assert.deepEqual(payload.groups.aim.map((item) => item.label), [
   'Aim Control', 'Jump Aim', 'Spatial Precision', 'Flow Aim',
 ]);
@@ -57,5 +64,40 @@ assert.deepEqual(payload.groups.tapping.map((item) => item.label), [
 ]);
 assert.deepEqual(payload.groups.reading.map((item) => item.label), ['Reading']);
 assert.doesNotMatch(JSON.stringify(payload), /MUST_NOT_RENDER|algorithm_id|map_demand_version/i);
+
+const fallbackPayload = buildSkillProfilerCardPayload({
+  status: 'OK',
+  beatmap: {
+    beatmap_id: 1,
+    beatmapset_id: 2,
+    title: 'Fallback metadata',
+  },
+  analysis_context: { clock_rate: 1.5, difficulty: {} },
+  mod_context: { effective_mods: ['HD', 'DT'] },
+  axes: {
+    aim_control: axis(1), jump_aim: axis(1), spatial_precision: axis(1), flow_aim: axis(1),
+    raw_speed: axis(1), finger_control: axis(1), stamina: axis(1, 'LOW', 'bounded_0_10'),
+    endurance: axis(1, 'LOW', 'bounded_0_10'), reading: axis(1),
+  },
+}, {
+  beatmap: { bpm: 180, total_length: 150 },
+  starRating: 6.54,
+});
+assert.equal(fallbackPayload.beatmap.stars, 6.54);
+assert.equal(fallbackPayload.beatmap.bpm, 270, 'DT clock rate adjusts official base BPM');
+assert.equal(fallbackPayload.beatmap.lengthSeconds, 100, 'DT clock rate adjusts official base length');
+
+const strictModPayload = buildSkillProfilerCardPayload({
+  status: 'OK',
+  beatmap: { beatmap_id: 1, local_nm_stars: 5.5 },
+  analysis_context: { difficulty: {} },
+  mod_context: { effective_mods: ['HR'] },
+  axes: {
+    aim_control: axis(1), jump_aim: axis(1), spatial_precision: axis(1), flow_aim: axis(1),
+    raw_speed: axis(1), finger_control: axis(1), stamina: axis(1, 'LOW', 'bounded_0_10'),
+    endurance: axis(1, 'LOW', 'bounded_0_10'), reading: axis(1),
+  },
+});
+assert.equal(strictModPayload.beatmap.stars, null, 'NM stars never masquerade as Mod-adjusted stars');
 
 console.log('PASS: Skill Profiler card is 3-group image data with Tapping and no algorithm version');

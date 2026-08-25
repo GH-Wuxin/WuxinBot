@@ -10,7 +10,7 @@ import type {
   CommandVisibility,
   CooldownPolicy,
 } from './types.js';
-import { ANALYSIS_COOLDOWN, RECENT_COOLDOWN } from './commandConstants.js';
+import { ANALYSIS_COOLDOWN } from './commandConstants.js';
 
 export interface OsuSubcommandMeta {
   id: string;
@@ -46,27 +46,14 @@ export const OSU_SUBCOMMANDS = {
   analyze: {
     id: 'analyze',
     syntax: '/w osu analyze [用户名] [--mode=std/taiko/catch/mania]',
-    description: '完整玩家分析：BP、PP+、技能与结论',
+    description: '玩家分析（已停用，后续由 Skill 画像替代）',
     permission: 'all',
-    visibility: 'public',
-    discoverability: 'listed',
-    status: 'active',
+    visibility: 'hidden',
+    discoverability: 'hidden',
+    status: 'disabled',
     execution: { kind: 'local', handlerKey: 'analyze' },
     cooldown: ANALYSIS_COOLDOWN,
-    tags: ['analyze', '分析', '玩家分析'],
-    availability: { contexts: ['group', 'private'], requiresBinding: false, supportedModes: ['std', 'taiko', 'catch', 'mania'] },
-  },
-  recent: {
-    id: 'recent',
-    syntax: '/w osu recent [用户名] [--mode=std/taiko/catch/mania]',
-    description: '对比近期成绩与完整档案给出短评',
-    permission: 'all',
-    visibility: 'public',
-    discoverability: 'listed',
-    status: 'active',
-    execution: { kind: 'local', handlerKey: 'recent' },
-    cooldown: RECENT_COOLDOWN,
-    tags: ['recent', '近期', '短评', '近期成绩'],
+    tags: ['analyze', '锐评', '玩家锐评'],
     availability: { contexts: ['group', 'private'], requiresBinding: false, supportedModes: ['std', 'taiko', 'catch', 'mania'] },
   },
   clear: {

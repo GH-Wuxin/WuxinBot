@@ -144,6 +144,7 @@ function mergeRecords(existing: PlayerSkillRecord, incoming: PlayerSkillRecord):
     // Full analysis updates do not implicitly erase the latest Recent summary.
     recentSummary: normalizedIncoming.recentSummary ?? normalizedExisting.recentSummary,
     lastRecentAnalyzed: normalizedIncoming.lastRecentAnalyzed ?? normalizedExisting.lastRecentAnalyzed,
+    ppPlus: normalizedIncoming.ppPlus ?? normalizedExisting.ppPlus,
   });
 }
 

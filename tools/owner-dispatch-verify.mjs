@@ -92,8 +92,9 @@ const BASELINE_OWNER_HELP = [
   ['refresh', '/w refresh', '触发全局重算（仅 owner）', 'memberPolicy', 'owner', 'owner', 'direct_only', 'refresh'],
   ['osuHelp', '/w osu help', 'osu! 命令帮助', 'osuHelp', 'all', 'public', 'listed', 'osu.help'],
   ['osuBind', '/w osu bind <osu用户名>', '绑定 osu! 账号', 'osuBind', 'all', 'public', 'listed', 'osu.bind'],
-  ['osuAnalyze', '/w osu analyze (@某人)', '完整玩家分析', 'osuAnalyze', 'all', 'public', 'listed', 'osu.analyze'],
-  ['osuRecent', '/w osu recent (@某人)', '近期成绩短评', 'osuRecent', 'all', 'public', 'listed', 'osu.recent'],
+  ['osuAnalyze', '/w osu analyze (@某人)', '玩家分析（已停用）', 'osuAnalyze', 'all', 'hidden', 'hidden', 'osu.analyze'],
+  ['skill', '/w skill profile [玩家名] | <BP名次或BID> [+Mods] | <玩家名> <BP名次>', '生成玩家真实 BP20 Skill 画像，或分析单张 BP/BID；纯数字玩家名可用 p:[...]', 'skill', 'all', 'public', 'listed', 'skill'],
+  ['skillFeedback', '/w cd <BID> [+Mods] <反馈>', '按 BID 与 Mod 反馈 Skill Profiler 判断；不写 Mod 表示 NM', 'skillFeedback', 'all', 'public', 'listed', 'skillFeedback'],
 ];
 
 {

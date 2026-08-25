@@ -83,7 +83,6 @@ export const OWNER_HANDLER_REGISTRY: Record<OwnerHandlerKey, OwnerHandler> = {
   'osu.help': ownerOsuHandler,
   'osu.bind': ownerOsuHandler,
   'osu.analyze': ownerOsuHandler,
-  'osu.recent': ownerOsuHandler,
   'osu.clear.bind': ownerOsuHandler,
   'osu.clear.history': ownerOsuHandler,
   'osu.clear.cooldown': ownerOsuHandler,

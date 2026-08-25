@@ -161,7 +161,6 @@ export function resolveOwnerRoute(ctx: OwnerHandlerContext): OwnerRouteResolutio
     const clearAction = String(commandArgs || '').trim().split(/\s+/)[0].toLowerCase();
     if (subCommand === 'bind') return directRoute('osu.bind', 'osuBind');
     if (subCommand === 'analyze') return directRoute('osu.analyze', 'osuAnalyze');
-    if (subCommand === 'recent') return directRoute('osu.recent', 'osuRecent');
     if (subCommand === 'clear') {
       const mapping: Record<string, { handlerKey: OwnerHandlerKey; permissionKey: string }> = {
         bind: { handlerKey: 'osu.clear.bind', permissionKey: 'osuClearBind' },
