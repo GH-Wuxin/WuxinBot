@@ -570,7 +570,7 @@
 .memory-dynamic > span, .memory-sample > span, .memory-sample > small { color: var(--v2-text-muted); font-size: 10px; }
 .memory-sample > small { padding-left: 8px; border-left: 2px solid var(--v2-border-strong); }
 .memory-samples { max-height: 430px; overflow: auto; padding-right: 3px; }
-.profile-log-metrics { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+.profile-log-metrics { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }
 .profile-log-metrics .metric-card { min-height: 92px; }
 .profile-log-toolbar .ui-field { min-width: 180px; }
 .profile-log-toolbar .ui-field:last-child { min-width: 210px; }

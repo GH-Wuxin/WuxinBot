@@ -278,6 +278,37 @@ async function main() {
     console.log('PASS: Test 9 — /w exp add/set/reset parses full command tail');
 
     // ============================================================
+    // Test 10: command display rounds XP and resolves current-group nickname
+    // ============================================================
+    console.log('Test 10: rounded XP + group nickname display');
+    setupDb(original);
+    updateDb((draft) => {
+      draft.experience[TEST_USER] = {
+        xp: 123.6, level: 1, dailyXp: 3.6, dailyDate: '', activeDays: 2,
+        streakDays: 0, lastMsgDate: '', lastLevelUpAt: '', lastDecayCheck: '',
+      };
+      draft.messages.push({
+        id: 'nickname-source', role: 'user', type: 'group', groupId: TEST_GROUP,
+        userId: TEST_USER, nickname: '群昵称玩家', content: '测试昵称', inContext: true,
+        createdAt: new Date().toISOString(),
+      });
+    });
+    const sent10 = [];
+    await processIncoming(event({
+      userId: TEST_OWNER,
+      nickname: 'Owner',
+      text: `/w lv [CQ:at,qq=${TEST_USER}]`,
+      atTargets: [TEST_USER],
+      messageId: 't10-lv',
+    }), async (_evt, text) => { sent10.push(String(text || '')); });
+    const levelReply = sent10.join('\n');
+    assert(levelReply.includes('群昵称玩家 的等级'), `should display current-group nickname, got ${levelReply}`);
+    assert(levelReply.includes('XP: 124/200'), `should round displayed XP, got ${levelReply}`);
+    assert(!levelReply.includes(`${TEST_USER} 的等级`), 'should not use QQ number when group nickname is known');
+
+    console.log('PASS: Test 10 — rounded XP and group nickname display');
+
+    // ============================================================
     console.log('\nAll experience verification tests PASSED.');
   } finally {
     fs.rmSync(testDataDir, { recursive: true, force: true });

@@ -154,6 +154,8 @@ export interface MemoryEntry {
   lastProfileStatus?: 'updated' | 'checked' | 'recent-only' | 'empty' | 'error';
   lastProfileError?: string;
   lastProfiledAt?: string;
+  profileFailureCount?: number;
+  profileRetryAfter?: string;
   createdAt: string;
   updatedAt: string;
 }

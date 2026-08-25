@@ -114,13 +114,22 @@ try {
       profileMeta: {},
     });
   });
-  await maybeUpdateMemoryProfile(event('m-fail-trigger', '触发画像'));
+  const failedOutcome = await maybeUpdateMemoryProfile(event('m-fail-trigger', '触发画像'));
   const logs3 = readDb().profileLogs || [];
   const started = logs3.find((log) => log.event === 'profile.run_started');
   const failed = logs3.find((log) => log.event === 'profile.error');
   assert(started, 'profile.run_started should be logged before LLM failure');
   assert(failed, 'profile.error should be logged after LLM failure');
   assert(started.runId && started.runId === failed.runId, 'failure log should keep the same runId');
+  assert(failedOutcome?.ok === false, 'failed scheduler outcome should be observable');
+  const failedMemory = readDb().memories.find((item) => item.userId === 'u1');
+  assert(failedMemory?.profileFailureCount === 1, 'failure count should persist');
+  assert(new Date(failedMemory?.profileRetryAfter || 0).getTime() > Date.now(), 'retry backoff should persist');
+
+  const backedOff = await maybeUpdateMemoryProfile(event('m-backoff-trigger', '再次触发画像'));
+  const logsAfterBackoff = readDb().profileLogs || [];
+  assert(backedOff?.skipped === true && backedOff?.reason === '画像失败退避中', 'automatic retry should respect backoff');
+  assert(logsAfterBackoff.some((log) => log.event === 'profile.backoff'), 'profile.backoff should be logged');
 
   console.log('\nAll profile log verification tests PASSED.');
 } finally {
