@@ -15,7 +15,7 @@ import { getHealth, getRecalcProgress, startRecalc, tickRecalc, stopRecalc, fini
 import { getKbHealth } from './bot/knowledgeBase.js';
 import { getGroupProfile, updateGroupProfile, clearGroupProfile, hasGroupProfileContent } from './bot/groupProfile.js';
 import { getRelationshipProfile, updateRelationshipProfile, clearRelationshipProfile, isSubstantiveRelationshipProfile } from './bot/relationshipProfile.js';
-import { commitMemoryProfileResult, updateMemoryProfile } from './bot/memory.js';
+import { getMemoryProfileQueueStatus, maybeUpdateMemoryProfile } from './bot/memory.js';
 import { evaluateTrustScores } from './bot/trust.js';
 import { decayInactiveUsers } from './bot/experience.js';
 import { queryProfileLogs, getProfileLogStats } from './bot/profileLog.js';
@@ -896,12 +896,15 @@ app.post('/api/memories/:userId/recalculate', async (req, res) => {
     return res.status(400).json({ ok: false, error: `可用画像样本不足：样本 ${storedUsableSamples} 条，历史消息 ${historicalMessages} 条` });
   }
   try {
-    const result = await updateMemoryProfile(db, memory);
-    const outcome = commitMemoryProfileResult(userId, result, {
-      model: db.settings.model,
-      kind: 'memory-manual-recalc'
+    const outcome = await maybeUpdateMemoryProfile({
+      type: 'private', groupId: '', userId, nickname: memory.nickname || userId,
+      messageId: `memory-manual-recalc:${userId}:${Date.now()}`
+    }, {
+      force: true,
+      kind: 'memory-manual-recalc',
     });
-    res.json(ok({ outcome, runId: result.runId, usage: result.usage || {}, db: publicDb() }));
+    if (!outcome.ok) return res.status(400).json({ ok: false, error: outcome.reason || outcome.error || '画像更新失败', db: publicDb() });
+    res.json(ok({ outcome, runId: outcome.runId, usage: outcome.usage || {}, db: publicDb() }));
   } catch (error) {
     updateDb((draft) => {
       const target = (draft.memories || []).find((entry) => String(entry.userId) === userId);
@@ -1222,7 +1225,7 @@ app.get('/api/profile-logs', (req, res) => {
     offset: offset ? Number(offset) : 0,
   });
   const stats = getProfileLogStats();
-  res.json(ok({ logs, stats }));
+  res.json(ok({ logs, stats: { ...stats, queue: getMemoryProfileQueueStatus() } }));
 });
 
 // Backup routes
@@ -1275,15 +1278,16 @@ app.post('/api/recalc', (_req, res) => {
     const rels = (db.relationshipProfiles || []).filter((r) => r.enabled !== false);
     const total = mems.length + gps.length + rels.length;
     startRecalc(total, '正在重算全部画像');
-    const { updateMemoryProfile } = await import('./bot/memory.js');
+    const { maybeUpdateMemoryProfile } = await import('./bot/memory.js');
     const { updateGroupProfile } = await import('./bot/groupProfile.js');
     const { updateRelationshipProfile } = await import('./bot/relationshipProfile.js');
     for (const mem of mems) {
       if (getRecalcProgress().stopped) break;
       try {
-        const latestDb = readDb();
-        const result = await updateMemoryProfile(latestDb, mem);
-        commitMemoryProfileResult(mem.userId, result, { model: latestDb.settings.model, kind: 'memory-recalc' });
+        await maybeUpdateMemoryProfile({
+          type: 'private', groupId: '', userId: String(mem.userId), nickname: mem.nickname || String(mem.userId),
+          messageId: `memory-recalc:${mem.userId}:${Date.now()}`
+        }, { force: true, kind: 'memory-recalc' });
       } catch { /* skip */ }
       tickRecalc();
     }

@@ -9,7 +9,7 @@ import {
   finishRecalc,
   setBotPaused,
 } from '../../health.js';
-import { updateMemoryProfile, commitMemoryProfileResult } from '../memory.js';
+import { maybeUpdateMemoryProfile } from '../memory.js';
 import { updateGroupProfile } from '../groupProfile.js';
 import { updateRelationshipProfile } from '../relationshipProfile.js';
 import { completeChat } from '../llm.js';
@@ -148,9 +148,13 @@ export async function ownerRefreshHandler(ctx: OwnerHandlerContext): Promise<Own
   for (const mem of mems) {
     if (getRecalcProgress().stopped) break;
     try {
-      const result = await updateMemoryProfile(readDb(), mem);
-      commitMemoryProfileResult(mem.userId, result, { groupId: ctx.event.groupId, model: readDb().settings.model, kind: 'memory-recalc' });
-      pCount++;
+      const outcome = await maybeUpdateMemoryProfile({
+        ...ctx.event,
+        userId: String(mem.userId),
+        nickname: mem.nickname || String(mem.userId),
+        messageId: `${ctx.event.messageId || 'memory-recalc'}:${mem.userId}`,
+      }, { force: true, kind: 'memory-recalc' });
+      if (outcome.ok) pCount++;
     } catch { /* skip */ }
     tickRecalc();
   }

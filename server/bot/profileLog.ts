@@ -8,6 +8,8 @@ export type ProfileLogEvent =
   | 'evidence.created'
   | 'evidence.rejected'
   | 'profile.threshold_check'
+  | 'profile.queued'
+  | 'profile.backoff'
   | 'profile.run_started'
   | 'profile.llm_result'
   | 'profile.patch_applied'

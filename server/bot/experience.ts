@@ -18,6 +18,10 @@ export function levelFromXp(xp) {
   return Math.max(0, Math.floor(Number(xp) / 100));
 }
 
+export function roundDisplayedXp(xp) {
+  return Math.max(0, Math.round(Number(xp) || 0));
+}
+
 // One-time migration for records created under the legacy 5-level system:
 // recompute every stored level from total XP (level N = N*100 XP).
 export function migrateLegacyLevels() {
@@ -258,10 +262,11 @@ export function formatXpBar(exp) {
   const bar = '█'.repeat(filled) + '░'.repeat(10 - filled);
   const streakMul = getStreakMultiplier(exp.streakDays);
   const mulText = streakMul > 1 ? ` ×${streakMul}` : '';
+  const displayedXp = roundDisplayedXp(exp.xp);
 
   const lines = [
     `当前等级：${currentPp}pp（下一级 ${nextPp}pp）`,
-    `XP: ${exp.xp}/${nextPp} ${bar} ${pct}%`,
+    `XP: ${displayedXp}/${nextPp} ${bar} ${pct}%`,
     `今日: +${Math.round(exp.dailyXp)}/${DAILY_XP_CAP}${mulText}  连续: ${exp.streakDays}天`,
   ];
   return lines.join('\n');

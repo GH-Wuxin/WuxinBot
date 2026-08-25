@@ -7,7 +7,7 @@ import {
   updateRelationshipProfile,
   clearRelationshipProfile
 } from '../relationshipProfile.js';
-import { updateMemoryProfile, commitMemoryProfileResult } from '../memory.js';
+import { maybeUpdateMemoryProfile } from '../memory.js';
 import { sendForwardText } from '../reply.js';
 import type { OwnerHandlerContext, OwnerCommandResult } from './types.js';
 
@@ -256,21 +256,22 @@ export async function ownerProfileHandler(ctx: OwnerHandlerContext): Promise<Own
     const db = readDb();
     const mem = (db.memories || []).find((m) => String(m.userId) === String(retryTarget));
     if (!mem) { const reply = '还没有这个用户的记忆数据。'; if (sendMessage) await sendMessage(event, reply); return { replied: Boolean(sendMessage), reason: reply }; }
-    // Temporarily set profilingRule as guidance for this update
-    const savedRule = mem.profilingRule;
-    if (guidance) mem.profilingRule = guidance;
     if (sendMessage) await sendMessage(event, `正在按「${guidance || '默认方向'}」重算 ${mem.nickname || retryTarget} 的画像…`);
     try {
-      const result = await updateMemoryProfile(db, mem);
-      const outcome = commitMemoryProfileResult(retryTarget, result, { groupId: event.groupId, model: db.settings.model, kind: 'memory' });
-      updateDb((draft) => {
-        const target = (draft.memories || []).find((m) => String(m.userId) === String(retryTarget));
-        if (target) target.profilingRule = savedRule;
+      const outcome = await maybeUpdateMemoryProfile({
+        ...event,
+        userId: String(retryTarget),
+        nickname: mem.nickname || String(retryTarget),
+        messageId: `${event.messageId || 'profile-retry'}:${retryTarget}`,
+      }, {
+        force: true,
+        kind: 'memory-manual-retry',
+        profilingRule: guidance || mem.profilingRule || '',
       });
+      if (!outcome.ok) throw new Error(outcome.reason || outcome.error || '画像更新失败');
       if (sendMessage) await sendMessage(event, `${mem.nickname || retryTarget} 画像重算完成：${outcome.reason}`);
       return { replied: Boolean(sendMessage), reason: `定向重算 ${retryTarget} 画像` };
     } catch (error) {
-      updateDb((draft) => { const t = (draft.memories || []).find((m) => String(m.userId) === String(retryTarget)); if (t) t.profilingRule = savedRule; });
       const reply = `重算失败：${error.message}`; if (sendMessage) await sendMessage(event, reply);
       return { replied: Boolean(sendMessage), error: error.message, reason: reply };
     }
@@ -315,8 +316,13 @@ export async function ownerProfileHandler(ctx: OwnerHandlerContext): Promise<Own
   }
   if (sendMessage) await sendMessage(event, `正在更新 ${memory.nickname || targetUser} 的画像…`);
   try {
-    const result = await updateMemoryProfile(db, memory);
-    const outcome = commitMemoryProfileResult(targetUser, result, { groupId: event.groupId, model: db.settings.model, kind: 'memory' });
+    const outcome = await maybeUpdateMemoryProfile({
+      ...event,
+      userId: String(targetUser),
+      nickname: memory.nickname || String(targetUser),
+      messageId: `${event.messageId || 'profile-manual'}:${targetUser}`,
+    }, { force: true, kind: 'memory-manual' });
+    if (!outcome.ok) throw new Error(outcome.reason || outcome.error || '画像更新失败');
     if (sendMessage) await sendMessage(event, `${memory.nickname || targetUser} 画像更新完成：${outcome.reason}`);
     return { replied: Boolean(sendMessage), reason: `手动更新 ${targetUser} 画像` };
   } catch (error) {

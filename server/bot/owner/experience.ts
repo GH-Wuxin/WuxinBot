@@ -7,21 +7,43 @@ import {
   levelToPp,
   levelFromXp,
   formatXpBar,
+  roundDisplayedXp,
 } from '../experience.js';
 import { extractAtQq, parseTargetAndRest, llmContentFilter } from '../gate.js';
 import { sendForwardText } from '../reply.js';
 import type { OwnerHandlerContext, OwnerCommandResult } from './types.js';
 
+function groupDisplayName(db: any, event: any, userId: string): string {
+  const target = String(userId);
+  const groupId = String(event.groupId || '');
+  if (target === String(event.userId) && String(event.nickname || '').trim()) {
+    return String(event.nickname).trim();
+  }
+  const groupUser = [...(db.users || [])].reverse().find((user: any) =>
+    String(user.groupId) === groupId && String(user.userId) === target && String(user.nickname || '').trim()
+  );
+  if (groupUser?.nickname) return String(groupUser.nickname).trim();
+  const recentMessage = [...(db.messages || [])].reverse().find((message: any) =>
+    String(message.groupId) === groupId && String(message.userId) === target && String(message.nickname || '').trim()
+  );
+  if (recentMessage?.nickname) return String(recentMessage.nickname).trim();
+  const memory = (db.memories || []).find((item: any) =>
+    String(item.userId) === target && (item.groupsSeen || []).some((seen: any) => String(seen) === groupId)
+  );
+  if (memory?.nickname) return String(memory.nickname).trim();
+  return target;
+}
+
 export async function ownerLvHandler(ctx: OwnerHandlerContext): Promise<OwnerCommandResult> {
   const db = ctx.commandDb;
   const targetQq = extractAtQq(ctx.subCommand || ctx.parts[2] || '') || ctx.event.userId;
   const exp = getExperience(db, targetQq);
-  const targetUser = (db.users || []).find((u) => String(u.userId) === targetQq);
-  const nickname = targetUser?.nickname || targetQq;
+  const targetUser = (db.users || []).find((u) => String(u.groupId) === String(ctx.event.groupId) && String(u.userId) === targetQq);
+  const nickname = groupDisplayName(db, ctx.event, targetQq);
   const isSelf = String(targetQq) === String(ctx.event.userId);
   const bar = formatXpBar(exp);
   const features = getUnlockedFeatures(exp.level);
-  const lines = [bar];
+  const lines = [`${nickname} 的等级`, bar];
   if (features.length) lines.push('已解锁: ' + features.join(' · '));
   if (exp.level >= 2) {
     const user = (db.users || []).find((u) => String(u.userId) === targetQq);
@@ -50,13 +72,13 @@ export async function ownerTopHandler(ctx: OwnerHandlerContext): Promise<OwnerCo
     const ge = groupEntries[i];
     const exp = getExperience(db, ge.userId);
     const info = getLevelInfo(exp.level);
-    const user = (db.users || []).find((u) => String(u.userId) === ge.userId);
-    const name = user?.customName || user?.nickname || ge.userId;
+    const user = (db.users || []).find((u) => String(u.groupId) === groupId && String(u.userId) === String(ge.userId));
+    const name = groupDisplayName(db, ctx.event, ge.userId) || user?.customName || ge.userId;
     const currentPp = levelToPp(exp.level);
     const nextPp = levelToPp(exp.level + 1);
     const progress = Math.min(10, Math.max(0, Math.round(((exp.xp - currentPp) / (nextPp - currentPp)) * 10)));
     const bar = '█'.repeat(progress) + '░'.repeat(10 - progress);
-    lines.push(`${i + 1}. ${name}  ${exp.xp} XP ${bar}（${currentPp}pp）`);
+    lines.push(`${i + 1}. ${name}  ${roundDisplayedXp(exp.xp)} XP ${bar}（${currentPp}pp）`);
   }
   if (ctx.sendMessage) await sendForwardText(ctx.sendMessage, ctx.event, '群经验排行', lines.join('\n'));
   return { replied: Boolean(ctx.sendMessage), reason: '显示排行榜' };
@@ -224,7 +246,7 @@ export async function ownerMeHandler(ctx: OwnerHandlerContext): Promise<OwnerCom
     mem.preferences && `偏好：${mem.preferences}`,
     mem.manualNotes && `备注：${mem.manualNotes}`,
     `───────────────`,
-    `${info.emoji} ${info.title} · ${exp.xp} XP · 活跃 ${exp.activeDays} 天`,
+    `${info.emoji} ${info.title} · ${roundDisplayedXp(exp.xp)} XP · 活跃 ${exp.activeDays} 天`,
   ].filter(Boolean);
   if (ctx.sendMessage) await sendForwardText(ctx.sendMessage, ctx.event, '我的画像', lines.join('\n'));
   return { replied: Boolean(ctx.sendMessage), reason: '查看画像' };
@@ -242,8 +264,8 @@ export async function ownerExpHandler(ctx: OwnerHandlerContext): Promise<OwnerCo
   }
   const exp = getExperience(db, targetQq);
   const info = getLevelInfo(exp.level);
-  const user = (db.users || []).find((u) => String(u.userId) === targetQq);
-  const nickname = user?.nickname || user?.customName || targetQq;
+  const user = (db.users || []).find((u) => String(u.groupId) === String(ctx.event.groupId) && String(u.userId) === targetQq);
+  const nickname = groupDisplayName(db, ctx.event, targetQq);
 
   // Parse subcommand after @mention
   const action = parsedTarget.rest.trim().toLowerCase();
@@ -266,7 +288,7 @@ export async function ownerExpHandler(ctx: OwnerHandlerContext): Promise<OwnerCo
     });
     const newExp = getExperience(readDb(), targetQq);
     const newInfo = getLevelInfo(newExp.level);
-    if (ctx.sendMessage) await ctx.sendMessage(ctx.event, `已给 ${nickname} 增加 ${amount} XP → ${newExp.xp} XP（${newInfo.title}）`);
+    if (ctx.sendMessage) await ctx.sendMessage(ctx.event, `已给 ${nickname} 增加 ${amount} XP → ${roundDisplayedXp(newExp.xp)} XP（${newInfo.title}）`);
     return { replied: Boolean(ctx.sendMessage), reason: 'exp add' };
   }
 
@@ -303,7 +325,7 @@ export async function ownerExpHandler(ctx: OwnerHandlerContext): Promise<OwnerCo
   // Default: show info
   const bar = formatXpBar(exp);
   const features = getUnlockedFeatures(exp.level);
-  const lines = [bar];
+  const lines = [`${nickname} 的等级`, bar];
   if (features.length) lines.push('已解锁: ' + features.join(' · '));
   if (user?.customName) lines.push(`称呼: ${user.customName}`);
   if (user?.customStyle) lines.push(`风格: ${user.customStyle.slice(0, 50)}`);
