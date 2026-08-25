@@ -5,7 +5,7 @@ import { getBeatmap, getBeatmapAttributes } from '../osu/api.js';
 const AXIS_LABELS: Readonly<Record<string, string>> = {
   aim_control: 'Aim Control',
   jump_aim: 'Jump Aim',
-  spatial_precision: 'Spatial Precision',
+  spatial_precision: 'Micro Precision',
   flow_aim: 'Flow Aim',
   raw_speed: 'Raw Speed',
   finger_control: 'Finger Control',

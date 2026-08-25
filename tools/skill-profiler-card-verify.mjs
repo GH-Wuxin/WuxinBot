@@ -57,7 +57,7 @@ assert.equal(payload.beatmap.stars, 8.765);
 assert.equal(payload.beatmap.bpm, 200, 'official BPM wins over the computed fallback');
 assert.equal(payload.beatmap.lengthSeconds, 180, 'official length wins over the computed fallback');
 assert.deepEqual(payload.groups.aim.map((item) => item.label), [
-  'Aim Control', 'Jump Aim', 'Spatial Precision', 'Flow Aim',
+  'Aim Control', 'Jump Aim', 'Micro Precision', 'Flow Aim',
 ]);
 assert.deepEqual(payload.groups.tapping.map((item) => item.label), [
   'Raw Speed', 'Finger Control', 'Stamina', 'Endurance',

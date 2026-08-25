@@ -15,6 +15,13 @@ const TTL = {
   score: 120_000,
 };
 
+// The response cache only contains completed requests. Without a separate
+// in-flight table, two commands arriving in the same event-loop turn can miss
+// the cache together and issue identical requests to osu!. Coalesce only GETs:
+// it removes accidental duplication without throttling unrelated API traffic.
+const inFlightGets = new Map<string, Promise<unknown>>();
+const GET_RETRY_BACKOFF_MS = 300;
+
 export interface OsuBeatmapAttributes {
   star_rating: number;
   max_combo?: number;
@@ -43,6 +50,7 @@ async function fetchWithTimeout(url: string, opts: RequestInit, timeoutMs: numbe
     } catch (error) {
       lastError = error;
       if (attempt >= maxAttempts || !isRetryableFetchError(error)) break;
+      await new Promise((resolve) => setTimeout(resolve, GET_RETRY_BACKOFF_MS * attempt));
     } finally {
       clearTimeout(timer);
     }
@@ -56,7 +64,7 @@ async function fetchWithTimeout(url: string, opts: RequestInit, timeoutMs: numbe
   throw new Error(`osu! API 网络请求失败${maxAttempts > 1 ? '（已自动重试 1 次）' : ''}：${message}`);
 }
 
-async function osuFetch<T>(path: string, options: RequestInit = {}): Promise<T> {
+async function performOsuFetch<T>(path: string, options: RequestInit = {}): Promise<T> {
   const url = `${API_BASE}${path}`;
   const token = await getToken();
   const headers = { ...(options.headers || {}), Authorization: `Bearer ${token}` } as Record<string, string>;
@@ -77,6 +85,23 @@ async function osuFetch<T>(path: string, options: RequestInit = {}): Promise<T> 
   return response.json() as Promise<T>;
 }
 
+async function osuFetch<T>(path: string, options: RequestInit = {}): Promise<T> {
+  const method = String(options.method || 'GET').toUpperCase();
+  if (method !== 'GET') return performOsuFetch<T>(path, options);
+
+  const key = `GET ${path}`;
+  const existing = inFlightGets.get(key);
+  if (existing) return existing as Promise<T>;
+
+  const request = performOsuFetch<T>(path, options);
+  inFlightGets.set(key, request);
+  try {
+    return await request;
+  } finally {
+    if (inFlightGets.get(key) === request) inFlightGets.delete(key);
+  }
+}
+
 export async function getUser(
   username: string,
   mode: OsuMode = 'osu',
@@ -87,6 +112,8 @@ export async function getUser(
   if (cached && !options.force) return cached;
   const user = await osuFetch<OsuUser>(`/users/@${encodeURIComponent(username)}/${mode}`);
   cacheSet(cacheKey, user, TTL.user);
+  cacheSet(`user:${user.id}:${mode}`, user, TTL.user);
+  if (user.username) cacheSet(`user:${user.username}:${mode}`, user, TTL.user);
   return user;
 }
 
@@ -100,6 +127,7 @@ export async function getUserById(
   if (cached && !options.force) return cached;
   const user = await osuFetch<OsuUser>(`/users/${userId}/${mode}`);
   cacheSet(cacheKey, user, TTL.user);
+  if (user.username) cacheSet(`user:${user.username}:${mode}`, user, TTL.user);
   return user;
 }
 

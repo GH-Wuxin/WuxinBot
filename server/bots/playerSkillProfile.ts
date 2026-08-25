@@ -21,7 +21,7 @@ export type PlayerSkillAxis = typeof PLAYER_SKILL_AXES[number];
 export const PLAYER_SKILL_AXIS_LABELS: Readonly<Record<PlayerSkillAxis, string>> = {
   aim_control: 'Aim Control',
   jump_aim: 'Jump Aim',
-  spatial_precision: 'Spatial Precision',
+  spatial_precision: 'Micro Precision',
   flow_aim: 'Flow Aim',
   raw_speed: 'Raw Speed',
   finger_control: 'Finger Control',

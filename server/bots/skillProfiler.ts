@@ -13,7 +13,7 @@ const AXIS_LABELS: Readonly<Record<string, string>> = {
   endurance: 'Endurance',
   raw_speed: 'Raw Speed',
   jump_aim: 'Jump Aim',
-  spatial_precision: 'Spatial Precision',
+  spatial_precision: 'Micro Precision',
   flow_aim: 'Flow Aim',
   finger_control: 'Finger Control',
   reading: 'Reading',
@@ -157,7 +157,7 @@ export function formatSkillProfilerAnalysis(analysis: any): string {
   const durationMs = finiteNumber(analysis.analysis_context?.duration_ms);
   const localStars = finiteNumber(beatmap.local_nm_stars);
   const lines = [
-    'Skill Profiler 本地确定性谱面需求分析（V0.92.2；各维不是 osu! 官方总星数，也不是玩家能力评价）',
+    'Skill Profiler 本地确定性谱面需求分析（V0.95；各维不是 osu! 官方总星数，也不是玩家能力评价）',
     `谱面：${formatBeatmapTitle(beatmap)}`,
     `BID：${beatmap.beatmap_id} · Mods：${mods}${neutralMods.length ? `（${neutralMods.join('/')} 对谱面需求分值无影响）` : ''}`,
     `环境：AR ${finiteNumber(difficulty.ApproachRate ?? difficulty.AR)?.toFixed(1) ?? '未知'} · OD ${finiteNumber(difficulty.OverallDifficulty ?? difficulty.OD)?.toFixed(1) ?? '未知'} · CS ${finiteNumber(difficulty.CircleSize ?? difficulty.CS)?.toFixed(1) ?? '未知'}${bpm === null ? '' : ` · BPM ${bpm.toFixed(1)}`}${durationMs === null ? '' : ` · 时长 ${(durationMs / 1000).toFixed(0)}s`}${localStars === null ? '' : ` · 本地 NM 总星数 ${localStars.toFixed(2)}★`}`,
@@ -213,7 +213,7 @@ export function buildSkillProfilerToolSchema(): LlmTool {
     type: 'function',
     function: {
       name: SKILL_PROFILER_TOOL_NAME,
-      description: '分析一张本地已有的 osu!standard 谱面在 Aim Control、Stamina、Endurance、Raw Speed、Jump Aim、Spatial Precision、Flow Aim、Finger Control、Reading 九个维度上的需求，并判断谱面类型。用户问“这图难在哪/是什么类型/某维度多难”时调用；这是实验性谱面分析，不是玩家能力分析，也不是官方星数。',
+      description: '分析一张本地已有的 osu!standard 谱面在 Aim Control、Stamina、Endurance、Raw Speed、Jump Aim、Micro Precision（小目标容错、落点稳定与微修正）、Flow Aim、Finger Control、Reading 九个维度上的需求，并判断谱面类型。用户问“这图难在哪/是什么类型/某维度多难”时调用；这是实验性谱面分析，不是玩家能力分析，也不是官方星数。',
       parameters: {
         type: 'object',
         properties: {
@@ -247,7 +247,7 @@ export async function executeSkillProfilerAnalysis(
       content: formatSkillProfilerAnalysis(analysis),
       metadata: {
         requestedCapability: 'beatmap_skill_profile',
-        actualExecutor: 'osu_skill_profiler_v0922',
+        actualExecutor: 'osu_skill_profiler_v095',
         dataSource: 'local_osu_manifest',
         renderer: 'none',
         command: SKILL_PROFILER_TOOL_NAME,
@@ -263,7 +263,7 @@ export async function executeSkillProfilerAnalysis(
       error: message,
       metadata: {
         requestedCapability: 'beatmap_skill_profile',
-        actualExecutor: 'osu_skill_profiler_v0922',
+        actualExecutor: 'osu_skill_profiler_v095',
         dataSource: 'local_osu_manifest',
         renderer: 'none',
         command: SKILL_PROFILER_TOOL_NAME,
