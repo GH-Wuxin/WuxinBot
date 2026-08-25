@@ -64,7 +64,8 @@ export const OWNER_FALLBACK_HELP = `Wuxin 指令 · 都可以简写为 /w
 /w summarize 条数 · 总结群聊
 
 【osu!】
-/w skill profile [玩家名] · 用真实 BP20 生成玩家 Skill 雷达画像
+/w skill profile [玩家名] · 用成绩质量与名次衰减后的真实 BP50 生成玩家 Skill 雷达画像
+/w skill compare <玩家A> | <玩家B> · 生成两名玩家的 BP50 Skill 对比图
 /w skill <BP名次或BID> [+Mods] · 指定玩家：<玩家名> <BP名次>；纯数字名用 p:[玩家名]
 /w cd <BID> [+Mods] <反馈> · 按谱面和 Mod 提交分析异议；不写 Mod 表示 NM
 

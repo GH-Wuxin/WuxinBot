@@ -1,8 +1,8 @@
 import { getUserBestScores, getUserById } from '../osu/api.js';
 import { normalizedScoreMods } from '../osu/scoreMetrics.js';
 import { requestSkillProfilerAnalysisWithFetch } from './skillProfiler.js';
-import { getRenderServer, renderPanel } from './renderServer.js';
 import { saveAndGetCqCode } from './render.js';
+import { renderPlayerSkillComparisonCard, renderPlayerSkillProfileCard } from './playerSkillComparisonCard.js';
 
 export const PLAYER_SKILL_AXES = [
   'aim_control',
@@ -38,21 +38,144 @@ interface WeightedValue {
   weight: number;
 }
 
-interface AnalyzedBp {
+export interface ScoreAchievementQuality {
+  accuracy: number;
+  comboRatio: number;
+  missRate: number;
+  accuracyQuality: number;
+  comboQuality: number;
+  missQuality: number;
+  overall: number;
+}
+
+export interface AnalyzedBp {
   rank: number;
   beatmapId: number;
   mods: string[];
   pp: number;
   accuracy: number;
   weight: number;
+  scoreQuality?: ScoreAchievementQuality;
   axes: Record<PlayerSkillAxis, number>;
+  demandAxes?: Record<PlayerSkillAxis, number>;
   primaryType: string;
 }
+
+const PLAYER_PROFILE_LIMIT = 50;
+const BP_RANK_DECAY = 0.95;
+const PROFILE_ANALYSIS_CONCURRENCY = 3;
+const PLAYER_PROFILE_CACHE_TTL_MS = 30 * 60_000;
+const playerProfileCache = new Map<string, { at: number; payload: Record<string, unknown> }>();
 
 function finite(value: unknown): number | null {
   if (value === null || value === undefined || value === '') return null;
   const number = Number(value);
   return Number.isFinite(number) ? number : null;
+}
+
+function clamp01(value: number): number {
+  return Math.max(0, Math.min(1, value));
+}
+
+function smoothstep(value: number): number {
+  const bounded = clamp01(value);
+  return bounded * bounded * (3 - 2 * bounded);
+}
+
+function scoreHitObjectCount(score: any): number {
+  const statistics = score?.statistics || {};
+  const counts = [
+    statistics.count_300 ?? statistics.great,
+    statistics.count_100 ?? statistics.ok,
+    statistics.count_50 ?? statistics.meh,
+    statistics.count_miss ?? statistics.miss,
+  ].map((value) => Math.max(0, Number(value || 0)));
+  return counts.reduce((sum, value) => sum + value, 0);
+}
+
+function estimatedBeatmapMaxCombo(score: any, objectCount: number): number {
+  const reported = Math.max(0, Number(score?.beatmap?.max_combo || 0));
+  if (reported > 0) return reported;
+  const circles = Math.max(0, Number(score?.beatmap?.count_circles || 0));
+  const sliders = Math.max(0, Number(score?.beatmap?.count_sliders || 0));
+  const spinners = Math.max(0, Number(score?.beatmap?.count_spinners || 0));
+  // The v2 best-score response does not expose beatmap.max_combo. A standard
+  // slider contributes its head, tail and usually at least part of one repeat /
+  // tick chain, so 2.5 is a deliberately conservative estimator. This keeps a
+  // low-combo hard-map pass from looking like an FC merely because hit-object
+  // count is much smaller than real combo.
+  const estimated = circles + sliders * 2.5 + spinners;
+  return estimated > 0 ? Math.max(objectCount, estimated) : objectCount;
+}
+
+export function scoreAchievementQuality(score: any): ScoreAchievementQuality {
+  const rawAccuracy = Math.max(0, Number(score?.accuracy || 0));
+  const accuracy = rawAccuracy > 1 ? rawAccuracy / 100 : rawAccuracy;
+  const objectCount = scoreHitObjectCount(score);
+  const maximumCombo = estimatedBeatmapMaxCombo(score, objectCount);
+  const comboDenominator = maximumCombo > 0 ? maximumCombo : objectCount;
+  const comboRatio = comboDenominator > 0
+    ? clamp01(Number(score?.max_combo || 0) / comboDenominator)
+    : 0;
+  const missCount = Math.max(0, Number(score?.statistics?.count_miss ?? score?.statistics?.miss ?? 0));
+  const missRate = objectCount > 0 ? clamp01(missCount / objectCount) : (missCount > 0 ? 1 : 0);
+  const accuracyQuality = smoothstep((accuracy - 0.75) / 0.245);
+  const comboQuality = Math.sqrt(comboRatio);
+  const missQuality = Math.exp(-missRate * 36);
+  const overall = clamp01(accuracyQuality * 0.40 + comboQuality * 0.40 + missQuality * 0.20);
+  return {
+    accuracy: rounded(accuracy * 100, 2),
+    comboRatio: rounded(comboRatio, 3),
+    missRate: rounded(missRate, 4),
+    accuracyQuality: rounded(accuracyQuality, 3),
+    comboQuality: rounded(comboQuality, 3),
+    missQuality: rounded(missQuality, 3),
+    overall: rounded(overall, 3),
+  };
+}
+
+const AXIS_QUALITY_WEIGHTS: Readonly<Record<PlayerSkillAxis, readonly [number, number, number]>> = {
+  aim_control: [0.25, 0.55, 0.20],
+  jump_aim: [0.15, 0.65, 0.20],
+  spatial_precision: [0.25, 0.55, 0.20],
+  flow_aim: [0.25, 0.50, 0.25],
+  raw_speed: [0.65, 0.15, 0.20],
+  finger_control: [0.65, 0.15, 0.20],
+  stamina: [0.55, 0.20, 0.25],
+  endurance: [0.35, 0.35, 0.30],
+  reading: [0.30, 0.45, 0.25],
+};
+
+export function demonstratedAxisValue(axis: PlayerSkillAxis, demand: number, quality: ScoreAchievementQuality): number {
+  const [accuracyWeight, comboWeight, missWeight] = AXIS_QUALITY_WEIGHTS[axis];
+  const evidence = clamp01(
+    quality.accuracyQuality * accuracyWeight
+    + quality.comboQuality * comboWeight
+    + quality.missQuality * missWeight
+  );
+  // A pass on a hard map still proves something, so the score never erases the
+  // map demand. It cannot, however, claim the full demand without a convincing
+  // ACC/combo/miss result. Repeated strong maps can still establish a specialty.
+  const achievementMultiplier = 0.50 + 0.50 * Math.pow(evidence, 0.85);
+  return Math.max(0, Number(demand || 0)) * achievementMultiplier;
+}
+
+export function bpRankWeight(rank: number): number {
+  return BP_RANK_DECAY ** Math.max(0, Math.floor(Number(rank) || 1) - 1);
+}
+
+async function mapLimit<T, R>(items: readonly T[], limit: number, fn: (item: T, index: number) => Promise<R>): Promise<R[]> {
+  const results = new Array<R>(items.length);
+  let next = 0;
+  const workers = Array.from({ length: Math.max(1, Math.min(limit, items.length)) }, async () => {
+    while (true) {
+      const index = next++;
+      if (index >= items.length) return;
+      results[index] = await fn(items[index], index);
+    }
+  });
+  await Promise.all(workers);
+  return results;
 }
 
 export function weightedQuantile(values: WeightedValue[], quantile: number): number | null {
@@ -99,7 +222,7 @@ export function aggregatePlayerSkillProfile(analyzed: AnalyzedBp[]): {
   if (!analyzed.length) throw new Error('PLAYER_SKILL_PROFILE_NO_VALID_BP');
   const axes = PLAYER_SKILL_AXES.map((axis) => {
     const samples = analyzed.map((item) => ({ value: item.axes[axis], weight: item.weight }));
-    // BP20 is evidence, not a complete ability test. The weighted 80th percentile
+    // BP50 is evidence, not a complete ability test. The weighted 80th percentile
     // keeps a player's demonstrated strengths visible without letting one outlier
     // dictate the whole card. The weighted median is the breadth/normal polygon.
     const ceiling = weightedQuantile(samples, 0.80) ?? 0;
@@ -120,14 +243,17 @@ export function aggregatePlayerSkillProfile(analyzed: AnalyzedBp[]): {
   const typeWeights = new Map<string, number>();
   for (const item of analyzed) {
     const type = titleCase(item.primaryType);
-    typeWeights.set(type, (typeWeights.get(type) || 0) + item.weight);
+    typeWeights.set(type, (typeWeights.get(type) || 0) + item.weight * Number(item.scoreQuality?.overall ?? 1));
   }
   const profileType = [...typeWeights.entries()].sort((left, right) => right[1] - left[1])[0]?.[0] || 'Balanced';
   return { axes, primaryAxes, profileType };
 }
 
-export async function buildPlayerSkillProfilePayload(osuId: number, limit = 20): Promise<Record<string, unknown>> {
-  const safeLimit = Math.max(1, Math.min(20, Math.floor(limit)));
+export async function buildPlayerSkillProfilePayload(osuId: number, limit = PLAYER_PROFILE_LIMIT): Promise<Record<string, unknown>> {
+  const safeLimit = Math.max(1, Math.min(PLAYER_PROFILE_LIMIT, Math.floor(limit)));
+  const cacheKey = `${osuId}:${safeLimit}`;
+  const cached = playerProfileCache.get(cacheKey);
+  if (cached && Date.now() - cached.at < PLAYER_PROFILE_CACHE_TTL_MS) return cached.payload;
   const [user, scores] = await Promise.all([
     getUserById(osuId, 'osu'),
     getUserBestScores(osuId, 'osu', safeLimit),
@@ -136,41 +262,52 @@ export async function buildPlayerSkillProfilePayload(osuId: number, limit = 20):
   const failures: Array<{ rank: number; beatmapId: number; reason: string }> = [];
   const modCounts = new Map<string, number>();
 
-  for (let index = 0; index < scores.slice(0, safeLimit).length; index += 1) {
-    const score: any = scores[index];
+  const scoreResults = await mapLimit(scores.slice(0, safeLimit), PROFILE_ANALYSIS_CONCURRENCY, async (score: any, index) => {
     const rank = index + 1;
     const beatmapId = Number(score?.beatmap?.id || score?.beatmap_id || 0);
     try {
       if (!Number.isSafeInteger(beatmapId) || beatmapId <= 0) throw new Error('BEATMAP_ID_MISSING');
       const mods = scoreMods(score);
       const modLabel = mods.length ? mods.join('') : 'NM';
-      modCounts.set(modLabel, (modCounts.get(modLabel) || 0) + 1);
       const analysis = await requestSkillProfilerAnalysisWithFetch(beatmapId, mods);
       if (analysis?.status !== 'OK' || !analysis?.axes) throw new Error(`ANALYSIS_${analysis?.status || 'INVALID'}`);
-      const axisValues = {} as Record<PlayerSkillAxis, number>;
+      const quality = scoreAchievementQuality(score);
+      const demandAxes = {} as Record<PlayerSkillAxis, number>;
+      const demonstratedAxes = {} as Record<PlayerSkillAxis, number>;
       for (const axis of PLAYER_SKILL_AXES) {
         const value = finite(analysis.axes?.[axis]?.stars);
         if (value === null) throw new Error(`AXIS_${axis.toUpperCase()}_MISSING`);
-        axisValues[axis] = value;
+        demandAxes[axis] = value;
+        demonstratedAxes[axis] = demonstratedAxisValue(axis, value, quality);
       }
-      analyzed.push({
+      return { ok: true as const, modLabel, analyzed: {
         rank,
         beatmapId,
         mods,
         pp: finite(score?.pp) || 0,
-        accuracy: (finite(score?.accuracy) || 0) * 100,
-        weight: 0.95 ** index,
-        axes: axisValues,
+        accuracy: quality.accuracy,
+        weight: bpRankWeight(rank),
+        scoreQuality: quality,
+        axes: demonstratedAxes,
+        demandAxes,
         primaryType: String(analysis?.archetype?.primary_type || 'BALANCED'),
-      });
+      } satisfies AnalyzedBp };
     } catch (error: any) {
-      failures.push({ rank, beatmapId, reason: String(error?.message || error).slice(0, 160) });
+      return { ok: false as const, failure: { rank, beatmapId, reason: String(error?.message || error).slice(0, 160) } };
+    }
+  });
+  for (const result of scoreResults) {
+    if (result.ok) {
+      analyzed.push(result.analyzed);
+      modCounts.set(result.modLabel, (modCounts.get(result.modLabel) || 0) + 1);
+    } else {
+      failures.push(result.failure);
     }
   }
 
   const aggregate = aggregatePlayerSkillProfile(analyzed);
   const stats: any = user.statistics || {};
-  return {
+  const payload = {
     player: {
       osuId: user.id,
       username: user.username,
@@ -187,27 +324,51 @@ export async function buildPlayerSkillProfilePayload(osuId: number, limit = 20):
       valid: analyzed.length,
       failed: failures.length,
       failures,
+      averageScoreQuality: rounded(
+        analyzed.reduce((sum, item) => sum + Number(item.scoreQuality?.overall || 0), 0) / Math.max(1, analyzed.length),
+        3,
+      ),
+      bpRankDecay: BP_RANK_DECAY,
       modCounts: [...modCounts.entries()]
         .sort((left, right) => right[1] - left[1])
         .map(([mods, count]) => ({ mods, count })),
     },
     profile: {
-      methodology: 'BP20 weighted P80 / weighted median',
+      methodology: 'BP50 score-adjusted demand · 0.95^(rank-1) · weighted P80/P50',
       primaryAxes: aggregate.primaryAxes,
       profileType: aggregate.profileType,
       axes: aggregate.axes,
     },
   };
+  playerProfileCache.set(cacheKey, { at: Date.now(), payload });
+  return payload;
 }
 
-export async function renderPlayerSkillProfile(osuId: number, limit = 20): Promise<{
+export async function renderPlayerSkillProfile(osuId: number, limit = PLAYER_PROFILE_LIMIT): Promise<{
   buffer: Buffer;
   cqCode: string;
   payload: Record<string, unknown>;
 } | null> {
-  if (!getRenderServer().hasClients()) return null;
   const payload = await buildPlayerSkillProfilePayload(osuId, limit);
-  const buffer = await renderPanel('panel_SkillPlayer', payload);
+  const buffer = await renderPlayerSkillProfileCard(payload);
+  return {
+    buffer,
+    cqCode: saveAndGetCqCode(buffer, 'skill'),
+    payload,
+  };
+}
+
+export async function renderPlayerSkillComparison(leftOsuId: number, rightOsuId: number, limit = PLAYER_PROFILE_LIMIT): Promise<{
+  buffer: Buffer;
+  cqCode: string;
+  payload: Record<string, unknown>;
+} | null> {
+  const [left, right] = await Promise.all([
+    buildPlayerSkillProfilePayload(leftOsuId, limit),
+    buildPlayerSkillProfilePayload(rightOsuId, limit),
+  ]);
+  const payload = { left, right, limit };
+  const buffer = await renderPlayerSkillComparisonCard(payload);
   return {
     buffer,
     cqCode: saveAndGetCqCode(buffer, 'skill'),

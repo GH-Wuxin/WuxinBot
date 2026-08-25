@@ -1,5 +1,12 @@
 import assert from 'node:assert/strict';
-import { aggregatePlayerSkillProfile, PLAYER_SKILL_AXES, weightedQuantile } from '../server/bots/playerSkillProfile.ts';
+import {
+  aggregatePlayerSkillProfile,
+  bpRankWeight,
+  demonstratedAxisValue,
+  PLAYER_SKILL_AXES,
+  scoreAchievementQuality,
+  weightedQuantile,
+} from '../server/bots/playerSkillProfile.ts';
 
 assert.equal(weightedQuantile([{ value: 2, weight: 1 }, { value: 8, weight: 3 }], 0.5), 8);
 assert.equal(weightedQuantile([], 0.8), null);
@@ -20,4 +27,41 @@ assert.equal(result.axes[0].ceiling, 10);
 assert.equal(result.axes[0].median, 9);
 assert.equal(result.primaryAxes[0], 'Aim Control');
 assert.equal(result.profileType, 'Technical');
+
+const score = (accuracy, combo, miss, objects = 500) => ({
+  accuracy,
+  max_combo: combo,
+  statistics: { count_300: Math.max(0, objects - miss), count_100: 0, count_50: 0, count_miss: miss },
+  beatmap: {},
+});
+const weakQuality = scoreAchievementQuality(score(0.78, 50, 30));
+const strongQuality = scoreAchievementQuality(score(0.99, 490, 1));
+const weakJump = demonstratedAxisValue('jump_aim', 12, weakQuality);
+const strongJump = demonstratedAxisValue('jump_aim', 12, strongQuality);
+assert.ok(weakJump < 8.5, `low ACC/combo 12★ pass must not claim mrekk-level Jump, got ${weakJump}`);
+assert.ok(strongJump > 11, `high-quality 12★ score should preserve demonstrated Jump, got ${strongJump}`);
+const sliderMapQuality = scoreAchievementQuality({
+  accuracy: 0.9,
+  max_combo: 300,
+  statistics: { count_300: 300, count_100: 20, count_50: 0, count_miss: 10 },
+  beatmap: { count_circles: 100, count_sliders: 200, count_spinners: 0 },
+});
+assert.ok(sliderMapQuality.comboRatio < 0.55, `slider-heavy maps need estimated max combo, got ${sliderMapQuality.comboRatio}`);
+assert.equal(bpRankWeight(1), 1);
+assert.ok(bpRankWeight(50) < 0.09 && bpRankWeight(50) > 0.08, `BP50 decay should be about 8.1%, got ${bpRankWeight(50)}`);
+
+const baseAxes = (jump) => Object.fromEntries(PLAYER_SKILL_AXES.map((axis) => [axis, axis === 'jump_aim' ? jump : 5]));
+const isolatedOutlier = Array.from({ length: 50 }, (_, index) => ({
+  rank: index + 1, beatmapId: 1000 + index, mods: [], pp: 500 - index,
+  accuracy: 97, weight: bpRankWeight(index + 1),
+  axes: baseAxes(index === 0 ? weakJump : 6), primaryType: 'JUMP_AIM_DOMINANT',
+}));
+const repeatedSpecialty = isolatedOutlier.map((row, index) => ({
+  ...row,
+  axes: baseAxes(index < 15 ? 10.5 : 6),
+}));
+assert.ok(aggregatePlayerSkillProfile(isolatedOutlier).axes.find((axis) => axis.key === 'jump_aim').ceiling < 7,
+  'one weak outlier must not inflate the BP50 Jump ceiling');
+assert.ok(aggregatePlayerSkillProfile(repeatedSpecialty).axes.find((axis) => axis.key === 'jump_aim').ceiling > 10,
+  'repeated high Jump evidence should remain visibly exceptional');
 console.log('player-skill-profile-verify: ok');

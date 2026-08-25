@@ -93,7 +93,7 @@ const BASELINE_OWNER_HELP = [
   ['osuHelp', '/w osu help', 'osu! 命令帮助', 'osuHelp', 'all', 'public', 'listed', 'osu.help'],
   ['osuBind', '/w osu bind <osu用户名>', '绑定 osu! 账号', 'osuBind', 'all', 'public', 'listed', 'osu.bind'],
   ['osuAnalyze', '/w osu analyze (@某人)', '玩家分析（已停用）', 'osuAnalyze', 'all', 'hidden', 'hidden', 'osu.analyze'],
-  ['skill', '/w skill profile [玩家名] | <BP名次或BID> [+Mods] | <玩家名> <BP名次>', '生成玩家真实 BP20 Skill 画像，或分析单张 BP/BID；纯数字玩家名可用 p:[...]', 'skill', 'all', 'public', 'listed', 'skill'],
+    ['skill', '/w skill profile [玩家名] | compare <玩家A> | <玩家B> | <BP名次或BID> [+Mods] | <玩家名> <BP名次>', '生成成绩修正后的 BP50 玩家画像/对比图，或分析单张 BP/BID；纯数字玩家名可用 p:[...]', 'skill', 'all', 'public', 'listed', 'skill'],
   ['skillFeedback', '/w cd <BID> [+Mods] <反馈>', '按 BID 与 Mod 反馈 Skill Profiler 判断；不写 Mod 表示 NM', 'skillFeedback', 'all', 'public', 'listed', 'skillFeedback'],
 ];
 

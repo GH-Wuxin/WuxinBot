@@ -8,7 +8,7 @@ import {
   requestSkillProfilerAnalysisWithFetch,
 } from '../../bots/skillProfiler.js';
 import { renderSkillProfilerCard } from '../../bots/skillProfilerCard.js';
-import { renderPlayerSkillProfile } from '../../bots/playerSkillProfile.js';
+import { renderPlayerSkillComparison, renderPlayerSkillProfile } from '../../bots/playerSkillProfile.js';
 import {
   appendSkillProfilerFeedback,
   compactSkillProfilerSnapshot,
@@ -32,6 +32,15 @@ export type SkillCommandRequest =
   | { ok: false; message: string };
 
 export type PlayerSkillProfileRequest = { matched: true; player: string } | { matched: false };
+export type PlayerSkillComparisonRequest =
+  | { matched: true; left: string; right: string; error?: undefined }
+  | { matched: true; left: ''; right: ''; error: string }
+  | { matched: false };
+
+function unwrapExplicitPlayer(value: string): string {
+  const raw = String(value || '').trim();
+  return String(/^p:\[([^\]]+)\]$/i.exec(raw)?.[1] || raw).trim();
+}
 
 export function parsePlayerSkillProfileRequest(value: string): PlayerSkillProfileRequest {
   const match = /^profile(?:\s+([\s\S]+))?$/i.exec(String(value || '').trim());
@@ -39,6 +48,20 @@ export function parsePlayerSkillProfileRequest(value: string): PlayerSkillProfil
   const raw = String(match[1] || '').trim();
   const explicit = /^p:\[([^\]]+)\]$/i.exec(raw);
   return { matched: true, player: String(explicit?.[1] || raw).trim() };
+}
+
+export function parsePlayerSkillComparisonRequest(value: string): PlayerSkillComparisonRequest {
+  const raw = String(value || '').trim();
+  if (!/^compare(?:\s|$)/i.test(raw)) return { matched: false };
+  const body = raw.replace(/^compare\s*/i, '');
+  const pipe = /^([\s\S]+?)\s*\|\s*([\s\S]+)$/.exec(body);
+  const words = pipe ? null : /^([\s\S]+?)\s+(?:vs|对比)\s+([\s\S]+)$/i.exec(body);
+  const left = unwrapExplicitPlayer(String(pipe?.[1] || words?.[1] || ''));
+  const right = unwrapExplicitPlayer(String(pipe?.[2] || words?.[2] || ''));
+  if (!left || !right) {
+    return { matched: true, left: '', right: '', error: '用法：/w skill compare <玩家A> | <玩家B>；纯数字用户名可写 p:[970]。' };
+  }
+  return { matched: true, left, right };
 }
 
 export function parseSkillCommandTarget(value: string): SkillCommandTarget | null {
@@ -203,16 +226,36 @@ async function resolveProfileUser(ctx: OwnerHandlerContext, explicitPlayer: stri
 }
 
 export async function ownerSkillHandler(ctx: OwnerHandlerContext): Promise<OwnerCommandResult> {
+  const comparisonRequest = parsePlayerSkillComparisonRequest(ctx.commandArgs);
+  if (comparisonRequest.matched) {
+    if (comparisonRequest.error) {
+      if (ctx.sendMessage) await ctx.sendMessage(ctx.event, comparisonRequest.error);
+      return { replied: Boolean(ctx.sendMessage), reason: comparisonRequest.error };
+    }
+    const [left, right] = await Promise.all([
+      resolveProfileUser(ctx, comparisonRequest.left),
+      resolveProfileUser(ctx, comparisonRequest.right),
+    ]);
+    if (left.id === right.id) throw new Error('请选择两个不同的玩家进行 Skill 对比。');
+    if (ctx.sendMessage) {
+      await ctx.sendMessage(ctx.event, `正在用成绩质量与 BP 衰减对比 ${left.username} 和 ${right.username} 的 BP50，首次生成可能需要一两分钟……`);
+    }
+    const rendered = await renderPlayerSkillComparison(left.id, right.id, 50);
+    if (!rendered) throw new Error('玩家 Skill 对比渲染器当前未连接，请稍后再试。');
+    if (ctx.sendMessage) await ctx.sendMessage(ctx.event, rendered.cqCode);
+    return { replied: Boolean(ctx.sendMessage), reason: `已生成 ${left.username} 与 ${right.username} 的 BP50 Skill 对比` };
+  }
+
   const profileRequest = parsePlayerSkillProfileRequest(ctx.commandArgs);
   if (profileRequest.matched) {
     const user = await resolveProfileUser(ctx, profileRequest.player);
     if (ctx.sendMessage) {
-      await ctx.sendMessage(ctx.event, `正在分析 ${user.username} 的真实 BP20，首次生成可能需要几十秒……`);
+      await ctx.sendMessage(ctx.event, `正在按成绩质量与 BP 衰减分析 ${user.username} 的真实 BP50，首次生成可能需要一两分钟……`);
     }
-    const rendered = await renderPlayerSkillProfile(user.id, 20);
+    const rendered = await renderPlayerSkillProfile(user.id, 50);
     if (!rendered) throw new Error('玩家 Skill 画像渲染器当前未连接，请稍后再试。');
     if (ctx.sendMessage) await ctx.sendMessage(ctx.event, rendered.cqCode);
-    return { replied: Boolean(ctx.sendMessage), reason: `已生成 ${user.username} 的 BP20 Skill 画像` };
+    return { replied: Boolean(ctx.sendMessage), reason: `已生成 ${user.username} 的 BP50 Skill 画像` };
   }
 
   const request = parseSkillCommandRequest(ctx.commandArgs);
