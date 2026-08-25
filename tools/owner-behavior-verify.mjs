@@ -105,8 +105,13 @@ async function main() {
     const r = await run('/w osu help', false, false);
     assertEqual(r.result.reason, 'osu help', 'osu help reason');
     assert(
-      r.sent.length === 1 && r.sent[0].startsWith('osu! 命令：\n/w osu bind'),
-      'osu help body unchanged',
+      r.sent.length === 1
+        && r.sent[0].startsWith('osu! 命令：\n/w osu bind')
+        && r.sent[0].includes('/w skill profile [玩家名]')
+        && r.sent[0].includes('/w skill <BP名次或BID> [+Mods]')
+        && r.sent[0].includes('/w cd <BID> [+Mods] <反馈>')
+        && !r.sent[0].includes('/w osu recent'),
+      'osu help contains Skill family and omits removed recent command',
     );
   }
 

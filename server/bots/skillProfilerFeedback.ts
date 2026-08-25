@@ -7,9 +7,12 @@ export const MAX_SKILL_FEEDBACK_CHARS = 4_000;
 const MAX_FEEDBACK_FILE_BYTES = 32 * 1024 * 1024;
 
 export interface SkillProfilerFeedbackRecord {
-  schemaVersion: 1;
+  schemaVersion: 2;
   id: string;
   beatmapId: number;
+  mods: string[];
+  effectiveMods: string[];
+  neutralMods: string[];
   message: string;
   groupId: string;
   userId: string;

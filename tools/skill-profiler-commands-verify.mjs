@@ -25,11 +25,31 @@ const server = http.createServer((req, res) => {
       res.end(JSON.stringify({ id: 77, username: 'FixturePlayer', statistics: {}, grade_counts: {} }));
       return;
     }
+    if (req.url === '/api/v2/users/@mrekk/osu') {
+      res.end(JSON.stringify({ id: 88, username: 'mrekk', statistics: {}, grade_counts: {} }));
+      return;
+    }
+    if (req.url === '/api/v2/users/@970/osu') {
+      res.end(JSON.stringify({ id: 97088, username: '970', statistics: {}, grade_counts: {} }));
+      return;
+    }
     if (req.url === '/api/v2/users/77/scores/best?mode=osu&limit=2') {
       res.end(JSON.stringify([
         { id: 1, mods: [], beatmap: { id: 4000001 } },
         { id: 2, mods: ['HD', 'NC'], beatmap: { id: 4288226 } },
       ]));
+      return;
+    }
+    if (req.url === '/api/v2/users/88/scores/best?mode=osu&limit=20') {
+      res.end(JSON.stringify(Array.from({ length: 20 }, (_, index) => ({
+        id: 100 + index,
+        mods: index === 19 ? ['HR'] : [],
+        beatmap: { id: index === 19 ? 2872154 : 4100000 + index },
+      }))));
+      return;
+    }
+    if (req.url === '/api/v2/users/97088/scores/best?mode=osu&limit=1') {
+      res.end(JSON.stringify([{ id: 97001, mods: ['HD'], beatmap: { id: 4385157 } }]));
       return;
     }
     if (req.url === '/api/analyze' && req.method === 'POST') {
@@ -92,7 +112,7 @@ process.env.OSU_BEATMAP_FILE_BASE_URL = `http://127.0.0.1:${port}/osu/`;
 try {
   const { ensureStore, readDb, writeDb } = await import('../server/store.ts');
   const { processIncoming } = await import('../server/bot.ts');
-  const { parseSkillCommandRequest, parseSkillCommandTarget } = await import('../server/bot/owner/skill.ts');
+  const { parsePlayerSkillProfileRequest, parseSkillCommandRequest, parseSkillCommandTarget } = await import('../server/bot/owner/skill.ts');
   const { skillProfilerFeedbackPath } = await import('../server/bots/skillProfilerFeedback.ts');
   ensureStore();
   const db = readDb();
@@ -118,10 +138,29 @@ try {
   });
   assert.match(parseSkillCommandRequest('4288226 +FL').message, /暂不支持 FL/);
   assert.match(parseSkillCommandRequest('2 +HD').message, /BP 名次会自动读取/);
+  assert.deepEqual(parseSkillCommandRequest('mrekk 20'), {
+    ok: true,
+    target: { kind: 'named_bp', username: 'mrekk', rank: 20 },
+    mods: [],
+  });
+  assert.deepEqual(parseSkillCommandRequest('p:[970]'), {
+    ok: true,
+    target: { kind: 'named_bp', username: '970', rank: 1 },
+    mods: [],
+  });
+  assert.deepEqual(parseSkillCommandRequest('p:[970] 20'), {
+    ok: true,
+    target: { kind: 'named_bp', username: '970', rank: 20 },
+    mods: [],
+  });
+  assert.deepEqual(parsePlayerSkillProfileRequest('profile'), { matched: true, player: '' });
+  assert.deepEqual(parsePlayerSkillProfileRequest('profile mrekk'), { matched: true, player: 'mrekk' });
+  assert.deepEqual(parsePlayerSkillProfileRequest('profile p:[970]'), { matched: true, player: '970' });
+  assert.deepEqual(parsePlayerSkillProfileRequest('mrekk 20'), { matched: false });
 
   const helpEntries = (await import('../server/bot/owner/help.ts')).ownerHelpEntries();
-  assert.ok(helpEntries.some((entry) => entry.canonicalSyntax === '/w skill <BP名次或BID> [+Mods]'));
-  assert.ok(helpEntries.some((entry) => entry.canonicalSyntax === '/w cd <BID> <反馈>'));
+  assert.ok(helpEntries.some((entry) => entry.canonicalSyntax.includes('/w skill profile [玩家名]')));
+  assert.ok(helpEntries.some((entry) => entry.canonicalSyntax === '/w cd <BID> [+Mods] <反馈>'));
 
   const sent = [];
   const sendMessage = async (_event, text) => { sent.push(String(text)); };
@@ -134,7 +173,18 @@ try {
   assert.equal(bp.replied, true);
   assert.deepEqual(profilerPayloads.at(-1), { beatmap_id: 4288226, mods: ['HD', 'DT'] });
   assert.match(sent.at(-1), /FixturePlayer 的 BP#2/);
-  assert.match(sent.at(-1), /\/w cd 4288226/);
+  assert.match(sent.at(-1), /\/w cd 4288226 \+HDDT/);
+
+  const namedBp = await processIncoming(event('/w skill mrekk 20', 'skill-named-bp'), sendMessage);
+  assert.equal(namedBp.replied, true);
+  assert.deepEqual(profilerPayloads.at(-1), { beatmap_id: 2872154, mods: ['HR'] });
+  assert.match(sent.at(-1), /mrekk 的 BP#20/);
+  assert.match(sent.at(-1), /\/w cd 2872154 \+HR/);
+
+  const numericPlayer = await processIncoming(event('/w skill p:[970]', 'skill-numeric-player'), sendMessage);
+  assert.equal(numericPlayer.replied, true);
+  assert.deepEqual(profilerPayloads.at(-1), { beatmap_id: 4385157, mods: ['HD'] });
+  assert.match(sent.at(-1), /970 的 BP#1/);
 
   const direct = await processIncoming(event('/w skill 5648807 +HDDTPF', 'skill-bid'), sendMessage);
   assert.equal(direct.replied, true);
@@ -150,12 +200,16 @@ try {
   assert.equal(profilerPayloads.length, callsBeforeFl);
   assert.match(sent.at(-1), /暂不支持 FL/);
 
-  const feedback = await processIncoming(event('/w cd 5648807 Flow Aim 至少应该有 6.8★', 'skill-feedback'), sendMessage);
+  const feedback = await processIncoming(event('/w cd 5648807 +HDDTPF Flow Aim 至少应该有 6.8★', 'skill-feedback'), sendMessage);
   assert.equal(feedback.replied, true);
   assert.match(sent.at(-1), /已记录/);
   const records = fs.readFileSync(skillProfilerFeedbackPath(), 'utf8').trim().split('\n').map(JSON.parse);
   assert.equal(records.length, 1);
   assert.equal(records[0].beatmapId, 5648807);
+  assert.equal(records[0].schemaVersion, 2);
+  assert.deepEqual(records[0].mods, ['HD', 'DT', 'PF']);
+  assert.deepEqual(records[0].effectiveMods, ['HD', 'DT']);
+  assert.deepEqual(records[0].neutralMods, ['PF']);
   assert.equal(records[0].message, 'Flow Aim 至少应该有 6.8★');
   assert.equal(records[0].analysis.algorithmId, 'FIXTURE_ALGO');
   assert.deepEqual(records[0].analysis.mods, ['HD', 'DT', 'PF']);

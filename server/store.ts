@@ -249,7 +249,6 @@ export const defaultCommandPermissions = {
   exp: 'owner',
   osuBind: 'guest',
   osuAnalyze: 'guest',
-  osuRecent: 'guest',
   osuClearBind: 'guest',
   osuClearHistory: 'guest',
   osuClearCache: 'owner',

@@ -24,6 +24,45 @@ export interface RecentCollectorResult {
   errors: string[];
 }
 
+export interface OneLineCollectorResult {
+  user: OsuUser;
+  bestScores: OsuScore[];
+  recentScores: OsuScore[];
+  errors: string[];
+}
+
+/**
+ * Lightweight data path for the one-line roast. It deliberately skips PP+
+ * initialization, reference players and the legacy osu!oracle classifier.
+ */
+export async function collectPlayerOneLineData(
+  identifier: string | number,
+  mode: OsuMode = 'osu',
+): Promise<OneLineCollectorResult> {
+  const errors: string[] = [];
+  const isNumeric = typeof identifier === 'number' || /^\d+$/.test(String(identifier));
+  const user = isNumeric
+    ? await getUserById(Number(identifier), mode)
+    : await getUser(String(identifier), mode);
+  const [bestResult, recentResult] = await Promise.allSettled([
+    getUserBestScores(user.id, mode, 100),
+    getUserRecentScores(user.id, mode, 20),
+  ]);
+  let bestScores = bestResult.status === 'fulfilled' ? bestResult.value : [];
+  let recentScores = recentResult.status === 'fulfilled' ? recentResult.value : [];
+  if (bestResult.status === 'rejected') errors.push(`最佳成绩获取失败: ${bestResult.reason?.message || bestResult.reason}`);
+  if (recentResult.status === 'rejected') errors.push(`最近成绩获取失败: ${recentResult.reason?.message || recentResult.reason}`);
+  if (!bestScores.length) throw new Error(`${user.username} 没有可用的 BP 数据。`);
+  const bestCount = bestScores.length;
+  const enriched = await enrichScoreStarRatings([...bestScores, ...recentScores], mode);
+  bestScores = enriched.scores.slice(0, bestCount);
+  recentScores = enriched.scores.slice(bestCount);
+  if (enriched.failed > 0) {
+    errors.push(`Mod 后星数获取失败: ${enriched.failed} 组谱面/Mod 组合`);
+  }
+  return { user, bestScores, recentScores, errors };
+}
+
 export async function collectPlayerData(identifier: string | number, mode: OsuMode = 'osu'): Promise<CollectorResult> {
   const errors: string[] = [];
   let user: OsuUser | null = null;

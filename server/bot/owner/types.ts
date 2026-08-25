@@ -73,7 +73,6 @@ export type OwnerHandlerKey =
   | 'osu.help'
   | 'osu.bind'
   | 'osu.analyze'
-  | 'osu.recent'
   | 'osu.clear.bind'
   | 'osu.clear.history'
   | 'osu.clear.cooldown'

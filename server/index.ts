@@ -263,7 +263,6 @@ app.post('/api/group-bot-config', async (req, res) => {
 // A persisted `running` marker is useful for the GUI, but it cannot prove that
 // work still exists after a server crash/restart. Only this process-local set
 // may suppress a duplicate start; stale disk markers are overwritten.
-const consoleAnalysesRunning = new Set<string>();
 
 function tcpProbe(port, host = '127.0.0.1', timeoutMs = 800) {
   return new Promise((resolve) => {
@@ -670,66 +669,11 @@ app.get('/api/osu/player/:id/analyze', async (req, res) => {
 app.post('/api/osu/player/:id/analyze', async (req, res) => {
   const osuId = osuIdParam(req, res);
   if (osuId === null) return;
-  const { getStoredAnalysis, setStoredAnalysis } = await import('./osu/profileStore.js');
-  const analysisKey = String(osuId);
-  const existing = getStoredAnalysis(osuId);
-  if (consoleAnalysesRunning.has(analysisKey)) {
-    return res.json(ok({ analysis: existing, started: false }));
-  }
-
-  let profile;
-  try {
-    profile = await loadPlayerSnapshot(osuId);
-  } catch (error) {
-    return res.status(404).json({ ok: false, error: `玩家获取失败：${String(error?.message || error).slice(0, 200)}` });
-  }
-  const username = profile.player.username;
-  const entry = { status: 'running' as const, at: new Date().toISOString() };
-  consoleAnalysesRunning.add(analysisKey);
-  setStoredAnalysis(osuId, entry);
-
-  // Console analyses bypass the QQ-side 4h cooldown; a per-player console id
-  // only prevents double-starting the same player's analysis.
-  void (async () => {
-    try {
-      const { handleOsuCommand } = await import('./osu/commands.js');
-      const captured = [];
-      const event = {
-        userId: `console-${osuId}`,
-        groupId: 'console',
-        atTargets: [],
-        text: `/w osu analyze ${username}`,
-      };
-      const result: any = await handleOsuCommand(
-        event,
-        async (_e, text) => { captured.push(String(text || '')); },
-        { isOwner: true, isAdmin: true },
-        'analyze',
-        `analyze ${username}`,
-        { bypassCooldown: true },
-      );
-      // Long reports go through a merge-forward card whose body bypasses the
-      // text stub; handleOsuCommand still resolves with the full report text.
-      const reportText = String(result?.text || '') || captured.join('\n\n');
-      setStoredAnalysis(osuId, {
-        status: 'done',
-        at: entry.at,
-        finishedAt: new Date().toISOString(),
-        text: reportText,
-      });
-    } catch (error) {
-      setStoredAnalysis(osuId, {
-        status: 'error',
-        at: entry.at,
-        finishedAt: new Date().toISOString(),
-        error: String(error?.message || error),
-      });
-    } finally {
-      consoleAnalysesRunning.delete(analysisKey);
-    }
-  })();
-
-  res.json(ok({ analysis: { status: 'running', at: entry.at }, started: true }));
+  return res.status(410).json({
+    ok: false,
+    error: '玩家 Analyze 已停用；后续由玩家 Skill 画像替代。',
+    code: 'OSU_ANALYZE_DISABLED',
+  });
 });
 
 app.get('/api/diagnostics', (_req, res) => {
