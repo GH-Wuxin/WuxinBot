@@ -29,8 +29,8 @@ const server = http.createServer((req, res) => {
       res.end(JSON.stringify({ id: 88, username: 'mrekk', statistics: {}, grade_counts: {} }));
       return;
     }
-    if (req.url === '/api/v2/users/@970/osu') {
-      res.end(JSON.stringify({ id: 97088, username: '970', statistics: {}, grade_counts: {} }));
+    if (req.url === '/api/v2/users/970/osu') {
+      res.end(JSON.stringify({ id: 970, username: 'Player With Spaces', statistics: {}, grade_counts: {} }));
       return;
     }
     if (/^\/api\/v2\/users\/77\/scores\/best\?mode=osu&limit=(?:2|100)$/.test(String(req.url))) {
@@ -48,7 +48,7 @@ const server = http.createServer((req, res) => {
       }))));
       return;
     }
-    if (/^\/api\/v2\/users\/97088\/scores\/best\?mode=osu&limit=(?:1|100)$/.test(String(req.url))) {
+    if (/^\/api\/v2\/users\/970\/scores\/best\?mode=osu&limit=(?:1|100)$/.test(String(req.url))) {
       res.end(JSON.stringify([{ id: 97001, mods: ['HD'], beatmap: { id: 4385157 } }]));
       return;
     }
@@ -157,12 +157,14 @@ try {
   assert.deepEqual(parsePlayerSkillProfileRequest('profile mrekk'), { matched: true, player: 'mrekk' });
   assert.deepEqual(parsePlayerSkillProfileRequest('profile p:[970]'), { matched: true, player: '970' });
   assert.deepEqual(parsePlayerSkillProfileRequest('mrekk 20'), { matched: false });
-  assert.deepEqual(parsePlayerSkillComparisonRequest('compare mrekk | [SHK]yourenegg'), {
+  assert.deepEqual(parsePlayerSkillComparisonRequest('compare mrekk [SHK]yourenegg'), {
     matched: true, left: 'mrekk', right: '[SHK]yourenegg',
   });
-  assert.deepEqual(parsePlayerSkillComparisonRequest('compare p:[970] vs mrekk'), {
+  assert.deepEqual(parsePlayerSkillComparisonRequest('compare p:[970] mrekk'), {
     matched: true, left: '970', right: 'mrekk',
   });
+  assert.match(parsePlayerSkillComparisonRequest('compare mrekk | yourenegg').error, /空格/);
+  assert.match(parsePlayerSkillComparisonRequest('compare Player With Spaces mrekk').error, /p:\[玩家ID\]/);
   assert.match(parsePlayerSkillComparisonRequest('compare mrekk').error, /玩家A/);
 
   const helpEntries = (await import('../server/bot/owner/help.ts')).ownerHelpEntries();
@@ -192,7 +194,7 @@ try {
   const numericPlayer = await processIncoming(event('/w skill p:[970]', 'skill-numeric-player'), sendMessage);
   assert.equal(numericPlayer.replied, true);
   assert.deepEqual(profilerPayloads.at(-1), { beatmap_id: 4385157, mods: ['HD'] });
-  assert.match(sent.at(-1), /970 的 BP#1/);
+  assert.match(sent.at(-1), /Player With Spaces 的 BP#1/);
 
   const direct = await processIncoming(event('/w skill 5648807 +HDDTPF', 'skill-bid'), sendMessage);
   assert.equal(direct.replied, true);

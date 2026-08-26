@@ -1812,7 +1812,7 @@ function renderOsuHelp(permissions: any): string {
   const feedback = OWNER_COMMANDS.find((entry) => entry.id === 'skillFeedback');
   if (skill && canListCommand(skill.visibility, skill.discoverability, skill.permission, perms)) {
     lines.push('/w skill profile [玩家名] — 用成绩质量与名次衰减后的真实 BP50 生成玩家 Skill 雷达画像');
-    lines.push('/w skill compare <玩家A> | <玩家B> — 生成两名玩家的 BP50 Skill 对比图');
+    lines.push('/w skill compare <玩家A> <玩家B> — 空格分隔；玩家名含空格时用 p:[玩家ID]');
     lines.push('/w skill <BP名次或BID> [+Mods] — 分析自己或指定玩家的单张 BP/BID');
   }
   if (feedback && canListCommand(feedback.visibility, feedback.discoverability, feedback.permission, perms)) {
