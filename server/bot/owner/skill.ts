@@ -143,11 +143,26 @@ async function resolveBoundBp(ctx: OwnerHandlerContext, rank: number): Promise<{
   mods: string[];
   sourceLabel: string;
 }> {
-  const binding = resolveOsuBindingValue(ctx.commandDb.osuBindings?.[String(ctx.event.userId)]);
+  const rawBinding = ctx.commandDb.osuBindings?.[String(ctx.event.userId)];
+  // A BP lookup only needs the score list. Avoid fetching the full
+  // `/users/:id/osu` profile first: that endpoint is the one most often
+  // throttled, and modern bindings already contain the stable ID/username.
+  if (rawBinding && typeof rawBinding === 'object') {
+    const id = Number(rawBinding.osuUserId ?? rawBinding.userId ?? rawBinding.id ?? 0);
+    if (Number.isSafeInteger(id) && id > 0) {
+      const username = String(rawBinding.osuUsername ?? rawBinding.username ?? '').trim() || `osu#${id}`;
+      const scores = await getUserBestScores(id, 'osu', MAX_BP_RANK);
+      return resolveUserBp({ id, username }, rank, scores);
+    }
+  }
+
+  const binding = resolveOsuBindingValue(rawBinding);
   if (!binding) throw new Error('请先绑定 osu! 账号：/w osu bind <用户名>');
-  const user = typeof binding === 'number'
-    ? await getUserById(binding, 'osu')
-    : await getUser(String(binding), 'osu');
+  if (typeof binding === 'number') {
+    const scores = await getUserBestScores(binding, 'osu', MAX_BP_RANK);
+    return resolveUserBp({ id: binding, username: `osu#${binding}` }, rank, scores);
+  }
+  const user = await getUser(String(binding), 'osu');
   return resolveUserBp(user, rank);
 }
 
@@ -160,12 +175,19 @@ async function resolveNamedBp(username: string, rank: number): Promise<{
   return resolveUserBp(user, rank);
 }
 
-async function resolveUserBp(user: { id: number; username: string }, rank: number): Promise<{
+async function resolveUserBp(
+  user: { id: number; username: string },
+  rank: number,
+  preloadedScores?: any[],
+): Promise<{
   beatmapId: number;
   mods: string[];
   sourceLabel: string;
 }> {
-  const scores = await getUserBestScores(user.id, 'osu', rank);
+  // Always fill the BP100 cache. Fetching `limit=rank` made every different
+  // `/w skill <rank>` command use a different cache key and repeatedly hit the
+  // osu! API for the same player.
+  const scores = preloadedScores || await getUserBestScores(user.id, 'osu', MAX_BP_RANK);
   const score = scores[rank - 1];
   const beatmapId = Number(score?.beatmap?.id || (score as any)?.beatmap_id || 0);
   if (!score || !Number.isSafeInteger(beatmapId) || beatmapId <= 0) {
@@ -218,7 +240,15 @@ function feedbackGuidance(beatmapId: number, mods: string[]): string {
 
 async function resolveProfileUser(ctx: OwnerHandlerContext, explicitPlayer: string): Promise<{ id: number; username: string }> {
   if (explicitPlayer) return getUser(explicitPlayer, 'osu');
-  const binding = resolveOsuBindingValue(ctx.commandDb.osuBindings?.[String(ctx.event.userId)]);
+  const rawBinding = ctx.commandDb.osuBindings?.[String(ctx.event.userId)];
+  // Prefer the username already stored by /w osu bind. This keeps the profile
+  // route on the same cache identity as ordinary username lookups instead of
+  // needlessly hitting the ID endpoint after every process restart.
+  if (rawBinding && typeof rawBinding === 'object') {
+    const username = String(rawBinding.osuUsername ?? rawBinding.username ?? '').trim();
+    if (username) return getUser(username, 'osu');
+  }
+  const binding = resolveOsuBindingValue(rawBinding);
   if (!binding) throw new Error('请先绑定 osu! 账号：/w osu bind <用户名>，或使用 /w skill profile <玩家名>。');
   return typeof binding === 'number'
     ? getUserById(binding, 'osu')

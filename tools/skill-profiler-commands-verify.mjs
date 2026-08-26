@@ -33,14 +33,14 @@ const server = http.createServer((req, res) => {
       res.end(JSON.stringify({ id: 97088, username: '970', statistics: {}, grade_counts: {} }));
       return;
     }
-    if (req.url === '/api/v2/users/77/scores/best?mode=osu&limit=2') {
+    if (/^\/api\/v2\/users\/77\/scores\/best\?mode=osu&limit=(?:2|100)$/.test(String(req.url))) {
       res.end(JSON.stringify([
         { id: 1, mods: [], beatmap: { id: 4000001 } },
         { id: 2, mods: ['HD', 'NC'], beatmap: { id: 4288226 } },
       ]));
       return;
     }
-    if (req.url === '/api/v2/users/88/scores/best?mode=osu&limit=20') {
+    if (/^\/api\/v2\/users\/88\/scores\/best\?mode=osu&limit=(?:20|100)$/.test(String(req.url))) {
       res.end(JSON.stringify(Array.from({ length: 20 }, (_, index) => ({
         id: 100 + index,
         mods: index === 19 ? ['HR'] : [],
@@ -48,7 +48,7 @@ const server = http.createServer((req, res) => {
       }))));
       return;
     }
-    if (req.url === '/api/v2/users/97088/scores/best?mode=osu&limit=1') {
+    if (/^\/api\/v2\/users\/97088\/scores\/best\?mode=osu&limit=(?:1|100)$/.test(String(req.url))) {
       res.end(JSON.stringify([{ id: 97001, mods: ['HD'], beatmap: { id: 4385157 } }]));
       return;
     }
