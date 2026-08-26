@@ -43,6 +43,18 @@ const payload = buildSkillProfilerCardPayload({
     primary_type: 'FLOW_AIM_READING',
     dominant_axes: ['flow_aim', 'reading'],
   },
+  experimental_type: {
+    stage: 'EXPERIMENTAL',
+    status: 'PROPOSED',
+    classifier_version: 'fixture-experimental',
+    summary: {
+      status: 'PROPOSED',
+      primary_type: 'STREAM',
+      secondary_types: ['ALT', 'GIMMICK'],
+      composition_types: ['STREAM', 'TECH', 'ALT'],
+      gimmick_subtype: 'LOW_AR_READING',
+    },
+  },
   identity: { algorithm_id: 'MUST_NOT_RENDER', map_demand_version: 'MUST_NOT_RENDER' },
 }, {
   beatmap: { bpm: 200, total_length: 180 },
@@ -63,6 +75,13 @@ assert.deepEqual(payload.groups.tapping.map((item) => item.label), [
   'Raw Speed', 'Finger Control', 'Stamina', 'Endurance',
 ]);
 assert.deepEqual(payload.groups.reading.map((item) => item.label), ['Reading']);
+assert.deepEqual(payload.analysis.mapType, {
+  experimental: true,
+  available: true,
+  primary: 'Stream',
+  secondary: ['Alt', 'Gimmick', 'Tech'],
+  gimmickSubtype: 'LOW AR READING',
+});
 assert.doesNotMatch(JSON.stringify(payload), /MUST_NOT_RENDER|algorithm_id|map_demand_version/i);
 
 const fallbackPayload = buildSkillProfilerCardPayload({
@@ -99,5 +118,8 @@ const strictModPayload = buildSkillProfilerCardPayload({
   },
 });
 assert.equal(strictModPayload.beatmap.stars, null, 'NM stars never masquerade as Mod-adjusted stars');
+assert.equal(strictModPayload.analysis.mapType.experimental, true);
+assert.equal(strictModPayload.analysis.mapType.available, false);
+assert.equal(strictModPayload.analysis.mapType.primary, '暂无明确类型');
 
 console.log('PASS: Skill Profiler card is 3-group image data with Tapping and no algorithm version');

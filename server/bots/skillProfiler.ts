@@ -177,6 +177,17 @@ export function formatSkillProfilerAnalysis(analysis: any): string {
       `（置信度 ${String(archetype.confidence || 'UNKNOWN')}）`,
     );
   }
+  const experimentalType = analysis.experimental_type || {};
+  const typeSummary = experimentalType.summary || {};
+  if (experimentalType.stage === 'EXPERIMENTAL' && typeSummary.status === 'PROPOSED') {
+    const primary = String(typeSummary.primary_type || 'UNKNOWN').replaceAll('_', ' ');
+    const secondary = Array.isArray(typeSummary.secondary_types)
+      ? typeSummary.secondary_types.map((item: unknown) => String(item).replaceAll('_', ' ')).join('、')
+      : '';
+    lines.push(`实验性谱面类型：${primary}${secondary ? `；次类型 ${secondary}` : ''}（机器初判，可能有误）`);
+  } else {
+    lines.push('实验性谱面类型：暂无明确结论（机器选择弃权）');
+  }
   const warnings = Array.isArray(analysis.warnings) ? analysis.warnings.filter(Boolean).slice(0, 5) : [];
   if (warnings.length) lines.push(`警告：${warnings.map((warning: unknown) => String(warning)).join('；')}`);
   lines.push('解释时优先描述“哪些维度相对突出/这张图难在哪里”；LOW 置信度和实验性分值必须保留不确定性，不要包装成官方定论。');
