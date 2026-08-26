@@ -22,6 +22,55 @@ const TTL = {
 const inFlightGets = new Map<string, Promise<unknown>>();
 const GET_RETRY_BACKOFF_MS = 300;
 
+// osu! throttles the OAuth client globally. Serialize request starts and keep
+// a small gap between them so concurrent bot commands cannot create bursts.
+const configuredMinInterval = Number(process.env.OSU_API_MIN_INTERVAL_MS || 120);
+const OSU_API_MIN_INTERVAL_MS = Number.isFinite(configuredMinInterval)
+  ? Math.max(0, configuredMinInterval)
+  : 120;
+const OSU_API_RATE_RETRIES = 1;
+let requestSerial: Promise<void> = Promise.resolve();
+let lastRequestStartedAt = 0;
+let rateLimitedUntil = 0;
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, Math.max(0, ms)));
+}
+
+async function waitForOsuRequestSlot(): Promise<void> {
+  let release!: () => void;
+  const previous = requestSerial;
+  requestSerial = new Promise<void>((resolve) => { release = resolve; });
+  await previous;
+  try {
+    const earliest = Math.max(
+      lastRequestStartedAt + OSU_API_MIN_INTERVAL_MS,
+      rateLimitedUntil,
+    );
+    const waitMs = earliest - Date.now();
+    if (waitMs > 0) await sleep(waitMs);
+    lastRequestStartedAt = Date.now();
+  } finally {
+    release();
+  }
+}
+
+function retryAfterMs(response: Response, retryIndex: number): number {
+  const raw = String(response.headers.get('retry-after') || '').trim();
+  const seconds = Number(raw);
+  const fromHeader = Number.isFinite(seconds) && seconds >= 0
+    ? seconds * 1000
+    : raw
+      ? Math.max(0, Date.parse(raw) - Date.now())
+      : 0;
+  const fallback = 1_000 * Math.pow(2, Math.max(0, retryIndex - 1));
+  return Math.min(30_000, Math.max(1_000, fromHeader || fallback));
+}
+
+function extendRateLimitCooldown(delayMs: number): void {
+  rateLimitedUntil = Math.max(rateLimitedUntil, Date.now() + delayMs);
+}
+
 export interface OsuBeatmapAttributes {
   star_rating: number;
   max_combo?: number;
@@ -66,23 +115,37 @@ async function fetchWithTimeout(url: string, opts: RequestInit, timeoutMs: numbe
 
 async function performOsuFetch<T>(path: string, options: RequestInit = {}): Promise<T> {
   const url = `${API_BASE}${path}`;
-  const token = await getToken();
-  const headers = { ...(options.headers || {}), Authorization: `Bearer ${token}` } as Record<string, string>;
-  const response = await fetchWithTimeout(url, { ...options, headers });
-  if (response.status === 429) recordOsuApi429();
-  if (response.status === 401) {
-    const newToken = await refreshTokenOn401();
-    const retryHeaders = { ...(options.headers || {}), Authorization: `Bearer ${newToken}` } as Record<string, string>;
-    const retryResponse = await fetchWithTimeout(url, { ...options, headers: retryHeaders });
-    if (retryResponse.status === 429) recordOsuApi429();
-    if (!retryResponse.ok) throw new Error(`osu! API ${retryResponse.status} ${path}`);
-    return retryResponse.json() as Promise<T>;
+  let token = await getToken();
+  let authRetried = false;
+  let rateRetried = 0;
+
+  while (true) {
+    const headers = { ...(options.headers || {}), Authorization: `Bearer ${token}` } as Record<string, string>;
+    await waitForOsuRequestSlot();
+    const response = await fetchWithTimeout(url, { ...options, headers });
+
+    if (response.status === 429) {
+      recordOsuApi429();
+      if (rateRetried < OSU_API_RATE_RETRIES) {
+        rateRetried += 1;
+        extendRateLimitCooldown(retryAfterMs(response, rateRetried));
+        try { await response.body?.cancel(); } catch { /* best effort */ }
+        continue;
+      }
+    }
+
+    if (response.status === 401 && !authRetried) {
+      authRetried = true;
+      token = await refreshTokenOn401();
+      try { await response.body?.cancel(); } catch { /* best effort */ }
+      continue;
+    }
+    if (!response.ok) {
+      if (response.status === 404) throw new Error(`osu! 资源不存在 ${path}`);
+      throw new Error(`osu! API ${response.status} ${path}`);
+    }
+    return response.json() as Promise<T>;
   }
-  if (!response.ok) {
-    if (response.status === 404) throw new Error(`osu! 资源不存在 ${path}`);
-    throw new Error(`osu! API ${response.status} ${path}`);
-  }
-  return response.json() as Promise<T>;
 }
 
 async function osuFetch<T>(path: string, options: RequestInit = {}): Promise<T> {
