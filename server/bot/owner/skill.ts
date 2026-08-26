@@ -39,14 +39,14 @@ export type PlayerSkillComparisonRequest =
 
 function unwrapExplicitPlayer(value: string): string {
   const raw = String(value || '').trim();
-  return String(/^p:\[([^\]]+)\]$/i.exec(raw)?.[1] || raw).trim();
+  return String(/^p:\[(\d+)\]$/i.exec(raw)?.[1] || raw).trim();
 }
 
 export function parsePlayerSkillProfileRequest(value: string): PlayerSkillProfileRequest {
   const match = /^profile(?:\s+([\s\S]+))?$/i.exec(String(value || '').trim());
   if (!match) return { matched: false };
   const raw = String(match[1] || '').trim();
-  const explicit = /^p:\[([^\]]+)\]$/i.exec(raw);
+  const explicit = /^p:\[(\d+)\]$/i.exec(raw);
   return { matched: true, player: String(explicit?.[1] || raw).trim() };
 }
 
@@ -54,12 +54,11 @@ export function parsePlayerSkillComparisonRequest(value: string): PlayerSkillCom
   const raw = String(value || '').trim();
   if (!/^compare(?:\s|$)/i.test(raw)) return { matched: false };
   const body = raw.replace(/^compare\s*/i, '');
-  const pipe = /^([\s\S]+?)\s*\|\s*([\s\S]+)$/.exec(body);
-  const words = pipe ? null : /^([\s\S]+?)\s+(?:vs|对比)\s+([\s\S]+)$/i.exec(body);
-  const left = unwrapExplicitPlayer(String(pipe?.[1] || words?.[1] || ''));
-  const right = unwrapExplicitPlayer(String(pipe?.[2] || words?.[2] || ''));
+  const players = /^((?:p:\[\d+\])|(?:\S+))\s+((?:p:\[\d+\])|(?:\S+))$/i.exec(body);
+  const left = unwrapExplicitPlayer(String(players?.[1] || ''));
+  const right = unwrapExplicitPlayer(String(players?.[2] || ''));
   if (!left || !right) {
-    return { matched: true, left: '', right: '', error: '用法：/w skill compare <玩家A> | <玩家B>；纯数字用户名可写 p:[970]。' };
+    return { matched: true, left: '', right: '', error: '用法：/w skill compare <玩家A> <玩家B>；玩家名含空格时请改用 p:[玩家ID]，例如 /w skill compare mrekk p:[970]。' };
   }
   return { matched: true, left, right };
 }
@@ -171,7 +170,10 @@ async function resolveNamedBp(username: string, rank: number): Promise<{
   mods: string[];
   sourceLabel: string;
 }> {
-  const user = await getUser(username, 'osu');
+  const numericId = /^\d+$/.test(username) ? Number(username) : 0;
+  const user = Number.isSafeInteger(numericId) && numericId > 0
+    ? await getUserById(numericId, 'osu')
+    : await getUser(username, 'osu');
   return resolveUserBp(user, rank);
 }
 
@@ -239,7 +241,12 @@ function feedbackGuidance(beatmapId: number, mods: string[]): string {
 }
 
 async function resolveProfileUser(ctx: OwnerHandlerContext, explicitPlayer: string): Promise<{ id: number; username: string }> {
-  if (explicitPlayer) return getUser(explicitPlayer, 'osu');
+  if (explicitPlayer) {
+    const numericId = /^\d+$/.test(explicitPlayer) ? Number(explicitPlayer) : 0;
+    return Number.isSafeInteger(numericId) && numericId > 0
+      ? getUserById(numericId, 'osu')
+      : getUser(explicitPlayer, 'osu');
+  }
   const rawBinding = ctx.commandDb.osuBindings?.[String(ctx.event.userId)];
   // Prefer the username already stored by /w osu bind. This keeps the profile
   // route on the same cache identity as ordinary username lookups instead of
