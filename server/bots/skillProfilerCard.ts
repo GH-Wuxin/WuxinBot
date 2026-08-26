@@ -66,6 +66,42 @@ function readableAxis(value: unknown): string {
   return AXIS_LABELS[key] || key.replaceAll('_', ' ').replace(/\b\w/g, (letter) => letter.toUpperCase());
 }
 
+function readableMapType(value: unknown): string {
+  const key = String(value || '').trim().toUpperCase();
+  const labels: Readonly<Record<string, string>> = {
+    JUMP: 'Jump',
+    STREAM: 'Stream',
+    ALT: 'Alt',
+    TECH: 'Tech',
+    GIMMICK: 'Gimmick',
+  };
+  return labels[key] || key.replaceAll('_', ' ');
+}
+
+function experimentalMapType(analysis: any): Record<string, unknown> {
+  const classification = analysis?.experimental_type || {};
+  const summary = classification?.summary || {};
+  const proposed = classification?.stage === 'EXPERIMENTAL' && summary?.status === 'PROPOSED';
+  const secondaryKeys = proposed
+    ? [
+      ...(Array.isArray(summary.secondary_types) ? summary.secondary_types : []),
+      ...(Array.isArray(summary.composition_types) ? summary.composition_types : []),
+    ]
+      .map((item) => String(item || '').toUpperCase())
+      .filter((item, index, all) => item && item !== String(summary.primary_type || '').toUpperCase() && all.indexOf(item) === index)
+      .slice(0, 3)
+    : [];
+  const secondary = secondaryKeys.map(readableMapType);
+  const gimmickSubtype = proposed ? readableMapType(summary.gimmick_subtype) : '';
+  return {
+    experimental: true,
+    available: proposed,
+    primary: proposed ? readableMapType(summary.primary_type) : '暂无明确类型',
+    secondary,
+    gimmickSubtype,
+  };
+}
+
 function firstWarning(analysis: any): string {
   const warning = Array.isArray(analysis?.warnings) ? analysis.warnings.find(Boolean) : null;
   if (!warning) return '';
@@ -123,6 +159,7 @@ export function buildSkillProfilerCardPayload(
       dominantAxes: Array.isArray(archetype.dominant_axes)
         ? archetype.dominant_axes.map(readableAxis)
         : [],
+      mapType: experimentalMapType(analysis),
       warning: firstWarning(analysis),
     },
     groups: {
