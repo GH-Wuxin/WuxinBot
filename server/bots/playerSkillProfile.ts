@@ -42,6 +42,7 @@ export interface ScoreAchievementQuality {
   accuracy: number;
   comboRatio: number;
   missRate: number;
+  fullCombo: boolean;
   accuracyQuality: number;
   comboQuality: number;
   missQuality: number;
@@ -119,6 +120,7 @@ export function scoreAchievementQuality(score: any): ScoreAchievementQuality {
     : 0;
   const missCount = Math.max(0, Number(score?.statistics?.count_miss ?? score?.statistics?.miss ?? 0));
   const missRate = objectCount > 0 ? clamp01(missCount / objectCount) : (missCount > 0 ? 1 : 0);
+  const fullCombo = missCount === 0 && (score?.perfect === true || comboRatio >= 0.985);
   const accuracyQuality = smoothstep((accuracy - 0.75) / 0.245);
   const comboQuality = Math.sqrt(comboRatio);
   const missQuality = Math.exp(-missRate * 36);
@@ -127,6 +129,7 @@ export function scoreAchievementQuality(score: any): ScoreAchievementQuality {
     accuracy: rounded(accuracy * 100, 2),
     comboRatio: rounded(comboRatio, 3),
     missRate: rounded(missRate, 4),
+    fullCombo,
     accuracyQuality: rounded(accuracyQuality, 3),
     comboQuality: rounded(comboQuality, 3),
     missQuality: rounded(missQuality, 3),
@@ -147,6 +150,7 @@ const AXIS_QUALITY_WEIGHTS: Readonly<Record<PlayerSkillAxis, readonly [number, n
 };
 
 export function demonstratedAxisValue(axis: PlayerSkillAxis, demand: number, quality: ScoreAchievementQuality): number {
+  const demandValue = Math.max(0, Number(demand || 0));
   const [accuracyWeight, comboWeight, missWeight] = AXIS_QUALITY_WEIGHTS[axis];
   const evidence = clamp01(
     quality.accuracyQuality * accuracyWeight
@@ -157,7 +161,23 @@ export function demonstratedAxisValue(axis: PlayerSkillAxis, demand: number, qua
   // map demand. It cannot, however, claim the full demand without a convincing
   // ACC/combo/miss result. Repeated strong maps can still establish a specialty.
   const achievementMultiplier = 0.50 + 0.50 * Math.pow(evidence, 0.85);
-  return Math.max(0, Number(demand || 0)) * achievementMultiplier;
+  // Low ACC and low combo are a joint failure signal. On extreme maps, keeping
+  // a fixed percentage of raw demand lets a barely survived pass inflate the
+  // player ceiling forever. A reciprocal denominator makes that contribution
+  // approach a finite ceiling as demand rises, while one weak signal alone does
+  // not trigger the same collapse.
+  const jointFailure = (1 - quality.accuracyQuality) * (1 - quality.comboQuality);
+  const extremeDemandLoad = Math.max(0, demandValue - 6) / 4;
+  const reciprocalRetention = 1 / (1 + 1.25 * jointFailure * extremeDemandLoad);
+
+  // A genuinely excellent FC is positive evidence rather than merely the
+  // absence of a penalty. Keep the bonus deliberately small and continuous so
+  // 99%+ FCs can edge above map demand without starting another inflation loop.
+  const excellence = quality.fullCombo && quality.accuracy >= 99
+    ? smoothstep((quality.accuracy - 98.5) / 1.2)
+    : 0;
+  const excellenceBonus = 1 + 0.04 * excellence;
+  return demandValue * achievementMultiplier * reciprocalRetention * excellenceBonus;
 }
 
 export function bpRankWeight(rank: number): number {
@@ -334,7 +354,7 @@ export async function buildPlayerSkillProfilePayload(osuId: number, limit = PLAY
         .map(([mods, count]) => ({ mods, count })),
     },
     profile: {
-      methodology: 'BP50 score-adjusted demand · 0.95^(rank-1) · weighted P80/P50',
+      methodology: 'BP50 score-adjusted demand · reciprocal low-ACC×low-combo hard-demand penalty · FC excellence ≤4% · 0.95^(rank-1) · weighted P80/P50',
       primaryAxes: aggregate.primaryAxes,
       profileType: aggregate.profileType,
       axes: aggregate.axes,

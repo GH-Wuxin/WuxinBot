@@ -152,7 +152,10 @@ export function formatSkillProfilerAnalysis(analysis: any): string {
     : Array.isArray(modContext.effective_mods) && modContext.effective_mods.length
       ? modContext.effective_mods.join('')
     : 'NM';
-  const difficulty = analysis.analysis_context?.difficulty || beatmap.metadata?.difficulty || {};
+  const difficulty = analysis.analysis_context?.effective_difficulty
+    || analysis.analysis_context?.difficulty
+    || beatmap.metadata?.difficulty
+    || {};
   const bpm = finiteNumber(analysis.analysis_context?.bpm_max);
   const durationMs = finiteNumber(analysis.analysis_context?.duration_ms);
   const localStars = finiteNumber(beatmap.local_nm_stars);

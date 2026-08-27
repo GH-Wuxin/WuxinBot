@@ -22,6 +22,7 @@ const payload = buildSkillProfilerCardPayload({
     bpm_max: 240,
     duration_ms: 123000,
     difficulty: { ApproachRate: 9.6, OverallDifficulty: 9.2, CircleSize: 4, HPDrainRate: 6 },
+    effective_difficulty: { ApproachRate: 10.4, OverallDifficulty: 10.1, CircleSize: 4, HPDrainRate: 6 },
   },
   mod_context: {
     requested_mods: ['HD', 'DT', 'PF'],
@@ -68,6 +69,10 @@ assert.equal(payload.analysis.neutralMods, 'PF');
 assert.equal(payload.beatmap.stars, 8.765);
 assert.equal(payload.beatmap.bpm, 200, 'official BPM wins over the computed fallback');
 assert.equal(payload.beatmap.lengthSeconds, 180, 'official length wins over the computed fallback');
+assert.equal(payload.beatmap.ar, 10.4, 'card uses clock-adjusted effective AR');
+assert.equal(payload.beatmap.od, 10.1, 'card uses clock-adjusted effective OD');
+assert.equal(payload.beatmap.cs, 4, 'clock mods do not alter CS');
+assert.equal(payload.beatmap.hp, 6, 'clock mods do not alter HP');
 assert.deepEqual(payload.groups.aim.map((item) => item.label), [
   'Aim Control', 'Jump Aim', 'Micro Precision', 'Flow Aim',
 ]);

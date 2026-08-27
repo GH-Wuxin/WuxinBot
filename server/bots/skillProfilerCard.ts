@@ -118,7 +118,10 @@ export function buildSkillProfilerCardPayload(
   }
   const beatmap = analysis.beatmap;
   const context = analysis.analysis_context || {};
-  const difficulty = context.difficulty || beatmap.metadata?.difficulty || {};
+  const difficulty = context.effective_difficulty
+    || context.difficulty
+    || beatmap.metadata?.difficulty
+    || {};
   const setId = finite(beatmap.beatmapset_id);
   const clockRate = finite(context.clock_rate) || 1;
   const officialBpm = finite(official.beatmap?.bpm);
