@@ -38,8 +38,19 @@ const weakQuality = scoreAchievementQuality(score(0.78, 50, 30));
 const strongQuality = scoreAchievementQuality(score(0.99, 490, 1));
 const weakJump = demonstratedAxisValue('jump_aim', 12, weakQuality);
 const strongJump = demonstratedAxisValue('jump_aim', 12, strongQuality);
-assert.ok(weakJump < 8.5, `low ACC/combo 12★ pass must not claim mrekk-level Jump, got ${weakJump}`);
+const weakExtremeJump = demonstratedAxisValue('jump_aim', 16, weakQuality);
+const oneSidedWeaknessJump = demonstratedAxisValue('jump_aim', 12, scoreAchievementQuality(score(0.99, 50, 0)));
+const excellentFcQuality = scoreAchievementQuality({ ...score(0.995, 500, 0), perfect: true });
+const excellentFcJump = demonstratedAxisValue('jump_aim', 12, excellentFcQuality);
+assert.ok(weakJump < 5, `low ACC/combo 12★ pass must collapse under reciprocal penalty, got ${weakJump}`);
+assert.ok(weakExtremeJump <= weakJump + 0.75,
+  `low-quality extreme demand must approach a finite demonstrated ceiling, got 12★=${weakJump}, 16★=${weakExtremeJump}`);
+assert.ok(oneSidedWeaknessJump > weakJump * 1.8,
+  `one weak signal alone must not receive the joint low-ACC/low-combo collapse, got ${oneSidedWeaknessJump}`);
 assert.ok(strongJump > 11, `high-quality 12★ score should preserve demonstrated Jump, got ${strongJump}`);
+assert.ok(excellentFcQuality.fullCombo, '99%+ perfect score should be recognized as an FC');
+assert.ok(excellentFcJump > 12 && excellentFcJump < 12.6,
+  `99%+ FC should receive a small bounded excellence bonus, got ${excellentFcJump}`);
 const sliderMapQuality = scoreAchievementQuality({
   accuracy: 0.9,
   max_combo: 300,
