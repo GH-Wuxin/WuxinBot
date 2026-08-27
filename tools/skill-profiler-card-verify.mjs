@@ -98,6 +98,7 @@ const fallbackPayload = buildSkillProfilerCardPayload({
   },
   analysis_context: { clock_rate: 1.5, difficulty: {} },
   mod_context: { effective_mods: ['HD', 'DT'] },
+  archetype: { status: 'INSUFFICIENT_EVIDENCE', primary_type: null, dominant_axes: [] },
   axes: {
     aim_control: axis(1), jump_aim: axis(1), spatial_precision: axis(1), flow_aim: axis(1),
     raw_speed: axis(1), finger_control: axis(1), stamina: axis(1, 'LOW', 'bounded_0_10'),
@@ -110,6 +111,7 @@ const fallbackPayload = buildSkillProfilerCardPayload({
 assert.equal(fallbackPayload.beatmap.stars, 6.54);
 assert.equal(fallbackPayload.beatmap.bpm, 270, 'DT clock rate adjusts official base BPM');
 assert.equal(fallbackPayload.beatmap.lengthSeconds, 100, 'DT clock rate adjusts official base length');
+assert.equal(fallbackPayload.analysis.primaryType, '暂无主导维度');
 
 const strictModPayload = buildSkillProfilerCardPayload({
   status: 'OK',

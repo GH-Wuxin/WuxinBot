@@ -134,6 +134,9 @@ export function buildSkillProfilerCardPayload(
     ? analysis.mod_context.neutral_mods.map((mod: unknown) => String(mod).toUpperCase()).filter(Boolean)
     : [];
   const archetype = analysis.archetype || {};
+  const primaryType = archetype.status === 'CLASSIFIED' && archetype.primary_type
+    ? String(archetype.primary_type).replaceAll('_', ' ')
+    : '暂无主导维度';
   return {
     beatmap: {
       beatmapId: finite(beatmap.beatmap_id),
@@ -158,7 +161,7 @@ export function buildSkillProfilerCardPayload(
       mods: mods.join(''),
       modList: mods,
       neutralMods: neutralMods.join('/'),
-      primaryType: String(archetype.primary_type || 'UNCLASSIFIED').replaceAll('_', ' '),
+      primaryType,
       dominantAxes: Array.isArray(archetype.dominant_axes)
         ? archetype.dominant_axes.map(readableAxis)
         : [],
