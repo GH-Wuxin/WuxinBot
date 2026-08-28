@@ -165,7 +165,8 @@ export async function ownerGroupSettingsHandler(ctx: OwnerHandlerContext): Promi
       silent: '静默',
       mention: '只在 @ 时回复',
       light: '轻度参与',
-      natural: '自然群友'
+      natural: '自然群友',
+      osu: '仅 osu! 指令'
     }[currentGroup.mode] || currentGroup.mode;
     const reply = `本群参数：
 模式：${modeName}
@@ -202,13 +203,15 @@ export async function ownerGroupSettingsHandler(ctx: OwnerHandlerContext): Promi
 
     if (command === '/mode') {
       const value = String(parts[2] || '').toLowerCase();
-      const allowed = ['silent', 'mention', 'light', 'natural'];
+      const allowed = ['silent', 'mention', 'light', 'natural', 'osu'];
       if (!allowed.includes(value)) {
-        reply = '用法：/wuxin mode silent|mention|light|natural。';
+        reply = '用法：/wuxin mode silent|mention|light|natural|osu。';
         return;
       }
       group.mode = value;
-      reply = `已设置本群回复模式为 ${value}。`;
+      reply = value === 'osu'
+        ? '已启用仅 osu! 指令模式：普通消息不会进入 LLM、聊天上下文或画像系统。使用 /w mode natural 等指令退出。'
+        : `已设置本群回复模式为 ${value}。`;
     }
 
     group.updatedAt = nowIso();

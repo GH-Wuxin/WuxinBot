@@ -288,6 +288,7 @@ export async function decideReply({ db, group, userPolicy, text, mentioned, user
   if (!group?.enabled) return { shouldReply: false, reason: '这个群没有启用机器人' };
   if (userPolicy.policy === 'blocked') return { shouldReply: false, reason: '该用户在黑名单中', inContext: false };
   if (group.mode === 'silent') return { shouldReply: false, reason: '当前群是静默模式' };
+  if (group.mode === 'osu') return { shouldReply: false, reason: '当前群仅处理 osu! 指令', inContext: false };
   if (db.settings.onlyMentionMode && !mentioned) return { shouldReply: false, reason: '全局设置为只在 @ 时回复' };
   const visionCapable = modelSupportsVision(db);
   const hasVisionImages = visionCapable && Array.isArray(images) && images.length > 0;
@@ -405,6 +406,19 @@ export function collectEventVisionImages(event) {
   });
 }
 
+/**
+ * The `osu` group mode is a hard ingress boundary, not a reply preference.
+ * `/w mode` is the sole non-osu escape hatch so an administrator can leave the
+ * mode after enabling it. Natural-language osu! questions are intentionally not
+ * accepted because answering them would require the LLM.
+ */
+export function allowedByOsuCommandOnlyMode(event, quickMatch = null) {
+  const text = String(event?.text || '').trim();
+  const ownerCommand = /^\/w(?:uxin)?\s+([^\s]+)/i.exec(text)?.[1]?.toLowerCase() || '';
+  if (ownerCommand) return ['osu', 'skill', 'cd', 'mode'].includes(ownerCommand);
+  return quickMatch?.def?.kind === 'osu';
+}
+
 export async function processIncoming(event, sendMessage = undefined, queuedDecision = undefined, isFromDrain = false) {
   const requestId = requestTraceIdFor(event);
   startRequestTrace(event, requestId);
@@ -482,6 +496,18 @@ async function processIncomingInner(event, sendMessage = undefined, queuedDecisi
   // sender has no permission. Otherwise a denied command could fall through
   // into normal chat and be answered by the model.
   const isWuxinCommandText = /^\/w(uxin)?(?:\s|$)/i.test(event.text);
+  const group = event.type === 'group' ? getGroup(db, event.groupId) : null;
+  const detectedQuickMatch = detectBpTypeAnalysisIntent(event.text) ? null : matchQuickCommand(event);
+  if (event.type === 'group' && group?.mode === 'osu' && !allowedByOsuCommandOnlyMode(event, detectedQuickMatch)) {
+    traceEvent('GATE', 'osu_command_only_ignored', {
+      status: 'silent',
+      reason: '本群为仅 osu! 指令模式',
+    });
+    // Return before messages, decisions, XP, memory, relationship and group
+    // profile counters are touched. This is what makes the mode a real privacy
+    // and cost boundary instead of another probabilistic reply policy.
+    return { replied: false, reason: '本群为仅 osu! 指令模式，忽略非 osu! 内容' };
+  }
   if (event.type === 'group' && looksLikeExternalBotSender(event, settings) && !isGroupOwner) {
     const reason = '忽略疑似其他机器人账号的消息';
     updateDb((draft) => {
@@ -518,7 +544,7 @@ async function processIncomingInner(event, sendMessage = undefined, queuedDecisi
   // Deterministic `!p`/`!bs`/`/plus`/`~`/`查@` … commands bypass the LLM.
   // BP 类型查询 has its own deterministic osu!oracle route. In particular,
   // `查 @某人 的 BP 类型` must not be consumed as Hydrant's generic 查@资料.
-  const quickMatch = detectBpTypeAnalysisIntent(event.text) ? null : matchQuickCommand(event);
+  const quickMatch = detectedQuickMatch;
   if (quickMatch && quickRouterEnabled(db, event)) {
     const quickResult = await handleQuickCommand(event, sendMessage, db, quickMatch, {
       isOwner: isGroupOwner || isPrivateOwner,
@@ -529,7 +555,6 @@ async function processIncomingInner(event, sendMessage = undefined, queuedDecisi
     }
   }
 
-  const group = getGroup(db, event.groupId);
   const userPolicy = getUserPolicy(db, event.groupId, event.userId);
   const mentioned = mentionsBot(event.text, settings);
   const eventVisionImages = collectEventVisionImages(event);

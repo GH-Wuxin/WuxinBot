@@ -119,7 +119,7 @@ const app = express();
 app.use(express.json({ limit: '2mb' }));
 
 const SAFE_ID = /^[A-Za-z0-9_-]{1,64}$/;
-const GROUP_MODES = new Set(['silent', 'mention', 'light', 'natural']);
+const GROUP_MODES = new Set(['silent', 'mention', 'light', 'natural', 'osu']);
 const USER_POLICIES = new Set(['normal', 'whitelist', 'priority', 'muted', 'blocked', 'admin', 'owner']);
 
 function safeSecretEqual(actual, expected) {

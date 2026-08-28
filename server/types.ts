@@ -107,7 +107,7 @@ export interface Group {
   groupId: string;
   name: string;
   enabled: boolean;
-  mode: 'silent' | 'mention' | 'light' | 'natural';
+  mode: 'silent' | 'mention' | 'light' | 'natural' | 'osu';
   maxPerHour: number;
   cooldownSec: number;
   createdAt?: string;

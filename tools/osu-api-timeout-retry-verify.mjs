@@ -8,10 +8,13 @@ process.env.OSU_API_BASE_URL = 'http://api.test/api/v2';
 const originalFetch = globalThis.fetch;
 const attemptsByUser = new Map();
 let playerLookupCount = 0;
+let tokenRequestCount = 0;
 
 globalThis.fetch = async (input) => {
   const url = String(input);
   if (url === process.env.OSU_TOKEN_URL) {
+    tokenRequestCount += 1;
+    if (tokenRequestCount === 1) throw new TypeError('fetch failed');
     return new Response(JSON.stringify({
       access_token: 'retry-verify-token',
       token_type: 'Bearer',
@@ -52,6 +55,7 @@ try {
   const { getUser, getUserById, getUserBestScores } = await import('../server/osu/api.ts');
 
   const namedUser = await getUser('fixture-user', 'osu');
+  assert.equal(tokenRequestCount, 2, 'OAuth token fetch should retry one transient network failure');
   const sameUserById = await getUserById(namedUser.id, 'osu');
   assert.equal(sameUserById.username, 'fixture-user');
   assert.equal(playerLookupCount, 1, 'username lookup should populate the numeric user-id cache alias');
@@ -74,7 +78,7 @@ try {
   assert.equal(attemptsByUser.get(3), 1, 'identical concurrent GETs should share one upstream request');
   assert.deepEqual(first, second, 'coalesced callers should receive the same successful payload');
 
-  console.log('PASS: osu! API GET coalesces identical in-flight reads, retries one transient abort, and normalizes exhausted timeout errors');
+  console.log('PASS: osu! OAuth and API GET retry transient failures, GETs coalesce, and exhausted timeouts are normalized');
 } finally {
   globalThis.fetch = originalFetch;
 }

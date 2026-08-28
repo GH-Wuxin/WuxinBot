@@ -31,6 +31,7 @@ const modeOptions = [
   { value: 'mention', label: '只在 @ 时回复' },
   { value: 'light', label: '轻度参与' },
   { value: 'natural', label: '自然群友' },
+  { value: 'osu', label: '仅 osu! 指令' },
 ];
 
 export function AgentPage({ db }) {

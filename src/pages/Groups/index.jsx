@@ -8,7 +8,8 @@ const modeOptions = [
   { value: 'silent', label: '静默' },
   { value: 'mention', label: '@ 回复' },
   { value: 'light', label: '轻度参与' },
-  { value: 'natural', label: '自然群友' }
+  { value: 'natural', label: '自然群友' },
+  { value: 'osu', label: '仅 osu! 指令' }
 ];
 const sortOptions = [
   { value: 'recent', label: '最近活跃' },

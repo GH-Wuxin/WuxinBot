@@ -50,7 +50,7 @@ export const OWNER_FALLBACK_HELP = `Wuxin 指令 · 都可以简写为 /w
 /w group profile clear · 清除群画像
 /w rate 数字 · 每小时回复上限
 /w cooldown 秒数 · 发言冷却
-/w mode silent|mention|light|natural · 回复模式
+/w mode silent|mention|light|natural|osu · 回复模式；osu 只响应 osu! 指令
 /w status · 查看群参数
 
 【模型与搜索】
