@@ -456,6 +456,12 @@ async function handleQuickCommandInner(
     return { handled: false, reason: '私聊快捷指令暂仅限 owner' };
   }
 
+  // In the hard osu-only group mode, deterministic commands are allowed but
+  // their observations must not become future conversational context. Command
+  // telemetry and the command's own functional state (bindings, cooldowns,
+  // results) remain available.
+  const contextRecordingEnabled = isPrivate || group?.mode !== 'osu';
+
   // Admin-gated commands.
   const meta = finalizeQuickDef(def);
   if ((meta.permission === 'group_admin' || def.kind === 'admin') && !permissions.isOwner && !permissions.isAdmin) {
@@ -484,6 +490,7 @@ async function handleQuickCommandInner(
   // asked. Recording failures must never affect the reply.
   const requester = String(event.nickname || event.userId || '未知用户');
   const record = (content: string, images: string[] = []) => {
+    if (!contextRecordingEnabled) return;
     try {
       if (traceId) markLatencySpan(traceId, 'observation_persist_start');
       recordQuickContext(
@@ -501,6 +508,7 @@ async function handleQuickCommandInner(
     images: string[],
     bpSelection?: BpQuerySelection,
   ) => {
+    if (!contextRecordingEnabled) return;
     // QUICK_CONTEXT_FIX_QB08: write the placeholder context slot NOW (the
     // visible reply was already sent) so later hydration can never reorder
     // two consecutive quick commands. The shadow fetch still runs

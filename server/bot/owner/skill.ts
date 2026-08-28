@@ -258,11 +258,17 @@ async function resolveProfileUser(ctx: OwnerHandlerContext, explicitPlayer: stri
       : getUser(explicitPlayer, 'osu');
   }
   const rawBinding = ctx.commandDb.osuBindings?.[String(ctx.event.userId)];
-  // Prefer the username already stored by /w osu bind. This keeps the profile
-  // route on the same cache identity as ordinary username lookups instead of
-  // needlessly hitting the ID endpoint after every process restart.
+  // A structured binding already contains the stable player identity. Do not
+  // make an extra user-profile request before the real BP/profile work starts:
+  // after a process restart that request also forces a fresh OAuth token and a
+  // transient token-network failure used to make the entire command fail before
+  // the user even saw the "正在生成" progress message.
   if (rawBinding && typeof rawBinding === 'object') {
+    const id = Number(rawBinding.osuUserId ?? rawBinding.userId ?? rawBinding.id ?? 0);
     const username = String(rawBinding.osuUsername ?? rawBinding.username ?? '').trim();
+    if (Number.isSafeInteger(id) && id > 0) {
+      return { id, username: username || `osu#${id}` };
+    }
     if (username) return getUser(username, 'osu');
   }
   const binding = resolveOsuBindingValue(rawBinding);

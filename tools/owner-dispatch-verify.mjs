@@ -72,7 +72,7 @@ const BASELINE_OWNER_HELP = [
   ['groupProfileEdit', '/w group profile update/clear/on/off', '群画像管理：更新、清除、开关', 'groupProfileEdit', 'group_admin', 'public', 'direct_only', 'groupProfileEdit'],
   ['rate', '/w rate 数字', '设置每小时回复上限', 'rate', 'group_admin', 'public', 'direct_only', 'rate'],
   ['cooldown', '/w cooldown 秒数', '设置发言冷却', 'cooldown', 'group_admin', 'public', 'direct_only', 'cooldown'],
-  ['mode', '/w mode silent|mention|light|natural', '设置群回复模式', 'mode', 'group_admin', 'public', 'direct_only', 'mode'],
+  ['mode', '/w mode silent|mention|light|natural|osu', '设置群回复模式；osu 为仅 osu! 指令', 'mode', 'group_admin', 'public', 'direct_only', 'mode'],
   ['status', '/w status', '查看群参数', 'status', 'group_admin', 'public', 'direct_only', 'status'],
   ['modelShow', '/w model show/list', '查看模型列表与当前模型', 'modelShow', 'group_admin', 'public', 'direct_only', 'modelShow'],
   ['modelSet', '/w model 模型名', '切换当前模型', 'modelSet', 'group_admin', 'public', 'direct_only', 'modelSet'],
@@ -93,7 +93,7 @@ const BASELINE_OWNER_HELP = [
   ['osuHelp', '/w osu help', 'osu! 命令帮助', 'osuHelp', 'all', 'public', 'listed', 'osu.help'],
   ['osuBind', '/w osu bind <osu用户名>', '绑定 osu! 账号', 'osuBind', 'all', 'public', 'listed', 'osu.bind'],
   ['osuAnalyze', '/w osu analyze (@某人)', '玩家分析（已停用）', 'osuAnalyze', 'all', 'hidden', 'hidden', 'osu.analyze'],
-    ['skill', '/w skill profile [玩家名]；compare <玩家A> <玩家B>；<BP名次或BID> [+Mods]；<玩家名> <BP名次>', '生成成绩修正后的 BP50 玩家画像/对比图，或分析单张 BP/BID；玩家 ID 可用 p:[...]', 'skill', 'all', 'public', 'listed', 'skill'],
+  ['skill', '/w skill profile [玩家名]；recent [玩家名或 p:[玩家ID]]；compare <玩家A> <玩家B>；<BP名次或BID> [+Mods]；<玩家名> <BP名次>', '生成 BP50 长期画像、最近五天发挥画像、玩家对比图，或分析单张 BP/BID', 'skill', 'all', 'public', 'listed', 'skill'],
   ['skillFeedback', '/w cd <BID> [+Mods] <反馈>', '按 BID 与 Mod 反馈 Skill Profiler 判断；不写 Mod 表示 NM', 'skillFeedback', 'all', 'public', 'listed', 'skillFeedback'],
 ];
 

@@ -242,7 +242,7 @@ const WUXIN_SELF = [
     title: '群聊设置',
     tags: ['mode', 'rate', 'cooldown', 'status', '群设置'],
     content: [
-      '命令：/w mode silent|mention|light|natural（回复模式）、/w rate 数字（每小时上限）、/w cooldown 秒数（冷却）、/w status（群参数）、/w group profile show/update/clear（群画像）',
+      '命令：/w mode silent|mention|light|natural|osu（回复模式；osu 仅响应 osu! 指令且不进入 LLM/画像）、/w rate 数字（每小时上限）、/w cooldown 秒数（冷却）、/w status（群参数）、/w group profile show/update/clear（群画像）',
       '这些设置影响当前群的回复节奏；普通群友不能修改，权限不足时如实告知。',
     ].join('\n'),
     commandExamples: [
