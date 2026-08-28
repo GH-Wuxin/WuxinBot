@@ -2,6 +2,9 @@ node_modules/
 dist/
 data/
 logs/
+# Keep the Console Logs page tracked on case-insensitive filesystems.
+!src/pages/Logs/
+!src/pages/Logs/**
 artifacts/
 incidents/
 .env
@@ -21,3 +24,7 @@ release/
 portable-node/
 .public-export/
 external-bots/
+.private/
+tmp/
+startup.log
+startup-err.log

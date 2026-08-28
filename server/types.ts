@@ -17,6 +17,13 @@ export interface BotEvent {
   atTargets: string[];
   images?: { type: 'image'; url?: string; file?: string }[];
   replyMessageId?: string;
+  quotedMessage?: {
+    messageId: string;
+    text: string;
+    images: { type: 'image'; url?: string; file?: string }[];
+    userId?: string;
+    nickname?: string;
+  };
   senderRole?: 'owner' | 'admin' | 'member';
   raw?: Record<string, unknown>;
 }
@@ -53,6 +60,10 @@ export interface DbSettings {
   maxTokens: number;
   contextLimit: number;
   ownerPrivateContextCharBudget: number;
+  groupContextSearchEnabled?: boolean;
+  groupContextSearchPoolSize?: number;
+  groupContextSearchMaxExtra?: number;
+  groupContextSearchCharBudget?: number;
   botNames: string;
   personalityPrompt: string;
   baselinePersonalityPrompt?: string;
@@ -66,6 +77,8 @@ export interface DbSettings {
   enableWebSearch: boolean;
   webSearchMode: 'fast' | 'balanced' | 'deep';
   enableAutoModel: boolean;
+  /** Agent Runtime V2 is default; set legacy or env PIPPI_AGENT_RUNTIME_MODE=legacy for rollback. */
+  agentRuntimeMode?: 'legacy' | 'model_first';
   /** Phase 2 v1 master switch; env REASONING_ENABLED=false|0 is a hard veto. */
   reasoningEnabled: boolean;
   llmReplyGateMaxPerHour?: number;
@@ -94,7 +107,7 @@ export interface Group {
   groupId: string;
   name: string;
   enabled: boolean;
-  mode: 'silent' | 'mention' | 'light' | 'natural';
+  mode: 'silent' | 'mention' | 'light' | 'natural' | 'osu';
   maxPerHour: number;
   cooldownSec: number;
   createdAt?: string;
@@ -141,6 +154,8 @@ export interface MemoryEntry {
   lastProfileStatus?: 'updated' | 'checked' | 'recent-only' | 'empty' | 'error';
   lastProfileError?: string;
   lastProfiledAt?: string;
+  profileFailureCount?: number;
+  profileRetryAfter?: string;
   createdAt: string;
   updatedAt: string;
 }
@@ -174,6 +189,11 @@ export interface MemorySample {
 
 export interface MessageRecord {
   id: string;
+  requestId?: string;
+  sourceMessageId?: string;
+  replyToMessageId?: string;
+  replyToUserId?: string;
+  replyToNickname?: string;
   role: 'user' | 'assistant';
   type: 'group' | 'private';
   groupId: string;
@@ -187,6 +207,7 @@ export interface MessageRecord {
 
 export interface DecisionRecord {
   id: string;
+  requestId?: string;
   messageId: string;
   groupId: string;
   userId: string;
@@ -231,6 +252,17 @@ export interface ToolCallLogEntry {
   error: string;
   contentLength: number;
   latencyMs: number;
+}
+
+export interface SkillProfilerRunEntry {
+  id: string;
+  beatmapId: number;
+  groupId: string;
+  userId: string;
+  sourceMessageId: string;
+  sourceLabel: string;
+  analysis: Record<string, unknown>;
+  createdAt: string;
 }
 
 export interface UsageEvent {

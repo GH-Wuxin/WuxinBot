@@ -5,7 +5,7 @@ import { api } from '../../lib/api.js';
 
 const eventLabels = {
   'sample.accepted': ['样本采纳', 'accent'], 'sample.rejected': ['样本拒绝', 'warning'], 'evidence.created': ['证据创建', 'success'], 'evidence.rejected': ['证据拒绝', 'warning'],
-  'profile.threshold_check': ['阈值检查', 'neutral'], 'profile.run_started': ['画像启动', 'accent'], 'profile.llm_result': ['LLM 返回', 'success'], 'profile.patch_applied': ['已更新', 'success'],
+  'profile.threshold_check': ['阈值检查', 'neutral'], 'profile.queued': ['画像入队', 'accent'], 'profile.backoff': ['失败退避', 'warning'], 'profile.run_started': ['画像启动', 'accent'], 'profile.llm_result': ['LLM 返回', 'success'], 'profile.patch_applied': ['已更新', 'success'],
   'profile.no_change': ['无变化', 'neutral'], 'profile.error': ['错误', 'danger'],
 };
 
@@ -39,7 +39,7 @@ export function ProfileLogsPage() {
 
   return <div className="console-page profile-logs-page">
     <SectionHeader eyebrow="Context / Profile Logs" title="画像日志" description="查看样本、证据与画像任务的实际运行记录。" actions={<Button icon={RefreshCw} onClick={loadLogs}>刷新</Button>} />
-    {stats && <div className="profile-log-metrics"><MetricCard label="总日志" value={stats.total || 0} /><MetricCard label="今日画像任务" value={stats.recentRuns || 0} tone="accent" /><MetricCard label="今日错误" value={stats.recentErrors || 0} tone={stats.recentErrors ? 'accent' : 'neutral'} /></div>}
+    {stats && <div className="profile-log-metrics"><MetricCard label="总日志" value={stats.total || 0} /><MetricCard label="今日画像任务" value={stats.recentRuns || 0} tone="accent" /><MetricCard label="今日错误" value={stats.recentErrors || 0} tone={stats.recentErrors ? 'accent' : 'neutral'} /><MetricCard label="画像队列" value={`${stats.queue?.activeUserId ? 1 : 0} 运行 · ${stats.queue?.queued || 0} 等待`} tone={stats.queue?.activeUserId || stats.queue?.queued ? 'accent' : 'neutral'} /></div>}
     <Card className="console-section">
       <div className="console-toolbar profile-log-toolbar"><Input placeholder="用户 QQ" value={filterUser} onChange={(event) => setFilterUser(event.target.value)} /><Input placeholder="Run ID" value={filterRunId} onChange={(event) => setFilterRunId(event.target.value)} /><Select value={filterEvent} onChange={(event) => setFilterEvent(event.target.value)} options={[{ value: '', label: '全部事件' }, ...Object.entries(eventLabels).map(([value, [label]]) => ({ value, label }))]} /></div>
       {status.loading ? <LoadingState label="正在读取画像日志…" /> : status.error ? <ErrorState title="画像日志读取失败" message={status.error} onRetry={loadLogs} /> : <div className="console-list profile-log-list">{logs.map((log) => {

@@ -2,7 +2,19 @@
 // The LLM can ONLY request whitelisted operations. Everything else is rejected.
 // NO file system access, NO shell execution, NO config modification.
 import type { AllowedOperation, AllowedOperationType } from './types.js';
-import { internalCapabilitySupported } from './registry.js';
+import {
+  BEATMAP_CAPABILITY_NAMES,
+  BEATMAP_ID_PARAM,
+  RECENT_BOT_SELECTOR_IDS,
+  isCallableCapability,
+  LEADERBOARD_CAPABILITY,
+  PLAYER_CAPABILITY_NAMES,
+  PP_CALC_CAPABILITY,
+  queryOsuParam,
+  queryOsuParamAllowed,
+  queryOsuParamNames,
+  queryOsuParamRequiredFor,
+} from './capabilityCatalog.js';
 
 // ── Whitelist ──
 
@@ -13,6 +25,7 @@ const ALLOWED_OPERATIONS: ReadonlySet<AllowedOperationType> = new Set([
   'query_osu',
   'query_bot',
   'get_player_skill',
+  'osu_analyze_beatmap_skills',
   'list_bots',
   'get_recent_score'
 ]);
@@ -37,11 +50,17 @@ const BLOCKED_PATTERNS: ReadonlyArray<{ pattern: RegExp; reason: string }> = [
 
 // ── Validation ──
 
+const QUERY_OSU_PARAM_KEYS: ReadonlySet<string> = new Set([
+  'capability',
+  ...queryOsuParamNames(),
+]);
+
 const PARAM_KEYS: Readonly<Record<AllowedOperationType, ReadonlySet<string>>> = {
-  query_osu: new Set(['capability', 'username', 'bp_rank', 'bp_start', 'bp_end', 'compact', 'bot', 'beatmap_id', 'mods', 'accuracy', 'combo', 'misses', 'limit']),
+  query_osu: QUERY_OSU_PARAM_KEYS,
   query_external_bot: new Set(['bot', 'command']),
   query_bot: new Set(['bot', 'command', 'username', 'bp_rank', 'bp_start', 'bp_end']),
   get_player_skill: new Set(['player']),
+  osu_analyze_beatmap_skills: new Set(['beatmap_id', 'mods']),
   list_bots: new Set(),
   get_recent_score: new Set(['player']),
 };
@@ -115,6 +134,29 @@ function validateBpSelectionParams(op: AllowedOperation): { ok: true } | { ok: f
   return { ok: true };
 }
 
+/**
+ * Reject present parameters whose applicability family differs from the
+ * requested capability. Ordering follows the capability catalog so validation
+ * messages stay stable and match the pre-catalog behavior.
+ */
+function rejectFamilyDisallowedParams(
+  params: Record<string, unknown>,
+  capability: string,
+  familyNames: ReadonlySet<string>,
+): { ok: true } | { ok: false; reason: string } {
+  for (const paramName of queryOsuParamNames()) {
+    if (!hasOwnParam(params, paramName)) continue;
+    const param = queryOsuParam(paramName);
+    if (!param?.allowedFor) continue;
+    const belongsToFamily = param.allowedFor.some((name) => familyNames.has(name));
+    if (!belongsToFamily) continue;
+    if (!queryOsuParamAllowed(param, capability)) {
+      return { ok: false, reason: `${paramName} 不能与 ${capability} 一起使用` };
+    }
+  }
+  return { ok: true };
+}
+
 export function validateOperation(op: AllowedOperation): { ok: true } | { ok: false; reason: string } {
   if (!ALLOWED_OPERATIONS.has(op.type)) {
     return { ok: false, reason: `不允许的操作类型: ${op.type}` };
@@ -127,7 +169,7 @@ export function validateOperation(op: AllowedOperation): { ok: true } | { ok: fa
   switch (op.type) {
     case 'query_osu': {
       const capability = String(op.params.capability || '').trim();
-      if (!capability || !internalCapabilitySupported(capability)) {
+      if (!capability || !isCallableCapability(capability)) {
         return { ok: false, reason: `无效的查询类型: ${capability || '(空)'}` };
       }
       if (hasOwnParam(op.params, 'compact') && typeof op.params.compact !== 'boolean') {
@@ -137,23 +179,51 @@ export function validateOperation(op: AllowedOperation): { ok: true } | { ok: fa
       const usernameError = validatePlayerText(username, '玩家名', false);
       if (usernameError) return { ok: false, reason: usernameError };
 
-      // Beatmap-centric capabilities (Phase B): beatmap-scoped params only.
-      const BEATMAP_CAPABILITIES = new Set(['beatmap_lookup', 'pp_calc', 'leaderboard']);
-      if (BEATMAP_CAPABILITIES.has(capability)) {
-        const beatmapId = parseBpRankParam(op.params.beatmap_id);
-        if (beatmapId === null || beatmapId < 1) {
-          return { ok: false, reason: `${capability} 需要有效的 beatmap_id` };
+      // The LLM schema exposes bot as the supported recent selectors only
+      // (yumu/kanon). Any other value must be rejected, never silently
+      // coerced to a compatibility backend.
+      if (hasOwnParam(op.params, 'bot')) {
+        const botValue = String(op.params.bot || '').trim();
+        if (!(RECENT_BOT_SELECTOR_IDS as readonly string[]).includes(botValue)) {
+          return { ok: false, reason: `bot 必须是 ${RECENT_BOT_SELECTOR_IDS.join('/')} 之一` };
         }
-        for (const key of ['username', 'bp_rank', 'bp_start', 'bp_end', 'compact']) {
-          if (hasOwnParam(op.params, key)) return { ok: false, reason: `${key} 不能与 ${capability} 一起使用` };
+      }
+
+      // Parameter applicability is derived from the capability catalog.
+      // Player-family params and beatmap-family params are rejected separately
+      // so the error ordering matches the pre-catalog behavior exactly.
+      if (BEATMAP_CAPABILITY_NAMES.has(capability)) {
+        // Required parameters are declared in the catalog; today only
+        // beatmap_id is required for the three beatmap capabilities.
+        for (const paramName of queryOsuParamNames()) {
+          const param = queryOsuParam(paramName);
+          if (
+            param?.missingMessage &&
+            queryOsuParamRequiredFor(param, capability) &&
+            !hasOwnParam(op.params, paramName)
+          ) {
+            return { ok: false, reason: `${capability} ${param.missingMessage}` };
+          }
         }
+        if (hasOwnParam(op.params, BEATMAP_ID_PARAM)) {
+          const beatmapId = parseBpRankParam(op.params[BEATMAP_ID_PARAM]);
+          if (beatmapId === null || beatmapId < 1) {
+            return { ok: false, reason: `${capability} 需要有效的 beatmap_id` };
+          }
+        }
+        const familyRejection = rejectFamilyDisallowedParams(
+          op.params,
+          capability,
+          PLAYER_CAPABILITY_NAMES,
+        );
+        if (!familyRejection.ok) return familyRejection;
         if (hasOwnParam(op.params, 'mods')) {
           const modsValue = String(op.params.mods || '');
-          if (modsValue.length > 16 || !/^[A-Za-z]*$/.test(modsValue)) {
+          if (modsValue.length > 16 || !/^([A-Za-z]{2})*$/.test(modsValue)) {
             return { ok: false, reason: 'mods 必须是成对双字母组合' };
           }
         }
-        if (capability === 'pp_calc') {
+        if (capability === PP_CALC_CAPABILITY) {
           if (hasOwnParam(op.params, 'accuracy')) {
             const acc = Number(op.params.accuracy);
             if (!Number.isFinite(acc) || acc <= 0 || acc > 100) return { ok: false, reason: 'accuracy 必须是 0-100 的数字' };
@@ -167,21 +237,39 @@ export function validateOperation(op: AllowedOperation): { ok: true } | { ok: fa
             if (!Number.isInteger(misses) || misses < 0 || misses > 999) return { ok: false, reason: 'misses 必须是 0-999 的整数' };
           }
         } else {
-          for (const key of ['accuracy', 'combo', 'misses']) {
-            if (hasOwnParam(op.params, key)) return { ok: false, reason: `${key} 不能与 ${capability} 一起使用` };
-          }
+          // accuracy/combo/misses are pp_calc-only; other beatmap capabilities
+          // must reject them (pre-catalog behavior).
+          const ppCalcRejection = rejectFamilyDisallowedParams(
+            op.params,
+            capability,
+            new Set([PP_CALC_CAPABILITY]),
+          );
+          if (!ppCalcRejection.ok) return ppCalcRejection;
         }
-        if (capability !== 'leaderboard' && hasOwnParam(op.params, 'limit')) {
+        if (capability !== LEADERBOARD_CAPABILITY && hasOwnParam(op.params, 'limit')) {
           return { ok: false, reason: `limit 不能与 ${capability} 一起使用` };
         }
-        if (capability === 'leaderboard' && hasOwnParam(op.params, 'limit')) {
+        if (capability === LEADERBOARD_CAPABILITY && hasOwnParam(op.params, 'limit')) {
           const limit = Number(op.params.limit);
           if (!Number.isInteger(limit) || limit < 1 || limit > 50) return { ok: false, reason: 'limit 必须是 1-50 的整数' };
         }
       } else {
-        for (const key of ['beatmap_id', 'accuracy', 'combo', 'misses', 'limit']) {
-          if (hasOwnParam(op.params, key)) return { ok: false, reason: `${key} 不能与 ${capability} 一起使用` };
-        }
+        const familyRejection = rejectFamilyDisallowedParams(
+          op.params,
+          capability,
+          BEATMAP_CAPABILITY_NAMES,
+        );
+        if (!familyRejection.ok) return familyRejection;
+        // Player-family parameters are applicability-scoped too: bp_rank /
+        // bp_start / bp_end / compact belong to capability=bp, so present-on-
+        // wrong-player-capability must be rejected instead of silently ignored
+        // by the executor.
+        const intraFamilyRejection = rejectFamilyDisallowedParams(
+          op.params,
+          capability,
+          PLAYER_CAPABILITY_NAMES,
+        );
+        if (!intraFamilyRejection.ok) return intraFamilyRejection;
       }
       return validateBpSelectionParams(op);
     }
@@ -221,6 +309,28 @@ export function validateOperation(op: AllowedOperation): { ok: true } | { ok: fa
       if (playerError) return { ok: false, reason: playerError };
       break;
     }
+    case 'osu_analyze_beatmap_skills': {
+      const beatmapId = op.params.beatmap_id;
+      if (!Number.isSafeInteger(beatmapId) || Number(beatmapId) < 1) {
+        return { ok: false, reason: 'beatmap_id 必须是正整数 BID' };
+      }
+      const mods = op.params.mods ?? [];
+      if (!Array.isArray(mods) || mods.length > 4) {
+        return { ok: false, reason: 'mods 必须是不超过 4 项的数组' };
+      }
+      const allowedMods = new Set(['NM', 'EZ', 'HD', 'HR', 'HT', 'DT']);
+      const normalized = mods.map((mod) => String(mod || '').trim().toUpperCase());
+      if (normalized.some((mod) => !allowedMods.has(mod))) {
+        return { ok: false, reason: 'Skill Profiler 仅支持 NM/EZ/HD/HR/HT/DT' };
+      }
+      if (new Set(normalized).size !== normalized.length) {
+        return { ok: false, reason: 'mods 不能重复' };
+      }
+      if (normalized.includes('NM') && normalized.length > 1) {
+        return { ok: false, reason: 'NM 不能和其他 Mod 同时使用' };
+      }
+      break;
+    }
     case 'get_recent_score': {
       const player = String(op.params.player || '').trim();
       const playerError = validatePlayerText(player, '玩家标识', false);
@@ -239,13 +349,28 @@ export function validateOperation(op: AllowedOperation): { ok: true } | { ok: fa
 // ── LLM tool result sanitization ──
 
 export function sanitizeToolResult(content: string): string {
+  const safeUrls: string[] = [];
+  const withUrlPlaceholders = String(content || '').replace(/https?:\/\/[^\s<>"'`]+/gi, (candidate) => {
+    try {
+      const parsed = new URL(candidate);
+      if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return '[链接已隐藏]';
+      parsed.username = '';
+      parsed.password = '';
+      const safe = parsed.toString().slice(0, 1000);
+      safeUrls.push(safe);
+      return `__SAFE_TOOL_URL_${safeUrls.length - 1}__`;
+    } catch {
+      return '[链接已隐藏]';
+    }
+  });
   // Strip anything that looks like a file path
-  let cleaned = content
+  let cleaned = withUrlPlaceholders
     .replace(/[A-Za-z]:[\\/][^\s,，。]*/g, '[路径已隐藏]')
     // Only treat forward-slash tokens as paths when they contain a dot or a
     // file extension; plain word lists like "aim/alt/tech/stream" must survive.
     .replace(/\/[^\s,，。]*\.[^\s,，。]+/g, '[路径已隐藏]')
-    .replace(/\\[^\s,，。]+\\[^\s,，。]+/g, '[路径已隐藏]');
+    .replace(/\\[^\s,，。]+\\[^\s,，。]+/g, '[路径已隐藏]')
+    .replace(/__SAFE_TOOL_URL_(\d+)__/g, (_, index) => safeUrls[Number(index)] || '[链接已隐藏]');
 
   // Truncate if too long
   if (cleaned.length > 4000) {

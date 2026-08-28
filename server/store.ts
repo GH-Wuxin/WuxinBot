@@ -79,6 +79,72 @@ const MAX_ADMIN_ACTIONS = 1_000;
 let lastAutoBackupAt = 0;
 let lastDbReadFailureAt = 0;
 
+const SHARDED_STORAGE_FORMAT = 'wuxin-sharded-v1';
+const SHARD_SPECS = [
+  {
+    name: 'profiles',
+    file: 'db-profiles.json',
+    keys: new Set(['memories', 'groupProfiles', 'relationshipProfiles', 'pendingPairCounts', 'profileLogs', 'profileV3'])
+  },
+  { name: 'messages', file: 'db-messages.json', keys: new Set(['messages']) },
+  { name: 'decisions', file: 'db-decisions.json', keys: new Set(['decisions']) },
+  {
+    name: 'telemetry',
+    file: 'db-telemetry.json',
+    keys: new Set(['commandLogs', 'toolCallLogs', 'unmetCapabilities', 'adminActions', 'usageEvents', 'configSnapshots', 'searchLogs'])
+  },
+  { name: 'osu', file: 'db-osu.json', keys: new Set(['skillProfilerRuns']) }
+];
+let cachedStore: { dataDir: string; db: any; coreSignature: string } | null = null;
+let cachedPublicDb: { db: any; minute: number; value: any } | null = null;
+let storageRevision = '';
+let revisionSequence = 0;
+
+function shardNameForKey(key: string) {
+  for (const spec of SHARD_SPECS) if (spec.keys.has(key)) return spec.name;
+  if (key.startsWith('osu')) return 'osu';
+  return 'core';
+}
+
+function shardPath(name: string) {
+  if (name === 'core') return getDbPath();
+  const spec = SHARD_SPECS.find((candidate) => candidate.name === name);
+  if (!spec) throw new Error(`未知数据库分片: ${name}`);
+  return path.join(getDataDir(), spec.file);
+}
+
+function storageMarker() {
+  return {
+    format: SHARDED_STORAGE_FORMAT,
+    version: 1,
+    revision: storageRevision,
+    shards: Object.fromEntries(SHARD_SPECS.map((spec) => [spec.name, spec.file]))
+  };
+}
+
+function isShardedCore(value) {
+  return value?._storage?.format === SHARDED_STORAGE_FORMAT;
+}
+
+function invalidateStoreCaches() {
+  cachedPublicDb = null;
+}
+
+function nextStorageRevision() {
+  revisionSequence = (revisionSequence + 1) % 1000;
+  storageRevision = `${Date.now()}-${process.pid}-${revisionSequence}`;
+  return storageRevision;
+}
+
+function coreFileSignature() {
+  try {
+    const stat = fs.statSync(getDbPath());
+    return `${stat.size}:${stat.mtimeMs}`;
+  } catch {
+    return '';
+  }
+}
+
 /**
  * Bound unbounded history arrays so db.json rewrites stay predictable.
  * Keeps the newest entries (arrays are append-ordered). Existing bounded
@@ -99,7 +165,7 @@ export function lastDbReadFailureAtMs(): number {
   return lastDbReadFailureAt;
 }
 
-function autoBackupIfDue() {
+function autoBackupIfDue(db) {
   const now = Date.now();
   if (now - lastAutoBackupAt < AUTO_BACKUP_INTERVAL_MS) return;
   try {
@@ -107,7 +173,7 @@ function autoBackupIfDue() {
     fs.mkdirSync(backupDir, { recursive: true });
     const stamp = new Date(now).toISOString().replace(/[:.]/g, '-');
     const dest = path.join(backupDir, `auto-${stamp}.json`);
-    if (!fs.existsSync(dest)) fs.copyFileSync(getDbPath(), dest);
+    if (!fs.existsSync(dest)) writeJsonAtomic(dest, db, false);
     const files = fs.readdirSync(backupDir)
       .filter((f) => /^auto-.*\.json$/.test(f))
       .sort();
@@ -174,9 +240,9 @@ function withDbLock(callback) {
   }
 }
 
-function writeJsonAtomic(filePath, value) {
+function writeJsonAtomic(filePath, value, pretty = true) {
   const tempPath = `${filePath}.${process.pid}.${Date.now()}.tmp`;
-  const payload = JSON.stringify(value, null, 2);
+  const payload = pretty ? JSON.stringify(value, null, 2) : JSON.stringify(value);
   try {
     fs.writeFileSync(tempPath, payload, 'utf8');
     for (let attempt = 0; ; attempt += 1) {
@@ -249,13 +315,14 @@ export const defaultCommandPermissions = {
   exp: 'owner',
   osuBind: 'guest',
   osuAnalyze: 'guest',
-  osuRecent: 'guest',
   osuClearBind: 'guest',
   osuClearHistory: 'guest',
   osuClearCache: 'owner',
   osuClearCooldown: 'owner',
   osuClearRecommend: 'owner',
-  osuHelp: 'guest'
+  osuHelp: 'guest',
+  skill: 'guest',
+  skillFeedback: 'guest'
 };
 
 const initialDb = {
@@ -285,6 +352,10 @@ const initialDb = {
     maxTokens: 300,
     contextLimit: 30,
     ownerPrivateContextCharBudget: 24000,
+    groupContextSearchEnabled: true,
+    groupContextSearchPoolSize: 400,
+    groupContextSearchMaxExtra: 24,
+    groupContextSearchCharBudget: 12000,
         botNames: '小深,机器人,bot,pippi',
     personalityPrompt: defaultPrompt,
     oneBotHttpUrl: 'http://127.0.0.1:3000',
@@ -301,6 +372,7 @@ const initialDb = {
     searchMaxResults: 5,
     searchTimeoutMs: 8000,
     enableAutoModel: true,
+    agentRuntimeMode: 'model_first',
     reasoningEnabled: false,
     llmReplyGateMaxPerHour: 0,
     llmReplyGateNaturalThreshold: 45,
@@ -350,6 +422,7 @@ const initialDb = {
   decisions: [],
   commandLogs: [],
   toolCallLogs: [],
+  skillProfilerRuns: [],
   unmetCapabilities: [],
   adminActions: [],
   usageEvents: [],
@@ -365,6 +438,9 @@ const initialDb = {
 
 export function normalizeDb(db) {
   const settings = db.settings || {};
+  // Shortcut commands are always available subject to the normal group/bot
+  // controls; discard the retired extra activation switches.
+  delete settings.quickRouterEnabled;
   const roleMap = new Map();
   for (const role of defaultCommandRoles) roleMap.set(role.id, { ...role });
   for (const role of settings.commandRoles || []) {
@@ -416,6 +492,9 @@ export function normalizeDb(db) {
   db.botRegistry = db.settings.botRegistry;
   db.skillStore ||= { records: [], updatedAt: '' };
   db.groupBotConfig ||= {};
+  for (const config of Object.values(db.groupBotConfig)) {
+    if (config && typeof config === 'object') delete (config as Record<string, unknown>).quick;
+  }
   // Ensure all known groups have a default bot config entry
   for (const group of db.groups || []) {
     if (!db.groupBotConfig[group.groupId]) {
@@ -435,6 +514,8 @@ export function normalizeDb(db) {
   db.decisions ||= [];
   db.commandLogs ||= [];
   db.toolCallLogs ||= [];
+  db.skillProfilerRuns ||= [];
+  if (db.skillProfilerRuns.length > 500) db.skillProfilerRuns = db.skillProfilerRuns.slice(-500);
   db.unmetCapabilities ||= [];
   db.adminActions ||= [];
   db.usageEvents ||= [];
@@ -446,18 +527,112 @@ export function normalizeDb(db) {
   return applyRetention(db);
 }
 
-// The app uses a small JSON store instead of SQLite so the user can back up,
-// inspect, and hand-edit state easily. Keep writes atomic at the object level:
-// readDb -> mutate -> writeDb.
+function splitDb(db) {
+  const buckets = new Map<string, Record<string, any>>([
+    ['core', {}],
+    ...SHARD_SPECS.map((spec) => [spec.name, {}] as [string, Record<string, any>])
+  ]);
+  for (const [key, value] of Object.entries(db || {})) {
+    if (key === '_storage') continue;
+    const name = shardNameForKey(key);
+    (buckets.get(name) || buckets.get('core'))![key] = value;
+  }
+  buckets.get('core')!._storage = storageMarker();
+  return buckets;
+}
+
+function writeShard(db, name: string) {
+  const buckets = splitDb(db);
+  const value = buckets.get(name) || {};
+  // Core stays formatted because it contains the small, hand-editable settings.
+  // Large append-heavy shards are compact to avoid wasting ~18 MB on whitespace.
+  writeJsonAtomic(shardPath(name), value, name === 'core');
+}
+
+function writeAllShards(db) {
+  const normalized = applyRetention(db);
+  nextStorageRevision();
+  for (const spec of SHARD_SPECS) writeShard(normalized, spec.name);
+  // Commit the marker last. A legacy db.json therefore remains authoritative if
+  // migration is interrupted before every shard has been written.
+  writeShard(normalized, 'core');
+  cachedStore = { dataDir: getDataDir(), db: normalized, coreSignature: coreFileSignature() };
+  invalidateStoreCaches();
+  return normalized;
+}
+
+function writeDirtyShards(db, dirtyKeys: Set<string>) {
+  const dirtyShards = new Set<string>();
+  for (const key of dirtyKeys) dirtyShards.add(shardNameForKey(key));
+  nextStorageRevision();
+  // Data shards are committed before the small core/revision file. Other
+  // processes use the core signature as their cache invalidation signal.
+  for (const name of dirtyShards) if (name !== 'core') writeShard(db, name);
+  writeShard(db, 'core');
+  cachedStore = { dataDir: getDataDir(), db, coreSignature: coreFileSignature() };
+  invalidateStoreCaches();
+}
+
+function parseJsonFile(filePath: string) {
+  return JSON.parse(fs.readFileSync(filePath, 'utf8').replace(/^\uFEFF/, ''));
+}
+
+function readLogicalDbFromDisk() {
+  const core = parseJsonFile(getDbPath());
+  if (!isShardedCore(core)) return normalizeDb(core);
+  storageRevision = String(core._storage?.revision || '');
+  const merged = { ...core };
+  delete merged._storage;
+  for (const spec of SHARD_SPECS) {
+    const filePath = shardPath(spec.name);
+    if (!fs.existsSync(filePath)) throw new Error(`数据库分片缺失: ${spec.file}`);
+    Object.assign(merged, parseJsonFile(filePath));
+  }
+  return normalizeDb(merged);
+}
+
+function preserveLegacyDb() {
+  const backupDir = path.join(getDataDir(), 'backups');
+  fs.mkdirSync(backupDir, { recursive: true });
+  const stamp = new Date().toISOString().replace(/[:.]/g, '-');
+  const destination = path.join(backupDir, `pre-shard-${stamp}.json`);
+  fs.copyFileSync(getDbPath(), destination);
+  return destination;
+}
+
+// db.json is now the small core shard. Large independent collections live in
+// sibling files and are assembled once into the process-local authoritative
+// object. Existing single-file databases migrate automatically and are fully
+// preserved under backups/pre-shard-*.json before the marker is committed.
 export function ensureStore() {
   fs.mkdirSync(getDataDir(), { recursive: true });
   if (!fs.existsSync(getDbPath())) {
     withDbLock(() => {
       if (!fs.existsSync(getDbPath())) {
         assertWriteTargetSafe();
-        writeJsonAtomic(getDbPath(), initialDb);
+        writeAllShards(normalizeDb(JSON.parse(JSON.stringify(initialDb))));
       }
     });
+    return;
+  }
+
+  try {
+    const current = parseJsonFile(getDbPath());
+    if (isShardedCore(current)) return;
+    assertWriteTargetSafe();
+    withDbLock(() => {
+      const lockedCurrent = parseJsonFile(getDbPath());
+      if (isShardedCore(lockedCurrent)) return;
+      const legacy = normalizeDb(lockedCurrent);
+      const backup = preserveLegacyDb();
+      writeAllShards(legacy);
+      console.log(`[store] migrated legacy db.json to sharded storage; backup=${path.basename(backup)}`);
+    });
+  } catch (error) {
+    // Read-only tools are allowed to inspect a legacy production DB. The trusted
+    // server entry will perform migration on its next start.
+    if (String((error as Error)?.message || error).includes('安全防护')) return;
+    throw error;
   }
 }
 
@@ -501,7 +676,7 @@ function recoverCorruptDb(error) {
       const recovered = normalizeDb(JSON.parse(fs.readFileSync(candidate, 'utf8').replace(/^\uFEFF/, '')));
       if (canWrite) {
         try {
-          writeJsonAtomic(dbPath, recovered);
+          writeAllShards(recovered);
         } catch (writeError) {
           console.error('[store] recovered db could not be written back, continuing in memory:', String((writeError as Error)?.message || writeError));
         }
@@ -517,7 +692,7 @@ function recoverCorruptDb(error) {
   const fresh = normalizeDb(JSON.parse(JSON.stringify(initialDb)));
   if (canWrite) {
     try {
-      writeJsonAtomic(dbPath, fresh);
+      writeAllShards(fresh);
     } catch (writeError) {
       console.error('[store] fresh db could not be written back, continuing in memory:', String((writeError as Error)?.message || writeError));
     }
@@ -526,11 +701,19 @@ function recoverCorruptDb(error) {
 }
 
 function readDbUnlocked() {
-  const raw = fs.readFileSync(getDbPath(), 'utf8').replace(/^\uFEFF/, '');
+  const dataDir = getDataDir();
+  const signature = coreFileSignature();
+  if (cachedStore?.dataDir === dataDir && cachedStore.coreSignature === signature) return cachedStore.db;
   try {
-    return normalizeDb(JSON.parse(raw));
+    const db = readLogicalDbFromDisk();
+    cachedStore = { dataDir, db, coreSignature: signature };
+    invalidateStoreCaches();
+    return db;
   } catch (error) {
-    return recoverCorruptDb(error);
+    const db = recoverCorruptDb(error);
+    cachedStore = { dataDir, db, coreSignature: coreFileSignature() };
+    invalidateStoreCaches();
+    return db;
   }
 }
 
@@ -543,10 +726,57 @@ export function writeDb(db) {
   assertWriteTargetSafe();
   ensureStore();
   return withDbLock(() => {
-    const result = writeJsonAtomic(getDbPath(), applyRetention(db));
-    autoBackupIfDue();
+    const result = writeAllShards(normalizeDb(db));
+    autoBackupIfDue(result);
     return result;
   });
+}
+
+function unwrapTrackedValue(value, rawTargets: WeakMap<object, object>, seen = new WeakMap()) {
+  if (!value || typeof value !== 'object') return value;
+  const raw = rawTargets.get(value) || value;
+  if (seen.has(raw)) return seen.get(raw);
+  if (Array.isArray(raw)) {
+    const result: any[] = [];
+    seen.set(raw, result);
+    for (const item of raw) result.push(unwrapTrackedValue(item, rawTargets, seen));
+    return result;
+  }
+  const result = {};
+  seen.set(raw, result);
+  for (const [key, item] of Object.entries(raw)) result[key] = unwrapTrackedValue(item, rawTargets, seen);
+  return result;
+}
+
+function trackedMutationProxy(
+  target,
+  dirtyKeys: Set<string>,
+  rootKey = '',
+  proxies = new WeakMap(),
+  rawTargets = new WeakMap<object, object>()
+) {
+  if (!target || typeof target !== 'object') return target;
+  if (proxies.has(target)) return proxies.get(target);
+  const proxy = new Proxy(target, {
+    get(object, property, receiver) {
+      const value = Reflect.get(object, property, receiver);
+      const nextRoot = rootKey || (typeof property === 'string' ? property : '');
+      return trackedMutationProxy(value, dirtyKeys, nextRoot, proxies, rawTargets);
+    },
+    set(object, property, value, receiver) {
+      const key = rootKey || (typeof property === 'string' ? property : '');
+      if (key) dirtyKeys.add(key);
+      return Reflect.set(object, property, unwrapTrackedValue(value, rawTargets), receiver);
+    },
+    deleteProperty(object, property) {
+      const key = rootKey || (typeof property === 'string' ? property : '');
+      if (key) dirtyKeys.add(key);
+      return Reflect.deleteProperty(object, property);
+    }
+  });
+  proxies.set(target, proxy);
+  rawTargets.set(proxy, target);
+  return proxy;
 }
 
 export function updateDb(mutator) {
@@ -554,14 +784,30 @@ export function updateDb(mutator) {
   ensureStore();
   return withDbLock(() => {
     const db = readDbUnlocked();
-    const result = mutator(db);
-    writeJsonAtomic(getDbPath(), applyRetention(db));
-    autoBackupIfDue();
+    const dirtyKeys = new Set<string>();
+    const trackedDb = trackedMutationProxy(db, dirtyKeys);
+    let result;
+    try {
+      result = mutator(trackedDb);
+      applyRetention(trackedDb);
+    } catch (error) {
+      // A failed mutator may have partially changed the cached object. Discard
+      // it so the next read reconstructs the last committed disk state.
+      cachedStore = null;
+      invalidateStoreCaches();
+      throw error;
+    }
+    if (dirtyKeys.size > 0) {
+      writeDirtyShards(db, dirtyKeys);
+      autoBackupIfDue(db);
+    }
     return result ?? db;
   });
 }
 
 export function publicDb(db = readDb()) {
+  const minute = Math.floor(Date.now() / 60_000);
+  if (cachedPublicDb?.db === db && cachedPublicDb.minute === minute) return cachedPublicDb.value;
   const now = new Date();
   const localDayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
   const currentHourStart = new Date(now.getFullYear(), now.getMonth(), now.getDate(), now.getHours()).getTime();
@@ -626,7 +872,7 @@ export function publicDb(db = readDb()) {
     }))
   }));
 
-  return {
+  const value = {
     settings: {
       ...db.settings,
       // Never send secrets back to the browser in plaintext. The GUI uses these
@@ -671,6 +917,8 @@ export function publicDb(db = readDb()) {
       returnedCommandLogs: commandLogs.length
     }
   };
+  cachedPublicDb = { db, minute, value };
+  return value;
 }
 
 export function upsertBy(list, key, item) {

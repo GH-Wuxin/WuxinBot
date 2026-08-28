@@ -87,7 +87,7 @@ export async function runBpTypeAnalysis(
 
   if (result.totalClassified === 0) {
     const detail = result.errors[0] || '未知错误';
-    return `BP 谱面类型分析暂时不可用（osu!oracle：${detail}）。可以稍后再试，或先用 /w osu analyze 生成完整分析。`;
+    return `BP 谱面类型分析暂时不可用（osu!oracle：${detail}）。可以稍后再试。`;
   }
 
   saveAnalysis({

@@ -12,7 +12,12 @@ import { extractEvidenceFromSample, addEvidence } from './profileV3.js';
 const PROFILE_FIELDS = ['summary', 'traits', 'speechStyle', 'behavior', 'preferences'];
 const MEMORY_SWEEP_INTERVAL_MS = 90_000;
 const PROFILE_LLM_CIRCUIT_MS = 10 * 60_000;
-const memoryUpdateInFlight = new Set();
+const PROFILE_UPDATE_TIMEOUT_MS = 70_000;
+const PROFILE_RETRY_BACKOFF_MS = [5, 15, 30, 60].map((minutes) => minutes * 60_000);
+const profileUpdatePromises = new Map();
+let profileQueueTail = Promise.resolve();
+let profileQueueDepth = 0;
+let activeProfileUserId = '';
 let lastMemorySweepAt = 0;
 let profileLlmCircuit = { until: 0, fingerprint: '', reason: '' };
 const EMPTY_PROFILE_EXACT = new Set([
@@ -70,6 +75,16 @@ function hasRecentProfileAttempt(memory, minutes = 30) {
   return Number.isFinite(time) && Date.now() - time < minutes * 60_000;
 }
 
+function profileRetryRemainingMs(memory) {
+  const retryAt = new Date(memory?.profileRetryAfter || 0).getTime();
+  return Number.isFinite(retryAt) ? Math.max(0, retryAt - Date.now()) : 0;
+}
+
+function profileRetryDelayMs(failureCount) {
+  const index = Math.max(0, Math.min(PROFILE_RETRY_BACKOFF_MS.length - 1, Number(failureCount || 1) - 1));
+  return PROFILE_RETRY_BACKOFF_MS[index];
+}
+
 function profileLlmFingerprint(db) {
   const key = String(db.settings.apiKey || '');
   return [
@@ -112,7 +127,8 @@ export function memoryIsDueForProfile(db, memory) {
   if (!memory || memory.enabled === false) return false;
   if (String(memory.userId) === String(db.settings.ownerQq || '')) return false;
   if (String(memory.userId) === String(db.settings.selfQq || '')) return false;
-  if (hasRecentProfileAttempt(memory, 30)) return false;
+  if (profileRetryRemainingMs(memory) > 0) return false;
+  if (memory.lastProfileStatus !== 'error' && hasRecentProfileAttempt(memory, 30)) return false;
   const thresholds = thresholdsForMemory(db, memory);
   const profileMessages = Number(memory.profileMessageCount || 0);
   const pending = Number(memory.pendingCount || 0);
@@ -456,10 +472,11 @@ export function recordMemoryObservation(event, userPolicy) {
     memory.updatedAt = nowIso();
 
     const needsInitialProfile = !hasProfileContent(memory) && memory.profileMessageCount >= thresholds.minMessages;
+    const retryBlockedMs = profileRetryRemainingMs(memory);
     const bootstrapReady = needsInitialProfile
       && memory.pendingCount >= 1
-      && !hasRecentProfileAttempt(memory, 30);
-    if (memory.profileMessageCount >= thresholds.minMessages && (memory.pendingCount >= thresholds.updateEvery || bootstrapReady)) {
+      && (memory.lastProfileStatus === 'error' || !hasRecentProfileAttempt(memory, 30));
+    if (!retryBlockedMs && memory.profileMessageCount >= thresholds.minMessages && (memory.pendingCount >= thresholds.updateEvery || bootstrapReady)) {
       shouldUpdate = true;
     }
     thresholdLog = {
@@ -469,6 +486,7 @@ export function recordMemoryObservation(event, userPolicy) {
       pendingCount: memory.pendingCount,
       needsInitialProfile,
       bootstrapReady,
+      retryBlockedMs,
       shouldUpdate
     };
   });
@@ -733,8 +751,31 @@ export function computeTopicWeights(clusters) {
   return weights;
 }
 
-export async function updateMemoryProfile(db, memory) {
-  const runId = newRunId();
+export function formatMemorySampleBlocks(memory, promptSamples) {
+  return promptSamples.map((s, i) => {
+    const ctx = s.context;
+    let block = `[样本 #${i + 1}]\n目标发言者：${memory.nickname || memory.userId}（QQ:${memory.userId}）\n目标本人内容：${s.content}`;
+    block += `\n样本类型：${s.type || 'text'}`;
+    if (ctx && ctx.nearby && ctx.nearby.length > 0) {
+      block += '\n附近对话（只帮助理解语境；不是目标本人的画像证据，也不能算作独立样本）：';
+      for (const m of ctx.nearby.slice(-5)) {
+        const who = m.role === 'assistant' ? 'Wuxin' : (m.nickname || m.userId);
+        const ownership = String(m.userId) === String(memory.userId) ? '目标本人附近发言' : '其他说话人';
+        block += `\n  - [${ownership}] ${who}（QQ:${m.userId || 'bot'}）：${m.content}`;
+      }
+    }
+    if (ctx) {
+      block += `\n@了谁：${ctx.atTargets.length ? ctx.atTargets.join(',') : '无'}`;
+      block += `\n是否@了bot：${ctx.mentionedBot ? '是' : '否'}`;
+    }
+    block += `\n当前风险等级：${s.riskLevel || 'normal'}`;
+    block += `\n当前分类理由：${s.reason}`;
+    return block;
+  }).join('\n\n');
+}
+
+export async function updateMemoryProfile(db, memory, options = {}) {
+  const runId = options.runId || newRunId();
   const sourceSamples = collectProfileSamples(db, memory);
   const usedSamples = selectDiverseSamples(sourceSamples.filter((s) => s.usedForProfile && s.content), 48);
   writeProfileLog({ runId, event: 'profile.run_started', userId: String(memory.userId), nickname: memory.nickname, detail: `样本 ${usedSamples.length} 条，源 ${sourceSamples.length} 条`, meta: { sampleCount: usedSamples.length, sourceCount: sourceSamples.length } });
@@ -760,25 +801,7 @@ export async function updateMemoryProfile(db, memory) {
 
   // Format samples as context blocks instead of isolated lines
   const promptSamples = selectDiverseSamples(usedSamples, 24);
-  const sampleBlocks = promptSamples.map((s, i) => {
-    const ctx = s.context;
-    let block = `[样本 #${i + 1}]\n发言者：${memory.nickname || memory.userId}\n内容：${s.content}`;
-    block += `\n样本类型：${s.type || 'text'}`;
-    if (ctx && ctx.nearby && ctx.nearby.length > 0) {
-      block += '\n上下文对话：';
-      for (const m of ctx.nearby.slice(-5)) {
-        const who = m.role === 'assistant' ? 'Wuxin' : (m.nickname || m.userId);
-        block += `\n  - ${who}：${m.content}`;
-      }
-    }
-    if (ctx) {
-      block += `\n@了谁：${ctx.atTargets.length ? ctx.atTargets.join(',') : '无'}`;
-      block += `\n是否@了bot：${ctx.mentionedBot ? '是' : '否'}`;
-    }
-    block += `\n当前风险等级：${s.riskLevel || 'normal'}`;
-    block += `\n当前分类理由：${s.reason}`;
-    return block;
-  }).join('\n\n');
+  const sampleBlocks = formatMemorySampleBlocks(memory, promptSamples);
 
   // Check if old profile was generated without context awareness (legacy)
   const hasContextSamples = usedSamples.some((s) => s.context && s.context.nearby && s.context.nearby.length > 0);
@@ -818,11 +841,12 @@ export async function updateMemoryProfile(db, memory) {
 6. 同一晚、同一话题的多条消息合并计算，不能线性放大。
 7. 禁止侮辱性标签。禁止推断身份/取向/心理状态。
 8. image-summary 是用户发图后的视觉摘要，只能作为低权重兴趣/话题背景；不能单独据此推断性格、身份、心理状态或现实关系。只有图片摘要与用户真实文本或跨天多图主题互相支持时，才能写入长期画像。
+9. 每个样本中只有“目标本人内容”属于被画像的 QQ。“附近对话”无论是谁说的都只用于消歧，绝不能把其他说话人的经历、成绩、偏好、观点或第一人称陈述写进目标画像，也不能把附近对话重复计算为独立证据。
 ${isLegacyProfile ? '- 旧版画像缺上下文，与上下文样本一致的保留，单薄矛盾的覆盖。' : ''}
 ${memory.profilingRule ? `- 【硬性约束】${memory.profilingRule}` : ''}` },
         { role: 'user', content: `QQ号：${memory.userId}\n昵称：${memory.nickname || memory.userId}\n\n样本统计：真实文本 ${usedSamples.length} 条，覆盖 ${sampleDayCount} 天 / ${sampleGroupCount} 个群。提示：统计来自长期历史与最近上下文混合取样，不只是最近几十条。\n\n已有长期画像：\n${existing}${useV2 ? `\n已有近期动态：\n${JSON.stringify((memory.recentDynamics || []).slice(-5).map((d) => d.topic + ': ' + d.summary))}\n\n话题聚类分析：\n${longTermBlock || '无跨场景长期候选'}\n${recentDynamicsBlock || '无短期高频话题'}` : ''}\n\n样本与上下文：\n${sampleBlocks}\n\n低权重背景：\n${cardText}` }
       ],
-      temperature: 0.2, maxTokens: 1000, label: '画像更新'
+      temperature: 0.2, maxTokens: 1000, timeoutMs: PROFILE_UPDATE_TIMEOUT_MS, label: '画像更新'
     });
   } catch (error) {
     error.profileRunId = runId;
@@ -843,6 +867,7 @@ ${memory.profilingRule ? `- 【硬性约束】${memory.profilingRule}` : ''}` },
         ],
         temperature: 0,
         maxTokens: 1200,
+        timeoutMs: PROFILE_UPDATE_TIMEOUT_MS,
         label: '画像JSON修复'
       });
       return {
@@ -1091,6 +1116,8 @@ export function commitMemoryProfileResult(userId, result, options = {}) {
     target.lastProfileAttemptAt = stamp;
     const applyResult = applyProfileUpdate(target, result?.profile || {});
     const hasProfile = hasProfileContent(target);
+    target.profileFailureCount = 0;
+    target.profileRetryAfter = '';
     if (hasProfile) {
       target.pendingCount = 0;
       target.lastProfiledAt = stamp;
@@ -1145,59 +1172,139 @@ function countEvidenceByField(samples) {
   return counts;
 }
 
-export async function maybeUpdateMemoryProfile(event) {
+function enqueueProfileTask(userId, task) {
+  profileQueueDepth += 1;
+  const queuedAt = Date.now();
+  const run = profileQueueTail.then(async () => {
+    profileQueueDepth = Math.max(0, profileQueueDepth - 1);
+    activeProfileUserId = userId;
+    try {
+      return await task(Date.now() - queuedAt);
+    } finally {
+      activeProfileUserId = '';
+    }
+  });
+  profileQueueTail = run.catch(() => undefined);
+  return run;
+}
+
+export function getMemoryProfileQueueStatus() {
+  return {
+    activeUserId: activeProfileUserId,
+    queued: profileQueueDepth,
+    trackedUsers: profileUpdatePromises.size,
+  };
+}
+
+export function maybeUpdateMemoryProfile(event, options = {}) {
   const userId = String(event.userId || '');
-  if (!userId) return;
-  if (memoryUpdateInFlight.has(userId)) return;
-  memoryUpdateInFlight.add(userId);
-  const db = readDb();
-  const memory = (db.memories || []).find((entry) => String(entry.userId) === userId);
-  if (!memory || memory.enabled === false) {
-    memoryUpdateInFlight.delete(userId);
-    return;
+  if (!userId) return Promise.resolve({ ok: false, skipped: true, reason: '画像用户为空' });
+  const existing = profileUpdatePromises.get(userId);
+  if (existing) return existing;
+
+  const initialDb = readDb();
+  const initialMemory = (initialDb.memories || []).find((entry) => String(entry.userId) === userId);
+  if (!initialMemory || initialMemory.enabled === false) {
+    return Promise.resolve({ ok: false, skipped: true, reason: '画像不存在或已停用' });
   }
-  const circuitReason = profileLlmCircuitReason(db);
-  if (circuitReason) {
-    memoryUpdateInFlight.delete(userId);
-    return;
-  }
-  try {
-    const result = await updateMemoryProfile(db, memory);
-    if (!result) return;
-    commitMemoryProfileResult(userId, result, { groupId: event.groupId, model: db.settings.model, kind: 'memory' });
-  } catch (error) {
-    if (isProfileAuthError(error)) tripProfileLlmCircuit(db, error);
+  const initialRetryMs = profileRetryRemainingMs(initialMemory);
+  if (!options.force && initialRetryMs > 0) {
     writeProfileLog({
-      runId: error.profileRunId || '',
-      event: 'profile.error',
-      userId: String(userId),
-      nickname: memory.nickname,
-      groupId: event.groupId,
-      detail: error.message || String(error),
-      meta: {
-        provider: db.settings.llmProvider,
-        apiBaseUrl: db.settings.apiBaseUrl,
-        model: db.settings.model,
-        circuitUntil: isProfileAuthError(error) ? new Date(profileLlmCircuit.until).toISOString() : ''
-      }
+      runId: '', event: 'profile.backoff', userId, nickname: initialMemory.nickname,
+      groupId: event.groupId, detail: `画像失败退避中，约 ${Math.ceil(initialRetryMs / 60_000)} 分钟后重试`,
+      meta: { retryAfter: initialMemory.profileRetryAfter, remainingMs: initialRetryMs }
     });
-    updateDb((draft) => {
-      const target = (draft.memories || []).find((entry) => String(entry.userId) === userId);
-      if (target) {
-        target.lastProfileAttemptAt = nowIso();
-        target.lastProfileStatus = 'error';
-        target.lastProfileError = error.message || String(error);
-        target.updatedAt = nowIso();
-      }
-      draft.decisions.push({
-        id: crypto.randomUUID(), messageId: event.messageId, groupId: event.groupId,
-        userId, shouldReply: false,
-        reason: `长期记忆更新失败：${error.message}`, createdAt: nowIso()
-      });
-    });
-  } finally {
-    memoryUpdateInFlight.delete(userId);
+    return Promise.resolve({ ok: false, skipped: true, reason: '画像失败退避中', retryAfter: initialMemory.profileRetryAfter });
   }
+
+  const runId = newRunId();
+  writeProfileLog({
+    runId, event: 'profile.queued', userId, nickname: initialMemory.nickname,
+    groupId: event.groupId, detail: `画像更新已入队，前方 ${profileQueueDepth + (activeProfileUserId ? 1 : 0)} 个任务`,
+    meta: { queueDepth: profileQueueDepth, activeUserId: activeProfileUserId, kind: options.kind || 'memory' }
+  });
+
+  let scheduled;
+  scheduled = enqueueProfileTask(userId, async (queuedMs) => {
+    const db = readDb();
+    const storedMemory = (db.memories || []).find((entry) => String(entry.userId) === userId);
+    if (!storedMemory || storedMemory.enabled === false) {
+      return { ok: false, skipped: true, reason: '画像不存在或已停用', runId, queuedMs };
+    }
+    const retryMs = profileRetryRemainingMs(storedMemory);
+    if (!options.force && retryMs > 0) {
+      writeProfileLog({
+        runId, event: 'profile.backoff', userId, nickname: storedMemory.nickname,
+        groupId: event.groupId, detail: `轮到执行时仍处于失败退避，约 ${Math.ceil(retryMs / 60_000)} 分钟后重试`,
+        meta: { retryAfter: storedMemory.profileRetryAfter, remainingMs: retryMs, queuedMs }
+      });
+      return { ok: false, skipped: true, reason: '画像失败退避中', retryAfter: storedMemory.profileRetryAfter, runId, queuedMs };
+    }
+    const circuitReason = profileLlmCircuitReason(db);
+    if (circuitReason) {
+      return { ok: false, skipped: true, reason: `画像模型熔断中：${circuitReason}`, runId, queuedMs };
+    }
+    const memory = options.profilingRule === undefined
+      ? storedMemory
+      : { ...storedMemory, profilingRule: String(options.profilingRule || '') };
+    try {
+      const result = await updateMemoryProfile(db, memory, { runId });
+      if (!result) return { ok: false, skipped: true, reason: '画像模型未返回结果', runId, queuedMs };
+      const outcome = commitMemoryProfileResult(userId, result, {
+        groupId: event.groupId,
+        model: db.settings.model,
+        kind: options.kind || 'memory'
+      });
+      return { ...outcome, runId, usage: result.usage || {}, queuedMs };
+    } catch (error) {
+      if (isProfileAuthError(error)) tripProfileLlmCircuit(db, error);
+      let retryAfter = '';
+      let failureCount = 1;
+      updateDb((draft) => {
+        const target = (draft.memories || []).find((entry) => String(entry.userId) === userId);
+        if (target) {
+          failureCount = Number(target.profileFailureCount || 0) + 1;
+          retryAfter = new Date(Date.now() + profileRetryDelayMs(failureCount)).toISOString();
+          target.lastProfileAttemptAt = nowIso();
+          target.lastProfileStatus = 'error';
+          target.lastProfileError = error.message || String(error);
+          target.profileFailureCount = failureCount;
+          target.profileRetryAfter = retryAfter;
+          target.updatedAt = nowIso();
+        }
+        if (!draft.decisions) draft.decisions = [];
+        draft.decisions.push({
+          id: crypto.randomUUID(), messageId: event.messageId, groupId: event.groupId,
+          userId, shouldReply: false,
+          reason: `长期记忆更新失败：${error.message}`, createdAt: nowIso()
+        });
+      });
+      writeProfileLog({
+        runId: error.profileRunId || runId,
+        event: 'profile.error',
+        userId,
+        nickname: memory.nickname,
+        groupId: event.groupId,
+        detail: error.message || String(error),
+        meta: {
+          provider: db.settings.llmProvider,
+          apiBaseUrl: db.settings.apiBaseUrl,
+          model: db.settings.model,
+          queuedMs,
+          failureCount,
+          retryAfter,
+          circuitUntil: isProfileAuthError(error) ? new Date(profileLlmCircuit.until).toISOString() : ''
+        }
+      });
+      return { ok: false, error: error.message || String(error), reason: error.message || String(error), runId, queuedMs, retryAfter };
+    }
+  });
+  profileUpdatePromises.set(userId, scheduled);
+  const cleanup = () => {
+    if (profileUpdatePromises.get(userId) === scheduled) profileUpdatePromises.delete(userId);
+  };
+  scheduled.then(cleanup, cleanup);
+  return scheduled;
 }
 
 export function maybeSweepDueMemoryProfiles(event) {
@@ -1211,7 +1318,7 @@ export function maybeSweepDueMemoryProfiles(event) {
 
   const memory = target.memory;
   const userId = String(memory.userId);
-  if (memoryUpdateInFlight.has(userId)) return { started: false, reason: '目标画像正在更新中' };
+  if (profileUpdatePromises.has(userId)) return { started: false, reason: '目标画像已在队列中' };
   lastMemorySweepAt = now;
   const groupId = event.groupId || (memory.groupsSeen || []).slice(-1)[0] || '';
   const sweepEvent = {

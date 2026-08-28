@@ -15,7 +15,7 @@ import { getHealth, getRecalcProgress, startRecalc, tickRecalc, stopRecalc, fini
 import { getKbHealth } from './bot/knowledgeBase.js';
 import { getGroupProfile, updateGroupProfile, clearGroupProfile, hasGroupProfileContent } from './bot/groupProfile.js';
 import { getRelationshipProfile, updateRelationshipProfile, clearRelationshipProfile, isSubstantiveRelationshipProfile } from './bot/relationshipProfile.js';
-import { commitMemoryProfileResult, updateMemoryProfile } from './bot/memory.js';
+import { getMemoryProfileQueueStatus, maybeUpdateMemoryProfile } from './bot/memory.js';
 import { evaluateTrustScores } from './bot/trust.js';
 import { decayInactiveUsers } from './bot/experience.js';
 import { queryProfileLogs, getProfileLogStats } from './bot/profileLog.js';
@@ -23,11 +23,23 @@ import { updateProviderSettings } from './modelConfig.js';
 import { getRenderServer, startRenderServer } from './bots/renderServer.js';
 import { removeLazybotBinding, syncLazybotBinding } from './bots/bindingSync.js';
 import { sharedGroupBotConfigPath } from './bots/externalPaths.js';
+import { acquireInstanceLock } from './instanceLock.js';
+import { listRequestTraces, subscribeRequestTraces } from './requestTrace.js';
+
+const port = Number(process.env.PORT || 8787);
+let releaseInstanceLock = () => {};
+
+function releaseServerInstanceLock() {
+  try { releaseInstanceLock(); } catch { /* best-effort process cleanup */ }
+}
 
 // ── Process guards (P0-A) ──
 // These exist to leave a stack + exit reason behind, NOT to swallow errors
 // and keep running. uncaughtException / unhandledRejection still terminate
-// the process; SIGINT/SIGTERM shut the WS down cleanly first.
+// the process. Before exiting they make a best-effort request to close the
+// OneBot WS (listeners are detached and ws.close() is called, but process.exit
+// may not wait for the close handshake to finish). SIGINT/SIGTERM use the same
+// cleanup plus a short 200ms grace period.
 function writeCrashLog(kind, error) {
   try {
     const dir = path.join(process.cwd(), 'logs');
@@ -44,6 +56,12 @@ function writeCrashLog(kind, error) {
 process.on('uncaughtException', (error) => {
   console.error('[crash] uncaughtException:', error);
   writeCrashLog('uncaughtException', error);
+  try {
+    shutdownOneBot();
+  } catch (shutdownError) {
+    console.error('[crash] shutdownOneBot failed:', String(shutdownError?.message || shutdownError));
+  }
+  releaseServerInstanceLock();
   process.exit(1);
 });
 
@@ -51,21 +69,31 @@ process.on('unhandledRejection', (reason) => {
   const error = reason instanceof Error ? reason : new Error(String(reason));
   console.error('[crash] unhandledRejection:', error);
   writeCrashLog('unhandledRejection', error);
+  try {
+    shutdownOneBot();
+  } catch (shutdownError) {
+    console.error('[crash] shutdownOneBot failed:', String(shutdownError?.message || shutdownError));
+  }
+  releaseServerInstanceLock();
   process.exit(1);
 });
 
 function gracefulShutdown(signal) {
-  console.log(`[shutdown] ${signal} received, closing OneBot connection`);
+  console.log(`[shutdown] ${signal} received, requesting OneBot connection close`);
   try {
     shutdownOneBot();
   } catch (error) {
     console.error('[shutdown] shutdownOneBot failed:', String(error?.message || error));
   }
+  releaseServerInstanceLock();
+  // Best effort only: ws.close() is requested but a 200ms grace period cannot
+  // guarantee the close handshake completes before process exit.
   setTimeout(() => process.exit(0), 200);
 }
 
 process.on('SIGINT', () => gracefulShutdown('SIGINT'));
 process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
+process.on('exit', releaseServerInstanceLock);
 
 // Node 20.11.1 crashes with ERR_INTERNAL_ASSERTION in internalConnectMultiple
 // when many outbound sockets race IPv4/IPv6 auto-selection (happy eyeballs).
@@ -76,13 +104,22 @@ try {
   // Older/other runtimes simply keep the default.
 }
 
+releaseInstanceLock = acquireInstanceLock(port);
 ensureStore();
+
+// Authentication is consulted on every API request. Keep this one scalar in
+// memory instead of synchronously parsing the entire (currently ~34 MB) JSON
+// store for health/state polling. Mutating restore/settings routes refresh it.
+let cachedAdminPassword = String(readDb().settings.adminPassword || '');
+function refreshCachedAdminPassword(db = readDb()) {
+  cachedAdminPassword = String(db?.settings?.adminPassword || '');
+}
 
 const app = express();
 app.use(express.json({ limit: '2mb' }));
 
 const SAFE_ID = /^[A-Za-z0-9_-]{1,64}$/;
-const GROUP_MODES = new Set(['silent', 'mention', 'light', 'natural']);
+const GROUP_MODES = new Set(['silent', 'mention', 'light', 'natural', 'osu']);
 const USER_POLICIES = new Set(['normal', 'whitelist', 'priority', 'muted', 'blocked', 'admin', 'owner']);
 
 function safeSecretEqual(actual, expected) {
@@ -94,7 +131,7 @@ function safeSecretEqual(actual, expected) {
 // The GUI remains open when no password is configured. Once ADMIN_PASSWORD or
 // the GUI password field is set, every API call must authenticate.
 app.use('/api', (req, res, next) => {
-  const expected = String(readDb().settings.adminPassword || '');
+  const expected = cachedAdminPassword;
   if (!expected) return next();
   const supplied = req.get('x-wuxin-admin-password') || '';
   if (!safeSecretEqual(supplied, expected)) {
@@ -134,6 +171,47 @@ function ok(data = {}) {
 
 app.get('/api/state', (_req, res) => {
   res.json(ok({ db: publicDb(), oneBot: getOneBotStatus() }));
+});
+
+app.get('/api/request-traces', (req, res) => {
+  res.json(ok({ traces: listRequestTraces(Number(req.query.limit || 80)) }));
+});
+
+app.get('/api/request-traces/stream', (req, res) => {
+  res.status(200);
+  res.setHeader('Content-Type', 'text/event-stream; charset=utf-8');
+  res.setHeader('Cache-Control', 'no-cache, no-transform');
+  res.setHeader('Connection', 'keep-alive');
+  res.setHeader('X-Accel-Buffering', 'no');
+  res.flushHeaders?.();
+
+  const send = (payload) => {
+    try {
+      if (!res.writableEnded) res.write(`data: ${JSON.stringify(payload)}\n\n`);
+    } catch {
+      // Connection cleanup below handles disconnected console clients.
+    }
+  };
+  send({ type: 'snapshot', traces: listRequestTraces(Number(req.query.limit || 80)) });
+  const unsubscribe = subscribeRequestTraces((trace) => send({ type: 'upsert', trace }));
+  if (!unsubscribe) {
+    send({ type: 'error', error: 'trace_stream_capacity' });
+    res.end();
+    return;
+  }
+  const heartbeat = setInterval(() => {
+    try { if (!res.writableEnded) res.write(': heartbeat\n\n'); } catch { /* close handler cleans up */ }
+  }, 15_000);
+  heartbeat.unref?.();
+  let cleaned = false;
+  const cleanup = () => {
+    if (cleaned) return;
+    cleaned = true;
+    clearInterval(heartbeat);
+    unsubscribe();
+  };
+  req.once('close', cleanup);
+  res.once('close', cleanup);
 });
 
 // KB v4.1 status — admin-only via the global /api password guard. Exposes
@@ -185,7 +263,6 @@ app.post('/api/group-bot-config', async (req, res) => {
 // A persisted `running` marker is useful for the GUI, but it cannot prove that
 // work still exists after a server crash/restart. Only this process-local set
 // may suppress a duplicate start; stale disk markers are overwritten.
-const consoleAnalysesRunning = new Set<string>();
 
 function tcpProbe(port, host = '127.0.0.1', timeoutMs = 800) {
   return new Promise((resolve) => {
@@ -210,15 +287,6 @@ function osuBindingList(db = readDb()) {
   }).sort((a, b) => a.qq.localeCompare(b.qq));
 }
 
-function osuQuickGroupList(db = readDb()) {
-  return (db.groups || []).map((g) => ({
-    groupId: g.groupId,
-    name: g.name,
-    enabled: Boolean(g.enabled),
-    quick: Boolean(db.groupBotConfig?.[g.groupId]?.quick),
-  }));
-}
-
 app.get('/api/osu/status', async (_req, res) => {
   const db = readDb();
   const health = getHealth();
@@ -228,28 +296,9 @@ app.get('/api/osu/status', async (_req, res) => {
     bots.push({ id, port, up: await tcpProbe(Number(port)) });
   }
 
-  const logs = (db.commandLogs || []).filter((c) => String(c.command || '').startsWith('quick:'));
-  const byCommand = {};
-  const bySource = {};
-  for (const log of logs) {
-    const command = String(log.command || '').replace(/^quick:/, '');
-    byCommand[command] = (byCommand[command] || 0) + 1;
-    const source = String(log.source || 'other');
-    bySource[source] = (bySource[source] || 0) + 1;
-  }
   const osuLogs = (db.commandLogs || []).filter((c) => String(c.command || '') === '/osu');
   const analyzeCount = osuLogs.filter((c) => String(c.subCommand || '') === 'analyze').length;
   const bindCount = osuLogs.filter((c) => String(c.subCommand || '') === 'bind').length;
-  const recentQuick = [...logs].reverse().slice(0, 15).map((c) => ({
-    id: c.id,
-    createdAt: c.createdAt,
-    groupId: c.groupId,
-    userId: c.userId,
-    nickname: c.nickname,
-    command: String(c.command || '').replace(/^quick:/, ''),
-    outcome: c.outcome,
-    detail: c.detail,
-  }));
 
   res.json(ok({
     health: { api429Count: health.osu.api429Count, renderFailures: health.osu.renderFailures },
@@ -258,17 +307,11 @@ app.get('/api/osu/status', async (_req, res) => {
       listeningPort: getRenderServer().getListeningPort(),
       hasClients: getRenderServer().hasClients(),
     },
-    quickRouterEnabled: Boolean(db.settings.quickRouterEnabled),
-    groups: osuQuickGroupList(db),
     bindings: osuBindingList(db),
     stats: {
-      quickTotal: logs.length,
-      byCommand: Object.fromEntries(Object.entries(byCommand).sort((a, b) => Number(b[1]) - Number(a[1]))),
-      bySource,
       analyzeCount,
       bindCount,
     },
-    recentQuick,
   }));
 });
 
@@ -312,23 +355,6 @@ app.post('/api/osu/bindings', async (req, res) => {
   } catch {
     res.status(400).json({ ok: false, error: `osu! 用户 "${name}" 查不到。` });
   }
-});
-
-app.post('/api/osu/quick', (req, res) => {
-  const { global, groupId, enabled } = req.body || {};
-  if (global !== undefined) {
-    updateDb((db) => {
-      db.settings.quickRouterEnabled = Boolean(global);
-    });
-    return res.json(ok({ quickRouterEnabled: Boolean(global) }));
-  }
-  if (!groupId) return res.status(400).json({ ok: false, error: '缺少 groupId' });
-  updateDb((db) => {
-    db.groupBotConfig = db.groupBotConfig || {};
-    db.groupBotConfig[String(groupId)] = db.groupBotConfig[String(groupId)] || { yumu: true, kanon: true, hydrant: true, lazybot: true };
-    db.groupBotConfig[String(groupId)].quick = Boolean(enabled);
-  });
-  res.json(ok({ groups: osuQuickGroupList() }));
 });
 
 // ── osu! console player APIs ──
@@ -592,66 +618,11 @@ app.get('/api/osu/player/:id/analyze', async (req, res) => {
 app.post('/api/osu/player/:id/analyze', async (req, res) => {
   const osuId = osuIdParam(req, res);
   if (osuId === null) return;
-  const { getStoredAnalysis, setStoredAnalysis } = await import('./osu/profileStore.js');
-  const analysisKey = String(osuId);
-  const existing = getStoredAnalysis(osuId);
-  if (consoleAnalysesRunning.has(analysisKey)) {
-    return res.json(ok({ analysis: existing, started: false }));
-  }
-
-  let profile;
-  try {
-    profile = await loadPlayerSnapshot(osuId);
-  } catch (error) {
-    return res.status(404).json({ ok: false, error: `玩家获取失败：${String(error?.message || error).slice(0, 200)}` });
-  }
-  const username = profile.player.username;
-  const entry = { status: 'running' as const, at: new Date().toISOString() };
-  consoleAnalysesRunning.add(analysisKey);
-  setStoredAnalysis(osuId, entry);
-
-  // Console analyses bypass the QQ-side 4h cooldown; a per-player console id
-  // only prevents double-starting the same player's analysis.
-  void (async () => {
-    try {
-      const { handleOsuCommand } = await import('./osu/commands.js');
-      const captured = [];
-      const event = {
-        userId: `console-${osuId}`,
-        groupId: 'console',
-        atTargets: [],
-        text: `/w osu analyze ${username}`,
-      };
-      const result: any = await handleOsuCommand(
-        event,
-        async (_e, text) => { captured.push(String(text || '')); },
-        { isOwner: true, isAdmin: true },
-        'analyze',
-        `analyze ${username}`,
-        { bypassCooldown: true },
-      );
-      // Long reports go through a merge-forward card whose body bypasses the
-      // text stub; handleOsuCommand still resolves with the full report text.
-      const reportText = String(result?.text || '') || captured.join('\n\n');
-      setStoredAnalysis(osuId, {
-        status: 'done',
-        at: entry.at,
-        finishedAt: new Date().toISOString(),
-        text: reportText,
-      });
-    } catch (error) {
-      setStoredAnalysis(osuId, {
-        status: 'error',
-        at: entry.at,
-        finishedAt: new Date().toISOString(),
-        error: String(error?.message || error),
-      });
-    } finally {
-      consoleAnalysesRunning.delete(analysisKey);
-    }
-  })();
-
-  res.json(ok({ analysis: { status: 'running', at: entry.at }, started: true }));
+  return res.status(410).json({
+    ok: false,
+    error: '玩家 Analyze 已停用；后续由玩家 Skill 画像替代。',
+    code: 'OSU_ANALYZE_DISABLED',
+  });
 });
 
 app.get('/api/diagnostics', (_req, res) => {
@@ -681,7 +652,7 @@ app.get('/api/diagnostics', (_req, res) => {
 });
 
 app.post('/api/settings', (req, res) => {
-  updateDb((db) => {
+  const updatedDb = updateDb((db) => {
     saveConfigSnapshot(db);
     const incoming = Object.fromEntries(
       Object.entries(req.body || {}).filter(([key]) => Object.prototype.hasOwnProperty.call(db.settings, key))
@@ -710,11 +681,12 @@ app.post('/api/settings', (req, res) => {
       ));
     }
   });
-  res.json(ok({ db: publicDb() }));
+  refreshCachedAdminPassword(updatedDb);
+  res.json(ok({ db: publicDb(updatedDb) }));
 });
 
 app.post('/api/search/test-local', async (_req, res) => {
-  const testUrl = 'http://127.0.0.1:8080/search?q=test&format=json';
+  const testUrl = 'http://127.0.0.1:8080/search?q=test&format=json&language=zh-CN&safesearch=1';
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), 5000);
   try {
@@ -724,7 +696,7 @@ app.post('/api/search/test-local', async (_req, res) => {
     });
     if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
     const data = await resp.json();
-    if (!data || (!data.results && !data.query && data.results === undefined)) {
+    if (!data || !Array.isArray(data.results)) {
       throw new Error('响应格式不符合 SearXNG');
     }
     res.json(ok({ baseUrl: 'http://127.0.0.1:8080' }));
@@ -873,12 +845,15 @@ app.post('/api/memories/:userId/recalculate', async (req, res) => {
     return res.status(400).json({ ok: false, error: `可用画像样本不足：样本 ${storedUsableSamples} 条，历史消息 ${historicalMessages} 条` });
   }
   try {
-    const result = await updateMemoryProfile(db, memory);
-    const outcome = commitMemoryProfileResult(userId, result, {
-      model: db.settings.model,
-      kind: 'memory-manual-recalc'
+    const outcome = await maybeUpdateMemoryProfile({
+      type: 'private', groupId: '', userId, nickname: memory.nickname || userId,
+      messageId: `memory-manual-recalc:${userId}:${Date.now()}`
+    }, {
+      force: true,
+      kind: 'memory-manual-recalc',
     });
-    res.json(ok({ outcome, runId: result.runId, usage: result.usage || {}, db: publicDb() }));
+    if (!outcome.ok) return res.status(400).json({ ok: false, error: outcome.reason || outcome.error || '画像更新失败', db: publicDb() });
+    res.json(ok({ outcome, runId: outcome.runId, usage: outcome.usage || {}, db: publicDb() }));
   } catch (error) {
     updateDb((draft) => {
       const target = (draft.memories || []).find((entry) => String(entry.userId) === userId);
@@ -1199,7 +1174,7 @@ app.get('/api/profile-logs', (req, res) => {
     offset: offset ? Number(offset) : 0,
   });
   const stats = getProfileLogStats();
-  res.json(ok({ logs, stats }));
+  res.json(ok({ logs, stats: { ...stats, queue: getMemoryProfileQueueStatus() } }));
 });
 
 // Backup routes
@@ -1219,6 +1194,7 @@ app.post('/api/backups', (req, res) => {
 app.post('/api/backups/:name/restore', (req, res) => {
   const result = restoreBackup(req.params.name);
   if (!result.ok) return res.status(400).json({ ok: false, error: result.error });
+  refreshCachedAdminPassword();
   res.json(ok({ restored: result.name }));
 });
 
@@ -1237,7 +1213,6 @@ setInterval(() => { evaluateTrustScores(); }, 4 * 60 * 60 * 1000);
 // Decay XP for inactive users every 6 hours
 setInterval(() => { decayInactiveUsers(); }, 6 * 60 * 60 * 1000);
 
-const port = Number(process.env.PORT || 8787);
 // Recalc progress
 app.get('/api/recalc-status', (_req, res) => { res.json(ok(getRecalcProgress())); });
 
@@ -1252,15 +1227,16 @@ app.post('/api/recalc', (_req, res) => {
     const rels = (db.relationshipProfiles || []).filter((r) => r.enabled !== false);
     const total = mems.length + gps.length + rels.length;
     startRecalc(total, '正在重算全部画像');
-    const { updateMemoryProfile } = await import('./bot/memory.js');
+    const { maybeUpdateMemoryProfile } = await import('./bot/memory.js');
     const { updateGroupProfile } = await import('./bot/groupProfile.js');
     const { updateRelationshipProfile } = await import('./bot/relationshipProfile.js');
     for (const mem of mems) {
       if (getRecalcProgress().stopped) break;
       try {
-        const latestDb = readDb();
-        const result = await updateMemoryProfile(latestDb, mem);
-        commitMemoryProfileResult(mem.userId, result, { model: latestDb.settings.model, kind: 'memory-recalc' });
+        await maybeUpdateMemoryProfile({
+          type: 'private', groupId: '', userId: String(mem.userId), nickname: mem.nickname || String(mem.userId),
+          messageId: `memory-recalc:${mem.userId}:${Date.now()}`
+        }, { force: true, kind: 'memory-recalc' });
       } catch { /* skip */ }
       tickRecalc();
     }
@@ -1297,10 +1273,13 @@ app.get('/api/config-snapshots', (_req, res) => {
 
 app.post('/api/config-snapshots/:index/restore', (req, res) => {
   const index = parseInt(req.params.index, 10);
-  updateDb((db) => {
-    if (!restoreConfigSnapshot(db, index)) return res.status(400).json({ ok: false, error: '无效的快照索引' });
-    res.json(ok({ restored: true }));
+  let restored = false;
+  const updatedDb = updateDb((db) => {
+    restored = restoreConfigSnapshot(db, index);
   });
+  if (!restored) return res.status(400).json({ ok: false, error: '无效的快照索引' });
+  refreshCachedAdminPassword(updatedDb);
+  res.json(ok({ restored: true }));
 });
 
 // JSON error handler — never return HTML error pages to the GUI

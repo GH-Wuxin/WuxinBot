@@ -374,7 +374,7 @@
 .groups-danger-zone > div:last-child { display: flex; gap: 8px; flex-wrap: wrap; }
 
 .osu-page, .integrations-page { display: grid; gap: 15px; }
-.osu-metrics { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 10px; }
+.osu-metrics { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 10px; }
 .osu-metrics .metric-card { min-height: 104px; }
 .osu-player-search { display: grid; grid-template-columns: auto minmax(180px, .8fr) minmax(260px, 1.2fr) auto; align-items: center; gap: 12px; background: linear-gradient(100deg, var(--v2-surface-2), #33263a); border-color: rgba(240,100,154,.28); }
 .osu-player-search > svg { color: var(--v2-accent); }
@@ -383,22 +383,12 @@
 .osu-services__list { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }
 .osu-services__list > div { min-width: 0; display: grid; gap: 6px; padding: 10px 11px; background: var(--v2-surface-2); border-radius: var(--v2-radius-sm); }
 .osu-services__list code { overflow: hidden; color: var(--v2-text-muted); font-size: 11px; text-overflow: ellipsis; }
-.osu-workspace { display: grid; grid-template-columns: minmax(420px, .9fr) minmax(520px, 1.1fr); gap: 14px; align-items: start; }
 .osu-binding-form { display: grid; grid-template-columns: .8fr 1.2fr auto; align-items: end; gap: 9px; }
 .osu-binding-list { max-height: 490px; overflow: auto; display: grid; gap: 2px; margin-top: 12px; }
 .osu-binding-list > div { display: flex; align-items: center; gap: 8px; padding: 7px 8px; background: var(--v2-surface-2); border-radius: var(--v2-radius-sm); }
 .osu-binding-list__player { min-width: 0; flex: 1; display: grid; gap: 2px; text-align: left; color: var(--v2-text); background: transparent; border: 0; cursor: pointer; }
 .osu-binding-list__player span, .osu-binding-list__player small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .osu-binding-list__player small { color: var(--v2-text-muted); }
-.osu-router-groups { max-height: 610px; overflow: auto; display: grid; gap: 9px; margin-top: 10px; padding-right: 3px; }
-.osu-router-groups .ui-setting-group + .ui-setting-group { margin-top: 0; }
-.osu-activity-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
-.osu-command-stats, .osu-recent-list { display: grid; gap: 2px; }
-.osu-command-stats > div { min-height: 39px; display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 7px 9px; background: var(--v2-surface-2); }
-.osu-source-pills { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 10px; }
-.osu-recent-list article { padding: 9px 10px; background: var(--v2-surface-2); border-left: 2px solid var(--v2-border-strong); }
-.osu-recent-list article > * { display: block; }
-.osu-recent-list span, .osu-recent-list p { margin: 2px 0 0; color: var(--v2-text-muted); font-size: 11px; }
 
 .osu-player-overlay { position: fixed; z-index: 90; inset: 0; display: flex; justify-content: flex-end; background: rgba(9,7,13,.72); }
 .osu-player-drawer { width: min(880px, calc(100vw - 28px)); height: 100%; overflow: hidden; display: grid; grid-template-rows: auto auto auto minmax(0,1fr); padding: 18px; background: var(--v2-surface-1); border-left: 1px solid var(--v2-border-strong); box-shadow: -24px 0 70px rgba(0,0,0,.42); }
@@ -570,7 +560,7 @@
 .memory-dynamic > span, .memory-sample > span, .memory-sample > small { color: var(--v2-text-muted); font-size: 10px; }
 .memory-sample > small { padding-left: 8px; border-left: 2px solid var(--v2-border-strong); }
 .memory-samples { max-height: 430px; overflow: auto; padding-right: 3px; }
-.profile-log-metrics { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+.profile-log-metrics { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }
 .profile-log-metrics .metric-card { min-height: 92px; }
 .profile-log-toolbar .ui-field { min-width: 180px; }
 .profile-log-toolbar .ui-field:last-child { min-width: 210px; }
@@ -593,6 +583,38 @@
 .log-row > span, .log-row > small { color: var(--v2-text-muted); font-size: 10px; overflow-wrap: anywhere; }
 .log-row > small { color: var(--v2-danger); }
 .log-row p { margin: 0; color: var(--v2-text-soft); font-size: 12px; line-height: 1.55; overflow-wrap: anywhere; }
+.chat-decision-row.is-unmatched { border-left-color: var(--v2-warning); }
+.decision-inline { display: grid; gap: 3px; padding: 7px 8px; background: var(--v2-surface-1); }
+.chat-context-state { display: flex; }
+.decision-inline b { color: var(--v2-text-muted); font-size: 10px; }
+.decision-inline span { color: var(--v2-text-soft); font-size: 11px; line-height: 1.45; overflow-wrap: anywhere; }
+.trace-id { color: var(--v2-text-muted); font-size: 9px; overflow-wrap: anywhere; }
+.trace-link-state { display: flex; align-items: center; gap: 4px; color: var(--v2-accent-hover) !important; }
+.trace-row { display: block; }
+.trace-row > summary { display: flex; align-items: center; justify-content: space-between; gap: 8px; cursor: pointer; list-style: none; }
+.trace-row > summary::-webkit-details-marker { display: none; }
+.trace-row > summary > span { min-width: 0; display: grid; gap: 3px; }
+.trace-row > summary small { color: var(--v2-text-muted); font-size: 10px; }
+.trace-row__status { justify-items: end; }
+.trace-row__status > b { color: var(--v2-warning); font-size: 10px; font-variant-numeric: tabular-nums; }
+.trace-live-strip { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 7px; align-items: start; padding: 8px; background: rgba(242,201,109,.08); border: 1px solid rgba(242,201,109,.24); }
+.trace-live-strip > svg { margin-top: 2px; color: var(--v2-warning); animation: trace-live-pulse 1.5s ease-in-out infinite; }
+.trace-live-strip > div { min-width: 0; display: grid; gap: 3px; }
+.trace-live-strip strong { color: var(--v2-text); font-size: 11px; }
+.trace-live-strip span, .trace-live-strip small { color: var(--v2-text-muted); font-size: 9px; line-height: 1.45; overflow-wrap: anywhere; }
+.trace-live-strip.is-idle { background: rgba(239,109,109,.08); border-color: rgba(239,109,109,.28); }
+.trace-live-strip.is-idle > svg { color: var(--v2-danger); }
+@keyframes trace-live-pulse { 50% { opacity: .35; } }
+.trace-timeline { display: grid; gap: 7px; margin-top: 8px; padding-left: 9px; border-left: 1px solid var(--v2-border-strong); }
+.trace-event { min-width: 0; display: grid; gap: 5px; padding: 7px; background: var(--v2-surface-1); }
+.trace-event--error, .trace-event--failed { border-left: 2px solid var(--v2-danger); }
+.trace-event__head { min-width: 0; display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 5px; }
+.trace-event__head strong { color: var(--v2-text-soft); font-size: 10px; white-space: normal; overflow-wrap: anywhere; }
+.trace-event__head > span { color: var(--v2-text-muted); font-size: 9px; }
+.trace-event details summary { cursor: pointer; color: var(--v2-text-muted); font-size: 10px; }
+.trace-event pre { max-height: 220px; margin: 5px 0 0; padding: 7px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; background: var(--v2-surface-2); color: var(--v2-text-soft); font: 10px/1.45 ui-monospace, SFMono-Regular, Consolas, monospace; }
+.model-call-detail { display: grid; gap: 5px; }
+.model-call-detail > span, .model-call-detail > small { color: var(--v2-text-muted); font-size: 9px; overflow-wrap: anywhere; }
 .permissions-workspace { display: grid; grid-template-columns: minmax(330px, .72fr) minmax(560px, 1.28fr); gap: 14px; align-items: start; }
 .permissions-roles { position: sticky; top: 14px; }
 .role-list { max-height: calc(100vh - 355px); overflow: auto; padding-right: 3px; }
@@ -639,7 +661,6 @@
   .groups-workspace { grid-template-columns: minmax(280px, .7fr) minmax(420px, 1.3fr); }
   .groups-form-grid, .groups-profile__fields { grid-template-columns: 1fr; }
   .osu-metrics { grid-template-columns: repeat(3,minmax(0,1fr)); }
-  .osu-workspace { grid-template-columns: 1fr; }
   .integrations-service-grid { grid-template-columns: repeat(2,minmax(0,1fr)); }
   .console-split--agent { grid-template-columns: 1fr; }
   .models-layout { grid-template-columns: 1fr; }
@@ -673,7 +694,7 @@
   .app-shell__status { margin-top: auto; }
   .app-shell__topbar { min-height: 76px; padding: 14px 18px; }
   .app-shell__main { padding: 18px; }
-  .dashboard-grid, .dashboard-controls, .groups-workspace, .osu-activity-grid { grid-template-columns: 1fr; }
+  .dashboard-grid, .dashboard-controls, .groups-workspace { grid-template-columns: 1fr; }
   .groups-list-panel { position: static; max-height: none; }
   .groups-list { max-height: 420px; }
   .groups-settings-bar { grid-template-columns: 1fr; }

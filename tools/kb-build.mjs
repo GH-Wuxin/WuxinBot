@@ -109,40 +109,6 @@ const WUXIN_SELF = [
     lastVerifiedAt: LAST_VERIFIED_AT,
   },
   {
-    id: 'analyze_player',
-    title: '完整玩家分析',
-    tags: ['analyze', '分析', '画像'],
-    content: [
-      '命令：/w osu analyze [用户名] [--mode=std/taiko/catch/mania]',
-      '对玩家进行完整分析：BP、PP+、技能与结论。同一玩家同一模式有约 4 小时冷却，重复请求会显示上次结果；分析在后台队列生成，完成后会 @ 请求者。默认模式 osu!std。',
-    ].join('\n'),
-    commandExamples: [
-      { command: '/w osu analyze mrekk', verifier: 'wuxin' },
-      { command: '/w osu analyze', verifier: 'wuxin' },
-    ],
-    implementationRefs: [
-      { path: 'server/osu/commands.ts', symbol: 'handleOsuCommand' },
-      { path: 'server/osu/analyzer.ts', symbol: 'analyzeData' },
-    ],
-    lastVerifiedAt: LAST_VERIFIED_AT,
-  },
-  {
-    id: 'recent_comment',
-    title: '近期成绩短评',
-    tags: ['recent', '近期', '短评'],
-    content: [
-      '命令：/w osu recent [用户名] [--mode=std/taiko/catch/mania]',
-      '对比近期成绩与完整档案给出短评。需要该玩家先有 /w osu analyze 建立的完整档案；没有时先引导建立档案，不要凭空评价。',
-    ].join('\n'),
-    commandExamples: [
-      { command: '/w osu recent', verifier: 'wuxin' },
-    ],
-    implementationRefs: [
-      { path: 'server/osu/commands.ts', symbol: 'handleOsuCommand' },
-    ],
-    lastVerifiedAt: LAST_VERIFIED_AT,
-  },
-  {
     id: 'clear_commands',
     title: '清除绑定、冷却与历史',
     tags: ['clear', '清除', '冷却', '历史', '缓存', '推图历史'],
@@ -276,7 +242,7 @@ const WUXIN_SELF = [
     title: '群聊设置',
     tags: ['mode', 'rate', 'cooldown', 'status', '群设置'],
     content: [
-      '命令：/w mode silent|mention|light|natural（回复模式）、/w rate 数字（每小时上限）、/w cooldown 秒数（冷却）、/w status（群参数）、/w group profile show/update/clear（群画像）',
+      '命令：/w mode silent|mention|light|natural|osu（回复模式；osu 仅响应 osu! 指令且不进入 LLM/画像）、/w rate 数字（每小时上限）、/w cooldown 秒数（冷却）、/w status（群参数）、/w group profile show/update/clear（群画像）',
       '这些设置影响当前群的回复节奏；普通群友不能修改，权限不足时如实告知。',
     ].join('\n'),
     commandExamples: [
@@ -411,7 +377,6 @@ function concreteCommandExample(entry) {
     me: '/w me',
     osuBind: '/w osu bind LimaPlayer',
     osuAnalyze: '/w osu analyze',
-    osuRecent: '/w osu recent',
     osuHelp: '/w osu help',
     'clear.bind': '/w osu clear bind',
     'clear.history': '/w osu clear history',

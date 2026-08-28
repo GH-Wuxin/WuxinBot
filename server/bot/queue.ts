@@ -148,6 +148,25 @@ export async function drainReplyQueue(key, processIncoming) {
   }
 }
 
+/**
+ * Second dedupe boundary, persisted inside the same atomic update that records
+ * the message. The in-memory map above handles routine OneBot redelivery; this
+ * check prevents two accidentally concurrent server processes from both
+ * crossing into memory/profile/LLM side effects.
+ */
+export function persistedInboundDuplicate(draft, event) {
+  const messageId = String(event?.messageId || '').trim();
+  if (!messageId || event?.source === 'gui') return false;
+  const type = String(event?.type || 'unknown');
+  const groupId = String(event?.groupId || 'private');
+  const recentMessages = (draft?.messages || []).slice(-INBOUND_EVENT_DEDUPE_LIMIT);
+  return recentMessages.some((message) =>
+    String(message?.sourceMessageId || '') === messageId &&
+    String(message?.type || 'unknown') === type &&
+    String(message?.groupId || 'private') === groupId
+  );
+}
+
 function mergeQueuedReplyItems(items) {
   const last = items[items.length - 1];
   const texts = items

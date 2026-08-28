@@ -17,7 +17,6 @@ import path from 'node:path';
 
 const testDataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'wuxin-experience-'));
 process.env.DATA_DIR = testDataDir;
-const dbPath = path.join(testDataDir, 'db.json');
 let readDb;
 let writeDb;
 let updateDb;
@@ -33,7 +32,7 @@ let processIncoming;
 const TEST_OWNER = '30000001';
 const TEST_BOT = '30000002';
 const TEST_USER = '30000003';
-const TEST_GROUP = '900000007';
+const TEST_GROUP = '770001';
 
 function assert(cond, msg) {
   if (!cond) throw new Error(`FAIL: ${msg}`);
@@ -77,8 +76,7 @@ async function main() {
   ({ decideReply, processIncoming } = bot);
   store.ensureStore();
 
-  const originalRaw = fs.readFileSync(dbPath, 'utf8').replace(/^﻿/, '');
-  const original = JSON.parse(originalRaw);
+  const original = structuredClone(readDb());
 
   try {
     // ============================================================
@@ -221,13 +219,13 @@ async function main() {
     setupDb(original);
 
     // Process messages in two different groups
-    processXpGain(event({ text: '群1消息 有效内容', groupId: '900000007', messageId: 't8-1' }), readDb());
+    processXpGain(event({ text: '群1消息 有效内容', groupId: '770001', messageId: 't8-1' }), readDb());
     processXpGain(event({ text: '群2消息 有效内容', groupId: '770002', messageId: 't8-2' }), readDb());
 
     const exp8 = getExperience(readDb(), TEST_USER);
     assert(exp8.xp > 0, 'global XP should be > 0');
 
-    const gExp8a = readDb().groupExperience?.[`900000007:${TEST_USER}`];
+    const gExp8a = readDb().groupExperience?.[`770001:${TEST_USER}`];
     const gExp8b = readDb().groupExperience?.[`770002:${TEST_USER}`];
     assert(gExp8a, 'should have group 1 experience');
     assert(gExp8b, 'should have group 2 experience');
@@ -276,6 +274,37 @@ async function main() {
     assert(exp9reset.xp === 0 && exp9reset.level === 0, `reset should clear XP, got ${JSON.stringify(exp9reset)}`);
 
     console.log('PASS: Test 9 — /w exp add/set/reset parses full command tail');
+
+    // ============================================================
+    // Test 10: command display rounds XP and resolves current-group nickname
+    // ============================================================
+    console.log('Test 10: rounded XP + group nickname display');
+    setupDb(original);
+    updateDb((draft) => {
+      draft.experience[TEST_USER] = {
+        xp: 123.6, level: 1, dailyXp: 3.6, dailyDate: '', activeDays: 2,
+        streakDays: 0, lastMsgDate: '', lastLevelUpAt: '', lastDecayCheck: '',
+      };
+      draft.messages.push({
+        id: 'nickname-source', role: 'user', type: 'group', groupId: TEST_GROUP,
+        userId: TEST_USER, nickname: '群昵称玩家', content: '测试昵称', inContext: true,
+        createdAt: new Date().toISOString(),
+      });
+    });
+    const sent10 = [];
+    await processIncoming(event({
+      userId: TEST_OWNER,
+      nickname: 'Owner',
+      text: `/w lv [CQ:at,qq=${TEST_USER}]`,
+      atTargets: [TEST_USER],
+      messageId: 't10-lv',
+    }), async (_evt, text) => { sent10.push(String(text || '')); });
+    const levelReply = sent10.join('\n');
+    assert(levelReply.includes('群昵称玩家 的等级'), `should display current-group nickname, got ${levelReply}`);
+    assert(levelReply.includes('XP: 124/200'), `should round displayed XP, got ${levelReply}`);
+    assert(!levelReply.includes(`${TEST_USER} 的等级`), 'should not use QQ number when group nickname is known');
+
+    console.log('PASS: Test 10 — rounded XP and group nickname display');
 
     // ============================================================
     console.log('\nAll experience verification tests PASSED.');

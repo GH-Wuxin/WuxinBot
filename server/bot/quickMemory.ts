@@ -20,6 +20,7 @@ import {
   type BpQuerySelection,
 } from '../bots/executor.js';
 import { getPlayerBars } from '../osu/pplus.js';
+import { markLatencySpan } from '../perf/latencyTrace.js';
 
 const SUMMARY_LIMIT = 400;
 const ASSISTANT_IMAGES_LIMIT = 4;
@@ -32,8 +33,70 @@ export function recordQuickContext(
   event: any,
   content: string,
   images: string[] = [],
+  traceId?: string | null,
+): void {
+  persistQuickContext(event, content, images, undefined, traceId);
+}
+
+/**
+ * Write the user message plus a PLACEHOLDER assistant record synchronously and
+ * return its pending id. The placeholder holds the conversation slot so later
+ * shadow hydration can never reorder two quick commands (QB-08 candidate C).
+ */
+export function recordQuickContextPending(
+  event: any,
+  content: string,
+  images: string[] = [],
+  traceId?: string | null,
+): string {
+  const pendingId = crypto.randomUUID();
+  persistQuickContext(event, content, images, pendingId, traceId);
+  return pendingId;
+}
+
+/**
+ * Hydrate a pending assistant record in place. Never appends a new record, so
+ * it cannot overwrite or reorder the conversation.
+ */
+export function hydrateQuickContextPending(
+  event: any,
+  pendingId: string,
+  content: string,
+  images: string[] = [],
+  traceId?: string | null,
 ): void {
   try {
+    if (traceId) markLatencySpan(traceId, 'observation_hydrate_start');
+    const cleanContent = textWithoutControlPlaceholders(
+      String(content || '').trim(),
+    ).slice(0, SUMMARY_LIMIT);
+    updateDb((draft) => {
+      if (!Array.isArray(draft.messages)) return;
+      const target = draft.messages.find(
+        (m: any) => m.role === 'assistant' && m.pendingQuickId === pendingId,
+      );
+      if (!target) return;
+      target.content = cleanContent;
+      target.media = images.length > 0
+        ? { images: images.slice(0, ASSISTANT_IMAGES_LIMIT) }
+        : undefined;
+      delete target.pendingQuickId;
+    });
+    if (traceId) markLatencySpan(traceId, 'observation_hydrate_done');
+  } catch (error: any) {
+    console.error('[quickMemory] 快捷指令上下文 hydration 失败:', error?.message || error);
+  }
+}
+
+function persistQuickContext(
+  event: any,
+  content: string,
+  images: string[],
+  pendingQuickId: string | undefined,
+  traceId?: string | null,
+): void {
+  try {
+    if (traceId) markLatencySpan(traceId, 'observation_persist_start');
     const createdAt = nowIso();
     const messageId = String(event?.messageId || '');
     const cleanContent = textWithoutControlPlaceholders(
@@ -63,7 +126,7 @@ export function recordQuickContext(
       });
 
       if (cleanContent || images.length > 0) {
-        draft.messages.push({
+        const assistant: any = {
           id: crypto.randomUUID(),
           role: 'assistant',
           type: event.type,
@@ -77,9 +140,12 @@ export function recordQuickContext(
               : undefined,
           inContext: true,
           createdAt,
-        });
+        };
+        if (pendingQuickId) assistant.pendingQuickId = pendingQuickId;
+        draft.messages.push(assistant);
       }
     });
+    if (traceId) markLatencySpan(traceId, 'observation_persist_done');
   } catch (error: any) {
     console.error('[quickMemory] 记录快捷指令上下文失败:', error?.message || error);
   }
@@ -94,31 +160,40 @@ export async function buildQuickShadowSummary(
   capability: string | undefined,
   username: string,
   bpSelection?: BpQuerySelection,
+  traceId?: string | null,
 ): Promise<string> {
   const cap = String(capability || '').trim();
   const name = String(username || '').trim();
   if (!cap || !name) return '';
+  if (traceId) markLatencySpan(traceId, 'observation_build_start', { capability: cap });
   try {
     const user = /^\d+$/.test(name)
       ? await getUserById(Number(name))
       : await getUser(name);
-    if (!user?.id) return '';
+    if (!user?.id) {
+      if (traceId) markLatencySpan(traceId, 'observation_build_done', { resolved: false });
+      return '';
+    }
 
     switch (cap) {
       case 'recent': {
         const scores = await getUserRecentScores(user.id, 'osu', 1);
         if (!Array.isArray(scores) || scores.length === 0) {
+          if (traceId) markLatencySpan(traceId, 'observation_build_done', { capability: cap, empty: true });
           return `${user.username} 最近没有 osu! 成绩记录`;
         }
-        return `${user.username} 的最近成绩：${formatInternalScoreLine(
+        const line = formatInternalScoreLine(
           scores[0],
           { includeCombo: true },
-        )}`;
+        );
+        if (traceId) markLatencySpan(traceId, 'observation_build_done', { capability: cap });
+        return `${user.username} 的最近成绩：${line}`;
       }
       case 'bp':
       case 'bplist': {
         const scores = await getUserBestScores(user.id, 'osu', 100);
         if (!Array.isArray(scores) || scores.length === 0) {
+          if (traceId) markLatencySpan(traceId, 'observation_build_done', { capability: cap, empty: true });
           return `${user.username} 没有 BP 记录`;
         }
         let candidates = scores;
@@ -131,21 +206,26 @@ export async function buildQuickShadowSummary(
         const lines = candidates
           .slice(0, 5)
           .map((score) => formatInternalScoreLine(score, { includeCombo: true }));
+        if (traceId) markLatencySpan(traceId, 'observation_build_done', { capability: cap });
         return `${user.username} 的 BP：${lines.join('；')}`;
       }
       case 'info':
       case 'profile':
       case 'card':
+        if (traceId) markLatencySpan(traceId, 'observation_build_done', { capability: cap });
         return formatInternalProfileText(user);
       case 'pplus': {
         const bars = await getPlayerBars(user.id);
+        if (traceId) markLatencySpan(traceId, 'observation_build_done', { capability: cap });
         if (!bars) return `${user.username} 的 PP+ 数据暂不可用`;
         return `${user.username} 的 PP+（${bars.ppTotal}pp）：Jump ${bars.jump.toFixed(2)}、Flow ${bars.flow.toFixed(2)}、Speed ${bars.speed.toFixed(2)}、Stamina ${bars.stamina.toFixed(2)}、Precision ${bars.precision.toFixed(2)}、Accuracy ${bars.accuracy.toFixed(2)}`;
       }
       default:
+        if (traceId) markLatencySpan(traceId, 'observation_build_done', { capability: cap, empty: true });
         return '';
     }
   } catch (error: any) {
+    if (traceId) markLatencySpan(traceId, 'observation_build_done', { failed: true });
     console.error(
       `[quickMemory] 影子查询失败 (${cap}/${name}):`,
       error?.message || error,

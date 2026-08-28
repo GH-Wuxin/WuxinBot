@@ -100,10 +100,13 @@ await check('safe-only stateful sample executes the real runToolLoop', async () 
 });
 
 await check('unsafe-inclusive stateful sample enforces exact tool accounting', async () => {
+  // maxCommands 4 keeps generated scripts inside the production hard tool-call
+  // budget (<=4 per response, <=8 per turn); overflow itself is covered by
+  // tools/agent-tool-surface-hardening-verify.mjs with a direct executor seam.
   const campaign = await runC1Campaign({
     seed: C1_DEFAULT_SEED,
     numRuns: 50,
-    maxCommands: 5,
+    maxCommands: 4,
     includeUnsafe: true,
     hardLimitMs: 15_000,
   });

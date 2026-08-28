@@ -70,7 +70,7 @@ const {
 const { parseOsuCommandText, OSU_SUBCOMMANDS, OSU_CLEAR_ACTIONS_META } = await import('../server/bot/commands/osu.meta.ts');
 const { parseOwnerCommandText, OWNER_COMMANDS } = await import('../server/bot/commands/owner.meta.ts');
 const { resolveQuickCommand, QUICK_DEFS, finalizeQuickDef } = await import('../server/bot/commands/quick.meta.ts');
-const { ANALYSIS_COOLDOWN, RECENT_COOLDOWN, RECOMMEND_COOLDOWN } = await import('../server/bot/commands/commandConstants.ts');
+const { ANALYSIS_COOLDOWN, RECOMMEND_COOLDOWN } = await import('../server/bot/commands/commandConstants.ts');
 const { quickCollisionKey } = await import('../server/bot/commands/alias.ts');
 
 ensureStore();
@@ -105,7 +105,7 @@ const fixtureDbSetup = (db) => {
   db.settings.enableAutoModel = false;
   db.settings.thinkingNoticeMode = 'off';
   db.groups = [
-    { groupId: '900000007', name: 'KBTest', enabled: true, mode: 'natural', maxPerHour: 100, cooldownSec: 0 },
+    { groupId: '770001', name: 'KBTest', enabled: true, mode: 'natural', maxPerHour: 100, cooldownSec: 0 },
   ];
   db.messages = [];
   db.groupProfiles = [];
@@ -120,7 +120,7 @@ const fixtureEvent = (id, text, extra = {}) => ({
   source: 'onebot',
   type: 'group',
   messageId: 'kb-' + id,
-  groupId: '900000007',
+  groupId: '770001',
   userId: '10001',
   nickname: 'Tester',
   text,
@@ -138,7 +138,7 @@ resetKbForTests();
   const result = retrieveKnowledgeForPrompt({
     scene: 'osu_analysis',
     text: '/w osu analyze mrekk',
-    groupId: '900000007',
+    groupId: '770001',
     messageType: 'group',
     settings: enabledSettings,
   });
@@ -162,7 +162,7 @@ updateDb(fixtureDbSetup);
     ['analysis_command', '/w osu analyze mrekk'],
     ['dt_talk', '这把DT开得有点飘'],
   ];
-  const group = { groupId: '900000007', name: 'KBTest' };
+  const group = { groupId: '770001', name: 'KBTest' };
   const policy = { policy: 'normal', attentionLevel: 3, allowCommands: true };
   let ok = true;
   for (const [id, text] of scenarios) {
@@ -253,7 +253,7 @@ resetKbForTests();
   const result = retrieveKnowledgeForPrompt({
     scene: 'casual',
     text: '怎么绑定osu账号',
-    groupId: '900000007',
+    groupId: '770001',
     messageType: 'group',
     settings: enabledSettings,
   });
@@ -270,7 +270,7 @@ resetKbForTests();
   const communityQueries = ['aim比我强好多', '单戳练读图，会读了就能打', 'hd到底怎么玩', '我们S1大人已经10k了', '今天aim手感炸了'];
   let capOk = true;
   for (const text of communityQueries) {
-    const r = retrieveKnowledgeForPrompt({ scene: 'casual', text, groupId: '900000007', messageType: 'group', settings: enabledSettings });
+    const r = retrieveKnowledgeForPrompt({ scene: 'casual', text, groupId: '770001', messageType: 'group', settings: enabledSettings });
     const communityBlocks = r.blocks.filter((b) => b.collection === 'community_style');
     if (communityBlocks.length > 1) {
       capOk = false;
@@ -279,14 +279,14 @@ resetKbForTests();
   }
   check(capOk, 'g5 community_style ≤1 block per query');
 
-  const combined = retrieveKnowledgeForPrompt({ scene: 'casual', text: 'PP+怎么用', groupId: '900000007', messageType: 'group', settings: enabledSettings });
+  const combined = retrieveKnowledgeForPrompt({ scene: 'casual', text: 'PP+怎么用', groupId: '770001', messageType: 'group', settings: enabledSettings });
   check(combined.route.kind === 'self_and_domain', 'g5 combined route explicit self_and_domain');
 
-  const ar = retrieveKnowledgeForPrompt({ scene: 'casual', text: 'AR是什么', groupId: '900000007', messageType: 'group', settings: enabledSettings });
+  const ar = retrieveKnowledgeForPrompt({ scene: 'casual', text: 'AR是什么', groupId: '770001', messageType: 'group', settings: enabledSettings });
   const arIds = ar.blocks.filter((b) => b.collection === 'osu_domain').map((b) => b.documentId);
   check(arIds.includes('attributes') && arIds.includes('ar_detail'), 'g5 tag anchors keep AR docs above minScore', JSON.stringify(arIds));
 
-  const hdhr = retrieveKnowledgeForPrompt({ scene: 'casual', text: 'HD和HR有什么区别', groupId: '900000007', messageType: 'group', settings: enabledSettings });
+  const hdhr = retrieveKnowledgeForPrompt({ scene: 'casual', text: 'HD和HR有什么区别', groupId: '770001', messageType: 'group', settings: enabledSettings });
   const hdhrIds = hdhr.blocks.map((b) => b.documentId);
   check(
     hdhrIds.includes('mods_core') && !hdhrIds.includes('mod_ht') && !hdhrIds.includes('grade_detail'),
@@ -294,22 +294,22 @@ resetKbForTests();
     JSON.stringify(hdhrIds),
   );
 
-  const bonus = retrieveKnowledgeForPrompt({ scene: 'casual', text: 'bonus pp是什么', groupId: '900000007', messageType: 'group', settings: enabledSettings });
+  const bonus = retrieveKnowledgeForPrompt({ scene: 'casual', text: 'bonus pp是什么', groupId: '770001', messageType: 'group', settings: enabledSettings });
   const bonusIds = bonus.blocks.filter((b) => b.collection === 'osu_domain').map((b) => b.documentId);
   check(bonusIds.includes('performance_detail') && bonusIds.includes('bp_pp_rank'), 'g5 bonus pp ranks real pp docs first', JSON.stringify(bonusIds));
 
-  const ppp = retrieveKnowledgeForPrompt({ scene: 'casual', text: 'PP+怎么用', groupId: '900000007', messageType: 'group', settings: enabledSettings });
+  const ppp = retrieveKnowledgeForPrompt({ scene: 'casual', text: 'PP+怎么用', groupId: '770001', messageType: 'group', settings: enabledSettings });
   const pppIds = ppp.blocks.map((b) => `${b.collection}:${b.documentId}`);
   check(pppIds.includes('wuxin_self:quick_score_commands') && pppIds.includes('osu_domain:bp_pp_rank'), 'g5 PP+ usage hits quick command + pp docs', JSON.stringify(pppIds));
 
-  const bindShort = retrieveKnowledgeForPrompt({ scene: 'casual', text: '绑定怎么弄', groupId: '900000007', messageType: 'group', settings: enabledSettings });
+  const bindShort = retrieveKnowledgeForPrompt({ scene: 'casual', text: '绑定怎么弄', groupId: '770001', messageType: 'group', settings: enabledSettings });
   const bindShortIds = bindShort.blocks.map((b) => b.documentId);
   check(bindShortIds.includes('bind_osu') && !bindShortIds.includes('quick_score_commands'), 'g5 short bind query selects bind_osu via tags', JSON.stringify(bindShortIds));
 
   const capPublic = retrieveKnowledgeForPrompt({
     scene: 'casual',
     text: '你能做什么',
-    groupId: '900000007',
+    groupId: '770001',
     messageType: 'group',
     settings: enabledSettings,
     permissions: { isOwner: false, isAdmin: false },
@@ -324,7 +324,7 @@ resetKbForTests();
   const capAdmin = retrieveKnowledgeForPrompt({
     scene: 'casual',
     text: '你能做什么',
-    groupId: '900000007',
+    groupId: '770001',
     messageType: 'group',
     settings: enabledSettings,
     permissions: { isOwner: false, isAdmin: true },
@@ -337,7 +337,7 @@ resetKbForTests();
   const capOwner = retrieveKnowledgeForPrompt({
     scene: 'casual',
     text: '你能做什么',
-    groupId: '900000007',
+    groupId: '770001',
     messageType: 'group',
     settings: enabledSettings,
     permissions: { isOwner: true, isAdmin: true },
@@ -352,11 +352,11 @@ resetKbForTests();
 // ── Gate 6: rollout allowlist switches without restart ──
 
 {
-  const allow = { ...enabledSettings, rollout: { mode: 'allowlist', groupIds: ['900000007'], privateMessagesEnabled: true } };
+  const allow = { ...enabledSettings, rollout: { mode: 'allowlist', groupIds: ['770001'], privateMessagesEnabled: true } };
   const denied = { ...enabledSettings, rollout: { mode: 'allowlist', groupIds: ['999999'], privateMessagesEnabled: false } };
-  const first = decideKbEnabled({ settings: allow, groupId: '900000007', messageType: 'group' });
-  const second = decideKbEnabled({ settings: denied, groupId: '900000007', messageType: 'group' });
-  const third = decideKbEnabled({ settings: allow, groupId: '900000007', messageType: 'group' });
+  const first = decideKbEnabled({ settings: allow, groupId: '770001', messageType: 'group' });
+  const second = decideKbEnabled({ settings: denied, groupId: '770001', messageType: 'group' });
+  const third = decideKbEnabled({ settings: allow, groupId: '770001', messageType: 'group' });
   check(first.enabled && second.enabled === false && third.enabled, 'g6 allowlist switches without restart');
   const privateAllowed = decideKbEnabled({ settings: { ...enabledSettings, rollout: { mode: 'allowlist', groupIds: [], privateMessagesEnabled: true } }, messageType: 'private' });
   check(privateAllowed.enabled, 'g6 private messages rollout flag');
@@ -368,7 +368,7 @@ resetKbForTests();
   resetKbForTests();
   fs.mkdirSync(path.dirname(kbSentinelPathForTests()), { recursive: true });
   fs.writeFileSync(kbSentinelPathForTests(), '1', 'utf8');
-  const sentinel = decideKbEnabled({ settings: enabledSettings, groupId: '900000007', messageType: 'group' });
+  const sentinel = decideKbEnabled({ settings: enabledSettings, groupId: '770001', messageType: 'group' });
   check(sentinel.enabled === false && sentinel.source === 'sentinel', 'g7 sentinel fails closed');
   resetKbForTests();
   fs.rmSync(kbSentinelPathForTests(), { force: true });
@@ -389,7 +389,7 @@ resetKbForTests();
   cleanupTestDir(corruptDir);
 
   const envSub = spawnSync(process.execPath, ['--import', 'tsx', '-e',
-    `(async () => { process.env.KB_ENABLED = 'false'; process.env.DATA_DIR = ${JSON.stringify(testDataDir)}; const m = await import('./server/bot/knowledgeBase.ts'); console.log(JSON.stringify(m.decideKbEnabled({settings: ${JSON.stringify(enabledSettings)}, groupId: '900000007', messageType: 'group'}))); })()`,
+    `(async () => { process.env.KB_ENABLED = 'false'; process.env.DATA_DIR = ${JSON.stringify(testDataDir)}; const m = await import('./server/bot/knowledgeBase.ts'); console.log(JSON.stringify(m.decideKbEnabled({settings: ${JSON.stringify(enabledSettings)}, groupId: '770001', messageType: 'group'}))); })()`,
   ], { cwd: root, encoding: 'utf8', timeout: 60_000 });
   let envDecision = null;
   try { envDecision = JSON.parse((envSub.stdout || '').trim().split('\n').pop()); } catch { /* keep null */ }
@@ -429,7 +429,7 @@ resetKbForTests();
   const osuPath = path.join(knowledgeRootFor(kbKnowledgeDirForTests()), 'osu_domain.json');
   const original = fs.readFileSync(osuPath, 'utf8');
   fs.writeFileSync(osuPath, original + '\n//tampered', 'utf8');
-  const result = retrieveKnowledgeForPrompt({ scene: 'casual', text: 'AR是什么', groupId: '900000007', messageType: 'group', settings: enabledSettings });
+  const result = retrieveKnowledgeForPrompt({ scene: 'casual', text: 'AR是什么', groupId: '770001', messageType: 'group', settings: enabledSettings });
   const health = getKbHealth();
   check(
     result.blocks.length === 0
@@ -440,7 +440,7 @@ resetKbForTests();
   );
   fs.writeFileSync(osuPath, original, 'utf8');
   resetKbForTests();
-  const recovered = retrieveKnowledgeForPrompt({ scene: 'casual', text: 'AR是什么', groupId: '900000007', messageType: 'group', settings: enabledSettings });
+  const recovered = retrieveKnowledgeForPrompt({ scene: 'casual', text: 'AR是什么', groupId: '770001', messageType: 'group', settings: enabledSettings });
   check(getKbHealth().collections.osu_domain.status === 'ready' && recovered.blocks.length >= 0, 'g9 restore after quarantine reloads');
 }
 
@@ -603,10 +603,6 @@ function knowledgeRootFor(knowledgeDirPath) {
     ok = false;
     console.error('  analyze cooldown is not the shared ANALYSIS_COOLDOWN object');
   }
-  if (OSU_SUBCOMMANDS.recent.cooldown !== RECENT_COOLDOWN) {
-    ok = false;
-    console.error('  recent cooldown is not the shared RECENT_COOLDOWN object');
-  }
   for (const def of QUICK_DEFS) {
     if ((def.id === 'recommend' || def.id === 'rd') && def.cooldown !== RECOMMEND_COOLDOWN) {
       ok = false;
@@ -665,7 +661,7 @@ function knowledgeRootFor(knowledgeDirPath) {
     ['owner', { isOwner: true, isAdmin: true }],
   ];
   const isWuxinOsuHelp = (entry) => entry.namespace === 'wuxin' && entry.family === 'osu';
-  const canonicalSubById = { osuBind: 'bind', osuAnalyze: 'analyze', osuRecent: 'recent', osuHelp: 'help' };
+  const canonicalSubById = { osuBind: 'bind', osuAnalyze: 'analyze', osuHelp: 'help' };
   let ok = true;
   for (const [label, perms] of audiences) {
     for (const entry of entries) {
@@ -699,7 +695,7 @@ function knowledgeRootFor(knowledgeDirPath) {
     const r = retrieveKnowledgeForPrompt({
       scene: 'casual',
       text,
-      groupId: '900000007',
+      groupId: '770001',
       messageType: 'group',
       settings: enabledSettings,
       permissions: { isOwner: false, isAdmin: false },

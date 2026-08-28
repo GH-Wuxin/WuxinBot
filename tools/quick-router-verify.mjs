@@ -53,12 +53,12 @@ updateDb((db) => {
   db.settings.thinkingNoticeMode = 'off';
   db.settings.memoryEnabled = false;
   db.groups = [
-    { groupId: '900000007', name: 'ExpTest', enabled: true, mode: 'normal', maxPerHour: 100, cooldownSec: 0 },
+    { groupId: '770001', name: 'ExpTest', enabled: true, mode: 'normal', maxPerHour: 100, cooldownSec: 0 },
     { groupId: '770099', name: 'DisabledGroup', enabled: false, mode: 'normal', maxPerHour: 100, cooldownSec: 0 },
   ];
-  // Quick router is per-group opt-in in M1 (original bots still run elsewhere).
+  // Per-bot group switches remain the only shortcut availability controls.
   db.groupBotConfig = db.groupBotConfig || {};
-  db.groupBotConfig['900000007'] = { quick: true };
+  db.groupBotConfig['770001'] = {};
   db.osuBindings = db.osuBindings || {};
   db.osuBindings['REDACTED_QQ_001'] = { id: 1234567, username: '[TST]Alpha' };
 });
@@ -67,7 +67,7 @@ const groupEvent = (text, extra = {}) => ({
   source: 'onebot',
   type: 'group',
   messageId: 'qr-' + Math.random().toString(36).slice(2, 10),
-  groupId: '900000007',
+  groupId: '770001',
   userId: '10001',
   nickname: 'Tester',
   text,
@@ -351,10 +351,9 @@ console.log('\n=== E2E: processIncoming quick-command path ===');
   ok('e2e-cut-no-router', cut.replied === false, JSON.stringify(cut));
   sent.length = 0;
 
-  // A group without the quick flag keeps the router dormant (no double replies
-  // while the original bots are still running).
+  // A group that is not enabled still ignores shortcut commands.
   const dormant = await processIncoming({ ...groupEvent('!dice 6'), groupId: '770098' }, send);
-  ok('e2e-dormant-group', dormant.replied === false && sent.length === 0, JSON.stringify(dormant) + ' ' + JSON.stringify(sent));
+  ok('e2e-disabled-group', dormant.replied === false && sent.length === 0, JSON.stringify(dormant) + ' ' + JSON.stringify(sent));
   sent.length = 0;
 }
 

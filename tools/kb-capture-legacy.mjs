@@ -28,7 +28,7 @@ updateDb((db) => {
   db.settings.enableAutoModel = false;
   db.settings.thinkingNoticeMode = 'off';
   db.groups = [
-    { groupId: '900000007', name: 'KBTest', enabled: true, mode: 'natural', maxPerHour: 100, cooldownSec: 0 },
+    { groupId: '770001', name: 'KBTest', enabled: true, mode: 'natural', maxPerHour: 100, cooldownSec: 0 },
   ];
   db.messages = [];
   db.groupProfiles = [];
@@ -45,7 +45,7 @@ const scenario = (id, text, extra = {}) => ({
     source: 'onebot',
     type: 'group',
     messageId: 'legacy-' + id,
-    groupId: '900000007',
+    groupId: '770001',
     userId: '10001',
     nickname: 'Tester',
     text,
@@ -67,7 +67,7 @@ const scenarios = [
   scenario('dt_talk', '这把DT开得有点飘'),
 ];
 
-const group = { groupId: '900000007', name: 'KBTest' };
+const group = { groupId: '770001', name: 'KBTest' };
 const userPolicy = { policy: 'normal', attentionLevel: 3, allowCommands: true };
 
 const captured = {};

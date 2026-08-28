@@ -15,36 +15,154 @@ const TTL = {
   score: 120_000,
 };
 
+// The response cache only contains completed requests. Without a separate
+// in-flight table, two commands arriving in the same event-loop turn can miss
+// the cache together and issue identical requests to osu!. Coalesce only GETs:
+// it removes accidental duplication without throttling unrelated API traffic.
+const inFlightGets = new Map<string, Promise<unknown>>();
+const GET_RETRY_BACKOFF_MS = 300;
+
+// osu! throttles the OAuth client globally. Serialize request starts and keep
+// a small gap between them so concurrent bot commands cannot create bursts.
+const configuredMinInterval = Number(process.env.OSU_API_MIN_INTERVAL_MS || 120);
+const OSU_API_MIN_INTERVAL_MS = Number.isFinite(configuredMinInterval)
+  ? Math.max(0, configuredMinInterval)
+  : 120;
+const OSU_API_RATE_RETRIES = 1;
+let requestSerial: Promise<void> = Promise.resolve();
+let lastRequestStartedAt = 0;
+let rateLimitedUntil = 0;
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, Math.max(0, ms)));
+}
+
+async function waitForOsuRequestSlot(): Promise<void> {
+  let release!: () => void;
+  const previous = requestSerial;
+  requestSerial = new Promise<void>((resolve) => { release = resolve; });
+  await previous;
+  try {
+    const earliest = Math.max(
+      lastRequestStartedAt + OSU_API_MIN_INTERVAL_MS,
+      rateLimitedUntil,
+    );
+    const waitMs = earliest - Date.now();
+    if (waitMs > 0) await sleep(waitMs);
+    lastRequestStartedAt = Date.now();
+  } finally {
+    release();
+  }
+}
+
+function retryAfterMs(response: Response, retryIndex: number): number {
+  const raw = String(response.headers.get('retry-after') || '').trim();
+  const seconds = Number(raw);
+  const fromHeader = Number.isFinite(seconds) && seconds >= 0
+    ? seconds * 1000
+    : raw
+      ? Math.max(0, Date.parse(raw) - Date.now())
+      : 0;
+  const fallback = 1_000 * Math.pow(2, Math.max(0, retryIndex - 1));
+  return Math.min(30_000, Math.max(1_000, fromHeader || fallback));
+}
+
+function extendRateLimitCooldown(delayMs: number): void {
+  rateLimitedUntil = Math.max(rateLimitedUntil, Date.now() + delayMs);
+}
+
 export interface OsuBeatmapAttributes {
   star_rating: number;
   max_combo?: number;
 }
 
-function fetchWithTimeout(url: string, opts: RequestInit, timeoutMs: number = 15000): Promise<Response> {
-  const ctrl = new AbortController();
-  const timer = setTimeout(() => ctrl.abort(), timeoutMs);
-  return fetch(url, { ...opts, signal: ctrl.signal }).finally(() => clearTimeout(timer));
+function isRetryableFetchError(error: unknown): boolean {
+  const name = String((error as { name?: string } | undefined)?.name || '');
+  const message = String((error as { message?: string } | undefined)?.message || error || '');
+  return name === 'AbortError' || /aborted|fetch failed|network|socket|ECONNRESET|ETIMEDOUT/i.test(message);
+}
+
+async function fetchWithTimeout(url: string, opts: RequestInit, timeoutMs: number = 15000): Promise<Response> {
+  // osu! API reads are idempotent. A cold TLS connection occasionally reaches
+  // this timeout, while an immediate manual retry succeeds. Retry GET once here
+  // so callers do not have to repeat the whole command themselves. Mutating
+  // requests (currently beatmap attributes POST) are never retried here.
+  const method = String(opts.method || 'GET').toUpperCase();
+  const maxAttempts = method === 'GET' ? 2 : 1;
+  let lastError: unknown;
+
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), timeoutMs);
+    try {
+      return await fetch(url, { ...opts, signal: ctrl.signal });
+    } catch (error) {
+      lastError = error;
+      if (attempt >= maxAttempts || !isRetryableFetchError(error)) break;
+      await new Promise((resolve) => setTimeout(resolve, GET_RETRY_BACKOFF_MS * attempt));
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+
+  const name = String((lastError as { name?: string } | undefined)?.name || '');
+  const message = String((lastError as { message?: string } | undefined)?.message || lastError || '未知错误');
+  if (name === 'AbortError' || /aborted/i.test(message)) {
+    throw new Error(`osu! API 请求超时${maxAttempts > 1 ? '（已自动重试 1 次）' : ''}`);
+  }
+  throw new Error(`osu! API 网络请求失败${maxAttempts > 1 ? '（已自动重试 1 次）' : ''}：${message}`);
+}
+
+async function performOsuFetch<T>(path: string, options: RequestInit = {}): Promise<T> {
+  const url = `${API_BASE}${path}`;
+  let token = await getToken();
+  let authRetried = false;
+  let rateRetried = 0;
+
+  while (true) {
+    const headers = { ...(options.headers || {}), Authorization: `Bearer ${token}` } as Record<string, string>;
+    await waitForOsuRequestSlot();
+    const response = await fetchWithTimeout(url, { ...options, headers });
+
+    if (response.status === 429) {
+      recordOsuApi429();
+      if (rateRetried < OSU_API_RATE_RETRIES) {
+        rateRetried += 1;
+        extendRateLimitCooldown(retryAfterMs(response, rateRetried));
+        try { await response.body?.cancel(); } catch { /* best effort */ }
+        continue;
+      }
+    }
+
+    if (response.status === 401 && !authRetried) {
+      authRetried = true;
+      token = await refreshTokenOn401();
+      try { await response.body?.cancel(); } catch { /* best effort */ }
+      continue;
+    }
+    if (!response.ok) {
+      if (response.status === 404) throw new Error(`osu! 资源不存在 ${path}`);
+      throw new Error(`osu! API ${response.status} ${path}`);
+    }
+    return response.json() as Promise<T>;
+  }
 }
 
 async function osuFetch<T>(path: string, options: RequestInit = {}): Promise<T> {
-  const url = `${API_BASE}${path}`;
-  const token = await getToken();
-  const headers = { ...(options.headers || {}), Authorization: `Bearer ${token}` } as Record<string, string>;
-  const response = await fetchWithTimeout(url, { ...options, headers });
-  if (response.status === 429) recordOsuApi429();
-  if (response.status === 401) {
-    const newToken = await refreshTokenOn401();
-    const retryHeaders = { ...(options.headers || {}), Authorization: `Bearer ${newToken}` } as Record<string, string>;
-    const retryResponse = await fetchWithTimeout(url, { ...options, headers: retryHeaders });
-    if (retryResponse.status === 429) recordOsuApi429();
-    if (!retryResponse.ok) throw new Error(`osu! API ${retryResponse.status} ${path}`);
-    return retryResponse.json() as Promise<T>;
+  const method = String(options.method || 'GET').toUpperCase();
+  if (method !== 'GET') return performOsuFetch<T>(path, options);
+
+  const key = `GET ${path}`;
+  const existing = inFlightGets.get(key);
+  if (existing) return existing as Promise<T>;
+
+  const request = performOsuFetch<T>(path, options);
+  inFlightGets.set(key, request);
+  try {
+    return await request;
+  } finally {
+    if (inFlightGets.get(key) === request) inFlightGets.delete(key);
   }
-  if (!response.ok) {
-    if (response.status === 404) throw new Error(`osu! 资源不存在 ${path}`);
-    throw new Error(`osu! API ${response.status} ${path}`);
-  }
-  return response.json() as Promise<T>;
 }
 
 export async function getUser(
@@ -57,6 +175,8 @@ export async function getUser(
   if (cached && !options.force) return cached;
   const user = await osuFetch<OsuUser>(`/users/@${encodeURIComponent(username)}/${mode}`);
   cacheSet(cacheKey, user, TTL.user);
+  cacheSet(`user:${user.id}:${mode}`, user, TTL.user);
+  if (user.username) cacheSet(`user:${user.username}:${mode}`, user, TTL.user);
   return user;
 }
 
@@ -70,6 +190,7 @@ export async function getUserById(
   if (cached && !options.force) return cached;
   const user = await osuFetch<OsuUser>(`/users/${userId}/${mode}`);
   cacheSet(cacheKey, user, TTL.user);
+  if (user.username) cacheSet(`user:${user.username}:${mode}`, user, TTL.user);
   return user;
 }
 
@@ -82,8 +203,18 @@ export async function getUserBestScores(userId: number, mode: OsuMode = 'osu', l
   return scores;
 }
 
-export async function getUserRecentScores(userId: number, mode: OsuMode = 'osu', limit: number = 50): Promise<OsuScore[]> {
-  const scores = await osuFetch<OsuScore[]>(`/users/${userId}/scores/recent?mode=${mode}&limit=${limit}&include_fails=1`);
+export async function getUserRecentScores(
+  userId: number,
+  mode: OsuMode = 'osu',
+  limit: number = 50,
+  offset: number = 0,
+): Promise<OsuScore[]> {
+  const safeLimit = Math.max(1, Math.min(100, Math.floor(Number(limit) || 50)));
+  const safeOffset = Math.max(0, Math.floor(Number(offset) || 0));
+  const offsetQuery = safeOffset > 0 ? `&offset=${safeOffset}` : '';
+  const scores = await osuFetch<OsuScore[]>(
+    `/users/${userId}/scores/recent?mode=${mode}&limit=${safeLimit}${offsetQuery}&include_fails=1`,
+  );
   return scores;
 }
 

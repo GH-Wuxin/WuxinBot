@@ -76,16 +76,34 @@ else {
 
 console.log('\n=== Phase A: meta table discipline ===');
 
-if (AGENT_CAPABILITY_META.every((entry) => entry.sideEffects === 'readonly')) pass('all-readonly');
-else fail('all-readonly', 'a capability is not readonly');
+const callableMeta = AGENT_CAPABILITY_META.filter((entry) => entry.callable);
+const commandOnlyMeta = AGENT_CAPABILITY_META.filter((entry) => !entry.callable);
+if (callableMeta.every((entry) => entry.sideEffects === 'readonly')) pass('callable-all-readonly');
+else fail('callable-all-readonly', 'a callable capability is not readonly');
+if (commandOnlyMeta.length === 0 || commandOnlyMeta.some((entry) => entry.sideEffects === 'stateful')) pass('command-only-stateful-allowed');
+else fail('command-only-stateful-allowed', `no command-only capability declares stateful: ${JSON.stringify(commandOnlyMeta)}`);
+const matchMeta = commandOnlyMeta.find((entry) => entry.capability === 'match');
+if (matchMeta?.sideEffects === 'stateful') pass('match-stateful-metadata');
+else fail('match-stateful-metadata', JSON.stringify(matchMeta));
 if (AGENT_CAPABILITY_META.every((entry) => entry.rollout === 'all' || entry.rollout === 'owner_canary')) pass('valid-rollouts');
 else fail('valid-rollouts', 'invalid rollout value');
 for (const entry of AGENT_CAPABILITY_META) {
   const isBeatmap = entry.capability === 'beatmap_lookup' || entry.capability === 'pp_calc' || entry.capability === 'leaderboard';
   const op = { type: 'query_osu', params: isBeatmap ? { capability: entry.capability, beatmap_id: 5518740 } : { capability: entry.capability } };
   const result = validateOperation(op);
-  if (result.ok) pass(`validated-${entry.capability}`);
-  else fail(`validated-${entry.capability}`, result.reason || 'rejected');
+  if (entry.callable) {
+    if (result.ok) pass(`validated-${entry.capability}`);
+    else fail(`validated-${entry.capability}`, result.reason || 'rejected');
+  } else if (!result.ok) {
+    pass(`command-only-rejected-${entry.capability}`);
+  } else {
+    fail(`command-only-rejected-${entry.capability}`, 'non-callable capability passed the Agent guard');
+  }
+}
+if (!callable.includes('match') && callable.length === AGENT_CAPABILITY_META.filter((entry) => entry.callable).length) {
+  pass('match-not-callable');
+} else {
+  fail('match-not-callable', `callable=${JSON.stringify(callable)} meta callable count mismatch`);
 }
 
 console.log('\n=== Phase D: unmet-capability telemetry ===');
@@ -100,8 +118,8 @@ updateDb((db) => {
 const telemetryContext = {
   db: readDb(),
   userId: 'REDACTED_QQ_001',
-  groupId: '900000007',
-  event: { userId: 'REDACTED_QQ_001', groupId: '900000007', text: '帮我算一下这张图的pp', nickname: 'Tester' },
+  groupId: '770001',
+  event: { userId: 'REDACTED_QQ_001', groupId: '770001', text: '帮我算一下这张图的pp', nickname: 'Tester' },
 };
 
 // 1. query_osu with an unsupported capability → TOOL_NOT_CAPABLE.

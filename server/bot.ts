@@ -56,6 +56,7 @@ import {
 import {
   sanitizeReply,
   sendReplySegments,
+  replyToCurrentMessageOptions,
   isWeirdReply,
   rewriteNormalReply,
   visualLimitationReply,
@@ -64,13 +65,29 @@ import {
   isIdentityQuestion,
   neutralIdentityReply
 } from './bot/reply.js';
+import { buildRewriteEntry, recordRewriteTelemetry } from './bot/rewriteTelemetry.js';
 import { recordMemoryObservation, maybeUpdateMemoryProfile, maybeRecordImageMemorySummary, updateMemoryProfile, commitMemoryProfileResult, maybeSweepDueMemoryProfiles } from './bot/memory.js';
 import { getGroupProfile, updateGroupProfile, clearGroupProfile, incrementGroupProfilePending, hasGroupProfileContent } from './bot/groupProfile.js';
 import { getRelationshipProfile, updateRelationshipProfile, clearRelationshipProfile, incrementPairPending } from './bot/relationshipProfile.js';
 import { processTrustSignal, evaluateTrustScores, trustInteractionBonus, isTrustedMember } from './bot/trust.js';
 import { processXpGain, getExperience, getXpBonus, formatXpBar, getUnlockedFeatures, getLevelInfo, getNextLevelInfo, levelToPp, decayInactiveUsers } from './bot/experience.js';
-import { isSearchAvailable, searchWeb, formatSearchResults, getLastSearchStatus, extractSearchQuery } from './bot/search.js';
+import {
+  SEARCH_TOOL_NAME,
+  buildSearchToolGuidance,
+  buildSearchToolSchema,
+  executeSearchToolCall,
+  extractSearchQuery,
+  isSearchAvailable,
+} from './bot/search.js';
 import { setBotPaused, getRecalcProgress, startRecalc, tickRecalc, finishRecalc, markActiveProcessing } from './health.js';
+import {
+  currentRequestTraceId,
+  finishRequestTrace,
+  requestTraceIdFor,
+  startRequestTrace,
+  traceEvent,
+  withRequestTrace,
+} from './requestTrace.js';
 import { activateModelProfile, activeProviderLabel } from './modelConfig.js';
 import { handleOsuCommand } from './osu/commands.js';
 import { loadRegistry, buildBotToolSchemas, enabledBots, findBot } from './bots/registry.js';
@@ -83,9 +100,17 @@ import {
   looksLikeRecommendationReply,
 } from './bots/intent.js';
 import { validateOperation, looksLikeToolCallMarkup } from './bots/guard.js';
-import { runToolLoop, tryResolveBotResponse } from './bots/executor.js';
+import { RECENT_BOT_SELECTOR_IDS } from './bots/capabilityCatalog.js';
+import { executeToolCall, runToolLoop, tryResolveBotResponse } from './bots/executor.js';
+import { buildToolGuidance } from './bots/toolGuidance.js';
+import {
+  agentRuntimeModeFor,
+  buildAgentAutonomyGuidance,
+  rewriteLegacyToolReferencesForV2,
+} from './bots/agentToolContracts.js';
 import {
   claimInboundEvent,
+  persistedInboundDuplicate,
   getQueueState,
   drainReplyQueue,
   REPLY_QUEUE_LIMIT
@@ -118,7 +143,16 @@ import {
   llmReplyGate
 } from './bot/gate.js';
 import { handleOwnerCommand } from './bot/ownerCommands.js';
-import { matchQuickCommand, handleQuickCommand, quickRouterEnabled } from './bot/quickRouter.js';
+import { matchQuickCommand, handleQuickCommand } from './bot/quickRouter.js';
+import { settlePendingQuickObservations } from './bot/quickContext.js';
+
+function replyTargetMetadata(event) {
+  return {
+    replyToMessageId: String(event.messageId || ''),
+    replyToUserId: String(event.userId || ''),
+    replyToNickname: String(event.nickname || event.userId || ''),
+  };
+}
 
 function escapeCqParam(value) {
   return String(value || '')
@@ -254,16 +288,22 @@ export async function decideReply({ db, group, userPolicy, text, mentioned, user
   if (!group?.enabled) return { shouldReply: false, reason: '这个群没有启用机器人' };
   if (userPolicy.policy === 'blocked') return { shouldReply: false, reason: '该用户在黑名单中', inContext: false };
   if (group.mode === 'silent') return { shouldReply: false, reason: '当前群是静默模式' };
+  if (group.mode === 'osu') return { shouldReply: false, reason: '当前群仅处理 osu! 指令', inContext: false };
   if (db.settings.onlyMentionMode && !mentioned) return { shouldReply: false, reason: '全局设置为只在 @ 时回复' };
   const visionCapable = modelSupportsVision(db);
   const hasVisionImages = visionCapable && Array.isArray(images) && images.length > 0;
-  if (text.length < 1) return { shouldReply: false, reason: '空消息或无法识别的消息' };
+  if (text.length < 1) {
+    if (hasVisionImages) return { shouldReply: false, reason: '真实纯图片已记录，未点名机器人时不主动回复' };
+    return { shouldReply: false, reason: '空消息或无法识别的消息' };
+  }
   if (!textWithoutControlPlaceholders(text)) {
     if (hasVisionImages && mentioned) return { shouldReply: true, reason: '用户 @ 机器人并发送图片，交给视觉模型回答' };
+    if (hasVisionImages) return { shouldReply: false, reason: '真实纯图片已记录，未点名机器人时不主动回复' };
     return { shouldReply: false, reason: '只有 @/媒体/卡片占位，没有可回复的文字', inContext: false };
   }
   if (onlyVisualMessage(text)) {
     if (hasVisionImages && mentioned) return { shouldReply: true, reason: '用户 @ 机器人并发送纯图片，交给视觉模型回答' };
+    if (hasVisionImages) return { shouldReply: false, reason: '真实纯图片已记录，未点名机器人时不主动回复' };
     return { shouldReply: false, reason: visionCapable ? '纯图片或表情包消息，默认不抢话' : '图片或表情包消息，当前默认忽略', inContext: false };
   }
   if (asksToInspectVisual(text)) {
@@ -315,15 +355,22 @@ export function oneBotToInternal(event) {
   const text = normalizeMessage(event.raw_message || event.message);
   let images = extractImageInputs(event.message || event.raw_message);
   const replyMessageId = extractReplyMessageId(event.message || event.raw_message);
+  let quotedMessage;
 
   // If the user quoted a message, try to include images from the quoted message.
   // This handles: user replies to an image message and @bots.
   if (replyMessageId && images.length === 0) {
     try {
       const db = readDb();
-      const quoted = db.messages.find((m) => String(m.id) === replyMessageId);
-      if (quoted?.media?.images?.length) {
-        images = quoted.media.images;
+      const quoted = db.messages.find((m) => String(m.sourceMessageId || m.messageId || m.id) === replyMessageId);
+      if (quoted) {
+        quotedMessage = {
+          messageId: replyMessageId,
+          text: String(quoted.content || ''),
+          images: quoted.media?.images || [],
+          userId: String(quoted.userId || ''),
+          nickname: String(quoted.nickname || ''),
+        };
       }
     } catch { /* DB read failure is non-fatal */ }
   }
@@ -338,19 +385,68 @@ export function oneBotToInternal(event) {
     text,
     images,
     replyMessageId,
+    quotedMessage,
     senderRole: event.sender?.role || 'member',
     atTargets: extractAtTargets(event.message || event.raw_message),
     raw: event
   };
 }
 
+export function collectEventVisionImages(event) {
+  const all = [
+    ...(Array.isArray(event?.images) ? event.images : []),
+    ...(Array.isArray(event?.quotedMessage?.images) ? event.quotedMessage.images : []),
+  ];
+  const seen = new Set();
+  return all.filter((image) => {
+    const key = String(image?.url || image?.file || '');
+    if (!key || seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+/**
+ * The `osu` group mode is a hard ingress boundary, not a reply preference.
+ * `/w mode` is the sole non-osu escape hatch so an administrator can leave the
+ * mode after enabling it. Natural-language osu! questions are intentionally not
+ * accepted because answering them would require the LLM.
+ */
+export function allowedByOsuCommandOnlyMode(event, quickMatch = null) {
+  const text = String(event?.text || '').trim();
+  const ownerCommand = /^\/w(?:uxin)?\s+([^\s]+)/i.exec(text)?.[1]?.toLowerCase() || '';
+  if (ownerCommand) return ['osu', 'skill', 'cd', 'mode'].includes(ownerCommand);
+  return quickMatch?.def?.kind === 'osu';
+}
+
 export async function processIncoming(event, sendMessage = undefined, queuedDecision = undefined, isFromDrain = false) {
-  markActiveProcessing(1);
-  try {
-    return await processIncomingInner(event, sendMessage, queuedDecision, isFromDrain);
-  } finally {
-    markActiveProcessing(-1);
-  }
+  const requestId = requestTraceIdFor(event);
+  startRequestTrace(event, requestId);
+  return withRequestTrace(requestId, async () => {
+    traceEvent('INGRESS', 'onebot_message_received', {
+      messageId: event?.messageId,
+      groupId: event?.groupId,
+      userId: event?.userId,
+      messageType: event?.type,
+      imageCount: event?.images?.length || 0,
+      replayedFromQueue: Boolean(isFromDrain),
+    });
+    markActiveProcessing(1);
+    try {
+      const result = await processIncomingInner(event, sendMessage, queuedDecision, isFromDrain);
+      finishRequestTrace(result?.error ? 'failed' : 'completed', {
+        replied: Boolean(result?.replied),
+        queued: Boolean(result?.queued),
+        reason: result?.reason || '',
+      });
+      return result;
+    } catch (error) {
+      finishRequestTrace('failed', { error: error?.message || String(error) });
+      throw error;
+    } finally {
+      markActiveProcessing(-1);
+    }
+  });
 }
 
 async function processIncomingInner(event, sendMessage = undefined, queuedDecision = undefined, isFromDrain = false) {
@@ -373,12 +469,11 @@ async function processIncomingInner(event, sendMessage = undefined, queuedDecisi
 
   const isPrivateOwner = event.type === 'private' && settings.ownerQq && String(event.userId) === String(settings.ownerQq);
   if (isPrivateOwner && event.text.startsWith('/')) {
-    // Bare slash commands that belong to the LazyBot quick table are routed
-    // below (when the quick router is enabled); Wuxin's own `/help` and other
-    // owner slash commands keep their existing behavior.
+    // Bare slash commands that belong to the LazyBot shortcut table are routed
+    // below; Wuxin's own `/help` and owner commands keep their existing behavior.
     const privateQuick = matchQuickCommand(event);
     const isLazyQuick = privateQuick?.def.source === 'lazybot' && privateQuick.def.id !== 'help';
-    if (!(isLazyQuick && quickRouterEnabled(db, event))) {
+    if (!isLazyQuick) {
       return handleOwnerCommand(event, sendMessage);
     }
   }
@@ -400,6 +495,18 @@ async function processIncomingInner(event, sendMessage = undefined, queuedDecisi
   // sender has no permission. Otherwise a denied command could fall through
   // into normal chat and be answered by the model.
   const isWuxinCommandText = /^\/w(uxin)?(?:\s|$)/i.test(event.text);
+  const group = event.type === 'group' ? getGroup(db, event.groupId) : null;
+  const detectedQuickMatch = detectBpTypeAnalysisIntent(event.text) ? null : matchQuickCommand(event);
+  if (event.type === 'group' && group?.mode === 'osu' && !allowedByOsuCommandOnlyMode(event, detectedQuickMatch)) {
+    traceEvent('GATE', 'osu_command_only_ignored', {
+      status: 'silent',
+      reason: '本群为仅 osu! 指令模式',
+    });
+    // Return before messages, decisions, XP, memory, relationship and group
+    // profile counters are touched. This is what makes the mode a real privacy
+    // and cost boundary instead of another probabilistic reply policy.
+    return { replied: false, reason: '本群为仅 osu! 指令模式，忽略非 osu! 内容' };
+  }
   if (event.type === 'group' && looksLikeExternalBotSender(event, settings) && !isGroupOwner) {
     const reason = '忽略疑似其他机器人账号的消息';
     updateDb((draft) => {
@@ -432,12 +539,12 @@ async function processIncomingInner(event, sendMessage = undefined, queuedDecisi
     return handleOwnerCommand(event, sendMessage, { isOwner: isGroupOwner, isAdmin: isGroupAdmin });
   }
 
-  // ── Legacy quick-command router (M1 of four-bot merge) ──
+  // ── Deterministic shortcut commands ──
   // Deterministic `!p`/`!bs`/`/plus`/`~`/`查@` … commands bypass the LLM.
   // BP 类型查询 has its own deterministic osu!oracle route. In particular,
   // `查 @某人 的 BP 类型` must not be consumed as Hydrant's generic 查@资料.
-  const quickMatch = detectBpTypeAnalysisIntent(event.text) ? null : matchQuickCommand(event);
-  if (quickMatch && quickRouterEnabled(db, event)) {
+  const quickMatch = detectedQuickMatch;
+  if (quickMatch) {
     const quickResult = await handleQuickCommand(event, sendMessage, db, quickMatch, {
       isOwner: isGroupOwner || isPrivateOwner,
       isAdmin: isGroupAdmin,
@@ -447,20 +554,36 @@ async function processIncomingInner(event, sendMessage = undefined, queuedDecisi
     }
   }
 
-  const group = getGroup(db, event.groupId);
   const userPolicy = getUserPolicy(db, event.groupId, event.userId);
   const mentioned = mentionsBot(event.text, settings);
+  const eventVisionImages = collectEventVisionImages(event);
   // On the first pass the message + decision are recorded and side effects
   // (memory, XP, pair/profile pending) run exactly once. Drained replays use
   // the stored decision and must NOT duplicate history or side effects.
   const decision = queuedDecision || (event.type === 'private'
     ? { shouldReply: String(event.userId) === String(settings.ownerQq || event.userId), reason: '私聊消息' }
-    : await decideReply({ db, group, userPolicy, text: event.text, mentioned, userId: event.userId, images: event.images || [] }));
+    : await decideReply({ db, group, userPolicy, text: event.text, mentioned, userId: event.userId, images: eventVisionImages }));
+  traceEvent('GATE', 'reply_gate_decided', {
+    status: decision.shouldReply ? 'reply' : 'silent',
+    shouldReply: Boolean(decision.shouldReply),
+    reason: decision.reason,
+    inContext: decision.inContext !== false,
+    visualLimitation: Boolean(decision.visualLimitation),
+    mentioned,
+    atTargets: event?.atTargets || [],
+  });
 
   if (!isFromDrain) {
+    let persistedDuplicate = false;
     updateDb((draft) => {
+      if (persistedInboundDuplicate(draft, event)) {
+        persistedDuplicate = true;
+        return;
+      }
       draft.messages.push({
         id: crypto.randomUUID(),
+        requestId: currentRequestTraceId(),
+        sourceMessageId: event.messageId,
         role: 'user',
         type: event.type,
         groupId: event.groupId,
@@ -473,6 +596,7 @@ async function processIncomingInner(event, sendMessage = undefined, queuedDecisi
       });
       draft.decisions.push({
         id: crypto.randomUUID(),
+        requestId: currentRequestTraceId(),
         messageId: event.messageId,
         groupId: event.groupId,
         userId: event.userId,
@@ -481,6 +605,9 @@ async function processIncomingInner(event, sendMessage = undefined, queuedDecisi
         createdAt: nowIso()
       });
     });
+    if (persistedDuplicate) {
+      return { replied: false, reason: '忽略已持久化的重复 OneBot message_id', duplicate: true };
+    }
 
     const memoryRecord = recordMemoryObservation(event, userPolicy);
     if (memoryRecord.shouldUpdate) {
@@ -556,10 +683,14 @@ async function processIncomingInner(event, sendMessage = undefined, queuedDecisi
 
   if (decision.visualLimitation) {
     const replyText = visualLimitationReply(event, db);
+    traceEvent('SEND', 'deterministic_visual_reply_started', { contentLength: replyText.length });
     const segments = await sendReplySegments(sendMessage, event, replyText);
+    traceEvent('SEND', 'deterministic_visual_reply_sent', { status: 'ok', segmentCount: segments.length });
     updateDb((draft) => {
       draft.messages.push({
         id: crypto.randomUUID(),
+        requestId: currentRequestTraceId(),
+        ...replyTargetMetadata(event),
         role: 'assistant',
         type: event.type,
         groupId: event.groupId,
@@ -609,16 +740,28 @@ async function processIncomingInner(event, sendMessage = undefined, queuedDecisi
       });
     });
     queueState.queue.push({ event, sendMessage, decision, enqueuedAt: Date.now() });
+    traceEvent('QUEUE', 'reply_enqueued', { status: 'waiting', position: queueState.queue.length });
     return { replied: false, reason, queued: true, queuePosition: queueState.queue.length };
   }
   queueState.locked = true;
 
   let thinkingTimer = null;
   try {
+    // QUICK_CONTEXT_FIX_QB08: before building this conversational turn's
+    // context, drain any pending quick observation whose visible reply already
+    // completed for THIS group+user. Bounded by QUICK_CONTEXT_PENDING_WAIT_MS;
+    // no pending work means zero added latency.
+    await settlePendingQuickObservations(event);
     const liveDb = readDb();
     const liveGroup = getGroup(liveDb, event.groupId) || { groupId: event.groupId, name: '私聊' };
     const liveUserPolicy = getUserPolicy(liveDb, event.groupId, event.userId);
     const messages = buildPrompt(liveDb, liveGroup, event, liveUserPolicy);
+    traceEvent('PROMPT', 'prompt_built', {
+      messageCount: messages.length,
+      roles: messages.map((message) => message.role),
+      totalCharacters: messages.reduce((sum, message) => sum + String(message.content || '').length, 0),
+      includesVision: Boolean(event?.images?.length),
+    });
     const responseOptions = responseOptionsFor(event, liveDb, liveUserPolicy);
     const turnId = String(event.messageId || crypto.randomUUID());
     const reasoningRouter = createShadowReasoningRouter();
@@ -641,14 +784,55 @@ async function processIncomingInner(event, sendMessage = undefined, queuedDecisi
     }
     const registryHere = loadRegistry(liveDb);
     const namedBotRequest = detectNamedBotRequest(event.text, registryHere.bots || []);
+    traceEvent('ROUTER', 'conversation_route_resolved', {
+      explicitSearch,
+      osuCapability: osuDataIntent?.args?.capability || '',
+      namedBotId: namedBotRequest?.botId || '',
+    });
+    let namedBotDowngradeNotice = '';
 
-    // If the user explicitly named a bot (猫猫/雨沐/etc.) AND asked for osu
-    // data, carry the bot choice into the required tool. This mapping is a
-    // simple common-sense alias (猫猫→kanon), and live tests showed the LLM
-    // picks the wrong tool when left to decide; the tool schema still exposes
-    // `bot` as a fallback for LLM-driven calls on uncaught phrasings.
+    // If the user explicitly named a bot (猫猫/雨沐/etc.) AND asked for recent
+    // data with a truly-supported selector, carry the bot choice into the
+    // required tool. Only yumu/kanon are distinct recent selectors in
+    // executeInternalBotCommand (yumu → !r, kanon → !re); hydrant/lazybot are
+    // NOT supported selectors and must degrade explicitly instead of being
+    // silently mapped to the yumu compatibility bridge.
     if (osuDataIntent && namedBotRequest) {
-      osuDataIntent.args.bot = namedBotRequest.botId;
+      if (
+        osuDataIntent.args.capability === 'recent' &&
+        (RECENT_BOT_SELECTOR_IDS as readonly string[]).includes(namedBotRequest.botId)
+      ) {
+        osuDataIntent.args.bot = namedBotRequest.botId;
+      } else {
+        // Named-bot constraint on a capability/value that does not have a real
+        // executor selection must never be dropped silently. Keep the internal
+        // result but tell the user explicitly that the requested bot selection
+        // was degraded.
+        const capabilityLabels: Record<string, string> = {
+          bp: 'BP 查询',
+          bp_type: 'BP 类型分析',
+          info: '玩家信息',
+          profile: '玩家资料',
+          ppplus: 'PP+ 分析',
+          skill: '技能分析',
+          recent: '最近成绩',
+          recommend: '谱面推荐',
+        };
+        const capabilityLabel = capabilityLabels[osuDataIntent.args.capability] || 'osu 数据查询';
+        namedBotDowngradeNotice =
+          `[系统] 你点名的「${namedBotRequest.botName}」暂不支持在“${capabilityLabel}”中指定；` +
+          '本次查询已降级为 Wuxin 内部数据，结果照常给出。';
+      }
+    }
+
+    // Surface the degradation immediately instead of silently executing a
+    // plain internal query_osu. The internal result still follows this notice.
+    if (namedBotDowngradeNotice) {
+      if (sendMessage) await sendMessage(event, namedBotDowngradeNotice);
+      updateDb((draft) => {
+        draft.messages.push({ id: crypto.randomUUID(), ...replyTargetMetadata(event), role: 'assistant', type: event.type, groupId: event.groupId, userId: 'bot', nickname: '机器人', content: namedBotDowngradeNotice, inContext: true, createdAt: nowIso() });
+        draft.usage.replies += 1;
+      });
     }
 
     // ── Named-bot invocation guard ──
@@ -659,79 +843,52 @@ async function processIncomingInner(event, sendMessage = undefined, queuedDecisi
       const replyText = `${namedBotRequest.botName}目前没有接入 Harness 的真实调用通道。无心内部 osu! 查询可以提供类似数据。`;
       if (sendMessage) await sendMessage(event, replyText);
       updateDb((draft) => {
-        draft.messages.push({ id: crypto.randomUUID(), role: 'assistant', type: event.type, groupId: event.groupId, userId: 'bot', nickname: '机器人', content: replyText, inContext: true, createdAt: nowIso() });
+        draft.messages.push({ id: crypto.randomUUID(), ...replyTargetMetadata(event), role: 'assistant', type: event.type, groupId: event.groupId, userId: 'bot', nickname: '机器人', content: replyText, inContext: true, createdAt: nowIso() });
         draft.usage.replies += 1;
       });
       await drainReplyQueue(replyLockKey, processIncoming);
       return { replied: true, text: replyText, reason: 'named_bot_no_adapter' };
     }
 
-    // Real search: if explicitly requested, run searchWeb and inject results
+    // Explicit search still has a deterministic availability guard. Query
+    // planning and execution happen later through the LLM tool loop.
     if (explicitSearch && !osuDataIntent && !namedBotRequest && !isSearchAvailable(liveDb)) {
       // Search requested but no real provider configured — don't let LLM fake it
       const replyText = '当前还没有接入真实联网搜索源。可以在控制台「模型」页配置 SearXNG 或其他搜索服务。';
       if (sendMessage) await sendMessage(event, replyText);
       updateDb((draft) => {
-        draft.messages.push({ id: crypto.randomUUID(), role: 'assistant', type: event.type, groupId: event.groupId, userId: 'bot', nickname: '机器人', content: replyText, inContext: true, createdAt: nowIso() });
+        draft.messages.push({ id: crypto.randomUUID(), ...replyTargetMetadata(event), role: 'assistant', type: event.type, groupId: event.groupId, userId: 'bot', nickname: '机器人', content: replyText, inContext: true, createdAt: nowIso() });
         draft.usage.replies += 1;
       });
       await drainReplyQueue(replyLockKey, processIncoming);
       return { replied: true, text: replyText, reason: '搜索请求但未接入真实搜索源' };
     }
 
-    let searchBlock = '';
-    if (explicitSearch && !osuDataIntent && !namedBotRequest && isSearchAvailable(liveDb)) {
-      const searchQuery = extractSearchQuery(event.text);
-      if (!searchQuery || searchQuery.length < 2) {
-        const replyText = '你想让我搜什么？给我一个关键词或问题就行。';
-        if (sendMessage) await sendMessage(event, replyText);
-        updateDb((draft) => {
-          draft.messages.push({
-            id: crypto.randomUUID(),
-            role: 'assistant',
-            type: event.type,
-            groupId: event.groupId,
-            userId: 'bot',
-            nickname: '机器人',
-            content: replyText,
-            inContext: true,
-            createdAt: nowIso()
-          });
-          draft.usage.replies += 1;
-        });
-        await drainReplyQueue(replyLockKey, processIncoming);
-        return { replied: true, text: replyText, reason: '搜索请求缺少关键词' };
-      }
-      if (sendMessage) await sendMessage(event, `正在搜索：${searchQuery.slice(0, 60)}…`);
-      const searchResult = await searchWeb(liveDb, searchQuery);
-      if (searchResult.ok && searchResult.results.length > 0) {
-        searchBlock = `【搜索结果】\n${formatSearchResults(searchResult.results)}\n\n请基于以上搜索结果回答，不确定就说没查到。`;
-        messages[messages.length - 1].content += '\n\n' + searchBlock;
-      } else {
-        const detail = searchResult.error ? `原因：${searchResult.error}` : '没有拿到可用结果';
-        const replyText = `我这次没有搜到可靠结果，先不硬编。${detail}`;
-        if (sendMessage) await sendMessage(event, replyText);
-        updateDb((draft) => {
-          draft.messages.push({
-            id: crypto.randomUUID(),
-            role: 'assistant',
-            type: event.type,
-            groupId: event.groupId,
-            userId: 'bot',
-            nickname: '机器人',
-            content: replyText,
-            inContext: true,
-            createdAt: nowIso()
-          });
-          draft.usage.replies += 1;
-        });
-        await drainReplyQueue(replyLockKey, processIncoming);
-        return { replied: true, text: replyText, reason: '搜索失败或无结果' };
-      }
-    }
-    const searchMode = responseOptions.searchMode;
-    // Always offer tools when bots are enabled — the LLM decides when to use them
-    const useTools = enabledBots(loadRegistry(liveDb)).length > 0;
+    const searchMode = responseOptions.searchMode || liveDb.settings.webSearchMode || 'balanced';
+    const maxSearchCalls = searchMode === 'deep' ? 3 : (searchMode === 'fast' ? 1 : 2);
+    const agentRuntimeMode = agentRuntimeModeFor(liveDb);
+    const modelFirstRuntime = agentRuntimeMode === 'model_first';
+    const registryForTurn = loadRegistry(liveDb);
+    const hasEnabledBots = enabledBots(registryForTurn).length > 0;
+    const botTools = hasEnabledBots
+      ? buildBotToolSchemas(registryForTurn, { surface: modelFirstRuntime ? 'v2' : 'legacy' })
+      : [];
+    // Clear osu! data intents keep their deterministic domain tool. Other
+    // conversational turns receive search_web and let the LLM decide whether,
+    // what and how to search.
+    const searchToolEnabled = isSearchAvailable(liveDb) && (modelFirstRuntime || !osuDataIntent);
+    const toolsForTurn = [
+      ...botTools,
+      ...(searchToolEnabled ? [buildSearchToolSchema()] : []),
+    ];
+    const useTools = toolsForTurn.length > 0;
+    traceEvent('ROUTER', 'execution_path_selected', {
+      route: useTools ? 'tool_loop' : 'direct_model',
+      enabledToolNames: toolsForTurn.map((tool) => tool?.function?.name).filter(Boolean),
+      explicitSearch,
+      requiredOsuCapability: osuDataIntent?.args?.capability || '',
+      agentRuntimeMode,
+    });
 
     // Thinking notice — configurable per thinkingNoticeMode
     const thinkingMode = useTools ? 'off' : (liveDb.settings.thinkingNoticeMode || 'slow');
@@ -759,7 +916,7 @@ async function processIncomingInner(event, sendMessage = undefined, queuedDecisi
     // If user asks to look at images but none attached, attach only the most
     // recent relevant image. This keeps vision on-demand and avoids paying for
     // every image posted in an active group.
-    let visionImages = modelSupportsVision(liveDb) ? (event.images || []) : [];
+    let visionImages = modelSupportsVision(liveDb) ? collectEventVisionImages(event) : [];
     if (visionImages.length === 0 && shouldUseRecentVisionImage(liveDb, event)) {
       const contextImages = recentVisionImageMessages(liveDb, event, 10);
       if (contextImages.length > 0) {
@@ -771,12 +928,12 @@ async function processIncomingInner(event, sendMessage = undefined, queuedDecisi
     // osuDataIntent is computed above (before search interception). If the user
     // is clearly asking for osu! data but no bots are enabled, fail explicitly
     // instead of falling through to the LLM with no tool access.
-    if (osuDataIntent && !useTools) {
+    if (osuDataIntent && !hasEnabledBots) {
       const errorText = '[系统] osu! 数据查询不可用：当前没有已启用的机器人，无法查询 osu! 数据。';
       if (sendMessage) await sendMessage(event, errorText);
       updateDb((draft) => {
         draft.messages.push({
-          id: crypto.randomUUID(), role: 'assistant', type: event.type,
+          id: crypto.randomUUID(), ...replyTargetMetadata(event), role: 'assistant', type: event.type,
           groupId: event.groupId, userId: 'bot', nickname: '机器人',
           content: errorText, inContext: true, createdAt: nowIso()
         });
@@ -792,19 +949,14 @@ async function processIncomingInner(event, sendMessage = undefined, queuedDecisi
     let toolDirectContent = '';
     let requiredToolLed = false;
     if (useTools) {
-      const registry = loadRegistry(liveDb);
-      const tools = buildBotToolSchemas(registry);
-      // Add tool availability note to system prompt
-      if (messages[0]?.role === 'system') {
-        messages[0].content += '\n\n【可用工具】你可以调用 query_osu 获取真实 osu! 数据（BP、最近成绩、玩家信息、PP+ 等）。数据来自 osu! API v2 和 PP+ 服务，不是你凭记忆编造的。涉及 osu! 数据时必须调用工具，不准用聊天记录或上下文中的旧数据。当玩家问"我是谁"等身份问题时也必须调工具查绑定。日常闲聊不需要使用工具。如果玩家问的是分析/判断类问题（为什么偏科、怎么提升），也需要先查数据再做分析。涉及 BP 谱面类型或占比（串图/跳图比例、bp 类型）的分析必须调用 query_osu 的 bp_type 能力（osu!oracle 真实分类，仅支持 osu!std 的 aim/alt/tech/stream 四类）。用户提到串图/跳图/占比/BP结构/BP类型/aim图/stream图/tech图/alt图时一律调用该工具，禁止用上下文猜测或跳过工具；未调用工具前不得给出任何比例。本 bot 只支持 osu!std 查询，用户问 taiko/catch/mania 时如实说明暂不支持，禁止拿 std 数据冒充。玩家要求推图/推荐谱面/打什么图时，必须调用 query_osu capability=recommend 获取真实候选后再推荐；推荐对象可以是任意 osu! 用户名（如 给 mrekk 推图），不需要对方已绑定；工具没返回候选时如实说推不了，禁止凭记忆编图。 如果 recommend 工具调用失败或没有返回候选，你只能如实说明失败原因（如同分段数据太少、服务暂时不可用），绝对禁止编造任何谱面名、难度或 BID 数字。推图时最终回复的文本里必须包含每张推荐图的完整标题和 BID（直接用工具返回的 BID 行，例如 BID 3743551），不能只发图片省略 BID。推图支持自然语言筛选：玩家提出 BPM/AR/CS/OD/HP/星数/时长等限制时，正常调用 recommend 即可，系统会自动解析限制，并按带 Mod 后的实际数值筛选和展示；推荐时必须说明按什么条件筛的，禁止无视条件硬推；筛选结果为空时如实告知玩家可以放宽条件，禁止用不满足条件的图充数。注意：雨沐/猫猫/消防栓/LazyBot 是 QQ 群里的独立机器人，不是你可以调用的工具——你应该用 query_osu 获取数据。涉及"最近成绩/最近没玩/多久没打/最近状态"时必须调用 query_osu capability=recent 实时查询；profile、info、skill、get_player_skill 的结果都不包含 recent，工具没返回 recent 字段绝不等于玩家没有最近成绩。历史对话和技能快照中的 osu! 数据可能过时，以实时查询为准。 引用任何 osu! 查询结果时必须先说玩家名（如 Naaahida 的最近成绩：），禁止把某位玩家的数据说成另一位玩家的；不确定数据归属时如实说不知道，不要猜测。 用户点名用某个 bot 时（雨沐/猫猫/消防栓/LazyBot），调用 query_osu 必须把 bot 参数填成对应 id（yumu/kanon/hydrant/lazybot）；没点名就不填 bot。';
-      }
-
+      const registry = registryForTurn;
+      const tools = toolsForTurn;
       // ── Deterministic osu! data routing ──
       // When the user's intent is an unambiguous data lookup, we execute the
       // tool before the LLM sees the context. This prevents context poisoning
       // where repeated queries cause the model to skip tool calls.
       let requiredTool: { toolName: string; args: Record<string, unknown> } | undefined;
-      if (osuDataIntent) {
+      if (osuDataIntent && !modelFirstRuntime) {
         const internalBotsEnabled = enabledBots(registry).some((b) => b.channel === 'internal');
         const opValid = validateOperation({
           type: 'query_osu',
@@ -820,7 +972,7 @@ async function processIncomingInner(event, sendMessage = undefined, queuedDecisi
           if (sendMessage) await sendMessage(event, errorText);
           updateDb((draft) => {
             draft.messages.push({
-              id: crypto.randomUUID(), role: 'assistant', type: event.type,
+              id: crypto.randomUUID(), ...replyTargetMetadata(event), role: 'assistant', type: event.type,
               groupId: event.groupId, userId: 'bot', nickname: '机器人',
               content: errorText, inContext: true, createdAt: nowIso()
             });
@@ -830,6 +982,50 @@ async function processIncomingInner(event, sendMessage = undefined, queuedDecisi
           return { replied: true, text: errorText, reason };
         }
       }
+
+      // P1B conditional tool-guidance injection. The deterministic required
+      // tool path is the only runtime state that narrows the exposed
+      // capability set for this turn; otherwise the unified query_osu tool
+      // exposes the full callable catalog and guidance stays full.
+      const requiredCapability = requiredTool?.toolName === 'query_osu' && requiredTool.args?.capability
+        ? String(requiredTool.args.capability)
+        : null;
+      if (messages[0]?.role === 'system') {
+        if (modelFirstRuntime) {
+          messages[0].content = rewriteLegacyToolReferencesForV2(messages[0].content);
+        }
+        const guidanceBlocks = [];
+        if (modelFirstRuntime) {
+          guidanceBlocks.push(buildAgentAutonomyGuidance({ searchEnabled: searchToolEnabled, maxSearchCalls }));
+        } else {
+          if (botTools.length > 0) {
+            guidanceBlocks.push(requiredCapability
+              ? buildToolGuidance({ exposedCapabilities: [requiredCapability] })
+              : buildToolGuidance());
+          }
+          if (searchToolEnabled) {
+            guidanceBlocks.push(buildSearchToolGuidance({ explicitSearch, maxCalls: maxSearchCalls }));
+          }
+        }
+        if (guidanceBlocks.filter(Boolean).length > 0) {
+          messages[0].content += '\n\n' + guidanceBlocks.filter(Boolean).join('\n\n');
+        }
+      }
+
+      let webSearchCalls = 0;
+      const executeConversationTool = async (toolCall, context) => {
+        if (String(toolCall?.function?.name || '') !== SEARCH_TOOL_NAME) {
+          return executeToolCall(toolCall, context);
+        }
+        if (!searchToolEnabled) {
+          return { toolCallId: toolCall.id, ok: false, content: '当前未开放网页搜索', error: 'search_unavailable' };
+        }
+        if (webSearchCalls >= maxSearchCalls) {
+          return { toolCallId: toolCall.id, ok: false, content: `本轮网页搜索已达到 ${maxSearchCalls} 次上限`, error: 'search_call_limit' };
+        }
+        webSearchCalls += 1;
+        return executeSearchToolCall(toolCall, context);
+      };
 
       const harnessChat = (db: any, opts: any) => completeChat(db, {
         ...opts,
@@ -855,11 +1051,42 @@ async function processIncomingInner(event, sendMessage = undefined, queuedDecisi
         // 自然聊天不回显工具原文：数据只供 LLM 参考并自然融入回答。
         // 显式指令（/w osu analyze、!p 等）走独立通道，不受此开关影响。
         deliverDirectContent: requiredTool?.args.capability === 'recommend',
+        continueAfterDirectPayload: modelFirstRuntime,
+        deduplicateToolCalls: modelFirstRuntime,
+        structuredToolResults: modelFirstRuntime,
         turnId,
         reasoningRouter,
+        executeToolCallFn: executeConversationTool,
       };
-      let toolResult = await runToolLoop(harnessChat, loopOptions);
+      // One user message is one shared tool budget, even when the
+      // recommendation hard guard below runs a second runToolLoop.
+      let turnToolCallsMade = 0;
+      let toolResult = await runToolLoop(harnessChat, {
+        ...loopOptions,
+        toolCallsExecutedBeforeLoop: turnToolCallsMade,
+      });
       requiredToolLed = Boolean(requiredTool);
+      turnToolCallsMade = Number(toolResult.toolCallsMadeThisTurn ?? toolResult.toolCallsMade) || 0;
+
+      // Explicit search is a hard user requirement. Normally the first LLM
+      // planner chooses a better query and calls search_web itself. If it
+      // ignores the tool contract, execute one bounded fallback search using
+      // the cleaned user request, then let the LLM synthesize the result.
+      const fallbackSearchQuery = explicitSearch ? extractSearchQuery(event.text) : '';
+      if (
+        explicitSearch &&
+        searchToolEnabled &&
+        webSearchCalls === 0 &&
+        fallbackSearchQuery.length >= 2
+      ) {
+        toolResult = await runToolLoop(harnessChat, {
+          ...loopOptions,
+          toolCallsExecutedBeforeLoop: turnToolCallsMade,
+          requiredTool: { toolName: SEARCH_TOOL_NAME, args: { query: fallbackSearchQuery } },
+        });
+        requiredToolLed = true;
+        turnToolCallsMade = Number(toolResult.toolCallsMadeThisTurn ?? toolResult.toolCallsMade) || 0;
+      }
 
       // Hard guard: when the user clearly asked for recommendations but the
       // model answered WITHOUT ever running the recommend tool, any map names
@@ -873,9 +1100,11 @@ async function processIncomingInner(event, sendMessage = undefined, queuedDecisi
       ) {
         toolResult = await runToolLoop(harnessChat, {
           ...loopOptions,
+          toolCallsExecutedBeforeLoop: turnToolCallsMade,
           requiredTool: { toolName: 'query_osu', args: { capability: 'recommend' } },
           deliverDirectContent: true,
         });
+        turnToolCallsMade = Number(toolResult.toolCallsMadeThisTurn ?? toolResult.toolCallsMade) || 0;
       }
 
       ai = {
@@ -900,6 +1129,8 @@ async function processIncomingInner(event, sendMessage = undefined, queuedDecisi
         maxTokens: responseOptions.maxTokens,
         overrideModel: responseOptions.overrideModel,
         visionImages,
+        traceRole: 'conversation',
+        tracePurpose: 'conversation_reply',
         ...convWire
       });
       reasoningRouter.record({
@@ -915,10 +1146,47 @@ async function processIncomingInner(event, sendMessage = undefined, queuedDecisi
     let replyText = sanitizeReply(ai.text, liveDb.settings);
     const imageCqCodes = toolImages.map(toolImageToCq).filter(Boolean);
     const hasDirectToolDelivery = Boolean(toolDirectContent || imageCqCodes.length > 0);
+    const rewriteEligible = isWeirdReply(replyText);
+    let rewriteSkipReason = null;
+    if (rewriteEligible) {
+      rewriteSkipReason = hasDirectToolDelivery
+        ? 'direct_tool_delivery'
+        : (responseOptions.longForm ? 'long_form' : null);
+    }
+    if (rewriteEligible && rewriteSkipReason) {
+      void recordRewriteTelemetry(liveDb, buildRewriteEntry({
+        event,
+        turnId,
+        eligible: true,
+        invoked: false,
+        skipReason: rewriteSkipReason,
+        provider: ai.provider,
+        model: ai.model,
+        usageAvailable: false,
+        latencyMs: null,
+        result: 'SKIPPED',
+        originalText: replyText,
+        rewrittenText: replyText,
+      }));
+    }
     if (hasDirectToolDelivery) {
       replyText = compactDirectToolLead(replyText, toolDirectContent, imageCqCodes.length > 0);
-    } else if (!responseOptions.longForm && isWeirdReply(replyText)) {
+    } else if (!responseOptions.longForm && rewriteEligible) {
       if (isIdentityQuestion(event.text)) {
+        void recordRewriteTelemetry(liveDb, buildRewriteEntry({
+          event,
+          turnId,
+          eligible: true,
+          invoked: false,
+          skipReason: 'identity_question_deterministic',
+          provider: ai.provider,
+          model: ai.model,
+          usageAvailable: false,
+          latencyMs: null,
+          result: 'SKIPPED',
+          originalText: replyText,
+          rewrittenText: replyText,
+        }));
         replyText = neutralIdentityReply(event, liveDb.settings);
       } else {
         const rewrite = await rewriteNormalReply(liveDb, replyText, event, { reasoningRouter, turnId });
@@ -969,12 +1237,17 @@ async function processIncomingInner(event, sendMessage = undefined, queuedDecisi
     const withinMergeFloor = deliveredText.length <= MERGE_FORWARD_MIN_CHARS;
     const isLongReply = responseOptions.longForm || (!withinMergeFloor && segmentCount >= 2);
     let segments;
+    traceEvent('SEND', 'qq_delivery_started', {
+      contentLength: deliveredText.length,
+      imageCount: imageCqCodes.length,
+      deliveryMode: hasDirectToolDelivery ? 'direct-tool' : (isLongReply ? 'forward' : 'segments'),
+    });
     if (hasDirectToolDelivery) {
       // Structured tool output bypasses both the LLM restatement and the
       // three-segment/merged-forward paths. NapCat receives one complete,
       // deterministic message with any images appended structurally.
       const outboundText = [deliveredText, ...imageCqCodes].filter(Boolean).join('\n');
-      if (sendMessage) await sendMessage(event, outboundText);
+      if (sendMessage) await sendMessage(event, outboundText, replyToCurrentMessageOptions(event));
       segments = [outboundText];
     } else if (isLongReply && sendMessage) {
       await sendForwardText(sendMessage, event, 'Wuxin 回复', deliveredText);
@@ -982,10 +1255,13 @@ async function processIncomingInner(event, sendMessage = undefined, queuedDecisi
     } else {
       segments = await sendReplySegments(sendMessage, event, deliveredText);
     }
+    traceEvent('SEND', 'qq_delivery_completed', { status: 'ok', segmentCount: segments.length });
 
     updateDb((draft) => {
       draft.messages.push({
         id: crypto.randomUUID(),
+        requestId: currentRequestTraceId(),
+        ...replyTargetMetadata(event),
         role: 'assistant',
         type: event.type,
         groupId: event.groupId,
@@ -1029,6 +1305,7 @@ async function processIncomingInner(event, sendMessage = undefined, queuedDecisi
       draft.usage.errors += 1;
       draft.decisions.push({
         id: crypto.randomUUID(),
+        requestId: currentRequestTraceId(),
         messageId: event.messageId,
         groupId: event.groupId,
         userId: event.userId,
@@ -1043,4 +1320,3 @@ async function processIncomingInner(event, sendMessage = undefined, queuedDecisi
     void drainReplyQueue(replyLockKey, processIncoming);
   }
 }
-

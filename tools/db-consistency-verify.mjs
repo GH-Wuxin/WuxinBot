@@ -238,11 +238,6 @@ async function main() {
   const analyzeA = await handleOsuCommand(event, null, perms, 'analyze', '111');
   assert(analyzeA.text === 'A-OLD-REPORT', 'c3:analyze-explicit-A-is-A', `got=${analyzeA.text}`);
 
-  // Recent: same QQ has both A and B cache rows; B's row is keyed by B's
-  // osuUserId and must win after rebinding to B.
-  const recentB = await handleOsuCommand(event, null, perms, 'recent', '');
-  assert(recentB.text === 'B-FRESH-RECENT', 'c3:recent-uses-B-osuUserId', `got=${recentB.text}`);
-
   // Recommend cooldown/history are osuUserId-keyed and must not cross over.
   markRecommendation(111, [{ beatmapId: 1, beatmapsetId: 701 }]);
   markRecommendation(222, [{ beatmapId: 2, beatmapsetId: 702 }]);

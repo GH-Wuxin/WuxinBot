@@ -78,11 +78,14 @@ export interface OsuBeatmap {
 
 export interface OsuScore {
   id: number;
+  beatmap_id?: number;
   accuracy: number;
   max_combo: number;
   mods: string[];
   pp: number;
   rank: string;
+  passed?: boolean;
+  perfect?: boolean;
   score: number;
   statistics: {
     count_50: number;

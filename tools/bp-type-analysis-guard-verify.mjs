@@ -5,6 +5,7 @@ import { createTestDataDir, assertNotProduction, productionDbSnapshot, verifyPro
 
 const testDataDir = createTestDataDir('wuxin-bptype');
 process.env.DATA_DIR = testDataDir;
+process.env.PIPPI_AGENT_RUNTIME_MODE = 'legacy';
 process.env.OSU_ORACLE_DISABLED = '1';
 assertNotProduction(testDataDir);
 

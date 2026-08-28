@@ -1,6 +1,13 @@
 // Bot registry: loads bot definitions from db config, builds LLM tool schemas.
 import type { BotCommand, BotCommandParam, BotDefinition, BotRegistry, LlmTool } from './types.js';
 import { buildQueryOsuDescription, callableCapabilities } from './agentCapabilities.js';
+import {
+  capabilityNames,
+  queryOsuParamJsonSchema,
+  QUERY_OSU_PARAMS,
+} from './capabilityCatalog.js';
+import { buildV2OsuAgentToolSchemas, type AgentToolSurface } from './agentToolContracts.js';
+import { buildSkillProfilerToolSchema } from './skillProfiler.js';
 
 function bpQueryParams(): BotCommandParam[] {
   return [
@@ -102,20 +109,11 @@ export function findBot(registry: BotRegistry, botId: string): BotDefinition | u
 // Wuxin internal adapter: these commands are served by Wuxin's own osu! API
 // client, PP+ service, skill store, and yumu-image renderer. The four default
 // bots (yumu/kanon/hydrant/lazybot) all share this single implementation.
-export const INTERNAL_CAPABILITIES = [
-  { name: 'bp', description: '最佳成绩（支持单张 #N 或范围 N-M，最多 100 张，一张图）' },
-  { name: 'bp_type', description: 'BP 谱面类型分析（用户问 BP 类型/占比/结构/构成/串图/跳图/aim/alt/tech/stream 时调用；osu!oracle 对 Top100 分类，仅 osu!std，训练范围约 5★-9★，结果按真实分布回复，禁止编造）' },
-  { name: 'recent', description: '最近一次 osu! 成绩（含图片）' },
-  { name: 'info', description: '玩家信息卡（含图片）' },
-  { name: 'profile', description: '玩家资料文本' },
-  { name: 'ppplus', description: 'PP+ 维度分析' },
-  { name: 'skill', description: '玩家技能雷达' },
-  { name: 'recommend', description: '谱面推荐（协同过滤：与你同分段的玩家在打的图；玩家要求推图/推荐谱面/打什么图/有没有适合我的图时调用，数据来自 osu! API v2）' },
-  { name: 'match', description: 'osu! 多人比赛观战（!ml <matchID> 开始监听对局并推送开局/回合成绩；玩家说“观战/比赛直播/!ml”时引导使用快捷指令）' },
-  { name: 'beatmap_lookup', description: '谱面信息与星数（玩家问“这图多少星/多少 AR/多久/谁做的”时调用；beatmap_id 必填；可选 mods 返回官方带 mod 星数）' },
-  { name: 'pp_calc', description: '估算某张图给定 acc/combo/miss 的 pp（rosu 估算，不是官方精确值；beatmap_id 必填，可选 mods/accuracy(0-100)/combo/misses；回复时必须说明是估算值）' },
-  { name: 'leaderboard', description: '谱面全球榜单（玩家问“榜一多少/前几是谁”时调用；beatmap_id 必填，可选 mods/limit(1-50)）' },
-] as const;
+// This table is DERIVED from server/bots/capabilityCatalog.ts — do not add a
+// name or description here by hand.
+export const INTERNAL_CAPABILITIES: ReadonlyArray<{ name: string }> = capabilityNames().map(
+  (name) => ({ name }),
+);
 
 export function internalCapabilitySupported(name: string): boolean {
   return INTERNAL_CAPABILITIES.some((c) => c.name === name);
@@ -154,101 +152,60 @@ export function findCommand(bot: BotDefinition, commandName: string): BotCommand
 // External bots (yumu/kanon/hydrant/lazybot) run independently on their QQ
 // channels. The harness uses a single unified internal tool for osu! data.
 
-export function buildBotToolSchemas(registry: BotRegistry): LlmTool[] {
+export function buildBotToolSchemas(
+  registry: BotRegistry,
+  options: { surface?: AgentToolSurface } = {},
+): LlmTool[] {
   const hasInternal = enabledBots(registry).some((b) => b.channel === 'internal');
-  const externalBots = enabledBots(registry).filter((b) => b.channel !== 'internal' && b.qq);
   const tools: LlmTool[] = [];
 
   if (hasInternal) {
-    tools.push({
-      type: 'function',
-      function: {
-        name: 'query_osu',
-        description: buildQueryOsuDescription(),
-        parameters: {
-          type: 'object',
-          properties: {
-            capability: {
-              type: 'string',
-              enum: callableCapabilities(),
-              description: '查询类型'
+    if (options.surface === 'v2') {
+      tools.push(...buildV2OsuAgentToolSchemas());
+      tools.push(buildSkillProfilerToolSchema());
+    } else {
+      tools.push({
+        type: 'function',
+        function: {
+          name: 'query_osu',
+          description: buildQueryOsuDescription(),
+          parameters: {
+            type: 'object',
+            properties: {
+              capability: {
+                type: 'string',
+                enum: callableCapabilities(),
+                description: '查询类型'
+              },
+              ...Object.fromEntries(
+                QUERY_OSU_PARAMS
+                  .filter((param) => param.exposed)
+                  .map((param) => [param.name, queryOsuParamJsonSchema(param)]),
+              )
             },
-            username: {
-              type: 'string',
-              description: 'osu! 用户名。不填则用提问玩家的绑定账号。'
-            },
-            bot: {
-              type: 'string',
-              enum: ['yumu', 'kanon', 'hydrant', 'lazybot'],
-              description: '用户点名要用的 bot（雨沐/猫猫/消防栓/LazyBot）时填对应 id；不填默认用雨沐渲染。'
-            },
-            bp_rank: {
-              type: 'integer', minimum: 1, maximum: 100,
-              description: 'BP 单张名次，与 bp_start/bp_end 互斥。'
-            },
-            bp_start: {
-              type: 'integer', minimum: 1, maximum: 100,
-              description: 'BP 范围起始（含），与 bp_end 同时填，最多 20 张。与 bp_rank 互斥。'
-            },
-            bp_end: {
-              type: 'integer', minimum: 1, maximum: 100,
-              description: 'BP 范围结束（含）。'
-            },
-            beatmap_id: {
-              type: 'integer', minimum: 1,
-              description: '谱面 ID（beatmap_lookup / pp_calc / leaderboard 必填）。'
-            },
-            mods: {
-              type: 'string',
-              description: 'mod 组合，成对双字母，如 HDHR / HDDT（beatmap_lookup / pp_calc / leaderboard 可选）。'
-            },
-            accuracy: {
-              type: 'number', minimum: 0.01, maximum: 100,
-              description: 'acc 百分比（pp_calc 用，0-100；不填按 100 算）。'
-            },
-            combo: {
-              type: 'integer', minimum: 0,
-              description: '连击数（pp_calc 用；不填按 FC/max combo 算）。'
-            },
-            misses: {
-              type: 'integer', minimum: 0, maximum: 999,
-              description: 'miss 数（pp_calc 用；不填按 0 算）。'
-            },
-            limit: {
-              type: 'integer', minimum: 1, maximum: 50,
-              description: '榜单条数（leaderboard 用；不填 10 条）。'
-            }
-          },
-          required: ['capability']
+            required: ['capability']
+          }
         }
-      }
-    });
+      });
+    }
   }
 
-  if (externalBots.length > 0) {
-    const botDesc = externalBots.map((b) => `${b.name}（${b.id}）`).join('、');
-    tools.push({
-      type: 'function',
-      function: {
-        name: 'query_external_bot',
-        description: `向外部 QQ 机器人发送指令并等待回复。已配置：${botDesc}。仅用户明确点名外部机器人时使用。`,
-        parameters: {
-          type: 'object',
-          properties: {
-            bot: { type: 'string', description: `机器人 ID：${externalBots.map((b) => b.id).join('、')}` },
-            command: { type: 'string', description: '指令文本' }
-          },
-          required: ['bot', 'command']
-        }
-      }
-    });
-  }
+  // R3 dead-path cleanup: query_external_bot must NEVER be emitted as an LLM
+  // schema. Its executor backend remains in executor.ts and guard.ts keeps
+  // rejecting it (VISIBLE_BUT_UNCALLABLE has been removed by making it
+  // INVISIBLE_BUT_BACKEND_PRESENT). The QQ relay path is unchanged.
+  //
+  // The legacy query_bot / list_bots / get_recent_score tools are also
+  // deliberately not LLM-visible here; their executor implementations stay
+  // dormant until a future explicit exposure decision.
 
   tools.push({
     type: 'function',
     function: {
       name: 'get_player_skill',
-      description: '获取已记录的玩家 osu! 技能水平快照（PP、排名、领域强弱、常用 Mods、分析摘要）。注意：这是之前分析时保存的快照，可能过时，且不含最近成绩。查询实时数据（最近成绩、最新 PP、当前状态）必须用 query_osu。',
+      description: options.surface === 'v2'
+        ? '获取已记录的玩家 osu! 技能水平快照（PP、排名、领域强弱、常用 Mods、分析摘要）。注意：这是之前分析时保存的快照，可能过时，且不含最近成绩；实时状态必须调用当前可见的实时玩家数据工具。'
+        : '获取已记录的玩家 osu! 技能水平快照（PP、排名、领域强弱、常用 Mods、分析摘要）。注意：这是之前分析时保存的快照，可能过时，且不含最近成绩。查询实时数据（最近成绩、最新 PP、当前状态）必须用 query_osu。',
       parameters: {
         type: 'object',
         properties: { player: { type: 'string', description: 'osu! 用户名或 QQ 号' } },

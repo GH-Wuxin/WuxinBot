@@ -2,7 +2,18 @@
 
 import { readDb, updateDb, nowIso } from '../store.js';
 import { completeChat } from '../bot/llm.js';
-import { collectPlayerData, collectRecentPlayerData } from './collector.js';
+import { traceEvent } from '../requestTrace.js';
+import { collectPlayerData, collectPlayerOneLineData, collectRecentPlayerData } from './collector.js';
+import { retrieveKnowledgeForPrompt } from '../bot/knowledgeBase.js';
+import {
+  buildOneLineReviewFacts,
+  buildOneLineReviewPrompt,
+  buildOneLineReviewStyleQuery,
+  fallbackOneLineReview,
+  findCopiedStyleFragment,
+  normalizeOneLineReview,
+  validateOneLineReview,
+} from './oneLineReview.js';
 import {
   analyzeData,
   buildAnalysisEditorPrompt,
@@ -43,6 +54,7 @@ import {
   type OsuCommandId,
 } from '../bot/commands/osu.meta.js';
 import { ANALYSIS_COOLDOWN, RECENT_COOLDOWN } from '../bot/commands/commandConstants.js';
+import { OWNER_COMMANDS } from '../bot/commands/owner.meta.js';
 import {
   canViewCommand,
   canListCommand,
@@ -63,7 +75,7 @@ interface QueueEntry {
 
 const ANALYSIS_COOLDOWN_MS = ANALYSIS_COOLDOWN.ms;
 const RECENT_COOLDOWN_MS = RECENT_COOLDOWN.ms;
-const ANALYSIS_FORMAT_VERSION = 89;
+const ANALYSIS_FORMAT_VERSION = 90;
 const RECENT_FORMAT_VERSION = 4;
 export const OSU_ANALYSIS_MODEL = 'deepseek-v4-flash';
 // Independent reviewer model: deliberately a separate knob from the generator
@@ -77,6 +89,9 @@ let queue: QueueEntry[] = [];
 let running = false;
 let currentEntry: QueueEntry | null = null;
 const MAX_ANALYZE_QUEUE = 8;
+// Retained as a reversible tombstone while player Skill profiles replace the
+// legacy report/roast experiment. Direct calls must fail before API/LLM work.
+const ENABLE_OSU_ANALYZE = false;
 
 /**
  * Normalize every osuBindings format that has existed in Wuxin's database.
@@ -273,7 +288,7 @@ function buildRecentSkillSummary(scores: OsuScore[], baseline: any): string {
     : '星数不可用';
   return [
     `Recent ${recent.count} 次：平均 ${recentStars}、Acc ${(recent.averageAcc * 100).toFixed(2)}%，Mods ${modCountsLabel(scores)}。`,
-    `完整档案 BP 对照：平均 ${bpStars}、Acc ${(Number(bp.topAverageAcc || 0) * 100).toFixed(2)}%。`,
+    `Analyze BP 基线：平均 ${bpStars}、Acc ${(Number(bp.topAverageAcc || 0) * 100).toFixed(2)}%。`,
   ].join(' ');
 }
 
@@ -330,12 +345,12 @@ export function buildRecentReport(user: OsuUser, scores: OsuScore[], baseline: a
     `平均 ${recent.averageStars.toFixed(2)}★｜Acc ${(recent.averageAcc * 100).toFixed(2)}%`,
     `Mods：${modCountsLabel(scores)}`,
     '',
-    '【完整档案对照】',
+    '【BP 基线对照】',
     `BP100 平均 ${Number(top.topAverageStars || 0).toFixed(2)}★｜Acc ${(Number(top.topAverageAcc || 0) * 100).toFixed(2)}%`,
     'Recent 收录近期提交，BP 收录 Best Performance 成绩。这里只并排展示数值；变化原因仍然未知。',
     '',
     '【结论】',
-    `${user.username} 的近期样本与完整档案已经完成对照。`,
+    `${user.username} 的近期样本与 BP 基线已经完成对照。`,
     '数值差异可以确认，状态与能力变化仍缺少直接证据。'
   ].join('\n');
 }
@@ -851,6 +866,13 @@ async function reviewFullReport(
   const prompt = buildAnalysisReviewerPrompt(analysis, report, narrative);
   let lastRaw = '';
   for (let attempt = 1; attempt <= 2; attempt += 1) {
+    const reviewStartedAt = Date.now();
+    traceEvent('REVIEW', 'reviewer_started', {
+      status: 'running',
+      reviewer: 'osu_full_report',
+      attempt,
+      model: OSU_REVIEW_MODEL,
+    });
     try {
       const result = await completeChat(db, {
         model: OSU_REVIEW_MODEL,
@@ -865,19 +887,44 @@ async function reviewFullReport(
         timeoutMs: 60000,
         requestMaxRetries: 0,
         label: attempt === 1 ? 'osu分析独立审查' : 'osu分析独立审查重试',
+        traceRole: 'reviewer',
+        tracePurpose: attempt === 1 ? 'osu_full_report_review' : 'osu_full_report_review_retry',
       });
       lastRaw = String(result.text || '').trim();
       const verdicts = parseReviewerVerdicts(lastRaw);
-      if (verdicts) return { verdicts, raw: lastRaw };
+      if (verdicts) {
+        traceEvent('REVIEW', 'reviewer_completed', {
+          status: 'ok',
+          durationMs: Date.now() - reviewStartedAt,
+          reviewer: 'osu_full_report',
+          attempt,
+          verdictCount: verdicts.length,
+          rejectedSections: verdicts.filter((verdict) => verdict.result === 'REJECT').map((verdict) => verdict.section),
+        });
+        return { verdicts, raw: lastRaw };
+      }
+      traceEvent('REVIEW', 'reviewer_invalid_result', {
+        status: 'error',
+        durationMs: Date.now() - reviewStartedAt,
+        reviewer: 'osu_full_report',
+        attempt,
+      });
       console.error(`[osu analyze] 独立审查第 ${attempt} 次未返回完整八段判决。`);
     } catch (error) {
+      traceEvent('REVIEW', 'reviewer_failed', {
+        status: 'error',
+        durationMs: Date.now() - reviewStartedAt,
+        reviewer: 'osu_full_report',
+        attempt,
+        error: error?.message || String(error),
+      });
       console.error(`[osu analyze] 独立审查第 ${attempt} 次调用失败：`, error?.message || error);
     }
   }
   return { verdicts: null, raw: lastRaw };
 }
 
-async function runAnalysis(
+async function runLegacyAnalysis(
   event: any, sendMessage: any,
   target: string | number, mode: OsuMode
 ): Promise<string> {
@@ -1193,6 +1240,181 @@ async function runAnalysis(
   return reply;
 }
 
+async function runAnalysis(
+  event: any, sendMessage: any,
+  target: string | number, mode: OsuMode,
+): Promise<string> {
+  void sendMessage;
+  const db = readDb();
+  const result = await (async () => {
+    let lastError: unknown;
+    for (let attempt = 1; attempt <= 3; attempt += 1) {
+      try {
+        return await collectPlayerOneLineData(target, mode);
+      } catch (error) {
+        lastError = error;
+        if (attempt >= 3) break;
+        await new Promise((resolve) => setTimeout(resolve, attempt * 1000));
+      }
+    }
+    throw lastError;
+  })();
+
+  const topSnapshot = buildScoreSnapshot(result.bestScores);
+  const recentSnapshot = buildScoreSnapshot(result.recentScores);
+  const facts = buildOneLineReviewFacts({
+    user: result.user,
+    bestScores: result.bestScores,
+    recentScores: result.recentScores,
+    mode,
+  });
+  const styleQuery = buildOneLineReviewStyleQuery(facts);
+  const knowledge = retrieveKnowledgeForPrompt({
+    scene: 'casual',
+    text: styleQuery,
+    groupId: String(event.groupId || ''),
+    messageType: event.type === 'private' ? 'private' : 'group',
+    settings: db.settings?.kb,
+    permissions: { isOwner: false, isAdmin: false },
+  });
+  const styleExcerpts = knowledge.blocks
+    .filter((block) => block.collection === 'community_style')
+    .map((block) => block.text)
+    .filter(Boolean)
+    .slice(0, 5);
+  const prompt = buildOneLineReviewPrompt(facts, styleExcerpts);
+
+  let reply = '';
+  let conclusionSource: 'llm' | 'fallback' = 'fallback';
+  let validationReasons: string[] = [];
+  let rejectedDraft = '';
+  let actualModel = OSU_ANALYSIS_MODEL;
+  try {
+    const completion = await completeChat(db, {
+      model: OSU_ANALYSIS_MODEL,
+      messages: [
+        { role: 'system', content: prompt.system },
+        { role: 'user', content: prompt.user },
+      ],
+      maxTokens: 180,
+      temperature: 0.78,
+      timeoutMs: 45_000,
+      requestMaxRetries: 0,
+      retryOnEmpty: false,
+      label: 'osu 一句话锐评',
+      tracePurpose: 'osu_one_line_roast',
+    });
+    actualModel = String(completion.model || OSU_ANALYSIS_MODEL);
+    const candidate = normalizeOneLineReview(completion.text);
+    validationReasons = validateOneLineReview(candidate, facts);
+    const copiedFragment = findCopiedStyleFragment(candidate, styleExcerpts);
+    if (copiedFragment) validationReasons.push(`style_copy:${copiedFragment}`);
+    if (validationReasons.length === 0) {
+      reply = candidate;
+      conclusionSource = 'llm';
+    } else {
+      rejectedDraft = candidate.slice(0, 500);
+      console.error('[osu analyze] 一句话锐评未通过校验：', validationReasons);
+    }
+  } catch (error) {
+    validationReasons = [`llm_error:${String(error?.message || error).slice(0, 180)}`];
+    console.error('[osu analyze] 一句话锐评生成失败，使用确定性锐评：', error?.message || error);
+  }
+  if (!reply) reply = fallbackOneLineReview(facts);
+
+  const displayName = result.user?.username || String(target);
+  const modComposition = buildModComposition(result.bestScores);
+  const topMods = Object.entries(modComposition)
+    .sort((left, right) => right[1] - left[1] || left[0].localeCompare(right[0]))
+    .slice(0, 4)
+    .map(([label]) => label);
+
+  if (result.errors.length > 0) {
+    console.error(`[osu analyze] ${displayName} (${target}) 的非致命错误：`, result.errors);
+  }
+
+  updateDb((draft) => {
+    const createdAt = nowIso();
+    draft.osuAnalyses = draft.osuAnalyses || [];
+    draft.osuAnalyses.push({
+      target: String(target),
+      displayName,
+      mode,
+      analysisType: 'one_line_roast',
+      analysisModel: actualModel,
+      conclusionSource,
+      conclusionValidationReasons: validationReasons.slice(0, 8),
+      conclusionRejectedDraft: rejectedDraft,
+      sectionCommentsSource: 'none',
+      sectionComments: null,
+      reviewLog: [],
+      generationTrace: {
+        route: knowledge.route,
+        styleDocumentCount: styleExcerpts.length,
+        styleDocumentIds: knowledge.blocks
+          .filter((block) => block.collection === 'community_style')
+          .slice(0, 5)
+          .map((block) => block.documentId),
+        primarySignal: facts.primarySignal,
+        primarySignalReason: facts.primarySignalReason,
+      },
+      conclusionText: reply,
+      formatVersion: ANALYSIS_FORMAT_VERSION,
+      osuUserId: result.user.id,
+      userId: String(event.userId),
+      groupId: String(event.groupId || ''),
+      createdAt,
+      pp: result.user.statistics.pp,
+      rank: result.user.statistics.global_rank,
+      acc: result.user.statistics.hit_accuracy,
+      bestCount: result.bestScores.length,
+      recentCount: result.recentScores.length,
+      summary: reply,
+      fullText: reply,
+      baseline: {
+        topCount: topSnapshot.count,
+        topAverageStars: topSnapshot.averageStars,
+        topAverageAcc: topSnapshot.averageAcc,
+        capturedAt: createdAt,
+      },
+      recentSnapshot: {
+        count: recentSnapshot.count,
+        averageStars: recentSnapshot.averageStars,
+        averageAcc: recentSnapshot.averageAcc,
+      },
+      ppBars: null,
+      errors: result.errors,
+    });
+    const associatedQq = resolveSkillQq({
+      bindings: draft.osuBindings || {},
+      requesterQq: event.userId,
+      mentionedQqs: event.atTargets || [],
+      osuUserId: result.user.id,
+      osuUsername: result.user.username,
+    });
+    upsertSkillRecordInDb(draft, extractSkillRecord({
+      userId: associatedQq,
+      osuUsername: result.user.username,
+      osuUserId: result.user.id,
+      mode,
+      pp: Number(result.user.statistics.pp || 0),
+      rank: Number(result.user.statistics.global_rank || 0),
+      countryRank: Number(result.user.statistics.country_rank || 0),
+      accuracy: Number(result.user.statistics.hit_accuracy || 0),
+      playCount: Number(result.user.statistics.play_count || 0),
+      playTimeSeconds: Number(result.user.statistics.play_time || 0),
+      level: Number(result.user.statistics.level?.current || 0),
+      levelProgress: Number(result.user.statistics.level?.progress || 0),
+      modComposition,
+      topMods,
+      gradeCounts: result.user.grade_counts || result.user.statistics.grade_counts || {},
+      summary: compactConclusion(reply),
+    }));
+  });
+
+  return reply;
+}
+
 async function drainQueue() {
   while (queue.length > 0) {
     currentEntry = queue.shift()!;
@@ -1266,6 +1488,11 @@ async function handleOsuBind(ctx: OsuCommandContext) {
 
 async function handleOsuAnalyze(ctx: OsuCommandContext) {
   const { event, sendMessage, subFree, options, db } = ctx;
+  if (!ENABLE_OSU_ANALYZE) {
+    const message = '/w osu analyze 已停用；后续由玩家 Skill 画像替代。谱面分析仍可使用 /w skill。';
+    if (sendMessage) await sendAsReply(event, sendMessage, message);
+    return { replied: true, reason: 'osu analyze 已停用', text: message };
+  }
   const { target, mode } = parseTargetAndMode(db, event, subFree);
   if (!target) {
     if (sendMessage) await sendMessage(event, '请先绑定 osu! 账号（/w osu bind <用户名>）或指定要分析的用户名。');
@@ -1284,15 +1511,15 @@ async function handleOsuAnalyze(ctx: OsuCommandContext) {
   // Prevent double-submit: same user can't have multiple pending analyses
   const isSameUser = (e: QueueEntry) => String(e.userId) === String(event.userId);
   if (currentEntry && isSameUser(currentEntry)) {
-    if (sendMessage) await sendAsReply(event, sendMessage, '你的分析正在生成中，请等待完成。');
+    if (sendMessage) await sendAsReply(event, sendMessage, '这份 BP 正在锐评，别重复催。');
     return { replied: true, reason: 'osu analyze 重复提交（正在运行）' };
   }
   if (queue.some(isSameUser)) {
-    if (sendMessage) await sendAsReply(event, sendMessage, '你已在分析队列中，请等待。');
+    if (sendMessage) await sendAsReply(event, sendMessage, '你已经在锐评队列里了。');
     return { replied: true, reason: 'osu analyze 重复提交（已在队列）' };
   }
   if (queue.length >= MAX_ANALYZE_QUEUE) {
-    if (sendMessage) await sendAsReply(event, sendMessage, `分析队列已满（正在运行 1 个，排队最多 ${MAX_ANALYZE_QUEUE} 个），请稍后再试。`);
+    if (sendMessage) await sendAsReply(event, sendMessage, `锐评队列已满（正在运行 1 个，排队最多 ${MAX_ANALYZE_QUEUE} 个），请稍后再试。`);
     return { replied: true, reason: `osu analyze 队列已满（${queue.length}/${MAX_ANALYZE_QUEUE}）` };
   }
 
@@ -1300,8 +1527,8 @@ async function handleOsuAnalyze(ctx: OsuCommandContext) {
   const position = queue.length + (running ? 1 : 0);
   if (sendMessage) {
     const statusMsg = position > 0
-      ? `已加入分析队列（前面还有 ${position} 人），到你时我会 @ 你。`
-      : `pippi 正在检查这份成绩，完成后 @ 你（约 3-4 分钟）…`;
+      ? `已加入锐评队列（前面还有 ${position} 人），到你时我会 @ 你。`
+      : 'pippi 正在翻这份 BP，马上锐评…';
     await sendAsReply(event, sendMessage, statusMsg);
   }
 
@@ -1337,7 +1564,7 @@ async function handleOsuRecent(ctx: OsuCommandContext) {
   const freshDb = readDb();
   const baseline = findFullBaseline(freshDb, result.user, target, mode);
   if (!baseline) {
-    const message = `先用 /w osu analyze ${result.user.username} 建立完整档案吧。pippi 得先知道该拿近期记录和什么对照。`;
+    const message = `${result.user.username} 没有旧版 BP 基线；由于 /w osu analyze 已停用，目前无法生成 Recent 对照。`;
     if (sendMessage) await sendAsReply(event, sendMessage, message);
     return { replied: true, reason: 'osu recent 缺少完整分析前置', text: message };
   }
@@ -1581,6 +1808,16 @@ function renderOsuHelp(permissions: any): string {
     }
     lines.push(`${sub.syntax} — ${sub.description}`);
   }
+  const skill = OWNER_COMMANDS.find((entry) => entry.id === 'skill');
+  const feedback = OWNER_COMMANDS.find((entry) => entry.id === 'skillFeedback');
+  if (skill && canListCommand(skill.visibility, skill.discoverability, skill.permission, perms)) {
+    lines.push('/w skill profile [玩家名] — 用成绩质量与名次衰减后的真实 BP50 生成玩家 Skill 雷达画像');
+    lines.push('/w skill compare <玩家A> <玩家B> — 空格分隔；玩家名含空格时用 p:[玩家ID]');
+    lines.push('/w skill <BP名次或BID> [+Mods] — 分析自己或指定玩家的单张 BP/BID');
+  }
+  if (feedback && canListCommand(feedback.visibility, feedback.discoverability, feedback.permission, perms)) {
+    lines.push(`${feedback.syntax} — ${feedback.description}`);
+  }
   return lines.join('\n');
 }
 
@@ -1593,7 +1830,6 @@ async function handleOsuHelp(ctx: OsuCommandContext) {
 const OSU_HANDLERS = {
   bind: handleOsuBind,
   analyze: handleOsuAnalyze,
-  recent: handleOsuRecent,
   clear: handleOsuClear,
   help: handleOsuHelp,
 } satisfies Record<OsuCommandId, OsuHandler>;

@@ -129,7 +129,7 @@ updateDb((db) => {
   db.settings.kb = JSON.parse(JSON.stringify(kbDisabledSettings));
   Object.assign(db.settings, llmSettings);
   db.groups = [
-    { groupId: '900000007', name: 'KBTest', enabled: true, mode: 'natural', maxPerHour: 100, cooldownSec: 0 },
+    { groupId: '770001', name: 'KBTest', enabled: true, mode: 'natural', maxPerHour: 100, cooldownSec: 0 },
   ];
   db.messages = [];
   db.groupProfiles = [];
@@ -148,13 +148,13 @@ if (selected.length === 0) {
   process.exit(1);
 }
 
-const group = { groupId: '900000007', name: 'KBTest' };
+const group = { groupId: '770001', name: 'KBTest' };
 const policy = { policy: 'normal', attentionLevel: 3, allowCommands: true };
 const eventFor = (id, text) => ({
   source: 'onebot',
   type: 'group',
   messageId: 'kb-ab-' + id,
-  groupId: '900000007',
+  groupId: '770001',
   userId: '10001',
   nickname: 'Tester',
   text,

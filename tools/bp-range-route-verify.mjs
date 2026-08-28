@@ -12,6 +12,7 @@ import { startOsuApiMock } from './osu-api-mock.mjs';
 
 const testDataDir = createTestDataDir('wuxin-bprange');
 process.env.DATA_DIR = testDataDir;
+process.env.PIPPI_AGENT_RUNTIME_MODE = 'legacy';
 assertNotProduction(testDataDir);
 
 const prodBefore = productionDbSnapshot();
@@ -104,7 +105,6 @@ function setupFixture() {
     db.settings.osuClientSecret = 'fixture-secret';
     // M1: literal quick commands (`!bs 1-100`) route deterministically; the
     // Chinese natural-language cases below still go through the LLM tool path.
-    db.settings.quickRouterEnabled = true;
     db.settings.botRegistry = {
       updatedAt: new Date().toISOString(),
       bots: [{
