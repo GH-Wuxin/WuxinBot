@@ -438,6 +438,9 @@ const initialDb = {
 
 export function normalizeDb(db) {
   const settings = db.settings || {};
+  // Shortcut commands are always available subject to the normal group/bot
+  // controls; discard the retired extra activation switches.
+  delete settings.quickRouterEnabled;
   const roleMap = new Map();
   for (const role of defaultCommandRoles) roleMap.set(role.id, { ...role });
   for (const role of settings.commandRoles || []) {
@@ -489,6 +492,9 @@ export function normalizeDb(db) {
   db.botRegistry = db.settings.botRegistry;
   db.skillStore ||= { records: [], updatedAt: '' };
   db.groupBotConfig ||= {};
+  for (const config of Object.values(db.groupBotConfig)) {
+    if (config && typeof config === 'object') delete (config as Record<string, unknown>).quick;
+  }
   // Ensure all known groups have a default bot config entry
   for (const group of db.groups || []) {
     if (!db.groupBotConfig[group.groupId]) {

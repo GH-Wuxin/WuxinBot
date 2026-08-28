@@ -107,8 +107,8 @@ async function initDb() {
       { groupId: '770002', name: 'QB08-B', enabled: true, mode: 'normal', maxPerHour: 100, cooldownSec: 0 },
     ];
     db.groupBotConfig = db.groupBotConfig || {};
-    db.groupBotConfig['770001'] = { quick: true };
-    db.groupBotConfig['770002'] = { quick: true };
+    db.groupBotConfig['770001'] = {};
+    db.groupBotConfig['770002'] = {};
     db.osuBindings = db.osuBindings || {};
     db.osuBindings['10001'] = { id: 1234567, username: '[TST]Alpha' };
     db.osuBindings['10002'] = { id: 1234568, username: '[TST]Beta' };
@@ -327,7 +327,7 @@ if (phase === 'b3-slow') {
     db.settings.memoryEnabled = false;
     db.groups = [{ groupId: '770001', name: 'QB08-A', enabled: true, mode: 'normal', maxPerHour: 100, cooldownSec: 0 }];
     db.groupBotConfig = db.groupBotConfig || {};
-    db.groupBotConfig['770001'] = { quick: true };
+    db.groupBotConfig['770001'] = {};
     db.osuBindings = db.osuBindings || {};
     db.osuBindings['10001'] = { id: 1234567, username: '[TST]Alpha' };
   });

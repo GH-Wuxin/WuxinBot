@@ -381,18 +381,6 @@ export interface QuickRoutePermissions {
 }
 
 /**
- * Quick-command activation gate. M1 keeps the router dormant by default so the
- * still-running original bots keep owning their commands (no double replies).
- * Enable per group (`groupBotConfig[groupId].quick = true`) or globally
- * (`settings.quickRouterEnabled = true`) once a bot family is retired.
- */
-export function quickRouterEnabled(db: any, event: { groupId?: string; type?: string }): boolean {
-  if (db?.settings?.quickRouterEnabled === true) return true;
-  const groupConfig = db?.groupBotConfig?.[String(event?.groupId || '')];
-  return groupConfig?.quick === true;
-}
-
-/**
  * Execute a matched quick command. Returns `{ handled: true }` when the quick
  * path owns the message (reply sent or intentionally ignored); `{ handled: false }`
  * when the message should continue into the normal LLM pipeline.

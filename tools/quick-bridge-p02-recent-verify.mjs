@@ -63,9 +63,9 @@ const { executeInternalBotCommand, executeToolCall } = await import(pathToFileUR
 ensureStore();
 const TEST_QQ = '570341031';
 updateDb((db) => {
-  db.settings = { ...(db.settings || {}), ownerQq: TEST_QQ, quickRouterEnabled: true, memoryEnabled: false, osuClientId: 'fixture-client', osuClientSecret: 'fixture-secret' };
+  db.settings = { ...(db.settings || {}), ownerQq: TEST_QQ, memoryEnabled: false, osuClientId: 'fixture-client', osuClientSecret: 'fixture-secret' };
   db.groups = [{ groupId: '770001', name: 'P02', enabled: true, mode: 'normal', maxPerHour: 1000, cooldownSec: 0 }];
-  db.groupBotConfig = { '770001': { quick: true } };
+  db.groupBotConfig = { '770001': {} };
   db.osuBindings = { [TEST_QQ]: { id: 10000001, username: '[TST]Alpha' } };
 });
 

@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Activity, ChevronLeft, ChevronRight, ExternalLink, RefreshCw, Search, Sparkles, Trash2, UserRound, X } from 'lucide-react';
+import { ChevronLeft, ChevronRight, ExternalLink, RefreshCw, Search, Sparkles, Trash2, UserRound, X } from 'lucide-react';
 import { api } from '../../lib/api.js';
-import { Button, Card, ConfirmDialog, EmptyState, ErrorState, IconButton, InlineHelp, Input, MetricCard, Pill, SectionHeader, SegmentedControl, SettingGroup, SettingRow, StatusBadge, Switch } from '../../components/ui/index.jsx';
+import { Button, Card, ConfirmDialog, EmptyState, ErrorState, IconButton, InlineHelp, Input, MetricCard, Pill, SectionHeader, SegmentedControl, StatusBadge } from '../../components/ui/index.jsx';
 
 const botLabels = { yumu: 'Yumu / 雨沐', kanon: 'Kanon / 猫猫', hydrant: 'Hydrant / 消防栓', lazybot: 'LazyBot' };
 const playerTabs = [
@@ -20,7 +20,6 @@ function scoreLine(row) {
 
 export function OsuPage({ db, refreshState }) {
   const [status, setStatus] = useState(null);
-  const [botConfig, setBotConfig] = useState(null);
   const [loadError, setLoadError] = useState('');
   const [pending, setPending] = useState('');
   const [operationError, setOperationError] = useState('');
@@ -32,8 +31,8 @@ export function OsuPage({ db, refreshState }) {
 
   const load = async () => {
     try {
-      const [nextStatus, nextBotConfig] = await Promise.all([api('/api/osu/status'), api('/api/group-bot-config')]);
-      setStatus(nextStatus); setBotConfig(nextBotConfig); setLoadError('');
+      const nextStatus = await api('/api/osu/status');
+      setStatus(nextStatus); setLoadError('');
     } catch (error) { setLoadError(error?.message || String(error)); }
   };
 
@@ -63,35 +62,20 @@ export function OsuPage({ db, refreshState }) {
     await api('/api/osu/bindings', { method: 'POST', body: { action: 'remove', qq: unbind.qq } });
     setUnbind(null); await Promise.all([load(), refreshState()]);
   });
-  const toggleGlobal = (enabled) => run('quick-global', async () => { await api('/api/osu/quick', { method: 'POST', body: { global: enabled } }); await load(); });
-  const toggleGroupQuick = (groupId, enabled) => run(`quick-${groupId}`, async () => { await api('/api/osu/quick', { method: 'POST', body: { groupId, enabled } }); await load(); });
-  const toggleBot = (groupId, botId, enabled) => run(`bot-${groupId}-${botId}`, async () => { await api('/api/group-bot-config', { method: 'POST', body: { groupId, botId, enabled } }); setBotConfig(await api('/api/group-bot-config')); });
-
-  const byCommand = Object.entries(status?.stats?.byCommand || {}).slice(0, 10);
-  const bySource = Object.entries(status?.stats?.bySource || {});
-
   return <div className="osu-page">
-    <SectionHeader eyebrow="Runtime / osu!" title="osu! 工作流" description="绑定、快捷路由、玩家档案与分析都来自现有真实接口。" actions={<Button icon={RefreshCw} onClick={load}>刷新</Button>} />
+    <SectionHeader eyebrow="Runtime / osu!" title="osu! 工作流" description="绑定、玩家档案与分析都来自现有真实接口。" actions={<Button icon={RefreshCw} onClick={load}>刷新</Button>} />
     {loadError && <ErrorState title="osu! 状态读取失败" message={loadError} onRetry={load} />}
     {operationError && <ErrorState title="操作失败" message={operationError} />}
-    <div className="osu-metrics"><MetricCard label="绑定账号" value={status?.bindings?.length ?? '…'} detail="QQ ↔ osu!" icon={UserRound} /><MetricCard label="快捷调用" value={status?.stats?.quickTotal ?? '…'} detail="累计记录" icon={Activity} /><MetricCard label="玩家分析" value={status?.stats?.analyzeCount ?? '…'} detail="/w osu analyze" icon={Sparkles} /><MetricCard label="绑定指令" value={status?.stats?.bindCount ?? '…'} detail="/w osu bind" icon={ExternalLink} /><MetricCard label="API 429" value={status?.health?.api429Count ?? '…'} detail="运行期记录" /><MetricCard label="渲染失败" value={status?.health?.renderFailures ?? '…'} detail="运行期记录" /></div>
+    <div className="osu-metrics"><MetricCard label="绑定账号" value={status?.bindings?.length ?? '…'} detail="QQ ↔ osu!" icon={UserRound} /><MetricCard label="玩家分析" value={status?.stats?.analyzeCount ?? '…'} detail="/w osu analyze" icon={Sparkles} /><MetricCard label="绑定指令" value={status?.stats?.bindCount ?? '…'} detail="/w osu bind" icon={ExternalLink} /><MetricCard label="API 429" value={status?.health?.api429Count ?? '…'} detail="运行期记录" /><MetricCard label="渲染失败" value={status?.health?.renderFailures ?? '…'} detail="运行期记录" /></div>
 
     <Card className="osu-player-search"><Search size={18} /><div><strong>检查玩家档案</strong><small>输入用户名或用户 ID，打开完整资料抽屉。</small></div><Input aria-label="osu! 用户名或 ID" value={searchText} onChange={(event) => setSearchText(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') doSearch(); }} placeholder="用户名或 ID" /><Button variant="primary" loading={pending === 'search'} disabled={!searchText.trim()} onClick={doSearch}>查询</Button></Card>
 
-    <Card className="osu-services"><SectionHeader eyebrow="External Services" title="快捷指令服务" description="状态来自当前本地端口探针。" /><div className="osu-services__list">{(status?.bots || []).map((bot) => <div key={bot.id}><StatusBadge tone={bot.up ? 'success' : 'danger'}>{bot.up ? 'Available' : 'Unavailable'}</StatusBadge><strong>{botLabels[bot.id] || bot.id}</strong><code>127.0.0.1:{bot.port}</code></div>)}{status && (status.bots || []).length === 0 && <EmptyState title="没有服务状态" />}</div></Card>
+    <Card className="osu-services"><SectionHeader eyebrow="External Services" title="外部 osu! 服务" description="Agent 工具调用依赖的本地服务状态。" /><div className="osu-services__list">{(status?.bots || []).map((bot) => <div key={bot.id}><StatusBadge tone={bot.up ? 'success' : 'danger'}>{bot.up ? 'Available' : 'Unavailable'}</StatusBadge><strong>{botLabels[bot.id] || bot.id}</strong><code>127.0.0.1:{bot.port}</code></div>)}{status && (status.bots || []).length === 0 && <EmptyState title="没有服务状态" />}</div></Card>
 
-    <div className="osu-workspace">
-      <Card><SectionHeader eyebrow="Bindings" title="绑定管理" description="管理员维护入口；选择玩家名可打开档案。" />
+    <Card><SectionHeader eyebrow="Bindings" title="绑定管理" description="管理员维护入口；选择玩家名可打开档案。" />
         <div className="osu-binding-form"><Input label="QQ 号" value={qq} onChange={(event) => setQq(event.target.value)} /><Input label="osu! 用户名" value={name} onChange={(event) => setName(event.target.value)} /><Button variant="primary" loading={pending === 'binding-add'} disabled={!qq.trim() || !name.trim()} onClick={addBinding}>添加绑定</Button></div>
         <div className="osu-binding-list">{(status?.bindings || []).map((binding) => <div key={binding.qq}><button type="button" className="osu-binding-list__player" onClick={() => openPlayer(binding.id, binding.username)}><span>{binding.username || '未解析用户名'}</span><small>QQ {binding.qq} · osu! {binding.id || '-'}</small></button><IconButton label={`解除 ${binding.qq} 的绑定`} icon={Trash2} variant="danger-ghost" onClick={() => setUnbind(binding)} /></div>)}{status && (status.bindings || []).length === 0 && <EmptyState title="还没有绑定" description="添加绑定后可以直接打开玩家资料。" />}</div>
-      </Card>
-      <Card><SectionHeader eyebrow="Quick Router" title="快捷路由" description="沿用现有全局、群级与外部 Bot 开关。" />
-        <SettingGroup title="Global" description="全局关闭时，群级配置不会启用快捷路由。"><SettingRow title="全局快捷路由" description="原 Bot 停服或需要 WuxinBot 接管时启用。" control={<Switch checked={Boolean(status?.quickRouterEnabled)} disabled={pending === 'quick-global'} onChange={(event) => toggleGlobal(event.target.checked)} />} /></SettingGroup>
-        <div className="osu-router-groups">{(status?.groups || []).map((group) => <SettingGroup key={group.groupId} title={group.name || String(group.groupId)} description={`${group.groupId}${group.enabled ? '' : ' · 群未启用'}`}><SettingRow title="群级快捷路由" control={<Switch checked={Boolean(group.quick)} disabled={!group.enabled || pending === `quick-${group.groupId}`} onChange={(event) => toggleGroupQuick(group.groupId, event.target.checked)} />} />{['yumu', 'kanon', 'hydrant', 'lazybot'].map((botId) => { const enabled = botConfig?.config?.[group.groupId]?.[botId] !== false; return <SettingRow key={botId} title={botLabels[botId]} description="该群内是否允许调用" control={<Switch checked={enabled} disabled={!group.enabled || pending === `bot-${group.groupId}-${botId}`} onChange={(event) => toggleBot(group.groupId, botId, event.target.checked)} />} />; })}</SettingGroup>)}{status && (status.groups || []).length === 0 && <EmptyState title="没有可配置群" description="先在 Groups 页面添加白名单群。" />}</div>
-      </Card>
-    </div>
-
-    <div className="osu-activity-grid"><Card><SectionHeader eyebrow="Commands" title="快捷指令统计" /><div className="osu-command-stats">{byCommand.map(([command, count]) => <div key={command}><code>{command}</code><Pill tone="accent">{count}</Pill></div>)}{byCommand.length === 0 && <EmptyState title="还没有快捷指令记录" />}</div>{bySource.length > 0 && <div className="osu-source-pills">{bySource.map(([source, count]) => <Pill key={source}>{botLabels[source] || source} · {count}</Pill>)}</div>}</Card><Card><SectionHeader eyebrow="Recent" title="最近快捷指令" /><div className="osu-recent-list">{(status?.recentQuick || []).map((log) => <article key={log.id}><strong>{log.command} · {log.outcome || 'ok'}</strong><span>{log.groupId} · {log.nickname || log.userId} · {fmtDate(log.createdAt)}</span>{log.detail && <p>{log.detail}</p>}</article>)}{status && (status.recentQuick || []).length === 0 && <EmptyState title="暂无记录" />}</div></Card></div>
+    </Card>
     {drawer && <PlayerDrawer key={drawer.osuId} osuId={drawer.osuId} username={drawer.username} onClose={() => setDrawer(null)} />}
     <ConfirmDialog open={Boolean(unbind)} title="解除 osu! 绑定？" description={unbind ? `QQ ${unbind.qq} 将不再绑定 ${unbind.username || unbind.id}。玩家公开档案不会被删除。` : ''} confirmLabel="解除绑定" busy={pending === 'binding-remove'} onCancel={() => setUnbind(null)} onConfirm={removeBinding} />
   </div>;

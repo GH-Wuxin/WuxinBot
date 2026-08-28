@@ -129,7 +129,7 @@ async function initDb() {
     db.settings.memoryEnabled = false;
     db.groups = [{ groupId: '770001', name: 'QB07', enabled: true, mode: 'normal', maxPerHour: 100, cooldownSec: 0 }];
     db.groupBotConfig = db.groupBotConfig || {};
-    db.groupBotConfig['770001'] = { quick: true };
+    db.groupBotConfig['770001'] = {};
     db.osuBindings = db.osuBindings || {};
     db.osuBindings['10001'] = { id: 1234567, username: '[TST]Alpha' };
     db.osuBindings['10002'] = { id: 1234568, username: '[TST]Beta' };
