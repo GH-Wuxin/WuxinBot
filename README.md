@@ -42,6 +42,8 @@ flowchart LR
 
 WuxinBot 支持按群和成员设置交互策略，并把近期上下文、长期用户记忆、群聊关系以及可选知识库检索组装进对话上下文。persona 与这些运行时能力分离：默认是 pippi，也可以继续调整其交互风格，而无需改动消息路由和工具执行层。
 
+对于只需要 osu! 功能的群，可以使用 `/w mode osu` 启用硬隔离模式：普通消息不会进入 LLM、聊天上下文、群画像或玩家画像，只处理 osu! 确定性指令和退出该模式所需的管理命令。
+
 ### Tool-backed workflows
 
 工具以明确的输入格式和允许操作范围接入。模型负责在开放问题中选择工具和组织回复；运行时决定哪些工具可以使用、何时停止以及交付什么结果。当前工具面以查询和 osu! 工作流为主，不提供任意文件、Shell 或电脑控制能力。
@@ -51,7 +53,9 @@ WuxinBot 支持按群和成员设置交互策略，并把近期上下文、长�
 osu! 是当前最完整的垂直能力：
 
 - QQ 与 osu! 账号绑定和玩家档案；
-- BP、Recent、PP+、skill 与谱面类型分析；
+- BP、Recent、PP+ 与谱面类型分析；
+- 单图九维 Skill Profiler，以及经过成绩质量和名次衰减修正的 BP50 长期玩家画像；
+- `/w skill recent` 近期状态画像与 `/w skill compare` 玩家能力对比；
 - 基于实际游玩数据的谱面推荐；
 - multiplayer 监听、回合事件推送与比赛 rating。
 
@@ -61,7 +65,7 @@ LLM 负责解释和表达，玩家数据、成绩、星数与工具结果来自�
 
 ### 1. 准备运行环境
 
-- Node.js（建议使用当前 LTS；仓库带有 portable Node 时优先使用它）
+- Node.js 22 或更高版本（当前验证基线为 Node.js 22；本地存在 portable Node 时优先使用它）
 - 一个 OneBot v11 实现，例如 [NapCatQQ](https://github.com/NapNeko/NapCatQQ)
 - DeepSeek 或其他 OpenAI-compatible LLM endpoint
 - 可选：osu! OAuth Client Credentials，用于 osu! 工作流
@@ -71,7 +75,7 @@ LLM 负责解释和表达，玩家数据、成绩、星数与工具结果来自�
 ```bash
 git clone https://github.com/GH-Wuxin/WuxinBot.git
 cd WuxinBot
-npm install
+npm ci
 ```
 
 复制 [`.env.example`](./.env.example) 为 `.env`，填写 LLM API key，并按所用供应商配置 provider、endpoint 与 model：
@@ -91,7 +95,19 @@ npm start
 
 默认管理界面位于 `http://127.0.0.1:8787`。在界面中配置 OneBot WebSocket / HTTP 地址并连接；默认值分别为 `ws://127.0.0.1:3001` 和 `http://127.0.0.1:3000`。
 
-Windows 下也可以使用仓库中的 `启动Wuxin.bat`、`停止Wuxin.bat` 和 `打开控制台.bat`。所有 QQ 指令及当前权限可见范围以群内 `/w help` 输出为准。
+Windows 下如需在后台重启服务，可使用正式维护脚本：
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\tools\restart-wuxin.ps1
+```
+
+如需为已有 NapCat 实例启用本地 OneBot HTTP/WS，可运行：
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\tools\enable-napcat-local-onebot.ps1
+```
+
+所有 QQ 指令及当前权限可见范围以群内 `/w help` 输出为准。
 
 ## 配置与文档
 
@@ -99,19 +115,7 @@ Windows 下也可以使用仓库中的 `启动Wuxin.bat`、`停止Wuxin.bat` 和
 - [`docs/EXTERNAL_INTEGRATION.md`](./docs/EXTERNAL_INTEGRATION.md)：OneBot、LLM、osu! OAuth、外部 Bot 与渲染器集成
 - [`docs/KNOWLEDGE_BASE_V41.md`](./docs/KNOWLEDGE_BASE_V41.md)：知识库构建、开关、路由与验证
 
-运行数据默认位于 Windows 的 `%APPDATA%\Wuxin\db.json`，可通过 `DATA_DIR` 改到其他目录。
-
-## Deployment
-
-| 级别 | 范围 | 文档 |
-|------|------|------|
-| **Core** | WuxinBot + OneBot + LLM | [Quick Start](#quick-start) |
-| **Full Feature** | + osu! API、PP+、渲染、KB、外部 Bot | [Full Deployment Guide](./docs/FULL_DEPLOYMENT.md) |
-| **Reference** | + 维护者兼容的组件版本与补丁 | [Full Deployment Guide](./docs/FULL_DEPLOYMENT.md#3-reference-component-matrix) |
-
-- [Full Deployment Guide](./docs/FULL_DEPLOYMENT.md)：从空环境到完整功能的部署流程
-- [External Integration](./docs/EXTERNAL_INTEGRATION.md)：外部 Bot 与渲染器集成细节
-- [reference-stack.json](./docs/reference-stack.json)：组件版本与依赖的 machine-readable 记录
+运行数据默认位于 Windows 的 `%APPDATA%\Wuxin`。`db.json` 保存小型核心状态，消息、画像、决策、遥测与 Skill Profiler 记录分别写入独立 shard；可通过 `DATA_DIR` 改到其他目录。备份接口仍导出一份完整的逻辑数据库 JSON。
 
 ## 开发与验证
 
