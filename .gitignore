@@ -24,3 +24,7 @@ release/
 portable-node/
 .public-export/
 external-bots/
+.private/
+tmp/
+startup.log
+startup-err.log

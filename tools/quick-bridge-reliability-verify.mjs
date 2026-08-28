@@ -586,7 +586,7 @@ fixtures.push({
 
 fixtures.push({
   id: 'p01-collision-regression', botId: 'kanon', timeoutMs: 10000,
-  command: '!re [SHK]Wuxin',
+  command: '!re [TST]Alpha',
   context: { groupId: '770099', userId: '1000000003', nickname: 'CollisionUser', atTargets: [] },
   behavior: {
     onConnect(socket) {
@@ -602,7 +602,7 @@ fixtures.push({
     ok('p01:sender-user-id-preserved', ev?.sender?.user_id === 1000000003, JSON.stringify(ev?.sender));
     ok('p01:self-header-not-colliding', header !== '1000000003' && Number(header) >= 7700000000 && Number(header) < 7800000000, `x-self-id=${header}`);
     ok('p01:event-self-id-matches', ev?.self_id === Number(header), `event.self_id=${ev?.self_id}`);
-    ok('p01:command', ev?.raw_message === '!re [SHK]Wuxin', JSON.stringify(ev?.raw_message));
+    ok('p01:command', ev?.raw_message === '!re [TST]Alpha', JSON.stringify(ev?.raw_message));
     ok('p01:array-message', Array.isArray(ev?.message), JSON.stringify(ev?.message));
     ok('p01:reply', ctx.result?.text === 'collision fixed', JSON.stringify(ctx.result));
     ok('p01:ack', ctx.obs.acks.length === 1 && ctx.obs.acks[0].echo === 'e-p01', JSON.stringify(ctx.obs.acks));
@@ -651,7 +651,7 @@ fixtures.push({
 fixtures.push({
   id: 'p01-env-override-colliding', botId: 'kanon', timeoutMs: 10000,
   env: { BRIDGE_SELF_ID: '1000000003' },
-  command: '!re [SHK]Wuxin',
+  command: '!re [TST]Alpha',
   context: { groupId: '770099', userId: '1000000003', nickname: 'EnvCollisionUser', atTargets: [] },
   behavior: {
     onConnect(socket) {
@@ -705,8 +705,8 @@ for (const fixture of fixtures) {
     { userId: '900000099' },
     { userId: '7700000042' },
     { userId: '1000000003' },
-    { userId: '3861208813' },
-    { userId: '570341031' },
+    { userId: '9300000005' },
+    { userId: '9300000006' },
   ];
   const results = await Promise.all(contexts.map((c, i) => mod.callLocalBot(
     'kanon',

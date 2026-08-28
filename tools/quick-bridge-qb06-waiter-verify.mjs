@@ -136,14 +136,14 @@ public class WaiterProbe {
   public static void main(String[] args) throws Exception {
     AsyncMessageUtil util = AsyncMessageUtil.INSTANCE;
     dispatchMarker = 0;
-    util.put(groupMessage(770099, 900000099, "!r [SHK]Wuxin"));
-    runDispatch(groupMessage(770099, 900000099, "!r [SHK]Wuxin"));
+    util.put(groupMessage(770099, 900000099, "!r [TST]Alpha"));
+    runDispatch(groupMessage(770099, 900000099, "!r [TST]Alpha"));
     ok("no-waiter-put-no-throw-and-dispatch-runs", dispatchMarker == 1, "marker=" + dispatchMarker);
     {
       long g = 770099, s = 900000099;
       var lock = util.getLock(g, s);
       dispatchMarker = 0;
-      var event = groupMessage(g, s, "!r [SHK]Wuxin");
+      var event = groupMessage(g, s, "!r [TST]Alpha");
       util.put(event);
       runDispatch(event);
       var got = lock.await(250);
@@ -163,7 +163,7 @@ public class WaiterProbe {
     }
     {
       long g = 770099, s = 900000099;
-      for (String text : new String[]{"!r [SHK]Wuxin", "OK", "plain text", ""}) {
+      for (String text : new String[]{"!r [TST]Alpha", "OK", "plain text", ""}) {
         var lock = util.getLock(g, s);
         var event = groupMessage(g, s, text);
         util.put(event);

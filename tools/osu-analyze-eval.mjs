@@ -13,7 +13,7 @@ const GOLDEN_PLAYERS = [
   { key: 'wuxin', id: 10000001 },
   { key: 'ben-jiang', id: 7983528 },
   { key: 'nakanooooo', id: 36077706 },
-  { key: 'elicyann', id: 37673654 },
+  { key: 'elicyann', id: 900000025 },
   { key: '13451b', id: 0, username: '13451b' },
   { key: 'KiloPlayer', id: 39873822 },
 ];
