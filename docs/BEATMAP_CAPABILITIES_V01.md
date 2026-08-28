@@ -82,7 +82,7 @@ GET /pub/map/calculate?bid=5518740&accuracy=95.2  → request.accuracy=0.952（1
 
 - **yumu**：已提交（`f6b513b`）+ 已部署（19:54 起新 jar 运行中）。
 - **Wuxin**：已提交（`f25999f` + `ebcaca7` + 遥测修复提交）；**运行中进程仍是 Phase B 前代码**——pp_calc 等三个 capability 在重启前不可用。
-- 流程：重启 Wuxin（`tools/restart-wuxin.ps1` 或 `启动Wuxin.bat`，需用户确认）→ 健康核查。
+- 流程：使用 `tools/restart-wuxin.ps1` 重启 Wuxin（需用户确认）→ 健康核查。
 - 部署后建议在群里实测一次："这图多少星 / 99acc fc 多少 pp / 榜一多少"。
 
 ## 8. 部署后实测补丁（2026-08-14 晚）
