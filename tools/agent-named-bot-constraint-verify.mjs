@@ -81,7 +81,7 @@ function check(condition, label, message) {
 function snapshot() { return { kanon: attempts.kanon, yumu: attempts.yumu }; }
 function delta(before, after, family) { return after[family] - before[family]; }
 
-const BOUND_QQ = '570341031';
+const BOUND_QQ = '900000001';
 const UNBOUND_QQ = 'unbound-user';
 const BOTS = ['yumu', 'kanon', 'hydrant', 'lazybot'].map((id, index) => ({
   id,

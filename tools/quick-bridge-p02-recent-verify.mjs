@@ -61,7 +61,7 @@ const { matchQuickCommand, handleQuickCommand } = await import(pathToFileURL(pat
 const { executeInternalBotCommand, executeToolCall } = await import(pathToFileURL(path.join(REPO, 'server/bots/executor.ts')));
 
 ensureStore();
-const TEST_QQ = '570341031';
+const TEST_QQ = '900000001';
 updateDb((db) => {
   db.settings = { ...(db.settings || {}), ownerQq: TEST_QQ, memoryEnabled: false, osuClientId: 'fixture-client', osuClientSecret: 'fixture-secret' };
   db.groups = [{ groupId: '770001', name: 'P02', enabled: true, mode: 'normal', maxPerHour: 1000, cooldownSec: 0 }];

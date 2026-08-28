@@ -160,8 +160,8 @@ try {
   assert.deepEqual(parsePlayerRecentSkillRequest('recent'), { matched: true, player: '' });
   assert.deepEqual(parsePlayerRecentSkillRequest('recent mrekk'), { matched: true, player: 'mrekk' });
   assert.deepEqual(parsePlayerRecentSkillRequest('recent p:[970]'), { matched: true, player: '970' });
-  assert.deepEqual(parsePlayerSkillComparisonRequest('compare mrekk [SHK]yourenegg'), {
-    matched: true, left: 'mrekk', right: '[SHK]yourenegg',
+  assert.deepEqual(parsePlayerSkillComparisonRequest('compare mrekk [TST]Bravo'), {
+    matched: true, left: 'mrekk', right: '[TST]Bravo',
   });
   assert.deepEqual(parsePlayerSkillComparisonRequest('compare p:[970] mrekk'), {
     matched: true, left: '970', right: 'mrekk',
