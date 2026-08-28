@@ -2,13 +2,12 @@
 // Usage: node --import tsx tools/osu-analyze-random-ten.mjs --players=<id,id,...> --label=<label>
 import fs from 'node:fs';
 import path from 'node:path';
+import { readDb } from '../server/store.ts';
 
 const API_BASE = process.env.OSU_ANALYZE_API_BASE || 'http://127.0.0.1:8787';
 const TIMEOUT_MS = 12 * 60 * 1000;
-const DB_PATH = process.env.WUXIN_DB || path.join(process.env.APPDATA || '', 'Wuxin', 'db.json');
-
 function readLatestRun(id, startedAt) {
-  const db = JSON.parse(fs.readFileSync(DB_PATH, 'utf8'));
+  const db = readDb();
   const entries = Array.isArray(db.osuAnalyses) ? db.osuAnalyses : [];
   return [...entries].reverse().find((entry) => (
     Number(entry?.osuUserId || 0) === Number(id)

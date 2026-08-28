@@ -1,10 +1,8 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import { readDb } from '../server/store.ts';
 
 const API_BASE = process.env.WUXIN_API_BASE || 'http://127.0.0.1:8787';
-const DATA_DIR = process.env.DATA_DIR
-  || path.join(process.env.APPDATA || path.join(process.env.USERPROFILE || 'C:', 'AppData', 'Roaming'), 'Wuxin');
-const DB_PATH = path.join(DATA_DIR, 'db.json');
 const POLL_MS = 2000;
 const TIMEOUT_MS = 12 * 60 * 1000;
 
@@ -96,7 +94,7 @@ async function waitForCompletion(id, previousAt) {
 }
 
 function readLatestRun(id, startedAt) {
-  const db = JSON.parse(fs.readFileSync(DB_PATH, 'utf8'));
+  const db = readDb();
   const entries = Array.isArray(db.osuAnalyses) ? db.osuAnalyses : [];
   return [...entries].reverse().find((entry) => (
     Number(entry?.osuUserId || 0) === Number(id)

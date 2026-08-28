@@ -12,6 +12,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { readDb } from '../server/store.ts';
 
 // ── CLI args ──────────────────────────────────────────────────────────────
 
@@ -42,8 +43,7 @@ function loadDb() {
     return { _missing: true, usageEvents: [] };
   }
   try {
-    const raw = fs.readFileSync(dbPath, 'utf8').replace(/^\uFEFF/, '');
-    const db = JSON.parse(raw);
+    const db = readDb();
     db.usageEvents = Array.isArray(db.usageEvents) ? db.usageEvents : [];
     return db;
   } catch (error) {

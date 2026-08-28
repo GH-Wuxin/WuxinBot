@@ -1,6 +1,6 @@
 import { getUserBestScores, getUserById } from '../osu/api.js';
 import { normalizedScoreMods } from '../osu/scoreMetrics.js';
-import { requestSkillProfilerAnalysisWithFetch } from './skillProfiler.js';
+import { requestSkillProfilerAnalysisCachedWithFetch } from './skillProfiler.js';
 import { saveAndGetCqCode } from './render.js';
 import { renderPlayerSkillComparisonCard, renderPlayerSkillProfileCard } from './playerSkillComparisonCard.js';
 
@@ -184,7 +184,7 @@ export function bpRankWeight(rank: number): number {
   return BP_RANK_DECAY ** Math.max(0, Math.floor(Number(rank) || 1) - 1);
 }
 
-async function mapLimit<T, R>(items: readonly T[], limit: number, fn: (item: T, index: number) => Promise<R>): Promise<R[]> {
+export async function mapLimit<T, R>(items: readonly T[], limit: number, fn: (item: T, index: number) => Promise<R>): Promise<R[]> {
   const results = new Array<R>(items.length);
   let next = 0;
   const workers = Array.from({ length: Math.max(1, Math.min(limit, items.length)) }, async () => {
@@ -213,7 +213,7 @@ export function weightedQuantile(values: WeightedValue[], quantile: number): num
   return sorted[sorted.length - 1].value;
 }
 
-function scoreMods(score: any): string[] {
+export function scoreMods(score: any): string[] {
   const normalized = normalizedScoreMods(score);
   if (normalized.includes('FL')) throw new Error('FL_UNSUPPORTED');
   return [...new Set(normalized
@@ -222,7 +222,7 @@ function scoreMods(score: any): string[] {
     .sort((left, right) => PROFILER_MOD_ORDER.indexOf(left) - PROFILER_MOD_ORDER.indexOf(right));
 }
 
-function rounded(value: number, digits = 1): number {
+export function rounded(value: number, digits = 1): number {
   const multiplier = 10 ** digits;
   return Math.round(value * multiplier) / multiplier;
 }
@@ -289,7 +289,7 @@ export async function buildPlayerSkillProfilePayload(osuId: number, limit = PLAY
       if (!Number.isSafeInteger(beatmapId) || beatmapId <= 0) throw new Error('BEATMAP_ID_MISSING');
       const mods = scoreMods(score);
       const modLabel = mods.length ? mods.join('') : 'NM';
-      const analysis = await requestSkillProfilerAnalysisWithFetch(beatmapId, mods);
+      const analysis = await requestSkillProfilerAnalysisCachedWithFetch(beatmapId, mods);
       if (analysis?.status !== 'OK' || !analysis?.axes) throw new Error(`ANALYSIS_${analysis?.status || 'INVALID'}`);
       const quality = scoreAchievementQuality(score);
       const demandAxes = {} as Record<PlayerSkillAxis, number>;

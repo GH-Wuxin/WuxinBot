@@ -112,7 +112,7 @@ process.env.OSU_BEATMAP_FILE_BASE_URL = `http://127.0.0.1:${port}/osu/`;
 try {
   const { ensureStore, readDb, writeDb } = await import('../server/store.ts');
   const { processIncoming } = await import('../server/bot.ts');
-  const { parsePlayerSkillComparisonRequest, parsePlayerSkillProfileRequest, parseSkillCommandRequest, parseSkillCommandTarget } = await import('../server/bot/owner/skill.ts');
+  const { parsePlayerRecentSkillRequest, parsePlayerSkillComparisonRequest, parsePlayerSkillProfileRequest, parseSkillCommandRequest, parseSkillCommandTarget } = await import('../server/bot/owner/skill.ts');
   const { skillProfilerFeedbackPath } = await import('../server/bots/skillProfilerFeedback.ts');
   ensureStore();
   const db = readDb();
@@ -157,6 +157,9 @@ try {
   assert.deepEqual(parsePlayerSkillProfileRequest('profile mrekk'), { matched: true, player: 'mrekk' });
   assert.deepEqual(parsePlayerSkillProfileRequest('profile p:[970]'), { matched: true, player: '970' });
   assert.deepEqual(parsePlayerSkillProfileRequest('mrekk 20'), { matched: false });
+  assert.deepEqual(parsePlayerRecentSkillRequest('recent'), { matched: true, player: '' });
+  assert.deepEqual(parsePlayerRecentSkillRequest('recent mrekk'), { matched: true, player: 'mrekk' });
+  assert.deepEqual(parsePlayerRecentSkillRequest('recent p:[970]'), { matched: true, player: '970' });
   assert.deepEqual(parsePlayerSkillComparisonRequest('compare mrekk [SHK]yourenegg'), {
     matched: true, left: 'mrekk', right: '[SHK]yourenegg',
   });
@@ -169,6 +172,7 @@ try {
 
   const helpEntries = (await import('../server/bot/owner/help.ts')).ownerHelpEntries();
   assert.ok(helpEntries.some((entry) => entry.canonicalSyntax.includes('/w skill profile [玩家名]')));
+  assert.ok(helpEntries.some((entry) => entry.canonicalSyntax.includes('recent [玩家名')));
   assert.ok(helpEntries.some((entry) => entry.canonicalSyntax.includes('compare <玩家A>')));
   assert.ok(helpEntries.some((entry) => entry.canonicalSyntax === '/w cd <BID> [+Mods] <反馈>'));
 

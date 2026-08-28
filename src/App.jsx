@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import './styles/tokens.css';
 import './styles/globals.css';
 import './styles/components.css';
@@ -24,22 +24,62 @@ export function App() {
   const [state, setState] = useState(null);
   const [toast, setToast] = useState('');
   const [loadError, setLoadError] = useState('');
+  const refreshInFlight = useRef(null);
+  const refreshAbort = useRef(null);
+  const mounted = useRef(false);
 
-  const refresh = async () => {
-    try {
-      const data = await api('/api/state');
-      setState(data);
-      setLoadError('');
-    } catch (error) {
-      setLoadError(error.message || String(error));
-    }
-  };
+  const refresh = useCallback(() => {
+    if (refreshInFlight.current) return refreshInFlight.current;
+    const controller = new AbortController();
+    refreshAbort.current = controller;
+    const request = (async () => {
+      try {
+        const data = await api('/api/state', { signal: controller.signal, timeoutMs: 10000 });
+        if (mounted.current) {
+          setState(data);
+          setLoadError('');
+        }
+      } catch (error) {
+        if (mounted.current && error?.message !== '请求已取消') setLoadError(error.message || String(error));
+      } finally {
+        if (refreshAbort.current === controller) refreshAbort.current = null;
+        refreshInFlight.current = null;
+      }
+    })();
+    refreshInFlight.current = request;
+    return request;
+  }, []);
 
   useEffect(() => {
-    refresh();
-    const timer = setInterval(refresh, 10000);
-    return () => clearInterval(timer);
-  }, []);
+    mounted.current = true;
+    let stopped = false;
+    let timer = null;
+    const schedule = () => {
+      if (timer) window.clearTimeout(timer);
+      if (!stopped && document.visibilityState !== 'hidden') timer = window.setTimeout(run, 10000);
+    };
+    const run = async () => {
+      await refresh();
+      schedule();
+    };
+    const onVisibilityChange = () => {
+      if (document.visibilityState === 'hidden') {
+        if (timer) window.clearTimeout(timer);
+        timer = null;
+      } else {
+        void run();
+      }
+    };
+    void run();
+    document.addEventListener('visibilitychange', onVisibilityChange);
+    return () => {
+      stopped = true;
+      mounted.current = false;
+      if (timer) window.clearTimeout(timer);
+      document.removeEventListener('visibilitychange', onVisibilityChange);
+      refreshAbort.current?.abort();
+    };
+  }, [refresh]);
 
   const saveSettings = async (patch) => {
     const data = await api('/api/settings', { method: 'POST', body: patch });
@@ -50,7 +90,7 @@ export function App() {
   };
 
   if (!state) {
-    return <div className="boot"><p>{loadError || '正在打开控制台...'}</p>{loadError && <button onClick={() => { resetAdminAuthPrompt(); refresh(); }}>重新认证</button>}</div>;
+    return <div className="boot"><p>{loadError || '正在打开控制台...'}</p>{loadError && <button onClick={() => { resetAdminAuthPrompt(); refresh(); }}>重试</button>}</div>;
   }
 
   const db = state.db;

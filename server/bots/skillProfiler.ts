@@ -1,4 +1,8 @@
 import type { LlmTool, ToolResult } from './types.js';
+import { createHash, randomUUID } from 'node:crypto';
+import fs from 'node:fs';
+import path from 'node:path';
+import { getDataDir } from '../store.js';
 
 export const SKILL_PROFILER_TOOL_NAME = 'osu_analyze_beatmap_skills';
 const DEFAULT_SKILL_PROFILER_URL = 'http://127.0.0.1:8767';
@@ -6,6 +10,14 @@ const DEFAULT_TIMEOUT_MS = 30_000;
 const MAX_RESPONSE_BYTES = 256 * 1024;
 const MAX_OSU_FILE_BYTES = 4 * 1024 * 1024;
 const DEFAULT_OSU_FILE_BASE_URL = 'https://osu.ppy.sh/osu/';
+const IDENTITY_CACHE_TTL_MS = 30_000;
+let identityCache: { at: number; value: SkillProfilerIdentity } | null = null;
+const analysisInflight = new Map<string, Promise<any>>();
+
+export interface SkillProfilerIdentity {
+  algorithmId: string;
+  mapDemandVersion: string;
+}
 
 const AXIS_LABELS: Readonly<Record<string, string>> = {
   aim_control: 'Aim Control',
@@ -73,6 +85,85 @@ async function postProfiler(pathname: string, payload: Record<string, unknown>):
     throw error;
   } finally {
     clearTimeout(timer);
+  }
+}
+
+async function getProfiler(pathname: string): Promise<any> {
+  const url = new URL(pathname, profilerBaseUrl());
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), profilerTimeoutMs());
+  timer.unref?.();
+  try {
+    const response = await fetch(url, { headers: { Accept: 'application/json' }, signal: controller.signal });
+    const text = await response.text();
+    if (Buffer.byteLength(text, 'utf8') > MAX_RESPONSE_BYTES) throw new Error('SKILL_PROFILER_RESPONSE_TOO_LARGE');
+    const data = JSON.parse(text);
+    if (!response.ok) throw new Error(`SKILL_PROFILER_HTTP_${response.status}`);
+    return data;
+  } catch (error: any) {
+    if (error?.name === 'AbortError') throw new Error('SKILL_PROFILER_TIMEOUT');
+    throw error;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+export async function getSkillProfilerIdentity(): Promise<SkillProfilerIdentity> {
+  if (identityCache && Date.now() - identityCache.at < IDENTITY_CACHE_TTL_MS) return identityCache.value;
+  const state = await getProfiler('/api/state');
+  const value = {
+    algorithmId: String(state?.algorithm_id || 'UNKNOWN_ALGORITHM'),
+    mapDemandVersion: String(state?.map_demand_version || 'UNKNOWN_VERSION'),
+  };
+  identityCache = { at: Date.now(), value };
+  return value;
+}
+
+function analysisCachePath(key: string): string {
+  return path.join(getDataDir(), 'skill-profiler-analysis-cache', `${key}.json`);
+}
+
+function normalizedCacheMods(mods: string[]): string[] {
+  const neutral = new Set(['NM', 'NF', 'SD', 'PF']);
+  return [...new Set(mods.map((mod) => String(mod).toUpperCase()).map((mod) => mod === 'NC' ? 'DT' : mod)
+    .map((mod) => mod === 'DC' ? 'HT' : mod).filter((mod) => !neutral.has(mod)))].sort();
+}
+
+export async function requestSkillProfilerAnalysisCachedWithFetch(
+  beatmapId: number,
+  mods: string[] = [],
+): Promise<any> {
+  const identity = await getSkillProfilerIdentity();
+  const canonicalMods = normalizedCacheMods(mods);
+  const source = JSON.stringify([identity.algorithmId, identity.mapDemandVersion, beatmapId, canonicalMods]);
+  const key = createHash('sha256').update(source).digest('hex');
+  const existing = analysisInflight.get(key);
+  if (existing) return existing;
+  const pending = (async () => {
+    const file = analysisCachePath(key);
+    try {
+      const cached = JSON.parse(fs.readFileSync(file, 'utf8'));
+      if (cached?.key === source && cached?.analysis?.status === 'OK') return cached.analysis;
+    } catch { /* cache miss */ }
+    const analysis = await requestSkillProfilerAnalysisWithFetch(beatmapId, canonicalMods);
+    if (analysis?.status === 'OK') {
+      let temporary = '';
+      try {
+        fs.mkdirSync(path.dirname(file), { recursive: true });
+        temporary = `${file}.${process.pid}.${randomUUID()}.tmp`;
+        fs.writeFileSync(temporary, JSON.stringify({ key: source, analysis }), { encoding: 'utf8', flag: 'wx' });
+        fs.copyFileSync(temporary, file);
+      } finally {
+        if (temporary) try { fs.unlinkSync(temporary); } catch { /* best effort */ }
+      }
+    }
+    return analysis;
+  })();
+  analysisInflight.set(key, pending);
+  try {
+    return await pending;
+  } finally {
+    if (analysisInflight.get(key) === pending) analysisInflight.delete(key);
   }
 }
 

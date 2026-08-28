@@ -288,6 +288,70 @@ ${grid}${spokes}<polygon points="${polygon('median')}" fill="#c8d4df" fill-opaci
   return sharp(Buffer.from(svg), { density: 144 }).png({ compressionLevel: 9 }).toBuffer();
 }
 
+export async function renderPlayerRecentSkillProfileCard(payload: Record<string, any>): Promise<Buffer> {
+  const player = payload.player || {};
+  const sample = payload.sample || {};
+  const profile = payload.profile || {};
+  const axes = (Array.isArray(profile.axes) ? profile.axes : []).slice(0, 9).map((axis: any) => ({
+    key: axis.key as PlayerSkillAxis,
+    label: axis.label || axis.key,
+    value: axis.value === null || axis.value === undefined ? null : finite(axis.value),
+    reference: finite(axis.reference),
+    delta: axis.delta === null || axis.delta === undefined ? null : finite(axis.delta),
+    evidence: String(axis.evidence || 'INSUFFICIENT'),
+    samples: finite(axis.samples),
+  }));
+  if (axes.length !== 9) throw new Error('PLAYER_RECENT_SKILL_AXES_INVALID');
+  const [cover, avatar] = await Promise.all([
+    imageDataUrl(player.coverUrl || player.avatarUrl),
+    imageDataUrl(player.avatarUrl, player.osuId),
+  ]);
+  const cx = 640;
+  const cy = 425;
+  const radius = 180;
+  const { count, grid, spokes } = radarGeometry(axes, cx, cy, radius);
+  const referencePoints = axes.map((axis: any, index: number) => {
+    const point = polar(cx, cy, radius, index, count, axis.reference, true);
+    return `${point.x.toFixed(1)},${point.y.toFixed(1)}`;
+  }).join(' ');
+  const recentPoints = axes.map((axis: any, index: number) => {
+    const point = polar(cx, cy, radius, index, count, axis.value ?? 0, true);
+    return `${point.x.toFixed(1)},${point.y.toFixed(1)}`;
+  }).join(' ');
+  const nodes = axes.map((axis: any, index: number) => {
+    if (axis.value === null) return '';
+    const point = polar(cx, cy, radius, index, count, axis.value, true);
+    const exceptional = axis.value > 10;
+    return `<circle cx="${point.x.toFixed(1)}" cy="${point.y.toFixed(1)}" r="${exceptional ? 7 : 5}" fill="${exceptional ? '#ffcf62' : '#ff5fae'}" stroke="${exceptional ? '#fff1ad' : '#ffabd0'}" stroke-width="2"/>`;
+  }).join('');
+  const labels = axes.map((axis: any, index: number) => {
+    const point = polar(cx, cy, radius + 48, index, count, 10);
+    const anchor = point.cos > 0.22 ? 'start' : point.cos < -0.22 ? 'end' : 'middle';
+    const y = point.y + (point.sin < -0.75 ? -5 : point.sin > 0.75 ? 5 : 0);
+    const value = axis.value === null
+      ? '近期证据不足'
+      : axis.evidence === 'LOWER_BOUND' ? `${axis.value.toFixed(1)} 下界` : axis.value.toFixed(1);
+    const color = axis.value !== null && axis.value > 10 ? '#ffcf62' : axis.evidence === 'LOWER_BOUND' ? '#ffd28c' : '#ff72b7';
+    const delta = axis.delta === null ? '' : `  ${axis.delta > 0 ? '▲' : '▼'}${Math.abs(axis.delta).toFixed(1)}`;
+    return text(axis.label, point.x, y, 15, { anchor, weight: 610 })
+      + text(`${value}${delta}`, point.x, y + 21, axis.value === null ? 12 : 16, { anchor, weight: 720, fill: color });
+  }).join('');
+  const completed = finite(sample.completed);
+  const analyzed = finite(sample.analyzed);
+  const skipped = finite(sample.skipped);
+  const svg = `<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="${WIDTH}" height="${HEIGHT}" viewBox="0 0 ${WIDTH} ${HEIGHT}">
+<defs><filter id="blur"><feGaussianBlur stdDeviation="28"/></filter><filter id="shadow"><feDropShadow dx="0" dy="4" stdDeviation="8" flood-color="#02050a" flood-opacity="0.60"/></filter><linearGradient id="recent-overlay" x2="1" y2="1"><stop stop-color="#071928" stop-opacity="0.89"/><stop offset="0.56" stop-color="#100d1d" stop-opacity="0.91"/><stop offset="1" stop-color="#1b0817" stop-opacity="0.88"/></linearGradient><clipPath id="recent-avatar"><circle cx="82" cy="82" r="55"/></clipPath><style>text { font-family: "MiSans", "Noto Sans SC", "Segoe UI", sans-serif; font-variant-numeric: tabular-nums; }</style></defs>
+<rect width="1280" height="720" fill="#07101a"/>${cover ? `<image x="-45" y="-45" width="1370" height="810" href="${cover}" preserveAspectRatio="xMidYMid slice" filter="url(#blur)" opacity="0.50"/>` : ''}<rect width="1280" height="720" fill="url(#recent-overlay)"/>
+<g filter="url(#shadow)"><circle cx="82" cy="82" r="59" fill="#0b1724" stroke="#ff5fae" stroke-width="2"/>${avatar ? `<image x="27" y="27" width="110" height="110" href="${avatar}" preserveAspectRatio="xMidYMid slice" clip-path="url(#recent-avatar)"/>` : ''}</g>
+${text(compact(player.username || `osu! ${player.osuId || '?'}`, 30), 158, 55, 32, { weight: 700 })}${text(`${String(player.countryCode || '—').toUpperCase()} · GLOBAL ${rank(player.globalRank)} · ${finite(player.pp).toLocaleString('en-US', { maximumFractionDigits: 0 })}pp`, 158, 87, 16, { fill: '#b9c7d4', weight: 560, spacing: 0.4 })}${text(`最近 ${finite(sample.days, 5)} 天 · ${completed} 张完成谱面 · ${analyzed} 组有效证据`, 158, 119, 17, { fill: '#ff8fc5', weight: 620 })}${text(`获取 ${finite(sample.fetched)} 条 · 去重 ${finite(sample.groups)} 组 · 跳过 ${skipped} 组`, 158, 147, 14, { fill: '#91a3b2', weight: 540, spacing: 0.5 })}
+${text('RECENT SKILL PROFILE', 1218, 61, 16, { anchor: 'end', fill: '#9facb8', weight: 650, spacing: 2.5 })}${text('近期发挥 vs BP50 长期画像', 1218, 99, 22, { anchor: 'end', fill: '#e9b65b', weight: 700 })}${text('同 BID + 需求 Mods 去重', 1218, 132, 15, { anchor: 'end', fill: '#dce7ef', weight: 560 })}<path d="M24 184H1256" stroke="#e1b45c" stroke-opacity="0.68" stroke-width="1.5"/>
+${grid}${spokes}<polygon points="${referencePoints}" fill="#9ecce7" fill-opacity="0.035" stroke="#a8c7da" stroke-opacity="0.55" stroke-width="2" stroke-dasharray="7 8"/><polygon points="${recentPoints}" fill="#ff4fa3" fill-opacity="0.15" stroke="#ff5fae" stroke-width="3.2" stroke-linejoin="round"/>${nodes}${labels}<circle cx="${cx}" cy="${cy}" r="5" fill="#07111d"/>
+<path d="M34 675H1246" stroke="#ffffff" stroke-opacity="0.12"/><path d="M44 704H82" stroke="#ff5fae" stroke-width="4" stroke-linecap="round"/>${text('近期有效发挥', 94, 709, 14, { fill: '#d9c4d0' })}<path d="M250 704H288" stroke="#a8c7da" stroke-opacity="0.70" stroke-width="2" stroke-dasharray="6 6"/>${text('BP50 长期参考', 300, 709, 14, { fill: '#a9bac6' })}${text('FAIL 降权 · 24H 100% → DAY5 85% · 差值 <0.2 不标记', 1238, 709, 12, { anchor: 'end', fill: '#8999a8', weight: 560, spacing: 1.1 })}
+</svg>`;
+  return sharp(Buffer.from(svg), { density: 144 }).png({ compressionLevel: 9 }).toBuffer();
+}
+
 export async function renderPlayerSkillComparisonCard(payload: Record<string, any>): Promise<Buffer> {
   const left = payload.left || {};
   const right = payload.right || {};

@@ -5,6 +5,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
+import { readDb } from '../server/store.ts';
 
 const API = 'http://127.0.0.1:8787';
 const BOTS = ['yumu', 'kanon', 'hydrant', 'lazybot'];
@@ -33,7 +34,7 @@ const stamp = new Date().toISOString().replace(/[:T]/g, '-').slice(0, 19);
 const backupDir = path.join(os.tmpdir(), `wuxin-migrate-${groupId}-${stamp}`);
 fs.mkdirSync(backupDir, { recursive: true });
 const dbPath = path.join(process.env.APPDATA || '', 'Wuxin', 'db.json');
-if (fs.existsSync(dbPath)) fs.copyFileSync(dbPath, path.join(backupDir, 'db.json'));
+if (fs.existsSync(dbPath)) fs.writeFileSync(path.join(backupDir, 'db.json'), JSON.stringify(readDb()), 'utf8');
 if (fs.existsSync(SHARED_CONFIG)) fs.copyFileSync(SHARED_CONFIG, path.join(backupDir, 'group-bot-config.json'));
 console.log(`[backup] ${backupDir}`);
 
