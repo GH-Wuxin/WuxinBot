@@ -203,8 +203,18 @@ export async function getUserBestScores(userId: number, mode: OsuMode = 'osu', l
   return scores;
 }
 
-export async function getUserRecentScores(userId: number, mode: OsuMode = 'osu', limit: number = 50): Promise<OsuScore[]> {
-  const scores = await osuFetch<OsuScore[]>(`/users/${userId}/scores/recent?mode=${mode}&limit=${limit}&include_fails=1`);
+export async function getUserRecentScores(
+  userId: number,
+  mode: OsuMode = 'osu',
+  limit: number = 50,
+  offset: number = 0,
+): Promise<OsuScore[]> {
+  const safeLimit = Math.max(1, Math.min(100, Math.floor(Number(limit) || 50)));
+  const safeOffset = Math.max(0, Math.floor(Number(offset) || 0));
+  const offsetQuery = safeOffset > 0 ? `&offset=${safeOffset}` : '';
+  const scores = await osuFetch<OsuScore[]>(
+    `/users/${userId}/scores/recent?mode=${mode}&limit=${safeLimit}${offsetQuery}&include_fails=1`,
+  );
   return scores;
 }
 

@@ -4,18 +4,9 @@ import path from 'node:path';
 
 const sanityDataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'wuxin-sanity-'));
 process.env.DATA_DIR = sanityDataDir;
-const dbPath = path.join(sanityDataDir, 'db.json');
 const sanityOwnerQq = '10000001';
 const sanityBotQq = '10000002';
 const sanityNormalUserQq = '10000003';
-
-function readJson(file) {
-  return JSON.parse(fs.readFileSync(file, 'utf8'));
-}
-
-function writeJson(file, value) {
-  fs.writeFileSync(file, JSON.stringify(value, null, 2), 'utf8');
-}
 
 function assert(condition, message) {
   if (!condition) throw new Error(message);
@@ -37,13 +28,12 @@ function event(overrides) {
 }
 
 async function main() {
-  const { ensureStore, publicDb } = await import('../server/store.ts');
+  const { ensureStore, publicDb, readDb, writeDb } = await import('../server/store.ts');
   const { decideReply, processIncoming } = await import('../server/bot.ts');
   const { mentionsBot, normalizeMessage } = await import('../server/bot/cleaning.ts');
   ensureStore();
 
-  const originalRaw = fs.readFileSync(dbPath, 'utf8').replace(/^﻿/, '');
-  const original = JSON.parse(originalRaw);
+  const original = structuredClone(readDb());
   const sent = [];
   const sendMessage = async (_event, text) => {
     sent.push(String(text || ''));
@@ -81,9 +71,9 @@ async function main() {
       at: new Date().toISOString(),
       settings: { apiKey: 'sanity-secret', oneBotAccessToken: 'sanity-token', adminPassword: 'sanity-password' }
     }];
-    writeJson(dbPath, db);
+    writeDb(db);
 
-    const browserState = publicDb(readJson(dbPath));
+    const browserState = publicDb(readDb());
     assert(!('configSnapshots' in browserState), 'public state must not expose config snapshots');
     assert(browserState.settings.apiKey === '已填写', 'public state should mask the API key');
 
@@ -135,7 +125,7 @@ async function main() {
       senderRole: 'admin',
       text: 'fetch failed？这bot是不是疯了'
     }), sendMessage);
-    const afterExternalBot = readJson(dbPath);
+    const afterExternalBot = readDb();
     const loggedExternalBot = afterExternalBot.messages.at(-1);
     assert(externalBot.replied === false, 'external bot-like sender should be ignored');
     assert(String(externalBot.reason || '').includes('其他机器人'), 'external bot ignore reason should be explicit');
@@ -147,7 +137,7 @@ async function main() {
       nickname: 'AI绘画爱好者',
       text: '普通聊天消息'
     }), sendMessage);
-    const loggedHumanWithAiName = readJson(dbPath).messages.at(-1);
+    const loggedHumanWithAiName = readDb().messages.at(-1);
     assert(!String(humanWithAiName.reason || '').includes('其他机器人'), 'human nickname containing AI should not be treated as a bot');
     assert(loggedHumanWithAiName?.inContext !== false, 'human nickname containing AI should remain in context');
 
@@ -194,18 +184,18 @@ async function main() {
       nickname: 'NormalUser',
       text: '/w group add 普通人测试群'
     }), sendMessage);
-    const deniedLog = readJson(dbPath).commandLogs.at(-1);
+    const deniedLog = readDb().commandLogs.at(-1);
     assert(deniedGroupAdd.replied === true, 'non-owner /w group add should reply with denial');
     assert(String(deniedGroupAdd.reason || '').includes('只有所有者'), 'non-owner /w group add should be denied');
     assert(deniedLog?.status === 'denied', 'non-owner /w group add should be logged as denied');
-    assert(!readJson(dbPath).groups.some((group) => String(group.groupId) === '990002'), 'non-owner /w group add must not create group');
+    assert(!readDb().groups.some((group) => String(group.groupId) === '990002'), 'non-owner /w group add must not create group');
 
     sent.length = 0;
     const ownerGroupAdd = await processIncoming(event({
       groupId: '990003',
       text: '/w group add SanityAddedGroup'
     }), sendMessage);
-    const afterOwnerGroupAdd = readJson(dbPath);
+    const afterOwnerGroupAdd = readDb();
     const addedGroup = afterOwnerGroupAdd.groups.find((group) => String(group.groupId) === '990003');
     assert(ownerGroupAdd.replied === true, 'owner /w group add should reply');
     assert(addedGroup?.enabled === true, 'owner /w group add should create enabled group');
@@ -216,12 +206,12 @@ async function main() {
       groupId: '990003',
       text: '/w group add SanityRenamedGroup'
     }), sendMessage);
-    const renamedGroup = readJson(dbPath).groups.find((group) => String(group.groupId) === '990003');
+    const renamedGroup = readDb().groups.find((group) => String(group.groupId) === '990003');
     assert(renamedGroup?.name === 'SanityRenamedGroup', 'owner /w group add should update existing group name');
 
     sent.length = 0;
     const invalidRate = await processIncoming(event({ text: '/w rate 2200' }), sendMessage);
-    const lastCommand = readJson(dbPath).commandLogs.at(-1);
+    const lastCommand = readDb().commandLogs.at(-1);
     assert(invalidRate.replied === true, 'invalid /w rate should reply');
     assert(lastCommand?.status === 'invalid', 'invalid /w rate should be logged as invalid');
 

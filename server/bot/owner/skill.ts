@@ -9,6 +9,7 @@ import {
 } from '../../bots/skillProfiler.js';
 import { renderSkillProfilerCard } from '../../bots/skillProfilerCard.js';
 import { renderPlayerSkillComparison, renderPlayerSkillProfile } from '../../bots/playerSkillProfile.js';
+import { renderPlayerRecentSkillProfile } from '../../bots/playerRecentSkillProfile.js';
 import {
   appendSkillProfilerFeedback,
   compactSkillProfilerSnapshot,
@@ -32,6 +33,7 @@ export type SkillCommandRequest =
   | { ok: false; message: string };
 
 export type PlayerSkillProfileRequest = { matched: true; player: string } | { matched: false };
+export type PlayerRecentSkillRequest = { matched: true; player: string } | { matched: false };
 export type PlayerSkillComparisonRequest =
   | { matched: true; left: string; right: string; error?: undefined }
   | { matched: true; left: ''; right: ''; error: string }
@@ -44,6 +46,14 @@ function unwrapExplicitPlayer(value: string): string {
 
 export function parsePlayerSkillProfileRequest(value: string): PlayerSkillProfileRequest {
   const match = /^profile(?:\s+([\s\S]+))?$/i.exec(String(value || '').trim());
+  if (!match) return { matched: false };
+  const raw = String(match[1] || '').trim();
+  const explicit = /^p:\[(\d+)\]$/i.exec(raw);
+  return { matched: true, player: String(explicit?.[1] || raw).trim() };
+}
+
+export function parsePlayerRecentSkillRequest(value: string): PlayerRecentSkillRequest {
+  const match = /^recent(?:\s+([\s\S]+))?$/i.exec(String(value || '').trim());
   if (!match) return { matched: false };
   const raw = String(match[1] || '').trim();
   const explicit = /^p:\[(\d+)\]$/i.exec(raw);
@@ -281,6 +291,32 @@ export async function ownerSkillHandler(ctx: OwnerHandlerContext): Promise<Owner
     if (!rendered) throw new Error('玩家 Skill 对比渲染器当前未连接，请稍后再试。');
     if (ctx.sendMessage) await ctx.sendMessage(ctx.event, rendered.cqCode);
     return { replied: Boolean(ctx.sendMessage), reason: `已生成 ${left.username} 与 ${right.username} 的 BP50 Skill 对比` };
+  }
+
+  const recentRequest = parsePlayerRecentSkillRequest(ctx.commandArgs);
+  if (recentRequest.matched) {
+    const user = await resolveProfileUser(ctx, recentRequest.player);
+    if (ctx.sendMessage) {
+      await ctx.sendMessage(ctx.event, `正在生成 ${user.username} 的 Recent Skill：优先读取最近 50 条，完成谱面不足时最多回溯 5 天……`);
+    }
+    let timer: NodeJS.Timeout | undefined;
+    try {
+      const timeout = new Promise<never>((_, reject) => {
+        timer = setTimeout(() => reject(new Error('RECENT_SKILL_TIMEOUT')), 150_000);
+        timer.unref?.();
+      });
+      const rendered = await Promise.race([renderPlayerRecentSkillProfile(user.id), timeout]);
+      if (ctx.sendMessage) await ctx.sendMessage(ctx.event, rendered.cqCode);
+      return { replied: Boolean(ctx.sendMessage), reason: `已生成 ${user.username} 的 Recent Skill 画像` };
+    } catch (error: any) {
+      const message = String(error?.message || error);
+      if (message === 'RECENT_SKILL_TIMEOUT') throw new Error('Recent Skill 生成超时；已保留成功的谱面分析缓存，请稍后重试。');
+      const insufficient = /^RECENT_SKILL_INSUFFICIENT(?:_AFTER_FILTER)?:([0-9]+)$/.exec(message);
+      if (insufficient) throw new Error(`近期证据不足：回溯 5 天后只有 ${insufficient[1]} 张有效完成谱面，至少需要 5 张。`);
+      throw error;
+    } finally {
+      if (timer) clearTimeout(timer);
+    }
   }
 
   const profileRequest = parsePlayerSkillProfileRequest(ctx.commandArgs);

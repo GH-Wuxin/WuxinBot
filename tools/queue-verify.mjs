@@ -19,7 +19,6 @@ import path from 'node:path';
 
 const testDataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'wuxin-queue-'));
 process.env.DATA_DIR = testDataDir;
-const dbPath = path.join(testDataDir, 'db.json');
 let readDb;
 let writeDb;
 let processIncoming;
@@ -135,8 +134,7 @@ async function main() {
   ({ getReplyQueueStats } = queue);
   store.ensureStore();
 
-  const originalRaw = fs.readFileSync(dbPath, 'utf8').replace(/^﻿/, '');
-  const original = JSON.parse(originalRaw);
+  const original = structuredClone(readDb());
   let server;
 
   try {
