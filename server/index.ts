@@ -287,15 +287,6 @@ function osuBindingList(db = readDb()) {
   }).sort((a, b) => a.qq.localeCompare(b.qq));
 }
 
-function osuQuickGroupList(db = readDb()) {
-  return (db.groups || []).map((g) => ({
-    groupId: g.groupId,
-    name: g.name,
-    enabled: Boolean(g.enabled),
-    quick: Boolean(db.groupBotConfig?.[g.groupId]?.quick),
-  }));
-}
-
 app.get('/api/osu/status', async (_req, res) => {
   const db = readDb();
   const health = getHealth();
@@ -305,28 +296,9 @@ app.get('/api/osu/status', async (_req, res) => {
     bots.push({ id, port, up: await tcpProbe(Number(port)) });
   }
 
-  const logs = (db.commandLogs || []).filter((c) => String(c.command || '').startsWith('quick:'));
-  const byCommand = {};
-  const bySource = {};
-  for (const log of logs) {
-    const command = String(log.command || '').replace(/^quick:/, '');
-    byCommand[command] = (byCommand[command] || 0) + 1;
-    const source = String(log.source || 'other');
-    bySource[source] = (bySource[source] || 0) + 1;
-  }
   const osuLogs = (db.commandLogs || []).filter((c) => String(c.command || '') === '/osu');
   const analyzeCount = osuLogs.filter((c) => String(c.subCommand || '') === 'analyze').length;
   const bindCount = osuLogs.filter((c) => String(c.subCommand || '') === 'bind').length;
-  const recentQuick = [...logs].reverse().slice(0, 15).map((c) => ({
-    id: c.id,
-    createdAt: c.createdAt,
-    groupId: c.groupId,
-    userId: c.userId,
-    nickname: c.nickname,
-    command: String(c.command || '').replace(/^quick:/, ''),
-    outcome: c.outcome,
-    detail: c.detail,
-  }));
 
   res.json(ok({
     health: { api429Count: health.osu.api429Count, renderFailures: health.osu.renderFailures },
@@ -335,17 +307,11 @@ app.get('/api/osu/status', async (_req, res) => {
       listeningPort: getRenderServer().getListeningPort(),
       hasClients: getRenderServer().hasClients(),
     },
-    quickRouterEnabled: Boolean(db.settings.quickRouterEnabled),
-    groups: osuQuickGroupList(db),
     bindings: osuBindingList(db),
     stats: {
-      quickTotal: logs.length,
-      byCommand: Object.fromEntries(Object.entries(byCommand).sort((a, b) => Number(b[1]) - Number(a[1]))),
-      bySource,
       analyzeCount,
       bindCount,
     },
-    recentQuick,
   }));
 });
 
@@ -389,23 +355,6 @@ app.post('/api/osu/bindings', async (req, res) => {
   } catch {
     res.status(400).json({ ok: false, error: `osu! 用户 "${name}" 查不到。` });
   }
-});
-
-app.post('/api/osu/quick', (req, res) => {
-  const { global, groupId, enabled } = req.body || {};
-  if (global !== undefined) {
-    updateDb((db) => {
-      db.settings.quickRouterEnabled = Boolean(global);
-    });
-    return res.json(ok({ quickRouterEnabled: Boolean(global) }));
-  }
-  if (!groupId) return res.status(400).json({ ok: false, error: '缺少 groupId' });
-  updateDb((db) => {
-    db.groupBotConfig = db.groupBotConfig || {};
-    db.groupBotConfig[String(groupId)] = db.groupBotConfig[String(groupId)] || { yumu: true, kanon: true, hydrant: true, lazybot: true };
-    db.groupBotConfig[String(groupId)].quick = Boolean(enabled);
-  });
-  res.json(ok({ groups: osuQuickGroupList() }));
 });
 
 // ── osu! console player APIs ──

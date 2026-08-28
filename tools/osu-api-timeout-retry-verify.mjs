@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import dns from 'node:dns';
 
 process.env.OSU_CLIENT_ID = 'retry-verify-client';
 process.env.OSU_CLIENT_SECRET = 'retry-verify-secret';
@@ -6,6 +7,7 @@ process.env.OSU_TOKEN_URL = 'http://auth.test/oauth/token';
 process.env.OSU_API_BASE_URL = 'http://api.test/api/v2';
 
 const originalFetch = globalThis.fetch;
+const originalDnsOrder = dns.getDefaultResultOrder();
 const attemptsByUser = new Map();
 let playerLookupCount = 0;
 let tokenRequestCount = 0;
@@ -53,6 +55,7 @@ globalThis.fetch = async (input) => {
 
 try {
   const { getUser, getUserById, getUserBestScores } = await import('../server/osu/api.ts');
+  assert.equal(dns.getDefaultResultOrder(), 'ipv4first', 'osu! networking should prefer IPv4 over a black-holed IPv6 route');
 
   const namedUser = await getUser('fixture-user', 'osu');
   assert.equal(tokenRequestCount, 2, 'OAuth token fetch should retry one transient network failure');
@@ -81,4 +84,5 @@ try {
   console.log('PASS: osu! OAuth and API GET retry transient failures, GETs coalesce, and exhausted timeouts are normalized');
 } finally {
   globalThis.fetch = originalFetch;
+  dns.setDefaultResultOrder(originalDnsOrder);
 }

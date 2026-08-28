@@ -36,7 +36,6 @@ try {
   db.settings.ownerQq = OWNER_ID;
   db.settings.selfQq = '10000002';
   db.settings.globalPaused = false;
-  db.settings.quickRouterEnabled = true;
   db.settings.apiKey = 'must-not-be-used';
   db.groups = [{
     groupId: GROUP_ID,

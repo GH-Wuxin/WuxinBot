@@ -1,7 +1,20 @@
 // osu! OAuth Client Credentials token manager.
 // Token lives in process memory only — never persisted to disk or returned in APIs.
 
+import dns from 'node:dns';
 import type { OsuToken } from './types.js';
+
+// This host has working IPv4 connectivity to Cloudflare but advertises an IPv6
+// route that can remain in SYN_SENT until Undici's connect timeout. Both OAuth
+// and API calls resolve osu.ppy.sh through the process-wide dns.lookup default,
+// so prefer IPv4 before either request path opens a connection. Numeric
+// loopback service URLs (Skill Profiler, OneBot, yumu-image) are unaffected.
+const requestedDnsOrder = String(process.env.OSU_DNS_ORDER || 'ipv4first').trim().toLowerCase();
+const OSU_DNS_ORDER: 'ipv4first' | 'ipv6first' | 'verbatim' =
+  requestedDnsOrder === 'ipv6first' || requestedDnsOrder === 'verbatim'
+    ? requestedDnsOrder
+    : 'ipv4first';
+dns.setDefaultResultOrder(OSU_DNS_ORDER);
 
 // Overridable for offline verification (recommend-verify serves a local mock).
 const TOKEN_URL = process.env.OSU_TOKEN_URL || 'https://osu.ppy.sh/oauth/token';

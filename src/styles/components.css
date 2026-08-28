@@ -374,7 +374,7 @@
 .groups-danger-zone > div:last-child { display: flex; gap: 8px; flex-wrap: wrap; }
 
 .osu-page, .integrations-page { display: grid; gap: 15px; }
-.osu-metrics { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 10px; }
+.osu-metrics { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 10px; }
 .osu-metrics .metric-card { min-height: 104px; }
 .osu-player-search { display: grid; grid-template-columns: auto minmax(180px, .8fr) minmax(260px, 1.2fr) auto; align-items: center; gap: 12px; background: linear-gradient(100deg, var(--v2-surface-2), #33263a); border-color: rgba(240,100,154,.28); }
 .osu-player-search > svg { color: var(--v2-accent); }
@@ -383,22 +383,12 @@
 .osu-services__list { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }
 .osu-services__list > div { min-width: 0; display: grid; gap: 6px; padding: 10px 11px; background: var(--v2-surface-2); border-radius: var(--v2-radius-sm); }
 .osu-services__list code { overflow: hidden; color: var(--v2-text-muted); font-size: 11px; text-overflow: ellipsis; }
-.osu-workspace { display: grid; grid-template-columns: minmax(420px, .9fr) minmax(520px, 1.1fr); gap: 14px; align-items: start; }
 .osu-binding-form { display: grid; grid-template-columns: .8fr 1.2fr auto; align-items: end; gap: 9px; }
 .osu-binding-list { max-height: 490px; overflow: auto; display: grid; gap: 2px; margin-top: 12px; }
 .osu-binding-list > div { display: flex; align-items: center; gap: 8px; padding: 7px 8px; background: var(--v2-surface-2); border-radius: var(--v2-radius-sm); }
 .osu-binding-list__player { min-width: 0; flex: 1; display: grid; gap: 2px; text-align: left; color: var(--v2-text); background: transparent; border: 0; cursor: pointer; }
 .osu-binding-list__player span, .osu-binding-list__player small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .osu-binding-list__player small { color: var(--v2-text-muted); }
-.osu-router-groups { max-height: 610px; overflow: auto; display: grid; gap: 9px; margin-top: 10px; padding-right: 3px; }
-.osu-router-groups .ui-setting-group + .ui-setting-group { margin-top: 0; }
-.osu-activity-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
-.osu-command-stats, .osu-recent-list { display: grid; gap: 2px; }
-.osu-command-stats > div { min-height: 39px; display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 7px 9px; background: var(--v2-surface-2); }
-.osu-source-pills { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 10px; }
-.osu-recent-list article { padding: 9px 10px; background: var(--v2-surface-2); border-left: 2px solid var(--v2-border-strong); }
-.osu-recent-list article > * { display: block; }
-.osu-recent-list span, .osu-recent-list p { margin: 2px 0 0; color: var(--v2-text-muted); font-size: 11px; }
 
 .osu-player-overlay { position: fixed; z-index: 90; inset: 0; display: flex; justify-content: flex-end; background: rgba(9,7,13,.72); }
 .osu-player-drawer { width: min(880px, calc(100vw - 28px)); height: 100%; overflow: hidden; display: grid; grid-template-rows: auto auto auto minmax(0,1fr); padding: 18px; background: var(--v2-surface-1); border-left: 1px solid var(--v2-border-strong); box-shadow: -24px 0 70px rgba(0,0,0,.42); }
@@ -671,7 +661,6 @@
   .groups-workspace { grid-template-columns: minmax(280px, .7fr) minmax(420px, 1.3fr); }
   .groups-form-grid, .groups-profile__fields { grid-template-columns: 1fr; }
   .osu-metrics { grid-template-columns: repeat(3,minmax(0,1fr)); }
-  .osu-workspace { grid-template-columns: 1fr; }
   .integrations-service-grid { grid-template-columns: repeat(2,minmax(0,1fr)); }
   .console-split--agent { grid-template-columns: 1fr; }
   .models-layout { grid-template-columns: 1fr; }
@@ -705,7 +694,7 @@
   .app-shell__status { margin-top: auto; }
   .app-shell__topbar { min-height: 76px; padding: 14px 18px; }
   .app-shell__main { padding: 18px; }
-  .dashboard-grid, .dashboard-controls, .groups-workspace, .osu-activity-grid { grid-template-columns: 1fr; }
+  .dashboard-grid, .dashboard-controls, .groups-workspace { grid-template-columns: 1fr; }
   .groups-list-panel { position: static; max-height: none; }
   .groups-list { max-height: 420px; }
   .groups-settings-bar { grid-template-columns: 1fr; }

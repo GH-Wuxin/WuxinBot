@@ -105,7 +105,6 @@ function setupFixture() {
     db.settings.osuClientSecret = 'fixture-secret';
     // M1: literal quick commands (`!bs 1-100`) route deterministically; the
     // Chinese natural-language cases below still go through the LLM tool path.
-    db.settings.quickRouterEnabled = true;
     db.settings.botRegistry = {
       updatedAt: new Date().toISOString(),
       bots: [{

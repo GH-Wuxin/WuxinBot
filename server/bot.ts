@@ -143,7 +143,7 @@ import {
   llmReplyGate
 } from './bot/gate.js';
 import { handleOwnerCommand } from './bot/ownerCommands.js';
-import { matchQuickCommand, handleQuickCommand, quickRouterEnabled } from './bot/quickRouter.js';
+import { matchQuickCommand, handleQuickCommand } from './bot/quickRouter.js';
 import { settlePendingQuickObservations } from './bot/quickContext.js';
 
 function replyTargetMetadata(event) {
@@ -469,12 +469,11 @@ async function processIncomingInner(event, sendMessage = undefined, queuedDecisi
 
   const isPrivateOwner = event.type === 'private' && settings.ownerQq && String(event.userId) === String(settings.ownerQq);
   if (isPrivateOwner && event.text.startsWith('/')) {
-    // Bare slash commands that belong to the LazyBot quick table are routed
-    // below (when the quick router is enabled); Wuxin's own `/help` and other
-    // owner slash commands keep their existing behavior.
+    // Bare slash commands that belong to the LazyBot shortcut table are routed
+    // below; Wuxin's own `/help` and owner commands keep their existing behavior.
     const privateQuick = matchQuickCommand(event);
     const isLazyQuick = privateQuick?.def.source === 'lazybot' && privateQuick.def.id !== 'help';
-    if (!(isLazyQuick && quickRouterEnabled(db, event))) {
+    if (!isLazyQuick) {
       return handleOwnerCommand(event, sendMessage);
     }
   }
@@ -540,12 +539,12 @@ async function processIncomingInner(event, sendMessage = undefined, queuedDecisi
     return handleOwnerCommand(event, sendMessage, { isOwner: isGroupOwner, isAdmin: isGroupAdmin });
   }
 
-  // ── Legacy quick-command router (M1 of four-bot merge) ──
+  // ── Deterministic shortcut commands ──
   // Deterministic `!p`/`!bs`/`/plus`/`~`/`查@` … commands bypass the LLM.
   // BP 类型查询 has its own deterministic osu!oracle route. In particular,
   // `查 @某人 的 BP 类型` must not be consumed as Hydrant's generic 查@资料.
   const quickMatch = detectedQuickMatch;
-  if (quickMatch && quickRouterEnabled(db, event)) {
+  if (quickMatch) {
     const quickResult = await handleQuickCommand(event, sendMessage, db, quickMatch, {
       isOwner: isGroupOwner || isPrivateOwner,
       isAdmin: isGroupAdmin,
