@@ -362,7 +362,9 @@ export async function ownerSkillHandler(ctx: OwnerHandlerContext): Promise<Owner
     feedbackGuidance(resolved.beatmapId, resolved.mods),
   ].filter(Boolean).join('\n');
   rememberProfilerRun(ctx, analysis, resolved.sourceLabel);
-  const rendered = await renderSkillProfilerCard(analysis);
+  const rendered = await renderSkillProfilerCard(analysis, {
+    sourceLabel: target.kind !== 'bid' ? resolved.sourceLabel : '',
+  });
   if (ctx.sendMessage) await ctx.sendMessage(ctx.event, rendered?.cqCode || fallbackText);
   return { replied: Boolean(ctx.sendMessage), reason: `Skill Profiler 已分析 BID ${resolved.beatmapId}` };
 }

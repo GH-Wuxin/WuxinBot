@@ -60,12 +60,15 @@ const payload = buildSkillProfilerCardPayload({
 }, {
   beatmap: { bpm: 200, total_length: 180 },
   starRating: 8.765,
+}, {
+  sourceLabel: 'FixturePlayer 的 BP#2',
 });
 
 assert.equal(payload.beatmap.coverUrl, 'https://assets.ppy.sh/beatmaps/1946744/covers/fullsize.jpg');
 assert.equal(payload.analysis.mods, 'HDDTPF');
 assert.deepEqual(payload.analysis.modList, ['HD', 'DT', 'PF']);
 assert.equal(payload.analysis.neutralMods, 'PF');
+assert.equal(payload.analysis.sourceLabel, 'FixturePlayer 的 BP#2');
 assert.equal(payload.beatmap.stars, 8.765);
 assert.equal(payload.beatmap.bpm, 200, 'official BPM wins over the computed fallback');
 assert.equal(payload.beatmap.lengthSeconds, 180, 'official length wins over the computed fallback');
@@ -128,5 +131,6 @@ assert.equal(strictModPayload.beatmap.stars, null, 'NM stars never masquerade as
 assert.equal(strictModPayload.analysis.mapType.experimental, true);
 assert.equal(strictModPayload.analysis.mapType.available, false);
 assert.equal(strictModPayload.analysis.mapType.primary, '暂无明确类型');
+assert.equal(strictModPayload.analysis.sourceLabel, '');
 
 console.log('PASS: Skill Profiler card is 3-group image data with Tapping and no algorithm version');

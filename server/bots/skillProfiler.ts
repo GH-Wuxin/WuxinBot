@@ -19,6 +19,22 @@ export interface SkillProfilerIdentity {
   mapDemandVersion: string;
 }
 
+export function skillProfilerIdentityKey(identity: SkillProfilerIdentity): string {
+  return JSON.stringify([identity.algorithmId, identity.mapDemandVersion]);
+}
+
+export function skillProfilerReleaseLabel(version: unknown): string {
+  const value = String(version || '');
+  return /^\d+\.\d+\.\d+-beta\.\d+$/.test(value) ? `${value} · 试用` : '';
+}
+
+export function assertSkillProfilerIdentity(analysis: any, expected: SkillProfilerIdentity): void {
+  if (analysis?.identity?.algorithm_id !== expected.algorithmId
+    || analysis?.identity?.map_demand_version !== expected.mapDemandVersion) {
+    throw new Error('SKILL_PROFILER_VERSION_CHANGED: 算法版本已切换，请重新执行指令');
+  }
+}
+
 const AXIS_LABELS: Readonly<Record<string, string>> = {
   aim_control: 'Aim Control',
   stamina: 'Stamina',
@@ -108,8 +124,8 @@ async function getProfiler(pathname: string): Promise<any> {
   }
 }
 
-export async function getSkillProfilerIdentity(): Promise<SkillProfilerIdentity> {
-  if (identityCache && Date.now() - identityCache.at < IDENTITY_CACHE_TTL_MS) return identityCache.value;
+export async function getSkillProfilerIdentity(forceRefresh = false): Promise<SkillProfilerIdentity> {
+  if (!forceRefresh && identityCache && Date.now() - identityCache.at < IDENTITY_CACHE_TTL_MS) return identityCache.value;
   const state = await getProfiler('/api/state');
   const value = {
     algorithmId: String(state?.algorithm_id || 'UNKNOWN_ALGORITHM'),
@@ -143,10 +159,14 @@ export async function requestSkillProfilerAnalysisCachedWithFetch(
     const file = analysisCachePath(key);
     try {
       const cached = JSON.parse(fs.readFileSync(file, 'utf8'));
-      if (cached?.key === source && cached?.analysis?.status === 'OK') return cached.analysis;
+      if (cached?.key === source && cached?.analysis?.status === 'OK') {
+        assertSkillProfilerIdentity(cached.analysis, identity);
+        return cached.analysis;
+      }
     } catch { /* cache miss */ }
     const analysis = await requestSkillProfilerAnalysisWithFetch(beatmapId, canonicalMods);
     if (analysis?.status === 'OK') {
+      assertSkillProfilerIdentity(analysis, identity);
       let temporary = '';
       try {
         fs.mkdirSync(path.dirname(file), { recursive: true });

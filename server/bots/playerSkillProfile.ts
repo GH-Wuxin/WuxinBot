@@ -1,6 +1,7 @@
 import { getUserBestScores, getUserById } from '../osu/api.js';
 import { normalizedScoreMods } from '../osu/scoreMetrics.js';
-import { requestSkillProfilerAnalysisCachedWithFetch } from './skillProfiler.js';
+import { requestSkillProfilerAnalysisCachedWithFetch, getSkillProfilerIdentity, skillProfilerIdentityKey,
+  skillProfilerReleaseLabel, assertSkillProfilerIdentity } from './skillProfiler.js';
 import { saveAndGetCqCode } from './render.js';
 import { renderPlayerSkillComparisonCard, renderPlayerSkillProfileCard } from './playerSkillComparisonCard.js';
 
@@ -271,7 +272,8 @@ export function aggregatePlayerSkillProfile(analyzed: AnalyzedBp[]): {
 
 export async function buildPlayerSkillProfilePayload(osuId: number, limit = PLAYER_PROFILE_LIMIT): Promise<Record<string, unknown>> {
   const safeLimit = Math.max(1, Math.min(PLAYER_PROFILE_LIMIT, Math.floor(limit)));
-  const cacheKey = `${osuId}:${safeLimit}`;
+  const profilerIdentity = await getSkillProfilerIdentity();
+  const cacheKey = `${osuId}:${safeLimit}:${skillProfilerIdentityKey(profilerIdentity)}`;
   const cached = playerProfileCache.get(cacheKey);
   if (cached && Date.now() - cached.at < PLAYER_PROFILE_CACHE_TTL_MS) return cached.payload;
   const [user, scores] = await Promise.all([
@@ -291,6 +293,7 @@ export async function buildPlayerSkillProfilePayload(osuId: number, limit = PLAY
       const modLabel = mods.length ? mods.join('') : 'NM';
       const analysis = await requestSkillProfilerAnalysisCachedWithFetch(beatmapId, mods);
       if (analysis?.status !== 'OK' || !analysis?.axes) throw new Error(`ANALYSIS_${analysis?.status || 'INVALID'}`);
+      assertSkillProfilerIdentity(analysis, profilerIdentity);
       const quality = scoreAchievementQuality(score);
       const demandAxes = {} as Record<PlayerSkillAxis, number>;
       const demonstratedAxes = {} as Record<PlayerSkillAxis, number>;
@@ -354,12 +357,17 @@ export async function buildPlayerSkillProfilePayload(osuId: number, limit = PLAY
         .map(([mods, count]) => ({ mods, count })),
     },
     profile: {
+      profilerIdentity,
+      releaseLabel: skillProfilerReleaseLabel(profilerIdentity.mapDemandVersion),
       methodology: 'BP50 score-adjusted demand · reciprocal low-ACC×low-combo hard-demand penalty · FC excellence ≤4% · 0.95^(rank-1) · weighted P80/P50',
       primaryAxes: aggregate.primaryAxes,
       profileType: aggregate.profileType,
       axes: aggregate.axes,
     },
   };
+  if (skillProfilerIdentityKey(await getSkillProfilerIdentity(true)) !== skillProfilerIdentityKey(profilerIdentity)) {
+    throw new Error('SKILL_PROFILER_VERSION_CHANGED: 算法版本已切换，请重新执行指令');
+  }
   playerProfileCache.set(cacheKey, { at: Date.now(), payload });
   return payload;
 }
@@ -387,6 +395,10 @@ export async function renderPlayerSkillComparison(leftOsuId: number, rightOsuId:
     buildPlayerSkillProfilePayload(leftOsuId, limit),
     buildPlayerSkillProfilePayload(rightOsuId, limit),
   ]);
+  if (skillProfilerIdentityKey((left as any).profile.profilerIdentity)
+    !== skillProfilerIdentityKey((right as any).profile.profilerIdentity)) {
+    throw new Error('SKILL_PROFILER_VERSION_CHANGED: 算法版本已切换，请重新执行指令');
+  }
   const payload = { left, right, limit };
   const buffer = await renderPlayerSkillComparisonCard(payload);
   return {

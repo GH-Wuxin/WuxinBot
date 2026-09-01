@@ -1,6 +1,7 @@
 import { getRenderServer, renderPanel } from './renderServer.js';
 import { saveAndGetCqCode } from './render.js';
 import { getBeatmap, getBeatmapAttributes } from '../osu/api.js';
+import { skillProfilerReleaseLabel } from './skillProfiler.js';
 
 const AXIS_LABELS: Readonly<Record<string, string>> = {
   aim_control: 'Aim Control',
@@ -112,6 +113,7 @@ function firstWarning(analysis: any): string {
 export function buildSkillProfilerCardPayload(
   analysis: any,
   official: { beatmap?: any; starRating?: number | null } = {},
+  display: { sourceLabel?: string } = {},
 ): Record<string, unknown> {
   if (analysis?.status !== 'OK' || !analysis?.beatmap || !analysis?.axes) {
     throw new Error('SKILL_PROFILER_CARD_ANALYSIS_INVALID');
@@ -158,6 +160,8 @@ export function buildSkillProfilerCardPayload(
       hp: difficultyValue(difficulty, 'HPDrainRate', 'HP', 'hp'),
     },
     analysis: {
+      releaseLabel: skillProfilerReleaseLabel(analysis?.identity?.map_demand_version),
+      sourceLabel: String(display.sourceLabel || '').trim(),
       mods: mods.join(''),
       modList: mods,
       neutralMods: neutralMods.join('/'),
@@ -178,6 +182,7 @@ export function buildSkillProfilerCardPayload(
 
 export async function renderSkillProfilerCard(
   analysis: any,
+  display: { sourceLabel?: string } = {},
 ): Promise<{ buffer: Buffer; cqCode: string } | null> {
   if (!getRenderServer().hasClients()) return null;
   try {
@@ -202,7 +207,7 @@ export async function renderSkillProfilerCard(
     const payload = buildSkillProfilerCardPayload(analysis, {
       beatmap: officialBeatmap,
       starRating: officialStarRating,
-    });
+    }, display);
     const buffer = await renderPanel('panel_Skill', payload);
     return { buffer, cqCode: saveAndGetCqCode(buffer, 'skill') };
   } catch (error) {

@@ -15,7 +15,8 @@ import {
   weightedQuantile,
   type PlayerSkillAxis,
 } from './playerSkillProfile.js';
-import { requestSkillProfilerAnalysisCachedWithFetch } from './skillProfiler.js';
+import { requestSkillProfilerAnalysisCachedWithFetch, getSkillProfilerIdentity, skillProfilerIdentityKey,
+  skillProfilerReleaseLabel, assertSkillProfilerIdentity, type SkillProfilerIdentity } from './skillProfiler.js';
 
 const PAGE_SIZE = 50;
 const TARGET_COMPLETED_GROUPS = 25;
@@ -24,8 +25,8 @@ const MAX_RAW_SCORES = 500;
 const MAX_AGE_MS = 5 * 24 * 60 * 60_000;
 const CACHE_TTL_MS = 5 * 60_000;
 const ANALYSIS_CONCURRENCY = 3;
-const recentCache = new Map<number, { at: number; payload: Record<string, any> }>();
-const recentInflight = new Map<number, Promise<Record<string, any>>>();
+const recentCache = new Map<string, { at: number; payload: Record<string, any> }>();
+const recentInflight = new Map<string, Promise<Record<string, any>>>();
 
 export type RecentEvidence = 'SUFFICIENT' | 'LOWER_BOUND' | 'INSUFFICIENT';
 
@@ -191,7 +192,7 @@ export function aggregateRecentSkillProfile(groups: RecentAnalyzedGroup[], longT
   });
 }
 
-async function buildUncached(osuId: number): Promise<Record<string, any>> {
+async function buildUncached(osuId: number, profilerIdentity: SkillProfilerIdentity): Promise<Record<string, any>> {
   const now = Date.now();
   const [user, collected, longTerm] = await Promise.all([
     getUserById(osuId, 'osu'),
@@ -209,6 +210,7 @@ async function buildUncached(osuId: number): Promise<Record<string, any>> {
       const totalStars = Number(score?.modded_star_rating ?? (group.mods.length ? NaN : score?.beatmap?.difficulty_rating));
       const analysis = await requestSkillProfilerAnalysisCachedWithFetch(group.beatmapId, group.mods);
       if (analysis?.status !== 'OK' || !analysis?.axes) throw new Error(`ANALYSIS_${analysis?.status || 'INVALID'}`);
+      assertSkillProfilerIdentity(analysis, profilerIdentity);
       const demand = {} as Record<PlayerSkillAxis, number>;
       for (const axis of PLAYER_SKILL_AXES) demand[axis] = Number(analysis.axes?.[axis]?.stars);
       if (!validRecentDemand(totalStars, demand, score)) throw new Error('OUT_OF_DOMAIN');
@@ -238,6 +240,9 @@ async function buildUncached(osuId: number): Promise<Record<string, any>> {
   const validCompleted = valid.filter((item) => item.completed).length;
   if (validCompleted < MIN_COMPLETED_GROUPS) throw new Error(`RECENT_SKILL_INSUFFICIENT_AFTER_FILTER:${validCompleted}`);
   const longTermProfile = (longTerm as any).profile || {};
+  if (skillProfilerIdentityKey(longTermProfile.profilerIdentity) !== skillProfilerIdentityKey(profilerIdentity)) {
+    throw new Error('SKILL_PROFILER_VERSION_CHANGED: 算法版本已切换，请重新执行指令');
+  }
   const axes = aggregateRecentSkillProfile(valid, Array.isArray(longTermProfile.axes) ? longTermProfile.axes : []);
   const stats: any = user.statistics || {};
   return {
@@ -251,23 +256,29 @@ async function buildUncached(osuId: number): Promise<Record<string, any>> {
       completed: completedGroups, analyzed: valid.length, skipped: failures.length, failures,
       days: 5, targetCompleted: TARGET_COMPLETED_GROUPS,
     },
-    profile: { mode: 'recent', axes, referenceMethod: 'BP50', recentMethod: 'Recent 50 → backfill up to 5 days · deduped map+mods · weighted upper evidence' },
+    profile: { profilerIdentity, releaseLabel: skillProfilerReleaseLabel(profilerIdentity.mapDemandVersion),
+      mode: 'recent', axes, referenceMethod: 'BP50', recentMethod: 'Recent 50 → backfill up to 5 days · deduped map+mods · weighted upper evidence' },
   };
 }
 
 export async function buildPlayerRecentSkillProfilePayload(osuId: number): Promise<Record<string, any>> {
-  const cached = recentCache.get(osuId);
+  const profilerIdentity = await getSkillProfilerIdentity();
+  const cacheKey = `${osuId}:${skillProfilerIdentityKey(profilerIdentity)}`;
+  const cached = recentCache.get(cacheKey);
   if (cached && Date.now() - cached.at < CACHE_TTL_MS) return cached.payload;
-  const existing = recentInflight.get(osuId);
+  const existing = recentInflight.get(cacheKey);
   if (existing) return existing;
-  const pending = buildUncached(osuId);
-  recentInflight.set(osuId, pending);
+  const pending = buildUncached(osuId, profilerIdentity);
+  recentInflight.set(cacheKey, pending);
   try {
     const payload = await pending;
-    recentCache.set(osuId, { at: Date.now(), payload });
+    if (skillProfilerIdentityKey(await getSkillProfilerIdentity(true)) !== skillProfilerIdentityKey(profilerIdentity)) {
+      throw new Error('SKILL_PROFILER_VERSION_CHANGED: 算法版本已切换，请重新执行指令');
+    }
+    recentCache.set(cacheKey, { at: Date.now(), payload });
     return payload;
   } finally {
-    if (recentInflight.get(osuId) === pending) recentInflight.delete(osuId);
+    if (recentInflight.get(cacheKey) === pending) recentInflight.delete(cacheKey);
   }
 }
 
