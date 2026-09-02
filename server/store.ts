@@ -336,6 +336,13 @@ const initialDb = {
     deepseekApiBaseUrl: DEEPSEEK_BASE_URL,
     mimoApiKey: process.env.MIMO_API_KEY || '',
     mimoApiBaseUrl: process.env.MIMO_API_BASE_URL || MIMO_BASE_URL,
+    codexExecutable: process.env.CODEX_EXECUTABLE || 'codex',
+    codexModel: process.env.CODEX_MODEL || 'gpt-5.6-luna',
+    codexReasoningEffort: process.env.CODEX_REASONING_EFFORT || 'low',
+    codexTimeoutMs: Number(process.env.CODEX_TIMEOUT_MS || 90000),
+    codexFallbackEnabled: true,
+    codexFallbackProvider: 'deepseek',
+    codexFallbackModel: 'deepseek-v4-flash',
     model: process.env.LLM_MODEL || (
       looksLikeMimoEndpoint(process.env.LLM_API_BASE_URL) || process.env.LLM_PROVIDER === 'openai-compatible'
         ? 'mimo-v2.5'

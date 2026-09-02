@@ -22,7 +22,7 @@ flowchart LR
     OB --> RT["消息运行时"]
     RT --> ROUTE["确定性路由"]
     RT --> LOOP["有界 Agent 工具循环"]
-    LOOP <--> LLM["OpenAI-compatible LLM"]
+    LOOP <--> LLM["OpenAI-compatible API / Codex App Server"]
     RT --> CONTEXT["Context / Memory / Knowledge"]
     CONTEXT --> LOOP
     ROUTE --> TOOLS["Tool Runtime"]
@@ -67,7 +67,7 @@ LLM 负责解释和表达，玩家数据、成绩、星数与工具结果来自�
 
 - Node.js 22 或更高版本（当前验证基线为 Node.js 22；本地存在 portable Node 时优先使用它）
 - 一个 OneBot v11 实现，例如 [NapCatQQ](https://github.com/NapNeko/NapCatQQ)
-- DeepSeek 或其他 OpenAI-compatible LLM endpoint
+- DeepSeek / 其他 OpenAI-compatible endpoint，或已登录个人 ChatGPT 的 Codex CLI
 - 可选：osu! OAuth Client Credentials，用于 osu! 工作流
 
 ### 2. 安装与配置
@@ -78,11 +78,13 @@ cd WuxinBot
 npm ci
 ```
 
-复制 [`.env.example`](./.env.example) 为 `.env`，填写 LLM API key，并按所用供应商配置 provider、endpoint 与 model：
+复制 [`.env.example`](./.env.example) 为 `.env`，按所用供应商配置 provider、endpoint 与 model。传统 API 模式填写：
 
 ```env
 LLM_API_KEY=your_api_key
 ```
+
+也可以在管理界面的“模型与推理设置”中选择“个人 ChatGPT / Codex 额度”，完成官方 ChatGPT 登录后直接使用 Codex 配额；无需把登录令牌写入 WuxinBot。该模式会保留当前 API 模型作为自动降级通道。详见 [`docs/CODEX_CHATGPT_PROVIDER.md`](./docs/CODEX_CHATGPT_PROVIDER.md)。
 
 如需 osu! 功能，再填写 `OSU_CLIENT_ID` 与 `OSU_CLIENT_SECRET`。不要把 `.env` 或任何真实凭据提交到 Git。
 

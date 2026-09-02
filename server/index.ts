@@ -25,6 +25,14 @@ import { removeLazybotBinding, syncLazybotBinding } from './bots/bindingSync.js'
 import { sharedGroupBotConfigPath } from './bots/externalPaths.js';
 import { acquireInstanceLock } from './instanceLock.js';
 import { listRequestTraces, subscribeRequestTraces } from './requestTrace.js';
+import {
+  getCodexAccountStatus,
+  getCodexRateLimits,
+  listCodexModels,
+  logoutCodexAccount,
+  shutdownCodexAppServer,
+  startCodexChatGptLogin,
+} from './codexAppServer.js';
 
 const port = Number(process.env.PORT || 8787);
 let releaseInstanceLock = () => {};
@@ -61,6 +69,7 @@ process.on('uncaughtException', (error) => {
   } catch (shutdownError) {
     console.error('[crash] shutdownOneBot failed:', String(shutdownError?.message || shutdownError));
   }
+  shutdownCodexAppServer();
   releaseServerInstanceLock();
   process.exit(1);
 });
@@ -74,6 +83,7 @@ process.on('unhandledRejection', (reason) => {
   } catch (shutdownError) {
     console.error('[crash] shutdownOneBot failed:', String(shutdownError?.message || shutdownError));
   }
+  shutdownCodexAppServer();
   releaseServerInstanceLock();
   process.exit(1);
 });
@@ -85,6 +95,7 @@ function gracefulShutdown(signal) {
   } catch (error) {
     console.error('[shutdown] shutdownOneBot failed:', String(error?.message || error));
   }
+  shutdownCodexAppServer();
   releaseServerInstanceLock();
   // Best effort only: ws.close() is requested but a 200ms grace period cannot
   // guarantee the close handshake completes before process exit.
@@ -171,6 +182,44 @@ function ok(data = {}) {
 
 app.get('/api/state', (_req, res) => {
   res.json(ok({ db: publicDb(), oneBot: getOneBotStatus() }));
+});
+
+app.get('/api/codex/status', async (_req, res) => {
+  const status = await getCodexAccountStatus(readDb().settings);
+  res.json(ok({ status }));
+});
+
+app.get('/api/codex/models', async (_req, res) => {
+  try {
+    res.json(ok({ models: await listCodexModels(readDb().settings) }));
+  } catch (error) {
+    res.status(502).json({ ok: false, error: `Codex 模型列表读取失败：${String(error?.message || error).slice(0, 300)}` });
+  }
+});
+
+app.get('/api/codex/rate-limits', async (_req, res) => {
+  try {
+    res.json(ok({ limits: await getCodexRateLimits(readDb().settings) }));
+  } catch (error) {
+    res.status(502).json({ ok: false, error: `Codex 额度读取失败：${String(error?.message || error).slice(0, 300)}` });
+  }
+});
+
+app.post('/api/codex/login', async (_req, res) => {
+  try {
+    const login = await startCodexChatGptLogin(readDb().settings);
+    res.json(ok({ login }));
+  } catch (error) {
+    res.status(502).json({ ok: false, error: `ChatGPT 登录启动失败：${String(error?.message || error).slice(0, 300)}` });
+  }
+});
+
+app.post('/api/codex/logout', async (_req, res) => {
+  try {
+    res.json(ok({ status: await logoutCodexAccount(readDb().settings) }));
+  } catch (error) {
+    res.status(502).json({ ok: false, error: `ChatGPT 退出登录失败：${String(error?.message || error).slice(0, 300)}` });
+  }
 });
 
 app.get('/api/request-traces', (req, res) => {
