@@ -4,6 +4,7 @@ import { fileURLToPath } from 'node:url';
 import { activateModelProfile, DEEPSEEK_BASE_URL, looksLikeMimoEndpoint, MIMO_BASE_URL, recoverProviderProfiles } from './modelConfig.js';
 import { DEFAULT_BOTS } from './bots/registry.js';
 import { DEFAULT_KB_SETTINGS } from './bot/knowledgeTypes.js';
+import { cacheUsageSummary, usageEventHasCacheDetails } from './usage.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const rootDir = path.resolve(__dirname, '..');
@@ -440,6 +441,9 @@ const initialDb = {
     cacheWriteTokens: 0,
     completionTokens: 0,
     reasoningTokens: 0,
+    cacheMeasuredPromptTokens: 0,
+    cacheMeasuredRequests: 0,
+    cacheMetricsStartedAt: '',
     requests: 0,
     replies: 0,
     errors: 0
@@ -529,10 +533,24 @@ export function normalizeDb(db) {
   db.unmetCapabilities ||= [];
   db.adminActions ||= [];
   db.usageEvents ||= [];
+  const storedUsage = db.usage || {};
+  const needsCacheMetricsBackfill = !Object.prototype.hasOwnProperty.call(storedUsage, 'cacheMeasuredPromptTokens');
   db.usage = {
     ...initialDb.usage,
-    ...(db.usage || {})
+    ...storedUsage
   };
+  if (needsCacheMetricsBackfill) {
+    const measured = cacheUsageSummary(db.usageEvents || []);
+    db.usage.cacheMeasuredPromptTokens = measured.promptTokens;
+    db.usage.cacheMeasuredRequests = measured.requests;
+    db.usage.cacheMetricsStartedAt = measured.startedAt;
+    if (!Object.prototype.hasOwnProperty.call(storedUsage, 'cachedTokens')) {
+      db.usage.cachedTokens = measured.cachedTokens;
+    }
+    if (!Object.prototype.hasOwnProperty.call(storedUsage, 'cacheWriteTokens')) {
+      db.usage.cacheWriteTokens = measured.cacheWriteTokens;
+    }
+  }
 
   return applyRetention(db);
 }
@@ -833,6 +851,8 @@ export function publicDb(db = readDb()) {
       cacheWriteTokens: 0,
       completionTokens: 0,
       reasoningTokens: 0,
+      cacheMeasuredPromptTokens: 0,
+      cacheMeasuredRequests: 0,
       requests: 0
     };
   });
@@ -847,12 +867,14 @@ export function publicDb(db = readDb()) {
       cacheWriteTokens: 0,
       completionTokens: 0,
       reasoningTokens: 0,
+      cacheMeasuredPromptTokens: 0,
+      cacheMeasuredRequests: 0,
       requests: 0
     };
   });
   const hourlyByStart = new Map(hourlyUsage.map((bucket) => [bucket.start, bucket]));
   const dailyByStart = new Map(dailyUsage.map((bucket) => [bucket.start, bucket]));
-  const todayUsage = { totalTokens: 0, promptTokens: 0, cachedTokens: 0, cacheWriteTokens: 0, completionTokens: 0, reasoningTokens: 0, requests: 0 };
+  const todayUsage = { totalTokens: 0, promptTokens: 0, cachedTokens: 0, cacheWriteTokens: 0, completionTokens: 0, reasoningTokens: 0, cacheMeasuredPromptTokens: 0, cacheMeasuredRequests: 0, requests: 0 };
   for (const event of db.usageEvents || []) {
     const time = new Date(event.createdAt || 0);
     const timestamp = time.getTime();
@@ -863,7 +885,8 @@ export function publicDb(db = readDb()) {
       cachedTokens: Number(event.cachedTokens || 0),
       cacheWriteTokens: Number(event.cacheWriteTokens || 0),
       completionTokens: Number(event.completionTokens || 0),
-      reasoningTokens: Number(event.reasoningTokens || 0)
+      reasoningTokens: Number(event.reasoningTokens || 0),
+      cacheMetricsAvailable: usageEventHasCacheDetails(event)
     };
     const add = (bucket) => {
       if (!bucket) return;
@@ -873,6 +896,10 @@ export function publicDb(db = readDb()) {
       bucket.cacheWriteTokens += values.cacheWriteTokens;
       bucket.completionTokens += values.completionTokens;
       bucket.reasoningTokens += values.reasoningTokens;
+      if (values.cacheMetricsAvailable) {
+        bucket.cacheMeasuredPromptTokens += values.promptTokens;
+        bucket.cacheMeasuredRequests += 1;
+      }
       bucket.requests += 1;
     };
     if (timestamp >= localDayStart) add(todayUsage);
@@ -926,7 +953,14 @@ export function publicDb(db = readDb()) {
     usageStats: {
       today: todayUsage,
       hourly24: hourlyUsage,
-      daily7: dailyUsage
+      daily7: dailyUsage,
+      cacheMeasuredAll: {
+        promptTokens: Number(db.usage?.cacheMeasuredPromptTokens || 0),
+        cachedTokens: Number(db.usage?.cachedTokens || 0),
+        cacheWriteTokens: Number(db.usage?.cacheWriteTokens || 0),
+        requests: Number(db.usage?.cacheMeasuredRequests || 0),
+        startedAt: String(db.usage?.cacheMetricsStartedAt || '')
+      }
     },
     stateStats: {
       totalMessages: (db.messages || []).length,

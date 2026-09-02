@@ -102,11 +102,15 @@ export function buildCodexAdapterInput(messages: any[] = [], tools: any[] = [], 
   const imageInputs: any[] = [];
   const conversation = messages.map((message) => messageForAdapter(message, imageInputs));
   const availableTools = tools.map(normalizeToolDefinition).filter((tool) => tool.name);
+  const instructionMessages: any[] = [];
+  let conversationStart = 0;
+  while (conversationStart < conversation.length && ['system', 'developer'].includes(conversation[conversationStart]?.role)) {
+    instructionMessages.push(conversation[conversationStart]);
+    conversationStart += 1;
+  }
+  const conversationMessages = conversation.slice(conversationStart);
   const prompt = [
     'Act as a Chat Completions-compatible model for this single request.',
-    '',
-    'Conversation messages (JSON, in order):',
-    safeJson(conversation),
     '',
     'External tools that WuxinBot itself can execute (JSON):',
     safeJson(availableTools),
@@ -117,7 +121,16 @@ export function buildCodexAdapterInput(messages: any[] = [], tools: any[] = [], 
     '- Each tool call name must exactly match an available tool. arguments must be a JSON-encoded object string.',
     '- Never fabricate a tool result. After WuxinBot executes a requested tool, a later request will include its result in the conversation.',
     '- Preserve the language, persona, formatting, and safety requirements in the supplied messages.',
-    ...(responseFormat ? [`- The content string itself must satisfy this requested response format: ${safeJson(responseFormat)}`] : []),
+    '',
+    'Leading system/developer instructions (JSON, in order):',
+    safeJson(instructionMessages),
+    '',
+    'Conversation messages (JSON, in order):',
+    safeJson(conversationMessages),
+    ...(responseFormat ? [
+      '',
+      `Requested response format for the content string (JSON): ${safeJson(responseFormat)}`,
+    ] : []),
   ].join('\n');
   return [{ type: 'text', text: prompt, text_elements: [] }, ...imageInputs];
 }
@@ -169,6 +182,7 @@ export function mapCodexTokenUsage(breakdown: any = {}) {
     // not consume the OpenAI-compatible prompt_tokens_details shape.
     cache_read_input_tokens: cachedTokens,
     cache_write_input_tokens: cacheWriteTokens,
+    cache_metrics_available: true,
   };
 }
 

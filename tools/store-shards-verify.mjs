@@ -28,7 +28,10 @@ try {
     messages: [{ id: 'm1', role: 'user', content: 'hello', createdAt: '2026-01-01T00:00:00.000Z' }],
     decisions: [{ id: 'd1', shouldReply: true, reason: 'fixture', createdAt: '2026-01-01T00:00:00.000Z' }],
     commandLogs: [{ id: 'c1', command: '/w ping', createdAt: '2026-01-01T00:00:00.000Z' }],
-    usageEvents: [{ id: 'e1', totalTokens: 5, promptTokens: 3, completionTokens: 2, createdAt: '2026-01-01T00:00:00.000Z' }],
+    usageEvents: [
+      { id: 'e1', totalTokens: 5, promptTokens: 3, completionTokens: 2, createdAt: '2026-01-01T00:00:00.000Z' },
+      { id: 'e2', totalTokens: 5, promptTokens: 4, cachedTokens: 2, cacheWriteTokens: 0, completionTokens: 1, createdAt: '2026-01-02T00:00:00.000Z' },
+    ],
     osuBindings: { u1: { id: 123, username: 'Fixture' } },
     skillProfilerRuns: [{ id: 's1', beatmapId: 456 }],
     futureField: { preserved: true }
@@ -68,6 +71,8 @@ try {
   const publicA = store.publicDb();
   const publicB = store.publicDb();
   assert(publicA === publicB, 'public-state:cached');
+  assert(publicA.usageStats?.cacheMeasuredAll?.promptTokens === 4, 'public-state:cache-denominator-excludes-legacy-input');
+  assert(publicA.usageStats?.cacheMeasuredAll?.cachedTokens === 2, 'public-state:cache-summary-preserves-hits');
   store.updateDb((db) => { db.usage.replies = Number(db.usage.replies || 0) + 1; });
   const publicC = store.publicDb();
   assert(publicC !== publicB && publicC.usage.replies === 1, 'public-state:invalidated-after-write');

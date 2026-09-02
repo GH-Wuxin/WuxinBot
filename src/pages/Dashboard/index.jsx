@@ -13,6 +13,8 @@ const modelLabels = {
 
 const formatNumber = (value) => Number(value || 0).toLocaleString('zh-CN');
 const compactNumber = (value) => new Intl.NumberFormat('zh-CN', { notation: 'compact', maximumFractionDigits: 1 }).format(Number(value || 0));
+const formatPercent = (value) => value == null ? '—' : `${Number(value).toLocaleString('zh-CN', { maximumFractionDigits: value < 0.1 ? 2 : 1 })}%`;
+const formatDateTime = (value) => value ? new Date(value).toLocaleString('zh-CN', { hour12: false }) : '';
 
 function healthTone(level) {
   if (level === 'ok') return 'success';
@@ -33,17 +35,29 @@ function UsageChart({ usageStats, usage }) {
     cacheWriteTokens: total.cacheWriteTokens + Number(item.cacheWriteTokens || 0),
     completionTokens: total.completionTokens + Number(item.completionTokens || 0),
     reasoningTokens: total.reasoningTokens + Number(item.reasoningTokens || 0),
+    cacheMeasuredPromptTokens: total.cacheMeasuredPromptTokens + Number(item.cacheMeasuredPromptTokens || 0),
+    cacheMeasuredRequests: total.cacheMeasuredRequests + Number(item.cacheMeasuredRequests || 0),
     requests: total.requests + Number(item.requests || 0),
-  }), { totalTokens: 0, promptTokens: 0, cachedTokens: 0, cacheWriteTokens: 0, completionTokens: 0, reasoningTokens: 0, requests: 0 });
+  }), { totalTokens: 0, promptTokens: 0, cachedTokens: 0, cacheWriteTokens: 0, completionTokens: 0, reasoningTokens: 0, cacheMeasuredPromptTokens: 0, cacheMeasuredRequests: 0, requests: 0 });
+  const cacheBreakdown = period === 'all' ? (usageStats?.cacheMeasuredAll || {}) : breakdown;
+  const cacheMeasuredPromptTokens = Number(cacheBreakdown?.promptTokens ?? cacheBreakdown?.cacheMeasuredPromptTokens ?? 0);
+  const cachedTokens = Number(cacheBreakdown?.cachedTokens || 0);
+  const cacheWriteTokens = Number(cacheBreakdown?.cacheWriteTokens || 0);
+  const cacheRate = cacheMeasuredPromptTokens > 0 ? cachedTokens / cacheMeasuredPromptTokens * 100 : null;
   const totals = [
     { label: period === 'all' ? '累计总量' : period === 'daily7' ? '7 天总量' : '24 小时总量', value: breakdown?.totalTokens },
     { label: '输入', value: breakdown?.promptTokens },
-    { label: '缓存命中', value: breakdown?.cachedTokens },
-    { label: '缓存写入', value: breakdown?.cacheWriteTokens },
+    { label: '缓存命中', value: cachedTokens },
+    { label: '缓存命中率', value: formatPercent(cacheRate), display: true },
+    { label: '缓存写入', value: cacheWriteTokens },
     { label: '输出', value: breakdown?.completionTokens },
     { label: 'Reasoning', value: breakdown?.reasoningTokens },
   ];
-  return <Card className="dashboard-usage"><SectionHeader eyebrow="Activity" title="Token 用量" description={`${periodLabel} · ${formatNumber(breakdown?.totalTokens)} Token · ${formatNumber(breakdown?.requests)} 次请求`} actions={<SegmentedControl value={period} onChange={setPeriod} label="Token 统计周期" options={[{ value: 'all', label: '总览' }, { value: 'daily7', label: '7 天' }, { value: 'hourly24', label: '24 小时' }]} />} /><div className="dashboard-usage__totals" aria-label={`${periodLabel} Token 明细`}>{totals.map((item) => <div key={item.label}><span>{item.label}</span><strong>{formatNumber(item.value)}</strong></div>)}</div><p className="dashboard-usage__note">缓存命中、缓存写入和 reasoning 从支持明细统计的版本开始累计。</p>{period === 'all' ? <div className="dashboard-usage__empty">总览显示历史累计；切换到 7 天或 24 小时可查看最近消耗分布。</div> : data.length === 0 ? <div className="dashboard-usage__empty">当前周期还没有用量记录。</div> : <div className={`dashboard-usage__chart dashboard-usage__chart--${period}`} role="img" aria-label={`${periodLabel} Token 用量柱状图`}>{data.map((item, index) => {
+  const measuredAt = period === 'all' ? formatDateTime(cacheBreakdown?.startedAt) : '';
+  const cacheNote = cacheMeasuredPromptTokens > 0
+    ? `缓存命中率按可观测输入计算：${formatNumber(cachedTokens)} / ${formatNumber(cacheMeasuredPromptTokens)}${measuredAt ? `；明细始于 ${measuredAt}` : ''}。`
+    : '当前周期还没有可用的缓存明细。';
+  return <Card className="dashboard-usage"><SectionHeader eyebrow="Activity" title="Token 用量" description={`${periodLabel} · ${formatNumber(breakdown?.totalTokens)} Token · ${formatNumber(breakdown?.requests)} 次请求`} actions={<SegmentedControl value={period} onChange={setPeriod} label="Token 统计周期" options={[{ value: 'all', label: '总览' }, { value: 'daily7', label: '7 天' }, { value: 'hourly24', label: '24 小时' }]} />} /><div className="dashboard-usage__totals" aria-label={`${periodLabel} Token 明细`}>{totals.map((item) => <div key={item.label}><span>{item.label}</span><strong>{item.display ? item.value : formatNumber(item.value)}</strong></div>)}</div><p className="dashboard-usage__note">{cacheNote} Reasoning 同样从支持明细统计的版本开始累计。</p>{period === 'all' ? <div className="dashboard-usage__empty">总览显示历史累计；缓存率只使用具备缓存明细的请求，切换到 7 天或 24 小时可查看最近消耗分布。</div> : data.length === 0 ? <div className="dashboard-usage__empty">当前周期还没有用量记录。</div> : <div className={`dashboard-usage__chart dashboard-usage__chart--${period}`} role="img" aria-label={`${periodLabel} Token 用量柱状图`}>{data.map((item, index) => {
     const height = item.totalTokens > 0 ? Math.max(5, Math.round(Number(item.totalTokens) / maxTokens * 100)) : 0;
     const showLabel = period === 'daily7' || index % 4 === 3 || index === data.length - 1;
     const title = `${item.label} · ${formatNumber(item.totalTokens)} Token · 输入 ${formatNumber(item.promptTokens)} · 缓存命中 ${formatNumber(item.cachedTokens)} · 缓存写入 ${formatNumber(item.cacheWriteTokens)} · 输出 ${formatNumber(item.completionTokens)} · reasoning ${formatNumber(item.reasoningTokens)} · ${item.requests} 次`;

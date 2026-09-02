@@ -282,6 +282,7 @@ export interface UsageEvent {
   promptTokens: number;
   cachedTokens: number;
   cacheWriteTokens: number;
+  cacheMetricsAvailable?: boolean;
   completionTokens: number;
   reasoningTokens: number;
   createdAt: string;
@@ -328,6 +329,9 @@ export interface Db {
     cacheWriteTokens: number;
     completionTokens: number;
     reasoningTokens: number;
+    cacheMeasuredPromptTokens: number;
+    cacheMeasuredRequests: number;
+    cacheMetricsStartedAt: string;
     requests: number;
     replies: number;
     errors: number;
