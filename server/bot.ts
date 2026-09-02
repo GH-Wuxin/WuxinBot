@@ -64,7 +64,8 @@ import {
   sendForwardText,
   splitReplySegments,
   isIdentityQuestion,
-  neutralIdentityReply
+  neutralIdentityReply,
+  normalReplyRewriteSkipReason
 } from './bot/reply.js';
 import { buildRewriteEntry, recordRewriteTelemetry } from './bot/rewriteTelemetry.js';
 import { recordMemoryObservation, maybeUpdateMemoryProfile, maybeRecordImageMemorySummary, updateMemoryProfile, commitMemoryProfileResult, maybeSweepDueMemoryProfiles } from './bot/memory.js';
@@ -949,6 +950,7 @@ async function processIncomingInner(event, sendMessage = undefined, queuedDecisi
     let toolImages = [];
     let toolDirectContent = '';
     let requiredToolLed = false;
+    let evidenceProtectedTurn = false;
     if (useTools) {
       const registry = registryForTurn;
       const tools = toolsForTurn;
@@ -957,14 +959,16 @@ async function processIncomingInner(event, sendMessage = undefined, queuedDecisi
       // tool before the LLM sees the context. This prevents context poisoning
       // where repeated queries cause the model to skip tool calls.
       let requiredTool: { toolName: string; args: Record<string, unknown> } | undefined;
-      if (osuDataIntent && !modelFirstRuntime) {
+      let evidenceRequirement: { toolName: string; args: Record<string, unknown> } | undefined;
+      if (osuDataIntent) {
         const internalBotsEnabled = enabledBots(registry).some((b) => b.channel === 'internal');
         const opValid = validateOperation({
           type: 'query_osu',
           params: osuDataIntent.args,
         });
         if (internalBotsEnabled && opValid.ok) {
-          requiredTool = osuDataIntent;
+          if (modelFirstRuntime) evidenceRequirement = osuDataIntent;
+          else requiredTool = osuDataIntent;
         } else {
           const reason = !internalBotsEnabled
             ? '内部 osu! 工具未启用'
@@ -1049,6 +1053,7 @@ async function processIncomingInner(event, sendMessage = undefined, queuedDecisi
         model: responseOptions.overrideModel,
         label: 'Bot Harness',
         requiredTool,
+        evidenceRequirement,
         // 自然聊天不回显工具原文：数据只供 LLM 参考并自然融入回答。
         // 显式指令（/w osu analyze、!p 等）走独立通道，不受此开关影响。
         deliverDirectContent: requiredTool?.args.capability === 'recommend',
@@ -1066,7 +1071,8 @@ async function processIncomingInner(event, sendMessage = undefined, queuedDecisi
         ...loopOptions,
         toolCallsExecutedBeforeLoop: turnToolCallsMade,
       });
-      requiredToolLed = Boolean(requiredTool);
+      evidenceProtectedTurn = Boolean(evidenceRequirement);
+      requiredToolLed = Boolean(requiredTool || toolResult.evidenceFallbackExecuted);
       turnToolCallsMade = Number(toolResult.toolCallsMadeThisTurn ?? toolResult.toolCallsMade) || 0;
 
       // Explicit search is a hard user requirement. Normally the first LLM
@@ -1148,12 +1154,12 @@ async function processIncomingInner(event, sendMessage = undefined, queuedDecisi
     const imageCqCodes = toolImages.map(toolImageToCq).filter(Boolean);
     const hasDirectToolDelivery = Boolean(toolDirectContent || imageCqCodes.length > 0);
     const rewriteEligible = isWeirdReply(replyText);
-    let rewriteSkipReason = null;
-    if (rewriteEligible) {
-      rewriteSkipReason = hasDirectToolDelivery
-        ? 'direct_tool_delivery'
-        : (responseOptions.longForm ? 'long_form' : null);
-    }
+    const rewriteSkipReason = normalReplyRewriteSkipReason({
+      rewriteEligible,
+      toolEvidenceProtected: requiredToolLed || evidenceProtectedTurn,
+      hasDirectToolDelivery,
+      longForm: Boolean(responseOptions.longForm),
+    });
     if (rewriteEligible && rewriteSkipReason) {
       void recordRewriteTelemetry(liveDb, buildRewriteEntry({
         event,
@@ -1172,7 +1178,7 @@ async function processIncomingInner(event, sendMessage = undefined, queuedDecisi
     }
     if (hasDirectToolDelivery) {
       replyText = compactDirectToolLead(replyText, toolDirectContent, imageCqCodes.length > 0);
-    } else if (!responseOptions.longForm && rewriteEligible) {
+    } else if (!responseOptions.longForm && rewriteEligible && !rewriteSkipReason) {
       if (isIdentityQuestion(event.text)) {
         void recordRewriteTelemetry(liveDb, buildRewriteEntry({
           event,

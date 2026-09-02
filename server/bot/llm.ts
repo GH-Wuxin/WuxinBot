@@ -38,6 +38,23 @@ export interface LlmCompletionMeta {
   latencyMs: number;
 }
 
+/** Pure policy helper so the empty-response retry contract is regression-testable. */
+export function buildEmptyReplyRetryParams(
+  params: Record<string, any>,
+  options: { retainToolsOnEmpty?: boolean; removeProviderSearch?: boolean } = {},
+): Record<string, any> {
+  const retryParams = { ...params };
+  if (options.removeProviderSearch) {
+    delete retryParams.enable_search;
+    delete retryParams.search_mode;
+  }
+  if (!options.retainToolsOnEmpty && retryParams.tools) {
+    delete retryParams.tools;
+    delete retryParams.tool_choice;
+  }
+  return retryParams;
+}
+
 /**
  * Normalize completion metadata from a raw chat-completion response. Safe for
  * missing fields (non-DeepSeek providers, mocks, partial payloads): numbers
@@ -714,16 +731,10 @@ export async function completeChat(db, options = {}) {
       };
     }
     if (first.text || (first.raw?.choices?.[0]?.message?.tool_calls?.length > 0)) return first;
-    const retryParams = { ...params };
-    if (searchMode && supportsProviderSearch(provider)) {
-      delete retryParams.enable_search;
-      delete retryParams.search_mode;
-    }
-    // Don't retry with tools for empty responses — the model may not support them
-    if (retryParams.tools) {
-      delete retryParams.tools;
-      delete retryParams.tool_choice;
-    }
+    const retryParams = buildEmptyReplyRetryParams(params, {
+      retainToolsOnEmpty: options.retainToolsOnEmpty === true,
+      removeProviderSearch: Boolean(searchMode && supportsProviderSearch(provider)),
+    });
     const second = await runCompletion(retryParams);
     return {
       text: second.text,

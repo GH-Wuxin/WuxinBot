@@ -9,6 +9,19 @@ import { emptyTurnState, reasoningEnabledFor, reasoningInput } from './reasoning
 import { looksLikeToolCallMarkup, stripToolCallMarkup } from '../bots/guard.js';
 import { traceEvent } from '../requestTrace.js';
 
+export function normalReplyRewriteSkipReason(options: {
+  rewriteEligible: boolean;
+  toolEvidenceProtected: boolean;
+  hasDirectToolDelivery: boolean;
+  longForm: boolean;
+}): string | null {
+  if (!options.rewriteEligible) return null;
+  if (options.toolEvidenceProtected) return 'tool_evidence_invariant';
+  if (options.hasDirectToolDelivery) return 'direct_tool_delivery';
+  if (options.longForm) return 'long_form';
+  return null;
+}
+
 export function sanitizeReply(text, settings) {
   let cleaned = String(text || '').trim();
   const names = [
