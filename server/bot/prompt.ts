@@ -45,15 +45,11 @@ export function describeModel(model) {
 export function modelSupportsVision(db) {
   const mode = String(db.settings.visionMode || 'auto').toLowerCase();
   const provider = llmProvider(db);
-  const apiBase = String(db.settings.apiBaseUrl || '').toLowerCase();
   if (mode === 'off') return false;
-  if (provider === 'deepseek' || apiBase.includes('api.deepseek.com')) {
-    return isDeepSeekVisionModel(db.settings.model);
-  }
   if (mode === 'on') return true;
+  if (provider === 'deepseek') return isDeepSeekVisionModel(db.settings.model);
   const probe = [
     db.settings.llmProvider,
-    db.settings.apiBaseUrl,
     db.settings.model,
     db.settings.customModel
   ].filter(Boolean).join(' ').toLowerCase();

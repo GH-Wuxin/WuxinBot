@@ -43,12 +43,29 @@ const responseTrace = extractProviderResponseTrace({
     reasoning_content: 'real provider reasoning',
     tool_calls: [{ id: 'tc1', function: { name: 'demo', arguments: JSON.stringify({ apiKey: 'not-for-console' }) } }],
   } }],
-  usage: { total_tokens: 9, prompt_tokens: 4, completion_tokens: 5, completion_tokens_details: { reasoning_tokens: 2 } },
+  usage: {
+    total_tokens: 9,
+    prompt_tokens: 4,
+    completion_tokens: 5,
+    prompt_tokens_details: { cached_tokens: 3, cache_write_tokens: 1 },
+    completion_tokens_details: { reasoning_tokens: 2 },
+  },
 });
 assert.equal(responseTrace.reasoning, 'real provider reasoning');
 assert.equal(responseTrace.reasoningExposed, true);
+assert.equal(responseTrace.usage.cachedTokens, 3);
+assert.equal(responseTrace.usage.cacheWriteTokens, 1);
 assert.equal(JSON.stringify(responseTrace).includes('not-for-console'), false, 'tool arguments must be recursively redacted');
 assert.equal(extractProviderResponseTrace({ choices: [{ message: { content: 'answer' } }] }).reasoningExposed, false);
+
+const usageTraceId = startRequestTrace({ ...input, messageId: 'usage-depth' });
+withRequestTrace(usageTraceId, () => {
+  traceEvent('MODEL', 'model_call_completed', { status: 'ok', response: responseTrace });
+  finishRequestTrace('completed');
+});
+const listedUsage = listRequestTraces().find((trace) => trace.messageId === 'usage-depth')?.events[0]?.data?.response?.usage;
+assert.equal(listedUsage.totalTokens, 9, 'nested usage must remain visible after trace redaction');
+assert.equal(listedUsage.cachedTokens, 3, 'nested cache usage must remain visible after trace redaction');
 
 async function* fakeCompletionStream() {
   yield { id: 'stream-1', model: 'deepseek-v4-flash', choices: [{ delta: { role: 'assistant', reasoning_content: '先分析' }, finish_reason: null }] };

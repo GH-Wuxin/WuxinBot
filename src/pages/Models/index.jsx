@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { BrainCircuit, Eye, Globe2, Save, Settings2, Sparkles } from 'lucide-react';
+import { BrainCircuit, Eye, Globe2, LogIn, LogOut, RefreshCw, Save, Settings2, Sparkles } from 'lucide-react';
 import {
   Button,
   Card,
@@ -18,6 +18,14 @@ import { api } from '../../lib/api.js';
 const providerOptions = [
   { value: 'deepseek', label: 'DeepSeek（默认）' },
   { value: 'openai-compatible', label: 'OpenAI 兼容接口' },
+  { value: 'codex-app-server', label: '个人 ChatGPT / Codex 额度' },
+];
+
+const defaultCodexModelOptions = [
+  { value: 'gpt-5.6-luna', label: 'GPT-5.6 Luna（快、省额度）' },
+  { value: 'gpt-5.6-terra', label: 'GPT-5.6 Terra（均衡）' },
+  { value: 'gpt-5.6-sol', label: 'GPT-5.6 Sol（最强）' },
+  { value: 'gpt-5.5', label: 'GPT-5.5' },
 ];
 
 const baseModelOptions = [
@@ -36,6 +44,11 @@ export function ModelsPage({ db, saveSettings }) {
   const [dirty, setDirty] = useState(false);
   const [testingLocal, setTestingLocal] = useState(false);
   const [localSearchStatus, setLocalSearchStatus] = useState(null);
+  const [codexStatus, setCodexStatus] = useState(null);
+  const [codexModels, setCodexModels] = useState([]);
+  const [codexLimits, setCodexLimits] = useState(null);
+  const [codexBusy, setCodexBusy] = useState(false);
+  const [codexMessage, setCodexMessage] = useState('');
 
   useEffect(() => {
     if (!dirty) setDraft(db.settings);
@@ -51,7 +64,14 @@ export function ModelsPage({ db, saveSettings }) {
   const isMimoModel = (value) => /^mimo-/i.test(String(value || ''));
   const withProviderDefaults = (patch) => {
     const next = { ...draft, ...patch };
-    if (patch.model !== undefined && isMimoModel(next.model)) {
+    if (patch.llmProvider === 'codex-app-server') {
+      if (draft.llmProvider !== 'codex-app-server') {
+        next.codexFallbackProvider = draft.llmProvider || 'deepseek';
+        next.codexFallbackModel = draft.model || 'deepseek-v4-flash';
+      }
+      next.codexModel ||= 'gpt-5.6-luna';
+      next.codexReasoningEffort ||= 'low';
+    } else if (patch.model !== undefined && isMimoModel(next.model)) {
       next.llmProvider = 'openai-compatible';
       if (!looksLikeMimoEndpoint(next.apiBaseUrl)) next.apiBaseUrl = 'https://token-plan-cn.xiaomimimo.com/v1';
     } else if (patch.model !== undefined && isDeepSeekModel(next.model)) {
@@ -68,6 +88,64 @@ export function ModelsPage({ db, saveSettings }) {
       if (isDeepSeekModel(next.model)) next.model = 'mimo-v2.5';
     }
     return next;
+  };
+
+  const refreshCodex = async () => {
+    setCodexBusy(true);
+    setCodexMessage('');
+    try {
+      const statusResult = await api('/api/codex/status', { timeoutMs: 20000 });
+      setCodexStatus(statusResult.status);
+      const modelResult = await api('/api/codex/models', { timeoutMs: 25000 });
+      setCodexModels(modelResult.models || []);
+      if (statusResult.status?.authenticated) {
+        const limitResult = await api('/api/codex/rate-limits', { timeoutMs: 20000 });
+        setCodexLimits(limitResult.limits || null);
+      } else {
+        setCodexLimits(null);
+      }
+    } catch (cause) {
+      setCodexMessage(cause.message || 'Codex 状态读取失败');
+    } finally {
+      setCodexBusy(false);
+    }
+  };
+
+  useEffect(() => {
+    if (draft.llmProvider === 'codex-app-server' && !codexStatus && !codexBusy) void refreshCodex();
+  }, [draft.llmProvider]);
+
+  const loginCodex = async () => {
+    setCodexBusy(true);
+    setCodexMessage('');
+    const loginWindow = window.open('about:blank', '_blank');
+    try {
+      const result = await api('/api/codex/login', { method: 'POST', timeoutMs: 35000 });
+      const authUrl = result.login?.authUrl || result.login?.verificationUrl;
+      if (!authUrl) throw new Error('服务端没有返回登录地址');
+      if (loginWindow) loginWindow.location.href = authUrl;
+      else window.open(authUrl, '_blank', 'noopener,noreferrer');
+      setCodexMessage('登录页已打开；完成授权后点击“刷新状态”。');
+    } catch (cause) {
+      loginWindow?.close();
+      setCodexMessage(cause.message || '登录启动失败');
+    } finally {
+      setCodexBusy(false);
+    }
+  };
+
+  const logoutCodex = async () => {
+    setCodexBusy(true);
+    try {
+      const result = await api('/api/codex/logout', { method: 'POST', timeoutMs: 20000 });
+      setCodexStatus(result.status);
+      setCodexLimits(null);
+      setCodexMessage('已退出 Codex 使用的 ChatGPT 账号。');
+    } catch (cause) {
+      setCodexMessage(cause.message || '退出失败');
+    } finally {
+      setCodexBusy(false);
+    }
   };
 
   const testLocalSearch = async () => {
@@ -95,8 +173,42 @@ export function ModelsPage({ db, saveSettings }) {
     ? baseModelOptions
     : [...baseModelOptions, { value: currentModel, label: `当前自定义：${currentModel}` }];
 
+  const codexModelOptions = (codexModels.length ? codexModels.map((model) => ({
+    value: model.model || model.id,
+    label: `${model.displayName || model.model || model.id}${model.description ? ` — ${model.description}` : ''}`,
+  })) : [...defaultCodexModelOptions]);
+  const selectedCodexModel = draft.codexModel || 'gpt-5.6-luna';
+  if (!codexModelOptions.some((option) => option.value === selectedCodexModel)) {
+    codexModelOptions.push({ value: selectedCodexModel, label: `当前：${selectedCodexModel}` });
+  }
+
+  const formatLimitWindow = (window) => {
+    if (!window) return '暂无';
+    const reset = window.resetsAt ? new Date(window.resetsAt * 1000).toLocaleString() : '未知';
+    return `已用 ${Math.round(Number(window.usedPercent || 0))}% · 重置 ${reset}`;
+  };
+
+  const limitWindowLabel = (window, fallback) => {
+    const minutes = Number(window?.windowDurationMins || 0);
+    if (minutes === 300) return '5 小时窗口';
+    if (minutes === 10080) return '周额度窗口';
+    if (minutes > 0 && minutes % 1440 === 0) return `${minutes / 1440} 天窗口`;
+    if (minutes > 0 && minutes % 60 === 0) return `${minutes / 60} 小时窗口`;
+    if (minutes > 0) return `${minutes} 分钟窗口`;
+    return fallback;
+  };
+
+  const codexLimitBuckets = (() => {
+    const byId = Object.entries(codexLimits?.rateLimitsByLimitId || {});
+    if (byId.length) return byId.map(([id, bucket]) => ({ id, bucket }));
+    return codexLimits?.rateLimits ? [{ id: codexLimits.rateLimits.limitId || 'codex', bucket: codexLimits.rateLimits }] : [];
+  })();
+
   const save = async () => {
-    await saveSettings(withProviderDefaults({ model: draft.customModel?.trim() || draft.model, customModel: '' }));
+    const patch = draft.llmProvider === 'codex-app-server'
+      ? withProviderDefaults({ customModel: '' })
+      : withProviderDefaults({ model: draft.customModel?.trim() || draft.model, customModel: '' });
+    await saveSettings(patch);
     setDirty(false);
   };
 
@@ -105,11 +217,36 @@ export function ModelsPage({ db, saveSettings }) {
     <div className="models-layout">
       <div className="console-setting-stack">
         <SettingGroup title="供应商与模型" description="切换已配置过的模型系列时会复用对应接口与密钥。">
-          <SettingRow title="接口供应商" description="DeepSeek 或 OpenAI-compatible endpoint" control={<Select value={draft.llmProvider || 'deepseek'} onChange={(event) => updateDraft(withProviderDefaults({ llmProvider: event.target.value }))} options={providerOptions} />} />
-          <SettingRow title="API Key" description={draft.apiKey === '已填写' ? '已配置；留空不会覆盖' : '当前供应商的访问密钥'} control={<Input type="password" placeholder={draft.apiKey === '已填写' ? '已填写，留空不改' : ''} value={draft.apiKey === '已填写' ? '' : draft.apiKey || ''} onChange={(event) => updateDraft({ apiKey: event.target.value })} />} />
-          <SettingRow title="API 地址" description="OpenAI-compatible base URL" control={<Input value={draft.apiBaseUrl || ''} onChange={(event) => updateDraft(withProviderDefaults({ apiBaseUrl: event.target.value }))} />} />
-          <SettingRow title="模型" control={<Select value={currentModel} onChange={(event) => updateDraft(withProviderDefaults({ model: event.target.value }))} options={modelOptions} />} />
-          <SettingRow title="自定义模型名" description="留空则使用上面的选择" control={<Input value={draft.customModel || ''} onChange={(event) => updateDraft({ customModel: event.target.value })} />} />
+          <SettingRow title="接口供应商" description="API Key 通道或个人 ChatGPT 的 Codex 配额" control={<Select value={draft.llmProvider || 'deepseek'} onChange={(event) => updateDraft(withProviderDefaults({ llmProvider: event.target.value }))} options={providerOptions} />} />
+          {draft.llmProvider === 'codex-app-server' ? <>
+            <SettingRow title="ChatGPT 登录" description={codexStatus?.authenticated
+              ? `${codexStatus.account?.email || '已登录'} · ${codexStatus.account?.planType || 'ChatGPT'} 计划`
+              : '通过本机 Codex 官方登录；令牌不会进入 WuxinBot 数据库'} control={<div className="console-actions">
+                {!codexStatus?.authenticated && <Button icon={LogIn} loading={codexBusy} onClick={loginCodex}>登录 ChatGPT</Button>}
+                <Button icon={RefreshCw} loading={codexBusy} onClick={refreshCodex}>刷新状态</Button>
+                {codexStatus?.authenticated && <Button icon={LogOut} onClick={logoutCodex}>退出</Button>}
+              </div>} />
+            {codexStatus?.error && <InlineHelp tone="warning">{codexStatus.error}{codexStatus.diagnostic ? `；${codexStatus.diagnostic}` : ''}</InlineHelp>}
+            {codexMessage && <InlineHelp tone={codexStatus?.authenticated ? 'normal' : 'warning'}>{codexMessage}</InlineHelp>}
+            <SettingRow title="Codex 模型" description="高频群聊推荐 Luna；复杂任务可用 Terra/Sol" control={<Select value={selectedCodexModel} onChange={(event) => updateDraft({ codexModel: event.target.value })} options={codexModelOptions} />} />
+            <SettingRow title="推理强度" control={<Select value={draft.codexReasoningEffort || 'low'} onChange={(event) => updateDraft({ codexReasoningEffort: event.target.value })} options={[{ value: 'low', label: 'Low（推荐聊天）' }, { value: 'medium', label: 'Medium' }, { value: 'high', label: 'High' }, { value: 'xhigh', label: 'XHigh' }, { value: 'max', label: 'Max' }]} />} />
+            <SettingRow title="Codex 可执行文件" description="默认从 PATH 运行 codex app-server" control={<Input value={draft.codexExecutable || 'codex'} onChange={(event) => updateDraft({ codexExecutable: event.target.value })} />} />
+            <SettingRow title="自动降级" description={`Codex 未登录、超时或额度不可用时回到 ${draft.codexFallbackModel || draft.model || '旧模型'}`} control={<Switch checked={draft.codexFallbackEnabled !== false} onChange={(event) => updateDraft({ codexFallbackEnabled: event.target.checked })} />} />
+            {codexLimitBuckets.map(({ id, bucket }) => {
+              const windows = [
+                { key: 'primary', value: bucket?.primary, fallback: '主额度窗口' },
+                { key: 'secondary', value: bucket?.secondary, fallback: '次额度窗口' },
+              ].filter((item) => item.value);
+              return <InlineHelp key={id}>
+                {bucket?.limitName || id}：{windows.map((item) => `${limitWindowLabel(item.value, item.fallback)} ${formatLimitWindow(item.value)}`).join('；') || '暂无额度窗口'}
+              </InlineHelp>;
+            })}
+          </> : <>
+            <SettingRow title="API Key" description={draft.apiKey === '已填写' ? '已配置；留空不会覆盖' : '当前供应商的访问密钥'} control={<Input type="password" placeholder={draft.apiKey === '已填写' ? '已填写，留空不改' : ''} value={draft.apiKey === '已填写' ? '' : draft.apiKey || ''} onChange={(event) => updateDraft({ apiKey: event.target.value })} />} />
+            <SettingRow title="API 地址" description="OpenAI-compatible base URL" control={<Input value={draft.apiBaseUrl || ''} onChange={(event) => updateDraft(withProviderDefaults({ apiBaseUrl: event.target.value }))} />} />
+            <SettingRow title="模型" control={<Select value={currentModel} onChange={(event) => updateDraft(withProviderDefaults({ model: event.target.value }))} options={modelOptions} />} />
+            <SettingRow title="自定义模型名" description="留空则使用上面的选择" control={<Input value={draft.customModel || ''} onChange={(event) => updateDraft({ customModel: event.target.value })} />} />
+          </>}
         </SettingGroup>
 
         <SettingGroup title="生成参数" description="控制回复风格、长度和上下文预算。">
@@ -161,7 +298,7 @@ export function ModelsPage({ db, saveSettings }) {
           <div className="console-section__title"><BrainCircuit size={18} /><div><h3>配置提示</h3><p>按当前运行时能力说明，不推断供应商状态。</p></div></div>
           <p><Sparkles size={14} />创造性越高越活泼，越低越稳定；小群聊天可从 0.85 开始。</p>
           <p><Eye size={14} />视觉能力需要实际多模态模型支持，传输方式不会让纯文本模型获得视觉。</p>
-          <p><Settings2 size={14} />DeepSeek 官方 Chat API 没有内置搜索；没有真实搜索源时，请求会被拒绝而不是假装联网。</p>
+          <p><Settings2 size={14} />Codex 通道走官方 App Server 和个人 ChatGPT 登录；失败时可自动回到原 API 模型。</p>
         </Card>
       </div>
     </div>

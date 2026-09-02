@@ -285,7 +285,7 @@ ${text('PLAYER SKILL PROFILE', 1218, 61, 16, { anchor: 'end', fill: '#9facb8', w
 ${grid}${spokes}<polygon points="${polygon('median')}" fill="#c8d4df" fill-opacity="0.05" stroke="#c8d4df" stroke-opacity="0.40" stroke-width="1.5" stroke-dasharray="6 7"/><polygon points="${polygon('ceiling')}" fill="#35d7ff" fill-opacity="0.17" stroke="#42d5ff" stroke-width="3.2" stroke-linejoin="round"/>${nodes}${labels}<circle cx="${cx}" cy="${cy}" r="5" fill="#07111d"/>
 <path d="M34 675H1246" stroke="#ffffff" stroke-opacity="0.12"/>${text('实线：高位能力  ·  虚线：常态覆盖', 42, 706, 13, { fill: '#9aacba', weight: 540 })}${text('BP50 · SCORE QUALITY ADJUSTED · 0.95 RANK DECAY', 1238, 706, 12, { anchor: 'end', fill: '#8999a8', weight: 560, spacing: 1.7 })}
 </svg>`;
-  return sharp(Buffer.from(withReleaseLabel(svg, profile.releaseLabel)), { density: 144 }).png({ compressionLevel: 9 }).toBuffer();
+  return sharp(Buffer.from(svg), { density: 144 }).png({ compressionLevel: 9 }).toBuffer();
 }
 
 export async function renderPlayerRecentSkillProfileCard(payload: Record<string, any>): Promise<Buffer> {
@@ -349,7 +349,7 @@ ${text('RECENT SKILL PROFILE', 1218, 61, 16, { anchor: 'end', fill: '#9facb8', w
 ${grid}${spokes}<polygon points="${referencePoints}" fill="#9ecce7" fill-opacity="0.035" stroke="#a8c7da" stroke-opacity="0.55" stroke-width="2" stroke-dasharray="7 8"/><polygon points="${recentPoints}" fill="#ff4fa3" fill-opacity="0.15" stroke="#ff5fae" stroke-width="3.2" stroke-linejoin="round"/>${nodes}${labels}<circle cx="${cx}" cy="${cy}" r="5" fill="#07111d"/>
 <path d="M34 675H1246" stroke="#ffffff" stroke-opacity="0.12"/><path d="M44 704H82" stroke="#ff5fae" stroke-width="4" stroke-linecap="round"/>${text('近期有效发挥', 94, 709, 14, { fill: '#d9c4d0' })}<path d="M250 704H288" stroke="#a8c7da" stroke-opacity="0.70" stroke-width="2" stroke-dasharray="6 6"/>${text('BP50 长期参考', 300, 709, 14, { fill: '#a9bac6' })}${text('FAIL 降权 · 24H 100% → DAY5 85% · 差值 <0.2 不标记', 1238, 709, 12, { anchor: 'end', fill: '#8999a8', weight: 560, spacing: 1.1 })}
 </svg>`;
-  return sharp(Buffer.from(withReleaseLabel(svg, profile.releaseLabel)), { density: 144 }).png({ compressionLevel: 9 }).toBuffer();
+  return sharp(Buffer.from(svg), { density: 144 }).png({ compressionLevel: 9 }).toBuffer();
 }
 
 export async function renderPlayerSkillComparisonCard(payload: Record<string, any>): Promise<Buffer> {
@@ -401,12 +401,5 @@ ${playerBlock(left, 'left')}${playerBlock(right, 'right')}${text('PLAYER SKILL',
 ${grid}${spokes}<polygon points="${points('left')}" fill="#35d7ff" fill-opacity="0.16" stroke="#42d5ff" stroke-width="3" stroke-linejoin="round"/><polygon points="${points('right')}" fill="#ff4fa3" fill-opacity="0.13" stroke="#ff5fae" stroke-width="3" stroke-linejoin="round"/>${nodes('left', '#42d5ff')}${nodes('right', '#ff5fae')}${labels}<circle cx="${cx}" cy="${cy}" r="5" fill="#07111d"/>
 <path d="M34 675H1246" stroke="#ffffff" stroke-opacity="0.11"/><path d="M44 704H82" stroke="#42d5ff" stroke-width="4" stroke-linecap="round"/>${text(compact(leftPlayer.username || 'LEFT', 20), 94, 709, 14, { fill: '#bdd0dc' })}<path d="M1030 704H1068" stroke="#ff5fae" stroke-width="4" stroke-linecap="round"/>${text(compact(rightPlayer.username || 'RIGHT', 20), 1080, 709, 14, { fill: '#bdd0dc' })}${text('BP50 · SCORE QUALITY ADJUSTED · 0.95 RANK DECAY', 640, 709, 12, { anchor: 'middle', fill: '#8999a8', weight: 560, spacing: 1.8 })}
 </svg>`;
-  return sharp(Buffer.from(withReleaseLabel(svg, left.profile?.releaseLabel, true)), { density: 144 }).png({ compressionLevel: 9 }).toBuffer();
-}
-
-function withReleaseLabel(svg: string, label: unknown, comparison = false): string {
-  if (!label) return svg;
-  return svg.replace('</svg>', `${text(compact(String(label), 36), comparison ? 640 : 1218, 164, 12, {
-    anchor: comparison ? 'middle' : 'end', fill: '#b7a57e', weight: 540,
-  })}</svg>`);
+  return sharp(Buffer.from(svg), { density: 144 }).png({ compressionLevel: 9 }).toBuffer();
 }

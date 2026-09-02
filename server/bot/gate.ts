@@ -1,5 +1,6 @@
 // Conversation context helpers + LLM reply gate. Type-checked module.
 import { readDb, updateDb, nowIso } from '../store.js';
+import { applyUsageTotals, usageEventFields } from '../usage.js';
 import {
   normalizeMessage,
   extractImageInputs,
@@ -298,9 +299,7 @@ export function recordLlmGateUsage({ groupId, userId, result, error, verdict, th
     draft.usageEvents ||= [];
     const usage = result?.usage || {};
     if (result) {
-      draft.usage.totalTokens += usage.total_tokens || 0;
-      draft.usage.promptTokens += usage.prompt_tokens || 0;
-      draft.usage.completionTokens += usage.completion_tokens || 0;
+      applyUsageTotals(draft.usage, usage);
       draft.usage.requests += 1;
     } else {
       draft.usage.errors += 1;
@@ -312,9 +311,7 @@ export function recordLlmGateUsage({ groupId, userId, result, error, verdict, th
       userId,
       model: result?.model || draft.settings.model,
       provider: result?.provider || draft.settings.llmProvider,
-      totalTokens: usage.total_tokens || 0,
-      promptTokens: usage.prompt_tokens || 0,
-      completionTokens: usage.completion_tokens || 0,
+      ...usageEventFields(usage),
       latencyMs: result?.latencyMs || 0,
       gateScore: verdict?.score,
       gateReason: verdict?.reason || '',
@@ -433,8 +430,9 @@ export async function llmReplyGate(db, groupId, text, { mode, question, chatIsBu
   // even attempting the call. Without this, every gate attempt would fail
   // silently with the user seeing only "LLM 门控调用失败" in decision logs.
   const resolvedSettings = activateModelProfile(db.settings, db.settings.model);
+  const usesCodexAccount = String(resolvedSettings.llmProvider || '') === 'codex-app-server';
   const hasApiKey = String(resolvedSettings.apiKey || db.settings.apiKey || '').trim().length > 0;
-  if (!hasApiKey) {
+  if (!usesCodexAccount && !hasApiKey) {
     return { shouldReply: false, reason: 'LLM 门控跳过（API Key 未配置）' };
   }
 

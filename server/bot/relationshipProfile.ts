@@ -4,6 +4,7 @@
 // Sensitive real-world relationships (couple/family/etc.) are NEVER written as conclusions.
 // They may only be recorded as boundaries ("避免起哄现实关系/避免调侃亲密关系").
 import { readDb, updateDb, nowIso } from '../store.js';
+import { applyUsageTotals, usageEventFields } from '../usage.js';
 import { completeChat } from './llm.js';
 import { findRecentInteractionPairs } from './signals.js';
 import { textWithoutControlPlaceholders } from './cleaning.js';
@@ -273,11 +274,9 @@ export async function updateRelationshipProfile(db, groupId, userA, userB) {
 
       // Track usage
       draft.usage.requests += 1;
-      draft.usage.totalTokens += response.usage?.total_tokens || 0;
-      draft.usage.promptTokens += response.usage?.prompt_tokens || 0;
-      draft.usage.completionTokens += response.usage?.completion_tokens || 0;
+      applyUsageTotals(draft.usage, response.usage);
       if (!draft.usageEvents) draft.usageEvents = [];
-      draft.usageEvents.push({ id: crypto.randomUUID(), groupId: String(groupId), userId: 'system', model: db.settings.model, kind: 'relationship', totalTokens: response.usage?.total_tokens || 0, promptTokens: response.usage?.prompt_tokens || 0, completionTokens: response.usage?.completion_tokens || 0, createdAt: nowIso() });
+      draft.usageEvents.push({ id: crypto.randomUUID(), groupId: String(groupId), userId: 'system', model: db.settings.model, kind: 'relationship', ...usageEventFields(response.usage), createdAt: nowIso() });
       draft.usageEvents = draft.usageEvents.slice(-5000);
     });
 

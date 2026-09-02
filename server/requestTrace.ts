@@ -37,6 +37,7 @@ export interface RequestTrace {
 const MAX_REQUESTS = 160;
 const MAX_EVENTS_PER_REQUEST = 120;
 const MAX_STRING = 12_000;
+const MAX_REDACTION_DEPTH = 10;
 const context = new AsyncLocalStorage<{ requestId: string }>();
 const traces = new Map<string, RequestTrace>();
 const order: string[] = [];
@@ -59,7 +60,7 @@ function parseToolArguments(value: unknown) {
 
 export function redactTraceValue(value: unknown, depth = 0): unknown {
   try {
-    if (depth > 5) return '[TRUNCATED]';
+    if (depth > MAX_REDACTION_DEPTH) return '[TRUNCATED]';
     if (value == null || typeof value === 'boolean' || typeof value === 'number') return value;
     if (typeof value === 'string') return safeString(value);
     if (Array.isArray(value)) return value.slice(0, 40).map((item) => redactTraceValue(item, depth + 1));
@@ -255,6 +256,7 @@ export function extractProviderResponseTrace(response: any) {
       totalTokens: usage.total_tokens,
       reasoningTokens: usage.completion_tokens_details?.reasoning_tokens,
       cachedTokens: usage.prompt_tokens_details?.cached_tokens ?? usage.cache_read_input_tokens,
+      cacheWriteTokens: usage.prompt_tokens_details?.cache_write_tokens ?? usage.cache_write_input_tokens,
     },
   });
 }

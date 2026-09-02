@@ -303,27 +303,10 @@ export function buildPippiPrompt(input: PippiPromptInput): string {
     parts.push(PIPPI_FACT_BOUNDARIES);
   }
 
-  // Layer 3: Scene rules
-  parts.push(sceneRules[input.scene] || sceneRules.casual);
-
-  // Layer 3b: casual-only community reaction bank (never in analysis/command/serious)
-  if (input.scene === 'casual') {
-    parts.push(PIPPI_BANTER_BLOCK);
-  }
-
-  // Layer 3c: retrieve only the detailed domain block relevant to this turn.
-  // It supplements permanent knowledge; it does not grant temporary identity.
-  if (input.topicKnowledge) {
-    parts.push(input.topicKnowledge);
-  }
-
-  // Layer 3d: optional knowledge-base retrieval (bypassable incremental layer).
-  // Absent when KB is disabled, so the prompt is byte-identical to legacy.
-  if (input.knowledgeBlocks && input.knowledgeBlocks.length > 0) {
-    parts.push(formatPromptKnowledgeBlocks(input.knowledgeBlocks));
-  }
-
-  // Layer 4: User's personality supplement
+  // Layer 3: Stable operator personality supplement. Keep this before the
+  // per-turn scene and retrieved context so all conversations share the
+  // longest practical prompt-cache prefix. Later scene rules still win when
+  // a supplement conflicts with the current task.
   if (input.userPersonality) {
     parts.push([
       '用户提供的补充表达偏好如下。',
@@ -332,17 +315,37 @@ export function buildPippiPrompt(input: PippiPromptInput): string {
     ].join('\n'));
   }
 
-  // Layer 5: Relationship and memory context
+  // Layer 4: Scene rules
+  parts.push(sceneRules[input.scene] || sceneRules.casual);
+
+  // Layer 4b: casual-only community reaction bank (never in analysis/command/serious)
+  if (input.scene === 'casual') {
+    parts.push(PIPPI_BANTER_BLOCK);
+  }
+
+  // Layer 5: retrieve only the detailed domain block relevant to this turn.
+  // It supplements permanent knowledge; it does not grant temporary identity.
+  if (input.topicKnowledge) {
+    parts.push(input.topicKnowledge);
+  }
+
+  // Layer 5b: optional knowledge-base retrieval (bypassable incremental layer).
+  // Absent when KB is disabled, so the prompt is byte-identical to legacy.
+  if (input.knowledgeBlocks && input.knowledgeBlocks.length > 0) {
+    parts.push(formatPromptKnowledgeBlocks(input.knowledgeBlocks));
+  }
+
+  // Layer 6: Relationship and memory context
   if (input.relationshipContext) {
     parts.push(input.relationshipContext);
   }
 
-  // Layer 6: Task-specific rules
+  // Layer 7: Task-specific rules
   if (input.taskRules) {
     parts.push(input.taskRules);
   }
 
-  // Layer 7: Factual context (visual, model, search)
+  // Layer 8: Factual context (visual, model, search)
   if (input.factualContext) {
     parts.push(`\n当前运行时信息：\n${input.factualContext}`);
   }
