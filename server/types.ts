@@ -280,7 +280,10 @@ export interface UsageEvent {
   kind?: string;           // 'memory' for memory-update calls
   totalTokens: number;
   promptTokens: number;
+  cachedTokens: number;
+  cacheWriteTokens: number;
   completionTokens: number;
+  reasoningTokens: number;
   createdAt: string;
 }
 
@@ -321,7 +324,10 @@ export interface Db {
   usage: {
     totalTokens: number;
     promptTokens: number;
+    cachedTokens: number;
+    cacheWriteTokens: number;
     completionTokens: number;
+    reasoningTokens: number;
     requests: number;
     replies: number;
     errors: number;

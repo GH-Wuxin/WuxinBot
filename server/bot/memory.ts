@@ -2,6 +2,7 @@
 // Long-term memory: sample collection, classification, profile updates.
 // Extracted from bot.ts.
 import { readDb, updateDb, nowIso } from '../store.js';
+import { applyUsageTotals, usageEventFields } from '../usage.js';
 import { recordDecisionError } from '../health.js';
 import { hasVisualPlaceholder, textWithoutControlPlaceholders } from './cleaning.js';
 import { completeChat, llmProvider, mergeUsage } from './llm.js';
@@ -657,16 +658,12 @@ export async function maybeRecordImageMemorySummary(event, userPolicy) {
     if (!draft.usage) draft.usage = { totalTokens: 0, promptTokens: 0, completionTokens: 0, requests: 0, errors: 0 };
     const usage = response.usage || {};
     draft.usage.requests += 1;
-    draft.usage.totalTokens += usage.total_tokens || 0;
-    draft.usage.promptTokens += usage.prompt_tokens || 0;
-    draft.usage.completionTokens += usage.completion_tokens || 0;
+    applyUsageTotals(draft.usage, usage);
     if (!draft.usageEvents) draft.usageEvents = [];
     draft.usageEvents.push({
       id: crypto.randomUUID(), groupId: event.groupId, userId: event.userId,
       model: response.model || draft.settings.model, kind: 'image-memory-summary',
-      totalTokens: usage.total_tokens || 0,
-      promptTokens: usage.prompt_tokens || 0,
-      completionTokens: usage.completion_tokens || 0,
+      ...usageEventFields(usage),
       createdAt: nowIso()
     });
     draft.usageEvents = draft.usageEvents.slice(-5000);
@@ -1138,9 +1135,7 @@ export function commitMemoryProfileResult(userId, result, options = {}) {
     if (!draft.usage) draft.usage = { totalTokens: 0, promptTokens: 0, completionTokens: 0, requests: 0, errors: 0 };
     const usage = result?.usage || {};
     draft.usage.requests += 1;
-    draft.usage.totalTokens += usage.total_tokens || 0;
-    draft.usage.promptTokens += usage.prompt_tokens || 0;
-    draft.usage.completionTokens += usage.completion_tokens || 0;
+    applyUsageTotals(draft.usage, usage);
     if (!draft.usageEvents) draft.usageEvents = [];
     draft.usageEvents.push({
       id: crypto.randomUUID(),
@@ -1148,9 +1143,7 @@ export function commitMemoryProfileResult(userId, result, options = {}) {
       userId: String(userId),
       model: options.model || draft.settings.model,
       kind: options.kind || 'memory',
-      totalTokens: usage.total_tokens || 0,
-      promptTokens: usage.prompt_tokens || 0,
-      completionTokens: usage.completion_tokens || 0,
+      ...usageEventFields(usage),
       createdAt: stamp,
     });
     draft.usageEvents = draft.usageEvents.slice(-5000);

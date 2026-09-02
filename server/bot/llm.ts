@@ -8,6 +8,7 @@ import crypto from 'node:crypto';
 import OpenAI from 'openai';
 import { recordLlmSuccess, recordLlmError } from '../health.js';
 import { completeCodexAppServerChat } from '../codexAppServer.js';
+import { mergeLlmUsage } from '../usage.js';
 import {
   currentRequestTraceId,
   extractProviderResponseTrace,
@@ -211,11 +212,7 @@ function requestModelForProvider(db, provider, baseURL, options = {}) {
 }
 
 export function mergeUsage(...items) {
-  return items.reduce((total, item) => ({
-    total_tokens: (total.total_tokens || 0) + (item?.total_tokens || 0),
-    prompt_tokens: (total.prompt_tokens || 0) + (item?.prompt_tokens || 0),
-    completion_tokens: (total.completion_tokens || 0) + (item?.completion_tokens || 0)
-  }), { total_tokens: 0, prompt_tokens: 0, completion_tokens: 0 });
+  return mergeLlmUsage(...items);
 }
 
 export function withTimeout(promise, ms, label) {

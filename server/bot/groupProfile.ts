@@ -2,6 +2,7 @@
 // from personal memory profiles. Keyed by groupId, injected into buildPrompt
 // for the current group only.
 import { readDb, updateDb, nowIso } from '../store.js';
+import { applyUsageTotals, usageEventFields } from '../usage.js';
 import { completeChat } from './llm.js';
 import { textWithoutControlPlaceholders } from './cleaning.js';
 
@@ -90,16 +91,12 @@ export async function updateGroupProfile(db, groupId) {
     // Track usage
     updateDb((draft) => {
       draft.usage.requests += 1;
-      draft.usage.totalTokens += response.usage?.total_tokens || 0;
-      draft.usage.promptTokens += response.usage?.prompt_tokens || 0;
-      draft.usage.completionTokens += response.usage?.completion_tokens || 0;
+      applyUsageTotals(draft.usage, response.usage);
       if (!draft.usageEvents) draft.usageEvents = [];
       draft.usageEvents.push({
         id: crypto.randomUUID(), groupId: String(groupId), userId: 'system',
         model: db.settings.model, kind: 'group-profile',
-        totalTokens: response.usage?.total_tokens || 0,
-        promptTokens: response.usage?.prompt_tokens || 0,
-        completionTokens: response.usage?.completion_tokens || 0,
+        ...usageEventFields(response.usage),
         createdAt: nowIso()
       });
       draft.usageEvents = draft.usageEvents.slice(-5000);

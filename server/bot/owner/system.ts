@@ -2,6 +2,7 @@
 // ping/usage/model/search/thinking/sysfacts/summarize). Decomposed from
 // server/bot/ownerCommands.ts; permission preambles are handled by dispatch.
 import { defaultPrompt, readDb, updateDb, nowIso } from '../../store.js';
+import { applyUsageTotals, usageEventFields } from '../../usage.js';
 import {
   getRecalcProgress,
   startRecalc,
@@ -429,18 +430,14 @@ export async function ownerSummarizeHandler(ctx: OwnerHandlerContext): Promise<O
 
     updateDb((draft) => {
       draft.usage.requests += 1;
-      draft.usage.totalTokens += response.usage?.total_tokens || 0;
-      draft.usage.promptTokens += response.usage?.prompt_tokens || 0;
-      draft.usage.completionTokens += response.usage?.completion_tokens || 0;
+      applyUsageTotals(draft.usage, response.usage);
       if (!draft.usageEvents) draft.usageEvents = [];
       draft.usageEvents.push({
         id: crypto.randomUUID(),
         groupId: ctx.event.groupId,
         userId: ctx.event.userId,
         model: db.settings.model,
-        totalTokens: response.usage?.total_tokens || 0,
-        promptTokens: response.usage?.prompt_tokens || 0,
-        completionTokens: response.usage?.completion_tokens || 0,
+        ...usageEventFields(response.usage),
         createdAt: nowIso()
       });
       draft.adminActions.push({
