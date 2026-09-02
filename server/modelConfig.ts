@@ -78,6 +78,11 @@ export function activateModelProfile(settings: Record<string, any>, requestedMod
   const family = modelFamily(model);
   if (model) next.model = model;
 
+  // Codex App Server has its own `codexModel`. Keep the existing API model and
+  // credentials untouched as a rollback/fallback profile instead of letting a
+  // deepseek-/mimo- model name silently switch this provider back off.
+  if (clean(next.llmProvider) === 'codex-app-server') return next;
+
   if (family === 'mimo') {
     next.llmProvider = 'openai-compatible';
     next.apiBaseUrl = next.mimoApiBaseUrl || MIMO_BASE_URL;
@@ -124,6 +129,21 @@ export function updateProviderSettings(current: Record<string, any>, incoming: R
   const keepSecret = (value: unknown) => !clean(value) || isPlaceholder(value);
   if (keepSecret(incoming.deepseekApiKey)) next.deepseekApiKey = saved.deepseekApiKey;
   if (keepSecret(incoming.mimoApiKey)) next.mimoApiKey = saved.mimoApiKey;
+
+  if (clean(incoming.llmProvider) === 'codex-app-server') {
+    if (clean(saved.llmProvider) !== 'codex-app-server') {
+      next.codexFallbackProvider = clean(saved.llmProvider) || 'deepseek';
+      next.codexFallbackModel = clean(saved.model) || 'deepseek-v4-flash';
+    }
+    next.llmProvider = 'codex-app-server';
+    // API fields remain the last working fallback profile and are never
+    // replaced by the browser's secret placeholders.
+    next.apiKey = saved.apiKey;
+    next.apiBaseUrl = saved.apiBaseUrl;
+    next.model = saved.model;
+    return ensureProviderProfiles(next);
+  }
+
   const requestedModel = clean(incoming.model === undefined ? saved.model : incoming.model);
   const requestedFamily = modelFamily(requestedModel) ||
     (looksLikeMimoEndpoint(incoming.apiBaseUrl) ? 'mimo' : null) ||
@@ -149,6 +169,7 @@ export function updateProviderSettings(current: Record<string, any>, incoming: R
 }
 
 export function activeProviderLabel(settings: Record<string, any>) {
+  if (clean(settings.llmProvider) === 'codex-app-server') return 'ChatGPT / Codex App Server';
   const family = modelFamily(settings.model) || providerFamily(settings);
   return family === 'mimo' ? 'Mimo / OpenAI 兼容接口' : 'DeepSeek';
 }

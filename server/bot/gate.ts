@@ -433,8 +433,9 @@ export async function llmReplyGate(db, groupId, text, { mode, question, chatIsBu
   // even attempting the call. Without this, every gate attempt would fail
   // silently with the user seeing only "LLM 门控调用失败" in decision logs.
   const resolvedSettings = activateModelProfile(db.settings, db.settings.model);
+  const usesCodexAccount = String(resolvedSettings.llmProvider || '') === 'codex-app-server';
   const hasApiKey = String(resolvedSettings.apiKey || db.settings.apiKey || '').trim().length > 0;
-  if (!hasApiKey) {
+  if (!usesCodexAccount && !hasApiKey) {
     return { shouldReply: false, reason: 'LLM 门控跳过（API Key 未配置）' };
   }
 

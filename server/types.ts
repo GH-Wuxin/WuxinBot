@@ -48,6 +48,13 @@ export interface DbSettings {
   deepseekApiBaseUrl?: string;
   mimoApiKey?: string;
   mimoApiBaseUrl?: string;
+  codexExecutable?: string;
+  codexModel?: string;
+  codexReasoningEffort?: 'low' | 'medium' | 'high' | 'xhigh' | 'max';
+  codexTimeoutMs?: number;
+  codexFallbackEnabled?: boolean;
+  codexFallbackProvider?: 'deepseek' | 'openai-compatible';
+  codexFallbackModel?: string;
   model: string;
   visionMode?: 'auto' | 'on' | 'off';
   visionImageTransport?: 'auto' | 'url' | 'data';
@@ -324,7 +331,7 @@ export interface Db {
 
 // ── LLM layer ──
 
-export type LlmProvider = 'deepseek' | 'openai-compatible';
+export type LlmProvider = 'deepseek' | 'openai-compatible' | 'codex-app-server';
 
 export interface LlmCompletionOptions {
   overrideModel?: string | null;

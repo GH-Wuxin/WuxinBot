@@ -7,6 +7,7 @@ import path from 'node:path';
 import crypto from 'node:crypto';
 import OpenAI from 'openai';
 import { recordLlmSuccess, recordLlmError } from '../health.js';
+import { completeCodexAppServerChat } from '../codexAppServer.js';
 import {
   currentRequestTraceId,
   extractProviderResponseTrace,
@@ -167,7 +168,8 @@ export function defaultBaseUrlForProvider(provider) {
 export function llmProviderName(provider) {
   const names = {
     deepseek: 'DeepSeek',
-    'openai-compatible': 'OpenAI-compatible'
+    'openai-compatible': 'OpenAI-compatible',
+    'codex-app-server': 'ChatGPT / Codex'
   };
   return names[provider] || provider || 'LLM';
 }
@@ -420,6 +422,91 @@ export function createLLMClient(db, requestedModel = db.settings.model) {
 }
 
 export async function completeChat(db, options = {}) {
+  if (rawLlmProvider(db) === 'codex-app-server') {
+    const invocationId = crypto.randomUUID();
+    const started = Date.now();
+    const model = String(db.settings.codexModel || 'gpt-5.6-luna').trim() || 'gpt-5.6-luna';
+    traceEvent('MODEL', 'model_call_started', {
+      status: 'running',
+      invocationId,
+      attempt: 1,
+      role: options.traceRole || 'assistant',
+      purpose: options.tracePurpose || options.label || 'Codex App Server 调用',
+      provider: 'codex-app-server',
+      model,
+      messageCount: options.messages?.length || 0,
+      toolCount: options.tools?.length || 0,
+      streaming: false,
+      thinkingEnabled: db.settings.codexReasoningEffort !== 'low',
+    });
+    try {
+      const codexMessages = normalizeLlmMessages(
+        await attachVisionImages(db, options.messages || [], options.visionImages || [], options)
+      );
+      const result = await completeCodexAppServerChat(db, { ...options, messages: codexMessages });
+      const latencyMs = Date.now() - started;
+      recordLlmSuccess(latencyMs);
+      traceEvent('MODEL', 'model_call_completed', {
+        status: 'ok',
+        durationMs: latencyMs,
+        invocationId,
+        attempt: 1,
+        role: options.traceRole || 'assistant',
+        purpose: options.tracePurpose || options.label || 'Codex App Server 调用',
+        provider: 'codex-app-server',
+        model: result.model,
+        streaming: false,
+        response: extractProviderResponseTrace(result.raw),
+      });
+      return {
+        ...result,
+        meta: buildLlmCompletionMeta(result.raw, {
+          model: result.model,
+          provider: result.provider,
+          latencyMs,
+        }),
+      };
+    } catch (error) {
+      const message = String(error?.message || error?.code || error);
+      recordLlmError(message);
+      traceEvent('MODEL', 'model_call_failed', {
+        status: 'error',
+        durationMs: Date.now() - started,
+        invocationId,
+        attempt: 1,
+        role: options.traceRole || 'assistant',
+        purpose: options.tracePurpose || options.label || 'Codex App Server 调用',
+        provider: 'codex-app-server',
+        model,
+        error: message,
+      });
+      if (db.settings.codexFallbackEnabled === false || options.codexFallbackAttempt) throw error;
+      const fallbackProvider = ['deepseek', 'openai-compatible'].includes(String(db.settings.codexFallbackProvider))
+        ? String(db.settings.codexFallbackProvider)
+        : 'deepseek';
+      const fallbackModel = String(db.settings.codexFallbackModel || db.settings.model || 'deepseek-v4-flash').trim();
+      const fallbackSettings = activateModelProfile({
+        ...db.settings,
+        llmProvider: fallbackProvider,
+      }, fallbackModel);
+      try {
+        const fallback = await completeChat({ ...db, settings: fallbackSettings }, {
+          ...options,
+          model: fallbackModel,
+          overrideModel: fallbackModel,
+          codexFallbackAttempt: true,
+        });
+        return {
+          ...fallback,
+          fallbackFrom: 'codex-app-server',
+          fallbackReason: message.slice(0, 300),
+        };
+      } catch (fallbackError) {
+        throw new Error(`Codex 调用失败：${message}；旧供应商自动降级也失败：${String(fallbackError?.message || fallbackError)}`);
+      }
+    }
+  }
+
   const requestedModel = options.model || options.overrideModel || db.settings.model;
   const { provider, client, baseURL, settings } = createLLMClient(db, requestedModel);
   const resolvedDb = { ...db, settings };
