@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { buildCodexAdapterInput, mapCodexTokenUsage, parseCodexAdapterEnvelope } from '../server/codexAppServer.ts';
 import { activateModelProfile, updateProviderSettings } from '../server/modelConfig.ts';
+import { modelSupportsVision } from '../server/bot/prompt.ts';
 
 const input = buildCodexAdapterInput([
   { role: 'system', content: 'Use Chinese.' },
@@ -9,6 +10,28 @@ const input = buildCodexAdapterInput([
 assert.equal(input[0].type, 'text');
 assert.match(input[0].text, /weather/);
 assert.equal(input[1].type, 'image');
+
+const codexVisionSettings = {
+  visionMode: 'on',
+  llmProvider: 'codex-app-server',
+  apiBaseUrl: 'https://api.deepseek.com',
+  model: 'GPT-5.6-Sol',
+};
+assert.equal(
+  modelSupportsVision({ settings: codexVisionSettings }),
+  true,
+  '显式多模态模式不能被遗留的 DeepSeek API 地址覆盖',
+);
+assert.equal(
+  modelSupportsVision({ settings: { ...codexVisionSettings, visionMode: 'off' } }),
+  false,
+  '显式纯文字模式必须保持关闭视觉输入',
+);
+assert.equal(
+  modelSupportsVision({ settings: { ...codexVisionSettings, visionMode: 'auto', llmProvider: 'deepseek', model: 'deepseek-chat' } }),
+  false,
+  '自动模式下仍应按当前 DeepSeek 模型能力判断',
+);
 
 const toolEnvelope = parseCodexAdapterEnvelope(JSON.stringify({
   kind: 'tool_calls',

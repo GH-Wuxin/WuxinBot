@@ -10,7 +10,7 @@
     "web": "vite --host 127.0.0.1 --port 5173 --strictPort",
     "build": "vite build",
     "typecheck": "tsc --noEmit",
-    "check": "npm run typecheck && npm run build && npm run sanity && npm run usage:verify && npm run osu-only:verify && npm run osu:api:verify && npm run security && npm run search:verify && npm run search:agent:verify && npm run agent:v2:verify && npm run osu:roast:verify && npm run osu:analyze-disabled:verify && npm run runtime:safety:verify && npm run store:shards:verify && npm run request:trace:verify",
+    "check": "npm run typecheck && npm run build && npm run sanity && npm run usage:verify && npm run codex:verify && npm run osu-only:verify && npm run osu:api:verify && npm run security && npm run search:verify && npm run search:agent:verify && npm run agent:v2:verify && npm run osu:roast:verify && npm run osu:analyze-disabled:verify && npm run runtime:safety:verify && npm run store:shards:verify && npm run request:trace:verify",
     "start": "tsx server/index.ts",
     "sanity": "tsx tools/sanity.mjs",
     "security": "tsx tools/security-verify.mjs",
