@@ -330,7 +330,7 @@
 .dashboard-runtime__rows > div { min-height: 47px; display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 9px 11px; background: var(--v2-surface-2); }
 .dashboard-runtime__rows span { color: var(--v2-text-muted); font-size: 12px; }
 .dashboard-runtime__rows strong { max-width: 65%; overflow: hidden; text-align: right; text-overflow: ellipsis; white-space: nowrap; }
-.dashboard-usage__totals { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 8px; margin-top: 12px; }
+.dashboard-usage__totals { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 8px; margin-top: 12px; }
 .dashboard-usage__totals > div { min-width: 0; display: grid; gap: 5px; padding: 11px 12px; background: var(--v2-surface-2); border-radius: var(--v2-radius-sm); }
 .dashboard-usage__totals span { color: var(--v2-text-muted); font-size: 11px; }
 .dashboard-usage__totals strong { overflow: hidden; font-size: 17px; text-overflow: ellipsis; white-space: nowrap; }
