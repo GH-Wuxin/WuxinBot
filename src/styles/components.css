@@ -330,6 +330,11 @@
 .dashboard-runtime__rows > div { min-height: 47px; display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 9px 11px; background: var(--v2-surface-2); }
 .dashboard-runtime__rows span { color: var(--v2-text-muted); font-size: 12px; }
 .dashboard-runtime__rows strong { max-width: 65%; overflow: hidden; text-align: right; text-overflow: ellipsis; white-space: nowrap; }
+.dashboard-usage__totals { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 8px; margin-top: 12px; }
+.dashboard-usage__totals > div { min-width: 0; display: grid; gap: 5px; padding: 11px 12px; background: var(--v2-surface-2); border-radius: var(--v2-radius-sm); }
+.dashboard-usage__totals span { color: var(--v2-text-muted); font-size: 11px; }
+.dashboard-usage__totals strong { overflow: hidden; font-size: 17px; text-overflow: ellipsis; white-space: nowrap; }
+.dashboard-usage__note { margin: 8px 0 0; color: var(--v2-text-muted); font-size: 11px; }
 .dashboard-usage__empty { min-height: 180px; display: grid; place-items: center; color: var(--v2-text-muted); }
 .dashboard-usage__chart { height: 230px; display: grid; grid-template-columns: repeat(24, minmax(8px, 1fr)); gap: 5px; padding-top: 12px; }
 .dashboard-usage__chart--daily7 { grid-template-columns: repeat(7, minmax(24px, 1fr)); gap: 12px; }
@@ -695,6 +700,7 @@
   .app-shell__topbar { min-height: 76px; padding: 14px 18px; }
   .app-shell__main { padding: 18px; }
   .dashboard-grid, .dashboard-controls, .groups-workspace { grid-template-columns: 1fr; }
+  .dashboard-usage__totals { grid-template-columns: repeat(3, minmax(0, 1fr)); }
   .groups-list-panel { position: static; max-height: none; }
   .groups-list { max-height: 420px; }
   .groups-settings-bar { grid-template-columns: 1fr; }
@@ -714,6 +720,7 @@
   .app-shell__main { padding: 13px; }
   .dashboard-hero, .section-header { align-items: stretch; flex-direction: column; }
   .dashboard-metrics, .dashboard-health__list, .groups-bot-grid, .osu-metrics, .integrations-service-grid, .integrations-runtime__grid { grid-template-columns: 1fr; }
+  .dashboard-usage__totals { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .dashboard-usage__chart { gap: 2px; }
   .dashboard-usage__value { display: none; }
   .groups-editor__actions, .groups-profile__actions, .groups-danger-zone > div:last-child { display: grid; grid-template-columns: 1fr; }

@@ -1,6 +1,7 @@
 // @ts-nocheck -- legacy runtime module; new typed modules remain checked by tsc.
 import { pathToFileURL } from 'node:url';
 import { defaultPrompt, readDb, updateDb, nowIso } from './store.js';
+import { applyUsageTotals, mergeLlmUsage, usageEventFields } from './usage.js';
 import {
   normalizeMessage,
   extractImageInputs,
@@ -1191,9 +1192,7 @@ async function processIncomingInner(event, sendMessage = undefined, queuedDecisi
       } else {
         const rewrite = await rewriteNormalReply(liveDb, replyText, event, { reasoningRouter, turnId });
         replyText = sanitizeReply(rewrite.text, liveDb.settings);
-        ai.usage.total_tokens = (ai.usage.total_tokens || 0) + (rewrite.usage.total_tokens || 0);
-        ai.usage.prompt_tokens = (ai.usage.prompt_tokens || 0) + (rewrite.usage.prompt_tokens || 0);
-        ai.usage.completion_tokens = (ai.usage.completion_tokens || 0) + (rewrite.usage.completion_tokens || 0);
+        ai.usage = mergeLlmUsage(ai.usage, rewrite.usage);
         // Identity confusion fallback: if rewrite still contains self-negation
         if (isWeirdReply(replyText) && /(没有|没)回应.*(at|@)|(at|@).*(不是.*自己|其他|别人|群友)|不该.*回复|不该.*回应/.test(replyText)) {
           replyText = '我在，刚才识别有点乱。你刚刚是在叫我，对吧？';
@@ -1272,9 +1271,7 @@ async function processIncomingInner(event, sendMessage = undefined, queuedDecisi
         inContext: true,
         createdAt: nowIso()
       });
-      draft.usage.totalTokens += ai.usage.total_tokens || 0;
-      draft.usage.promptTokens += ai.usage.prompt_tokens || 0;
-      draft.usage.completionTokens += ai.usage.completion_tokens || 0;
+      applyUsageTotals(draft.usage, ai.usage);
       draft.usage.requests += 1;
       draft.usage.replies += Math.max(1, segments.length);
       if (!draft.usageEvents) draft.usageEvents = [];
@@ -1283,9 +1280,7 @@ async function processIncomingInner(event, sendMessage = undefined, queuedDecisi
         groupId: event.groupId,
         userId: event.userId,
         model: liveDb.settings.model,
-        totalTokens: ai.usage.total_tokens || 0,
-        promptTokens: ai.usage.prompt_tokens || 0,
-        completionTokens: ai.usage.completion_tokens || 0,
+        ...usageEventFields(ai.usage),
         createdAt: nowIso()
       });
       draft.usageEvents = draft.usageEvents.slice(-5000);

@@ -436,7 +436,10 @@ const initialDb = {
   usage: {
     totalTokens: 0,
     promptTokens: 0,
+    cachedTokens: 0,
+    cacheWriteTokens: 0,
     completionTokens: 0,
+    reasoningTokens: 0,
     requests: 0,
     replies: 0,
     errors: 0
@@ -826,7 +829,10 @@ export function publicDb(db = readDb()) {
       label: `${String(date.getHours()).padStart(2, '0')}:00`,
       totalTokens: 0,
       promptTokens: 0,
+      cachedTokens: 0,
+      cacheWriteTokens: 0,
       completionTokens: 0,
+      reasoningTokens: 0,
       requests: 0
     };
   });
@@ -837,13 +843,16 @@ export function publicDb(db = readDb()) {
       label: `${date.getMonth() + 1}/${date.getDate()}`,
       totalTokens: 0,
       promptTokens: 0,
+      cachedTokens: 0,
+      cacheWriteTokens: 0,
       completionTokens: 0,
+      reasoningTokens: 0,
       requests: 0
     };
   });
   const hourlyByStart = new Map(hourlyUsage.map((bucket) => [bucket.start, bucket]));
   const dailyByStart = new Map(dailyUsage.map((bucket) => [bucket.start, bucket]));
-  const todayUsage = { totalTokens: 0, promptTokens: 0, completionTokens: 0, requests: 0 };
+  const todayUsage = { totalTokens: 0, promptTokens: 0, cachedTokens: 0, cacheWriteTokens: 0, completionTokens: 0, reasoningTokens: 0, requests: 0 };
   for (const event of db.usageEvents || []) {
     const time = new Date(event.createdAt || 0);
     const timestamp = time.getTime();
@@ -851,13 +860,19 @@ export function publicDb(db = readDb()) {
     const values = {
       totalTokens: Number(event.totalTokens || 0),
       promptTokens: Number(event.promptTokens || 0),
-      completionTokens: Number(event.completionTokens || 0)
+      cachedTokens: Number(event.cachedTokens || 0),
+      cacheWriteTokens: Number(event.cacheWriteTokens || 0),
+      completionTokens: Number(event.completionTokens || 0),
+      reasoningTokens: Number(event.reasoningTokens || 0)
     };
     const add = (bucket) => {
       if (!bucket) return;
       bucket.totalTokens += values.totalTokens;
       bucket.promptTokens += values.promptTokens;
+      bucket.cachedTokens += values.cachedTokens;
+      bucket.cacheWriteTokens += values.cacheWriteTokens;
       bucket.completionTokens += values.completionTokens;
+      bucket.reasoningTokens += values.reasoningTokens;
       bucket.requests += 1;
     };
     if (timestamp >= localDayStart) add(todayUsage);

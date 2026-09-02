@@ -1,5 +1,6 @@
 // Conversation context helpers + LLM reply gate. Type-checked module.
 import { readDb, updateDb, nowIso } from '../store.js';
+import { applyUsageTotals, usageEventFields } from '../usage.js';
 import {
   normalizeMessage,
   extractImageInputs,
@@ -298,9 +299,7 @@ export function recordLlmGateUsage({ groupId, userId, result, error, verdict, th
     draft.usageEvents ||= [];
     const usage = result?.usage || {};
     if (result) {
-      draft.usage.totalTokens += usage.total_tokens || 0;
-      draft.usage.promptTokens += usage.prompt_tokens || 0;
-      draft.usage.completionTokens += usage.completion_tokens || 0;
+      applyUsageTotals(draft.usage, usage);
       draft.usage.requests += 1;
     } else {
       draft.usage.errors += 1;
@@ -312,9 +311,7 @@ export function recordLlmGateUsage({ groupId, userId, result, error, verdict, th
       userId,
       model: result?.model || draft.settings.model,
       provider: result?.provider || draft.settings.llmProvider,
-      totalTokens: usage.total_tokens || 0,
-      promptTokens: usage.prompt_tokens || 0,
-      completionTokens: usage.completion_tokens || 0,
+      ...usageEventFields(usage),
       latencyMs: result?.latencyMs || 0,
       gateScore: verdict?.score,
       gateReason: verdict?.reason || '',

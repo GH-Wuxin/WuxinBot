@@ -21,17 +21,25 @@ function healthTone(level) {
   return 'neutral';
 }
 
-function UsageChart({ usageStats }) {
+function UsageChart({ usageStats, usage }) {
   const [period, setPeriod] = useState('hourly24');
   const data = usageStats?.[period] || [];
   const maxTokens = Math.max(1, ...data.map((item) => Number(item.totalTokens || 0)));
   const total = data.reduce((sum, item) => sum + Number(item.totalTokens || 0), 0);
   const requests = data.reduce((sum, item) => sum + Number(item.requests || 0), 0);
   const periodLabel = period === 'hourly24' ? '近 24 小时' : '近 7 天';
-  return <Card className="dashboard-usage"><SectionHeader eyebrow="Activity" title="Token 用量" description={`${periodLabel} · ${formatNumber(total)} Token · ${formatNumber(requests)} 次请求`} actions={<SegmentedControl value={period} onChange={setPeriod} label="Token 统计周期" options={[{ value: 'hourly24', label: '24 小时' }, { value: 'daily7', label: '7 天' }]} />} />{data.length === 0 ? <div className="dashboard-usage__empty">当前周期还没有用量记录。</div> : <div className={`dashboard-usage__chart dashboard-usage__chart--${period}`} role="img" aria-label={`${periodLabel} Token 用量柱状图`}>{data.map((item, index) => {
+  const cumulative = [
+    { label: '累计总量', value: usage?.totalTokens },
+    { label: '输入', value: usage?.promptTokens },
+    { label: '缓存命中', value: usage?.cachedTokens },
+    { label: '缓存写入', value: usage?.cacheWriteTokens },
+    { label: '输出', value: usage?.completionTokens },
+    { label: 'Reasoning', value: usage?.reasoningTokens },
+  ];
+  return <Card className="dashboard-usage"><SectionHeader eyebrow="Activity" title="Token 用量" description={`${periodLabel} · ${formatNumber(total)} Token · ${formatNumber(requests)} 次请求`} actions={<SegmentedControl value={period} onChange={setPeriod} label="Token 统计周期" options={[{ value: 'hourly24', label: '24 小时' }, { value: 'daily7', label: '7 天' }]} />} /><div className="dashboard-usage__totals" aria-label="累计 Token 明细">{cumulative.map((item) => <div key={item.label}><span>{item.label}</span><strong>{formatNumber(item.value)}</strong></div>)}</div><p className="dashboard-usage__note">缓存命中、缓存写入和 reasoning 从支持明细统计的版本开始累计。</p>{data.length === 0 ? <div className="dashboard-usage__empty">当前周期还没有用量记录。</div> : <div className={`dashboard-usage__chart dashboard-usage__chart--${period}`} role="img" aria-label={`${periodLabel} Token 用量柱状图`}>{data.map((item, index) => {
     const height = item.totalTokens > 0 ? Math.max(5, Math.round(Number(item.totalTokens) / maxTokens * 100)) : 0;
     const showLabel = period === 'daily7' || index % 4 === 3 || index === data.length - 1;
-    const title = `${item.label} · ${formatNumber(item.totalTokens)} Token · 输入 ${formatNumber(item.promptTokens)} · 输出 ${formatNumber(item.completionTokens)} · ${item.requests} 次`;
+    const title = `${item.label} · ${formatNumber(item.totalTokens)} Token · 输入 ${formatNumber(item.promptTokens)} · 缓存命中 ${formatNumber(item.cachedTokens)} · 缓存写入 ${formatNumber(item.cacheWriteTokens)} · 输出 ${formatNumber(item.completionTokens)} · reasoning ${formatNumber(item.reasoningTokens)} · ${item.requests} 次`;
     return <div className="dashboard-usage__column" key={item.start} title={title}><span className="dashboard-usage__value">{item.totalTokens ? compactNumber(item.totalTokens) : ''}</span><div className="dashboard-usage__track"><span className="dashboard-usage__bar" style={{ '--usage-height': `${height}%` }} /></div><small>{showLabel ? item.label : ''}</small></div>;
   })}</div>}</Card>;
 }
@@ -65,7 +73,7 @@ export function DashboardPage({ db, oneBot, saveSettings, refreshState }) {
       <Card className="dashboard-runtime"><SectionHeader eyebrow="Runtime" title="当前运行状态" description="只展示现有状态，不推断 Agent telemetry" /><div className="dashboard-runtime__rows"><div><span>模型</span><strong>{db.settings.model}</strong></div><div><span>OneBot transport</span><strong>{(oneBot.transportConnected ?? oneBot.connected) ? 'Connected' : 'Disconnected'}</strong></div><div><span>最近 QQ 事件</span><strong>{oneBot.lastEventAt || '暂无'}</strong></div><div><span>重连次数</span><strong>{oneBot.reconnectCount ?? 0}</strong></div></div></Card>
     </section>
 
-    <UsageChart usageStats={db.usageStats} />
+    <UsageChart usageStats={db.usageStats} usage={db.usage} />
 
     <section className="dashboard-controls">
       <Card><SectionHeader eyebrow="Conversation" title="参与方式" description="立即写入现有 settings" /><Switch checked={Boolean(db.settings.onlyMentionMode)} onChange={(event) => saveSettings({ onlyMentionMode: event.target.checked })} label="临时只在 @ 时回复" description="关闭后恢复各群自己的参与模式。" /></Card>
