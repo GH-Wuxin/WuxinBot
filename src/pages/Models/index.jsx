@@ -188,6 +188,22 @@ export function ModelsPage({ db, saveSettings }) {
     return `已用 ${Math.round(Number(window.usedPercent || 0))}% · 重置 ${reset}`;
   };
 
+  const limitWindowLabel = (window, fallback) => {
+    const minutes = Number(window?.windowDurationMins || 0);
+    if (minutes === 300) return '5 小时窗口';
+    if (minutes === 10080) return '周额度窗口';
+    if (minutes > 0 && minutes % 1440 === 0) return `${minutes / 1440} 天窗口`;
+    if (minutes > 0 && minutes % 60 === 0) return `${minutes / 60} 小时窗口`;
+    if (minutes > 0) return `${minutes} 分钟窗口`;
+    return fallback;
+  };
+
+  const codexLimitBuckets = (() => {
+    const byId = Object.entries(codexLimits?.rateLimitsByLimitId || {});
+    if (byId.length) return byId.map(([id, bucket]) => ({ id, bucket }));
+    return codexLimits?.rateLimits ? [{ id: codexLimits.rateLimits.limitId || 'codex', bucket: codexLimits.rateLimits }] : [];
+  })();
+
   const save = async () => {
     const patch = draft.llmProvider === 'codex-app-server'
       ? withProviderDefaults({ customModel: '' })
@@ -216,7 +232,15 @@ export function ModelsPage({ db, saveSettings }) {
             <SettingRow title="推理强度" control={<Select value={draft.codexReasoningEffort || 'low'} onChange={(event) => updateDraft({ codexReasoningEffort: event.target.value })} options={[{ value: 'low', label: 'Low（推荐聊天）' }, { value: 'medium', label: 'Medium' }, { value: 'high', label: 'High' }, { value: 'xhigh', label: 'XHigh' }, { value: 'max', label: 'Max' }]} />} />
             <SettingRow title="Codex 可执行文件" description="默认从 PATH 运行 codex app-server" control={<Input value={draft.codexExecutable || 'codex'} onChange={(event) => updateDraft({ codexExecutable: event.target.value })} />} />
             <SettingRow title="自动降级" description={`Codex 未登录、超时或额度不可用时回到 ${draft.codexFallbackModel || draft.model || '旧模型'}`} control={<Switch checked={draft.codexFallbackEnabled !== false} onChange={(event) => updateDraft({ codexFallbackEnabled: event.target.checked })} />} />
-            {codexLimits?.rateLimits && <InlineHelp>5 小时窗口：{formatLimitWindow(codexLimits.rateLimits.primary)}；周窗口：{formatLimitWindow(codexLimits.rateLimits.secondary)}</InlineHelp>}
+            {codexLimitBuckets.map(({ id, bucket }) => {
+              const windows = [
+                { key: 'primary', value: bucket?.primary, fallback: '主额度窗口' },
+                { key: 'secondary', value: bucket?.secondary, fallback: '次额度窗口' },
+              ].filter((item) => item.value);
+              return <InlineHelp key={id}>
+                {bucket?.limitName || id}：{windows.map((item) => `${limitWindowLabel(item.value, item.fallback)} ${formatLimitWindow(item.value)}`).join('；') || '暂无额度窗口'}
+              </InlineHelp>;
+            })}
           </> : <>
             <SettingRow title="API Key" description={draft.apiKey === '已填写' ? '已配置；留空不会覆盖' : '当前供应商的访问密钥'} control={<Input type="password" placeholder={draft.apiKey === '已填写' ? '已填写，留空不改' : ''} value={draft.apiKey === '已填写' ? '' : draft.apiKey || ''} onChange={(event) => updateDraft({ apiKey: event.target.value })} />} />
             <SettingRow title="API 地址" description="OpenAI-compatible base URL" control={<Input value={draft.apiBaseUrl || ''} onChange={(event) => updateDraft(withProviderDefaults({ apiBaseUrl: event.target.value }))} />} />

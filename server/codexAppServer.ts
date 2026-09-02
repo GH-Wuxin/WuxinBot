@@ -152,6 +152,26 @@ export function parseCodexAdapterEnvelope(text: unknown) {
   }
 }
 
+export function mapCodexTokenUsage(breakdown: any = {}) {
+  const cachedTokens = Number(breakdown?.cachedInputTokens || 0);
+  const cacheWriteTokens = Number(breakdown?.cacheWriteInputTokens || 0);
+  return {
+    total_tokens: Number(breakdown?.totalTokens || 0),
+    prompt_tokens: Number(breakdown?.inputTokens || 0),
+    completion_tokens: Number(breakdown?.outputTokens || 0),
+    prompt_tokens_details: {
+      cached_tokens: cachedTokens,
+      cache_write_tokens: cacheWriteTokens,
+    },
+    input_tokens_details: { cached_tokens: cachedTokens },
+    completion_tokens_details: { reasoning_tokens: Number(breakdown?.reasoningOutputTokens || 0) },
+    // Preserve App Server-native aliases for diagnostics and callers that do
+    // not consume the OpenAI-compatible prompt_tokens_details shape.
+    cache_read_input_tokens: cachedTokens,
+    cache_write_input_tokens: cacheWriteTokens,
+  };
+}
+
 class CodexRpcError extends Error {
   code: number | string | undefined;
   data: unknown;
@@ -483,12 +503,7 @@ export async function completeCodexAppServerChat(db: any, options: JsonObject = 
           function: { name: call.name, arguments: JSON.stringify(call.arguments || {}) },
         }))
       : [];
-    const usage = {
-      total_tokens: Number(lastUsage?.totalTokens || 0),
-      prompt_tokens: Number(lastUsage?.inputTokens || 0),
-      completion_tokens: Number(lastUsage?.outputTokens || 0),
-      completion_tokens_details: { reasoning_tokens: Number(lastUsage?.reasoningOutputTokens || 0) },
-    };
+    const usage = mapCodexTokenUsage(lastUsage);
     const raw = {
       id: expectedTurnId,
       object: 'chat.completion',

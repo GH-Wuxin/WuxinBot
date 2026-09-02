@@ -19,6 +19,8 @@ WuxinBot 可以通过 OpenAI 官方 Codex App Server 使用当前 Windows 用户
 - 现有 OpenAI messages 和函数工具定义被放入一次结构化推理请求；结果再还原为 WuxinBot 已有的 `choices[0].message.tool_calls` 格式。
 - Codex 自带的 Shell、插件、浏览器、MCP 和多代理能力在这个子进程中关闭。只有 WuxinBot 原有的有界工具执行器可以执行工具。
 - 账号令牌由 Codex 自己的凭据存储维护。WuxinBot 数据库只保存可执行文件名、模型名和回退策略。
+- 日志会分别显示本轮输入、缓存命中、缓存写入、输出、reasoning 和总 Token；缓存命中是输入 Token 的子集，不应重复相加。
+- 额度页按 App Server 返回的 `windowDurationMins` 标注 5 小时/周窗口，并逐个展示不同模型额度桶，不假设 `primary` 或 `secondary` 的固定含义。
 
 ## 回退
 

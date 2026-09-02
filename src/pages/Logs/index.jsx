@@ -147,7 +147,7 @@ function TraceEvent({ event }) {
       {isModelResult && <details><summary>模型输出</summary><pre>{response.content || '（空内容）'}</pre></details>}
       {isModelResult && <details><summary>供应商 raw CoT</summary><pre>{response.reasoningExposed ? response.reasoning : 'Provider did not expose reasoning_content.'}</pre></details>}
       {isModelResult && response.toolCalls?.length > 0 && <details><summary>工具调用 ({response.toolCalls.length})</summary><pre>{JSON.stringify(response.toolCalls, null, 2)}</pre></details>}
-      <small>{isModelStream ? `${event.status === 'ok' ? '流式接收完成' : '流式接收中'} · 待组装工具 ${response.toolCallsPending || 0}` : `tokens: ${response.usage?.totalTokens ?? 'n/a'} · reasoning: ${response.usage?.reasoningTokens ?? 'n/a'} · cache: ${response.usage?.cachedTokens ?? 'n/a'} · streaming: ${data.streaming ? 'yes' : 'no'}`}</small>
+      <small>{isModelStream ? `${event.status === 'ok' ? '流式接收完成' : '流式接收中'} · 待组装工具 ${response.toolCallsPending || 0}` : `输入: ${response.usage?.promptTokens ?? 'n/a'} · 缓存命中: ${response.usage?.cachedTokens ?? 'n/a'} · 缓存写入: ${response.usage?.cacheWriteTokens ?? 'n/a'} · 输出: ${response.usage?.completionTokens ?? 'n/a'} · reasoning: ${response.usage?.reasoningTokens ?? 'n/a'} · 总计: ${response.usage?.totalTokens ?? 'n/a'} · streaming: ${data.streaming ? 'yes' : 'no'}`}</small>
     </div>}
     {!isModelResult && !isAgentDecision && !isEvidenceReturn && Object.keys(data).length > 0 && <details><summary>详情</summary><pre>{JSON.stringify(data, null, 2)}</pre></details>}
   </div>;
