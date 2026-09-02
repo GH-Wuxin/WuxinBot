@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { buildCodexAdapterInput, parseCodexAdapterEnvelope } from '../server/codexAppServer.ts';
+import { buildCodexAdapterInput, mapCodexTokenUsage, parseCodexAdapterEnvelope } from '../server/codexAppServer.ts';
 import { activateModelProfile, updateProviderSettings } from '../server/modelConfig.ts';
 
 const input = buildCodexAdapterInput([
@@ -17,6 +17,20 @@ const toolEnvelope = parseCodexAdapterEnvelope(JSON.stringify({
 }));
 assert.equal(toolEnvelope.kind, 'tool_calls');
 assert.deepEqual(toolEnvelope.toolCalls[0].arguments, { city: '上海' });
+
+const usage = mapCodexTokenUsage({
+  totalTokens: 120,
+  inputTokens: 100,
+  cachedInputTokens: 72,
+  cacheWriteInputTokens: 16,
+  outputTokens: 20,
+  reasoningOutputTokens: 8,
+});
+assert.equal(usage.prompt_tokens, 100);
+assert.equal(usage.prompt_tokens_details.cached_tokens, 72);
+assert.equal(usage.prompt_tokens_details.cache_write_tokens, 16);
+assert.equal(usage.completion_tokens, 20);
+assert.equal(usage.completion_tokens_details.reasoning_tokens, 8);
 
 const base = {
   llmProvider: 'deepseek',
