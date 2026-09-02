@@ -23,20 +23,27 @@ function healthTone(level) {
 
 function UsageChart({ usageStats, usage }) {
   const [period, setPeriod] = useState('hourly24');
-  const data = usageStats?.[period] || [];
+  const data = period === 'all' ? [] : (usageStats?.[period] || []);
   const maxTokens = Math.max(1, ...data.map((item) => Number(item.totalTokens || 0)));
-  const total = data.reduce((sum, item) => sum + Number(item.totalTokens || 0), 0);
-  const requests = data.reduce((sum, item) => sum + Number(item.requests || 0), 0);
-  const periodLabel = period === 'hourly24' ? '近 24 小时' : '近 7 天';
-  const cumulative = [
-    { label: '累计总量', value: usage?.totalTokens },
-    { label: '输入', value: usage?.promptTokens },
-    { label: '缓存命中', value: usage?.cachedTokens },
-    { label: '缓存写入', value: usage?.cacheWriteTokens },
-    { label: '输出', value: usage?.completionTokens },
-    { label: 'Reasoning', value: usage?.reasoningTokens },
+  const periodLabel = period === 'all' ? '历史累计' : period === 'daily7' ? '近 7 天' : '近 24 小时';
+  const breakdown = period === 'all' ? usage : data.reduce((total, item) => ({
+    totalTokens: total.totalTokens + Number(item.totalTokens || 0),
+    promptTokens: total.promptTokens + Number(item.promptTokens || 0),
+    cachedTokens: total.cachedTokens + Number(item.cachedTokens || 0),
+    cacheWriteTokens: total.cacheWriteTokens + Number(item.cacheWriteTokens || 0),
+    completionTokens: total.completionTokens + Number(item.completionTokens || 0),
+    reasoningTokens: total.reasoningTokens + Number(item.reasoningTokens || 0),
+    requests: total.requests + Number(item.requests || 0),
+  }), { totalTokens: 0, promptTokens: 0, cachedTokens: 0, cacheWriteTokens: 0, completionTokens: 0, reasoningTokens: 0, requests: 0 });
+  const totals = [
+    { label: period === 'all' ? '累计总量' : period === 'daily7' ? '7 天总量' : '24 小时总量', value: breakdown?.totalTokens },
+    { label: '输入', value: breakdown?.promptTokens },
+    { label: '缓存命中', value: breakdown?.cachedTokens },
+    { label: '缓存写入', value: breakdown?.cacheWriteTokens },
+    { label: '输出', value: breakdown?.completionTokens },
+    { label: 'Reasoning', value: breakdown?.reasoningTokens },
   ];
-  return <Card className="dashboard-usage"><SectionHeader eyebrow="Activity" title="Token 用量" description={`${periodLabel} · ${formatNumber(total)} Token · ${formatNumber(requests)} 次请求`} actions={<SegmentedControl value={period} onChange={setPeriod} label="Token 统计周期" options={[{ value: 'hourly24', label: '24 小时' }, { value: 'daily7', label: '7 天' }]} />} /><div className="dashboard-usage__totals" aria-label="累计 Token 明细">{cumulative.map((item) => <div key={item.label}><span>{item.label}</span><strong>{formatNumber(item.value)}</strong></div>)}</div><p className="dashboard-usage__note">缓存命中、缓存写入和 reasoning 从支持明细统计的版本开始累计。</p>{data.length === 0 ? <div className="dashboard-usage__empty">当前周期还没有用量记录。</div> : <div className={`dashboard-usage__chart dashboard-usage__chart--${period}`} role="img" aria-label={`${periodLabel} Token 用量柱状图`}>{data.map((item, index) => {
+  return <Card className="dashboard-usage"><SectionHeader eyebrow="Activity" title="Token 用量" description={`${periodLabel} · ${formatNumber(breakdown?.totalTokens)} Token · ${formatNumber(breakdown?.requests)} 次请求`} actions={<SegmentedControl value={period} onChange={setPeriod} label="Token 统计周期" options={[{ value: 'all', label: '总览' }, { value: 'daily7', label: '7 天' }, { value: 'hourly24', label: '24 小时' }]} />} /><div className="dashboard-usage__totals" aria-label={`${periodLabel} Token 明细`}>{totals.map((item) => <div key={item.label}><span>{item.label}</span><strong>{formatNumber(item.value)}</strong></div>)}</div><p className="dashboard-usage__note">缓存命中、缓存写入和 reasoning 从支持明细统计的版本开始累计。</p>{period === 'all' ? <div className="dashboard-usage__empty">总览显示历史累计；切换到 7 天或 24 小时可查看最近消耗分布。</div> : data.length === 0 ? <div className="dashboard-usage__empty">当前周期还没有用量记录。</div> : <div className={`dashboard-usage__chart dashboard-usage__chart--${period}`} role="img" aria-label={`${periodLabel} Token 用量柱状图`}>{data.map((item, index) => {
     const height = item.totalTokens > 0 ? Math.max(5, Math.round(Number(item.totalTokens) / maxTokens * 100)) : 0;
     const showLabel = period === 'daily7' || index % 4 === 3 || index === data.length - 1;
     const title = `${item.label} · ${formatNumber(item.totalTokens)} Token · 输入 ${formatNumber(item.promptTokens)} · 缓存命中 ${formatNumber(item.cachedTokens)} · 缓存写入 ${formatNumber(item.cacheWriteTokens)} · 输出 ${formatNumber(item.completionTokens)} · reasoning ${formatNumber(item.reasoningTokens)} · ${item.requests} 次`;
