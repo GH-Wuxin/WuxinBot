@@ -10,7 +10,7 @@
     "web": "vite --host 127.0.0.1 --port 5173 --strictPort",
     "build": "vite build",
     "typecheck": "tsc --noEmit",
-    "check": "npm run typecheck && npm run build && npm run sanity && npm run usage:verify && npm run codex:verify && npm run osu-only:verify && npm run osu:api:verify && npm run security && npm run search:verify && npm run search:agent:verify && npm run agent:v2:verify && npm run osu:roast:verify && npm run osu:analyze-disabled:verify && npm run runtime:safety:verify && npm run store:shards:verify && npm run request:trace:verify",
+    "check": "npm run typecheck && npm run build && npm run sanity && npm run usage:verify && npm run codex:verify && npm run osu-only:verify && npm run osu:api:verify && npm run security && npm run search:verify && npm run search:agent:verify && npm run agent:v2:verify && npm run evidence:verify && npm run osu:roast:verify && npm run osu:analyze-disabled:verify && npm run runtime:safety:verify && npm run store:shards:verify && npm run request:trace:verify",
     "start": "tsx server/index.ts",
     "sanity": "tsx tools/sanity.mjs",
     "security": "tsx tools/security-verify.mjs",
@@ -33,7 +33,8 @@
     "agent:campaign:c1": "node --import tsx tools/agent-runtime-campaign.ts",
     "agent:campaign:c2": "node --import tsx tools/agent-runtime-c2-campaign.ts",
     "agent:counterfactual": "node --import tsx tools/agent-counterfactual.ts",
-    "agent:v2:verify": "node --import tsx tools/agent-runtime-v2-contract-verify.mjs && node --import tsx tools/agent-runtime-v2-process-verify.mjs && node --import tsx tools/skill-profiler-agent-verify.mjs && node --import tsx tools/skill-profiler-commands-verify.mjs && node --import tsx tools/skill-profiler-card-verify.mjs && node --import tsx tools/player-skill-profile-verify.mjs && node --import tsx tools/player-skill-compare-card-verify.mjs && node --import tsx tools/player-recent-skill-profile-verify.mjs"
+    "agent:v2:verify": "node --import tsx tools/agent-runtime-v2-contract-verify.mjs && node --import tsx tools/agent-runtime-v2-process-verify.mjs && node --import tsx tools/skill-profiler-agent-verify.mjs && node --import tsx tools/skill-profiler-commands-verify.mjs && node --import tsx tools/skill-profiler-card-verify.mjs && node --import tsx tools/player-skill-profile-verify.mjs && node --import tsx tools/player-skill-compare-card-verify.mjs && node --import tsx tools/player-recent-skill-profile-verify.mjs",
+    "evidence:verify": "node --import tsx tools/evidence-requirement-verify.mjs"
   },
   "keywords": [],
   "author": "",

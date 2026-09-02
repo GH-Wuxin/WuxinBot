@@ -2227,6 +2227,12 @@ export interface RequiredTool {
   args: Record<string, unknown>;
 }
 
+/**
+ * A model-first turn may plan freely, but it cannot finish normally until a
+ * successful, safe tool result matching this requirement has been observed.
+ */
+export interface EvidenceRequirement extends RequiredTool {}
+
 export interface ToolExecutionContext {
   db: any;
   userId: string;
@@ -2273,6 +2279,8 @@ export interface ToolLoopOptions {
   label?: string;
   /** When set, execute this tool before the first LLM call. LLM only writes a short lead. */
   requiredTool?: RequiredTool;
+  /** Model-first evidence invariant. A bounded deterministic fallback runs if unmet. */
+  evidenceRequirement?: EvidenceRequirement;
   /**
    * When true, the structured tool payload is returned verbatim for the caller
    * to append after the LLM lead (command-style delivery). When false (default,
@@ -2319,6 +2327,55 @@ export interface ToolLoopResult {
   hardCapReached?: boolean;
   /** Total executed tool calls across all runToolLoop invocations of this turn. */
   toolCallsMadeThisTurn?: number;
+  /** Whether this loop (including its bounded fallback) satisfied required evidence. */
+  evidenceRequirementSatisfied?: boolean;
+  /** True when the model did not satisfy evidence and the deterministic fallback ran. */
+  evidenceFallbackExecuted?: boolean;
+}
+
+function parsedCanonicalToolArgs(toolCall: LlmToolCall): Record<string, unknown> {
+  const canonical = normalizeAgentToolCall(toolCall);
+  try {
+    const parsed = JSON.parse(canonical.function.arguments || '{}');
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
+function evidenceValueEquals(key: string, expected: unknown, actual: unknown): boolean {
+  if (key === 'username') {
+    return normalizePlayerName(String(expected || '')) === normalizePlayerName(String(actual || ''));
+  }
+  if (typeof expected === 'number' || typeof actual === 'number') {
+    const left = Number(expected);
+    const right = Number(actual);
+    return Number.isFinite(left) && Number.isFinite(right) && left === right;
+  }
+  return String(expected ?? '').trim().toLowerCase() === String(actual ?? '').trim().toLowerCase();
+}
+
+/** Match capability plus the detector's explicit constraints, not raw JSON ordering. */
+function toolResultSatisfiesEvidence(
+  requirement: EvidenceRequirement | undefined,
+  toolCall: LlmToolCall,
+  result: ToolResult,
+  safeContent: string,
+): boolean {
+  if (!requirement || !result.ok || !isSafeToolResult(safeContent)) return false;
+  const canonical = normalizeAgentToolCall(toolCall);
+  if (String(canonical.function.name || '') !== String(requirement.toolName || '')) return false;
+
+  const callArgs = parsedCanonicalToolArgs(toolCall);
+  const resultArgs = result.metadata?.args && typeof result.metadata.args === 'object'
+    ? result.metadata.args as Record<string, unknown>
+    : {};
+  for (const [key, expected] of Object.entries(requirement.args || {})) {
+    if (expected === undefined || key === 'compact') continue;
+    const actual = resultArgs[key] ?? callArgs[key];
+    if (actual === undefined || !evidenceValueEquals(key, expected, actual)) return false;
+  }
+  return true;
 }
 
 function sanitizeDirectDeliveryContent(content: string): string {
@@ -2376,7 +2433,7 @@ export async function runToolLoop(
     db, messages, tools, userId, groupId,
     sendMessage, event, selfQq,
     maxIterations = 5, temperature, maxTokens, model, label,
-    requiredTool, deliverDirectContent = false,
+    requiredTool, evidenceRequirement, deliverDirectContent = false,
     continueAfterDirectPayload = false, deduplicateToolCalls = false,
     structuredToolResults = false
   } = options;
@@ -2435,9 +2492,47 @@ export async function runToolLoop(
   let lastToolFailed = false;
   let toolCallsSkippedByCap = 0;
   let hardCapReached = false;
+  let evidenceRequirementSatisfied = false;
   const collectedImages: string[] = [];
   const collectedDirectContent: string[] = [];
   const successfulToolCallSignatures = new Set<string>();
+
+  const mergeEvidenceFallback = async (): Promise<ToolLoopResult> => {
+    const fallback = await runToolLoop(completeChatFn, {
+      ...options,
+      messages: currentMessages,
+      requiredTool: evidenceRequirement,
+      evidenceRequirement,
+      deliverDirectContent: deliverDirectContent || evidenceRequirement?.args?.capability === 'recommend',
+      toolCallsExecutedBeforeLoop: turnToolCallsMade(),
+    });
+    const combinedImages = [...collectedImages];
+    for (const image of fallback.images || []) {
+      if (!combinedImages.includes(image)) combinedImages.push(image);
+    }
+    const combinedDirect = [...collectedDirectContent];
+    if (fallback.directContent && !combinedDirect.includes(fallback.directContent)) {
+      combinedDirect.push(fallback.directContent);
+    }
+    return {
+      ...fallback,
+      usage: {
+        total_tokens: (totalUsage.total_tokens || 0) + (fallback.usage?.total_tokens || 0),
+        prompt_tokens: (totalUsage.prompt_tokens || 0) + (fallback.usage?.prompt_tokens || 0),
+        completion_tokens: (totalUsage.completion_tokens || 0) + (fallback.usage?.completion_tokens || 0),
+      },
+      toolCallsMade: toolCallsMade + fallback.toolCallsMade,
+      iterations: iterations + fallback.iterations,
+      recommendToolCalled: recommendToolCalled || fallback.recommendToolCalled,
+      images: combinedImages,
+      directContent: combinedDirect.filter(Boolean).join('\n\n'),
+      toolCallsSkippedByCap: toolCallsSkippedByCap + (fallback.toolCallsSkippedByCap || 0),
+      hardCapReached: hardCapReached || Boolean(fallback.hardCapReached),
+      toolCallsMadeThisTurn: fallback.toolCallsMadeThisTurn ?? turnToolCallsMade(),
+      evidenceRequirementSatisfied: Boolean(fallback.evidenceRequirementSatisfied),
+      evidenceFallbackExecuted: true,
+    };
+  };
 
   const toolCallSignature = (toolCall: LlmToolCall): string => {
     const canonical = normalizeAgentToolCall(toolCall);
@@ -2523,6 +2618,7 @@ export async function runToolLoop(
         toolCallsSkippedByCap: 1,
         hardCapReached: true,
         toolCallsMadeThisTurn: turnToolCallsMade(),
+        evidenceRequirementSatisfied: false,
       };
     }
 
@@ -2552,6 +2648,28 @@ export async function runToolLoop(
     // Terminal deterministic reply (recommendation cooldown): deliver
     // verbatim and never let the LLM lead or comment on it.
     if (result.final) {
+      const terminalSafeContent = sanitizeToolResult(result.directContent || result.content);
+      const terminalSatisfied = toolResultSatisfiesEvidence(
+        evidenceRequirement,
+        syntheticCall,
+        result,
+        terminalSafeContent,
+      );
+      if (evidenceRequirement && !terminalSatisfied) {
+        return {
+          text: '[系统] 工具返回结果与本轮取证要求不匹配，无法生成有数据依据的回答。',
+          usage: totalUsage,
+          toolCallsMade: 1,
+          iterations: 1,
+          recommendToolCalled,
+          images: [],
+          directContent: '',
+          toolCallsSkippedByCap: 0,
+          hardCapReached: false,
+          toolCallsMadeThisTurn: turnToolCallsMade(),
+          evidenceRequirementSatisfied: false,
+        };
+      }
       return {
         text: '',
         usage: totalUsage,
@@ -2563,6 +2681,7 @@ export async function runToolLoop(
         toolCallsSkippedByCap: 0,
         hardCapReached: false,
         toolCallsMadeThisTurn: turnToolCallsMade(),
+        evidenceRequirementSatisfied: terminalSatisfied,
       };
     }
 
@@ -2580,10 +2699,47 @@ export async function runToolLoop(
         toolCallsSkippedByCap: 0,
         hardCapReached: false,
         toolCallsMadeThisTurn: turnToolCallsMade(),
+        evidenceRequirementSatisfied: false,
       };
     }
 
     const safeContent = sanitizeToolResult(result.content);
+    if (evidenceRequirement && !isSafeToolResult(safeContent)) {
+      return {
+        text: '[系统] 查询结果未通过安全校验，本轮无法生成有数据依据的回答。',
+        usage: totalUsage,
+        toolCallsMade: 1,
+        iterations: 1,
+        recommendToolCalled,
+        images: [],
+        directContent: '',
+        toolCallsSkippedByCap: 0,
+        hardCapReached: false,
+        toolCallsMadeThisTurn: turnToolCallsMade(),
+        evidenceRequirementSatisfied: false,
+      };
+    }
+    evidenceRequirementSatisfied = toolResultSatisfiesEvidence(
+      evidenceRequirement,
+      syntheticCall,
+      result,
+      safeContent,
+    );
+    if (evidenceRequirement && !evidenceRequirementSatisfied) {
+      return {
+        text: '[系统] 工具返回结果与本轮取证要求不匹配，无法生成有数据依据的回答。',
+        usage: totalUsage,
+        toolCallsMade: 1,
+        iterations: 1,
+        recommendToolCalled,
+        images: [],
+        directContent: '',
+        toolCallsSkippedByCap: 0,
+        hardCapReached: false,
+        toolCallsMadeThisTurn: turnToolCallsMade(),
+        evidenceRequirementSatisfied: false,
+      };
+    }
     if (isSafeToolResult(safeContent)) {
       if (result.ok) {
         for (const image of result.images || []) {
@@ -2678,6 +2834,7 @@ export async function runToolLoop(
         toolCallsSkippedByCap: 0,
         hardCapReached: false,
         toolCallsMadeThisTurn: turnToolCallsMade(),
+        evidenceRequirementSatisfied,
       };
     }
 
@@ -2733,13 +2890,15 @@ export async function runToolLoop(
       toolCallsSkippedByCap: 0,
       hardCapReached: false,
       toolCallsMadeThisTurn: turnToolCallsMade(),
+      evidenceRequirementSatisfied,
     };
   }
 
   while (iterations < maxIterations) {
     iterations++;
     const hasDirectPayload = collectedDirectContent.length > 0 || collectedImages.length > 0;
-    const directPayloadIsTerminal = hasDirectPayload && !continueAfterDirectPayload;
+    const directPayloadIsTerminal = hasDirectPayload && !continueAfterDirectPayload &&
+      (!evidenceRequirement || evidenceRequirementSatisfied);
 
     // A5 — previousToolFailed is batch/turn-level sticky: it means "at least
     // one tool failed since the last planner decision", not "the single most
@@ -2779,6 +2938,7 @@ export async function runToolLoop(
         label: label ? `${label} [工具循环 ${iterations}]` : undefined,
         traceRole: plannerInput.callRole,
         tracePurpose: directPayloadIsTerminal ? 'tool_result_lead' : 'tool_planning',
+        retainToolsOnEmpty: Boolean(evidenceRequirement && !evidenceRequirementSatisfied),
       });
     } catch (error) {
       // Once a trusted direct payload has been collected, the follow-up LLM is
@@ -2787,6 +2947,9 @@ export async function runToolLoop(
       // deterministic fallback. Initial calls and ordinary tools still fail
       // normally so errors are not hidden.
       if (collectedDirectContent.length > 0 || collectedImages.length > 0) {
+        if (evidenceRequirement && !evidenceRequirementSatisfied) {
+          return mergeEvidenceFallback();
+        }
         return {
           text: '',
           usage: totalUsage,
@@ -2797,7 +2960,8 @@ export async function runToolLoop(
           directContent: collectedDirectContent.join('\n\n'),
           toolCallsSkippedByCap,
           hardCapReached,
-          toolCallsMadeThisTurn: turnToolCallsMade()
+          toolCallsMadeThisTurn: turnToolCallsMade(),
+          evidenceRequirementSatisfied,
         };
       }
       throw error;
@@ -2831,7 +2995,8 @@ export async function runToolLoop(
         directContent: collectedDirectContent.join('\n\n'),
         toolCallsSkippedByCap,
         hardCapReached,
-        toolCallsMadeThisTurn: turnToolCallsMade()
+        toolCallsMadeThisTurn: turnToolCallsMade(),
+        evidenceRequirementSatisfied,
       };
     }
 
@@ -2873,6 +3038,9 @@ export async function runToolLoop(
 
     // If no tool calls (structured or parsed), we have the final answer.
     if (!toolCalls.length) {
+      if (evidenceRequirement && !evidenceRequirementSatisfied) {
+        return mergeEvidenceFallback();
+      }
       return {
         text: finalReplyText(response.text),
         usage: totalUsage,
@@ -2883,7 +3051,8 @@ export async function runToolLoop(
         directContent: collectedDirectContent.join('\n\n'),
         toolCallsSkippedByCap,
         hardCapReached,
-        toolCallsMadeThisTurn: turnToolCallsMade()
+        toolCallsMadeThisTurn: turnToolCallsMade(),
+        evidenceRequirementSatisfied,
       };
     }
 
@@ -2966,9 +3135,17 @@ export async function runToolLoop(
         recommendToolCalled = osuCapabilityForToolCall(tc) === 'recommend';
       }
 
+      const safeContent = sanitizeToolResult(result.content);
+      if (toolResultSatisfiesEvidence(evidenceRequirement, tc, result, safeContent)) {
+        evidenceRequirementSatisfied = true;
+      }
+
       // Terminal deterministic reply: stop the loop immediately and deliver
       // verbatim; the LLM never sees the result and cannot add claims.
       if (result.final) {
+        if (evidenceRequirement && !evidenceRequirementSatisfied) {
+          return mergeEvidenceFallback();
+        }
         const finalDirect = sanitizeDirectDeliveryContent(result.directContent || result.content);
         return {
           text: '',
@@ -2980,12 +3157,12 @@ export async function runToolLoop(
           directContent: [...collectedDirectContent, finalDirect].filter(Boolean).join('\n\n'),
           toolCallsSkippedByCap,
           hardCapReached,
-          toolCallsMadeThisTurn: turnToolCallsMade()
+          toolCallsMadeThisTurn: turnToolCallsMade(),
+          evidenceRequirementSatisfied,
         };
       }
 
       // Sanitize and validate result
-      const safeContent = sanitizeToolResult(result.content);
       if (!isSafeToolResult(safeContent)) {
         const content = '[工具结果被安全过滤器拦截]';
         currentMessages.push({
@@ -3075,6 +3252,10 @@ export async function runToolLoop(
     if (hardCapReached) break;
   }
 
+  if (evidenceRequirement && !evidenceRequirementSatisfied) {
+    return mergeEvidenceFallback();
+  }
+
   // Max iterations reached — ask LLM for final answer
   let finalPrompt: string;
   if (collectedDirectContent.length > 0) {
@@ -3127,7 +3308,8 @@ export async function runToolLoop(
         directContent: collectedDirectContent.join('\n\n'),
         toolCallsSkippedByCap,
         hardCapReached,
-        toolCallsMadeThisTurn: turnToolCallsMade()
+        toolCallsMadeThisTurn: turnToolCallsMade(),
+        evidenceRequirementSatisfied,
       };
     }
     throw error;
@@ -3151,6 +3333,7 @@ export async function runToolLoop(
     directContent: collectedDirectContent.join('\n\n'),
     toolCallsSkippedByCap,
     hardCapReached,
-    toolCallsMadeThisTurn: turnToolCallsMade()
+    toolCallsMadeThisTurn: turnToolCallsMade(),
+    evidenceRequirementSatisfied,
   };
 }
