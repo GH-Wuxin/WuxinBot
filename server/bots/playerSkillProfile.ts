@@ -1,6 +1,10 @@
 import { getUserBestScores, getUserById } from '../osu/api.js';
 import { normalizedScoreMods } from '../osu/scoreMetrics.js';
-import { requestSkillProfilerAnalysisCachedWithFetch } from './skillProfiler.js';
+import {
+  getSkillProfilerIdentity,
+  requestSkillProfilerAnalysisCachedWithFetch,
+  type SkillProfilerIdentity,
+} from './skillProfiler.js';
 import { saveAndGetCqCode } from './render.js';
 import { renderPlayerSkillComparisonCard, renderPlayerSkillProfileCard } from './playerSkillComparisonCard.js';
 
@@ -17,6 +21,64 @@ export const PLAYER_SKILL_AXES = [
 ] as const;
 
 export type PlayerSkillAxis = typeof PLAYER_SKILL_AXES[number];
+
+export const PLAYER_SKILL_TIERS = ['BEGINNER', 'PLAYER', 'EXPERT', 'WORLD_CLASS'] as const;
+export type PlayerSkillTier = typeof PLAYER_SKILL_TIERS[number];
+export type PlayerSkillRatingStatus = 'RATED' | 'INSUFFICIENT_EVIDENCE';
+
+export const PLAYER_SKILL_ARCHETYPES = [
+  'ALL_ROUNDER',
+  'AIM',
+  'JUMP',
+  'FLOW',
+  'PRECISION',
+  'CONTROL',
+  'FLOW_SPEED',
+  'SPEED',
+  'RHYTHM',
+  'STAMINA',
+  'ENDURANCE',
+  'READING',
+  'TECH',
+] as const;
+export type PlayerSkillArchetype = typeof PLAYER_SKILL_ARCHETYPES[number];
+
+export const PLAYER_SKILL_TITLE_POLICY_ID = 'AGGREGATE_SPECIALTY_FOUR_TIER_TITLES_V01';
+
+export const PLAYER_SKILL_ARCHETYPE_LABELS: Readonly<Record<PlayerSkillArchetype, string>> = {
+  ALL_ROUNDER: 'All-Rounder',
+  AIM: 'Aim',
+  JUMP: 'Jump Aim',
+  FLOW: 'Flow Aim',
+  PRECISION: 'Precision Aim',
+  CONTROL: 'Aim Control',
+  FLOW_SPEED: 'Flow Speed',
+  SPEED: 'Speed',
+  RHYTHM: 'Rhythm Control',
+  STAMINA: 'Stamina',
+  ENDURANCE: 'Endurance',
+  READING: 'Reading',
+  TECH: 'Technical',
+};
+
+export const PLAYER_SKILL_TITLES: Readonly<Record<
+  PlayerSkillArchetype,
+  Readonly<Record<PlayerSkillTier, string>>
+>> = {
+  ALL_ROUNDER: { BEGINNER: 'BEGINNER', PLAYER: 'ALL-ROUNDER', EXPERT: 'COMPLETE PLAYER', WORLD_CLASS: 'MASTER OF ALL' },
+  AIM: { BEGINNER: 'BEGINNER', PLAYER: 'AIM ALL-ROUNDER', EXPERT: 'AIM VIRTUOSO', WORLD_CLASS: 'GOD OF AIM' },
+  JUMP: { BEGINNER: 'BEGINNER', PLAYER: 'JUMP PLAYER', EXPERT: 'AIM ACE', WORLD_CLASS: 'GOD OF AIM' },
+  FLOW: { BEGINNER: 'BEGINNER', PLAYER: 'FLOW PLAYER', EXPERT: 'FLOW SPECIALIST', WORLD_CLASS: 'FLOW SOVEREIGN' },
+  PRECISION: { BEGINNER: 'BEGINNER', PLAYER: 'PRECISION PLAYER', EXPERT: 'SHARPSHOOTER', WORLD_CLASS: 'PIXEL PERFECT' },
+  CONTROL: { BEGINNER: 'BEGINNER', PLAYER: 'AIM TECHNICIAN', EXPERT: 'CURSOR TACTICIAN', WORLD_CLASS: 'CURSOR ARCHITECT' },
+  FLOW_SPEED: { BEGINNER: 'BEGINNER', PLAYER: 'STREAM PLAYER', EXPERT: 'STREAM ACE', WORLD_CLASS: 'STREAM SOVEREIGN' },
+  SPEED: { BEGINNER: 'BEGINNER', PLAYER: 'SPEED PLAYER', EXPERT: 'SPEED DEMON', WORLD_CLASS: 'SPEED INCARNATE' },
+  RHYTHM: { BEGINNER: 'BEGINNER', PLAYER: 'TAPPING PLAYER', EXPERT: 'TAPPING VIRTUOSO', WORLD_CLASS: 'HUMAN METRONOME' },
+  STAMINA: { BEGINNER: 'BEGINNER', PLAYER: 'STAMINA PLAYER', EXPERT: 'IRON FINGERS', WORLD_CLASS: 'ENDLESS ENGINE' },
+  ENDURANCE: { BEGINNER: 'BEGINNER', PLAYER: 'MARATHON PLAYER', EXPERT: 'ENDURANCE ACE', WORLD_CLASS: 'THE UNBREAKABLE' },
+  READING: { BEGINNER: 'BEGINNER', PLAYER: 'SIGHTREADER', EXPERT: 'READING SAVANT', WORLD_CLASS: 'ALL-SEEING' },
+  TECH: { BEGINNER: 'BEGINNER', PLAYER: 'TECH PLAYER', EXPERT: 'TECH SPECIALIST', WORLD_CLASS: 'MECHANICAL GENIUS' },
+};
 
 export const PLAYER_SKILL_AXIS_LABELS: Readonly<Record<PlayerSkillAxis, string>> = {
   aim_control: 'Aim Control',
@@ -67,6 +129,35 @@ const BP_RANK_DECAY = 0.95;
 const PROFILE_ANALYSIS_CONCURRENCY = 3;
 const PLAYER_PROFILE_CACHE_TTL_MS = 30 * 60_000;
 const playerProfileCache = new Map<string, { at: number; payload: Record<string, unknown> }>();
+const STAR_EQUIVALENT_PLAYER_AXES = new Set<PlayerSkillAxis>([
+  'aim_control',
+  'jump_aim',
+  'spatial_precision',
+  'flow_aim',
+  'raw_speed',
+  'finger_control',
+  'reading',
+]);
+
+export type AggregatedPlayerAxis = {
+  key: PlayerSkillAxis;
+  label: string;
+  ceiling: number;
+  median: number;
+};
+
+export interface PlayerSkillIdentity {
+  status: PlayerSkillRatingStatus;
+  tier: PlayerSkillTier | null;
+  archetype: PlayerSkillArchetype;
+  title: string;
+  tierScore: number;
+}
+
+export interface PlayerSkillEvidenceSummary {
+  sampleCount: number;
+  effectiveSampleSize: number;
+}
 
 function finite(value: unknown): number | null {
   if (value === null || value === undefined || value === '') return null;
@@ -227,17 +318,164 @@ export function rounded(value: number, digits = 1): number {
   return Math.round(value * multiplier) / multiplier;
 }
 
-function titleCase(value: unknown): string {
-  return String(value || 'Balanced')
-    .toLowerCase()
-    .replaceAll('_', ' ')
-    .replace(/\b\w/g, (letter) => letter.toUpperCase());
+function playerAxisStrength(axis: AggregatedPlayerAxis): number {
+  return axis.ceiling * 0.68 + axis.median * 0.32;
+}
+
+function playerWorldStrength(axis: AggregatedPlayerAxis): number {
+  const ceilingCap = STAR_EQUIVALENT_PLAYER_AXES.has(axis.key) ? 10 : 8.8;
+  return Math.min(axis.ceiling, ceilingCap) * 0.68 + axis.median * 0.32;
+}
+
+function pairIncludes(pair: ReadonlySet<PlayerSkillAxis>, left: PlayerSkillAxis, right: PlayerSkillAxis): boolean {
+  return pair.size === 2 && pair.has(left) && pair.has(right);
+}
+
+function singleAxisArchetype(axis: PlayerSkillAxis): PlayerSkillArchetype {
+  if (axis === 'jump_aim') return 'JUMP';
+  if (axis === 'flow_aim') return 'FLOW';
+  if (axis === 'spatial_precision') return 'PRECISION';
+  if (axis === 'aim_control') return 'CONTROL';
+  if (axis === 'raw_speed') return 'SPEED';
+  if (axis === 'finger_control') return 'RHYTHM';
+  if (axis === 'stamina') return 'STAMINA';
+  if (axis === 'endurance') return 'ENDURANCE';
+  return 'READING';
+}
+
+function pairedAxisArchetype(top: PlayerSkillAxis, second: PlayerSkillAxis): PlayerSkillArchetype {
+  const pair = new Set<PlayerSkillAxis>([top, second]);
+  if (pairIncludes(pair, 'flow_aim', 'raw_speed')) return 'FLOW_SPEED';
+  if (pairIncludes(pair, 'flow_aim', 'finger_control')) return 'TECH';
+  if (
+    pairIncludes(pair, 'jump_aim', 'spatial_precision')
+    || pairIncludes(pair, 'jump_aim', 'aim_control')
+    || pairIncludes(pair, 'jump_aim', 'flow_aim')
+    || pairIncludes(pair, 'aim_control', 'spatial_precision')
+    || pairIncludes(pair, 'flow_aim', 'aim_control')
+    || pairIncludes(pair, 'flow_aim', 'spatial_precision')
+  ) {
+    return 'AIM';
+  }
+  if (pairIncludes(pair, 'raw_speed', 'finger_control')) return 'RHYTHM';
+  if (
+    pairIncludes(pair, 'raw_speed', 'stamina')
+    || pairIncludes(pair, 'raw_speed', 'endurance')
+  ) {
+    return 'SPEED';
+  }
+  if (
+    pairIncludes(pair, 'flow_aim', 'stamina')
+    || pairIncludes(pair, 'flow_aim', 'endurance')
+  ) {
+    return 'FLOW';
+  }
+  if (pairIncludes(pair, 'stamina', 'endurance')) return 'ENDURANCE';
+  if (
+    pairIncludes(pair, 'reading', 'finger_control')
+    || pairIncludes(pair, 'reading', 'aim_control')
+    || pairIncludes(pair, 'reading', 'spatial_precision')
+  ) {
+    return 'TECH';
+  }
+  return singleAxisArchetype(top);
+}
+
+export function inferPlayerSkillIdentity(
+  axes: AggregatedPlayerAxis[],
+  evidence: PlayerSkillEvidenceSummary = { sampleCount: 50, effectiveSampleSize: 50 },
+): PlayerSkillIdentity {
+  if (!axes.length) throw new Error('PLAYER_SKILL_IDENTITY_NO_AXES');
+  const ranked = [...axes]
+    .map((axis) => ({ ...axis, strength: playerAxisStrength(axis) }))
+    .sort((left, right) => (
+      right.strength - left.strength
+      || PLAYER_SKILL_AXES.indexOf(left.key) - PLAYER_SKILL_AXES.indexOf(right.key)
+    ));
+  const top = ranked[0];
+  const second = ranked[1] || top;
+  const breadth = ranked[Math.min(6, ranked.length - 1)].strength;
+  const tierScore = top.strength;
+
+  let archetype: PlayerSkillArchetype;
+  if (top.strength - breadth <= 0.8) {
+    archetype = 'ALL_ROUNDER';
+  } else {
+    const coPrimary = top.strength - second.strength <= 1.0
+      && second.strength >= top.strength * 0.82;
+    archetype = coPrimary
+      ? pairedAxisArchetype(top.key, second.key)
+      : singleAxisArchetype(top.key);
+  }
+
+  const rated = evidence.sampleCount >= 12 && evidence.effectiveSampleSize >= 10;
+  if (!rated) {
+    return {
+      status: 'INSUFFICIENT_EVIDENCE',
+      tier: null,
+      archetype,
+      title: 'UNRATED',
+      tierScore: rounded(tierScore, 2),
+    };
+  }
+
+  let tier: PlayerSkillTier;
+  if (tierScore < 3.5) {
+    tier = 'BEGINNER';
+  } else {
+    // World titles require a full-enough profile in addition to the P80/P50
+    // shape.  The first route rewards an exceptional repeated specialty; the
+    // second covers genuinely world-class broad players whose axes stay just
+    // below 10 instead of requiring artificial overflow.
+    const worldSupport = evidence.sampleCount >= 30 && evidence.effectiveSampleSize >= 20;
+    const exceptionalSpecialty = ranked.slice(0, 2).some((axis) => {
+      if (STAR_EQUIVALENT_PLAYER_AXES.has(axis.key)) {
+        // Overflow remains visible on the card, but it must not let four narrow
+        // outliers manufacture a world title without a strong BP50 baseline.
+        return axis.ceiling >= 10 && playerWorldStrength(axis) >= 9;
+      }
+      return axis.ceiling >= 8.8 && playerWorldStrength(axis) >= 8.2;
+    });
+    const broadWorldClass = top.ceiling >= 9
+      && top.median >= 6.5
+      && playerWorldStrength(top) >= 8.5
+      && playerWorldStrength(second) >= 7.5;
+    if (worldSupport && (exceptionalSpecialty || broadWorldClass)) tier = 'WORLD_CLASS';
+    else if (tierScore >= 6.5) tier = 'EXPERT';
+    else tier = 'PLAYER';
+  }
+  return {
+    status: 'RATED',
+    tier,
+    archetype,
+    title: PLAYER_SKILL_TITLES[archetype][tier],
+    tierScore: rounded(tierScore, 2),
+  };
+}
+
+export function playerProfileCacheKey(
+  osuId: number,
+  limit: number,
+  identity: SkillProfilerIdentity,
+): string {
+  return JSON.stringify([
+    PLAYER_SKILL_TITLE_POLICY_ID,
+    identity.algorithmId,
+    identity.mapDemandVersion,
+    osuId,
+    limit,
+  ]);
 }
 
 export function aggregatePlayerSkillProfile(analyzed: AnalyzedBp[]): {
-  axes: Array<{ key: PlayerSkillAxis; label: string; ceiling: number; median: number }>;
+  axes: AggregatedPlayerAxis[];
   primaryAxes: string[];
   profileType: string;
+  profileTitle: string;
+  profileStatus: PlayerSkillRatingStatus;
+  profileTier: PlayerSkillTier | null;
+  profileArchetype: PlayerSkillArchetype;
+  profileTierScore: number;
 } {
   if (!analyzed.length) throw new Error('PLAYER_SKILL_PROFILE_NO_VALID_BP');
   const axes = PLAYER_SKILL_AXES.map((axis) => {
@@ -257,21 +495,37 @@ export function aggregatePlayerSkillProfile(analyzed: AnalyzedBp[]): {
     };
   });
   const primaryAxes = [...axes]
-    .sort((left, right) => (right.ceiling * 0.68 + right.median * 0.32) - (left.ceiling * 0.68 + left.median * 0.32))
+    .sort((left, right) => playerAxisStrength(right) - playerAxisStrength(left))
     .slice(0, 2)
     .map((axis) => axis.label);
-  const typeWeights = new Map<string, number>();
-  for (const item of analyzed) {
-    const type = titleCase(item.primaryType);
-    typeWeights.set(type, (typeWeights.get(type) || 0) + item.weight * Number(item.scoreQuality?.overall ?? 1));
-  }
-  const profileType = [...typeWeights.entries()].sort((left, right) => right[1] - left[1])[0]?.[0] || 'Balanced';
-  return { axes, primaryAxes, profileType };
+  const positiveWeights = analyzed
+    .map((item) => Number(item.weight))
+    .filter((weight) => Number.isFinite(weight) && weight > 0);
+  const weightSum = positiveWeights.reduce((sum, weight) => sum + weight, 0);
+  const squaredWeightSum = positiveWeights.reduce((sum, weight) => sum + weight * weight, 0);
+  const effectiveSampleSize = squaredWeightSum > 0 ? weightSum * weightSum / squaredWeightSum : 0;
+  const identity = inferPlayerSkillIdentity(axes, {
+    sampleCount: analyzed.length,
+    effectiveSampleSize,
+  });
+  return {
+    axes,
+    primaryAxes,
+    // Keep type and title separate: type names the aggregate specialty, while
+    // title adds the evidence tier.  Neither is a vote over per-map labels.
+    profileType: PLAYER_SKILL_ARCHETYPE_LABELS[identity.archetype],
+    profileTitle: identity.title,
+    profileStatus: identity.status,
+    profileTier: identity.tier,
+    profileArchetype: identity.archetype,
+    profileTierScore: identity.tierScore,
+  };
 }
 
 export async function buildPlayerSkillProfilePayload(osuId: number, limit = PLAYER_PROFILE_LIMIT): Promise<Record<string, unknown>> {
   const safeLimit = Math.max(1, Math.min(PLAYER_PROFILE_LIMIT, Math.floor(limit)));
-  const cacheKey = `${osuId}:${safeLimit}`;
+  const profilerIdentity = await getSkillProfilerIdentity();
+  const cacheKey = playerProfileCacheKey(osuId, safeLimit, profilerIdentity);
   const cached = playerProfileCache.get(cacheKey);
   if (cached && Date.now() - cached.at < PLAYER_PROFILE_CACHE_TTL_MS) return cached.payload;
   const [user, scores] = await Promise.all([
@@ -354,9 +608,16 @@ export async function buildPlayerSkillProfilePayload(osuId: number, limit = PLAY
         .map(([mods, count]) => ({ mods, count })),
     },
     profile: {
-      methodology: 'BP50 score-adjusted demand · reciprocal low-ACC×low-combo hard-demand penalty · FC excellence ≤4% · 0.95^(rank-1) · weighted P80/P50',
+      methodology: 'BP50 score-adjusted demand · reciprocal low-ACC×low-combo hard-demand penalty · FC excellence ≤4% · 0.95^(rank-1) · weighted P80/P50 · aggregate specialty four-tier title',
       primaryAxes: aggregate.primaryAxes,
       profileType: aggregate.profileType,
+      profileTitle: aggregate.profileTitle,
+      profileStatus: aggregate.profileStatus,
+      profileTier: aggregate.profileTier,
+      profileArchetype: aggregate.profileArchetype,
+      profileTierScore: aggregate.profileTierScore,
+      titlePolicy: PLAYER_SKILL_TITLE_POLICY_ID,
+      profilerIdentity,
       axes: aggregate.axes,
     },
   };

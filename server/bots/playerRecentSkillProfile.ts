@@ -15,7 +15,11 @@ import {
   weightedQuantile,
   type PlayerSkillAxis,
 } from './playerSkillProfile.js';
-import { requestSkillProfilerAnalysisCachedWithFetch } from './skillProfiler.js';
+import {
+  getSkillProfilerIdentity,
+  requestSkillProfilerAnalysisCachedWithFetch,
+  type SkillProfilerIdentity,
+} from './skillProfiler.js';
 
 const PAGE_SIZE = 50;
 const TARGET_COMPLETED_GROUPS = 25;
@@ -24,10 +28,20 @@ const MAX_RAW_SCORES = 500;
 const MAX_AGE_MS = 5 * 24 * 60 * 60_000;
 const CACHE_TTL_MS = 5 * 60_000;
 const ANALYSIS_CONCURRENCY = 3;
-const recentCache = new Map<number, { at: number; payload: Record<string, any> }>();
-const recentInflight = new Map<number, Promise<Record<string, any>>>();
+export const RECENT_PROFILE_CACHE_POLICY_ID = 'RECENT_PROFILE_PROFILER_IDENTITY_V01';
+const recentCache = new Map<string, { at: number; payload: Record<string, any> }>();
+const recentInflight = new Map<string, Promise<Record<string, any>>>();
 
 export type RecentEvidence = 'SUFFICIENT' | 'LOWER_BOUND' | 'INSUFFICIENT';
+
+export function recentProfileCacheKey(osuId: number, identity: SkillProfilerIdentity): string {
+  return JSON.stringify([
+    RECENT_PROFILE_CACHE_POLICY_ID,
+    identity.algorithmId,
+    identity.mapDemandVersion,
+    osuId,
+  ]);
+}
 
 export function recentScorePassed(score: any): boolean {
   if (typeof score?.passed === 'boolean') return score.passed;
@@ -256,18 +270,20 @@ async function buildUncached(osuId: number): Promise<Record<string, any>> {
 }
 
 export async function buildPlayerRecentSkillProfilePayload(osuId: number): Promise<Record<string, any>> {
-  const cached = recentCache.get(osuId);
+  const profilerIdentity = await getSkillProfilerIdentity();
+  const cacheKey = recentProfileCacheKey(osuId, profilerIdentity);
+  const cached = recentCache.get(cacheKey);
   if (cached && Date.now() - cached.at < CACHE_TTL_MS) return cached.payload;
-  const existing = recentInflight.get(osuId);
+  const existing = recentInflight.get(cacheKey);
   if (existing) return existing;
   const pending = buildUncached(osuId);
-  recentInflight.set(osuId, pending);
+  recentInflight.set(cacheKey, pending);
   try {
     const payload = await pending;
-    recentCache.set(osuId, { at: Date.now(), payload });
+    recentCache.set(cacheKey, { at: Date.now(), payload });
     return payload;
   } finally {
-    if (recentInflight.get(osuId) === pending) recentInflight.delete(osuId);
+    if (recentInflight.get(cacheKey) === pending) recentInflight.delete(cacheKey);
   }
 }
 

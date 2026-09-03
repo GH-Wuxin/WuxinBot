@@ -32,6 +32,33 @@ function compact(value: unknown, maxLength = 28): string {
   return chars.length <= maxLength ? chars.join('') : `${chars.slice(0, maxLength - 1).join('')}…`;
 }
 
+function profileTitleColor(tier: unknown): string {
+  if (tier === 'WORLD_CLASS') return '#ffcf62';
+  if (tier === 'EXPERT') return '#e9b65b';
+  if (tier === 'PLAYER') return '#63dcff';
+  return '#aab8c4';
+}
+
+function profileTitleFontSize(title: string): number {
+  const length = [...title].length;
+  if (length <= 20) return 24;
+  if (length <= 26) return 21;
+  return 18;
+}
+
+export function playerProfileTitlePresentation(profile: Record<string, any>): {
+  title: string;
+  color: string;
+  fontSize: number;
+} {
+  const title = String(profile.profileTitle || profile.profileType || 'Beginner').toUpperCase();
+  return {
+    title,
+    color: profileTitleColor(profile.profileTier),
+    fontSize: profileTitleFontSize(title),
+  };
+}
+
 function text(value: unknown, x: number, y: number, size: number, options: Record<string, unknown> = {}): string {
   return `<text x="${x}" y="${y}" fill="${options.fill || '#eef4fa'}" fill-opacity="${options.opacity ?? 1}" font-size="${size}" font-weight="${options.weight || 500}" text-anchor="${options.anchor || 'start'}" letter-spacing="${options.spacing || 0}">${esc(value)}</text>`;
 }
@@ -274,6 +301,11 @@ export async function renderPlayerSkillProfileCard(payload: Record<string, any>)
       });
   }).join('');
   const primary = Array.isArray(profile.primaryAxes) ? profile.primaryAxes.slice(0, 2).join(' · ') : '—';
+  const {
+    title: profileTitle,
+    color: titleColor,
+    fontSize: titleSize,
+  } = playerProfileTitlePresentation(profile);
   const scoreEvidence = Math.round(finite(sample.averageScoreQuality) * 100);
   const svg = `<?xml version="1.0" encoding="UTF-8"?>
 <svg xmlns="http://www.w3.org/2000/svg" width="${WIDTH}" height="${HEIGHT}" viewBox="0 0 ${WIDTH} ${HEIGHT}">
@@ -281,7 +313,7 @@ export async function renderPlayerSkillProfileCard(payload: Record<string, any>)
 <rect width="1280" height="720" fill="#07101a"/>${cover ? `<image x="-45" y="-45" width="1370" height="810" href="${cover}" preserveAspectRatio="xMidYMid slice" filter="url(#blur)" opacity="0.50"/>` : ''}<rect width="1280" height="720" fill="url(#overlay)"/>
 <g filter="url(#shadow)"><circle cx="82" cy="82" r="59" fill="#0b1724" stroke="#42d5ff" stroke-width="2"/>${avatar ? `<image x="27" y="27" width="110" height="110" href="${avatar}" preserveAspectRatio="xMidYMid slice" clip-path="url(#avatar)"/>` : ''}</g>
 ${text(compact(player.username || `osu! ${player.osuId || '?'}`, 30), 158, 55, 32, { weight: 700 })}${text(`${String(player.countryCode || '—').toUpperCase()} · GLOBAL ${rank(player.globalRank)} · ${finite(player.pp).toLocaleString('en-US', { maximumFractionDigits: 0 })}pp`, 158, 87, 16, { fill: '#b9c7d4', weight: 560, spacing: 0.4 })}${text(`主要能力  ${compact(primary, 40)}`, 158, 116, 17, { fill: '#63dcff', weight: 620 })}${text(`BP50  ${finite(sample.valid)}/${finite(sample.requested, 50)} VALID · SCORE EVIDENCE ${scoreEvidence}%`, 158, 145, 14, { fill: '#91a3b2', weight: 540, spacing: 0.7 })}
-${text('PLAYER SKILL PROFILE', 1218, 61, 16, { anchor: 'end', fill: '#9facb8', weight: 650, spacing: 2.5 })}${text(compact(profile.profileType || 'Balanced', 32).toUpperCase(), 1218, 99, 24, { anchor: 'end', fill: '#e9b65b', weight: 700, spacing: 1.2 })}${text(`${finite(player.accuracy).toFixed(2)}% ACC`, 1218, 132, 16, { anchor: 'end', fill: '#dce7ef', weight: 580 })}<path d="M24 184H1256" stroke="#e1b45c" stroke-opacity="0.68" stroke-width="1.5"/>
+${text('PLAYER SKILL PROFILE', 1218, 61, 16, { anchor: 'end', fill: '#9facb8', weight: 650, spacing: 2.5 })}${text(profileTitle, 1218, 99, titleSize, { anchor: 'end', fill: titleColor, weight: 700, spacing: 1.2 })}${text(`${finite(player.accuracy).toFixed(2)}% ACC`, 1218, 132, 16, { anchor: 'end', fill: '#dce7ef', weight: 580 })}<path d="M24 184H1256" stroke="#e1b45c" stroke-opacity="0.68" stroke-width="1.5"/>
 ${grid}${spokes}<polygon points="${polygon('median')}" fill="#c8d4df" fill-opacity="0.05" stroke="#c8d4df" stroke-opacity="0.40" stroke-width="1.5" stroke-dasharray="6 7"/><polygon points="${polygon('ceiling')}" fill="#35d7ff" fill-opacity="0.17" stroke="#42d5ff" stroke-width="3.2" stroke-linejoin="round"/>${nodes}${labels}<circle cx="${cx}" cy="${cy}" r="5" fill="#07111d"/>
 <path d="M34 675H1246" stroke="#ffffff" stroke-opacity="0.12"/>${text('实线：高位能力  ·  虚线：常态覆盖', 42, 706, 13, { fill: '#9aacba', weight: 540 })}${text('BP50 · SCORE QUALITY ADJUSTED · 0.95 RANK DECAY', 1238, 706, 12, { anchor: 'end', fill: '#8999a8', weight: 560, spacing: 1.7 })}
 </svg>`;
