@@ -7,6 +7,8 @@ import {
   canonicalRecentMods,
   groupRecentScores,
   recentFailureEvidence,
+  RECENT_PROFILE_CACHE_POLICY_ID,
+  recentProfileCacheKey,
   recentScoreCompletion,
   recentScoreGroupKey,
   recentTimeWeight,
@@ -32,6 +34,22 @@ assert.ok(recentFailureEvidence(score({ passed: false, judged: 450, total: 500 }
   > recentFailureEvidence(score({ passed: false, judged: 100, total: 500 })), 'late fail must retain more evidence');
 assert.equal(recentTimeWeight(Date.now() - 12 * 3_600_000), 1);
 assert.ok(Math.abs(recentTimeWeight(Date.now() - 5 * 86_400_000) - .85) < .001);
+const recentBaseKey = recentProfileCacheKey(19244792, { algorithmId: 'A8', mapDemandVersion: 'beta8' });
+assert.deepEqual(JSON.parse(recentBaseKey), [
+  RECENT_PROFILE_CACHE_POLICY_ID,
+  'A8',
+  'beta8',
+  19244792,
+]);
+assert.notEqual(recentBaseKey,
+  recentProfileCacheKey(19244792, { algorithmId: 'A7', mapDemandVersion: 'beta8' }),
+  'recent cache must rotate with profiler algorithm');
+assert.notEqual(recentBaseKey,
+  recentProfileCacheKey(19244792, { algorithmId: 'A8', mapDemandVersion: 'beta7' }),
+  'recent cache must rotate with profiler version');
+assert.notEqual(recentBaseKey,
+  recentProfileCacheKey(19244793, { algorithmId: 'A8', mapDemandVersion: 'beta8' }),
+  'recent cache must be player-specific');
 
 const axes = Object.fromEntries(PLAYER_SKILL_AXES.map((axis) => [axis, 8]));
 assert.equal(validRecentDemand(19, axes, score({ total: 500 })), true);
