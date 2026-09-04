@@ -9,6 +9,7 @@ import { completeChat, llmProvider, mergeUsage } from './llm.js';
 import { trustInteractionBonus } from './trust.js';
 import { writeProfileLog, newRunId } from './profileLog.js';
 import { extractEvidenceFromSample, addEvidence } from './profileV3.js';
+import { activeModelName } from '../modelConfig.js';
 
 const PROFILE_FIELDS = ['summary', 'traits', 'speechStyle', 'behavior', 'preferences'];
 const MEMORY_SWEEP_INTERVAL_MS = 90_000;
@@ -91,7 +92,7 @@ function profileLlmFingerprint(db) {
   return [
     db.settings.llmProvider || '',
     db.settings.apiBaseUrl || '',
-    db.settings.model || '',
+    activeModelName(db.settings),
     key ? key.slice(-6) : ''
   ].join('|');
 }
@@ -662,7 +663,9 @@ export async function maybeRecordImageMemorySummary(event, userPolicy) {
     if (!draft.usageEvents) draft.usageEvents = [];
     draft.usageEvents.push({
       id: crypto.randomUUID(), groupId: event.groupId, userId: event.userId,
-      model: response.model || draft.settings.model, kind: 'image-memory-summary',
+      model: response.model || activeModelName(draft.settings),
+      provider: response.provider || draft.settings.llmProvider,
+      kind: 'image-memory-summary',
       ...usageEventFields(usage),
       createdAt: nowIso()
     });
@@ -851,7 +854,7 @@ ${memory.profilingRule ? `- 【硬性约束】${memory.profilingRule}` : ''}` },
   }
   writeProfileLog({ runId, event: 'profile.llm_result', userId: String(memory.userId), nickname: memory.nickname, detail: `tokens ${response.usage?.total_tokens || 0}`, meta: { usage: response.usage, outputPreview: (response.text || '').slice(0, 200) } });
   try {
-    return { profile: parseProfileJson(response.text || '{}'), usage: response.usage || {}, runId };
+    return { profile: parseProfileJson(response.text || '{}'), usage: response.usage || {}, model: response.model, provider: response.provider, runId };
   } catch (firstError) {
     try {
       const retry = await completeChat(db, {
@@ -870,6 +873,8 @@ ${memory.profilingRule ? `- 【硬性约束】${memory.profilingRule}` : ''}` },
       return {
         profile: parseProfileJson(retry.text || '{}'),
         usage: mergeUsage(response.usage || {}, retry.usage || {}),
+        model: retry.model || response.model,
+        provider: retry.provider || response.provider,
         runId
       };
     } catch (error) {
@@ -882,15 +887,15 @@ ${memory.profilingRule ? `- 【硬性约束】${memory.profilingRule}` : ''}` },
 function canUseVisionForMemory(db) {
   if (db.settings.visionMemoryEnabled === false) return false;
   const provider = llmProvider(db);
-  const apiBase = String(db.settings.apiBaseUrl || '').toLowerCase();
-  if (provider === 'deepseek' || apiBase.includes('api.deepseek.com')) return false;
   const mode = String(db.settings.visionMode || 'auto').toLowerCase();
   if (mode === 'off') return false;
   if (mode === 'on') return true;
+  if (provider === 'codex-app-server') return true;
+  if (provider === 'deepseek') return false;
   const probe = [
     db.settings.llmProvider,
     db.settings.apiBaseUrl,
-    db.settings.model,
+    activeModelName(db.settings),
     db.settings.customModel
   ].filter(Boolean).join(' ').toLowerCase();
   return /(mimo|vision|visual|multimodal|multi-modal|omni|gpt-4o|qwen[-_\s]?.*vl|glm[-_\s]?.*4v|yi[-_\s]?.*vision|(?:^|[-_\s])vl(?:$|[-_\s]))/i.test(probe);
@@ -1141,7 +1146,8 @@ export function commitMemoryProfileResult(userId, result, options = {}) {
       id: crypto.randomUUID(),
       groupId: options.groupId || '',
       userId: String(userId),
-      model: options.model || draft.settings.model,
+      model: options.model || activeModelName(draft.settings),
+      provider: options.provider || draft.settings.llmProvider,
       kind: options.kind || 'memory',
       ...usageEventFields(usage),
       createdAt: stamp,
@@ -1245,7 +1251,8 @@ export function maybeUpdateMemoryProfile(event, options = {}) {
       if (!result) return { ok: false, skipped: true, reason: '画像模型未返回结果', runId, queuedMs };
       const outcome = commitMemoryProfileResult(userId, result, {
         groupId: event.groupId,
-        model: db.settings.model,
+        model: result.model || activeModelName(db.settings),
+        provider: result.provider || db.settings.llmProvider,
         kind: options.kind || 'memory'
       });
       return { ...outcome, runId, usage: result.usage || {}, queuedMs };
@@ -1282,7 +1289,7 @@ export function maybeUpdateMemoryProfile(event, options = {}) {
         meta: {
           provider: db.settings.llmProvider,
           apiBaseUrl: db.settings.apiBaseUrl,
-          model: db.settings.model,
+          model: activeModelName(db.settings),
           queuedMs,
           failureCount,
           retryAfter,

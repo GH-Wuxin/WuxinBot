@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { buildCodexAdapterInput, mapCodexTokenUsage, parseCodexAdapterEnvelope } from '../server/codexAppServer.ts';
-import { activateModelProfile, updateProviderSettings } from '../server/modelConfig.ts';
+import { activeModelName, activateModelProfile, updateProviderSettings } from '../server/modelConfig.ts';
 import { modelSupportsVision } from '../server/bot/prompt.ts';
 import { buildPippiPrompt } from '../server/bot/persona.ts';
 
@@ -58,6 +58,11 @@ assert.equal(
   '显式纯文字模式必须保持关闭视觉输入',
 );
 assert.equal(
+  modelSupportsVision({ settings: { ...codexVisionSettings, visionMode: 'auto', codexModel: 'gpt-5.6-luna' } }),
+  true,
+  'Codex 自动视觉模式不能被遗留的 API 模型误判为纯文字',
+);
+assert.equal(
   modelSupportsVision({ settings: { ...codexVisionSettings, visionMode: 'auto', llmProvider: 'deepseek', model: 'deepseek-chat' } }),
   false,
   '自动模式下仍应按当前 DeepSeek 模型能力判断',
@@ -102,6 +107,11 @@ assert.equal(codex.codexFallbackProvider, 'deepseek');
 assert.equal(codex.codexFallbackModel, 'deepseek-v4-flash');
 assert.equal(codex.deepseekApiKey, 'sk-test');
 assert.equal(activateModelProfile(codex, 'deepseek-chat').llmProvider, 'codex-app-server');
+assert.equal(activeModelName({ ...codex, model: 'GPT-5.6-Sol' }), 'gpt-5.6-luna');
+
+const switchedCodex = updateProviderSettings(codex, { codexModel: 'gpt-5.6-terra' });
+assert.equal(activeModelName(switchedCodex), 'gpt-5.6-terra');
+assert.equal(switchedCodex.model, 'deepseek-v4-flash', '切换 Codex 模型必须保留 API 回退模型');
 
 const rolledBack = updateProviderSettings(codex, { llmProvider: 'deepseek', model: 'deepseek-v4-flash' });
 assert.equal(rolledBack.llmProvider, 'deepseek');

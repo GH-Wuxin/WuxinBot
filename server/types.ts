@@ -277,6 +277,7 @@ export interface UsageEvent {
   groupId: string;
   userId: string;
   model: string;
+  provider?: string;
   kind?: string;           // 'memory' for memory-update calls
   totalTokens: number;
   promptTokens: number;

@@ -43,6 +43,20 @@ function clean(value: unknown) {
   return String(value || '').trim();
 }
 
+/**
+ * Return the model that the active transport will actually request.
+ *
+ * `settings.model` is intentionally kept as the API/fallback profile while
+ * Codex App Server is active, so it must not be used as the runtime model
+ * identity in prompts, telemetry, commands, or the dashboard.
+ */
+export function activeModelName(settings: Record<string, any>) {
+  if (clean(settings.llmProvider) === 'codex-app-server') {
+    return clean(settings.codexModel) || 'gpt-5.6-luna';
+  }
+  return clean(settings.model) || '未设置';
+}
+
 function isPlaceholder(value: unknown) {
   const v = clean(value);
   return v === '已填写' || v === '已设置';
