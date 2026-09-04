@@ -90,7 +90,7 @@ import {
   traceEvent,
   withRequestTrace,
 } from './requestTrace.js';
-import { activateModelProfile, activeProviderLabel } from './modelConfig.js';
+import { activeModelName, activateModelProfile, activeProviderLabel } from './modelConfig.js';
 import { handleOsuCommand } from './osu/commands.js';
 import { loadRegistry, buildBotToolSchemas, enabledBots, findBot } from './bots/registry.js';
 import {
@@ -906,9 +906,10 @@ async function processIncomingInner(event, sendMessage = undefined, queuedDecisi
     if (thinkingMode === 'simple') {
       await sendThinking('正在思考…');
     } else if (thinkingMode === 'detail') {
-      const modelHint = responseOptions.overrideModel && responseOptions.overrideModel !== liveDb.settings.model
+      const currentModel = activeModelName(liveDb.settings);
+      const modelHint = responseOptions.overrideModel && responseOptions.overrideModel !== currentModel
         ? describeModel(responseOptions.overrideModel)
-        : describeModel(liveDb.settings.model);
+        : describeModel(currentModel);
       await sendThinking(`深度思考中（${modelHint}）…`);
     } else if (thinkingMode === 'slow') {
       thinkingTimer = setTimeout(() => sendThinking('正在进行思考…'), thinkingDelay);
@@ -1032,12 +1033,19 @@ async function processIncomingInner(event, sendMessage = undefined, queuedDecisi
         return executeSearchToolCall(toolCall, context);
       };
 
-      const harnessChat = (db: any, opts: any) => completeChat(db, {
-        ...opts,
-        searchMode,
-        visionImages,
-        label: opts.label || 'Bot Harness'
-      });
+      let toolLoopModel = '';
+      let toolLoopProvider = '';
+      const harnessChat = async (db: any, opts: any) => {
+        const result = await completeChat(db, {
+          ...opts,
+          searchMode,
+          visionImages,
+          label: opts.label || 'Bot Harness'
+        });
+        toolLoopModel = String(result?.model || toolLoopModel || '');
+        toolLoopProvider = String(result?.provider || toolLoopProvider || '');
+        return result;
+      };
       const loopOptions = {
         db: liveDb,
         messages,
@@ -1117,6 +1125,8 @@ async function processIncomingInner(event, sendMessage = undefined, queuedDecisi
       ai = {
         text: toolResult.text,
         usage: toolResult.usage,
+        model: toolLoopModel || activeModelName(liveDb.settings),
+        provider: toolLoopProvider || liveDb.settings.llmProvider,
         latencyMs: undefined
       };
       toolImages = toolResult.images || [];
@@ -1285,7 +1295,8 @@ async function processIncomingInner(event, sendMessage = undefined, queuedDecisi
         id: crypto.randomUUID(),
         groupId: event.groupId,
         userId: event.userId,
-        model: liveDb.settings.model,
+        model: ai.model || activeModelName(liveDb.settings),
+        provider: ai.provider || liveDb.settings.llmProvider,
         ...usageEventFields(ai.usage),
         createdAt: nowIso()
       });

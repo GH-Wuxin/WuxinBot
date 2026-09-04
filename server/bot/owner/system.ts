@@ -20,7 +20,7 @@ import {
   getPricing,
   calcCost,
 } from '../prompt.js';
-import { activateModelProfile, activeProviderLabel } from '../../modelConfig.js';
+import { activeModelName, activateModelProfile, activeProviderLabel, updateProviderSettings } from '../../modelConfig.js';
 import { isSearchAvailable, getLastSearchStatus } from '../search.js';
 import { sendForwardText } from '../reply.js';
 import { OWNER_FALLBACK_HELP } from './help.js';
@@ -220,7 +220,7 @@ export async function ownerUsageHandler(ctx: OwnerHandlerContext): Promise<Owner
     costLines.push(`${p.label}：¥${cost.toFixed(4)}（${data.requests}次）`);
   }
 
-  const allTimeP = getPricing(db.settings.model);
+  const allTimeP = getPricing(activeModelName(db.settings));
   const allTimeCost = calcCost(db.usage.promptTokens || 0, db.usage.completionTokens || 0, allTimeP);
 
   const reply = `今日用量：
@@ -236,13 +236,19 @@ ${costLines.length > 0 ? `费用明细：\n${costLines.join('\n')}\n今日合计
 
 export async function ownerModelHandler(ctx: OwnerHandlerContext): Promise<OwnerCommandResult> {
   const arg = String(ctx.parts[2] || '').trim();
-  const knownModels = [
-    'mimo-v2.5', 'mimo-v2.5-pro', 'mimo-v2-omni', 'mimo-v2-pro',
-    'deepseek-v4-flash', 'deepseek-v4-pro', 'deepseek-chat', 'deepseek-reasoner'
-  ];
+  const currentSettings = readDb().settings;
+  const knownModels = currentSettings.llmProvider === 'codex-app-server'
+    ? ['gpt-5.6-luna', 'gpt-5.6-terra', 'gpt-5.6-sol']
+    : [
+        'mimo-v2.5', 'mimo-v2.5-pro', 'mimo-v2-omni', 'mimo-v2-pro',
+        'deepseek-v4-flash', 'deepseek-v4-pro', 'deepseek-chat', 'deepseek-reasoner'
+      ];
   if (!arg || arg === 'show') {
     const db = readDb();
-    const reply = `当前模型：${db.settings.model}\n接口：${activeProviderLabel(db.settings)}\nAPI Key：${db.settings.apiKey ? '已配置' : '未配置'}`;
+    const credential = db.settings.llmProvider === 'codex-app-server'
+      ? '认证：ChatGPT 登录'
+      : `API Key：${db.settings.apiKey ? '已配置' : '未配置'}`;
+    const reply = `当前模型：${activeModelName(db.settings)}\n接口：${activeProviderLabel(db.settings)}\n${credential}`;
     if (ctx.sendMessage) await ctx.sendMessage(ctx.event, reply);
     return { replied: Boolean(ctx.sendMessage), reason: '显示当前模型' };
   }
@@ -256,7 +262,9 @@ ${knownModels.join('\n')}
 
   let switchedSettings;
   updateDb((draft) => {
-    draft.settings = activateModelProfile(draft.settings, arg);
+    draft.settings = draft.settings.llmProvider === 'codex-app-server'
+      ? updateProviderSettings(draft.settings, { codexModel: arg })
+      : activateModelProfile(draft.settings, arg);
     switchedSettings = draft.settings;
     draft.adminActions.push({
       id: crypto.randomUUID(),
@@ -264,11 +272,12 @@ ${knownModels.join('\n')}
       action: '/wuxin model',
       targetUserId: 'bot',
       groupId: ctx.event.groupId,
-      detail: `模型切换为 ${arg}；接口=${activeProviderLabel(draft.settings)}`,
+      detail: `模型切换为 ${activeModelName(draft.settings)}；接口=${activeProviderLabel(draft.settings)}`,
       createdAt: nowIso()
     });
   });
-  const reply = `已切换模型：${arg}\n接口：${activeProviderLabel(switchedSettings)}${switchedSettings?.apiKey ? '' : '\n注意：该接口的 API Key 尚未配置，请到控制台“模型”页填写。'}`;
+  const missingCredential = switchedSettings?.llmProvider !== 'codex-app-server' && !switchedSettings?.apiKey;
+  const reply = `已切换模型：${activeModelName(switchedSettings)}\n接口：${activeProviderLabel(switchedSettings)}${missingCredential ? '\n注意：该接口的 API Key 尚未配置，请到控制台“模型”页填写。' : ''}`;
   if (ctx.sendMessage) await ctx.sendMessage(ctx.event, reply);
   return { replied: Boolean(ctx.sendMessage), reason: reply };
 }
@@ -415,7 +424,7 @@ export async function ownerSummarizeHandler(ctx: OwnerHandlerContext): Promise<O
 
   try {
     const response = await completeChat(db, {
-      model: db.settings.model || 'deepseek-chat',
+      model: activeModelName(db.settings),
       messages: [
         { role: 'system', content: '你是群聊总结助手，用中文输出。' },
         { role: 'user', content: `${summaryPrompt}\n\n${formatted}` }
@@ -436,7 +445,8 @@ export async function ownerSummarizeHandler(ctx: OwnerHandlerContext): Promise<O
         id: crypto.randomUUID(),
         groupId: ctx.event.groupId,
         userId: ctx.event.userId,
-        model: db.settings.model,
+        model: response.model || activeModelName(db.settings),
+        provider: response.provider || db.settings.llmProvider,
         ...usageEventFields(response.usage),
         createdAt: nowIso()
       });

@@ -8,6 +8,7 @@ import { modelSupportsVision } from './prompt.js';
 import { emptyTurnState, reasoningEnabledFor, reasoningInput } from './reasoningRouter.js';
 import { looksLikeToolCallMarkup, stripToolCallMarkup } from '../bots/guard.js';
 import { traceEvent } from '../requestTrace.js';
+import { activeModelName } from '../modelConfig.js';
 
 export function normalReplyRewriteSkipReason(options: {
   rewriteEligible: boolean;
@@ -183,7 +184,7 @@ export async function rewriteNormalReply(db, originalText, event, options = {}) 
   let telemetryResult = 'ERROR_FALLBACK';
   try {
     response = await completeChatFn(db, {
-      model: db.settings.model || 'deepseek-v4-flash',
+      model: activeModelName(db.settings),
       messages: [
         {
           role: 'system',

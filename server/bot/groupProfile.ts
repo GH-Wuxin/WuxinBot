@@ -3,6 +3,7 @@
 // for the current group only.
 import { readDb, updateDb, nowIso } from '../store.js';
 import { applyUsageTotals, usageEventFields } from '../usage.js';
+import { activeModelName } from '../modelConfig.js';
 import { completeChat } from './llm.js';
 import { textWithoutControlPlaceholders } from './cleaning.js';
 
@@ -95,7 +96,9 @@ export async function updateGroupProfile(db, groupId) {
       if (!draft.usageEvents) draft.usageEvents = [];
       draft.usageEvents.push({
         id: crypto.randomUUID(), groupId: String(groupId), userId: 'system',
-        model: db.settings.model, kind: 'group-profile',
+        model: response.model || activeModelName(db.settings),
+        provider: response.provider || db.settings.llmProvider,
+        kind: 'group-profile',
         ...usageEventFields(response.usage),
         createdAt: nowIso()
       });

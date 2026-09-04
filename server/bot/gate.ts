@@ -57,7 +57,7 @@ import {
   isIdentityQuestion,
   neutralIdentityReply
 } from './reply.js';
-import { activateModelProfile } from '../modelConfig.js';
+import { activeModelName, activateModelProfile } from '../modelConfig.js';
 
 export function looksLikeExternalBotSender(
   event,
@@ -309,7 +309,7 @@ export function recordLlmGateUsage({ groupId, userId, result, error, verdict, th
       kind: 'reply-gate',
       groupId,
       userId,
-      model: result?.model || draft.settings.model,
+      model: result?.model || activeModelName(draft.settings),
       provider: result?.provider || draft.settings.llmProvider,
       ...usageEventFields(usage),
       latencyMs: result?.latencyMs || 0,
@@ -429,7 +429,7 @@ export async function llmReplyGate(db, groupId, text, { mode, question, chatIsBu
   // Resolve effective settings to check whether an API key is configured before
   // even attempting the call. Without this, every gate attempt would fail
   // silently with the user seeing only "LLM 门控调用失败" in decision logs.
-  const resolvedSettings = activateModelProfile(db.settings, db.settings.model);
+  const resolvedSettings = activateModelProfile(db.settings, activeModelName(db.settings));
   const usesCodexAccount = String(resolvedSettings.llmProvider || '') === 'codex-app-server';
   const hasApiKey = String(resolvedSettings.apiKey || db.settings.apiKey || '').trim().length > 0;
   if (!usesCodexAccount && !hasApiKey) {

@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { activateModelProfile, DEEPSEEK_BASE_URL, looksLikeMimoEndpoint, MIMO_BASE_URL, recoverProviderProfiles } from './modelConfig.js';
+import { activeModelName, activateModelProfile, DEEPSEEK_BASE_URL, looksLikeMimoEndpoint, MIMO_BASE_URL, recoverProviderProfiles } from './modelConfig.js';
 import { DEFAULT_BOTS } from './bots/registry.js';
 import { DEFAULT_KB_SETTINGS } from './bot/knowledgeTypes.js';
 import { cacheUsageSummary, usageEventHasCacheDetails } from './usage.js';
@@ -924,6 +924,9 @@ export function publicDb(db = readDb()) {
   const value = {
     settings: {
       ...db.settings,
+      // Derived display-only identity. It is rejected by /api/settings because
+      // it is not a persisted settings key.
+      effectiveModel: activeModelName(db.settings),
       // Never send secrets back to the browser in plaintext. The GUI uses these
       // placeholders to show that a secret is present without exposing it.
       apiKey: db.settings.apiKey ? '已填写' : '',
