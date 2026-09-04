@@ -11,6 +11,12 @@ const modelLabels = {
   'deepseek-reasoner': 'Reasoner'
 };
 
+const codexModelLabels = {
+  'gpt-5.6-luna': 'GPT-5.6 Luna',
+  'gpt-5.6-terra': 'GPT-5.6 Terra',
+  'gpt-5.6-sol': 'GPT-5.6 Sol'
+};
+
 const formatNumber = (value) => Number(value || 0).toLocaleString('zh-CN');
 const compactNumber = (value) => new Intl.NumberFormat('zh-CN', { notation: 'compact', maximumFractionDigits: 1 }).format(Number(value || 0));
 const formatPercent = (value) => value == null ? '—' : `${Number(value).toLocaleString('zh-CN', { maximumFractionDigits: value < 0.1 ? 2 : 1 })}%`;
@@ -73,8 +79,15 @@ export function DashboardPage({ db, oneBot, saveSettings, refreshState }) {
   const enabledGroups = (db.groups || []).filter((group) => group.enabled).length;
   const experienceEntries = Object.values(db.experience || {});
   const highestPp = experienceEntries.length ? Math.max(...experienceEntries.map((entry) => Math.floor(Number(entry.xp || 0) / 100) * 100)) : 0;
+  const codexActive = db.settings.llmProvider === 'codex-app-server';
+  const effectiveModel = db.settings.effectiveModel || (codexActive ? db.settings.codexModel : db.settings.model) || '未设置';
+  const quickModelLabels = codexActive ? codexModelLabels : modelLabels;
+  const quickModelOptions = Object.entries(quickModelLabels).map(([value, label]) => ({ value, label }));
+  if (!quickModelOptions.some((option) => option.value === effectiveModel)) {
+    quickModelOptions.push({ value: effectiveModel, label: effectiveModel });
+  }
   return <div className="dashboard-page">
-    <Card className="dashboard-hero"><div><StatusBadge tone={db.settings.globalPaused ? 'warning' : 'success'}>{db.settings.globalPaused ? 'PAUSED' : 'ONLINE'}</StatusBadge><h2>WuxinBot 正在{db.settings.globalPaused ? '等待恢复' : '参与群聊'}</h2><p>pippi · {oneBotLabel} · 当前模型 {db.settings.model}</p></div><Button icon={RefreshCw} onClick={refreshState}>刷新状态</Button></Card>
+    <Card className="dashboard-hero"><div><StatusBadge tone={db.settings.globalPaused ? 'warning' : 'success'}>{db.settings.globalPaused ? 'PAUSED' : 'ONLINE'}</StatusBadge><h2>WuxinBot 正在{db.settings.globalPaused ? '等待恢复' : '参与群聊'}</h2><p>pippi · {oneBotLabel} · 当前模型 {effectiveModel}</p></div><Button icon={RefreshCw} onClick={refreshState}>刷新状态</Button></Card>
 
     <section className="dashboard-metrics" aria-label="今日指标">
       <MetricCard icon={UsersRound} label="启用群" value={enabledGroups} detail={`共 ${(db.groups || []).length} 个配置`} />
@@ -91,14 +104,14 @@ export function DashboardPage({ db, oneBot, saveSettings, refreshState }) {
         <div><strong>{healthData?.llm?.recentFailures || '无'}</strong><span>LLM 近期错误</span></div>
       </div>}{health.error && healthData && <p className="dashboard-health__stale">刷新失败，正在显示上一次状态：{health.error}</p>}</Card>
 
-      <Card className="dashboard-runtime"><SectionHeader eyebrow="Runtime" title="当前运行状态" description="只展示现有状态，不推断 Agent telemetry" /><div className="dashboard-runtime__rows"><div><span>模型</span><strong>{db.settings.model}</strong></div><div><span>OneBot transport</span><strong>{(oneBot.transportConnected ?? oneBot.connected) ? 'Connected' : 'Disconnected'}</strong></div><div><span>最近 QQ 事件</span><strong>{oneBot.lastEventAt || '暂无'}</strong></div><div><span>重连次数</span><strong>{oneBot.reconnectCount ?? 0}</strong></div></div></Card>
+      <Card className="dashboard-runtime"><SectionHeader eyebrow="Runtime" title="当前运行状态" description="只展示现有状态，不推断 Agent telemetry" /><div className="dashboard-runtime__rows"><div><span>模型</span><strong>{effectiveModel}</strong></div><div><span>OneBot transport</span><strong>{(oneBot.transportConnected ?? oneBot.connected) ? 'Connected' : 'Disconnected'}</strong></div><div><span>最近 QQ 事件</span><strong>{oneBot.lastEventAt || '暂无'}</strong></div><div><span>重连次数</span><strong>{oneBot.reconnectCount ?? 0}</strong></div></div></Card>
     </section>
 
     <UsageChart usageStats={db.usageStats} usage={db.usage} />
 
     <section className="dashboard-controls">
       <Card><SectionHeader eyebrow="Conversation" title="参与方式" description="立即写入现有 settings" /><Switch checked={Boolean(db.settings.onlyMentionMode)} onChange={(event) => saveSettings({ onlyMentionMode: event.target.checked })} label="临时只在 @ 时回复" description="关闭后恢复各群自己的参与模式。" /></Card>
-      <Card><SectionHeader eyebrow="Model" title="快速切换模型" description="切换当前默认聊天模型" /><SegmentedControl value={db.settings.model} onChange={(model) => saveSettings({ model })} label="快速切换模型" options={Object.entries(modelLabels).map(([value, label]) => ({ value, label }))} /></Card>
+      <Card><SectionHeader eyebrow="Model" title="快速切换模型" description={codexActive ? '切换当前 Codex 模型' : '切换当前 API 模型'} /><SegmentedControl value={effectiveModel} onChange={(model) => saveSettings(codexActive ? { codexModel: model } : { model })} label="快速切换模型" options={quickModelOptions} /></Card>
     </section>
   </div>;
 }
