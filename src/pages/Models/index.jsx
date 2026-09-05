@@ -14,6 +14,7 @@ import {
   Switch,
 } from '../../components/ui/index.jsx';
 import { api } from '../../lib/api.js';
+import { codexLoginView } from './codexStatus.js';
 
 const providerOptions = [
   { value: 'deepseek', label: 'DeepSeek（默认）' },
@@ -93,9 +94,16 @@ export function ModelsPage({ db, saveSettings }) {
   const refreshCodex = async () => {
     setCodexBusy(true);
     setCodexMessage('');
+    let accountStatusRead = false;
     try {
       const statusResult = await api('/api/codex/status', { timeoutMs: 20000 });
       setCodexStatus(statusResult.status);
+      accountStatusRead = true;
+      setCodexLimits(null);
+      if (statusResult.status?.error || statusResult.status?.authStatus === 'unknown') {
+        setCodexModels([]);
+        return;
+      }
       const modelResult = await api('/api/codex/models', { timeoutMs: 25000 });
       setCodexModels(modelResult.models || []);
       if (statusResult.status?.authenticated) {
@@ -105,6 +113,11 @@ export function ModelsPage({ db, saveSettings }) {
         setCodexLimits(null);
       }
     } catch (cause) {
+      setCodexLimits(null);
+      if (!accountStatusRead) {
+        setCodexStatus({ authStatus: 'unknown', running: true, error: cause.message || '状态接口不可用' });
+        setCodexModels([]);
+      }
       setCodexMessage(cause.message || 'Codex 状态读取失败');
     } finally {
       setCodexBusy(false);
@@ -219,10 +232,8 @@ export function ModelsPage({ db, saveSettings }) {
         <SettingGroup title="供应商与模型" description="切换已配置过的模型系列时会复用对应接口与密钥。">
           <SettingRow title="接口供应商" description="API Key 通道或个人 ChatGPT 的 Codex 配额" control={<Select value={draft.llmProvider || 'deepseek'} onChange={(event) => updateDraft(withProviderDefaults({ llmProvider: event.target.value }))} options={providerOptions} />} />
           {draft.llmProvider === 'codex-app-server' ? <>
-            <SettingRow title="ChatGPT 登录" description={codexStatus?.authenticated
-              ? `${codexStatus.account?.email || '已登录'} · ${codexStatus.account?.planType || 'ChatGPT'} 计划`
-              : '通过本机 Codex 官方登录；令牌不会进入 WuxinBot 数据库'} control={<div className="console-actions">
-                {!codexStatus?.authenticated && <Button icon={LogIn} loading={codexBusy} onClick={loginCodex}>登录 ChatGPT</Button>}
+            <SettingRow title="ChatGPT 登录" description={codexLoginView(codexStatus).description} control={<div className="console-actions">
+                {codexLoginView(codexStatus).canLogin && <Button icon={LogIn} loading={codexBusy} onClick={loginCodex}>登录 ChatGPT</Button>}
                 <Button icon={RefreshCw} loading={codexBusy} onClick={refreshCodex}>刷新状态</Button>
                 {codexStatus?.authenticated && <Button icon={LogOut} onClick={logoutCodex}>退出</Button>}
               </div>} />
@@ -230,7 +241,7 @@ export function ModelsPage({ db, saveSettings }) {
             {codexMessage && <InlineHelp tone={codexStatus?.authenticated ? 'normal' : 'warning'}>{codexMessage}</InlineHelp>}
             <SettingRow title="Codex 模型" description="高频群聊推荐 Luna；复杂任务可用 Terra/Sol" control={<Select value={selectedCodexModel} onChange={(event) => updateDraft({ codexModel: event.target.value })} options={codexModelOptions} />} />
             <SettingRow title="推理强度" control={<Select value={draft.codexReasoningEffort || 'low'} onChange={(event) => updateDraft({ codexReasoningEffort: event.target.value })} options={[{ value: 'low', label: 'Low（推荐聊天）' }, { value: 'medium', label: 'Medium' }, { value: 'high', label: 'High' }, { value: 'xhigh', label: 'XHigh' }, { value: 'max', label: 'Max' }]} />} />
-            <SettingRow title="Codex 可执行文件" description="默认从 PATH 运行 codex app-server" control={<Input value={draft.codexExecutable || 'codex'} onChange={(event) => updateDraft({ codexExecutable: event.target.value })} />} />
+            <SettingRow title="Codex 可执行文件" description={`Windows 默认自动发现本机 Codex；失效的官方版本路径会自动恢复，自定义路径保持不变。${codexStatus?.command ? ` 当前解析路径：${codexStatus.command}` : ''}`} control={<Input value={draft.codexExecutable || 'codex'} onChange={(event) => updateDraft({ codexExecutable: event.target.value })} />} />
             <SettingRow title="自动降级" description={`Codex 未登录、超时或额度不可用时回到 ${draft.codexFallbackModel || draft.model || '旧模型'}`} control={<Switch checked={draft.codexFallbackEnabled !== false} onChange={(event) => updateDraft({ codexFallbackEnabled: event.target.checked })} />} />
             {codexLimitBuckets.map(({ id, bucket }) => {
               const windows = [

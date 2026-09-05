@@ -1,6 +1,7 @@
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
 import crypto from 'node:crypto';
 import readline from 'node:readline';
+import { resolveCodexExecutable } from './codexExecutable.js';
 
 type JsonObject = Record<string, any>;
 type RpcEvent = { method: string; params?: any; id?: string | number };
@@ -409,7 +410,7 @@ export class CodexAppServerClient {
 const client = new CodexAppServerClient();
 
 function commandFromSettings(settings: JsonObject = {}) {
-  return cleanText(settings.codexExecutable) || process.env.CODEX_EXECUTABLE || 'codex';
+  return resolveCodexExecutable(cleanText(settings.codexExecutable) || process.env.CODEX_EXECUTABLE || 'codex');
 }
 
 function codexModelFromSettings(settings: JsonObject = {}) {
@@ -446,6 +447,7 @@ export async function getCodexAccountStatus(settings: JsonObject = {}) {
       command: client.getCommand(),
       account: result?.account || null,
       authenticated: result?.account?.type === 'chatgpt',
+      authStatus: result?.account?.type === 'chatgpt' ? 'authenticated' : 'unauthenticated',
       requiresOpenaiAuth: Boolean(result?.requiresOpenaiAuth),
       diagnostic: '',
     };
@@ -455,6 +457,7 @@ export async function getCodexAccountStatus(settings: JsonObject = {}) {
       command,
       account: null,
       authenticated: false,
+      authStatus: 'unknown',
       requiresOpenaiAuth: true,
       error: cleanText(error?.message || error),
       diagnostic: client.getLastDiagnostic(),

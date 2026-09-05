@@ -19,7 +19,7 @@
     "runtime:safety:verify": "node --import tsx tools/runtime-safety-verify.mjs && node --import tsx tools/health-runtime-verify.mjs && node --import tsx tools/health-delivery-verify.mjs",
     "request:trace:verify": "node --import tsx tools/request-trace-verify.mjs",
     "usage:verify": "node --import tsx tools/usage-totals-verify.mjs && node --import tsx tools/health-accounting-verify.mjs",
-    "codex:verify": "node --import tsx tools/codex-app-server-verify.mjs",
+    "codex:verify": "node --import tsx tools/codex-app-server-verify.mjs && node --import tsx tools/codex-executable-verify.mjs",
     "codex:probe": "node --import tsx tools/codex-app-server-probe.mjs",
     "codex:smoke": "node --import tsx tools/codex-app-server-smoke.mjs",
     "store:shards:verify": "node --import tsx tools/store-shards-verify.mjs",
