@@ -198,13 +198,17 @@ class CodexRpcError extends Error {
   }
 }
 
-class CodexAppServerClient {
+export class CodexAppServerClient {
+  constructor(private spawnProcess: typeof spawn = spawn) {}
   private child: ChildProcessWithoutNullStreams | null = null;
   private command = '';
   private nextId = 1;
   private pending = new Map<number, { resolve: (value: any) => void; reject: (error: Error) => void; timer: NodeJS.Timeout }>();
   private listeners = new Set<(event: RpcEvent) => void>();
   private startPromise: Promise<void> | null = null;
+  private ready = false;
+  private generation = 0;
+  private failureListeners = new Set<(error: Error) => void>();
   private stderrTail: string[] = [];
 
   isRunning() {
@@ -220,6 +224,7 @@ class CodexAppServerClient {
   }
 
   private rejectPending(error: Error) {
+    for (const listener of this.failureListeners) listener(error);
     for (const item of this.pending.values()) {
       clearTimeout(item.timer);
       item.reject(error);
@@ -292,13 +297,18 @@ class CodexAppServerClient {
 
   async ensureStarted(command = 'codex') {
     const requestedCommand = cleanText(command) || 'codex';
-    if (this.isRunning() && this.command === requestedCommand) return;
-    if (this.startPromise) return this.startPromise;
+    if (this.startPromise) {
+      await this.startPromise;
+      return this.ensureStarted(requestedCommand);
+    }
+    if (this.ready && this.isRunning() && this.command === requestedCommand) return;
     if (this.isRunning()) this.shutdown();
-    this.startPromise = (async () => {
+    const generation = ++this.generation;
+    const starting = (async () => {
+      this.ready = false;
       this.command = requestedCommand;
       this.stderrTail = [];
-      const child = spawn(requestedCommand, APP_SERVER_ARGS, {
+      const child = this.spawnProcess(requestedCommand, APP_SERVER_ARGS, {
         cwd: process.cwd(),
         env: process.env,
         stdio: ['pipe', 'pipe', 'pipe'],
@@ -306,14 +316,21 @@ class CodexAppServerClient {
       });
       this.child = child;
       child.once('error', (error) => {
+        if (this.child !== child) return;
+        this.ready = false;
         this.rejectPending(new Error(`无法启动 Codex App Server：${error.message}`));
       });
       child.once('exit', (code, signal) => {
-        if (this.child === child) this.child = null;
+        if (this.child !== child) return;
+        this.child = null;
+        this.ready = false;
         this.rejectPending(new Error(`Codex App Server 已退出（code=${code ?? '-'} signal=${signal ?? '-'}）`));
       });
-      readline.createInterface({ input: child.stdout }).on('line', (line) => this.handleLine(line));
+      readline.createInterface({ input: child.stdout }).on('line', (line) => {
+        if (this.child === child) this.handleLine(line);
+      });
       readline.createInterface({ input: child.stderr }).on('line', (line) => {
+        if (this.child !== child) return;
         const diagnostic = cleanText(line);
         if (!diagnostic) return;
         this.stderrTail.push(diagnostic);
@@ -334,22 +351,40 @@ class CodexAppServerClient {
         clientInfo: { name: 'wuxinbot', title: 'WuxinBot', version: '1.0.3' },
         capabilities: { experimentalApi: false, requestAttestation: false },
       }, 30_000);
+      if (this.child !== child || !this.isRunning()) throw new Error('Codex 初始化进程已更换或退出');
       this.send({ method: 'initialized', params: {} });
+      this.ready = true;
     })();
+    this.startPromise = starting;
     try {
-      await this.startPromise;
+      await starting;
     } catch (error) {
-      this.shutdown();
+      if (this.generation === generation) this.shutdown();
       throw error;
     } finally {
-      this.startPromise = null;
+      if (this.startPromise === starting) this.startPromise = null;
     }
   }
 
   async request(method: string, params?: any, timeoutMs = 30_000, command = 'codex') {
-    await this.ensureStarted(command);
-    return this.rawRequest(method, params, timeoutMs);
+    const deadline = Date.now() + timeoutMs;
+    let timer: NodeJS.Timeout;
+    try {
+      await Promise.race([this.ensureStarted(command), new Promise<never>((_, reject) => {
+        timer = setTimeout(() => reject(new Error(`${method} initialization deadline exceeded`)), timeoutMs);
+      })]);
+    } finally { clearTimeout(timer!); }
+    const remaining = deadline - Date.now();
+    if (remaining <= 0) throw new Error(`${method} deadline exceeded during initialization`);
+    return this.rawRequest(method, params, remaining);
   }
+
+  onFailure(listener: (error: Error) => void) {
+    this.failureListeners.add(listener);
+    return () => this.failureListeners.delete(listener);
+  }
+
+  getGeneration() { return this.generation; }
 
   onEvent(listener: (event: RpcEvent) => void) {
     this.listeners.add(listener);
@@ -357,6 +392,8 @@ class CodexAppServerClient {
   }
 
   shutdown() {
+    this.ready = false;
+    this.generation += 1;
     const child = this.child;
     this.child = null;
     this.startPromise = null;
@@ -441,6 +478,11 @@ export async function completeCodexAppServerChat(db: any, options: JsonObject = 
   const timeoutMs = Math.max(10_000, Number(options.timeoutMs || settings.codexTimeoutMs || 90_000));
   const input = buildCodexAdapterInput(options.messages || [], options.tools || [], options.responseFormat);
   const startedAt = Date.now();
+  const remainingMs = () => {
+    const remaining = timeoutMs - (Date.now() - startedAt);
+    if (remaining <= 0) throw new Error('Codex App Server total deadline exceeded');
+    return remaining;
+  };
 
   const threadResponse = await client.request('thread/start', {
     model,
@@ -452,8 +494,9 @@ export async function completeCodexAppServerChat(db: any, options: JsonObject = 
     ephemeral: true,
     serviceName: 'wuxinbot-llm',
     threadSource: 'wuxinbot',
-  }, 30_000, command);
+  }, Math.min(30_000, remainingMs()), command);
   const threadId = cleanText(threadResponse?.thread?.id);
+  const generation = client.getGeneration();
   if (!threadId) throw new Error('Codex App Server 未返回 thread id');
 
   let expectedTurnId = '';
@@ -466,6 +509,10 @@ export async function completeCodexAppServerChat(db: any, options: JsonObject = 
     resolveTurn = resolve;
     rejectTurn = reject;
   });
+  // A child can exit while turn/start RPC is still pending.
+  void turnDone.catch(() => {});
+  const unsubscribeFailure = client.onFailure((error) => { settled = true; rejectTurn(error); });
+  let finalAgentText = '';
   const inspectEvent = (event: RpcEvent) => {
     const params = event?.params || {};
     if (params.threadId !== threadId) return;
@@ -475,6 +522,7 @@ export async function completeCodexAppServerChat(db: any, options: JsonObject = 
     }
     if (params.turnId && params.turnId !== expectedTurnId && params.turn?.id !== expectedTurnId) return;
     if (event.method === 'thread/tokenUsage/updated') lastUsage = params.tokenUsage?.last || params.tokenUsage?.total || null;
+    if (event.method === 'item/completed' && params.item?.type === 'agentMessage') finalAgentText = cleanText(params.item.text);
     if (event.method === 'turn/completed' && params.turn?.id === expectedTurnId && !settled) {
       settled = true;
       if (params.turn.status === 'failed') {
@@ -489,6 +537,7 @@ export async function completeCodexAppServerChat(db: any, options: JsonObject = 
   const unsubscribe = client.onEvent(inspectEvent);
   let timeout: NodeJS.Timeout | undefined;
   try {
+    if (!client.isRunning() || generation !== client.getGeneration()) throw new Error('Codex thread 所属进程已退出');
     const turnResponse = await client.request('turn/start', {
       threadId,
       input,
@@ -497,17 +546,18 @@ export async function completeCodexAppServerChat(db: any, options: JsonObject = 
       effort,
       summary: 'none',
       outputSchema: ADAPTER_OUTPUT_SCHEMA,
-    }, 30_000, command);
+    }, Math.min(30_000, remainingMs()), command);
+    if (generation !== client.getGeneration()) throw new Error('Codex thread 所属进程已更换');
     expectedTurnId = cleanText(turnResponse?.turn?.id);
     if (!expectedTurnId) throw new Error('Codex App Server 未返回 turn id');
     for (const event of buffered.splice(0)) inspectEvent(event);
     const timedTurn = new Promise((_, reject) => {
-      timeout = setTimeout(() => reject(new Error(`Codex App Server 调用超时 ${Math.round(timeoutMs / 1000)} 秒`)), timeoutMs);
+      timeout = setTimeout(() => reject(new Error(`Codex App Server 调用超时 ${Math.round(timeoutMs / 1000)} 秒`)), Math.max(1, timeoutMs - (Date.now() - startedAt)));
       timeout.unref?.();
     });
     const turn: any = await Promise.race([turnDone, timedTurn]);
     const agentItems = (turn?.items || []).filter((item: any) => item?.type === 'agentMessage');
-    const finalText = cleanText(agentItems.at(-1)?.text);
+    const finalText = cleanText(agentItems.at(-1)?.text) || finalAgentText;
     if (!finalText) throw new Error('Codex 返回了空回复');
     const envelope = parseCodexAdapterEnvelope(finalText);
     const toolCalls = envelope.kind === 'tool_calls'
@@ -543,12 +593,13 @@ export async function completeCodexAppServerChat(db: any, options: JsonObject = 
       latencyMs: Date.now() - startedAt,
     };
   } catch (error) {
-    if (expectedTurnId) {
+    if (expectedTurnId && client.isRunning() && generation === client.getGeneration()) {
       void client.request('turn/interrupt', { threadId, turnId: expectedTurnId }, 5_000, command).catch(() => {});
     }
     throw error;
   } finally {
     if (timeout) clearTimeout(timeout);
     unsubscribe();
+    unsubscribeFailure();
   }
 }

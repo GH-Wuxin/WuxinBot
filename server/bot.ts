@@ -1,5 +1,6 @@
 // @ts-nocheck -- legacy runtime module; new typed modules remain checked by tsc.
 import { pathToFileURL } from 'node:url';
+import { sendOptionalNotice } from './bot/notice.js';
 import { defaultPrompt, readDb, updateDb, nowIso } from './store.js';
 import { applyUsageTotals, mergeLlmUsage, usageEventFields } from './usage.js';
 import {
@@ -422,6 +423,7 @@ export function allowedByOsuCommandOnlyMode(event, quickMatch = null) {
 }
 
 export async function processIncoming(event, sendMessage = undefined, queuedDecision = undefined, isFromDrain = false) {
+  const queueOwner = { key: '' };
   const requestId = requestTraceIdFor(event);
   startRequestTrace(event, requestId);
   return withRequestTrace(requestId, async () => {
@@ -435,7 +437,7 @@ export async function processIncoming(event, sendMessage = undefined, queuedDeci
     });
     markActiveProcessing(1);
     try {
-      const result = await processIncomingInner(event, sendMessage, queuedDecision, isFromDrain);
+      const result = await processIncomingInner(event, sendMessage, queuedDecision, isFromDrain, queueOwner);
       finishRequestTrace(result?.error ? 'failed' : 'completed', {
         replied: Boolean(result?.replied),
         queued: Boolean(result?.queued),
@@ -447,11 +449,16 @@ export async function processIncoming(event, sendMessage = undefined, queuedDeci
       throw error;
     } finally {
       markActiveProcessing(-1);
+      if (queueOwner.key && !isFromDrain) {
+        void drainReplyQueue(queueOwner.key, processIncoming).catch((error) => {
+          console.error('[reply-queue] worker failed:', error?.message || error);
+        });
+      }
     }
   });
 }
 
-async function processIncomingInner(event, sendMessage = undefined, queuedDecision = undefined, isFromDrain = false) {
+async function processIncomingInner(event, sendMessage = undefined, queuedDecision = undefined, isFromDrain = false, queueOwner = { key: '' }) {
   // High-level pipeline:
   // 1. Ignore self messages and route slash commands.
   // 2. Log the incoming message and decide whether to reply.
@@ -557,6 +564,11 @@ async function processIncomingInner(event, sendMessage = undefined, queuedDecisi
   }
 
   const userPolicy = getUserPolicy(db, event.groupId, event.userId);
+  if (isFromDrain && (settings.globalPaused || userPolicy.policy === 'blocked'
+      || userPolicy.policy === 'muted' || (event.type === 'group' && (!group?.enabled || group.mode === 'silent'))
+      || (settings.onlyMentionMode && !mentionsBot(event.text, settings)))) {
+    return { replied: false, reason: '排队期间权限或参与模式已改变，取消回复' };
+  }
   const mentioned = mentionsBot(event.text, settings);
   const eventVisionImages = collectEventVisionImages(event);
   // On the first pass the message + decision are recorded and side effects
@@ -746,6 +758,7 @@ async function processIncomingInner(event, sendMessage = undefined, queuedDecisi
     return { replied: false, reason, queued: true, queuePosition: queueState.queue.length };
   }
   queueState.locked = true;
+  queueOwner.key = replyLockKey;
 
   let thinkingTimer = null;
   try {
@@ -848,7 +861,6 @@ async function processIncomingInner(event, sendMessage = undefined, queuedDecisi
         draft.messages.push({ id: crypto.randomUUID(), ...replyTargetMetadata(event), role: 'assistant', type: event.type, groupId: event.groupId, userId: 'bot', nickname: '机器人', content: replyText, inContext: true, createdAt: nowIso() });
         draft.usage.replies += 1;
       });
-      await drainReplyQueue(replyLockKey, processIncoming);
       return { replied: true, text: replyText, reason: 'named_bot_no_adapter' };
     }
 
@@ -862,7 +874,6 @@ async function processIncomingInner(event, sendMessage = undefined, queuedDecisi
         draft.messages.push({ id: crypto.randomUUID(), ...replyTargetMetadata(event), role: 'assistant', type: event.type, groupId: event.groupId, userId: 'bot', nickname: '机器人', content: replyText, inContext: true, createdAt: nowIso() });
         draft.usage.replies += 1;
       });
-      await drainReplyQueue(replyLockKey, processIncoming);
       return { replied: true, text: replyText, reason: '搜索请求但未接入真实搜索源' };
     }
 
@@ -904,15 +915,17 @@ async function processIncomingInner(event, sendMessage = undefined, queuedDecisi
     };
 
     if (thinkingMode === 'simple') {
-      await sendThinking('正在思考…');
+      await sendOptionalNotice(() => sendThinking('正在思考…'));
     } else if (thinkingMode === 'detail') {
       const currentModel = activeModelName(liveDb.settings);
       const modelHint = responseOptions.overrideModel && responseOptions.overrideModel !== currentModel
         ? describeModel(responseOptions.overrideModel)
         : describeModel(currentModel);
-      await sendThinking(`深度思考中（${modelHint}）…`);
+      await sendOptionalNotice(() => sendThinking(`深度思考中（${modelHint}）…`));
     } else if (thinkingMode === 'slow') {
-      thinkingTimer = setTimeout(() => sendThinking('正在进行思考…'), thinkingDelay);
+      thinkingTimer = setTimeout(() => {
+        void sendOptionalNotice(() => sendThinking('正在进行思考…'));
+      }, thinkingDelay);
     }
     // 'off' — never send
 
@@ -942,7 +955,6 @@ async function processIncomingInner(event, sendMessage = undefined, queuedDecisi
         });
         draft.usage.replies += 1;
       });
-      await drainReplyQueue(replyLockKey, processIncoming);
       return { replied: true, text: errorText, reason: 'osu_intent_no_bots' };
     }
 
@@ -984,7 +996,6 @@ async function processIncomingInner(event, sendMessage = undefined, queuedDecisi
             });
             draft.usage.replies += 1;
           });
-          await drainReplyQueue(replyLockKey, processIncoming);
           return { replied: true, text: errorText, reason };
         }
       }
@@ -1252,6 +1263,7 @@ async function processIncomingInner(event, sendMessage = undefined, queuedDecisi
     const withinMergeFloor = deliveredText.length <= MERGE_FORWARD_MIN_CHARS;
     const isLongReply = responseOptions.longForm || (!withinMergeFloor && segmentCount >= 2);
     let segments;
+    if (thinkingTimer) { clearTimeout(thinkingTimer); thinkingTimer = null; }
     traceEvent('SEND', 'qq_delivery_started', {
       contentLength: deliveredText.length,
       imageCount: imageCqCodes.length,
@@ -1329,6 +1341,5 @@ async function processIncomingInner(event, sendMessage = undefined, queuedDecisi
     return { replied: false, error: error.message, reason: decision.reason };
   } finally {
     if (thinkingTimer) clearTimeout(thinkingTimer);
-    void drainReplyQueue(replyLockKey, processIncoming);
   }
 }

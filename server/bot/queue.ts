@@ -110,6 +110,10 @@ export function getReplyQueueStats() {
 
 export async function drainReplyQueue(key, processIncoming) {
   const state = replyQueues.get(key);
+  if (!state || state.draining) return;
+  state.draining = true;
+  try {
+  while (state.queue.length > 0) {
   if (state?.queue?.length) {
     const now = Date.now();
     const fresh = [];
@@ -132,11 +136,7 @@ export async function drainReplyQueue(key, processIncoming) {
     }
     state.queue = fresh;
   }
-  if (!state || state.queue.length === 0) {
-    if (state) state.locked = false;
-    replyQueues.delete(key);
-    return;
-  }
+  if (state.queue.length === 0) break;
   // Take ALL queued messages (same member by key design) and merge them into
   // a single reply so a burst of messages costs one LLM turn, not N.
   const items = state.queue.splice(0, state.queue.length);
@@ -145,6 +145,12 @@ export async function drainReplyQueue(key, processIncoming) {
     await processIncoming(next.event, next.sendMessage, next.decision, true);
   } catch {
     // Errors are already handled inside processIncoming
+  }
+  }
+  } finally {
+    state.draining = false;
+    state.locked = false;
+    if (replyQueues.get(key) === state) replyQueues.delete(key);
   }
 }
 

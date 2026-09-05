@@ -1,5 +1,6 @@
 // @ts-nocheck -- legacy runtime module; new typed modules remain checked by tsc.
 import WebSocket from 'ws';
+import { fetchBoundedBody } from './httpBody.js';
 import { readDb } from './store.js';
 import { oneBotToInternal, processIncoming } from './bot.js';
 import { extractImageInputs, normalizeMessage } from './bot/cleaning.js';
@@ -104,16 +105,8 @@ function armReconnectStableTimer() {
 }
 
 async function fetchWithTimeout(url, options, timeoutMs = 12_000) {
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), timeoutMs);
-  try {
-    return await fetch(url, { ...options, signal: controller.signal });
-  } catch (error) {
-    if (error?.name === 'AbortError') throw new Error(`OneBot HTTP 请求超时 ${Math.round(timeoutMs / 1000)} 秒`);
-    throw error;
-  } finally {
-    clearTimeout(timer);
-  }
+  const { response, bytes } = await fetchBoundedBody(url, options, timeoutMs);
+  return { ok: response.ok, status: response.status, text: async () => bytes.toString('utf8') };
 }
 
 async function assertOneBotSuccess(response, label) {
@@ -267,7 +260,9 @@ function syncHealth() {
   setOneBotError(s.lastError || '');
 }
 
+let statusProbeActive = false;
 export async function probeGetStatus() {
+  if (statusProbeActive) return;
   let db;
   try {
     db = readDb();
@@ -276,20 +271,13 @@ export async function probeGetStatus() {
   }
   const baseUrl = db?.settings?.oneBotHttpUrl;
   if (!baseUrl) return;
+  statusProbeActive = true;
   try {
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), 12_000);
-    let response;
-    try {
-      response = await fetch(`${String(baseUrl).replace(/\/$/, '')}/get_status`, {
+    const response = await fetchWithTimeout(`${String(baseUrl).replace(/\/$/, '')}/get_status`, {
         method: 'POST',
         headers: oneBotHeaders(db),
         body: '{}',
-        signal: controller.signal,
       });
-    } finally {
-      clearTimeout(timer);
-    }
     const body = await response.text();
     let payload = null;
     try {
@@ -311,6 +299,8 @@ export async function probeGetStatus() {
       ok: false,
       error: String(error?.message || error),
     });
+  } finally {
+    statusProbeActive = false;
   }
   syncHealth();
 }
