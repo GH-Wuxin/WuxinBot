@@ -284,6 +284,15 @@ export interface UsageEvent {
   cachedTokens: number;
   cacheWriteTokens: number;
   cacheMetricsAvailable?: boolean;
+  cacheMeasuredPromptTokens?: number;
+  accountingExcluded?: boolean;
+  observedUsage?: unknown;
+  usageKnown?: boolean;
+  requestId?: string;
+  purpose?: string;
+  status?: string;
+  fallbackFrom?: string;
+  durationMs?: number;
   completionTokens: number;
   reasoningTokens: number;
   createdAt: string;

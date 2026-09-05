@@ -1,8 +1,6 @@
 // natural-chat-delivery-verify.mjs
-// Regression guard: natural chat (LLM tool loop) must never deliver the raw
-// structured tool payload to the user. The LLM receives the data as reference
-// material and writes its own reply; only explicit command flows opt into
-// verbatim delivery via deliverDirectContent=true.
+// Successful natural-chat synthesis does not dump raw reports. When synthesis
+// fails and there is no direct payload, a bounded safe source excerpt is allowed.
 // Exit 0 on all pass, non-zero on any failure.
 
 import http from 'node:http';
@@ -91,13 +89,19 @@ const llmServer = http.createServer((req, res) => {
     const message = hasToolFlow
       ? { role: 'assistant', content: leadContent }
       : { role: 'assistant', content: '不应该走这里。' };
-    res.writeHead(200, { 'Content-Type': 'application/json' });
-    res.end(JSON.stringify({
+    const response = {
       id: 'c' + llmCalls, object: 'chat.completion', created: Date.now(),
       model: 'deepseek-v4-pro',
       choices: [{ index: 0, message, finish_reason: 'stop' }],
       usage: { prompt_tokens: 10, completion_tokens: 3, total_tokens: 13 }
-    }));
+    };
+    if (request.stream) {
+      res.writeHead(200, { 'Content-Type': 'text/event-stream' });
+      res.end(`data: ${JSON.stringify({ ...response, choices: [{ index: 0, delta: message, finish_reason: 'stop' }] })}\n\ndata: [DONE]\n\n`);
+    } else {
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify(response));
+    }
   });
 });
 await new Promise((r) => llmServer.listen(0, '127.0.0.1', r));
@@ -153,8 +157,8 @@ async function testNaturalNoDump(label, userText, expectedCapability) {
     atTargets: [],
     images: [],
     raw: {}
-  }, async (evt, text) => {
-    sends.push({ userId: evt.userId, text: String(text || '') });
+  }, async (evt, text, options) => {
+    sends.push({ userId: evt.userId, text: options?.forwardNodes?.map(node => node.data.content).join('\n') || String(text || '') });
   });
 
   const intent = detectRequiredOsuTool(userText);
@@ -228,8 +232,8 @@ async function testNaturalDsmlLead(label, userText, expectedCapability) {
     atTargets: [],
     images: [],
     raw: {}
-  }, async (evt, text) => {
-    sends.push({ userId: evt.userId, text: String(text || '') });
+  }, async (evt, text, options) => {
+    sends.push({ userId: evt.userId, text: options?.forwardNodes?.map(node => node.data.content).join('\n') || String(text || '') });
   });
   dsmlLeadMode = false;
 
@@ -249,10 +253,9 @@ async function testNaturalDsmlLead(label, userText, expectedCapability) {
     fail(label, `DSML tool-call markup leaked into delivery: ${delivered.slice(0, 220)}`);
     return;
   }
-  // No direct payload exists in this harness scenario, so the reply must NOT
-  // pretend a result was delivered: the deterministic honest-retry lead
-  // replaces the markup (never the markup itself).
-  if (!delivered.includes('这次查询我这边没整理好，你稍后再试一次？')) {
+  // No direct payload: return actual source data, never markup or a claim that
+  // an invisible image was delivered.
+  if (!delivered.includes('已查询到的数据摘录')) {
     fail(label, `fallback lead missing from delivery: ${delivered.slice(0, 220)}`);
     return;
   }
@@ -285,8 +288,8 @@ await testNaturalDsmlLead('natural-dsml-lead', '看看我的bp1', 'bp');
     atTargets: [],
     images: [],
     raw: {}
-  }, async (evt, text) => {
-    sends.push({ userId: evt.userId, text: String(text || '') });
+  }, async (evt, text, options) => {
+    sends.push({ userId: evt.userId, text: options?.forwardNodes?.map(node => node.data.content).join('\n') || String(text || '') });
   });
   dsmlRetryMode = false;
   const delivered = sends.map((s) => s.text).join('\n') || result.text || '';

@@ -516,6 +516,7 @@ export function buildPrompt(db, group, event, userPolicy, options = {}) {
 
 export function sumUsageSince(db, sinceTime) {
   return (db.usageEvents || []).reduce((sum, item) => {
+    if (item.accountingExcluded || item.kind === 'rewrite-reply') return sum;
     if (new Date(item.createdAt).getTime() >= sinceTime) {
       return {
         totalTokens: sum.totalTokens + (item.totalTokens || 0),

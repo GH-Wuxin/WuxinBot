@@ -8,10 +8,13 @@
  * 4. 视觉限制 — 不支持视觉时正确提示
  */
 
-import { extractReplyMessageId, asksToInspectVisual, extractImageInputs } from '../server/bot/cleaning.ts';
-import { collectEventVisionImages, decideReply } from '../server/bot.ts';
-import { completeChat } from '../server/bot/llm.ts';
-import { buildPrompt, modelSupportsVision, responseOptionsFor } from '../server/bot/prompt.ts';
+import { createTestDataDir, cleanupTestDir } from './test-isolation.mjs';
+const testDataDir = createTestDataDir('wuxin-vision');
+process.on('exit', () => cleanupTestDir(testDataDir));
+const { extractReplyMessageId, asksToInspectVisual, extractImageInputs } = await import('../server/bot/cleaning.ts');
+const { collectEventVisionImages, decideReply } = await import('../server/bot.ts');
+const { completeChat } = await import('../server/bot/llm.ts');
+const { buildPrompt, modelSupportsVision, responseOptionsFor } = await import('../server/bot/prompt.ts');
 
 function assert(cond, msg) {
   if (!cond) throw new Error(`FAIL: ${msg}`);

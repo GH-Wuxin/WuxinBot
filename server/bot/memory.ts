@@ -658,7 +658,7 @@ export async function maybeRecordImageMemorySummary(event, userPolicy) {
 
     if (!draft.usage) draft.usage = { totalTokens: 0, promptTokens: 0, completionTokens: 0, requests: 0, errors: 0 };
     const usage = response.usage || {};
-    draft.usage.requests += 1;
+    if (!usage?.accounted) draft.usage.requests += 1;
     applyUsageTotals(draft.usage, usage);
     if (!draft.usageEvents) draft.usageEvents = [];
     draft.usageEvents.push({
@@ -1139,7 +1139,7 @@ export function commitMemoryProfileResult(userId, result, options = {}) {
 
     if (!draft.usage) draft.usage = { totalTokens: 0, promptTokens: 0, completionTokens: 0, requests: 0, errors: 0 };
     const usage = result?.usage || {};
-    draft.usage.requests += 1;
+    if (!usage?.accounted) draft.usage.requests += 1;
     applyUsageTotals(draft.usage, usage);
     if (!draft.usageEvents) draft.usageEvents = [];
     draft.usageEvents.push({

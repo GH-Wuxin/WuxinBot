@@ -304,7 +304,7 @@ export function recordLlmGateUsage({ groupId, userId, result, error, verdict, th
     const usage = result?.usage || {};
     if (result) {
       applyUsageTotals(draft.usage, usage);
-      draft.usage.requests += 1;
+      if (!usage?.accounted) draft.usage.requests += 1;
     } else {
       draft.usage.errors += 1;
     }
