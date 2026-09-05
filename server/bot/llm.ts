@@ -9,6 +9,7 @@ import OpenAI from 'openai';
 import { recordLlmSuccess, recordLlmError } from '../health.js';
 import { completeCodexAppServerChat } from '../codexAppServer.js';
 import { mergeLlmUsage } from '../usage.js';
+import { fetchBoundedBody } from '../httpBody.js';
 import {
   currentRequestTraceId,
   extractProviderResponseTrace,
@@ -338,24 +339,32 @@ async function bufferToDataUrl(buffer, mime, maxBytes) {
 }
 
 async function fetchImageAsDataUrl(url, timeoutMs, maxBytes) {
-  const response = await withTimeout(fetch(url), timeoutMs, '图片下载');
+  const { response, bytes } = await fetchBoundedBody(url, {}, timeoutMs, maxBytes);
   if (!response.ok) throw new Error(`图片下载失败 ${response.status}`);
   const mime = response.headers.get('content-type')?.split(';')[0] || imageMimeFromRef(url);
-  const bytes = Buffer.from(await response.arrayBuffer());
   return bufferToDataUrl(bytes, mime, maxBytes);
 }
 
 async function localImageAsDataUrl(file, maxBytes) {
   const filePath = normalizeLocalPath(file);
   if (!filePath) throw new Error('不是可读取的本地图片路径');
-  const bytes = await fs.readFile(filePath);
-  return bufferToDataUrl(bytes, imageMimeFromRef(filePath), maxBytes);
+  const handle = await fs.open(filePath, 'r');
+  try {
+    const bytes = Buffer.alloc(maxBytes + 1);
+    let size = 0;
+    while (size < bytes.length) {
+      const read = await handle.read(bytes, size, bytes.length - size, null);
+      if (!read.bytesRead) break;
+      size += read.bytesRead;
+    }
+    return bufferToDataUrl(bytes.subarray(0, size), imageMimeFromRef(filePath), maxBytes);
+  } finally { await handle.close(); }
 }
 
 async function resolveVisionImageUrl(db, image, options = {}) {
   const transport = String(db.settings.visionImageTransport || 'auto').toLowerCase();
   const maxBytes = Math.max(256_000, Math.min(20_000_000, Number(db.settings.visionMaxImageBytes || 6_000_000)));
-  const timeoutMs = Math.max(1000, Math.min(30_000, Number(db.settings.visionImageTimeoutMs || options.timeoutMs || 8000)));
+  const timeoutMs = Math.max(1, Math.min(30_000, Number(db.settings.visionImageTimeoutMs || 8000), options.visionRemainingMs ?? Infinity));
   const url = String(image?.url || '').trim();
   const file = String(image?.file || '').trim();
 
@@ -373,7 +382,7 @@ async function resolveVisionImageUrl(db, image, options = {}) {
   throw new Error('图片缺少 url/file');
 }
 
-async function attachVisionImages(db, messages, images = [], options = {}) {
+export async function attachVisionImages(db, messages, images = [], options = {}) {
   if (!images?.length) return messages;
   const provider = llmProvider(db);
   const requestedModel = options.model || options.overrideModel || db.settings.model;
@@ -381,9 +390,12 @@ async function attachVisionImages(db, messages, images = [], options = {}) {
   const maxImages = Math.max(1, Math.min(6, Number(db.settings.visionMaxImages || 3)));
   const usable = [];
   const errors = [];
+  const deadline = Date.now() + Math.max(1000, Math.min(30_000, Number(db.settings.visionImageTimeoutMs || 8000), options.timeoutMs || Infinity));
   for (const image of images.slice(0, maxImages)) {
     try {
-      const url = await resolveVisionImageUrl(db, image, options);
+      const visionRemainingMs = deadline - Date.now();
+      if (visionRemainingMs <= 0) { errors.push('图片准备阶段超时'); break; }
+      const url = await withTimeout(resolveVisionImageUrl(db, image, { ...options, visionRemainingMs }), visionRemainingMs, '图片准备');
       usable.push({ type: 'image_url', image_url: { url } });
     } catch (error) {
       errors.push(String(error?.message || error));
