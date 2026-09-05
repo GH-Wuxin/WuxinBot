@@ -61,6 +61,8 @@ export function usageBreakdown(usage: any = {}): UsageBreakdown {
 }
 
 export function applyUsageTotals(target: any, usage: any = {}): UsageBreakdown {
+  if (usage?.accounted === true) return usageBreakdown(usage);
+  usage = usage?.unaccounted_usage ?? usage;
   const values = usageBreakdown(usage);
   target.totalTokens = nonNegative(target.totalTokens) + values.totalTokens;
   target.promptTokens = nonNegative(target.promptTokens) + values.promptTokens;
@@ -69,7 +71,7 @@ export function applyUsageTotals(target: any, usage: any = {}): UsageBreakdown {
   target.completionTokens = nonNegative(target.completionTokens) + values.completionTokens;
   target.reasoningTokens = nonNegative(target.reasoningTokens) + values.reasoningTokens;
   if (hasCacheUsageDetails(usage)) {
-    target.cacheMeasuredPromptTokens = nonNegative(target.cacheMeasuredPromptTokens) + values.promptTokens;
+    target.cacheMeasuredPromptTokens = nonNegative(target.cacheMeasuredPromptTokens) + measuredPromptTokens(usage);
     target.cacheMeasuredRequests = nonNegative(target.cacheMeasuredRequests) + 1;
     if (!target.cacheMetricsStartedAt) target.cacheMetricsStartedAt = new Date().toISOString();
   }
@@ -77,10 +79,25 @@ export function applyUsageTotals(target: any, usage: any = {}): UsageBreakdown {
 }
 
 export function usageEventFields(usage: any = {}) {
+  // Old releases do not understand accountingExcluded. Keep diagnostic rows
+  // numerically neutral even for those readers after a code-only rollback.
+  const billableUsage = usage?.accounted === true ? {} : (usage?.unaccounted_usage ?? usage);
   return {
-    ...usageBreakdown(usage),
-    cacheMetricsAvailable: hasCacheUsageDetails(usage),
+    ...usageBreakdown(billableUsage),
+    cacheMetricsAvailable: hasCacheUsageDetails(billableUsage),
+    cacheMeasuredPromptTokens: measuredPromptTokens(billableUsage),
+    accountingExcluded: usage?.accounted === true,
+    ...(usage?.accounted === true ? { observedUsage: usageBreakdown(usage) } : {}),
   };
+}
+
+export function measuredPromptTokens(usage: any = {}): number {
+  if (!hasCacheUsageDetails(usage)) return 0;
+  return nonNegative(usage.cache_measured_prompt_tokens ?? usageBreakdown(usage).promptTokens);
+}
+
+export function eventMeasuredPromptTokens(event: any = {}): number {
+  return usageEventHasCacheDetails(event) ? nonNegative(event.cacheMeasuredPromptTokens ?? event.promptTokens) : 0;
 }
 
 export function cacheUsageSummary(events: any[] = []): CacheUsageSummary {
@@ -92,10 +109,10 @@ export function cacheUsageSummary(events: any[] = []): CacheUsageSummary {
     startedAt: '',
   };
   for (const event of events) {
-    if (!usageEventHasCacheDetails(event)) continue;
+    if (event?.accountingExcluded || event?.kind === 'rewrite-reply' || !usageEventHasCacheDetails(event)) continue;
     const createdAt = String(event?.createdAt || '');
     const timestamp = new Date(createdAt).getTime();
-    summary.promptTokens += nonNegative(event?.promptTokens);
+    summary.promptTokens += eventMeasuredPromptTokens(event);
     summary.cachedTokens += nonNegative(event?.cachedTokens);
     summary.cacheWriteTokens += nonNegative(event?.cacheWriteTokens);
     summary.requests += 1;
@@ -106,8 +123,9 @@ export function cacheUsageSummary(events: any[] = []): CacheUsageSummary {
   return summary;
 }
 
-export function mergeLlmUsage(...items: any[]) {
+export function mergeLlmUsage(...items: any[]): Record<string, any> {
   const cacheMetricsAvailable = items.some((item) => hasCacheUsageDetails(item));
+  const nonempty = items.filter(item => item?.accounted || Object.values(usageBreakdown(item)).some(value => value > 0));
   const merged = items.reduce<UsageBreakdown>((total, item) => {
     const values = usageBreakdown(item);
     total.totalTokens += values.totalTokens;
@@ -125,6 +143,11 @@ export function mergeLlmUsage(...items: any[]) {
     completionTokens: 0,
     reasoningTokens: 0,
   });
+  // No measured usage: retain the legacy empty shape, without manufacturing
+  // cache/reasoning detail fields (also preserves archived replay fingerprints).
+  if (!cacheMetricsAvailable && nonempty.length === 0) {
+    return { total_tokens: 0, prompt_tokens: 0, completion_tokens: 0 };
+  }
   return {
     total_tokens: merged.totalTokens,
     prompt_tokens: merged.promptTokens,
@@ -138,5 +161,12 @@ export function mergeLlmUsage(...items: any[]) {
     cache_read_input_tokens: merged.cachedTokens,
     cache_write_input_tokens: merged.cacheWriteTokens,
     cache_metrics_available: cacheMetricsAvailable,
+    cache_measured_prompt_tokens: items.reduce((sum, item) => sum + measuredPromptTokens(item), 0),
+    accounted: nonempty.length > 0 && nonempty.every(item => item.accounted === true),
+    // If one invocation failed to persist, a later business write retries only
+    // that unpaid subset, never the other invocations already in the ledger.
+    ...(items.some(item => item?.unaccounted_usage) || (nonempty.some(item => item.accounted) && nonempty.some(item => !item.accounted))
+      ? { unaccounted_usage: mergeLlmUsage(...items.filter(item => !item?.accounted).map(item => item?.unaccounted_usage ?? item)) }
+      : {}),
   };
 }

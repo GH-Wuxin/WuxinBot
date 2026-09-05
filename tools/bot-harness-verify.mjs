@@ -602,6 +602,6 @@ assert(tryResolveBotResponse(stagedDb, {
   messageId: 'progress-only-1',
 }), 'a progress-only response must be consumed');
 const progressOnlyResult = await progressOnlyPromise;
-assert(progressOnlyResult.ok && progressOnlyResult.text.includes('正在查询'), 'a progress-only bot must still terminate at its configured grace period');
+assert(!progressOnlyResult.ok && progressOnlyResult.text.includes('正在查询'), 'progress-only must terminate without pretending a result exists');
 
 console.log('PASS bot harness: guard, registry, bindings, official score metrics, tool cap, images and QQ routing');

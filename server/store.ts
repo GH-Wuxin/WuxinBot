@@ -4,7 +4,7 @@ import { fileURLToPath } from 'node:url';
 import { activeModelName, activateModelProfile, DEEPSEEK_BASE_URL, looksLikeMimoEndpoint, MIMO_BASE_URL, recoverProviderProfiles } from './modelConfig.js';
 import { DEFAULT_BOTS } from './bots/registry.js';
 import { DEFAULT_KB_SETTINGS } from './bot/knowledgeTypes.js';
-import { cacheUsageSummary, usageEventHasCacheDetails } from './usage.js';
+import { cacheUsageSummary, usageEventHasCacheDetails, eventMeasuredPromptTokens } from './usage.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const rootDir = path.resolve(__dirname, '..');
@@ -876,6 +876,7 @@ export function publicDb(db = readDb()) {
   const dailyByStart = new Map(dailyUsage.map((bucket) => [bucket.start, bucket]));
   const todayUsage = { totalTokens: 0, promptTokens: 0, cachedTokens: 0, cacheWriteTokens: 0, completionTokens: 0, reasoningTokens: 0, cacheMeasuredPromptTokens: 0, cacheMeasuredRequests: 0, requests: 0 };
   for (const event of db.usageEvents || []) {
+    if (!event || event.accountingExcluded || event.kind === 'rewrite-reply') continue;
     const time = new Date(event.createdAt || 0);
     const timestamp = time.getTime();
     if (!Number.isFinite(timestamp)) continue;
@@ -897,7 +898,7 @@ export function publicDb(db = readDb()) {
       bucket.completionTokens += values.completionTokens;
       bucket.reasoningTokens += values.reasoningTokens;
       if (values.cacheMetricsAvailable) {
-        bucket.cacheMeasuredPromptTokens += values.promptTokens;
+        bucket.cacheMeasuredPromptTokens += eventMeasuredPromptTokens(event);
         bucket.cacheMeasuredRequests += 1;
       }
       bucket.requests += 1;

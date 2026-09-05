@@ -33,6 +33,8 @@ assert.deepEqual(usageEventFields(second), {
   completionTokens: 7,
   reasoningTokens: 4,
   cacheMetricsAvailable: true,
+  cacheMeasuredPromptTokens: 11,
+  accountingExcluded: false,
 });
 
 const totals = {

@@ -11,6 +11,10 @@
 import http from 'node:http';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
+import { createTestDataDir, cleanupTestDir } from './test-isolation.mjs';
+
+const testDataDir = createTestDataDir('wuxin-reasoning-wire');
+process.on('exit', () => cleanupTestDir(testDataDir));
 
 const REPO = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const { completeChat, normalizeLlmMessages } =

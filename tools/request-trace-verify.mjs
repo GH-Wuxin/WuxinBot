@@ -14,7 +14,10 @@ import {
 } from '../server/requestTrace.ts';
 import { correlateChatRecords, requestProgressSnapshot } from '../src/pages/Logs/correlation.js';
 import { parseSseBuffer } from '../src/lib/api.js';
-import { collectChatCompletionStream, completeChat } from '../server/bot/llm.ts';
+import { createTestDataDir, cleanupTestDir } from './test-isolation.mjs';
+const testDataDir = createTestDataDir('wuxin-request-trace');
+process.on('exit', () => cleanupTestDir(testDataDir));
+const { collectChatCompletionStream, completeChat } = await import('../server/bot/llm.ts');
 
 clearRequestTracesForTest();
 

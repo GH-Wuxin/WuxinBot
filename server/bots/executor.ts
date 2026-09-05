@@ -1,5 +1,6 @@
 // Tool executor: handles LLM tool calls, runs the tool loop, manages bot communication.
 import { createHash } from 'node:crypto';
+import { mergeLlmUsage } from '../usage.js';
 import type { LlmToolCall, ToolResult, BotResponse, LlmTool, BotCommand } from './types.js';
 import {
   validateOperation,
@@ -187,7 +188,7 @@ function finishPendingBotCall(entry: PendingBotCall, timeoutWithoutContent = fal
     ? substantive
     : (entry.images.length > 0 ? [] : allText);
   const text = [...new Set(selectedText)].join('\n').trim();
-  const ok = Boolean(text || entry.images.length > 0);
+  const ok = Boolean(substantive.some(text => text.trim()) || entry.images.length > 0);
   entry.resolve({
     correlationId: entry.correlationId,
     botId: entry.botId,
@@ -195,7 +196,7 @@ function finishPendingBotCall(entry: PendingBotCall, timeoutWithoutContent = fal
     text,
     images: [...entry.images],
     rawMessageId: entry.rawMessageId,
-    error: ok ? undefined : (timeoutWithoutContent ? '机器人响应超时' : undefined)
+    error: ok ? undefined : '机器人未返回查询结果（仅进度或响应超时）'
   });
 }
 
@@ -563,13 +564,14 @@ async function executeToolCallInner(
   let args: Record<string, unknown> = {};
 
   try {
-    args = JSON.parse(toolCall.function.arguments || '{}');
+    args = JSON.parse(toolCall.function.arguments);
+    if (!args || typeof args !== 'object' || Array.isArray(args)) throw new Error('Expected object');
   } catch {
     return {
       toolCallId: toolCall.id,
       ok: false,
-      content: '',
-      error: `无法解析工具参数: ${toolCall.function.arguments}`
+      content: '工具参数必须是有效的 JSON 对象，请修正后重试。',
+      error: 'INVALID_TOOL_ARGUMENTS'
     };
   }
 
@@ -1305,7 +1307,7 @@ export async function executeToolCall(
     try {
       args = JSON.parse(canonicalToolCall.function?.arguments || '{}');
     } catch { /* non-fatal */ }
-    const capability = String(args.capability || '').trim();
+    const capability = String(args?.capability || '').trim();
     const errorText = String(result.error || '');
     if (errorText.startsWith('unknown_tool') || errorText.includes('不允许的操作类型')) {
       recordUnmetCapability(canonicalToolCall, context, 'NO_TOOL_MATCH');
@@ -2333,6 +2335,23 @@ export interface ToolLoopResult {
   evidenceFallbackExecuted?: boolean;
 }
 
+/** Preserve completed work when a caller starts a bounded corrective loop. */
+export function mergeToolLoopResults(previous: ToolLoopResult, next: ToolLoopResult): ToolLoopResult {
+  return {
+    ...next,
+    usage: mergeLlmUsage(previous.usage, next.usage),
+    images: [...new Set([...(previous.images || []), ...(next.images || [])])],
+    directContent: [...new Set([previous.directContent, next.directContent].filter(Boolean))].join('\n\n'),
+    toolCallsMade: previous.toolCallsMade + next.toolCallsMade,
+    iterations: previous.iterations + next.iterations,
+    recommendToolCalled: previous.recommendToolCalled || next.recommendToolCalled,
+    toolCallsSkippedByCap: (previous.toolCallsSkippedByCap || 0) + (next.toolCallsSkippedByCap || 0),
+    hardCapReached: previous.hardCapReached || next.hardCapReached,
+    evidenceRequirementSatisfied: previous.evidenceRequirementSatisfied || next.evidenceRequirementSatisfied,
+    evidenceFallbackExecuted: previous.evidenceFallbackExecuted || next.evidenceFallbackExecuted,
+  };
+}
+
 function parsedCanonicalToolArgs(toolCall: LlmToolCall): Record<string, unknown> {
   const canonical = normalizeAgentToolCall(toolCall);
   try {
@@ -2485,7 +2504,7 @@ export async function runToolLoop(
     Math.min(AGENT_MAX_TOOL_CALLS_PER_TURN, toolCallsExecutedBeforeLoop + toolCallsMade);
 
   let currentMessages = [...messages];
-  let totalUsage = { total_tokens: 0, prompt_tokens: 0, completion_tokens: 0 };
+  let totalUsage: any = { total_tokens: 0, prompt_tokens: 0, completion_tokens: 0 };
   let toolCallsMade = 0;
   let iterations = 0;
   let recommendToolCalled = false;
@@ -2516,11 +2535,7 @@ export async function runToolLoop(
     }
     return {
       ...fallback,
-      usage: {
-        total_tokens: (totalUsage.total_tokens || 0) + (fallback.usage?.total_tokens || 0),
-        prompt_tokens: (totalUsage.prompt_tokens || 0) + (fallback.usage?.prompt_tokens || 0),
-        completion_tokens: (totalUsage.completion_tokens || 0) + (fallback.usage?.completion_tokens || 0),
-      },
+      usage: mergeLlmUsage(totalUsage, fallback.usage),
       toolCallsMade: toolCallsMade + fallback.toolCallsMade,
       iterations: iterations + fallback.iterations,
       recommendToolCalled: recommendToolCalled || fallback.recommendToolCalled,
@@ -2799,16 +2814,24 @@ export async function runToolLoop(
       });
     }
 
-    // LLM turn — tools disabled, only writes a short lead
-    const leadInput = reasoningInput('decorative_lead', {
+    const noDirectPayload = collectedImages.length === 0 && collectedDirectContent.length === 0;
+    const leadRole: LlmCallRole = noDirectPayload ? 'tool_synthesis' : 'decorative_lead';
+    // Keep complete source lines: do not cut numbers or fabricate a summary.
+    const sourceLines = isSafeToolResult(safeContent)
+      ? sanitizeDirectDeliveryContent(safeContent).split('\n').filter(line => line.trim() && line.length <= 400).slice(0, 6)
+      : [];
+    const synthesisFallback = noDirectPayload && sourceLines.length
+      ? `自动整理失败，以下为已查询到的数据摘录：\n${sourceLines.join('\n')}`
+      : (noDirectPayload ? '[系统] 已完成查询，但结果无法安全展示，请稍后重试。' : '');
+    const leadInput = reasoningInput(leadRole, {
       requiredTool: true,
       toolSelectionRequired: false,
       toolCallsMade: 1,
       iterations: 1,
       maxIterations,
-      hasDirectPayload: true,
+      hasDirectPayload: !noDirectPayload,
     });
-    const leadDecision = decideCall('decorative_lead', leadInput);
+    const leadDecision = decideCall(leadRole, leadInput);
     let leadResponse;
     try {
       leadResponse = await completeChatFn(db, {
@@ -2818,13 +2841,13 @@ export async function runToolLoop(
         model,
         ...wireForLevel(leadDecision.level),
         label: label ? `${label} [required lead]` : undefined,
-        traceRole: 'decorative_lead',
+        traceRole: leadRole,
         tracePurpose: 'required_tool_lead',
       });
     } catch {
-      // Lead is cosmetic — return the direct payload without it
+      // Only a real direct payload makes the LLM text optional.
       return {
-        text: '',
+        text: synthesisFallback,
         usage: totalUsage,
         toolCallsMade,
         iterations,
@@ -2838,16 +2861,13 @@ export async function runToolLoop(
       };
     }
 
-    recordCall('decorative_lead', leadInput, leadResponse?.meta || null, leadDecision);
+    recordCall(leadRole, leadInput, leadResponse?.meta || null, leadDecision);
 
     if (leadResponse.usage) {
-      totalUsage.total_tokens += leadResponse.usage.total_tokens || 0;
-      totalUsage.prompt_tokens += leadResponse.usage.prompt_tokens || 0;
-      totalUsage.completion_tokens += leadResponse.usage.completion_tokens || 0;
+      totalUsage = mergeLlmUsage(totalUsage, leadResponse.usage);
     }
 
     let leadText = sanitizeToolReplyText(leadResponse.text);
-    const noDirectPayload = collectedImages.length === 0 && collectedDirectContent.length === 0;
     if (!leadText && looksLikeToolCallMarkup(String(leadResponse.text || '')) && noDirectPayload) {
       // The lead came back as pure tool-call markup and there is no direct
       // payload to fall back on: retry once with an explicit corrective turn
@@ -2864,14 +2884,12 @@ export async function runToolLoop(
           model,
           ...wireForLevel(leadDecision.level),
           label: label ? `${label} [required lead retry]` : undefined,
-          traceRole: 'decorative_lead',
+          traceRole: leadRole,
           tracePurpose: 'required_tool_lead_retry',
         });
-        recordCall('decorative_lead', leadInput, retryResponse?.meta || null, leadDecision);
+        recordCall(leadRole, leadInput, retryResponse?.meta || null, leadDecision);
         if (retryResponse.usage) {
-          totalUsage.total_tokens += retryResponse.usage.total_tokens || 0;
-          totalUsage.prompt_tokens += retryResponse.usage.prompt_tokens || 0;
-          totalUsage.completion_tokens += retryResponse.usage.completion_tokens || 0;
+          totalUsage = mergeLlmUsage(totalUsage, retryResponse.usage);
         }
         leadText = sanitizeToolReplyText(retryResponse.text);
       } catch {
@@ -2880,7 +2898,7 @@ export async function runToolLoop(
     }
 
     return {
-      text: leadText,
+      text: leadText || synthesisFallback,
       usage: totalUsage,
       toolCallsMade,
       iterations,
@@ -2971,9 +2989,7 @@ export async function runToolLoop(
 
     // Merge usage
     if (response.usage) {
-      totalUsage.total_tokens += response.usage.total_tokens || 0;
-      totalUsage.prompt_tokens += response.usage.prompt_tokens || 0;
-      totalUsage.completion_tokens += response.usage.completion_tokens || 0;
+      totalUsage = mergeLlmUsage(totalUsage, response.usage);
     }
 
     // Check for tool calls in the response
@@ -3318,9 +3334,7 @@ export async function runToolLoop(
   recordCall('tool_synthesis', synthesisInput, finalResponse?.meta || null, synthesisDecision);
 
   if (finalResponse.usage) {
-    totalUsage.total_tokens += finalResponse.usage.total_tokens || 0;
-    totalUsage.prompt_tokens += finalResponse.usage.prompt_tokens || 0;
-    totalUsage.completion_tokens += finalResponse.usage.completion_tokens || 0;
+    totalUsage = mergeLlmUsage(totalUsage, finalResponse.usage);
   }
 
   return {

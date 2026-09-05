@@ -113,40 +113,37 @@ export async function drainReplyQueue(key, processIncoming) {
   if (!state || state.draining) return;
   state.draining = true;
   try {
-  while (state.queue.length > 0) {
-  if (state?.queue?.length) {
-    const now = Date.now();
-    const fresh = [];
-    for (const item of state.queue) {
-      if (!item.enqueuedAt || now - item.enqueuedAt <= REPLY_QUEUE_TTL_MS) {
-        fresh.push(item);
-        continue;
-      }
-      updateDb((draft) => {
-        draft.decisions.push({
-          id: crypto.randomUUID(),
-          messageId: item.event.messageId,
-          groupId: item.event.groupId,
-          userId: item.event.userId,
-          shouldReply: false,
-          reason: '回复队列等待超时，丢弃旧消息',
-          createdAt: nowIso()
+    while (state.queue.length > 0) {
+      const now = Date.now();
+      const fresh = [];
+      for (const item of state.queue) {
+        if (!item.enqueuedAt || now - item.enqueuedAt <= REPLY_QUEUE_TTL_MS) {
+          fresh.push(item);
+          continue;
+        }
+        updateDb((draft) => {
+          draft.decisions.push({
+            id: crypto.randomUUID(),
+            messageId: item.event.messageId,
+            groupId: item.event.groupId,
+            userId: item.event.userId,
+            shouldReply: false,
+            reason: '回复队列等待超时，丢弃旧消息',
+            createdAt: nowIso()
+          });
         });
-      });
+      }
+      state.queue = fresh;
+      if (state.queue.length === 0) break;
+      // Merge a burst from the same member into one reply, not N model turns.
+      const items = state.queue.splice(0, state.queue.length);
+      const next = mergeQueuedReplyItems(items);
+      try {
+        await processIncoming(next.event, next.sendMessage, next.decision, true);
+      } catch {
+        // processIncoming records failure; the worker still owns the queue.
+      }
     }
-    state.queue = fresh;
-  }
-  if (state.queue.length === 0) break;
-  // Take ALL queued messages (same member by key design) and merge them into
-  // a single reply so a burst of messages costs one LLM turn, not N.
-  const items = state.queue.splice(0, state.queue.length);
-  const next = mergeQueuedReplyItems(items);
-  try {
-    await processIncoming(next.event, next.sendMessage, next.decision, true);
-  } catch {
-    // Errors are already handled inside processIncoming
-  }
-  }
   } finally {
     state.draining = false;
     state.locked = false;

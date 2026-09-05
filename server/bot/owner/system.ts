@@ -204,6 +204,7 @@ export async function ownerUsageHandler(ctx: OwnerHandlerContext): Promise<Owner
   const todayStart = startOfLocalDayTime();
   const todayByModel: Record<string, { prompt: number; completion: number; requests: number }> = {};
   for (const e of (db.usageEvents || [])) {
+    if (e.accountingExcluded || e.kind === 'rewrite-reply') continue;
     if (new Date(e.createdAt).getTime() < todayStart) continue;
     const m = e.model || 'unknown';
     if (!todayByModel[m]) todayByModel[m] = { prompt: 0, completion: 0, requests: 0 };
@@ -438,7 +439,7 @@ export async function ownerSummarizeHandler(ctx: OwnerHandlerContext): Promise<O
     const summary = response.text || '无法生成总结。';
 
     updateDb((draft) => {
-      draft.usage.requests += 1;
+      if (!response.usage?.accounted) draft.usage.requests += 1;
       applyUsageTotals(draft.usage, response.usage);
       if (!draft.usageEvents) draft.usageEvents = [];
       draft.usageEvents.push({

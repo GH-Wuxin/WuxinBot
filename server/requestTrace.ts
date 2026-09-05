@@ -138,6 +138,12 @@ export function currentRequestTraceId() {
   try { return context.getStore()?.requestId || ''; } catch { return ''; }
 }
 
+export function currentRequestIdentity() {
+  const requestId = currentRequestTraceId();
+  const trace = traces.get(requestId);
+  return { requestId, groupId: trace?.groupId || '', userId: trace?.userId || '', messageId: trace?.messageId || '' };
+}
+
 export function withRequestTrace<T>(requestId: string, fn: () => T): T {
   return context.run({ requestId }, fn);
 }

@@ -1,6 +1,7 @@
 // @ts-nocheck -- legacy runtime module; new typed modules remain checked by tsc.
 import { pathToFileURL } from 'node:url';
 import { sendOptionalNotice } from './bot/notice.js';
+import { withLlmTurnPolicy, assertLlmTurnActive } from './llmPolicy.js';
 import { defaultPrompt, readDb, updateDb, nowIso } from './store.js';
 import { applyUsageTotals, mergeLlmUsage, usageEventFields } from './usage.js';
 import {
@@ -104,7 +105,7 @@ import {
 } from './bots/intent.js';
 import { validateOperation, looksLikeToolCallMarkup } from './bots/guard.js';
 import { RECENT_BOT_SELECTOR_IDS } from './bots/capabilityCatalog.js';
-import { executeToolCall, runToolLoop, tryResolveBotResponse } from './bots/executor.js';
+import { executeToolCall, runToolLoop, mergeToolLoopResults, tryResolveBotResponse } from './bots/executor.js';
 import { buildToolGuidance } from './bots/toolGuidance.js';
 import {
   agentRuntimeModeFor,
@@ -437,7 +438,7 @@ export async function processIncoming(event, sendMessage = undefined, queuedDeci
     });
     markActiveProcessing(1);
     try {
-      const result = await processIncomingInner(event, sendMessage, queuedDecision, isFromDrain, queueOwner);
+      const result = await withLlmTurnPolicy(() => processIncomingInner(event, sendMessage, queuedDecision, isFromDrain, queueOwner));
       finishRequestTrace(result?.error ? 'failed' : 'completed', {
         replied: Boolean(result?.replied),
         queued: Boolean(result?.queued),
@@ -566,7 +567,8 @@ async function processIncomingInner(event, sendMessage = undefined, queuedDecisi
   const userPolicy = getUserPolicy(db, event.groupId, event.userId);
   if (isFromDrain && (settings.globalPaused || userPolicy.policy === 'blocked'
       || userPolicy.policy === 'muted' || (event.type === 'group' && (!group?.enabled || group.mode === 'silent'))
-      || (settings.onlyMentionMode && !mentionsBot(event.text, settings)))) {
+      || (event.type === 'private' && settings.ownerQq && !isPrivateOwner)
+      || ((settings.onlyMentionMode || (event.type === 'group' && group?.mode === 'mention')) && !mentionsBot(event.text, settings)))) {
     return { replied: false, reason: '排队期间权限或参与模式已改变，取消回复' };
   }
   const mentioned = mentionsBot(event.text, settings);
@@ -761,6 +763,8 @@ async function processIncomingInner(event, sendMessage = undefined, queuedDecisi
   queueOwner.key = replyLockKey;
 
   let thinkingTimer = null;
+  let modelStageStarted = false;
+  let deliveryStarted = false;
   try {
     // QUICK_CONTEXT_FIX_QB08: before building this conversational turn's
     // context, drain any pending quick observation whose visible reply already
@@ -904,7 +908,8 @@ async function processIncomingInner(event, sendMessage = undefined, queuedDecisi
     });
 
     // Thinking notice — configurable per thinkingNoticeMode
-    const thinkingMode = useTools ? 'off' : (liveDb.settings.thinkingNoticeMode || 'slow');
+    modelStageStarted = true;
+    const thinkingMode = liveDb.settings.thinkingNoticeMode || 'slow';
     const thinkingDelay = Number(liveDb.settings.thinkingNoticeDelayMs || 3000);
     let thinkingSent = false;
 
@@ -924,7 +929,7 @@ async function processIncomingInner(event, sendMessage = undefined, queuedDecisi
       await sendOptionalNotice(() => sendThinking(`深度思考中（${modelHint}）…`));
     } else if (thinkingMode === 'slow') {
       thinkingTimer = setTimeout(() => {
-        void sendOptionalNotice(() => sendThinking('正在进行思考…'));
+        void sendOptionalNotice(() => sendThinking(useTools ? '正在查询或整理结果…' : '正在进行思考…'));
       }, thinkingDelay);
     }
     // 'off' — never send
@@ -1031,6 +1036,7 @@ async function processIncomingInner(event, sendMessage = undefined, queuedDecisi
 
       let webSearchCalls = 0;
       const executeConversationTool = async (toolCall, context) => {
+        assertLlmTurnActive();
         if (String(toolCall?.function?.name || '') !== SEARCH_TOOL_NAME) {
           return executeToolCall(toolCall, context);
         }
@@ -1105,11 +1111,11 @@ async function processIncomingInner(event, sendMessage = undefined, queuedDecisi
         webSearchCalls === 0 &&
         fallbackSearchQuery.length >= 2
       ) {
-        toolResult = await runToolLoop(harnessChat, {
+        toolResult = mergeToolLoopResults(toolResult, await runToolLoop(harnessChat, {
           ...loopOptions,
           toolCallsExecutedBeforeLoop: turnToolCallsMade,
           requiredTool: { toolName: SEARCH_TOOL_NAME, args: { query: fallbackSearchQuery } },
-        });
+        }));
         requiredToolLed = true;
         turnToolCallsMade = Number(toolResult.toolCallsMadeThisTurn ?? toolResult.toolCallsMade) || 0;
       }
@@ -1124,12 +1130,12 @@ async function processIncomingInner(event, sendMessage = undefined, queuedDecisi
         !toolResult.recommendToolCalled &&
         looksLikeRecommendationReply(toolResult.text)
       ) {
-        toolResult = await runToolLoop(harnessChat, {
+        toolResult = mergeToolLoopResults(toolResult, await runToolLoop(harnessChat, {
           ...loopOptions,
           toolCallsExecutedBeforeLoop: turnToolCallsMade,
           requiredTool: { toolName: 'query_osu', args: { capability: 'recommend' } },
           deliverDirectContent: true,
-        });
+        }));
         turnToolCallsMade = Number(toolResult.toolCallsMadeThisTurn ?? toolResult.toolCallsMade) || 0;
       }
 
@@ -1264,6 +1270,7 @@ async function processIncomingInner(event, sendMessage = undefined, queuedDecisi
     const isLongReply = responseOptions.longForm || (!withinMergeFloor && segmentCount >= 2);
     let segments;
     if (thinkingTimer) { clearTimeout(thinkingTimer); thinkingTimer = null; }
+    deliveryStarted = true;
     traceEvent('SEND', 'qq_delivery_started', {
       contentLength: deliveredText.length,
       imageCount: imageCqCodes.length,
@@ -1300,11 +1307,14 @@ async function processIncomingInner(event, sendMessage = undefined, queuedDecisi
         createdAt: nowIso()
       });
       applyUsageTotals(draft.usage, ai.usage);
-      draft.usage.requests += 1;
+      if (!ai.usage?.accounted) draft.usage.requests += 1;
       draft.usage.replies += Math.max(1, segments.length);
       if (!draft.usageEvents) draft.usageEvents = [];
       draft.usageEvents.push({
         id: crypto.randomUUID(),
+        kind: 'reply-delivery',
+        requestId: currentRequestTraceId(),
+        status: 'completed',
         groupId: event.groupId,
         userId: event.userId,
         model: ai.model || activeModelName(liveDb.settings),
@@ -1325,8 +1335,23 @@ async function processIncomingInner(event, sendMessage = undefined, queuedDecisi
       reason: decision.reason
     };
   } catch (error) {
+    if (thinkingTimer) { clearTimeout(thinkingTimer); thinkingTimer = null; }
+    traceEvent(deliveryStarted ? 'SEND' : 'ERROR', deliveryStarted ? 'qq_delivery_failed_or_unknown' : 'reply_generation_failed', { status: 'error', error: String(error) });
+    // Once QQ delivery starts, timeout may mean accepted-but-unacknowledged.
+    // Do not resend the answer or a contradictory failure notice in that case.
+    if (modelStageStarted && !deliveryStarted && sendMessage) {
+      await sendOptionalNotice(() => sendMessage(event, '[系统] 这次查询或回复未能完成，请稍后重试。'));
+    }
     updateDb((draft) => {
       draft.usage.errors += 1;
+      draft.usageEvents ||= [];
+      draft.usageEvents.push({
+        id: crypto.randomUUID(), kind: 'reply-delivery', requestId: currentRequestTraceId(),
+        groupId: event.groupId, userId: event.userId,
+        status: deliveryStarted ? 'failed_or_unknown' : 'generation_failed',
+        accountingExcluded: true, createdAt: nowIso(),
+      });
+      draft.usageEvents = draft.usageEvents.slice(-5000);
       draft.decisions.push({
         id: crypto.randomUUID(),
         requestId: currentRequestTraceId(),

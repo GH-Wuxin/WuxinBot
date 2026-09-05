@@ -7,7 +7,7 @@ import { createTestDataDir, cleanupTestDir } from './test-isolation.mjs';
 
 const dataDir = createTestDataDir('wuxin-health-runtime');
 const { fetchBoundedBody } = await import('../server/httpBody.ts');
-const { CodexAppServerClient } = await import('../server/codexAppServer.ts');
+const { CodexAppServerClient, completeCodexAppServerChat } = await import('../server/codexAppServer.ts');
 const { recentVisionImageMessages } = await import('../server/bot/gate.ts');
 const queue = await import('../server/bot/queue.ts');
 const store = await import('../server/store.ts');
@@ -66,6 +66,48 @@ try {
   assert.equal(failedTurn, true);
   off(); client.shutdown();
   console.log('PASS real Codex client: handshake barrier, old-process isolation, exit notification');
+
+  for (const exitDuringTurn of [false, true]) {
+    const processFailure = new Error('process lost');
+    const rpc = new CodexAppServerClient(() => {
+      const child = new EventEmitter();
+      Object.assign(child, { killed: false, exitCode: null, stdin: new PassThrough(), stdout: new PassThrough(), stderr: new PassThrough() });
+      child.kill = () => { child.killed = true; };
+      const emit = message => child.stdout.write(JSON.stringify(message) + '\n');
+      child.stdin.on('data', bytes => {
+        const request = JSON.parse(String(bytes));
+        if (!request.id) return;
+        if (request.method === 'initialize') emit({ id: request.id, result: {} });
+        if (request.method === 'thread/start') emit({ id: request.id, result: { thread: { id: 'thread-fixture' } } });
+        if (request.method === 'turn/start') {
+          emit({ id: request.id, result: { turn: { id: 'turn-fixture' } } });
+          setImmediate(() => {
+            emit({ method: 'thread/tokenUsage/updated', params: { threadId: 'thread-fixture', tokenUsage: { last: { totalTokens: 12, inputTokens: 10, cachedInputTokens: 7, outputTokens: 2 } } } });
+            if (exitDuringTurn) { child.emit('error', processFailure); child.emit('exit', 1, null); return; }
+            emit({ method: 'item/completed', params: { threadId: 'thread-fixture', turnId: 'turn-fixture', item: { type: 'agentMessage', text: '{"kind":"final","content":"答案","tool_calls":[]}' } } });
+            emit({ method: 'turn/completed', params: { threadId: 'thread-fixture', turn: { id: 'turn-fixture', status: 'completed', items: [] } } });
+          });
+        }
+      });
+      queueMicrotask(() => child.emit('spawn')); return child;
+    });
+    try {
+      const start = Date.now();
+      const pendingTurn = completeCodexAppServerChat({ settings: {} }, { timeoutMs: 5000, messages: [] }, rpc);
+      if (exitDuringTurn) {
+        await assert.rejects(pendingTurn, error => {
+          assert.equal(error.usage.total_tokens, 12); return true;
+        });
+        assert.ok(Date.now() - start < 1000, 'turn waiter must reject on exit, not 5s deadline');
+        assert.equal(Object.hasOwn(processFailure, 'usage'), false, 'shared process failure cannot be mutated with per-turn usage');
+      } else {
+        const result = await pendingTurn;
+        assert.equal(result.text, '答案');
+        assert.equal(result.usage.prompt_tokens_details.cached_tokens, 7);
+      }
+    } finally { rpc.shutdown(); }
+  }
+  console.log('PASS real Codex completion: item fallback and immediate turn failure retain known usage');
 
   const state = queue.getQueueState('fixture');
   state.locked = true;
