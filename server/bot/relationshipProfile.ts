@@ -274,7 +274,7 @@ export async function updateRelationshipProfile(db, groupId, userA, userB) {
       else draft.relationshipProfiles.push(entry);
 
       // Track usage
-      draft.usage.requests += 1;
+      if (!response.usage?.accounted) draft.usage.requests += 1;
       applyUsageTotals(draft.usage, response.usage);
       if (!draft.usageEvents) draft.usageEvents = [];
       draft.usageEvents.push({ id: crypto.randomUUID(), groupId: String(groupId), userId: 'system', model: response.model || activeModelName(db.settings), provider: response.provider || db.settings.llmProvider, kind: 'relationship', ...usageEventFields(response.usage), createdAt: nowIso() });

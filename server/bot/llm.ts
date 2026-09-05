@@ -7,9 +7,11 @@ import path from 'node:path';
 import crypto from 'node:crypto';
 import OpenAI from 'openai';
 import { recordLlmSuccess, recordLlmError } from '../health.js';
-import { completeCodexAppServerChat } from '../codexAppServer.js';
+import { completeCodexAppServerChat, codexInvocationConfig } from '../codexAppServer.js';
 import { mergeLlmUsage } from '../usage.js';
 import { fetchBoundedBody } from '../httpBody.js';
+import { recordLlmInvocation } from '../llmLedger.js';
+import { reserveLlmInvocation, markTurnFallback, hasTurnFallback } from '../llmPolicy.js';
 import {
   currentRequestTraceId,
   extractProviderResponseTrace,
@@ -390,7 +392,7 @@ export async function attachVisionImages(db, messages, images = [], options = {}
   const maxImages = Math.max(1, Math.min(6, Number(db.settings.visionMaxImages || 3)));
   const usable = [];
   const errors = [];
-  const deadline = Date.now() + Math.max(1000, Math.min(30_000, Number(db.settings.visionImageTimeoutMs || 8000), options.timeoutMs || Infinity));
+  const deadline = Date.now() + Math.max(1, Math.min(30_000, Number(db.settings.visionImageTimeoutMs || 8000), options.timeoutMs ?? Infinity));
   for (const image of images.slice(0, maxImages)) {
     try {
       const visionRemainingMs = deadline - Date.now();
@@ -449,9 +451,27 @@ export function createLLMClient(db, requestedModel = db.settings.model) {
 
 export async function completeChat(db, options = {}) {
   if (rawLlmProvider(db) === 'codex-app-server') {
+    const fallbackKey = `${db.settings.codexExecutable || ''}:${db.settings.codexModel || ''}`;
+    const runFallback = async (message) => {
+      const fallbackProvider = ['deepseek', 'openai-compatible'].includes(String(db.settings.codexFallbackProvider))
+        ? String(db.settings.codexFallbackProvider) : 'deepseek';
+      const fallbackModel = String(db.settings.codexFallbackModel || db.settings.model || 'deepseek-v4-flash').trim();
+      const fallbackSettings = activateModelProfile({ ...db.settings, llmProvider: fallbackProvider }, fallbackModel);
+      const fallback = await completeChat({ ...db, settings: fallbackSettings }, {
+        ...options, model: fallbackModel, overrideModel: fallbackModel, codexFallbackAttempt: true, fallbackFrom: 'codex-app-server',
+      });
+      markTurnFallback(fallbackKey);
+      return { ...fallback, fallbackFrom: 'codex-app-server', fallbackReason: message.slice(0, 300) };
+    };
+    if (db.settings.codexFallbackEnabled !== false && !options.codexFallbackAttempt && hasTurnFallback(fallbackKey)) {
+      traceEvent('MODEL', 'provider_fallback_reused', { provider: 'codex-app-server', reason: 'earlier failure in same turn' });
+      return runFallback('本轮沿用已成功的备用供应商');
+    }
+    const reservation = reserveLlmInvocation(Number(options.timeoutMs || db.settings.codexTimeoutMs || 90_000));
     const invocationId = crypto.randomUUID();
     const started = Date.now();
-    const model = String(db.settings.codexModel || 'gpt-5.6-luna').trim() || 'gpt-5.6-luna';
+    const invocationConfig = codexInvocationConfig(db.settings, options);
+    const model = invocationConfig.model;
     traceEvent('MODEL', 'model_call_started', {
       status: 'running',
       invocationId,
@@ -463,13 +483,19 @@ export async function completeChat(db, options = {}) {
       messageCount: options.messages?.length || 0,
       toolCount: options.tools?.length || 0,
       streaming: false,
-      thinkingEnabled: db.settings.codexReasoningEffort !== 'low',
+      thinkingEnabled: true,
+      effort: invocationConfig.effort,
+      capabilities: invocationConfig.capabilities,
+      unsupportedOptions: invocationConfig.unsupportedOptions,
     });
     try {
       const codexMessages = normalizeLlmMessages(
-        await attachVisionImages(db, options.messages || [], options.visionImages || [], options)
+        await attachVisionImages(db, options.messages || [], options.visionImages || [], { ...options, timeoutMs: reservation.remainingMs() })
       );
-      const result = await completeCodexAppServerChat(db, { ...options, messages: codexMessages });
+      if (reservation.remainingMs() <= 0) throw new Error('LLM_TURN_BUDGET_EXHAUSTED: 图片准备耗尽调用时限');
+      const result = await completeCodexAppServerChat(db, { ...options, messages: codexMessages, timeoutMs: reservation.remainingMs() });
+      result.usage = recordLlmInvocation({ invocationId, provider: result.provider, model: result.model,
+        purpose: options.tracePurpose || options.label || 'assistant', startedAt: started, usage: result.usage });
       const latencyMs = Date.now() - started;
       recordLlmSuccess(latencyMs);
       traceEvent('MODEL', 'model_call_completed', {
@@ -494,6 +520,8 @@ export async function completeChat(db, options = {}) {
       };
     } catch (error) {
       const message = String(error?.message || error?.code || error);
+      recordLlmInvocation({ invocationId, provider: 'codex-app-server', model,
+        purpose: options.tracePurpose || options.label || 'assistant', startedAt: started, error, usage: error?.usage });
       recordLlmError(message);
       traceEvent('MODEL', 'model_call_failed', {
         status: 'error',
@@ -507,29 +535,15 @@ export async function completeChat(db, options = {}) {
         error: message,
       });
       if (db.settings.codexFallbackEnabled === false || options.codexFallbackAttempt) throw error;
-      const fallbackProvider = ['deepseek', 'openai-compatible'].includes(String(db.settings.codexFallbackProvider))
-        ? String(db.settings.codexFallbackProvider)
-        : 'deepseek';
-      const fallbackModel = String(db.settings.codexFallbackModel || db.settings.model || 'deepseek-v4-flash').trim();
-      const fallbackSettings = activateModelProfile({
-        ...db.settings,
-        llmProvider: fallbackProvider,
-      }, fallbackModel);
+      if (message.includes('LLM_TURN_BUDGET_EXHAUSTED')) throw error;
+      reservation.release();
       try {
-        const fallback = await completeChat({ ...db, settings: fallbackSettings }, {
-          ...options,
-          model: fallbackModel,
-          overrideModel: fallbackModel,
-          codexFallbackAttempt: true,
-        });
-        return {
-          ...fallback,
-          fallbackFrom: 'codex-app-server',
-          fallbackReason: message.slice(0, 300),
-        };
+        return await runFallback(message);
       } catch (fallbackError) {
         throw new Error(`Codex 调用失败：${message}；旧供应商自动降级也失败：${String(fallbackError?.message || fallbackError)}`);
       }
+    } finally {
+      reservation.release();
     }
   }
 
@@ -581,12 +595,13 @@ export async function completeChat(db, options = {}) {
 
   let providerAttempt = 0;
   const runCompletion = async (nextParams) => {
+    const reservation = reserveLlmInvocation(Number(options.timeoutMs || 45_000) + 1000);
     providerAttempt += 1;
     const invocationId = crypto.randomUUID();
     const invocationStarted = Date.now();
-    const requestTimeoutMs = Number(options.timeoutMs || 45_000);
+    const requestTimeoutMs = Math.max(1, Math.min(Number(options.timeoutMs || 45_000), reservation.remainingMs() - 1000));
     const requestMaxRetries = Math.max(0, Number(options.requestMaxRetries ?? 2));
-    const outerTimeoutMs = requestTimeoutMs + 1000;
+    const outerTimeoutMs = Math.max(1, Math.min(requestTimeoutMs + 1000, reservation.remainingMs()));
     const label = options.label || `${llmProviderName(provider)} 调用`;
     const streaming = provider === 'deepseek'
       && Boolean(currentRequestTraceId())
@@ -695,7 +710,9 @@ export async function completeChat(db, options = {}) {
       });
       return {
         text: response.choices?.[0]?.message?.content?.trim() || '',
-        usage: response.usage || {},
+        usage: recordLlmInvocation({ invocationId, provider, model: response.model || nextParams.model,
+          purpose: options.tracePurpose || label, startedAt: invocationStarted, usage: response.usage,
+          fallbackFrom: options.fallbackFrom }),
         raw: response
       };
     } catch (error) {
@@ -710,6 +727,9 @@ export async function completeChat(db, options = {}) {
         model: nextParams.model,
         error: error?.message || String(error),
       });
+      recordLlmInvocation({ invocationId, provider, model: nextParams.model,
+        purpose: options.tracePurpose || label, startedAt: invocationStarted, error,
+        fallbackFrom: options.fallbackFrom });
       // The abort fires at the same instant the outer timer rejects, so the
       // SDK usually settles first with APIUserAbortError. Normalize it back to
       // the same user-facing timeout message callers saw before.
@@ -719,6 +739,7 @@ export async function completeChat(db, options = {}) {
       throw error;
     } finally {
       clearTimeout(timer);
+      reservation.release();
     }
   };
 

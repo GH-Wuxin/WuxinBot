@@ -91,7 +91,7 @@ export async function updateGroupProfile(db, groupId) {
 
     // Track usage
     updateDb((draft) => {
-      draft.usage.requests += 1;
+      if (!response.usage?.accounted) draft.usage.requests += 1;
       applyUsageTotals(draft.usage, response.usage);
       if (!draft.usageEvents) draft.usageEvents = [];
       draft.usageEvents.push({

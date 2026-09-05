@@ -148,9 +148,10 @@ export function parseCodexAdapterEnvelope(text: unknown) {
           .map((call: any) => ({
             id: cleanText(call.id) || `call_${crypto.randomUUID().replace(/-/g, '').slice(0, 24)}`,
             name: cleanText(call.name),
+            rawArguments: typeof call.arguments === 'string' ? call.arguments : JSON.stringify(call.arguments ?? null),
             arguments: typeof call.arguments === 'string'
-              ? (() => { try { return JSON.parse(call.arguments); } catch { return {}; } })()
-              : (call.arguments && typeof call.arguments === 'object' ? call.arguments : {}),
+              ? (() => { try { return JSON.parse(call.arguments); } catch { return null; } })()
+              : (call.arguments ?? null),
           }))
       : [];
     return {
@@ -182,7 +183,8 @@ export function mapCodexTokenUsage(breakdown: any = {}) {
     // not consume the OpenAI-compatible prompt_tokens_details shape.
     cache_read_input_tokens: cachedTokens,
     cache_write_input_tokens: cacheWriteTokens,
-    cache_metrics_available: true,
+    cache_metrics_available: typeof breakdown?.cachedInputTokens === 'number',
+    usage_known: typeof breakdown?.totalTokens === 'number',
   };
 }
 
@@ -419,6 +421,22 @@ function codexEffortFromSettings(settings: JsonObject = {}) {
   return ['low', 'medium', 'high', 'xhigh', 'max'].includes(value) ? value : 'low';
 }
 
+export function codexInvocationConfig(settings: JsonObject = {}, options: JsonObject = {}) {
+  const requested = cleanText(options.codexReasoningEffort || options.reasoning_effort).toLowerCase();
+  const effort = options.thinking?.type === 'disabled' ? 'low'
+    : (['low', 'medium', 'high', 'xhigh', 'max'].includes(requested) ? requested : codexEffortFromSettings(settings));
+  return {
+    model: cleanText(options.codexModel) || codexModelFromSettings(settings), effort,
+    capabilities: { hardMaxTokens: false, temperature: false, thinkingOff: false, perCallEffort: true },
+    unsupportedOptions: [
+      ...(options.maxTokens != null ? ['maxTokens'] : []),
+      ...(options.temperature != null ? ['temperature'] : []),
+      ...(options.thinking?.type === 'disabled' ? ['thinking=disabled (mapped to low, not off)'] : []),
+      ...(options.model && options.model !== codexModelFromSettings(settings) ? ['model (use codexModel override)'] : []),
+    ],
+  };
+}
+
 export async function getCodexAccountStatus(settings: JsonObject = {}) {
   const command = commandFromSettings(settings);
   try {
@@ -470,12 +488,11 @@ export function shutdownCodexAppServer() {
   client.shutdown();
 }
 
-export async function completeCodexAppServerChat(db: any, options: JsonObject = {}) {
+export async function completeCodexAppServerChat(db: any, options: JsonObject = {}, rpcClient: CodexAppServerClient = client) {
   const settings = db?.settings || {};
   const command = commandFromSettings(settings);
-  const model = codexModelFromSettings(settings);
-  const effort = codexEffortFromSettings(settings);
-  const timeoutMs = Math.max(10_000, Number(options.timeoutMs || settings.codexTimeoutMs || 90_000));
+  const { model, effort } = codexInvocationConfig(settings, options);
+  const timeoutMs = Math.max(1, Number(options.timeoutMs ?? settings.codexTimeoutMs ?? 90_000));
   const input = buildCodexAdapterInput(options.messages || [], options.tools || [], options.responseFormat);
   const startedAt = Date.now();
   const remainingMs = () => {
@@ -484,7 +501,7 @@ export async function completeCodexAppServerChat(db: any, options: JsonObject = 
     return remaining;
   };
 
-  const threadResponse = await client.request('thread/start', {
+  const threadResponse = await rpcClient.request('thread/start', {
     model,
     cwd: process.cwd(),
     approvalPolicy: 'never',
@@ -496,7 +513,7 @@ export async function completeCodexAppServerChat(db: any, options: JsonObject = 
     threadSource: 'wuxinbot',
   }, Math.min(30_000, remainingMs()), command);
   const threadId = cleanText(threadResponse?.thread?.id);
-  const generation = client.getGeneration();
+  const generation = rpcClient.getGeneration();
   if (!threadId) throw new Error('Codex App Server 未返回 thread id');
 
   let expectedTurnId = '';
@@ -511,7 +528,7 @@ export async function completeCodexAppServerChat(db: any, options: JsonObject = 
   });
   // A child can exit while turn/start RPC is still pending.
   void turnDone.catch(() => {});
-  const unsubscribeFailure = client.onFailure((error) => { settled = true; rejectTurn(error); });
+  const unsubscribeFailure = rpcClient.onFailure((error) => { settled = true; rejectTurn(error); });
   let finalAgentText = '';
   const inspectEvent = (event: RpcEvent) => {
     const params = event?.params || {};
@@ -534,11 +551,11 @@ export async function completeCodexAppServerChat(db: any, options: JsonObject = 
       }
     }
   };
-  const unsubscribe = client.onEvent(inspectEvent);
+  const unsubscribe = rpcClient.onEvent(inspectEvent);
   let timeout: NodeJS.Timeout | undefined;
   try {
-    if (!client.isRunning() || generation !== client.getGeneration()) throw new Error('Codex thread 所属进程已退出');
-    const turnResponse = await client.request('turn/start', {
+    if (!rpcClient.isRunning() || generation !== rpcClient.getGeneration()) throw new Error('Codex thread 所属进程已退出');
+    const turnResponse = await rpcClient.request('turn/start', {
       threadId,
       input,
       approvalPolicy: 'never',
@@ -547,7 +564,7 @@ export async function completeCodexAppServerChat(db: any, options: JsonObject = 
       summary: 'none',
       outputSchema: ADAPTER_OUTPUT_SCHEMA,
     }, Math.min(30_000, remainingMs()), command);
-    if (generation !== client.getGeneration()) throw new Error('Codex thread 所属进程已更换');
+    if (generation !== rpcClient.getGeneration()) throw new Error('Codex thread 所属进程已更换');
     expectedTurnId = cleanText(turnResponse?.turn?.id);
     if (!expectedTurnId) throw new Error('Codex App Server 未返回 turn id');
     for (const event of buffered.splice(0)) inspectEvent(event);
@@ -564,7 +581,7 @@ export async function completeCodexAppServerChat(db: any, options: JsonObject = 
       ? envelope.toolCalls.map((call: any) => ({
           id: call.id,
           type: 'function',
-          function: { name: call.name, arguments: JSON.stringify(call.arguments || {}) },
+          function: { name: call.name, arguments: call.rawArguments },
         }))
       : [];
     const usage = mapCodexTokenUsage(lastUsage);
@@ -593,9 +610,12 @@ export async function completeCodexAppServerChat(db: any, options: JsonObject = 
       latencyMs: Date.now() - startedAt,
     };
   } catch (error) {
-    if (expectedTurnId && client.isRunning() && generation === client.getGeneration()) {
-      void client.request('turn/interrupt', { threadId, turnId: expectedTurnId }, 5_000, command).catch(() => {});
+    if (expectedTurnId && rpcClient.isRunning() && generation === rpcClient.getGeneration()) {
+      void rpcClient.request('turn/interrupt', { threadId, turnId: expectedTurnId }, 5_000, command).catch(() => {});
     }
+    // Process failure is shared by all waiting turns. Never mutate that Error
+    // with this turn's usage, or concurrent callers can bill each other's data.
+    if (lastUsage) throw Object.assign(new Error(String((error as any)?.message || error), { cause: error }), { usage: mapCodexTokenUsage(lastUsage) });
     throw error;
   } finally {
     if (timeout) clearTimeout(timeout);

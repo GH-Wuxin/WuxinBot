@@ -239,7 +239,7 @@ console.log('\n=== 5. Intent classifier integration ===');
 // ═══════════════════════════════════════════════════════
 // 6. requiredTool: lead failure does not discard payload
 // ═══════════════════════════════════════════════════════
-console.log('\n=== 6. requiredTool: LLM failure preserves direct payload ===');
+console.log('\n=== 6. requiredTool: LLM failure preserves data without a direct payload ===');
 
 {
   const result = await runToolLoop(
@@ -255,9 +255,9 @@ console.log('\n=== 6. requiredTool: LLM failure preserves direct payload ===');
     },
   );
 
-  assert(result.text === '', 'lead failure: text must be empty (cosmetic lead failed)');
+  assert(result.text.includes('已查询到的数据摘录'), 'synthesis failure without a payload must return safe source data');
   assert(result.toolCallsMade === 1, 'lead failure: tool must have executed before the crash');
-  pass('required-tool-lead-failure-payload-preserved');
+  pass('required-tool-synthesis-failure-data-preserved');
 }
 
 // ═══════════════════════════════════════════════════════

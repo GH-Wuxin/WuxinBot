@@ -181,11 +181,12 @@ export function normalizeAgentToolCall(toolCall: LlmToolCall): LlmToolCall {
 
   let args: Record<string, unknown> = {};
   try {
-    const parsed = JSON.parse(toolCall.function.arguments || '{}');
-    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) args = parsed;
+    const parsed = JSON.parse(toolCall.function.arguments);
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return toolCall;
+    args = parsed;
   } catch {
-    // Preserve malformed input as an empty argument object. The canonical
-    // guard will then return a normal validation error for required fields.
+    // Do not turn broken arguments into a valid default capability query.
+    return toolCall;
   }
 
   return {
