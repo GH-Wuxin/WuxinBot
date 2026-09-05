@@ -16,7 +16,7 @@
     "security": "tsx tools/security-verify.mjs",
     "search:verify": "node --import tsx tools/search-security-verify.mjs",
     "search:agent:verify": "node --import tsx tools/search-agent-loop-verify.mjs",
-    "runtime:safety:verify": "node --import tsx tools/runtime-safety-verify.mjs",
+    "runtime:safety:verify": "node --import tsx tools/runtime-safety-verify.mjs && node --import tsx tools/health-runtime-verify.mjs",
     "request:trace:verify": "node --import tsx tools/request-trace-verify.mjs",
     "usage:verify": "node --import tsx tools/usage-totals-verify.mjs",
     "codex:verify": "node --import tsx tools/codex-app-server-verify.mjs",

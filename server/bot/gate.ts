@@ -255,6 +255,10 @@ export function recentVisionImageMessages(db, event, minutes = 10) {
   const sameGroupImages = (db.messages || [])
     .filter((message) => {
       if (String(message.groupId) !== String(event.groupId)) return false;
+      if (message.inContext === false || message.type !== event.type) return false;
+      // Automatic history lookup requires a connection to this speaker.
+      // Explicitly quoted messages are hydrated through a separate path.
+      if (String(message.userId) !== String(event.userId)) return false;
       if (!message.media?.images?.length) return false;
       if (currentId && String(message.id) === currentId) return false;
       const time = new Date(message.createdAt || 0).getTime();

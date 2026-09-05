@@ -818,16 +818,16 @@ export function updateDb(mutator) {
     try {
       result = mutator(trackedDb);
       applyRetention(trackedDb);
+      if (dirtyKeys.size > 0) {
+        writeDirtyShards(db, dirtyKeys);
+        autoBackupIfDue(db);
+      }
     } catch (error) {
       // A failed mutator may have partially changed the cached object. Discard
       // it so the next read reconstructs the last committed disk state.
       cachedStore = null;
       invalidateStoreCaches();
       throw error;
-    }
-    if (dirtyKeys.size > 0) {
-      writeDirtyShards(db, dirtyKeys);
-      autoBackupIfDue(db);
     }
     return result ?? db;
   });
