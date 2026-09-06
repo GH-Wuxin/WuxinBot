@@ -6,6 +6,7 @@ import {
   inferPlayerSkillIdentity,
   PLAYER_SKILL_AXES,
   PLAYER_SKILL_TITLE_POLICY_ID,
+  PLAYER_SKILL_QUALITY_POLICY_ID,
   scoreAchievementQuality,
   PLAYER_SKILL_TITLES,
   playerProfileCacheKey,
@@ -38,14 +39,14 @@ const beginner = aggregatePlayerSkillProfile(profileRows(allAxes(2.8)));
 assert.equal(beginner.profileStatus, 'RATED');
 assert.equal(beginner.profileTier, 'BEGINNER');
 assert.equal(beginner.profileType, 'All-Rounder');
-assert.equal(beginner.profileTitle, 'BEGINNER');
+assert.equal(beginner.profileTitle, 'Rookie');
 
 const flowSpeedPlayerAxes = { ...allAxes(3.0), flow_aim: 5.5, raw_speed: 5.0 };
 const flowSpeedPlayer = aggregatePlayerSkillProfile(profileRows(flowSpeedPlayerAxes));
 assert.equal(flowSpeedPlayer.profileTier, 'PLAYER');
 assert.equal(flowSpeedPlayer.profileArchetype, 'FLOW_SPEED');
 assert.equal(flowSpeedPlayer.profileType, 'Flow Speed');
-assert.equal(flowSpeedPlayer.profileTitle, 'STREAM PLAYER');
+assert.equal(flowSpeedPlayer.profileTitle, 'Stream Runner');
 
 const wuxinLikeAxes = {
   aim_control: 5.6,
@@ -66,7 +67,7 @@ assert.deepEqual(wuxinLike.primaryAxes, ['Flow Aim', 'Raw Speed']);
 assert.equal(wuxinLike.profileTier, 'EXPERT');
 assert.equal(wuxinLike.profileArchetype, 'FLOW_SPEED');
 assert.equal(wuxinLike.profileType, 'Flow Speed');
-assert.equal(wuxinLike.profileTitle, 'STREAM ACE');
+assert.equal(wuxinLike.profileTitle, 'Torrent Rider');
 assert.notEqual(wuxinLike.profileType, 'Hybrid');
 
 const sameAxesDifferentMapVotes = aggregatePlayerSkillProfile(profileRows(
@@ -84,7 +85,7 @@ const mrekkLike = aggregatePlayerSkillProfile(profileRows({
 }));
 assert.equal(mrekkLike.profileTier, 'WORLD_CLASS');
 assert.equal(mrekkLike.profileArchetype, 'AIM');
-assert.equal(mrekkLike.profileTitle, 'GOD OF AIM');
+assert.equal(mrekkLike.profileTitle, 'Aiming Ascendant');
 
 const qiaoLike = inferPlayerSkillIdentity(identityAxes({
   jump_aim: { ceiling: 6.5, median: 5.1 },
@@ -92,7 +93,7 @@ const qiaoLike = inferPlayerSkillIdentity(identityAxes({
 }));
 assert.equal(qiaoLike.tierScore, 6.05);
 assert.equal(qiaoLike.tier, 'PLAYER', 'qiao-like 6kpp profile must not become an 8-star aim expert');
-assert.equal(qiaoLike.title, 'AIM ALL-ROUNDER');
+assert.equal(qiaoLike.title, 'Aimer');
 
 const badeuLike = inferPlayerSkillIdentity(identityAxes({
   jump_aim: { ceiling: 9.3, median: 8.15 },
@@ -100,7 +101,7 @@ const badeuLike = inferPlayerSkillIdentity(identityAxes({
   aim_control: { ceiling: 7.4, median: 6.6 },
 }));
 assert.equal(badeuLike.tier, 'WORLD_CLASS', 'broad world-class aim must not require artificial 10-star overflow');
-assert.equal(badeuLike.title, 'GOD OF AIM');
+assert.equal(badeuLike.title, 'Ballistic Virtuoso');
 
 const tierAt = (value, evidence = undefined) => inferPlayerSkillIdentity(identityAxes({
   jump_aim: value,
@@ -115,7 +116,7 @@ assert.equal(inferPlayerSkillIdentity(worldThreshold, { sampleCount: 30, effecti
 assert.equal(inferPlayerSkillIdentity(worldThreshold, { sampleCount: 30, effectiveSampleSize: 19.99 }).tier, 'EXPERT');
 
 assert.equal(inferPlayerSkillIdentity(identityAxes(), { sampleCount: 11, effectiveSampleSize: 11 }).title, 'UNRATED');
-assert.equal(inferPlayerSkillIdentity(identityAxes(), { sampleCount: 12, effectiveSampleSize: 10 }).title, 'BEGINNER');
+assert.equal(inferPlayerSkillIdentity(identityAxes(), { sampleCount: 12, effectiveSampleSize: 10 }).title, 'Rookie');
 
 const oneExtremeMap = aggregatePlayerSkillProfile(profileRows({
   ...allAxes(2.5),
@@ -197,12 +198,13 @@ for (const titles of Object.values(PLAYER_SKILL_TITLES)) {
   }
 }
 
-assert.equal(inferPlayerSkillIdentity(wuxinLike.axes).title, 'STREAM ACE');
+assert.equal(inferPlayerSkillIdentity(wuxinLike.axes).title, 'Torrent Rider');
 const beta7Cache = playerProfileCacheKey(19244792, 50, { algorithmId: 'A7', mapDemandVersion: 'beta7' });
 const beta8Cache = playerProfileCacheKey(19244792, 50, { algorithmId: 'A8', mapDemandVersion: 'beta8' });
 assert.notEqual(beta7Cache, beta8Cache, 'player cache must rotate with profiler identity');
 assert.deepEqual(JSON.parse(beta8Cache), [
   PLAYER_SKILL_TITLE_POLICY_ID,
+  PLAYER_SKILL_QUALITY_POLICY_ID,
   'A8',
   'beta8',
   19244792,
@@ -243,8 +245,51 @@ assert.ok(oneSidedWeaknessJump > weakJump * 1.8,
   `one weak signal alone must not receive the joint low-ACC/low-combo collapse, got ${oneSidedWeaknessJump}`);
 assert.ok(strongJump > 11, `high-quality 12★ score should preserve demonstrated Jump, got ${strongJump}`);
 assert.ok(excellentFcQuality.fullCombo, '99%+ perfect score should be recognized as an FC');
-assert.ok(excellentFcJump > 12 && excellentFcJump < 12.6,
+assert.ok(excellentFcJump > 12 && excellentFcJump <= 12 * 1.19,
   `99%+ FC should receive a small bounded excellence bonus, got ${excellentFcJump}`);
+// Isolate bonus behaviour from the separate achievement penalties.
+for (const axis of PLAYER_SKILL_AXES) {
+  const base = { ...scoreAchievementQuality(score(1, 500, 0)), fullCombo: false };
+  const bonusValue = (accuracy) => demonstratedAxisValue(axis, 8, { ...base, accuracy });
+  assert.ok(Math.abs(bonusValue(99) - 8 * 1.04) < 1e-10);
+  assert.ok(Math.abs(bonusValue(100) - 8 * 1.15) < 1e-10);
+  assert.ok(bonusValue(99.5) - bonusValue(99) < bonusValue(100) - bonusValue(99.5),
+    'reward must accelerate toward SS');
+  let previousIncrement = 0;
+  for (let step = 1; step <= 100; step++) {
+    const increment = bonusValue(99 + step / 100) - bonusValue(99 + (step - 1) / 100);
+    assert.ok(increment > previousIncrement, 'exponential increments must strictly increase');
+    previousIncrement = increment;
+  }
+  assert.ok(Math.abs(demonstratedAxisValue(axis, 8, { ...base, fullCombo: true }) - 8 * 1.19) < 1e-10);
+}
+// Quality policy: independent ACC excellence, stronger low combo, subordinate misses.
+for (const axis of PLAYER_SKILL_AXES) {
+  const evaluate = (acc, combo, miss = 0) => demonstratedAxisValue(axis, 8,
+    scoreAchievementQuality({ ...score(acc, combo, miss), beatmap: { max_combo: 500 } }));
+  for (const combo of [0, 125, 245, 250, 400, 500]) {
+    let previous = 0;
+    for (let acc = 7500; acc <= 10000; acc += 5) {
+      const next = evaluate(acc / 10000, combo);
+      assert.ok(next >= previous - 1e-10, axis + ': increasing ACC must not lower evidence');
+      previous = next;
+    }
+  }
+  for (const acc of [0.80, 0.96, 0.97, 0.99, 1]) {
+    let previous = 0;
+    for (let combo = 0; combo <= 500; combo++) {
+      const next = evaluate(acc, combo);
+      assert.ok(next >= previous - 1e-10, axis + ': increasing combo must not lower evidence');
+      previous = next;
+    }
+  }
+  assert.equal(evaluate(0.97, 0), evaluate(0.97, 0, 20), 'miss must only refine combo evidence');
+  assert.ok(evaluate(0.995, 400) > evaluate(0.99, 400), 'non-FC accuracy excellence must matter');
+  assert.ok(evaluate(1, 500) <= 8 * 1.19, 'combined bonus must stay bounded');
+}
+assert.ok(scoreAchievementQuality(score(0.96, 250, 0)).accuracyQuality < 0.90);
+assert.ok(scoreAchievementQuality(score(0.99, 125, 0)).comboQuality < 0.50);
+assert.equal(scoreAchievementQuality(score(0.99, 200, 0)).fullCombo, false);
 const sliderMapQuality = scoreAchievementQuality({
   accuracy: 0.9,
   max_combo: 300,

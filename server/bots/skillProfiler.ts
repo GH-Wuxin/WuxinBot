@@ -6,7 +6,9 @@ import { getDataDir } from '../store.js';
 
 export const SKILL_PROFILER_TOOL_NAME = 'osu_analyze_beatmap_skills';
 const DEFAULT_SKILL_PROFILER_URL = 'http://127.0.0.1:8767';
-const DEFAULT_TIMEOUT_MS = 30_000;
+const DEFAULT_TIMEOUT_MS = 60_000;
+let activeAnalyses = 0;
+const analysisWaiters: Array<() => void> = [];
 const MAX_RESPONSE_BYTES = 256 * 1024;
 const MAX_OSU_FILE_BYTES = 4 * 1024 * 1024;
 const DEFAULT_OSU_FILE_BASE_URL = 'https://osu.ppy.sh/osu/';
@@ -48,6 +50,24 @@ function profilerBaseUrl(): URL {
 function profilerTimeoutMs(): number {
   const parsed = Number(process.env.SKILL_PROFILER_TIMEOUT_MS || DEFAULT_TIMEOUT_MS);
   return Number.isFinite(parsed) ? Math.max(1_000, Math.min(60_000, Math.round(parsed))) : DEFAULT_TIMEOUT_MS;
+}
+
+async function withAnalysisSlot<T>(run: () => Promise<T>): Promise<T> {
+  // All profiles share the same Python workers. Wait outside the HTTP
+  // execution deadline instead of timing out in the server's work queue.
+  const concurrency = Math.max(1, Math.min(8, Math.floor(Number(process.env.SKILL_PROFILER_CONCURRENCY) || 3)));
+  if (activeAnalyses >= concurrency) {
+    await new Promise<void>((resolve) => analysisWaiters.push(resolve));
+  } else {
+    activeAnalyses += 1;
+  }
+  try {
+    return await run();
+  } finally {
+    const next = analysisWaiters.shift();
+    if (next) next();
+    else activeAnalyses -= 1;
+  }
 }
 
 async function postProfiler(pathname: string, payload: Record<string, unknown>): Promise<any> {
@@ -178,7 +198,7 @@ function beatmapFileBaseUrl(): URL {
   return url;
 }
 
-async function downloadOsuFile(beatmapId: number): Promise<string> {
+async function downloadOsuFile(beatmapId: number): Promise<{ content: string; expected_md5?: string }> {
   const url = new URL(String(beatmapId), beatmapFileBaseUrl());
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), 20_000);
@@ -200,11 +220,23 @@ async function downloadOsuFile(beatmapId: number): Promise<string> {
     if (declaredLength > MAX_OSU_FILE_BYTES) throw new Error('OSU_FILE_TOO_LARGE');
     const bytes = Buffer.from(await response.arrayBuffer());
     if (!bytes.length || bytes.length > MAX_OSU_FILE_BYTES) throw new Error('OSU_FILE_TOO_LARGE');
-    const text = bytes.toString('utf8').replace(/^\uFEFF/, '');
-    if (!text.startsWith('osu file format v')) throw new Error('OSU_FILE_INVALID_HEADER');
-    const embedded = /^BeatmapID\s*:\s*(\d+)\s*$/im.exec(text);
-    if (!embedded || Number(embedded[1]) !== beatmapId) throw new Error('OSU_FILE_BID_MISMATCH');
-    return text;
+    const text = bytes.toString('utf8');
+    if (!text.replace(/^\uFEFF/, '').startsWith('osu file format v')) throw new Error('OSU_FILE_INVALID_HEADER');
+    if (!bytes.equals(Buffer.from(text, 'utf8'))) throw new Error('OSU_FILE_INVALID_ENCODING');
+    const embedded = /^BeatmapID\s*:[ \t]*([^\r\n]*)/im.exec(text);
+    const declaredBid = embedded ? Number(embedded[1]) : 0;
+    if (declaredBid === beatmapId) return { content: text };
+    if (declaredBid !== 0) throw new Error('OSU_FILE_BID_MISMATCH');
+    // Official v9 files may omit BeatmapID. Verify the requested map's API
+    // checksum and preserve the raw bytes; never insert an invented ID.
+    const { getBeatmap } = await import('../osu/api.js');
+    const metadata = await getBeatmap(beatmapId);
+    const checksum = String(metadata.checksum || '').toLowerCase();
+    if (metadata.id !== beatmapId || !/^[a-f0-9]{32}$/.test(checksum)
+      || createHash('md5').update(bytes).digest('hex') !== checksum) {
+      throw new Error('OSU_FILE_CHECKSUM_MISMATCH');
+    }
+    return { content: text, expected_md5: checksum };
   } catch (error: any) {
     if (error?.name === 'AbortError') throw new Error('OSU_FILE_DOWNLOAD_TIMEOUT');
     throw error;
@@ -251,7 +283,7 @@ export function formatSkillProfilerAnalysis(analysis: any): string {
   const durationMs = finiteNumber(analysis.analysis_context?.duration_ms);
   const localStars = finiteNumber(beatmap.local_nm_stars);
   const lines = [
-    'Skill Profiler 本地确定性谱面需求分析（V0.95；各维不是 osu! 官方总星数，也不是玩家能力评价）',
+    `Skill Profiler 本地确定性谱面需求分析（${String(analysis.identity?.map_demand_version || '版本未知')}；各维不是 osu! 官方总星数，也不是玩家能力评价）`,
     `谱面：${formatBeatmapTitle(beatmap)}`,
     `BID：${beatmap.beatmap_id} · Mods：${mods}${neutralMods.length ? `（${neutralMods.join('/')} 对谱面需求分值无影响）` : ''}`,
     `环境：AR ${finiteNumber(difficulty.ApproachRate ?? difficulty.AR)?.toFixed(1) ?? '未知'} · OD ${finiteNumber(difficulty.OverallDifficulty ?? difficulty.OD)?.toFixed(1) ?? '未知'} · CS ${finiteNumber(difficulty.CircleSize ?? difficulty.CS)?.toFixed(1) ?? '未知'}${bpm === null ? '' : ` · BPM ${bpm.toFixed(1)}`}${durationMs === null ? '' : ` · 时长 ${(durationMs / 1000).toFixed(0)}s`}${localStars === null ? '' : ` · 本地 NM 总星数 ${localStars.toFixed(2)}★`}`,
@@ -292,10 +324,10 @@ export async function requestSkillProfilerAnalysis(
   beatmapId: number,
   mods: string[] = [],
 ): Promise<any> {
-  return postProfiler('/api/analyze', {
+  return withAnalysisSlot(() => postProfiler('/api/analyze', {
     beatmap_id: beatmapId,
     mods,
-  });
+  }));
 }
 
 export async function requestSkillProfilerAnalysisWithFetch(
@@ -307,8 +339,8 @@ export async function requestSkillProfilerAnalysisWithFetch(
   } catch (error: any) {
     const message = String(error?.message || error);
     if (!/^(?:BID_NOT_FOUND|OSU_FILE_MISSING):/.test(message)) throw error;
-    const content = await downloadOsuFile(beatmapId);
-    await postProfiler('/api/import', { beatmap_id: beatmapId, content });
+    const imported = await downloadOsuFile(beatmapId);
+    await postProfiler('/api/import', { beatmap_id: beatmapId, ...imported });
     return requestSkillProfilerAnalysis(beatmapId, mods);
   }
 }

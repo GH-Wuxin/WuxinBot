@@ -329,12 +329,16 @@ export async function ownerSkillHandler(ctx: OwnerHandlerContext): Promise<Owner
   if (profileRequest.matched) {
     const user = await resolveProfileUser(ctx, profileRequest.player);
     if (ctx.sendMessage) {
-      await ctx.sendMessage(ctx.event, `正在按成绩质量与 BP 衰减分析 ${user.username} 的真实 BP50，首次生成可能需要一两分钟……`);
+      await ctx.sendMessage(ctx.event, `正在按成绩质量与 BP 衰减分析 ${user.username} 的真实 BP50，首次会逐张计算，请求追踪中可查看进度……`);
     }
     const rendered = await renderPlayerSkillProfile(user.id, 50);
     if (!rendered) throw new Error('玩家 Skill 画像渲染器当前未连接，请稍后再试。');
-    if (ctx.sendMessage) await ctx.sendMessage(ctx.event, rendered.cqCode);
-    return { replied: Boolean(ctx.sendMessage), reason: `已生成 ${user.username} 的 BP50 Skill 画像` };
+    const sample = rendered.payload.sample as { valid: number; requested: number; failed: number };
+    const partial = sample.failed > 0
+      ? `\n本次仅 ${sample.valid}/${sample.requested} 张纳入画像，存在超时或证据不足；可重试，已完成的谱面会复用缓存。`
+      : '';
+    if (ctx.sendMessage) await ctx.sendMessage(ctx.event, rendered.cqCode + partial);
+    return { replied: Boolean(ctx.sendMessage), reason: `已生成 ${user.username} 的 BP50 Skill 画像（${sample.valid}/${sample.requested} 有效）` };
   }
 
   const request = parseSkillCommandRequest(ctx.commandArgs);

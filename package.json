@@ -33,7 +33,7 @@
     "agent:campaign:c1": "node --import tsx tools/agent-runtime-campaign.ts",
     "agent:campaign:c2": "node --import tsx tools/agent-runtime-c2-campaign.ts",
     "agent:counterfactual": "node --import tsx tools/agent-counterfactual.ts",
-    "agent:v2:verify": "node --import tsx tools/agent-runtime-v2-contract-verify.mjs && node --import tsx tools/agent-runtime-v2-process-verify.mjs && node --import tsx tools/skill-profiler-agent-verify.mjs && node --import tsx tools/skill-profiler-commands-verify.mjs && node --import tsx tools/skill-profiler-card-verify.mjs && node --import tsx tools/player-skill-profile-verify.mjs && node --import tsx tools/player-skill-compare-card-verify.mjs && node --import tsx tools/player-recent-skill-profile-verify.mjs",
+    "agent:v2:verify": "node --import tsx tools/agent-runtime-v2-contract-verify.mjs && node --import tsx tools/agent-runtime-v2-process-verify.mjs && node --import tsx tools/skill-profiler-agent-verify.mjs && node --import tsx tools/skill-profiler-commands-verify.mjs && node --import tsx tools/skill-profiler-card-verify.mjs && node --import tsx tools/player-skill-profile-verify.mjs && node --import tsx tools/player-skill-runtime-verify.mjs && node --import tsx tools/player-skill-compare-card-verify.mjs && node --import tsx tools/player-recent-skill-profile-verify.mjs && node --import tsx tools/skill-card-design-verify.mjs",
     "evidence:verify": "node --import tsx tools/evidence-requirement-verify.mjs"
   },
   "keywords": [],
@@ -46,6 +46,7 @@
     "express": "^5.2.1",
     "lucide-react": "^1.16.0",
     "openai": "^6.38.0",
+    "playwright-core": "^1.62.1",
     "react": "^19.2.6",
     "react-dom": "^19.2.6",
     "sharp": "^0.35.3",

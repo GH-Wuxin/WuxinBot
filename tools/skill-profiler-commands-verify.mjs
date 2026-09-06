@@ -3,9 +3,11 @@ import fs from 'node:fs';
 import http from 'node:http';
 import os from 'node:os';
 import path from 'node:path';
+import { closeSkillCardBrowser } from '../server/bots/skillCard/browser.ts';
 
 const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'wuxin-skill-command-'));
 process.env.DATA_DIR = dataDir;
+process.env.NODE_ENV = 'test';
 process.env.OSU_CLIENT_ID = 'fixture-client';
 process.env.OSU_CLIENT_SECRET = 'fixture-secret';
 
@@ -186,19 +188,20 @@ try {
   const bp = await processIncoming(event('/w skill 2', 'skill-bp'), sendMessage);
   assert.equal(bp.replied, true);
   assert.deepEqual(profilerPayloads.at(-1), { beatmap_id: 4288226, mods: ['HD', 'DT'] });
-  assert.match(sent.at(-1), /FixturePlayer 的 BP#2/);
-  assert.match(sent.at(-1), /\/w cd 4288226 \+HDDT/);
+  assert.match(readDb().skillProfilerRuns.at(-1).sourceLabel, /FixturePlayer 的 BP#2/);
+  assert.match(sent.at(-1), /\[CQ:image,/);
 
   const namedBp = await processIncoming(event('/w skill mrekk 20', 'skill-named-bp'), sendMessage);
   assert.equal(namedBp.replied, true);
   assert.deepEqual(profilerPayloads.at(-1), { beatmap_id: 2872154, mods: ['HR'] });
-  assert.match(sent.at(-1), /mrekk 的 BP#20/);
-  assert.match(sent.at(-1), /\/w cd 2872154 \+HR/);
+  assert.match(readDb().skillProfilerRuns.at(-1).sourceLabel, /mrekk 的 BP#20/);
+  assert.match(sent.at(-1), /\[CQ:image,/);
 
   const numericPlayer = await processIncoming(event('/w skill p:[970]', 'skill-numeric-player'), sendMessage);
   assert.equal(numericPlayer.replied, true);
   assert.deepEqual(profilerPayloads.at(-1), { beatmap_id: 4385157, mods: ['HD'] });
-  assert.match(sent.at(-1), /Player With Spaces 的 BP#1/);
+  assert.match(readDb().skillProfilerRuns.at(-1).sourceLabel, /Player With Spaces 的 BP#1/);
+  assert.match(sent.at(-1), /\[CQ:image,/);
 
   const direct = await processIncoming(event('/w skill 5648807 +HDDTPF', 'skill-bid'), sendMessage);
   assert.equal(direct.replied, true);
@@ -206,7 +209,8 @@ try {
   assert.equal(importedPayloads[0].beatmap_id, 5648807);
   assert.match(importedPayloads[0].content, /BeatmapID:5648807/);
   assert.deepEqual(profilerPayloads.at(-1), { beatmap_id: 5648807, mods: ['HD', 'DT', 'PF'] });
-  assert.match(sent.at(-1), /Mods：HDDTPF（PF 对谱面需求分值无影响）/);
+  assert.deepEqual(readDb().skillProfilerRuns.at(-1).analysis.neutralMods, ['PF']);
+  assert.match(sent.at(-1), /\[CQ:image,/,'the command must produce the new image, not silently fall back to text');
 
   const callsBeforeFl = profilerPayloads.length;
   const fl = await processIncoming(event('/w skill 5648807 +FL', 'skill-fl'), sendMessage);
@@ -232,6 +236,7 @@ try {
 
   console.log('PASS: /w skill resolves BP/BID with explicit Mods and /w cd stores correlated feedback');
 } finally {
+  await closeSkillCardBrowser();
   await new Promise((resolve) => server.close(resolve));
   fs.rmSync(dataDir, { recursive: true, force: true });
 }
