@@ -1,3 +1,4 @@
+import {closeSkillCardBrowser} from '../server/bots/skillCard/browser.ts';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
@@ -66,10 +67,9 @@ assert.doesNotMatch(longTitle.title, /…/);
 const profilePng = await renderPlayerSkillProfileCard(profile);
 assert.ok(profilePng.length > 10_000, `profile PNG should be non-trivial, got ${profilePng.length} bytes`);
 assert.deepEqual([...profilePng.subarray(0, 8)], [137, 80, 78, 71, 13, 10, 26, 10]);
-assert.deepEqual(
-  await sharp(profilePng).metadata().then(({ width, height }) => ({ width, height })),
-  { width: 2560, height: 1440 },
-);
+const profileSize=await sharp(profilePng).metadata();
+assert.equal(profileSize.width,1200);
+assert.ok(profileSize.height>=1400&&profileSize.height<2400);
 const originalFetch = globalThis.fetch;
 let avatarAttempts = 0;
 const avatarUrl = `https://a.ppy.sh/999999?retry-fixture-${Date.now()}`;
@@ -105,5 +105,6 @@ if (process.env.RENDER_OUTPUT_DIR) {
   fs.writeFileSync(path.join(process.env.RENDER_OUTPUT_DIR, 'player-skill-profile-preview.png'), profilePng);
   fs.writeFileSync(path.join(process.env.RENDER_OUTPUT_DIR, 'player-skill-compare-preview.png'), png);
 }
+await closeSkillCardBrowser();
 fs.rmSync(testDataDir, { recursive: true, force: true });
 console.log('player-skill-compare-card-verify: ok');

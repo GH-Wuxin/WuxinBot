@@ -56,6 +56,7 @@ export interface OsuBeatmapset {
 
 export interface OsuBeatmap {
   id: number;
+  checksum?: string;
   beatmapset_id: number;
   mode: 'osu' | 'taiko' | 'fruits' | 'mania';
   difficulty_rating: number;

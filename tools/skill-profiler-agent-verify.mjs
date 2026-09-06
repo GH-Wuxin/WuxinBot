@@ -92,7 +92,7 @@ try {
   assert.match(direct.content, /九维需求/);
   assert.match(direct.content, /Jump Aim：11\.2★/);
   assert.match(direct.content, /Stamina：9\.2\/10/);
-  assert.match(direct.content, /V0\.95/);
+  assert.match(direct.content, /（0\.9\.0；/);
   assert.ok(!direct.content.includes('G:\\private'), 'absolute local path never reaches model evidence');
   assert.ok(!direct.content.includes('private/fixture.osu'), 'relative local path never reaches model evidence');
   assert.equal(direct.metadata.actualExecutor, 'osu_skill_profiler_v095');

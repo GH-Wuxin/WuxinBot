@@ -1,21 +1,10 @@
-import { createHash, randomUUID } from 'node:crypto';
-import fs from 'node:fs';
-import path from 'node:path';
+import {imageDataUrl} from './skillCard/images.js';
 import sharp from 'sharp';
-import { getDataDir } from '../store.js';
 import type { PlayerSkillAxis } from './playerSkillProfile.js';
 
 const WIDTH = 1280;
 const HEIGHT = 720;
 const OVERFLOW_MULTIPLIER = 1.8;
-const IMAGE_LIMIT_BYTES = 4 * 1024 * 1024;
-const IMAGE_FETCH_ATTEMPTS = 3;
-const IMAGE_FETCH_TIMEOUT_MS = 8_000;
-const IMAGE_MEMORY_CACHE_TTL_MS = 24 * 60 * 60_000;
-const IMAGE_DISK_CACHE_TTL_MS = 7 * 24 * 60 * 60_000;
-const imageMemoryCache = new Map<string, { at: number; dataUrl: string }>();
-const imageRequests = new Map<string, Promise<string>>();
-
 function esc(value: unknown): string {
   return String(value ?? '')
     .replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;')
@@ -85,149 +74,6 @@ function rank(value: unknown): string {
   return finite(value) > 0 ? `#${Math.round(finite(value)).toLocaleString('en-US')}` : '—';
 }
 
-function allowedImageUrl(value: unknown): URL | null {
-  try {
-    const url = new URL(String(value || ''));
-    const host = url.hostname.toLowerCase();
-    if (url.protocol !== 'https:' || !['a.ppy.sh', 'assets.ppy.sh'].includes(host) || url.username || url.password) return null;
-    return url;
-  } catch {
-    return null;
-  }
-}
-
-function imageCachePath(url: URL): string {
-  const key = createHash('sha256').update(url.href).digest('hex');
-  return path.join(getDataDir(), 'player-skill-image-cache', `${key}.json`);
-}
-
-function detectedImageMime(buffer: Buffer): 'image/jpeg' | 'image/png' | 'image/webp' | null {
-  if (buffer.length >= 8 && buffer.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]))) return 'image/png';
-  if (buffer.length >= 3 && buffer[0] === 0xff && buffer[1] === 0xd8 && buffer[2] === 0xff) return 'image/jpeg';
-  if (buffer.length >= 12 && buffer.subarray(0, 4).toString('ascii') === 'RIFF' && buffer.subarray(8, 12).toString('ascii') === 'WEBP') return 'image/webp';
-  return null;
-}
-
-function normalizedCachedDataUrl(value: unknown): string {
-  if (typeof value !== 'string' || value.length > Math.ceil(IMAGE_LIMIT_BYTES * 4 / 3) + 256) return '';
-  const match = /^data:image\/(?:jpeg|png|webp);base64,([A-Za-z0-9+/=]+)$/.exec(value);
-  if (!match) return '';
-  const buffer = Buffer.from(match[1], 'base64');
-  if (!buffer.length || buffer.length > IMAGE_LIMIT_BYTES) return '';
-  const mime = detectedImageMime(buffer);
-  return mime ? `data:${mime};base64,${buffer.toString('base64')}` : '';
-}
-
-function readCachedImage(url: URL): string {
-  const memory = imageMemoryCache.get(url.href);
-  if (memory && Date.now() - memory.at <= IMAGE_MEMORY_CACHE_TTL_MS) return memory.dataUrl;
-  try {
-    const cached = JSON.parse(fs.readFileSync(imageCachePath(url), 'utf8'));
-    if (cached?.url !== url.href || Date.now() - Number(cached?.at || 0) > IMAGE_DISK_CACHE_TTL_MS) return '';
-    const dataUrl = normalizedCachedDataUrl(cached?.dataUrl);
-    if (!dataUrl) return '';
-    imageMemoryCache.set(url.href, { at: Number(cached.at), dataUrl });
-    if (dataUrl !== cached.dataUrl) writeCachedImage(url, dataUrl);
-    return dataUrl;
-  } catch {
-    return '';
-  }
-}
-
-function writeCachedImage(url: URL, dataUrl: string): void {
-  const at = Date.now();
-  imageMemoryCache.set(url.href, { at, dataUrl });
-  let temporary = '';
-  try {
-    const filePath = imageCachePath(url);
-    fs.mkdirSync(path.dirname(filePath), { recursive: true });
-    temporary = `${filePath}.${process.pid}.${randomUUID()}.tmp`;
-    fs.writeFileSync(temporary, JSON.stringify({ at, url: url.href, dataUrl }), { encoding: 'utf8', flag: 'wx' });
-    fs.copyFileSync(temporary, filePath);
-  } catch (error: any) {
-    console.warn('[player-skill-card] image cache write failed:', String(error?.message || error));
-  } finally {
-    if (temporary) {
-      try { fs.unlinkSync(temporary); } catch { /* best-effort temp cleanup */ }
-    }
-  }
-}
-
-function wait(milliseconds: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, milliseconds));
-}
-
-async function downloadImageDataUrl(url: URL): Promise<string> {
-  const cached = readCachedImage(url);
-  if (cached) return cached;
-  let lastError: unknown = null;
-  for (let attempt = 1; attempt <= IMAGE_FETCH_ATTEMPTS; attempt += 1) {
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), IMAGE_FETCH_TIMEOUT_MS);
-    timer.unref?.();
-    try {
-      const response = await fetch(url, { signal: controller.signal, redirect: 'follow' });
-      if (!response.ok) throw new Error(`HTTP_${response.status}`);
-      const final = allowedImageUrl(response.url);
-      if (!final) throw new Error('IMAGE_REDIRECT_NOT_ALLOWED');
-      const length = Number(response.headers.get('content-length') || 0);
-      if (length > IMAGE_LIMIT_BYTES) throw new Error('IMAGE_TOO_LARGE');
-      const buffer = Buffer.from(await response.arrayBuffer());
-      if (!buffer.length || buffer.length > IMAGE_LIMIT_BYTES) throw new Error('IMAGE_SIZE_INVALID');
-      // a.ppy.sh sometimes serves PNG bytes with an image/jpeg header. SVG
-      // renderers trust the data-URL MIME and then silently draw a blank avatar,
-      // so determine the type from the file signature instead of the header.
-      const mime = detectedImageMime(buffer);
-      if (!mime) throw new Error('IMAGE_TYPE_UNSUPPORTED');
-      const dataUrl = `data:${mime};base64,${buffer.toString('base64')}`;
-      writeCachedImage(url, dataUrl);
-      return dataUrl;
-    } catch (error) {
-      lastError = error;
-    } finally {
-      clearTimeout(timer);
-    }
-    if (attempt < IMAGE_FETCH_ATTEMPTS) await wait(200 * attempt);
-  }
-  throw lastError || new Error('IMAGE_FETCH_FAILED');
-}
-
-async function cachedImageDataUrl(url: URL): Promise<string> {
-  const existing = imageRequests.get(url.href);
-  if (existing) return existing;
-  const pending = downloadImageDataUrl(url);
-  imageRequests.set(url.href, pending);
-  try {
-    return await pending;
-  } finally {
-    if (imageRequests.get(url.href) === pending) imageRequests.delete(url.href);
-  }
-}
-
-async function imageDataUrl(value: unknown, fallbackOsuId?: unknown): Promise<string> {
-  const url = allowedImageUrl(value);
-  const osuId = Number(fallbackOsuId);
-  const fallback = Number.isSafeInteger(osuId) && osuId > 0 ? allowedImageUrl(`https://a.ppy.sh/${osuId}`) : null;
-  const candidates = [url, fallback].filter((candidate): candidate is URL => Boolean(candidate));
-  const unique = [...new Map(candidates.map((candidate) => [candidate.href, candidate])).values()];
-  let lastError: unknown = null;
-  for (const candidate of unique) {
-    try {
-      return await cachedImageDataUrl(candidate);
-    } catch (error) {
-      lastError = error;
-    }
-  }
-  if (unique.length) {
-    console.warn('[player-skill-card] image unavailable after retries:', {
-      url: unique[0].href,
-      fallbackUsed: unique.length > 1,
-      error: String((lastError as any)?.message || lastError || 'unknown'),
-    });
-  }
-  return '';
-}
-
 function playerBlock(data: any, side: 'left' | 'right'): string {
   const player = data.player || {};
   const profile = data.profile || {};
@@ -261,64 +107,7 @@ function radarGeometry(axes: any[], cx: number, cy: number, radius: number) {
   return { count, grid, spokes };
 }
 
-export async function renderPlayerSkillProfileCard(payload: Record<string, any>): Promise<Buffer> {
-  const player = payload.player || {};
-  const sample = payload.sample || {};
-  const profile = payload.profile || {};
-  const axes = (Array.isArray(profile.axes) ? profile.axes : []).slice(0, 9).map((axis: any) => ({
-    key: axis.key as PlayerSkillAxis,
-    label: axis.label || axis.key,
-    ceiling: finite(axis.ceiling),
-    median: finite(axis.median),
-  }));
-  if (axes.length !== 9) throw new Error('PLAYER_SKILL_PROFILE_AXES_INVALID');
-  const [cover, avatar] = await Promise.all([
-    imageDataUrl(player.coverUrl || player.avatarUrl),
-    imageDataUrl(player.avatarUrl, player.osuId),
-  ]);
-  const cx = 640;
-  const cy = 425;
-  const radius = 180;
-  const { count, grid, spokes } = radarGeometry(axes, cx, cy, radius);
-  const polygon = (field: 'ceiling' | 'median') => axes.map((axis: any, index: number) => {
-    const point = polar(cx, cy, radius, index, count, axis[field], field === 'ceiling');
-    return `${point.x.toFixed(1)},${point.y.toFixed(1)}`;
-  }).join(' ');
-  const nodes = axes.map((axis: any, index: number) => {
-    const point = polar(cx, cy, radius, index, count, axis.ceiling, true);
-    const exceptional = axis.ceiling > 10;
-    return `<circle cx="${point.x.toFixed(1)}" cy="${point.y.toFixed(1)}" r="${exceptional ? 7 : 5}" fill="${exceptional ? '#ffcf62' : '#42d5ff'}" stroke="${exceptional ? '#fff1ad' : '#9cecff'}" stroke-width="2"/>`;
-  }).join('');
-  const labels = axes.map((axis: any, index: number) => {
-    const point = polar(cx, cy, radius + 42, index, count, 10);
-    const anchor = point.cos > 0.22 ? 'start' : point.cos < -0.22 ? 'end' : 'middle';
-    const y = point.y + (point.sin < -0.75 ? -5 : point.sin > 0.75 ? 5 : 0);
-    return text(axis.label, point.x, y, 16, { anchor, weight: 610 })
-      + text(axis.ceiling.toFixed(1), point.x, y + 22, 17, {
-        anchor,
-        weight: 740,
-        fill: axis.ceiling > 10 ? '#ffcf62' : '#63dcff',
-      });
-  }).join('');
-  const primary = Array.isArray(profile.primaryAxes) ? profile.primaryAxes.slice(0, 2).join(' · ') : '—';
-  const {
-    title: profileTitle,
-    color: titleColor,
-    fontSize: titleSize,
-  } = playerProfileTitlePresentation(profile);
-  const scoreEvidence = Math.round(finite(sample.averageScoreQuality) * 100);
-  const svg = `<?xml version="1.0" encoding="UTF-8"?>
-<svg xmlns="http://www.w3.org/2000/svg" width="${WIDTH}" height="${HEIGHT}" viewBox="0 0 ${WIDTH} ${HEIGHT}">
-<defs><filter id="blur"><feGaussianBlur stdDeviation="28"/></filter><filter id="shadow"><feDropShadow dx="0" dy="4" stdDeviation="8" flood-color="#02050a" flood-opacity="0.60"/></filter><linearGradient id="overlay" x2="1" y2="1"><stop stop-color="#071928" stop-opacity="0.89"/><stop offset="0.56" stop-color="#07111c" stop-opacity="0.91"/><stop offset="1" stop-color="#091522" stop-opacity="0.88"/></linearGradient><clipPath id="avatar"><circle cx="82" cy="82" r="55"/></clipPath><style>text { font-family: "MiSans", "Noto Sans SC", "Segoe UI", sans-serif; font-variant-numeric: tabular-nums; }</style></defs>
-<rect width="1280" height="720" fill="#07101a"/>${cover ? `<image x="-45" y="-45" width="1370" height="810" href="${cover}" preserveAspectRatio="xMidYMid slice" filter="url(#blur)" opacity="0.50"/>` : ''}<rect width="1280" height="720" fill="url(#overlay)"/>
-<g filter="url(#shadow)"><circle cx="82" cy="82" r="59" fill="#0b1724" stroke="#42d5ff" stroke-width="2"/>${avatar ? `<image x="27" y="27" width="110" height="110" href="${avatar}" preserveAspectRatio="xMidYMid slice" clip-path="url(#avatar)"/>` : ''}</g>
-${text(compact(player.username || `osu! ${player.osuId || '?'}`, 30), 158, 55, 32, { weight: 700 })}${text(`${String(player.countryCode || '—').toUpperCase()} · GLOBAL ${rank(player.globalRank)} · ${finite(player.pp).toLocaleString('en-US', { maximumFractionDigits: 0 })}pp`, 158, 87, 16, { fill: '#b9c7d4', weight: 560, spacing: 0.4 })}${text(`主要能力  ${compact(primary, 40)}`, 158, 116, 17, { fill: '#63dcff', weight: 620 })}${text(`BP50  ${finite(sample.valid)}/${finite(sample.requested, 50)} VALID · SCORE EVIDENCE ${scoreEvidence}%`, 158, 145, 14, { fill: '#91a3b2', weight: 540, spacing: 0.7 })}
-${text('PLAYER SKILL PROFILE', 1218, 61, 16, { anchor: 'end', fill: '#9facb8', weight: 650, spacing: 2.5 })}${text(profileTitle, 1218, 99, titleSize, { anchor: 'end', fill: titleColor, weight: 700, spacing: 1.2 })}${text(`${finite(player.accuracy).toFixed(2)}% ACC`, 1218, 132, 16, { anchor: 'end', fill: '#dce7ef', weight: 580 })}<path d="M24 184H1256" stroke="#e1b45c" stroke-opacity="0.68" stroke-width="1.5"/>
-${grid}${spokes}<polygon points="${polygon('median')}" fill="#c8d4df" fill-opacity="0.05" stroke="#c8d4df" stroke-opacity="0.40" stroke-width="1.5" stroke-dasharray="6 7"/><polygon points="${polygon('ceiling')}" fill="#35d7ff" fill-opacity="0.17" stroke="#42d5ff" stroke-width="3.2" stroke-linejoin="round"/>${nodes}${labels}<circle cx="${cx}" cy="${cy}" r="5" fill="#07111d"/>
-<path d="M34 675H1246" stroke="#ffffff" stroke-opacity="0.12"/>${text('实线：高位能力  ·  虚线：常态覆盖', 42, 706, 13, { fill: '#9aacba', weight: 540 })}${text('BP50 · SCORE QUALITY ADJUSTED · 0.95 RANK DECAY', 1238, 706, 12, { anchor: 'end', fill: '#8999a8', weight: 560, spacing: 1.7 })}
-</svg>`;
-  return sharp(Buffer.from(svg), { density: 144 }).png({ compressionLevel: 9 }).toBuffer();
-}
+export {renderPlayerSkillProfileCard} from './skillCard/cards.js';
 
 export async function renderPlayerRecentSkillProfileCard(payload: Record<string, any>): Promise<Buffer> {
   const player = payload.player || {};
