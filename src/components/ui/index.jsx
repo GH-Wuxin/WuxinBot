@@ -49,8 +49,8 @@ export function Textarea({ label, hint, error, className, ...props }) {
   return <Field label={label} hint={hint} error={error} className={className}><textarea className="ui-textarea" {...props} /></Field>;
 }
 
-export function Switch({ checked, onChange, label, description, disabled = false }) {
-  return <label className={cx('ui-switch', disabled && 'ui-switch--disabled')}><input type="checkbox" checked={checked} onChange={onChange} disabled={disabled} /><span className="ui-switch__track"><span /></span><span className="ui-switch__copy"><strong>{label}</strong>{description && <small>{description}</small>}</span></label>;
+export function Switch({ checked, onChange, label, description, disabled = false, 'aria-label': ariaLabel }) {
+  return <label className={cx('ui-switch', disabled && 'ui-switch--disabled')}><input type="checkbox" checked={checked} onChange={onChange} disabled={disabled} aria-label={ariaLabel || label} /><span className="ui-switch__track"><span /></span><span className="ui-switch__copy"><strong>{label}</strong>{description && <small>{description}</small>}</span></label>;
 }
 
 export function NumberInput({ label, hint, error, className, min, max, step = 1, value, onChange, suffix, ...props }) {
@@ -71,7 +71,10 @@ export function SettingGroup({ title, description, actions, children, className 
 }
 
 export function SettingRow({ title, description, control, tone = 'normal', children, className }) {
-  return <div className={cx('ui-setting-row', `ui-setting-row--${tone}`, className)}><div className="ui-setting-row__copy"><strong>{title}</strong>{description && <small>{description}</small>}</div><div className="ui-setting-row__control">{control || children}</div></div>;
+  const field = control || children;
+  const namedField = React.isValidElement(field) && [Input, Select, Textarea, NumberInput, Switch].includes(field.type) && !field.props.label && !field.props['aria-label']
+    ? React.cloneElement(field, { 'aria-label': title }) : field;
+  return <div className={cx('ui-setting-row', `ui-setting-row--${tone}`, className)}><div className="ui-setting-row__copy"><strong>{title}</strong>{description && <small>{description}</small>}</div><div className="ui-setting-row__control">{namedField}</div></div>;
 }
 
 export function InlineHelp({ children, tone = 'normal' }) {
@@ -88,7 +91,7 @@ export function GroupAvatar({ src, name, size = 36, className }) {
 }
 
 export function SegmentedControl({ value, onChange, options, label }) {
-  return <div className="ui-segments" role="group" aria-label={label}>{options.map((option) => <button key={option.value} className={value === option.value ? 'is-selected' : ''} onClick={() => onChange(option.value)} type="button">{option.label}</button>)}</div>;
+  return <div className="ui-segments" role="group" aria-label={label}>{options.map((option) => <button key={option.value} className={value === option.value ? 'is-selected' : ''} aria-pressed={value === option.value} onClick={() => onChange(option.value)} type="button">{option.label}</button>)}</div>;
 }
 
 export function ListRow({ selected = false, onClick, title, subtitle, leading, trailing, children }) {

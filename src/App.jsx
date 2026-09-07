@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import './styles/tokens.css';
 import './styles/globals.css';
 import './styles/components.css';
+import './styles/osu-console.css';
 import { AppShell } from './components/layout/AppShell.jsx';
 import { DashboardPage } from './pages/Dashboard/index.jsx';
 import { GroupsPage } from './pages/Groups/index.jsx';
@@ -103,7 +104,8 @@ export function App() {
     onPauseToggle={() => saveSettings({ globalPaused: !db.settings.globalPaused })}
   >
     {toast && <div className="toast">{toast}</div>}
-    {tab === 'overview' && <DashboardPage db={db} oneBot={state.oneBot} saveSettings={saveSettings} refreshState={refresh} />}
+    {loadError && <div className="osu-inline-warning" role="alert">连接刷新失败，正在显示上一次数据：{loadError}</div>}
+    {tab === 'overview' && <DashboardPage db={db} oneBot={state.oneBot} saveSettings={saveSettings} refreshState={refresh} onNavigate={setTab} />}
     {tab === 'groups' && <GroupsPage db={db} refreshState={refresh} saveSettings={saveSettings} />}
     {tab === 'agent' && <AgentPage db={db} />}
     {tab === 'osu' && <OsuPage db={db} refreshState={refresh} />}
