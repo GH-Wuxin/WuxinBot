@@ -38,7 +38,7 @@ export function ProfileLogsPage() {
   useEffect(() => { loadLogs(); }, [filterUser, filterEvent, filterRunId]);
 
   return <div className="console-page profile-logs-page">
-    <SectionHeader eyebrow="Context / Profile Logs" title="画像日志" description="查看样本、证据与画像任务的实际运行记录。" actions={<Button icon={RefreshCw} onClick={loadLogs}>刷新</Button>} />
+    <SectionHeader title="画像日志" actions={<Button icon={RefreshCw} onClick={loadLogs}>刷新</Button>} />
     {stats && <div className="profile-log-metrics"><MetricCard label="总日志" value={stats.total || 0} /><MetricCard label="今日画像任务" value={stats.recentRuns || 0} tone="accent" /><MetricCard label="今日错误" value={stats.recentErrors || 0} tone={stats.recentErrors ? 'accent' : 'neutral'} /><MetricCard label="画像队列" value={`${stats.queue?.activeUserId ? 1 : 0} 运行 · ${stats.queue?.queued || 0} 等待`} tone={stats.queue?.activeUserId || stats.queue?.queued ? 'accent' : 'neutral'} /></div>}
     <Card className="console-section">
       <div className="console-toolbar profile-log-toolbar"><Input placeholder="用户 QQ" value={filterUser} onChange={(event) => setFilterUser(event.target.value)} /><Input placeholder="Run ID" value={filterRunId} onChange={(event) => setFilterRunId(event.target.value)} /><Select value={filterEvent} onChange={(event) => setFilterEvent(event.target.value)} options={[{ value: '', label: '全部事件' }, ...Object.entries(eventLabels).map(([value, [label]]) => ({ value, label }))]} /></div>

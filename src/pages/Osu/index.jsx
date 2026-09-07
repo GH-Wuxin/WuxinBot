@@ -63,16 +63,16 @@ export function OsuPage({ db, refreshState }) {
     setUnbind(null); await Promise.all([load(), refreshState()]);
   });
   return <div className="osu-page">
-    <SectionHeader eyebrow="Runtime / osu!" title="osu! 工作流" description="绑定、玩家档案与分析都来自现有真实接口。" actions={<Button icon={RefreshCw} onClick={load}>刷新</Button>} />
+    <SectionHeader title="osu! 工作流" actions={<Button icon={RefreshCw} onClick={load}>刷新</Button>} />
     {loadError && <ErrorState title="osu! 状态读取失败" message={loadError} onRetry={load} />}
     {operationError && <ErrorState title="操作失败" message={operationError} />}
     <div className="osu-metrics"><MetricCard label="绑定账号" value={status?.bindings?.length ?? '…'} detail="QQ ↔ osu!" icon={UserRound} /><MetricCard label="玩家分析" value={status?.stats?.analyzeCount ?? '…'} detail="/w osu analyze" icon={Sparkles} /><MetricCard label="绑定指令" value={status?.stats?.bindCount ?? '…'} detail="/w osu bind" icon={ExternalLink} /><MetricCard label="API 429" value={status?.health?.api429Count ?? '…'} detail="运行期记录" /><MetricCard label="渲染失败" value={status?.health?.renderFailures ?? '…'} detail="运行期记录" /></div>
 
     <Card className="osu-player-search"><Search size={18} /><div><strong>检查玩家档案</strong><small>输入用户名或用户 ID，打开完整资料抽屉。</small></div><Input aria-label="osu! 用户名或 ID" value={searchText} onChange={(event) => setSearchText(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') doSearch(); }} placeholder="用户名或 ID" /><Button variant="primary" loading={pending === 'search'} disabled={!searchText.trim()} onClick={doSearch}>查询</Button></Card>
 
-    <Card className="osu-services"><SectionHeader eyebrow="External Services" title="外部 osu! 服务" description="Agent 工具调用依赖的本地服务状态。" /><div className="osu-services__list">{(status?.bots || []).map((bot) => <div key={bot.id}><StatusBadge tone={bot.up ? 'success' : 'danger'}>{bot.up ? 'Available' : 'Unavailable'}</StatusBadge><strong>{botLabels[bot.id] || bot.id}</strong><code>127.0.0.1:{bot.port}</code></div>)}{status && (status.bots || []).length === 0 && <EmptyState title="没有服务状态" />}</div></Card>
+    <Card className="osu-services"><SectionHeader title="外部 osu! 服务" description="Agent 工具调用依赖的本地服务状态。" /><div className="osu-services__list">{(status?.bots || []).map((bot) => <div key={bot.id}><StatusBadge tone={bot.up ? 'success' : 'danger'}>{bot.up ? 'Available' : 'Unavailable'}</StatusBadge><strong>{botLabels[bot.id] || bot.id}</strong><code>127.0.0.1:{bot.port}</code></div>)}{status && (status.bots || []).length === 0 && <EmptyState title="没有服务状态" />}</div></Card>
 
-    <Card><SectionHeader eyebrow="Bindings" title="绑定管理" description="管理员维护入口；选择玩家名可打开档案。" />
+    <Card><SectionHeader title="绑定管理" description="点击玩家名查看档案。" />
         <div className="osu-binding-form"><Input label="QQ 号" value={qq} onChange={(event) => setQq(event.target.value)} /><Input label="osu! 用户名" value={name} onChange={(event) => setName(event.target.value)} /><Button variant="primary" loading={pending === 'binding-add'} disabled={!qq.trim() || !name.trim()} onClick={addBinding}>添加绑定</Button></div>
         <div className="osu-binding-list">{(status?.bindings || []).map((binding) => <div key={binding.qq}><button type="button" className="osu-binding-list__player" onClick={() => openPlayer(binding.id, binding.username)}><span>{binding.username || '未解析用户名'}</span><small>QQ {binding.qq} · osu! {binding.id || '-'}</small></button><IconButton label={`解除 ${binding.qq} 的绑定`} icon={Trash2} variant="danger-ghost" onClick={() => setUnbind(binding)} /></div>)}{status && (status.bindings || []).length === 0 && <EmptyState title="还没有绑定" description="添加绑定后可以直接打开玩家资料。" />}</div>
     </Card>

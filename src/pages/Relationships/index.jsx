@@ -102,7 +102,7 @@ export function RelationshipsPage({ db, refreshState }) {
   };
 
   return <div className="console-page relationships-page">
-    <SectionHeader eyebrow="Context / Relationships" title="关系画像" description="查看成员之间已经形成的互动模式，或用现有证据生成和更新画像。" actions={<Button icon={RefreshCw} onClick={loadRelationships}>刷新</Button>} />
+    <SectionHeader title="关系画像" actions={<Button icon={RefreshCw} onClick={loadRelationships}>刷新</Button>} />
     <div className="relationship-metrics">
       <Card><span>已生成</span><strong>{profiles.length}</strong></Card>
       <Card><span>候选关系对</span><strong>{candidates.length}</strong></Card>
@@ -113,13 +113,13 @@ export function RelationshipsPage({ db, refreshState }) {
     {!relationshipData.loading && !relationshipData.error && <div className="relationships-workspace">
       <div className="console-setting-stack">
         <Card className="console-section relationship-generator">
-          <div className="console-section__title"><Sparkles size={18} /><div><h3>生成 / 更新</h3><p>使用当前数据库中的互动证据。</p></div></div>
+          <div className="console-section__title"><Sparkles size={18} /><div><h3>生成 / 更新</h3></div></div>
           <Select label="群" value={form.groupId} onChange={(event) => setForm({ ...form, groupId: event.target.value })} options={groupOptions} />
           <div className="console-form-grid"><Input label="用户 A QQ" value={form.userA} onChange={(event) => setForm({ ...form, userA: event.target.value })} /><Input label="用户 B QQ" value={form.userB} onChange={(event) => setForm({ ...form, userB: event.target.value })} /></div>
           <Button variant="primary" icon={Sparkles} loading={Boolean(loadingKey)} disabled={!form.groupId || !form.userA || !form.userB} onClick={() => doUpdate(form.groupId, form.userA, form.userB)}>LLM 更新</Button>
         </Card>
         <Card className="console-section">
-          <div className="console-section__title"><Users size={18} /><div><h3>候选关系对 · {candidates.length}</h3><p>最多展示前 20 个真实候选。</p></div></div>
+          <div className="console-section__title"><Users size={18} /><div><h3>候选关系对 · {candidates.length}</h3><p>最多显示 20 对。</p></div></div>
           <div className="console-list relationship-candidates">{candidates.slice(0, 20).map((candidate) => {
             const key = `${candidate.groupId}:${candidate.userA}:${candidate.userB}`;
             return <article className="console-list-item relationship-candidate" key={candidate.pairKey + candidate.groupId}><div><strong>{candidate.userAName || userName(candidate.userA, candidate.groupId)} ↔ {candidate.userBName || userName(candidate.userB, candidate.groupId)}</strong><span>{candidate.groupName || groupMap[candidate.groupId] || candidate.groupId} · 互动 {candidate.count} 次</span></div><Button size="sm" loading={loadingKey === key} disabled={Boolean(loadingKey)} onClick={() => doUpdate(candidate.groupId, candidate.userA, candidate.userB)}>生成</Button></article>;
@@ -128,7 +128,7 @@ export function RelationshipsPage({ db, refreshState }) {
       </div>
 
       <Card className="console-section relationships-list-panel">
-        <div className="console-section__title"><Users size={18} /><div><h3>已生成 · {filtered.length}</h3><p>展开后可检查或手动编辑字段。</p></div></div>
+        <div className="console-section__title"><Users size={18} /><div><h3>已生成 · {filtered.length}</h3></div></div>
         <div className="console-toolbar"><Input aria-label="搜索关系画像" placeholder="搜索昵称、QQ 或话题" value={search} onChange={(event) => setSearch(event.target.value)} /><Select value={groupFilter} onChange={(event) => setGroupFilter(event.target.value)} options={[{ value: 'all', label: '全部群' }, ...groupOptions]} /></div>
         <div className="console-list relationships-list">{filtered.map((profile) => {
           const key = profile.pairKey + profile.groupId;

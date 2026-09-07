@@ -1,8 +1,7 @@
 import React, { useEffect, useState } from 'react';
-import { BrainCircuit, Eye, Globe2, LogIn, LogOut, RefreshCw, Save, Settings2, Sparkles } from 'lucide-react';
+import { BrainCircuit, Globe2, LogIn, LogOut, RefreshCw, Save } from 'lucide-react';
 import {
   Button,
-  Card,
   InlineHelp,
   Input,
   NumberInput,
@@ -214,7 +213,7 @@ export function ModelsPage({ db, saveSettings }) {
   };
 
   return <div className="console-page models-page" data-section={section}>
-    <SectionHeader eyebrow="TUNE YOUR BOT / 模型设置" title="找到合适的聊天节奏。" description="选择模型，调整表达；复杂的选项，按需展开。" actions={<Button variant="primary" icon={Save} loading={saving} onClick={save}>{dirty ? '保存更改' : '保存模型设置'}</Button>} />
+    <SectionHeader title="模型设置" actions={<Button variant="primary" icon={Save} loading={saving} onClick={save}>{dirty ? '保存更改' : '保存模型设置'}</Button>} />
     <div className="osu-model-summary"><span className="osu-model-summary__icon"><BrainCircuit size={23} /></span><div><small>当前运行模型</small><strong>{db.settings.effectiveModel || (db.settings.llmProvider === 'codex-app-server' ? db.settings.codexModel : db.settings.model) || '未设置'}</strong></div><span>{dirty ? '有未保存的更改' : '设置已同步'}</span></div>
     {saveError && <InlineHelp tone="danger">{saveError}</InlineHelp>}
     <SegmentedControl value={section} onChange={setSection} label="模型设置分类" options={[{ value: 'account', label: '账号与模型' }, { value: 'conversation', label: '对话与上下文' }, { value: 'capabilities', label: '视觉与搜索' }, { value: 'participation', label: '主动参与' }]} />
@@ -243,7 +242,7 @@ export function ModelsPage({ db, saveSettings }) {
           </>}
         </SettingGroup>
 
-        <SettingGroup className="model-panel model-panel--conversation" title="生成参数与上下文" description="控制回复风格、长度和上下文预算。">
+        <SettingGroup className="model-panel model-panel--conversation" title="生成参数与上下文">
           {draft.llmProvider === 'codex-app-server' && <InlineHelp>当前 Codex 适配器不提供创造性和最大输出 Token 的硬控制；下面这两项保留用于 API 模型通道。</InlineHelp>}
           <Slider label="创造性" min={0} max={1.5} step={0.05} value={draft.temperature} onChange={(temperature) => updateDraft({ temperature })} />
           <Slider label="单次回复长度" min={80} max={1200} step={20} value={draft.maxTokens} onChange={(maxTokens) => updateDraft({ maxTokens })} />
@@ -289,12 +288,6 @@ export function ModelsPage({ db, saveSettings }) {
           {draft.thinkingNoticeMode === 'slow' && <SettingRow title="慢请求延迟" description="至少 500ms" control={<NumberInput min={500} value={draft.thinkingNoticeDelayMs || 3000} onChange={(thinkingNoticeDelayMs) => updateDraft({ thinkingNoticeDelayMs })} suffix="ms" />} />}
         </SettingGroup>
 
-        <Card className="model-guide model-panel model-panel--capabilities">
-          <div className="console-section__title"><BrainCircuit size={18} /><div><h3>配置提示</h3><p>按当前运行时能力说明，不推断供应商状态。</p></div></div>
-          <p><Sparkles size={14} />创造性越高越活泼，越低越稳定；小群聊天可从 0.85 开始。</p>
-          <p><Eye size={14} />视觉能力需要实际多模态模型支持，传输方式不会让纯文本模型获得视觉。</p>
-          <p><Settings2 size={14} />Codex 通道走官方 App Server 和个人 ChatGPT 登录；失败时可自动回到原 API 模型。</p>
-        </Card>
       </div>
     </div>
   </div>;

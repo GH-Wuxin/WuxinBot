@@ -29,7 +29,6 @@ body { font-family: 'Segoe UI', 'Microsoft YaHei', system-ui, sans-serif; }
 .app-shell__brand { gap: 13px; padding: 0 8px; }
 .app-shell__brand-mark { width: 43px; height: 43px; font: italic 900 24px/1 'Segoe UI', sans-serif; border: 3px solid #ffe9f4; box-shadow: 0 0 0 5px #ff66a61a, 0 4px 20px #ff66a626; }
 .app-shell__brand strong { font-size: 17px; letter-spacing: -.6px; }
-.app-shell__brand small { font-size: 9px; text-transform: lowercase; letter-spacing: 1px; }
 .app-shell__brand .app-shell__nav-close { display: none; }
 .osu-mobile-mark { display: grid; place-items: center; width: 24px; height: 24px; border: 2px solid #ffe9f4; border-radius: 50%; background: #ff66a6; color: white; font-size: 13px; font-weight: 900; font-style: italic; }
 .shell-search { min-height: 36px; background: #17121c; border-color: transparent; border-radius: 9px; }
@@ -48,7 +47,6 @@ body { font-family: 'Segoe UI', 'Microsoft YaHei', system-ui, sans-serif; }
 .app-shell__status small { font-size: 10px; color: var(--v2-text-muted); }
 .app-shell__topbar { min-height: 68px; padding: 12px 32px; background: #17131ee8; border-bottom-color: #ffffff08; }
 .osu-breadcrumb { display: flex; gap: 13px; align-items: center; }
-.osu-breadcrumb > span:first-child { font-size: 10px; letter-spacing: 1.4px; }
 .app-shell__topbar .osu-breadcrumb h1 { font-size: 15px; font-weight: 600; margin: 0; }
 .app-shell__topbar-actions { align-items: center; }
 .app-shell__topbar-actions > .ui-button { min-height: 32px; font-size: 12px; }
@@ -58,15 +56,13 @@ body { font-family: 'Segoe UI', 'Microsoft YaHei', system-ui, sans-serif; }
 .osu-shell-operations > div { position: absolute; z-index: 22; right: 0; top: 100%; width: 170px; padding: 8px; background: var(--v2-surface-2); border: 1px solid var(--v2-border); border-radius: 12px; box-shadow: 0 12px 30px #0007; }
 .app-shell__main { max-width: 1550px; padding: 30px 32px; }
 .app-shell__workspace { background: radial-gradient(ellipse 850px 420px at 94% -100px,#ff66a60a,transparent); }
-.osu-shell-footer { display: flex; justify-content: space-between; padding: 0 32px 22px; color: #8d799b; font-size: 10px; letter-spacing: .4px; }
-.osu-shell-footer > span:first-child { font-weight: 800; }
 .ui-card { border-color: #ffffff06; padding: 22px; box-shadow: 0 3px 14px #08050c16; }
 .ui-button { border-radius: 9px; min-height: 36px; border-color: #ffffff0b; font-size: 12px; font-weight: 600; }
 .ui-button--primary { color: #301021; background: #ff80b4; border-color: transparent; box-shadow: 0 4px 0 #a33465; }
 .ui-button--primary:hover:not(:disabled) { background: #ff9ac4; }
 .ui-button--primary:active:not(:disabled) { transform: translateY(2px); box-shadow: 0 2px 0 #a33465; }
 .ui-button--ghost { border-color: transparent; }
-.section-header__eyebrow, .osu-eyebrow { display: block; color: #c98bae; font-size: 10px; font-weight: 700; letter-spacing: 1.4px; }
+.section-header__eyebrow { display: block; color: #c98bae; font-size: 10px; font-weight: 700; letter-spacing: 1.4px; }
 .section-header h2 { font-size: 18px; letter-spacing: -.3px; }
 .section-header p { font-size: 12px; line-height: 1.7; }
 .ui-segments { gap: 4px; padding: 4px; border-color: #ffffff08; background: #201926; flex-wrap: wrap; }
@@ -87,12 +83,6 @@ body { font-family: 'Segoe UI', 'Microsoft YaHei', system-ui, sans-serif; }
 
 /* Overview — score panel and playfield. */
 .osu-dashboard { gap: 20px; }
-.osu-dashboard__intro { position: relative; display: flex; align-items: center; justify-content: space-between; gap: 20px; min-height: 91px; }
-.osu-dashboard__intro h2 { font-size: clamp(25px,2.3vw,34px); letter-spacing: -1px; margin: 4px 0; line-height: 1.35; }
-.osu-dashboard__intro h2 > span { color: #ff66a6; }
-.osu-dashboard__intro p { color: var(--v2-text-muted); font-size: 12px; margin: 0; }
-.osu-dashboard__period { display: grid; justify-items: end; gap: 8px; flex-shrink: 0; }
-.osu-dashboard__period > span { color: var(--v2-text-muted); font-size: 10px; }
 .osu-session-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 12px 22px; padding: 11px 16px; background: #211a29; border: 1px solid #ffffff05; border-radius: 10px; }
 .osu-session-bar > span { display: inline-flex; align-items: center; gap: 8px; font-size: 12px; }
 .osu-session-bar > .ui-button { margin-left: auto; padding-block: 0; min-height: 26px; }
@@ -100,15 +90,13 @@ body { font-family: 'Segoe UI', 'Microsoft YaHei', system-ui, sans-serif; }
 .osu-dashboard__rail { min-width: 0; display: grid; gap: 16px; }
 .osu-usage { overflow: hidden; position: relative; background: linear-gradient(135deg,#342336 0%,#281e30 42%,#231d2b 100%); border-top: 2px solid #ff66a6; padding: 25px 26px 18px; }
 .osu-usage::before { content: ''; position: absolute; width: 260px; height: 260px; border: 1px solid #ff9bca10; border-radius: 50%; right: -86px; top: -145px; box-shadow: 0 0 0 24px #ff9bca04, 0 0 0 25px #ff9bca08, 0 0 0 50px #ff9bca03; pointer-events: none; }
-.osu-usage__heading { position: relative; display: flex; align-items: start; justify-content: space-between; gap: 8px; }
-.osu-usage__heading h2 { font-size: 14px; font-weight: 500; margin: 6px 0 0; color: #e0cbdd; }
-.osu-period-label { background: #ff80b413; color: #ffc2dc; border-radius: 5px; padding: 3px 7px; font-size: 10px; white-space: nowrap; }
+.osu-usage__heading { position: relative; display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; }
+.osu-usage__heading h2 { font-size: 16px; font-weight: 600; margin: 0; color: var(--v2-text); }
 .osu-usage__score { display: flex; align-items: end; justify-content: space-between; gap: 16px; margin: 17px 0 18px; }
 .osu-score { font-size: clamp(38px,4.5vw,62px); font-weight: 750; line-height: 1.15; letter-spacing: -2px; font-variant-numeric: tabular-nums; }
 .osu-score > small { font-size: 22px; margin-left: 5px; font-weight: 500; color: #d6bed5; letter-spacing: 0; }
 .osu-score-unit { font-size: 10px; letter-spacing: 1.7px; margin-left: 14px; color: #b998b1; }
 .osu-usage__score p { text-align: right; font-size: 13px; color: #f0d6e9; margin: 0 0 5px; }
-.osu-usage__score p span { display: block; font-size: 10px; color: var(--v2-text-muted); }
 .osu-chart { height: 189px; position: relative; display: grid; grid-template-columns: 44px minmax(0,1fr); gap: 10px; }
 .osu-chart__axis { display: flex; flex-direction: column; justify-content: space-between; padding-bottom: 27px; font-size: 9px; color: var(--v2-text-muted); line-height: 1.4; }
 .osu-chart__bars { min-width: 0; display: grid; grid-template-columns: repeat(var(--bar-count),minmax(0,1fr)); gap: 5px; background: repeating-linear-gradient(to top,transparent 0,transparent 53px,#cba9ca10 54px,transparent 55px); }
@@ -119,8 +107,6 @@ body { font-family: 'Segoe UI', 'Microsoft YaHei', system-ui, sans-serif; }
 .osu-chart__label { display: block; width: 100%; height: 23px; padding-top: 8px; flex-shrink: 0; font-size: 9px; white-space: nowrap; overflow: visible; text-align: center; }
 .osu-chart__caption { min-height: 28px; margin: 9px 0 0; font-size: 10px; color: var(--v2-text-muted); }
 .osu-chart__empty { grid-column: 1/-1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; color: var(--v2-text-muted); background: #ffffff02; border-radius: 12px; }
-.osu-chart__empty > svg { color: var(--v2-accent); }
-.osu-chart__empty > span { font-size: 12px; }
 .osu-usage__breakdown { display: grid; grid-template-columns: repeat(4,minmax(0,1fr)); gap: 14px; padding: 16px 0; border-top: 1px solid #ffffff0b; }
 .osu-usage__breakdown > div { display: grid; gap: 6px; min-width: 0; }
 .osu-usage__breakdown > div > span { display: flex; align-items: center; gap: 4px; font-size: 11px; color: var(--v2-text-muted); }
@@ -162,7 +148,7 @@ body { font-family: 'Segoe UI', 'Microsoft YaHei', system-ui, sans-serif; }
 
 /* Models — same draft and save semantics, focused sections. */
 .models-page { max-width: 1060px; margin-inline: auto; gap: 20px; }
-.models-page > .section-header h2, .logs-page > .section-header h2 { font-size: 27px; font-weight: 750; }
+.models-page > .section-header h2, .logs-page > .section-header h2 { font-size: 21px; font-weight: 750; }
 .models-page > .section-header, .logs-page > .section-header { margin-bottom: 0; }
 .osu-model-summary { display: flex; align-items: center; gap: 16px; padding: 20px 24px; border-radius: 14px; background: linear-gradient(105deg,#462539,#2a2033); border-left: 3px solid #ff66a6; }
 .osu-model-summary__icon { display: grid; place-items: center; width: 46px; height: 46px; color: #ff9bc6; border: 1px solid #ff88b842; border-radius: 50%; box-shadow: 0 0 0 5px #ff66a608; }
@@ -240,7 +226,6 @@ body { font-family: 'Segoe UI', 'Microsoft YaHei', system-ui, sans-serif; }
   .app-shell__nav-group button { min-height: 28px; padding-block: 3px; }
   .app-shell__status { padding-top: 10px; }
   .osu-dashboard { gap: 16px; }
-  .osu-dashboard__intro { min-height: 76px; }
   .osu-chart { height: 150px; }
   .osu-usage__score { margin-block: 12px; }
   .osu-usage__breakdown { padding-block: 12px; }
@@ -270,27 +255,21 @@ body { font-family: 'Segoe UI', 'Microsoft YaHei', system-ui, sans-serif; }
   .app-shell__topbar { padding: 12px 20px; min-height: 56px; }
   .app-shell__mobile-bar { background: #211828; border-bottom-color: #ffffff0a; }
   .app-shell__nav { flex: 1; }
-  .osu-dashboard__intro h2 { font-size: 28px; }
   .app-shell__main { padding: 24px 20px; }
 }
 @media (max-width: 640px) {
   .app-shell__main { padding: 18px 14px; }
   .app-shell__topbar { flex-direction: row; align-items: center; gap: 8px; padding-inline: 14px; }
   .osu-breadcrumb { gap: 8px; }
-  .osu-breadcrumb > span:first-child { display: none; }
-  .osu-breadcrumb > span:nth-child(2) { display: none; }
   .app-shell__topbar-actions { width: auto; gap: 6px; }
   .app-shell__topbar-actions .ui-button { width: auto; }
   .osu-shell-operations > summary { font-size: 11px; padding-inline: 4px; }
   .osu-dashboard { gap: 14px; }
-  .osu-dashboard__intro { align-items: stretch; flex-direction: column; gap: 14px; }
-  .osu-dashboard__period { display: flex; align-items: center; justify-content: space-between; }
-  .osu-dashboard__period > span { font-size: 11px; }
   .osu-session-bar { gap: 8px 15px; padding: 12px; }
   .osu-session-bar > span:nth-child(3) { display: none; }
   .osu-session-bar > .ui-button { margin-left: 0; }
   .osu-usage { padding: 20px 16px 15px; }
-  .osu-usage__heading h2 { font-size: 12px; }
+  .osu-usage__heading h2 { font-size: 14px; }
   .osu-score { font-size: 44px; }
   .osu-score-unit { display: block; margin: 3px 0 0; }
   .osu-chart { height: 155px; grid-template-columns: 30px minmax(0,1fr); gap: 8px; }
@@ -305,8 +284,7 @@ body { font-family: 'Segoe UI', 'Microsoft YaHei', system-ui, sans-serif; }
   .dashboard-controls { grid-template-columns: 1fr; gap: 14px; }
   .ui-segments, .ui-segments button { border-radius: 999px; }
   .ui-segments button { padding-inline: 12px; }
-  .osu-shell-footer { padding-inline: 16px; font-size: 9px; }
-  .models-page > .section-header h2, .logs-page > .section-header h2 { font-size: 23px; }
+  .models-page > .section-header h2, .logs-page > .section-header h2 { font-size: 20px; }
   .models-page > .ui-segments { display: grid; width: 100%; grid-template-columns: 1fr 1fr; border-radius: 12px; }
   .osu-model-summary { padding: 16px; gap: 12px; flex-wrap: wrap; }
   .osu-model-summary strong { font-size: 17px; }
