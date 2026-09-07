@@ -1,9 +1,10 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { Activity, BrainCircuit, Download, MessageSquare, Search, TerminalSquare, Trash2 } from 'lucide-react';
-import { Button, Card, EmptyState, Pill, SectionHeader } from '../../components/ui/index.jsx';
+import { Activity, BrainCircuit, ChevronLeft, ChevronRight, Download, Search, Trash2 } from 'lucide-react';
+import { Button, Card, EmptyState, Pill, SectionHeader, SegmentedControl, Select, StatusBadge } from '../../components/ui/index.jsx';
 import { usePollingResource } from '../../app/polling.js';
 import { api, subscribeRequestTraceStream } from '../../lib/api.js';
 import { correlateChatRecords, requestProgressSnapshot } from './correlation.js';
+import { buildRequestEntries, filterLogEntries } from './explorer.js';
 
 const commandStatusLabels = { ok: '执行成功', denied: '权限拒绝', error: '执行失败', invalid: '参数有误', ignored: '已忽略' };
 const phaseLabels = {
@@ -19,16 +20,23 @@ const traceEventLabels = {
   tool_evidence_returned_to_model: '证据已返回模型',
 };
 
-function matchesSearch(item, query) {
-  return !query || JSON.stringify(item || {}).toLowerCase().includes(query);
-}
-
 export function LogsPage({ db }) {
   const [logSearch, setLogSearch] = useState('');
   const [now, setNow] = useState(() => Date.now());
   const [streamTraces, setStreamTraces] = useState(null);
   const [streamState, setStreamState] = useState('connecting');
   const [streamError, setStreamError] = useState('');
+  const [channel, setChannel] = useState('requests');
+  const [filter, setFilter] = useState('all');
+  const [selectedId, setSelectedId] = useState(null);
+  const [listPage, setListPage] = useState(0);
+  const detailRef = useRef(null);
+  const listRef = useRef(null);
+  useEffect(() => {
+    if (!selectedId) return;
+    detailRef.current?.focus({ preventScroll: true });
+    if (window.matchMedia('(max-width: 640px)').matches) detailRef.current?.scrollIntoView({ block: 'start' });
+  }, [selectedId]);
   useEffect(() => {
     const timer = window.setInterval(() => setNow(Date.now()), 250);
     return () => window.clearInterval(timer);
@@ -59,17 +67,24 @@ export function LogsPage({ db }) {
     { initialData: [], enabled: streamState !== 'connected' },
   );
   const traces = streamTraces ?? traceResource.data ?? [];
-  const traceById = useMemo(() => new Map(traces.map((trace) => [trace.id, trace])), [traces]);
   const chatRows = useMemo(() => correlateChatRecords(
     [...(db.messages || [])].reverse().slice(0, 160),
     [...(db.decisions || [])].reverse().slice(0, 160),
-  ).filter((row) => matchesSearch(row, query)).slice(0, 100), [db.messages, db.decisions, query]);
-  const visibleTraces = traces.filter((trace) => matchesSearch(trace, query)).sort((left, right) => {
-    if (left.status === 'active' && right.status !== 'active') return -1;
-    if (right.status === 'active' && left.status !== 'active') return 1;
-    return new Date(right.startedAt).getTime() - new Date(left.startedAt).getTime();
-  });
-  const commandLogs = [...(db.commandLogs || [])].reverse().filter((log) => matchesSearch(log, query)).slice(0, 100);
+  ), [db.messages, db.decisions]);
+  const requestEntries = useMemo(() => buildRequestEntries(chatRows, traces), [chatRows, traces]);
+  const commandEntries = useMemo(() => [...(db.commandLogs || [])].reverse().slice(0, 100).map(log => ({
+    id: 'command:' + log.id, log, title: (log.command || '未知指令') + ' ' + (log.subCommand || ''),
+    groupId: log.groupId, preview: log.reason || log.errorMessage || log.rawText, at: log.createdAt,
+    status: log.status || 'unknown', duration: log.latencyMs ?? null, tokens: null,
+  })), [db.commandLogs]);
+  const filtered = useMemo(() => filterLogEntries(channel === 'requests' ? requestEntries : commandEntries, filter, query), [channel, requestEntries, commandEntries, filter, query]);
+  const pageSize = 8;
+  const pageCount = Math.max(1, Math.ceil(filtered.length / pageSize));
+  const currentPage = Math.min(listPage, pageCount - 1);
+  const pageEntries = filtered.slice(currentPage * pageSize, (currentPage + 1) * pageSize);
+  const selected = filtered.find(entry => entry.id === selectedId) || pageEntries[0];
+  const selectChannel = value => { setChannel(value); setFilter('all'); setListPage(0); setSelectedId(null); };
+  const selectFilter = value => { setFilter(value); setListPage(0); setSelectedId(null); };
 
   const clearAllContext = async () => {
     if (!window.confirm('清空所有群的聊天上下文、决策日志和指令日志？这不会删除人设、模型、群配置和成员策略。')) return;
@@ -78,12 +93,23 @@ export function LogsPage({ db }) {
   };
 
   return <div className="console-page logs-page">
-    <SectionHeader eyebrow="System / Logs" title="运行日志" description="聊天决策、请求阶段与模型调用实时追踪；追踪只驻留内存，不进入模型上下文。" actions={<><Button icon={Download} onClick={() => { window.location.href = '/api/diagnostics'; }}>导出诊断日志</Button><Button variant="danger-ghost" icon={Trash2} onClick={clearAllContext}>清空全部上下文</Button></>} />
-    <Card className="logs-toolbar"><span className="console-search"><Search size={15} /><input aria-label="搜索日志" placeholder="搜索消息、阶段、模型、指令或 QQ" value={logSearch} onChange={(event) => setLogSearch(event.target.value)} /></span><p>请求追踪：{streamState === 'connected' ? '实时推送已连接' : streamState === 'connecting' ? '正在连接实时推送' : `实时推送断开，10 秒轮询兜底 · ${streamError || '自动重连中'}`}；模型未返回 reasoning 时不会推测。</p></Card>
-    <div className="logs-grid">
-      <LogColumn icon={MessageSquare} title="聊天与决策" count={chatRows.length}>{chatRows.map((row) => <ChatDecisionRow key={`${row.kind}:${row.message?.id || row.decision?.id}`} row={row} trace={traceById.get(row.requestId)} />)}</LogColumn>
-      <LogColumn icon={BrainCircuit} title="请求追踪 / 模型思考" count={visibleTraces.length} subtitle={traceResource.error || (streamState === 'connected' ? '活动请求自动展开 · 事件即时到达' : '实时流重连中 · polling 兜底')}>{visibleTraces.map((trace) => <TraceRow key={trace.id} trace={trace} now={now} />)}</LogColumn>
-      <LogColumn icon={TerminalSquare} title="指令与错误" count={commandLogs.length}>{commandLogs.map((log) => <article className="log-row" key={log.id}><header><strong>{log.command || '未知指令'} {log.subCommand || ''}</strong><Pill tone={log.status === 'ok' ? 'success' : log.status === 'error' || log.status === 'denied' ? 'danger' : 'warning'}>{commandStatusLabels[log.status] || log.status || '指令记录'}</Pill></header><span>{log.groupId} · {log.nickname || log.userId} · {log.userRoleId || 'guest'} · {new Date(log.createdAt).toLocaleString()} · {log.latencyMs || 0}ms</span><p>{log.reason || log.errorMessage || log.rawText}</p>{log.errorMessage && <small>{log.errorName || '错误'}：{log.errorMessage}</small>}</article>)}</LogColumn>
+    <SectionHeader eyebrow="REPLAY / 运行日志" title="回看每一次判断。" description="从消息到回复，把同一次请求的过程放在一起。" actions={<><Button icon={Download} onClick={() => { window.location.href = '/api/diagnostics'; }}>导出诊断</Button><details className="osu-shell-operations"><summary>更多操作</summary><div><Button variant="danger-ghost" icon={Trash2} onClick={clearAllContext}>清空全部上下文</Button></div></details></>} />
+    <div className="osu-log-tabs"><SegmentedControl label="日志分类" value={channel} onChange={selectChannel} options={[{ value: 'requests', label: '会话与请求' }, { value: 'commands', label: '指令与错误' }]} /><StatusBadge tone={streamState === 'connected' ? 'success' : 'warning'}>{streamState === 'connected' ? '实时连接' : '连接恢复中'}</StatusBadge></div>
+    <div className="osu-log-toolbar"><span className="console-search"><Search size={15} /><input aria-label="搜索日志" placeholder="搜索消息、群号、模型或事件…" value={logSearch} onChange={event => { setLogSearch(event.target.value); setListPage(0); setSelectedId(null); }} /></span><Select aria-label="筛选日志" value={filter} onChange={event => selectFilter(event.target.value)} options={[{ value: 'all', label: '全部记录' }, { value: 'failed', label: '失败 / 拒绝' }, { value: 'slow', label: '慢请求 ≥ 30秒' }, ...(channel === 'requests' ? [{ value: 'active', label: '进行中' }, { value: 'silent', label: '未回复' }, { value: 'costly', label: '已记录用量 ≥ 5万' }] : [])]} /></div>
+    {(streamError || traceResource.error) && <p className="osu-inline-warning">实时追踪暂不可用，使用轮询重试：{streamError || traceResource.error}</p>}
+    <div className={'osu-log-workspace' + (selectedId && selected ? ' has-selection' : '')}>
+      <section className="osu-request-list" aria-label="请求列表" ref={listRef} tabIndex={-1}><header><span>最近记录</span><small>{filtered.length} 条匹配 · 每页 {pageSize} 条</small></header>{pageEntries.length ? pageEntries.map(entry => <button type="button" key={entry.id} className={'osu-request-item' + (selected?.id === entry.id ? ' is-selected' : '')} onClick={() => setSelectedId(entry.id)} aria-pressed={selected?.id === entry.id}>
+        <span className="osu-request-item__top"><strong>{entry.title}</strong><Pill tone={entry.status === 'active' ? 'warning' : ['failed','error','denied','invalid'].includes(entry.status) ? 'danger' : ['completed','ok'].includes(entry.status) ? 'success' : 'neutral'}>{entryStatusLabels[entry.status] || entry.status}</Pill></span>
+        <span className="osu-request-item__preview">{entry.preview || '暂无正文'}</span><span className="osu-request-item__meta"><span>{new Date(entry.at).toLocaleString('zh-CN', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false })} · {entry.groupId || '私聊'}</span><span>{entry.tokens == null ? '— Token' : entry.tokens.toLocaleString() + ' Token'}{entry.duration == null ? '' : ' · ' + formatElapsed(entry.duration)}</span></span>
+      </button>) : <EmptyState title="没有匹配的记录" description="试试其他关键词或筛选条件。" />}
+        <footer><Button size="sm" variant="ghost" icon={ChevronLeft} disabled={currentPage === 0} onClick={() => { setListPage(currentPage - 1); setSelectedId(null); }}>上一页</Button><span>{currentPage + 1} / {pageCount}</span><Button size="sm" variant="ghost" icon={ChevronRight} disabled={currentPage + 1 >= pageCount} onClick={() => { setListPage(currentPage + 1); setSelectedId(null); }}>下一页</Button></footer>
+      </section>
+      <Card className="osu-request-detail" aria-label="请求详情" ref={detailRef} tabIndex={-1}><Button className="osu-log-back" variant="ghost" icon={ChevronLeft} onClick={() => { setSelectedId(null); window.requestAnimationFrame(() => { listRef.current?.focus({ preventScroll: true }); listRef.current?.scrollIntoView({ block: 'start' }); }); }}>返回记录列表</Button>{selected ? <><header><span className="osu-eyebrow">REQUEST DETAIL</span><h3>{selected.title}</h3><p>{new Date(selected.at).toLocaleString('zh-CN')} · {selected.groupId || '私聊'}</p></header>
+        {selected.row && <ChatDecisionRow row={selected.row} trace={selected.trace} />}
+        {selected.log && <article className="log-row"><header><strong>{commandStatusLabels[selected.log.status] || '指令记录'}</strong><Pill>{selected.log.nickname || selected.log.userId}</Pill></header><p>{selected.preview}</p><span>{selected.log.userRoleId || 'guest'} · {formatElapsed(selected.log.latencyMs || 0)}</span>{selected.log.errorMessage && <small>{selected.log.errorName || '错误'}：{selected.log.errorMessage}</small>}</article>}
+        {selected.trace ? <><div className="osu-detail-section"><BrainCircuit size={16} /><h4>请求时间线</h4><small>{selected.trace.eventCount ?? selected.trace.events?.length ?? 0} 个事件</small></div><TraceRow key={selected.trace.id} trace={selected.trace} now={now} expanded /></> : !selected.log && <p className="osu-muted">这条记录没有保留可关联的请求追踪。不会按时间或昵称猜测关联。</p>}
+        <p className="osu-log-footnote">Token 为追踪中已记录的模型完成用量，不代替账单；“—”代表未知。原始详情按需展开。</p>
+      </> : <EmptyState title="选择一条记录" description="消息、决策和执行过程会显示在这里。" />}</Card>
     </div>
   </div>;
 }
@@ -91,13 +117,13 @@ export function LogsPage({ db }) {
 function ChatDecisionRow({ row, trace }) {
   const { message, decision } = row;
   return <article className={`log-row chat-decision-row ${!message || !decision ? 'is-unmatched' : ''}`}>
-    <header><strong>{message ? (message.nickname || message.userId) : '未关联的决策'}</strong>{decision ? <Pill tone={decision.shouldReply ? 'success' : 'neutral'}>{decision.shouldReply ? 'Reply' : 'Silent'}</Pill> : <Pill>暂无决策记录</Pill>}</header>
+    <header><strong>{message ? (message.nickname || message.userId) : '未关联的决策'}</strong>{decision ? <Pill tone={decision.shouldReply ? 'success' : 'neutral'}>{decision.shouldReply ? '决定回复' : '未回复'}</Pill> : <Pill>暂无决策记录</Pill>}</header>
     <span>{message?.groupId || decision?.groupId} · {message?.userId || decision?.userId || '未知用户'} · {new Date(message?.createdAt || decision?.createdAt).toLocaleString()}</span>
     {message && <p>{message.content}</p>}
     {message && <div className="chat-context-state"><Pill>{message.inContext === false ? '不进入上下文' : '进入上下文'}</Pill></div>}
     {decision && <div className="decision-inline"><b>{decision.shouldReply ? '为何回复' : '为何沉默'}</b><span>{decision.reason}</span></div>}
     {(row.requestId || message?.sourceMessageId || decision?.messageId) && <code className="trace-id">{row.requestId || `message:${message?.sourceMessageId || decision?.messageId}`}</code>}
-    {trace && <small className="trace-link-state"><Activity size={11} /> {trace.status} · {trace.eventCount} events</small>}
+    {trace && <small className="trace-link-state"><Activity size={11} /> {entryStatusLabels[trace.status] || trace.status} · {trace.eventCount ?? trace.events?.length ?? 0} 个事件</small>}
   </article>;
 }
 
@@ -108,11 +134,13 @@ function formatElapsed(milliseconds) {
   return `${Math.floor(seconds / 60)}m ${seconds % 60}s`;
 }
 
-function TraceRow({ trace, now }) {
+const entryStatusLabels = { active: '进行中', completed: '完成', failed: '失败', silent: '未回复', reply: '决定回复', unknown: '无状态', ...commandStatusLabels };
+
+function TraceRow({ trace, now, expanded = false }) {
   const progress = requestProgressSnapshot(trace, now);
   const phaseName = phaseLabels[progress.phase] || progress.phase;
-  return <details className="log-row trace-row" open={trace.status === 'active'}>
-    <summary><span><strong>{trace.nickname || trace.userId || '请求'}</strong><small>{trace.groupId} · {new Date(trace.startedAt).toLocaleTimeString()}</small></span><span className="trace-row__status"><Pill tone={trace.status === 'failed' ? 'danger' : trace.status === 'completed' ? 'success' : 'warning'}>{trace.status}</Pill>{progress.active && <b>{formatElapsed(progress.elapsedMs)}</b>}</span></summary>
+  return <details className="log-row trace-row" open={expanded || trace.status === 'active'}>
+    <summary><span><strong>{trace.nickname || trace.userId || '请求'}</strong><small>{trace.groupId} · {new Date(trace.startedAt).toLocaleTimeString()}</small></span><span className="trace-row__status"><Pill tone={trace.status === 'failed' ? 'danger' : trace.status === 'completed' ? 'success' : 'warning'}>{entryStatusLabels[trace.status] || trace.status}</Pill>{progress.active && <b>{formatElapsed(progress.elapsedMs)}</b>}</span></summary>
     <code className="trace-id">{trace.id}</code>
     {progress.active && <div className={`trace-live-strip ${progress.longIdle ? 'is-idle' : ''}`}>
       <Activity size={13} />
@@ -160,8 +188,4 @@ function LivePre({ children }) {
     if (element) element.scrollTop = element.scrollHeight;
   }, [children]);
   return <pre ref={elementRef}>{children}</pre>;
-}
-
-function LogColumn({ icon: Icon, title, count, subtitle, children }) {
-  return <Card className="console-section log-column"><div className="console-section__title"><Icon size={18} /><div><h3>{title}</h3><p>{subtitle || `当前显示 ${count} 条`}</p></div></div><div className="console-list log-column__list">{children}{!count && <EmptyState title="暂无记录" />}</div></Card>;
 }
