@@ -13,6 +13,8 @@ Frontend-only refresh, based on `884dd8c` (2026-09-07).
 
 No server, provider transport, credentials, conversation policy or stored configuration changes are required. No new runtime dependencies are added. The overview's new quota read is a status request, not a model invocation.
 
+Copy follow-up: remove promotional slogans, decorative English overlines, the footer signature and redundant UI descriptions across all 14 pages. Use direct functional headings, place the period selector in the usage card, and retain statistical definitions, risk warnings and operational constraints. Keep this cleanup as a separate revertible commit.
+
 ## Verification
 
 `npm run check` includes the new `npm run console:verify` suite. It uses pure fixtures and real React server rendering without a running bot or production database. Existing server checks use their existing isolated fixtures.

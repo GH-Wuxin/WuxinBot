@@ -108,10 +108,10 @@ export function AgentPage({ db }) {
   };
 
   return <div className="console-page agent-page">
-    <SectionHeader eyebrow="Runtime / Agent" title="决策沙盒" description="用真实群配置和上下文检查一次消息会如何进入回复决策；只有开启模型生成时才会调用 LLM。" />
+    <SectionHeader title="决策沙盒" />
     <div className="console-split console-split--agent">
       <Card className="console-section">
-        <div className="console-section__title"><MessageSquareText size={18} /><div><h3>模拟消息</h3><p>输入发言人、消息和临时覆盖条件。</p></div></div>
+        <div className="console-section__title"><MessageSquareText size={18} /><div><h3>模拟消息</h3></div></div>
         <div className="console-form-grid">
           <Select label="群聊" value={groupId} onChange={(event) => setGroupId(event.target.value)} options={groups.length ? groups.map((group) => ({ value: String(group.groupId), label: group.name || String(group.groupId) })) : [{ value: '', label: '无群' }]} />
           <Select label="发言人" value={userId} onChange={(event) => { setNicknameDirty(false); setUserId(event.target.value); }} options={[{ value: '', label: '自定义…' }, ...groupUsers.map((user) => ({ value: String(user.userId), label: displayUserLabel(user) }))]} />
@@ -135,8 +135,8 @@ export function AgentPage({ db }) {
       </Card>
 
       <Card className="console-section agent-result">
-        <div className="console-section__title"><Bot size={18} /><div><h3>运行结果</h3><p>决策、注入上下文与可选回复预览。</p></div></div>
-        {!result ? <EmptyState title="等待一次沙盒运行" description="这里不会使用伪造示例。运行后展示真实 /api/sandbox 返回。" /> : <div className="agent-result__body">
+        <div className="console-section__title"><Bot size={18} /><div><h3>运行结果</h3></div></div>
+        {!result ? <EmptyState title="暂无运行结果" /> : <div className="agent-result__body">
           <div className="agent-result__decision">
             <Pill tone={result.decision?.shouldReply ? 'success' : 'warning'}>{result.decision?.shouldReply ? '会回复' : '不回复'}</Pill>
             <strong>{result.decision?.reason || '未返回原因'}</strong>

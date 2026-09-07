@@ -21,7 +21,7 @@ export function PersonaPage({ db, saveSettings }) {
   };
 
   return <div className="console-page persona-page">
-    <SectionHeader eyebrow="Context / Persona" title="人设与说话方式" description="配置默认 persona 的名字和核心提示词；persona 影响表达方式，不改变 Agent runtime 的执行边界。" />
+    <SectionHeader title="人设与说话方式" />
     <Card className="console-section persona-editor">
       <div className="console-section__title"><Sparkles size={18} /><div><h3>默认人格</h3><p>多个机器人名字使用英文逗号分隔。</p></div></div>
       <Input label="机器人名字" value={draft.botNames || ''} onChange={(event) => updateDraft({ botNames: event.target.value })} />

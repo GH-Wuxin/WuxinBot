@@ -93,7 +93,7 @@ export function LogsPage({ db }) {
   };
 
   return <div className="console-page logs-page">
-    <SectionHeader eyebrow="REPLAY / 运行日志" title="回看每一次判断。" description="从消息到回复，把同一次请求的过程放在一起。" actions={<><Button icon={Download} onClick={() => { window.location.href = '/api/diagnostics'; }}>导出诊断</Button><details className="osu-shell-operations"><summary>更多操作</summary><div><Button variant="danger-ghost" icon={Trash2} onClick={clearAllContext}>清空全部上下文</Button></div></details></>} />
+    <SectionHeader title="运行日志" actions={<><Button icon={Download} onClick={() => { window.location.href = '/api/diagnostics'; }}>导出诊断</Button><details className="osu-shell-operations"><summary>更多操作</summary><div><Button variant="danger-ghost" icon={Trash2} onClick={clearAllContext}>清空全部上下文</Button></div></details></>} />
     <div className="osu-log-tabs"><SegmentedControl label="日志分类" value={channel} onChange={selectChannel} options={[{ value: 'requests', label: '会话与请求' }, { value: 'commands', label: '指令与错误' }]} /><StatusBadge tone={streamState === 'connected' ? 'success' : 'warning'}>{streamState === 'connected' ? '实时连接' : '连接恢复中'}</StatusBadge></div>
     <div className="osu-log-toolbar"><span className="console-search"><Search size={15} /><input aria-label="搜索日志" placeholder="搜索消息、群号、模型或事件…" value={logSearch} onChange={event => { setLogSearch(event.target.value); setListPage(0); setSelectedId(null); }} /></span><Select aria-label="筛选日志" value={filter} onChange={event => selectFilter(event.target.value)} options={[{ value: 'all', label: '全部记录' }, { value: 'failed', label: '失败 / 拒绝' }, { value: 'slow', label: '慢请求 ≥ 30秒' }, ...(channel === 'requests' ? [{ value: 'active', label: '进行中' }, { value: 'silent', label: '未回复' }, { value: 'costly', label: '已记录用量 ≥ 5万' }] : [])]} /></div>
     {(streamError || traceResource.error) && <p className="osu-inline-warning">实时追踪暂不可用，使用轮询重试：{streamError || traceResource.error}</p>}
@@ -104,12 +104,12 @@ export function LogsPage({ db }) {
       </button>) : <EmptyState title="没有匹配的记录" description="试试其他关键词或筛选条件。" />}
         <footer><Button size="sm" variant="ghost" icon={ChevronLeft} disabled={currentPage === 0} onClick={() => { setListPage(currentPage - 1); setSelectedId(null); }}>上一页</Button><span>{currentPage + 1} / {pageCount}</span><Button size="sm" variant="ghost" icon={ChevronRight} disabled={currentPage + 1 >= pageCount} onClick={() => { setListPage(currentPage + 1); setSelectedId(null); }}>下一页</Button></footer>
       </section>
-      <Card className="osu-request-detail" aria-label="请求详情" ref={detailRef} tabIndex={-1}><Button className="osu-log-back" variant="ghost" icon={ChevronLeft} onClick={() => { setSelectedId(null); window.requestAnimationFrame(() => { listRef.current?.focus({ preventScroll: true }); listRef.current?.scrollIntoView({ block: 'start' }); }); }}>返回记录列表</Button>{selected ? <><header><span className="osu-eyebrow">REQUEST DETAIL</span><h3>{selected.title}</h3><p>{new Date(selected.at).toLocaleString('zh-CN')} · {selected.groupId || '私聊'}</p></header>
+      <Card className="osu-request-detail" aria-label="请求详情" ref={detailRef} tabIndex={-1}><Button className="osu-log-back" variant="ghost" icon={ChevronLeft} onClick={() => { setSelectedId(null); window.requestAnimationFrame(() => { listRef.current?.focus({ preventScroll: true }); listRef.current?.scrollIntoView({ block: 'start' }); }); }}>返回记录列表</Button>{selected ? <><header><h3>{selected.title}</h3><p>{new Date(selected.at).toLocaleString('zh-CN')} · {selected.groupId || '私聊'}</p></header>
         {selected.row && <ChatDecisionRow row={selected.row} trace={selected.trace} />}
         {selected.log && <article className="log-row"><header><strong>{commandStatusLabels[selected.log.status] || '指令记录'}</strong><Pill>{selected.log.nickname || selected.log.userId}</Pill></header><p>{selected.preview}</p><span>{selected.log.userRoleId || 'guest'} · {formatElapsed(selected.log.latencyMs || 0)}</span>{selected.log.errorMessage && <small>{selected.log.errorName || '错误'}：{selected.log.errorMessage}</small>}</article>}
-        {selected.trace ? <><div className="osu-detail-section"><BrainCircuit size={16} /><h4>请求时间线</h4><small>{selected.trace.eventCount ?? selected.trace.events?.length ?? 0} 个事件</small></div><TraceRow key={selected.trace.id} trace={selected.trace} now={now} expanded /></> : !selected.log && <p className="osu-muted">这条记录没有保留可关联的请求追踪。不会按时间或昵称猜测关联。</p>}
-        <p className="osu-log-footnote">Token 为追踪中已记录的模型完成用量，不代替账单；“—”代表未知。原始详情按需展开。</p>
-      </> : <EmptyState title="选择一条记录" description="消息、决策和执行过程会显示在这里。" />}</Card>
+        {selected.trace ? <><div className="osu-detail-section"><BrainCircuit size={16} /><h4>请求时间线</h4><small>{selected.trace.eventCount ?? selected.trace.events?.length ?? 0} 个事件</small></div><TraceRow key={selected.trace.id} trace={selected.trace} now={now} expanded /></> : !selected.log && <p className="osu-muted">暂无关联的请求追踪。</p>}
+        <p className="osu-log-footnote">Token 仅统计已保留的模型追踪，非账单；“—”表示未知。</p>
+      </> : <EmptyState title="选择一条记录" />}</Card>
     </div>
   </div>;
 }

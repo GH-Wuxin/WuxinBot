@@ -38,7 +38,7 @@ export function PermissionsPage({ db, saveSettings, refreshState }) {
   const filteredCommands = Object.entries(commandLabels).filter(([key, label]) => !permSearch.trim() || label.includes(permSearch.trim()) || key.includes(permSearch.trim().toLowerCase()));
 
   return <div className="console-page permissions-page">
-    <SectionHeader eyebrow="System / Permissions" title="指令权限" description="定义指令用户组和每条指令需要的最低权限；Owner 永远保留完整权限。" actions={<Button variant="primary" icon={Save} onClick={save} disabled={!dirty}>保存权限设置</Button>} />
+    <SectionHeader title="指令权限" description="Owner 始终保留完整权限。" actions={<Button variant="primary" icon={Save} onClick={save} disabled={!dirty}>保存权限设置</Button>} />
     <div className="permissions-workspace">
       <Card className="console-section permissions-roles">
         <div className="console-section__title"><ShieldCheck size={18} /><div><h3>指令用户组</h3><p>等级越高，权限越大。</p></div></div>

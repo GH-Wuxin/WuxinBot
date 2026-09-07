@@ -95,7 +95,7 @@ export function MemoryPage({ db, saveSettings, refreshState }) {
   };
 
   return <div className="console-page memory-page">
-    <SectionHeader eyebrow="Context / Memory" title="长期记忆" description="管理画像生成参数、已记录对象、人工编辑与最近样本。未保存草稿不会被全局轮询覆盖。" />
+    <SectionHeader title="长期记忆" />
     <SettingGroup title="记忆生成设置" description="Owner 不做自动画像；重点成员会更快沉淀记忆。" actions={<Button size="sm" variant="primary" icon={Save} onClick={saveMemorySettings}>保存设置</Button>}>
       <SettingRow title="启用长期记忆" control={<Switch checked={settingsDraft.memoryEnabled !== false} onChange={(event) => updateSettingsDraft({ memoryEnabled: event.target.checked })} />} />
       <SettingRow title="图片摘要进入长期记忆" description="仅多模态模型" control={<Switch checked={settingsDraft.visionMemoryEnabled !== false} onChange={(event) => updateSettingsDraft({ visionMemoryEnabled: event.target.checked })} />} />

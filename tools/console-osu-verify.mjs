@@ -1,5 +1,6 @@
 // Frontend-only fixtures: never start a bot, log in, or touch the live database.
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { quotaWindows, shortNumber, usageSummary } from '../src/pages/Dashboard/usageView.js';
@@ -8,6 +9,7 @@ import { correlateChatRecords } from '../src/pages/Logs/correlation.js';
 import { DashboardPage } from '../src/pages/Dashboard/index.jsx';
 import { ModelsPage } from '../src/pages/Models/index.jsx';
 import { LogsPage } from '../src/pages/Logs/index.jsx';
+import { AppShell } from '../src/components/layout/AppShell.jsx';
 import { SegmentedControl, SettingRow, Select, Switch } from '../src/components/ui/index.jsx';
 
 const point = { start: '2026-09-07T00:00:00Z', label: '08:00', promptTokens: 1000, completionTokens: 20, totalTokens: 1020, cachedTokens: 75, cacheMeasuredPromptTokens: 100, requests: 2 };
@@ -83,3 +85,20 @@ assert.match(render(SegmentedControl, { value: 'a', onChange: noop, options: [{ 
 assert.match(render(SettingRow, { title: '接口供应商', control: React.createElement(Select, { options: [] }) }), /aria-label="接口供应商"/);
 assert.match(render(SettingRow, { title: '自动降级', control: React.createElement(Switch, { checked: true, onChange: noop }) }), /aria-label="自动降级"/);
 console.log('PASS real React page rendering, preserved model sections, empty logs and accessible controls');
+
+const shell = render(AppShell, { page: 'overview', db, oneBot: {}, onNavigate: noop, onPauseToggle: noop, onStopAll: noop });
+assert.doesNotMatch(shell, /always in rhythm|CONTROL ROOM|made for the community|osu-shell-footer/);
+assert.match(shell, /暂停机器人/);
+assert.match(shell, /停止后台操作/);
+assert.match(overview, /Token 用量/);
+assert.match(overview, /Token 统计周期/);
+assert.match(overview, /缓存命中率只使用可观测输入/);
+assert.match(overview, /账号额度与本地 Token 用量是两个口径/);
+assert.doesNotMatch(overview, /osu-dashboard__intro|掌握每一拍|一眼看清|迹可循|选择这一拍|什么时候加入聊天/);
+for (const page of ['Agent', 'Dashboard', 'Groups', 'Integrations', 'Logs', 'Maintenance', 'Members', 'Memory', 'Models', 'Osu', 'Permissions', 'Persona', 'ProfileLogs', 'Relationships']) {
+  const source = readFileSync(new URL(`../src/pages/${page}/index.jsx`, import.meta.url), 'utf8');
+  assert.doesNotMatch(source, /eyebrow="|YOUR BOT, IN RHYTHM|找到合适的聊天节奏|回看每一次判断|每一次对话，都有迹可循|一眼看清|REQUEST DETAIL/, `${page}: no decorative copy`);
+}
+assert.match(readFileSync(new URL('../src/pages/Groups/index.jsx', import.meta.url), 'utf8'), /这些操作会清理或永久删除已有数据/);
+assert.match(readFileSync(new URL('../src/pages/Models/index.jsx', import.meta.url), 'utf8'), /图片理解需要实际多模态模型支持/);
+console.log('PASS decorative copy removed across 14 pages; functional controls and warnings retained');

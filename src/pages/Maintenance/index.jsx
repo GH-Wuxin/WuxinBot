@@ -5,7 +5,7 @@ import { api } from '../../lib/api.js';
 
 export function MaintenancePage() {
   return <div className="console-page maintenance-page">
-    <SectionHeader eyebrow="System / Maintenance" title="维护与恢复" description="重算画像、创建备份或恢复数据库；高风险操作保留确认步骤。" />
+    <SectionHeader title="维护与恢复" />
     <RecalcPanel />
     <BackupsPanel />
   </div>;

@@ -93,10 +93,10 @@ export function MembersPage({ db, refreshState }) {
   const commandRoleOptions = [{ value: '', label: '自动（按成员策略）' }, ...(db.settings.commandRoles || []).map((role) => ({ value: role.id, label: `${role.name} Lv.${role.level}` }))];
 
   return <div className="console-page members-page">
-    <SectionHeader eyebrow="Context / Members" title="成员策略" description="为特定群成员设置回应策略、注意力和指令权限；没有策略的成员继续使用群默认行为。" />
+    <SectionHeader title="成员策略" description="未设置的成员沿用群默认策略。" />
     <div className="members-workspace">
       <Card className="console-section members-editor">
-        <div className="console-section__title"><UserRoundCog size={18} /><div><h3>{form.userId ? '编辑成员策略' : '添加成员策略'}</h3><p>保存后写入现有 users 数据。</p></div></div>
+        <div className="console-section__title"><UserRoundCog size={18} /><div><h3>{form.userId ? '编辑成员策略' : '添加成员策略'}</h3></div></div>
         <div className="console-form-grid">
           <Input label="群号" value={form.groupId || ''} onChange={(event) => setForm({ ...form, groupId: event.target.value })} />
           <Input label="用户 QQ 号" value={form.userId || ''} onChange={(event) => setForm({ ...form, userId: event.target.value })} />
@@ -112,7 +112,7 @@ export function MembersPage({ db, refreshState }) {
       </Card>
 
       <Card className="console-section members-list-panel">
-        <div className="console-section__title"><ShieldCheck size={18} /><div><h3>已设置成员 · {users.length}</h3><p>筛选只影响当前视图。</p></div></div>
+        <div className="console-section__title"><ShieldCheck size={18} /><div><h3>已设置成员 · {users.length}</h3></div></div>
         <div className="console-toolbar members-toolbar">
           <span className="console-search"><Search size={15} /><input aria-label="搜索成员" placeholder="搜索昵称、QQ 或备注" value={search} onChange={(event) => setSearch(event.target.value)} /></span>
           <Select value={filterGroup} onChange={(event) => setFilterGroup(event.target.value)} options={groupOptions} />
