@@ -11,13 +11,14 @@ const payload=buildSkillProfilerCardPayload(analysis,{beatmap:{difficulty_rating
 assert.equal(payload.coverUrl,'https://assets.ppy.sh/beatmaps/1946744/covers/fullsize.jpg');
 assert.deepEqual(payload.mods,['HD','DT','PF']);assert.equal(payload.stars,8.765);assert.equal(payload.nomodStars,7.42);
 const html=buildMapSkillCardHtml(payload);
-assert.match(html,/osu! 原星数/);assert.match(html,/>8\.77</);assert.match(html,/NM 7\.42★/);assert.match(html,/HDDTPF/);
+assert.match(html,/OSU! ORIGINAL STAR/);assert.match(html,/>8\.77</);assert.match(html,/NM 7\.42★/);assert.match(html,/HDDTPF/);
 assert.match(html,/10\.4/);assert.doesNotMatch(html,/<script>/);
 assert.equal((html.match(/class="lane-label"/g)||[]).length,9,'all nine axes have evidence lanes');
-assert.match(html,/多项局部证据重合|局部证据/);
+assert.match(html,/OVERLAPPING SUPPORT|LOCAL EVIDENCE/);
 const missing=buildSkillProfilerCardPayload(analysis);
 assert.equal(missing.stars,null,'NM stars never masquerade as played Mod stars');
-assert.match(buildMapSkillCardHtml(missing),/原星数暂不可用/);
+assert.match(buildMapSkillCardHtml(missing),/OSU! ORIGINAL STAR/);
+assert.match(buildMapSkillCardHtml(missing),/>—</);
 const nm=buildSkillProfilerCardPayload({...analysis,mod_context:{effective_mods:[]}});
 assert.equal(nm.stars,7.42);
 const sparse=buildSkillProfilerCardPayload({...analysis,beatmap:{beatmap_id:1},analysis_context:{},key_sections:undefined});

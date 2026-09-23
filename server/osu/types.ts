@@ -13,6 +13,9 @@ export interface OsuUser {
   avatar_url: string;
   cover_url?: string;
   is_online: boolean;
+  is_active?: boolean;
+  is_deleted?: boolean;
+  last_visit?: string | null;
   playstyle?: string[];
   join_date: string;
   statistics: OsuUserStats;

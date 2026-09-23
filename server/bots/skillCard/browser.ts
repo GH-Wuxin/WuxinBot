@@ -49,7 +49,7 @@ async function render(html:string):Promise<Buffer>{
   try{
     fs.writeFileSync(file,html,'utf8');
     const browser=await getBrowser();
-    context=await browser.newContext({viewport:{width:1200,height:2400},deviceScaleFactor:1,javaScriptEnabled:false,serviceWorkers:'block'});
+    context=await browser.newContext({viewport:{width:1280,height:720},deviceScaleFactor:1,javaScriptEnabled:false,serviceWorkers:'block'});
     // All remote media is fetched and validated by the shared image cache.
     await context.route(/^https?:/,route=>route.abort());
     const page=await context.newPage();
@@ -65,7 +65,7 @@ async function render(html:string):Promise<Buffer>{
       }
     });
     const box=await page.locator('.sheet').boundingBox();
-    if(!box||box.width!==1200||box.height>5000)throw Error('SKILL_CARD_LAYOUT_INVALID');
+    if(!box||Math.round(box.width)!==1280||Math.round(box.height)!==720)throw Error('SKILL_CARD_LAYOUT_INVALID');
     return await page.locator('.sheet').screenshot({type:'png',animations:'disabled'});
   }finally{
     await context?.close();
