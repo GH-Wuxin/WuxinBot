@@ -5,6 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import sharp from 'sharp';
 import {
+  buildPlayerSkillComparisonSvg,
   playerProfileTitlePresentation,
   renderPlayerSkillComparisonCard,
   renderPlayerSkillProfileCard,
@@ -38,7 +39,27 @@ const side = (username, colorOffset) => ({
   },
 });
 
-const png = await renderPlayerSkillComparisonCard({ left: side('LeftPlayer', 0), right: side('RightPlayer', 20), limit: 50 });
+const comparisonPayload = { left: side('LeftPlayer', 0), right: side('RightPlayer', 200), limit: 50 };
+const svg = buildPlayerSkillComparisonSvg(comparisonPayload);
+assert.match(svg,/data-design="tier-radar-v2"/);
+assert.match(svg,/class="comparison-radar"/);
+assert.equal((svg.match(/class="axis-value"/g)||[]).length,9,'comparison radar shows all nine fixed dimensions');
+assert.match(svg,/data-axis-label="spatial_precision"/,'comparison preserves the Spatial Precision label');
+assert.match(svg,/data-unit="independent"/,'Stamina and Endurance retain independent /10 units');
+assert.match(svg,/RightPlayer leads/,'the summary names the leading player rather than a generic profile lean');
+const leftRadarColor = svg.match(/data-left-color="([^"]+)"/)?.[1];
+const rightRadarColor = svg.match(/data-right-color="([^"]+)"/)?.[1];
+assert.match(svg,new RegExp(`<text[^>]*fill="${rightRadarColor}"[^>]*>\\+2\\.0</text>`),'positive deltas use the right-player tier color');
+assert.match(svg,/r="39"[^>]*stroke-width="1\.7"/,'comparison avatars use the enlarged profile-card size');
+assert.doesNotMatch(svg,/TIER [IVX]+ · [A-Z]+<\/text><text[^>]*>[^<]+<\/text>/,'tier label is not packed beside the player name');
+assert.doesNotMatch(svg,/维度领先|势均力敌|Largest meaningful gap|dimensions are close|comparisonRows|comparisonBars/i);
+assert.doesNotMatch(svg,/<linearGradient id="compare-bg"/,'comparison uses the restrained graphite surface');
+assert.notEqual(leftRadarColor,rightRadarColor,'player radar accents come from their different Tiers');
+const closePayload = { left: side('LeftPlayer', 0), right: side('RightPlayer', 0), limit: 50 };
+const closeSvg = buildPlayerSkillComparisonSvg(closePayload);
+assert.match(closeSvg,/Overall close/);
+assert.equal((closeSvg.match(/Overall close/g)||[]).length,1,'close summary is not duplicated');
+const png = await renderPlayerSkillComparisonCard(comparisonPayload);
 assert.ok(png.length > 10_000, `comparison PNG should be non-trivial, got ${png.length} bytes`);
 assert.deepEqual([...png.subarray(0, 8)], [137, 80, 78, 71, 13, 10, 26, 10]);
 assert.deepEqual(
@@ -94,7 +115,9 @@ try {
   assert.ok(retryPng.length > 10_000);
   assert.equal(avatarAttempts, 2, 'avatar download should retry once after a transient HTTP failure');
   const cacheFiles = fs.readdirSync(path.join(testDataDir, 'player-skill-image-cache'));
-  const cached = JSON.parse(fs.readFileSync(path.join(testDataDir, 'player-skill-image-cache', cacheFiles[0]), 'utf8'));
+  const cacheEntries = cacheFiles.map((file) => JSON.parse(fs.readFileSync(path.join(testDataDir, 'player-skill-image-cache', file), 'utf8')));
+  const cached = cacheEntries.find((entry) => entry.url === avatarUrl);
+  assert.ok(cached, 'successful avatar retry should be cached under the requested URL');
   assert.match(cached.dataUrl, /^data:image\/png;base64,/, 'PNG signature must override a misleading image/jpeg response header');
 } finally {
   globalThis.fetch = originalFetch;
