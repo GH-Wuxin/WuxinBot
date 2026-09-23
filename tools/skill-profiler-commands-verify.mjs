@@ -155,26 +155,48 @@ try {
     target: { kind: 'named_bp', username: '970', rank: 20 },
     mods: [],
   });
+  assert.deepEqual(parseSkillCommandRequest('p:[Tong Tong] 20'), {
+    ok: true,
+    target: { kind: 'named_bp', username: 'Tong Tong', rank: 20 },
+    mods: [],
+  });
+  assert.deepEqual(parseSkillCommandRequest('p:[[SHK]Hina] 20'), {
+    ok: true,
+    target: { kind: 'named_bp', username: '[SHK]Hina', rank: 20 },
+    mods: [],
+  });
   assert.deepEqual(parsePlayerSkillProfileRequest('profile'), { matched: true, player: '' });
   assert.deepEqual(parsePlayerSkillProfileRequest('profile mrekk'), { matched: true, player: 'mrekk' });
   assert.deepEqual(parsePlayerSkillProfileRequest('profile p:[970]'), { matched: true, player: '970' });
+  assert.deepEqual(parsePlayerSkillProfileRequest('profile p:[Tong Tong]'), { matched: true, player: 'Tong Tong' });
+  assert.deepEqual(parsePlayerSkillProfileRequest('profile p:[[SHK]Hina]'), { matched: true, player: '[SHK]Hina' });
   assert.deepEqual(parsePlayerSkillProfileRequest('mrekk 20'), { matched: false });
   assert.deepEqual(parsePlayerRecentSkillRequest('recent'), { matched: true, player: '' });
   assert.deepEqual(parsePlayerRecentSkillRequest('recent mrekk'), { matched: true, player: 'mrekk' });
   assert.deepEqual(parsePlayerRecentSkillRequest('recent p:[970]'), { matched: true, player: '970' });
+  assert.deepEqual(parsePlayerRecentSkillRequest('recent p:[Tong Tong]'), { matched: true, player: 'Tong Tong' });
+  assert.deepEqual(parsePlayerRecentSkillRequest('recent p:[[SHK]Hina]'), { matched: true, player: '[SHK]Hina' });
   assert.deepEqual(parsePlayerSkillComparisonRequest('compare mrekk [TST]Bravo'), {
     matched: true, left: 'mrekk', right: '[TST]Bravo',
   });
   assert.deepEqual(parsePlayerSkillComparisonRequest('compare p:[970] mrekk'), {
     matched: true, left: '970', right: 'mrekk',
   });
+  assert.deepEqual(parsePlayerSkillComparisonRequest('compare p:[[SHK]Hina] p:[Tong Tong]'), {
+    matched: true, left: '[SHK]Hina', right: 'Tong Tong',
+  });
+  assert.deepEqual(parsePlayerSkillComparisonRequest('compare mrekk p:[Team [Blue] Player]'), {
+    matched: true, left: 'mrekk', right: 'Team [Blue] Player',
+  });
   assert.match(parsePlayerSkillComparisonRequest('compare mrekk | yourenegg').error, /空格/);
-  assert.match(parsePlayerSkillComparisonRequest('compare Player With Spaces mrekk').error, /p:\[玩家ID\]/);
+  assert.match(parsePlayerSkillComparisonRequest('compare Player With Spaces mrekk').error, /p:\[完整玩家名或ID\]/);
+  assert.match(parsePlayerSkillComparisonRequest('compare p:[] mrekk').error, /完整玩家名或ID/);
+  assert.match(parsePlayerSkillComparisonRequest('compare p:[unclosed mrekk').error, /完整玩家名或ID/);
   assert.match(parsePlayerSkillComparisonRequest('compare mrekk').error, /玩家A/);
 
   const helpEntries = (await import('../server/bot/owner/help.ts')).ownerHelpEntries();
-  assert.ok(helpEntries.some((entry) => entry.canonicalSyntax.includes('/w skill profile [玩家名]')));
-  assert.ok(helpEntries.some((entry) => entry.canonicalSyntax.includes('recent [玩家名')));
+  assert.ok(helpEntries.some((entry) => entry.canonicalSyntax.includes('/w skill profile [玩家名或 p:[完整玩家名或ID]]')));
+  assert.ok(helpEntries.some((entry) => entry.canonicalSyntax.includes('recent [玩家名或 p:[完整玩家名或ID]]')));
   assert.ok(helpEntries.some((entry) => entry.canonicalSyntax.includes('compare <玩家A>')));
   assert.ok(helpEntries.some((entry) => entry.canonicalSyntax === '/w cd <BID> [+Mods] <反馈>'));
 
