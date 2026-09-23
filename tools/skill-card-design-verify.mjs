@@ -7,20 +7,30 @@ const rows=[1,2,3].map(rank=>({rank,beatmapId:rank,weight:1,mods:['HD'],accuracy
 const profile={profileStatus:'RATED',profileTier:'EXPERT',profileArchetype:'FLOW',profileType:'Flow Aim',axes};
 const payload={player:{username:'Fixture <&>',countryCode:'HK',globalRank:1,countryRank:1,pp:10000},profile,rows,sample:{valid:3,requested:50,failed:47,modCounts:[{mods:'HD',count:3}]}};
 const html=buildPlayerSkillCardHtml(payload);
-assert.match(html,/中国香港/);assert.match(html,/OSU! STANDARD<i>·<\/i>HK/);
+assert.match(html,/lang="en"/);assert.match(html,/OSU! STANDARD · HK/);
 assert.match(html,/Fixture &lt;&amp;&gt;/);assert.doesNotMatch(html,/<script>/);
 assert.match(html,/99\.50/,'backend ACC is percent, not a fraction');
-assert.match(html,/WORLD NO\. 1/);assert.match(html,/class="rank-crown"/);assert.match(html,/Flow Rider/);
+assert.match(html,/SKILL RATING/);assert.match(html,/TIER IX · DIAMOND/);assert.match(html,/Flow Rider/);
 assert.doesNotMatch(html,/>紫晶<|>辉金<|MAIN_PLUS_SUPPORT|contribution/);
-assert.equal((html.match(/class="skill-row /g)||[]).length,7);
-for(const [code,label] of [['MO','中国澳门'],['TW','中国台湾'],['DE','德国']])assert.ok(buildPlayerSkillCardHtml({...payload,player:{...payload.player,countryCode:code}}).includes(label));
+assert.equal((html.match(/class="skill-radar"/g)||[]).length,1);
+assert.match(html,/WEIGHTED P80/);assert.match(html,/WEIGHTED P50/);
+assert.match(html,/--paper:#/);assert.match(html,/--rule-soft:#/);
+assert.doesNotMatch(html,/class="activity-note"/,'active/ranked cards do not gain an inactivity label');
+const inactiveHtml=buildPlayerSkillCardHtml({...payload,player:{...payload.player,isActive:false,isRanked:false,lastVisit:'2026-02-17T14:00:44+00:00',globalRank:null,countryRank:null,pp:0}});
+assert.match(inactiveHtml,/UNRANKED · 0 pp · —%/);
+assert.match(inactiveHtml,/class="activity-note"><b>INACTIVE<\/b><span>LAST VISIT · FEB 2026<\/span><\/div>/);
+const deletedHtml=buildPlayerSkillCardHtml({...payload,player:{...payload.player,isActive:false,isRanked:false,isDeleted:true}});
+assert.doesNotMatch(deletedHtml,/class="activity-note"/,'deleted accounts are not presented as inactive players');
+const invalidVisitHtml=buildPlayerSkillCardHtml({...payload,player:{...payload.player,isActive:false,isRanked:false,lastVisit:'not-a-date'}});
+assert.match(invalidVisitHtml,/class="activity-note"><b>INACTIVE<\/b><\/div>/,'invalid last-visit dates are omitted');
+for(const code of ['MO','TW','DE'])assert.ok(buildPlayerSkillCardHtml({...payload,player:{...payload.player,countryCode:code}}).includes(`OSU! STANDARD · ${code}`));
 const metadata={...profile,rows,player:{statistics:{global_rank:1}}};
 for(const [rank,honor] of [[1,'first'],[3,'top10'],[51,'top100'],[748,'top1000'],[6427,undefined]]){
   const view=ratingPresentation({...metadata,player:{statistics:{global_rank:rank}}});
   assert.equal(view.honor?.key,honor);
 }
 const insufficient=buildPlayerSkillCardHtml({...payload,profile:{...profile,profileStatus:'INSUFFICIENT_EVIDENCE'}});
-assert.match(insufficient,/样本不足 · 暂未评级/);assert.match(insufficient,/TIER —/);
+assert.match(insufficient,/UNRATED/);assert.doesNotMatch(insufficient,/TIER —/);
 const ezhd=ratingPresentation({...metadata,profileArchetype:'READING',rows:rows.map(r=>({...r,mods:['EZ','HD']}))});
 assert.equal(ezhd.specialty?.label,'EZHD · Pattern Seeker');
 for(const [tier,title] of [['PLAYER','Snapper'],['EXPERT','Snap Ace'],['WORLD_CLASS','Ballistic Virtuoso']]){
@@ -32,7 +42,7 @@ assert.equal(ratingPresentation({...metadata,profileStatus:'INSUFFICIENT_EVIDENC
 assert.equal(ratingPresentation({...metadata,profileTier:'BEGINNER'}).specialty,null);
 assert.equal(ratingPresentation({...metadata,profileArchetype:'READING',profileTier:'WORLD_CLASS',rows:rows.map(r=>({...r,mods:['EZ','HD']}))}).specialty?.label,'EZHD · Perception Savant');
 assert.match(buildPlayerSkillCardHtml({...payload,profile:{...profile,profileArchetype:'AIM',profileTier:'WORLD_CLASS',profileTitle:'GOD OF AIM'}}),/Aiming Ascendant/,'cached title text must not bypass the current catalog');
-assert.match(buildPlayerSkillCardHtml({...payload,profile:{...profile,profileTier:'BEGINNER'}}),/Rookie · BP 画像/);
+assert.match(buildPlayerSkillCardHtml({...payload,profile:{...profile,profileTier:'BEGINNER'}}),/Rookie/);
 assert.equal(ratingPresentation({...metadata,profileTier:'WORLD_CLASS',rows:rows.slice(0,2)}).title,null,'fallback text cannot bypass specialty evidence');
 const baseline=compositeCandidate(axes);
 assert.ok(baseline.total>=baseline.main&&baseline.total<=baseline.main*1.2);
