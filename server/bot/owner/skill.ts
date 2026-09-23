@@ -39,36 +39,76 @@ export type PlayerSkillComparisonRequest =
   | { matched: true; left: ''; right: ''; error: string }
   | { matched: false };
 
+type ExplicitPlayerReference = { player: string; end: number };
+
+function readExplicitPlayerReference(value: string, start = 0): ExplicitPlayerReference | null {
+  const raw = String(value || '');
+  if (raw.slice(start, start + 3).toLowerCase() !== 'p:[') return null;
+  let depth = 1;
+  for (let index = start + 3; index < raw.length; index++) {
+    if (raw[index] === '[') depth++;
+    else if (raw[index] === ']') {
+      depth--;
+      if (depth === 0) {
+        const player = raw.slice(start + 3, index).trim();
+        if (!player || (index + 1 < raw.length && !/\s/.test(raw[index + 1]))) return null;
+        return { player, end: index + 1 };
+      }
+    }
+  }
+  return null;
+}
+
 function unwrapExplicitPlayer(value: string): string {
   const raw = String(value || '').trim();
-  return String(/^p:\[(\d+)\]$/i.exec(raw)?.[1] || raw).trim();
+  const explicit = readExplicitPlayerReference(raw);
+  return explicit?.end === raw.length ? explicit.player : raw;
+}
+
+function comparisonPlayers(body: string): string[] | null {
+  const players: string[] = [];
+  let index = 0;
+  while (index < body.length) {
+    while (index < body.length && /\s/.test(body[index])) index++;
+    if (index >= body.length) break;
+    const explicit = readExplicitPlayerReference(body, index);
+    if (body.slice(index, index + 3).toLowerCase() === 'p:[') {
+      if (!explicit) return null;
+      players.push(explicit.player);
+      index = explicit.end;
+    } else {
+      const start = index;
+      while (index < body.length && !/\s/.test(body[index])) index++;
+      players.push(body.slice(start, index));
+    }
+    if (players.length > 2) return null;
+  }
+  return players.length === 2 ? players : null;
 }
 
 export function parsePlayerSkillProfileRequest(value: string): PlayerSkillProfileRequest {
   const match = /^profile(?:\s+([\s\S]+))?$/i.exec(String(value || '').trim());
   if (!match) return { matched: false };
   const raw = String(match[1] || '').trim();
-  const explicit = /^p:\[(\d+)\]$/i.exec(raw);
-  return { matched: true, player: String(explicit?.[1] || raw).trim() };
+  return { matched: true, player: unwrapExplicitPlayer(raw) };
 }
 
 export function parsePlayerRecentSkillRequest(value: string): PlayerRecentSkillRequest {
   const match = /^recent(?:\s+([\s\S]+))?$/i.exec(String(value || '').trim());
   if (!match) return { matched: false };
   const raw = String(match[1] || '').trim();
-  const explicit = /^p:\[(\d+)\]$/i.exec(raw);
-  return { matched: true, player: String(explicit?.[1] || raw).trim() };
+  return { matched: true, player: unwrapExplicitPlayer(raw) };
 }
 
 export function parsePlayerSkillComparisonRequest(value: string): PlayerSkillComparisonRequest {
   const raw = String(value || '').trim();
   if (!/^compare(?:\s|$)/i.test(raw)) return { matched: false };
   const body = raw.replace(/^compare\s*/i, '');
-  const players = /^((?:p:\[\d+\])|(?:\S+))\s+((?:p:\[\d+\])|(?:\S+))$/i.exec(body);
-  const left = unwrapExplicitPlayer(String(players?.[1] || ''));
-  const right = unwrapExplicitPlayer(String(players?.[2] || ''));
+  const players = comparisonPlayers(body);
+  const left = String(players?.[0] || '');
+  const right = String(players?.[1] || '');
   if (!left || !right) {
-    return { matched: true, left: '', right: '', error: '用法：/w skill compare <玩家A> <玩家B>；玩家名含空格时请改用 p:[玩家ID]，例如 /w skill compare mrekk p:[970]。' };
+    return { matched: true, left: '', right: '', error: '用法：/w skill compare <玩家A> <玩家B>；名字含空格或方括号时可用 p:[完整玩家名或ID]，例如 /w skill compare [SHK]Hina p:[Tong Tong]。' };
   }
   return { matched: true, left, right };
 }
@@ -107,12 +147,15 @@ export function parseSkillCommandRequest(value: string): SkillCommandRequest {
   let target: SkillCommandTarget | null = numericTarget;
   let mods: string[] | null = numericMatch?.[2] === undefined ? [] : parseExplicitMods(numericMatch[2]);
   if (!numericMatch) {
-    const explicitPlayerMatch = /^p:\[([^\]]+)\](?:\s+(\d+))?$/i.exec(raw);
-    const namedBpMatch = explicitPlayerMatch ? null : /^(.+?)\s+(\d+)$/.exec(raw);
-    const username = String(explicitPlayerMatch?.[1] || namedBpMatch?.[1] || '').trim();
-    const rank = explicitPlayerMatch && explicitPlayerMatch[2] === undefined
-      ? 1
-      : Number(explicitPlayerMatch?.[2] || namedBpMatch?.[2] || 0);
+    const explicitPlayer = readExplicitPlayerReference(raw);
+    const explicitSuffix = explicitPlayer ? raw.slice(explicitPlayer.end).trim() : '';
+    const validExplicitPlayer = explicitPlayer && (!explicitSuffix || /^\d+$/.test(explicitSuffix)) ? explicitPlayer : null;
+    const malformedExplicit = /^p:\[/i.test(raw) && !validExplicitPlayer;
+    const namedBpMatch = validExplicitPlayer || malformedExplicit ? null : /^(.+?)\s+(\d+)$/.exec(raw);
+    const username = String(validExplicitPlayer?.player || namedBpMatch?.[1] || '').trim();
+    const rank = validExplicitPlayer
+      ? Number(explicitSuffix || 1)
+      : Number(namedBpMatch?.[2] || 0);
     if (username && Number.isSafeInteger(rank) && rank >= 1 && rank <= MAX_BP_RANK) {
       target = { kind: 'named_bp', username, rank };
       mods = [];
