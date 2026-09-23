@@ -59,6 +59,11 @@ const closePayload = { left: side('LeftPlayer', 0), right: side('RightPlayer', 0
 const closeSvg = buildPlayerSkillComparisonSvg(closePayload);
 assert.match(closeSvg,/Overall close/);
 assert.equal((closeSvg.match(/Overall close/g)||[]).length,1,'close summary is not duplicated');
+assert.equal(closeSvg.match(/data-left-tier-color="([^"]+)"/)?.[1],closeSvg.match(/data-right-tier-color="([^"]+)"/)?.[1],'same-tier players retain one shared Tier identity color');
+assert.notEqual(closeSvg.match(/data-left-color="([^"]+)"/)?.[1],closeSvg.match(/data-right-color="([^"]+)"/)?.[1],'same-tier comparison series still have distinct player colors');
+assert.match(closeSvg,/data-marker="circle"/,'left radar series uses circle markers');
+assert.match(closeSvg,/data-marker="diamond"/,'right radar series uses diamond markers');
+assert.match(closeSvg,/class="profile-series right"[^>]*stroke-dasharray="5 3"/,'right radar outline is dashed to remain distinguishable');
 const png = await renderPlayerSkillComparisonCard(comparisonPayload);
 assert.ok(png.length > 10_000, `comparison PNG should be non-trivial, got ${png.length} bytes`);
 assert.deepEqual([...png.subarray(0, 8)], [137, 80, 78, 71, 13, 10, 26, 10]);
