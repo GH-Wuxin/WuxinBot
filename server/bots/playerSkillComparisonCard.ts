@@ -155,6 +155,40 @@ function profileSide(side: any): any {
   };
 }
 
+function shiftColorLightness(hex: string, amount: number): string {
+  const channels = [1, 3, 5].map((offset) => parseInt(hex.slice(offset, offset + 2), 16) / 255);
+  const max = Math.max(...channels), min = Math.min(...channels), delta = max - min;
+  const lightness = (max + min) / 2;
+  const saturation = delta === 0 ? 0 : delta / (1 - Math.abs(2 * lightness - 1));
+  let hue = 0;
+  if (delta !== 0) {
+    if (max === channels[0]) hue = 60 * (((channels[1] - channels[2]) / delta) % 6);
+    else if (max === channels[1]) hue = 60 * ((channels[2] - channels[0]) / delta + 2);
+    else hue = 60 * ((channels[0] - channels[1]) / delta + 4);
+    if (hue < 0) hue += 360;
+  }
+  const shiftedLightness = Math.max(.48, Math.min(.88, lightness + amount));
+  const chroma = (1 - Math.abs(2 * shiftedLightness - 1)) * saturation;
+  const huePart = hue / 60;
+  const x = chroma * (1 - Math.abs(huePart % 2 - 1));
+  const rgb = huePart < 1 ? [chroma, x, 0]
+    : huePart < 2 ? [x, chroma, 0]
+      : huePart < 3 ? [0, chroma, x]
+        : huePart < 4 ? [0, x, chroma]
+          : huePart < 5 ? [x, 0, chroma]
+            : [chroma, 0, x];
+  const match = shiftedLightness - chroma / 2;
+  return `#${rgb.map((channel) => Math.round((channel + match) * 255).toString(16).padStart(2, '0')).join('')}`;
+}
+
+function comparisonColors(left: any, right: any): {left: string; right: string} {
+  if (left.tier?.level === right.tier?.level) {
+    const base = left.radarColor;
+    return {left: shiftColorLightness(base, -.11), right: shiftColorLightness(base, .10)};
+  }
+  return {left: left.radarColor, right: right.radarColor};
+}
+
 function tierRoman(level: unknown): string {
   return ['I', 'II', 'III', 'IV', 'V', 'VI', 'VII', 'VIII', 'IX', 'X', 'XI', 'XII'][Math.max(0, Math.min(11, Math.round(finite(level, 1)) - 1))];
 }
@@ -166,7 +200,7 @@ function comparisonAvatar(dataUrl: string, cx: number, cy: number, clipId: strin
   return `<circle cx="${cx}" cy="${cy}" r="39" fill="#1c2223" stroke="${color}" stroke-width="1.7"/>${image}`;
 }
 
-function comparisonPlayerHeader(side: any, placement: 'left' | 'right', avatar: string): string {
+function comparisonPlayerHeader(side: any, placement: 'left' | 'right', avatar: string, playerColor: string): string {
   const {player, sample, tier, color} = side;
   const left = placement === 'left';
   const avatarX = left ? 61 : 786;
@@ -174,10 +208,11 @@ function comparisonPlayerHeader(side: any, placement: 'left' | 'right', avatar: 
   const y = 137;
   const username = compact(player.username || `osu! ${player.osuId || '?'}`, 25);
   const tierName = tier?.en || 'UNRATED';
-  const avatarMarkup = comparisonAvatar(avatar, avatarX, 140, left ? 'compare-avatar-left' : 'compare-avatar-right', color, player.username);
-  const name = text(username, nameX, y, 18, {fill: '#e7e4dc', weight: 700});
-  const metadata = text(`${String(player.countryCode || '—').toUpperCase()} · GLOBAL ${rank(player.globalRank)} · ${pp(player.pp)}pp · ${number(player.accuracy, 2)}%`, nameX, 156, 9.5, {fill: color, weight: 600});
-  const sampleLine = text(`${tier ? `TIER ${tierRoman(tier.level)} · ${tierName}` : 'INSUFFICIENT EVIDENCE'} · BP50 ${finite(sample.valid)}/${finite(sample.requested, 50)} VALID`, nameX, 172, 8, {fill: '#7e8984', spacing: .35});
+  const avatarMarkup = comparisonAvatar(avatar, avatarX, 140, left ? 'compare-avatar-left' : 'compare-avatar-right', playerColor, player.username);
+  const name = text(username, nameX, y, 18, {fill: playerColor, weight: 700});
+  const metadata = text(`${String(player.countryCode || '—').toUpperCase()} · GLOBAL ${rank(player.globalRank)} · ${pp(player.pp)}pp · ${number(player.accuracy, 2)}%`, nameX, 156, 9.5, {fill: playerColor, weight: 600});
+  const tierText = tier ? `<tspan fill="#7e8984">TIER ${tierRoman(tier.level)} · </tspan><tspan fill="${color}">${esc(tierName)}</tspan>` : `<tspan fill="${color}">INSUFFICIENT EVIDENCE</tspan>`;
+  const sampleLine = `<text x="${nameX}" y="172" fill="#7e8984" font-size="8" font-weight="500" letter-spacing=".35">${tierText}<tspan fill="#7e8984"> · BP50 ${finite(sample.valid)}/${finite(sample.requested, 50)} VALID</tspan></text>`;
   return `${avatarMarkup}${name}${metadata}${sampleLine}`;
 }
 
@@ -208,13 +243,14 @@ function comparisonRadar(axes: any[], leftColor: string, rightColor: string): st
   }).join('');
   const series = (key: 'left' | 'right', color: string): string => {
     const points = axes.map((axis, index) => axis[key] === null ? null : radarPoint(axis[key], maxima[index], index, cx, cy, radius));
+    const dash = key === 'right' ? ' stroke-dasharray="5 3"' : '';
     if (points.every((point) => point !== null)) {
-      return `<polygon class="profile-series ${key}" data-series="${key}" points="${points.map((point) => `${point!.x.toFixed(1)},${point!.y.toFixed(1)}`).join(' ')}" fill="${color}" fill-opacity=".12" stroke="${color}" stroke-width="2" stroke-linejoin="round"/>`;
+      return `<polygon class="profile-series ${key}" data-series="${key}" points="${points.map((point) => `${point!.x.toFixed(1)},${point!.y.toFixed(1)}`).join(' ')}" fill="${color}" fill-opacity=".10" stroke="${color}" stroke-width="2" stroke-linejoin="round"${dash}/>`;
     }
     return points.map((point, index) => {
       const next = (index + 1) % points.length;
       if (!point || !points[next]) return '';
-      return `<line class="profile-series ${key}" data-series="${key}" x1="${point.x.toFixed(1)}" y1="${point.y.toFixed(1)}" x2="${points[next]!.x.toFixed(1)}" y2="${points[next]!.y.toFixed(1)}" stroke="${color}" stroke-width="2"/>`;
+      return `<line class="profile-series ${key}" data-series="${key}" x1="${point.x.toFixed(1)}" y1="${point.y.toFixed(1)}" x2="${points[next]!.x.toFixed(1)}" y2="${points[next]!.y.toFixed(1)}" stroke="${color}" stroke-width="2"${dash}/>`;
     }).join('');
   };
   const leftShape = series('left', leftColor);
@@ -222,12 +258,13 @@ function comparisonRadar(axes: any[], leftColor: string, rightColor: string): st
   const leftDots = axes.map((axis, index) => {
     if (axis.left === null) return '';
     const point = radarPoint(axis.left, maxima[index], index, cx, cy, radius);
-    return `<circle class="radar-dot left" cx="${point.x.toFixed(1)}" cy="${point.y.toFixed(1)}" r="3.5" fill="${leftColor}" stroke="#273031" stroke-width="1.3"/>`;
+    return `<circle class="radar-dot left" data-marker="circle" cx="${point.x.toFixed(1)}" cy="${point.y.toFixed(1)}" r="3.8" fill="${leftColor}" stroke="#273031" stroke-width="1.3"/>`;
   }).join('');
   const rightDots = axes.map((axis, index) => {
     if (axis.right === null) return '';
     const point = radarPoint(axis.right, maxima[index], index, cx, cy, radius);
-    return `<circle class="radar-dot right" cx="${point.x.toFixed(1)}" cy="${point.y.toFixed(1)}" r="3.5" fill="${rightColor}" stroke="#273031" stroke-width="1.3"/>`;
+    const x = point.x, y = point.y, markerRadius = 4.5;
+    return `<polygon class="radar-dot right" data-marker="diamond" points="${x.toFixed(1)},${(y - markerRadius).toFixed(1)} ${(x + markerRadius).toFixed(1)},${y.toFixed(1)} ${x.toFixed(1)},${(y + markerRadius).toFixed(1)} ${(x - markerRadius).toFixed(1)},${y.toFixed(1)}" fill="${rightColor}" stroke="#273031" stroke-width="1.3"/>`;
   }).join('');
   const labels = axes.map((axis, index) => {
     const angle = -Math.PI / 2 + index * Math.PI * 2 / axes.length;
@@ -294,18 +331,19 @@ export function buildPlayerSkillComparisonSvg(payload: Record<string, any>, left
   const leftPlayer = left.player;
   const rightPlayer = right.player;
   const axes = comparisonAxes(payload.left || {}, payload.right || {});
-  const signal = comparisonSignal(axes, leftPlayer.username || 'Left player', rightPlayer.username || 'Right player', left.radarColor, right.radarColor);
+  const colors = comparisonColors(left, right);
+  const signal = comparisonSignal(axes, leftPlayer.username || 'Left player', rightPlayer.username || 'Right player', colors.left, colors.right);
   const defs = `<clipPath id="compare-avatar-left"><circle cx="61" cy="140" r="34"/></clipPath><clipPath id="compare-avatar-right"><circle cx="786" cy="140" r="34"/></clipPath><style>text{font-family:"Segoe UI","Arial",sans-serif;font-variant-numeric:tabular-nums}</style>`;
   return `<?xml version="1.0" encoding="UTF-8"?>
-<svg xmlns="http://www.w3.org/2000/svg" width="${WIDTH}" height="${HEIGHT}" viewBox="0 0 ${WIDTH} ${HEIGHT}" data-design="tier-radar-v2" data-left-tier="${left.tier?.level || 0}" data-right-tier="${right.tier?.level || 0}" data-left-color="${left.radarColor}" data-right-color="${right.radarColor}">
+<svg xmlns="http://www.w3.org/2000/svg" width="${WIDTH}" height="${HEIGHT}" viewBox="0 0 ${WIDTH} ${HEIGHT}" data-design="tier-radar-v2" data-left-tier="${left.tier?.level || 0}" data-right-tier="${right.tier?.level || 0}" data-left-color="${colors.left}" data-right-color="${colors.right}" data-left-tier-color="${left.color}" data-right-tier-color="${right.color}">
 <defs>${defs}</defs><rect width="${WIDTH}" height="${HEIGHT}" fill="#1c2223"/><rect x="20" y="20" width="1240" height="680" fill="#273031" stroke="#303836" stroke-width=".7"/>
 ${text('Skill Profiler', 42, 46, 10, {fill: '#e7e4dc', weight: 650})}${text('PLAYER COMPARISON', 42, 72, 23, {fill: '#e7e4dc', weight: 700, spacing: 1.2})}${text('BP50 PROFILE  /  INDEPENDENT VIEW', 43, 89, 8, {fill: '#a0a5a0', spacing: .65})}${text('PROFILE COMPARISON', 1238, 46, 7, {anchor: 'end', fill: '#6e7773', weight: 650, spacing: 1})}${text('9 DIMENSIONS', 1238, 62, 7, {anchor: 'end', fill: '#acdafb', weight: 650, spacing: .8})}
 <line x1="43" y1="100" x2="1238" y2="100" stroke="#657272" stroke-width=".7"/>
-${comparisonPlayerHeader(left, 'left', leftAvatar)}<line x1="493" y1="118" x2="493" y2="168" stroke="#657272" stroke-width=".7"/><circle cx="514" cy="143" r="3.2" fill="${signal.color}"/>${text(signal.label, 528, 146, 9.5, {fill: signal.color, weight: 650, spacing: .4})}<line x1="746" y1="118" x2="746" y2="168" stroke="#657272" stroke-width=".7"/>${comparisonPlayerHeader(right, 'right', rightAvatar)}
+${comparisonPlayerHeader(left, 'left', leftAvatar, colors.left)}<line x1="493" y1="118" x2="493" y2="168" stroke="#657272" stroke-width=".7"/><circle cx="514" cy="143" r="3.2" fill="${signal.color}"/>${text(signal.label, 528, 146, 9.5, {fill: signal.color, weight: 650, spacing: .4})}<line x1="746" y1="118" x2="746" y2="168" stroke="#657272" stroke-width=".7"/>${comparisonPlayerHeader(right, 'right', rightAvatar, colors.right)}
 <line x1="43" y1="186" x2="1238" y2="186" stroke="#657272" stroke-opacity=".65" stroke-width=".7"/>
 ${text('PLAYER SKILL PROFILE', 43, 209, 8.5, {fill: '#a0a5a0', weight: 650, spacing: 1})}${text('Δ = RIGHT − LEFT', 1238, 209, 7.5, {anchor: 'end', fill: '#6e7773', weight: 600, spacing: .65})}<line x1="43" y1="233" x2="1238" y2="233" stroke="#657272" stroke-opacity=".5" stroke-width=".7"/><line x1="714" y1="249" x2="714" y2="649" stroke="#657272" stroke-width=".7"/>
-${comparisonRadar(axes, left.radarColor, right.radarColor)}${comparisonReadout(axes, left.radarColor, right.radarColor)}
-<line x1="43" y1="670" x2="1238" y2="670" stroke="#657272" stroke-opacity=".55" stroke-width=".7"/>${text(compact(leftPlayer.username || 'Left player', 22), 43, 689, 8, {fill: left.radarColor, weight: 650})}${text(compact(rightPlayer.username || 'Right player', 22), 1238, 689, 8, {anchor: 'end', fill: right.radarColor, weight: 650})}${text('BP50  ·  SCORE QUALITY ADJUSTED  ·  |Δ| < 0.15 = CLOSE', 640, 689, 7, {anchor: 'middle', fill: '#6e7773', weight: 600, spacing: .45})}
+${comparisonRadar(axes, colors.left, colors.right)}${comparisonReadout(axes, colors.left, colors.right)}
+<line x1="43" y1="670" x2="1238" y2="670" stroke="#657272" stroke-opacity=".55" stroke-width=".7"/>${text(compact(leftPlayer.username || 'Left player', 22), 43, 689, 8, {fill: colors.left, weight: 650})}${text(compact(rightPlayer.username || 'Right player', 22), 1238, 689, 8, {anchor: 'end', fill: colors.right, weight: 650})}${text('BP50  ·  SCORE QUALITY ADJUSTED  ·  |Δ| < 0.15 = CLOSE', 640, 689, 7, {anchor: 'middle', fill: '#6e7773', weight: 600, spacing: .45})}
 </svg>`;
 }
 
