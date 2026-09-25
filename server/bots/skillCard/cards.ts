@@ -1,9 +1,10 @@
 import fs from 'node:fs';
+import sharp from 'sharp';
 import {ratingPresentation,RATING_TIERS} from './presentation.js';
 import {imageDataUrl} from './images.js';
 import {renderSkillCardHtml,skillCardFontFace} from './browser.js';
 
-export const SKILL_CARD_DESIGN_VERSION='PROFILE_20260922_RADAR_16X9_V1';
+export const SKILL_CARD_DESIGN_VERSION='PROFILE_20260925_RADAR_16X9_V2_COVER_TINT';
 
 const esc=(value:unknown)=>String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const numeric=(value:unknown):number|null=>value===null||value===undefined||value===''||!Number.isFinite(Number(value))?null:Number(value);
@@ -49,16 +50,16 @@ function radarPolygon(values:number[],maxima:number[],cx:number,cy:number,radius
   }).join(' ');
 }
 
-function radarSvg(source:any,mode:'player'|'map',accent:string,level=5):string{
+function radarSvg(source:any,mode:'player'|'map',accent:string,level=5,unified=false,valueAccent=accent):string{
   const primary=allKeys.map(key=>axisValue(source,key,mode==='player'?'ceiling':'stars'));
   const secondary=mode==='player'?allKeys.map(key=>axisValue(source,key,'median')):[];
-  const coreValues=[...primary.slice(0,7),...secondary.slice(0,7)].filter((value):value is number=>value!==null);
+  const coreValues=(unified ? primary : [...primary.slice(0,7),...secondary.slice(0,7)]).filter((value):value is number=>value!==null);
   const max=Math.max(10,Math.ceil(Math.max(0,...coreValues)*1.08*2)/2);
   // These are display frames, not a common validated difficulty scale. The two
   // bounded indices keep their own 0–10 frame even when core values exceed 10.
-  const maxima=allKeys.map(key=>defs[key].unit==='independent'?10:max);
+  const maxima=allKeys.map(key=>unified?max:defs[key].unit==='independent'?10:max);
   const width=620,height=456,cx=310,cy=224,radius=157,labelRadius=202;
-  const muted='#aeb5ad',grid='#55605a',panel='#202624',textColor='#e7e4dc';
+  const muted='var(--muted)',grid='var(--rule)',panel='var(--panel)',textColor='#e7e4dc';
   const rings=[0.25,0.5,0.75,1].map(ratio=>`<polygon points="${radarPolygon(maxima.map(value=>value*ratio),maxima,cx,cy,radius)}" fill="none" stroke="${grid}" stroke-opacity="${ratio===1?.62:.25}" stroke-width="${ratio===1?1.4:1}"/>`).join('');
   const spokes=allKeys.map((_,index)=>{
     const point=radarPoint(index,maxima[index],maxima[index],cx,cy,radius);
@@ -87,12 +88,16 @@ function radarSvg(source:any,mode:'player'|'map',accent:string,level=5):string{
     const anchor=Math.cos(angle)>.22?'start':Math.cos(angle)<-.22?'end':'middle';
     const yOffset=Math.sin(angle)<-.65?-4:Math.sin(angle)>.65?8:4;
     const valueText=mode==='player'
-      ? `<tspan fill="${accent}">${n(primary[index])}</tspan><tspan fill="${muted}"> / ${n(secondary[index])}</tspan>`
-      : `<tspan fill="${accent}">${n(primary[index])}</tspan>`;
-    const labelFill=d.unit==='independent'?muted:textColor;
-    return `<g data-axis-label="${key}" data-unit="${d.unit==='independent'?'/10':'star'}">${text(Number(x.toFixed(1)),Number((y+yOffset).toFixed(1)),d.label,18,labelFill,600,anchor)}<text x="${x.toFixed(1)}" y="${(y+yOffset+23).toFixed(1)}" text-anchor="${anchor}" font-size="17" font-weight="650">${valueText}<tspan fill="${muted}" font-size="12">${d.unit==='independent'?' · /10':' ★'}</tspan></text></g>`;
+      ? `<tspan fill="${valueAccent}">${n(primary[index])}</tspan><tspan fill="${muted}"> / ${n(secondary[index])}</tspan>`
+      : `<tspan fill="${valueAccent}">${n(primary[index])}</tspan>`;
+    const independent=!unified&&d.unit==='independent';
+    const labelFill=independent?muted:textColor;
+    return `<g data-axis-label="${key}" data-unit="${independent?'/10':'star'}">${text(Number(x.toFixed(1)),Number((y+yOffset).toFixed(1)),d.label,18,labelFill,600,anchor)}<text x="${x.toFixed(1)}" y="${(y+yOffset+23).toFixed(1)}" text-anchor="${anchor}" font-size="17" font-weight="650">${valueText}<tspan fill="${muted}" font-size="12">${independent?' · /10':' ★'}</tspan></text></g>`;
   }).join('');
-  return `<svg class="skill-radar" data-core-max="${max}" data-index-max="10" viewBox="0 0 ${width} ${height}" role="img" aria-label="${esc(mode==='player'?'Player skill radar':'Beatmap demand radar')}"><desc>Display-only radar. Core frame 0–${max} stars; Stamina and Endurance frame 0–10. Different units; polygon area is not an overall rating. Missing evidence stays blank.</desc><g>${rings}${spokes}${secondaryPolygon}${primaryPolygon}${secondaryDots}${primaryDots}${labels}</g></svg>`;
+  const description=unified
+    ? `Display-only radar. All nine axes use the attached unified star-equivalent scale; polygon area is not an overall rating. Missing evidence stays blank.`
+    : `Display-only radar. Core frame 0–${max} stars; Stamina and Endurance frame 0–10. Different units; polygon area is not an overall rating. Missing evidence stays blank.`;
+  return `<svg class="skill-radar" data-core-max="${max}" data-index-max="10" viewBox="0 0 ${width} ${height}" role="img" aria-label="${esc(mode==='player'?'Player skill radar':'Beatmap demand radar')}"><desc>${description}</desc><g>${rings}${spokes}${secondaryPolygon}${primaryPolygon}${secondaryDots}${primaryDots}${labels}</g></svg>`;
 }
 
 const brand=(label:string)=>`<div class="brand"><b>Skill Profiler</b><span>${esc(label)}</span></div>`;
@@ -114,6 +119,89 @@ function mixHex(left:string,right:string,amount:number){
   const a=[1,3,5].map(offset=>parseInt(left.slice(offset,offset+2),16));
   const b=[1,3,5].map(offset=>parseInt(right.slice(offset,offset+2),16));
   return '#'+a.map((value,index)=>Math.round(value*(1-amount)+b[index]*amount).toString(16).padStart(2,'0')).join('');
+}
+
+export type MapSkillCardTheme={paper:string;panel:string;rule:string;ruleSoft:string;coverTint:string;contrastTint:string};
+
+const DEFAULT_MAP_THEME:MapSkillCardTheme={
+  paper:'#1a1d22',
+  panel:'#23262b',
+  rule:'#3c4148',
+  ruleSoft:'#30353c',
+  coverTint:'#71847c',
+  contrastTint:'#8bc3ca',
+};
+
+const clamp=(value:number,min=0,max=1)=>Math.max(min,Math.min(max,value));
+
+function rgbToHsl(red:number,green:number,blue:number){
+  const r=red/255,g=green/255,b=blue/255;
+  const max=Math.max(r,g,b),min=Math.min(r,g,b),delta=max-min;
+  const lightness=(max+min)/2;
+  if(delta===0)return {hue:0,saturation:0,lightness};
+  const saturation=delta/(1-Math.abs(2*lightness-1));
+  let hue=max===r?(g-b)/delta:max===g?(b-r)/delta+2:(r-g)/delta+4;
+  hue=(hue/6+1)%1;
+  return {hue,saturation,lightness};
+}
+
+function hslToHex(hue:number,saturation:number,lightness:number){
+  const h=((hue%1)+1)%1,s=clamp(saturation),l=clamp(lightness);
+  const channel=(n:number)=>{
+    const k=(n+h*12)%12;
+    const value=l-s*Math.min(l,1-l)*Math.max(-1,Math.min(k-3,9-k,1));
+    return Math.round(255*value).toString(16).padStart(2,'0');
+  };
+  return '#'+channel(0)+channel(8)+channel(4);
+}
+
+function rgbToHex(red:number,green:number,blue:number){
+  return '#'+[red,green,blue].map(value=>Math.round(clamp(value/255)*255).toString(16).padStart(2,'0')).join('');
+}
+
+/** Keep the cover's hue, but use it as a restrained tint rather than a full-bleed image palette. */
+export function mapSkillCardThemeFromColor(red:number,green:number,blue:number):MapSkillCardTheme{
+  const {hue,saturation}=rgbToHsl(red,green,blue);
+  const tintSaturation=Math.min(.82,saturation*.9+.18);
+  const coverTint=hslToHex(hue,tintSaturation,.61);
+  const contrastTint=hslToHex(hue+.5,tintSaturation,.61);
+  return {
+    // The page remains a shared neutral charcoal. The beatmap only contributes
+    // a restrained atmospheric tint through --cover-tint in map.css.
+    paper:'#1a1d22',
+    panel:'#23262b',
+    rule:'#3c4148',
+    ruleSoft:'#30353c',
+    coverTint,
+    contrastTint,
+  };
+}
+
+/** Extract a weighted cover hue from a tiny image; dark/white cover borders do not dominate it. */
+export async function mapSkillCardThemeFromImageDataUrl(dataUrl:string):Promise<MapSkillCardTheme>{
+  if(!dataUrl)return DEFAULT_MAP_THEME;
+  const encoded=dataUrl.match(/^data:image\/(?:jpeg|jpg|png|webp);base64,(.+)$/s)?.[1];
+  if(!encoded)return DEFAULT_MAP_THEME;
+  try{
+    const {data,info}=await sharp(Buffer.from(encoded,'base64'))
+      .resize(32,32,{fit:'cover'})
+      .removeAlpha()
+      .raw()
+      .toBuffer({resolveWithObject:true});
+    let red=0,green=0,blue=0,totalWeight=0;
+    const channels=info.channels||3;
+    for(let index=0;index+channels-1<data.length;index+=channels){
+      const r=data[index],g=data[index+1]??r,b=data[index+2]??r;
+      const {saturation,lightness}=rgbToHsl(r,g,b);
+      if(lightness<.035||lightness>.97)continue;
+      const weight=.75+saturation*1.35;
+      red+=r*weight;green+=g*weight;blue+=b*weight;totalWeight+=weight;
+    }
+    if(!totalWeight)return DEFAULT_MAP_THEME;
+    return mapSkillCardThemeFromColor(red/totalWeight,green/totalWeight,blue/totalWeight);
+  }catch{
+    return DEFAULT_MAP_THEME;
+  }
 }
 
 function tierBackground(level:number,tierColor:string){
@@ -214,19 +302,24 @@ function evidenceExtra(value:unknown){
 
 function mapTimeline(evidence:any[],end:number):string{
   const x=(value:number)=>105+Math.min(end,Math.max(0,value))/end*420;
-  const lanes=evidence.map((item:any,index:number)=>{const d=defs[item.key],y=15+index*16;return `<text x="0" y="${y+4}" class="lane-label">${esc(d.label)}</text><line x1="105" x2="525" y1="${y}" y2="${y}" stroke="#3a4541"/>${item.available?`<rect x="${x(finite(item.start))}" y="${y-4}" width="${Math.max(4,x(finite(item.end))-x(finite(item.start)))}" height="8" rx="2" fill="${d.color}"/><circle cx="${x(finite(item.start))}" cy="${y}" r="2.8" fill="${d.color}"/>`:`<text x="300" y="${y+4}" text-anchor="middle" class="timeline-empty">NO EVIDENCE</text>`}`;}).join('');
+  const lanes=evidence.map((item:any,index:number)=>{const d=defs[item.key],y=15+index*16;return `<text x="0" y="${y+4}" class="lane-label">${esc(d.label)}</text><line x1="105" x2="525" y1="${y}" y2="${y}" stroke="var(--rule-soft)"/>${item.available?`<rect x="${x(finite(item.start))}" y="${y-4}" width="${Math.max(4,x(finite(item.end))-x(finite(item.start)))}" height="8" rx="2" fill="${d.color}"/><circle cx="${x(finite(item.start))}" cy="${y}" r="2.8" fill="${d.color}"/>`:`<text x="300" y="${y+4}" text-anchor="middle" class="timeline-empty">NO EVIDENCE</text>`}`;}).join('');
   const ticks=Array.from({length:5},(_,index)=>index*end/4);
-  return `<svg class="multi-timeline" viewBox="0 0 560 180" role="img" aria-label="Key evidence timeline"><g>${ticks.map((tick,index)=>`<line x1="${x(tick)}" x2="${x(tick)}" y1="6" y2="154" stroke="#4a554f" stroke-opacity=".55" stroke-dasharray="2 5"/><text x="${x(tick)}" y="174" text-anchor="${index===0?'start':index===4?'end':'middle'}">${time(tick)}</text>`).join('')}</g>${lanes}</svg>`;
+  return `<svg class="multi-timeline" viewBox="0 0 560 180" role="img" aria-label="Key evidence timeline"><g>${ticks.map((tick,index)=>`<line x1="${x(tick)}" x2="${x(tick)}" y1="6" y2="154" stroke="var(--rule)" stroke-opacity=".55" stroke-dasharray="2 5"/><text x="${x(tick)}" y="174" text-anchor="${index===0?'start':index===4?'end':'middle'}">${time(tick)}</text>`).join('')}</g>${lanes}</svg>`;
 }
 
-function mapPage(payload:any,background:string){
+function mapPage(payload:any,background:string,theme:MapSkillCardTheme=DEFAULT_MAP_THEME){
   const analysis=payload.analysis||{};
   const official=payload.official||{};
   const axes=analysis.axes||{};
+  const unified=analysis.unified_measurements||{};
+  const unifiedAttached=unified.status==='ATTACHED';
+  const displayAxes=unifiedAttached
+    ? Object.fromEntries(allKeys.map(key=>[key,{...(axes[key]||{}),stars:axisValue(axes,key,'unified_star_equivalent'),unit:'star'}]))
+    : axes;
   const artist=String(analysis.beatmap?.artist||'').toUpperCase();
   const creator=String(analysis.beatmap?.creator||'').toUpperCase();
   const mods=Array.isArray(payload.mods)&&payload.mods.length?payload.mods:['NM'];
-  const lead=[...allKeys].sort((left,right)=>axisValue(axes,right,'stars')-axisValue(axes,left,'stars'));
+  const lead=[...allKeys].sort((left,right)=>(axisValue(displayAxes,right,'stars')??-Infinity)-(axisValue(displayAxes,left,'stars')??-Infinity));
   const topDef=defs[lead[0]]||defs.flow_aim;
   const diff=analysis.analysis_context?.effective_difficulty||analysis.analysis_context?.difficulty||{};
   const duration=finite(analysis.analysis_context?.duration_ms);
@@ -239,17 +332,18 @@ function mapPage(payload:any,background:string){
   const version=String(analysis.beatmap?.version||'');
   const starText=originalStars===null||originalStars===undefined?'—':Number(originalStars).toFixed(2);
   const stats=[['BPM',Number(finite(analysis.analysis_context?.bpm_max)).toFixed(1)],['CS',n(diff.CircleSize)],['AR',n(diff.ApproachRate)],['OD',n(diff.OverallDifficulty)],['LENGTH',time(duration)],['OBJECTS',fmt(analysis.beatmap?.metadata?.counts?.objects||0)]];
-  return {top:topDef.key,evidence,groups,originalStars,officialSource:official,html:`<main class="sheet radar-sheet map-sheet" style="--accent:${topDef.color}">
+  const leadValue=axisValue(displayAxes,topDef.key,'stars');
+  return {top:topDef.key,evidence,groups,originalStars,officialSource:official,html:`<main class="sheet radar-sheet map-sheet" style="--paper:${theme.paper};--panel:${theme.panel};--rule:${theme.rule};--rule-soft:${theme.ruleSoft};--cover-tint:${theme.coverTint};--contrast-tint:${theme.contrastTint};--accent:${topDef.color}">
     <header class="page-header">
       ${brand('BEATMAP PROFILE')}
       <div class="map-top"><div class="map-cover-frame">${background?`<img class="map-cover" src="${background}" alt="">`:''}</div><div class="map-copy"><div class="eyebrow">${esc(artist)} · MAPPED BY ${esc(creator)}</div><h1>${esc(title)}</h1><div class="difficulty-name">[${esc(version)}]</div><div class="map-id-line"><span>BID ${esc(analysis.beatmap?.beatmap_id||'—')}</span>${mods.map((mod:string)=>`<span class="mod">${esc(mod)}</span>`).join('')}</div></div><div class="star-stat"><span>OSU! ORIGINAL STAR</span><b>${esc(starText)}<em>★</em></b><small>${mods.join('')||'NM'}${mods.length&&Number.isFinite(Number(payload.nomodStars))?` · NM ${Number(payload.nomodStars).toFixed(2)}★`:''}</small></div></div>
       <div class="map-stats">${stats.map(([key,value])=>`<div><span>${key}</span><b>${value}</b></div>`).join('')}</div>
     </header>
     <div class="page-grid">
-      <section class="radar-panel"><div class="panel-head"><b>MAP DEMAND</b><span>${esc(mods.join('')||'NM')} · 9 DIMENSIONS</span></div><div class="lead-line"><span>PRIMARY DEMAND</span><b style="color:${topDef.color}">${esc(topDef.label)}</b><strong style="color:${topDef.color}">${n(axisValue(axes,topDef.key,'stars'))}</strong></div>${radarSvg(axes,'map',topDef.color)}<div class="unit-note">Core skill dimensions use equivalent star ratings. Stamina / Endurance remain independent /10 indices.</div></section>
+      <section class="radar-panel"><div class="panel-head"><b>MAP DEMAND</b><span>${esc(mods.join('')||'NM')} · 9 DIMENSIONS</span></div><div class="lead-line"><span>PRIMARY DEMAND</span><b style="color:${topDef.color}">${esc(topDef.label)}</b><strong style="color:${topDef.color}">${n(leadValue)}${unifiedAttached?'★':''}</strong></div>${radarSvg(displayAxes,'map',theme.contrastTint,5,unifiedAttached,theme.coverTint)}<div class="unit-note">${unifiedAttached?'All nine axes use the attached unified star-equivalent scale.':'Core skill dimensions use equivalent star ratings. Stamina / Endurance remain independent /10 indices.'}</div></section>
       <section class="detail-panel"><div class="evidence-head">${section('KEY EVIDENCE',`${groups.length} sections`)}</div>${mapTimeline(evidence,maxEnd)}<div class="timeline-note"><span>SHORT · LOCAL EVIDENCE</span><span>LONG · SUSTAINED SUPPORT</span></div><div class="key-cards">${cards||'<div class="no-evidence">No complete-map evidence available</div>'}</div><div class="detail-note"><span>Experimental demand analysis · ${analysis.identity?.map_demand_version||'v1.0.1'}</span><span>${analysis.warnings?.length?'WARNINGS PRESENT':'NO WARNINGS'}</span></div></section>
     </div>
-    ${foot('BEATMAP PROFILE · EXPERIMENTAL DEMAND',`${topDef.label} ${n(axisValue(axes,topDef.key,'stars'))}★`)}
+    ${foot(`BEATMAP PROFILE · ${unifiedAttached?'UNIFIED STAR DEMAND':'V0.40 DEMAND'}`,`${topDef.label} ${n(leadValue)}★`)}
   </main>`};
 }
 
@@ -258,7 +352,7 @@ const mapCss=fs.readFileSync(new URL('./map.css',import.meta.url),'utf8');
 const document=(body:string,kind:'player'|'map')=>`<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=1280"><style>${skillCardFontFace()}${kind==='player'?playerCss:mapCss}</style></head><body>${body}</body></html>`;
 
 export const buildPlayerSkillCardHtml=(payload:any,avatar='')=>document(playerPage(payload,avatar).html,'player');
-export const buildMapSkillCardHtml=(payload:any,background='')=>document(mapPage(payload,background).html,'map');
+export const buildMapSkillCardHtml=(payload:any,background='',theme:MapSkillCardTheme=DEFAULT_MAP_THEME)=>document(mapPage(payload,background,theme).html,'map');
 
 export async function renderPlayerSkillProfileCard(payload:any):Promise<Buffer>{
   const avatar=await imageDataUrl(payload.player?.avatarUrl,payload.player?.osuId);
@@ -267,5 +361,6 @@ export async function renderPlayerSkillProfileCard(payload:any):Promise<Buffer>{
 
 export async function renderMapSkillCard(payload:any):Promise<Buffer>{
   const background=await imageDataUrl(payload.coverUrl);
-  return renderSkillCardHtml(buildMapSkillCardHtml(payload,background));
+  const theme=await mapSkillCardThemeFromImageDataUrl(background);
+  return renderSkillCardHtml(buildMapSkillCardHtml(payload,background,theme));
 }

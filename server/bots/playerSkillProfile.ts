@@ -3,6 +3,7 @@ import { getUserBestScores, getUserById } from '../osu/api.js';
 import { normalizedScoreMods } from '../osu/scoreMetrics.js';
 import {
   getSkillProfilerIdentity,
+  skillProfilerAxisValue,
   requestSkillProfilerAnalysisCachedWithFetch,
   type SkillProfilerIdentity,
 } from './skillProfiler.js';
@@ -107,6 +108,7 @@ export interface AnalyzedBp {
   scoreQuality?: ScoreAchievementQuality;
   axes: Record<PlayerSkillAxis, number>;
   demandAxes?: Record<PlayerSkillAxis, number>;
+  demandScale?: 'unified' | 'v040_axis' | 'mixed';
   primaryType: string;
 }
 
@@ -450,6 +452,8 @@ export function playerProfileCacheKey(
     PLAYER_SKILL_QUALITY_POLICY_ID,
     identity.algorithmId,
     identity.mapDemandVersion,
+    identity.unifiedScaleId,
+    identity.unifiedCalibrationKey,
     osuId,
     limit,
   ]);
@@ -527,6 +531,7 @@ export async function buildPlayerSkillProfilePayload(osuId: number, limit = PLAY
   const analyzed: AnalyzedBp[] = [];
   const failures: Array<{ rank: number; beatmapId: number; reason: string }> = [];
   const modCounts = new Map<string, number>();
+  const demandScaleCounts = new Map<string, number>();
   const total = Math.min(scores.length, safeLimit);
   const batchStarted = Date.now();
   let completed = 0;
@@ -544,9 +549,12 @@ export async function buildPlayerSkillProfilePayload(osuId: number, limit = PLAY
       const quality = scoreAchievementQuality(score);
       const demandAxes = {} as Record<PlayerSkillAxis, number>;
       const demonstratedAxes = {} as Record<PlayerSkillAxis, number>;
+      const demandScales = new Set<'unified' | 'v040_axis'>();
       for (const axis of PLAYER_SKILL_AXES) {
-        const value = finite(analysis.axes?.[axis]?.stars);
+        const measurement = skillProfilerAxisValue(analysis, axis);
+        const value = measurement.value;
         if (value === null) throw new Error(`AXIS_${axis.toUpperCase()}_MISSING`);
+        demandScales.add(measurement.scale);
         demandAxes[axis] = value;
         demonstratedAxes[axis] = demonstratedAxisValue(axis, value, quality);
       }
@@ -562,6 +570,7 @@ export async function buildPlayerSkillProfilePayload(osuId: number, limit = PLAY
         scoreQuality: quality,
         axes: demonstratedAxes,
         demandAxes,
+        demandScale: demandScales.size === 1 ? [...demandScales][0] : 'mixed',
         primaryType: String(analysis?.archetype?.primary_type || 'BALANCED'),
       } satisfies AnalyzedBp };
     } catch (error: any) {
@@ -579,6 +588,8 @@ export async function buildPlayerSkillProfilePayload(osuId: number, limit = PLAY
     if (result.ok) {
       analyzed.push(result.analyzed);
       modCounts.set(result.modLabel, (modCounts.get(result.modLabel) || 0) + 1);
+      const scale = result.analyzed.demandScale || 'v040_axis';
+      demandScaleCounts.set(scale, (demandScaleCounts.get(scale) || 0) + 1);
     } else {
       failures.push(result.failure);
     }
@@ -615,9 +626,12 @@ export async function buildPlayerSkillProfilePayload(osuId: number, limit = PLAY
       modCounts: [...modCounts.entries()]
         .sort((left, right) => right[1] - left[1])
         .map(([mods, count]) => ({ mods, count })),
+      demandScales: [...demandScaleCounts.entries()]
+        .sort((left, right) => right[1] - left[1])
+        .map(([scale, count]) => ({ scale, count })),
     },
     profile: {
-      methodology: 'BP50 score-adjusted demand · reciprocal low-ACC×low-combo hard-demand penalty · exponential ACC excellence 99%=4%, SS=15% + FC ≤4% · miss refines combo only · 0.95^(rank-1) · weighted P80/P50 · aggregate specialty four-tier title',
+      methodology: 'BP50 score-adjusted demand · attached unified star-equivalent scale when available · reciprocal low-ACC×low-combo hard-demand penalty · exponential ACC excellence 99%=4%, SS=15% + FC ≤4% · miss refines combo only · 0.95^(rank-1) · weighted P80/P50 · aggregate specialty four-tier title',
       primaryAxes: aggregate.primaryAxes,
       profileType: aggregate.profileType,
       profileTitle: aggregate.profileTitle,
