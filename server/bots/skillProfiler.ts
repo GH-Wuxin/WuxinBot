@@ -7,6 +7,8 @@ import { getDataDir } from '../store.js';
 export const SKILL_PROFILER_TOOL_NAME = 'osu_analyze_beatmap_skills';
 const DEFAULT_SKILL_PROFILER_URL = 'http://127.0.0.1:8767';
 const DEFAULT_TIMEOUT_MS = 60_000;
+const DEFAULT_SKILL_PROFILER_CONCURRENCY = 6;
+const MAX_SKILL_PROFILER_CONCURRENCY = 8;
 let activeAnalyses = 0;
 const analysisWaiters: Array<() => void> = [];
 const MAX_RESPONSE_BYTES = 256 * 1024;
@@ -15,6 +17,10 @@ const DEFAULT_OSU_FILE_BASE_URL = 'https://osu.ppy.sh/osu/';
 const IDENTITY_CACHE_TTL_MS = 30_000;
 let identityCache: { at: number; value: SkillProfilerIdentity } | null = null;
 const analysisInflight = new Map<string, Promise<any>>();
+const PREFETCH_CONCURRENCY = 4;
+const beatmapPrefetchInflight = new Map<number, Promise<void>>();
+let activePrefetches = 0;
+const prefetchWaiters: Array<() => void> = [];
 
 export interface SkillProfilerIdentity {
   algorithmId: string;
@@ -54,21 +60,40 @@ function profilerTimeoutMs(): number {
   return Number.isFinite(parsed) ? Math.max(1_000, Math.min(60_000, Math.round(parsed))) : DEFAULT_TIMEOUT_MS;
 }
 
+export function skillProfilerConcurrency(): number {
+  const parsed = Number(process.env.SKILL_PROFILER_CONCURRENCY);
+  if (!Number.isFinite(parsed)) return DEFAULT_SKILL_PROFILER_CONCURRENCY;
+  return Math.max(1, Math.min(MAX_SKILL_PROFILER_CONCURRENCY, Math.floor(parsed)));
+}
+
 async function withAnalysisSlot<T>(run: () => Promise<T>): Promise<T> {
   // All profiles share the same Python workers. Wait outside the HTTP
   // execution deadline instead of timing out in the server's work queue.
-  const concurrency = Math.max(1, Math.min(8, Math.floor(Number(process.env.SKILL_PROFILER_CONCURRENCY) || 3)));
-  if (activeAnalyses >= concurrency) {
+  const concurrency = skillProfilerConcurrency();
+  if (activeAnalyses >= concurrency || analysisWaiters.length > 0) {
     await new Promise<void>((resolve) => analysisWaiters.push(resolve));
-  } else {
-    activeAnalyses += 1;
   }
+  activeAnalyses += 1;
   try {
     return await run();
   } finally {
+    activeAnalyses -= 1;
     const next = analysisWaiters.shift();
     if (next) next();
-    else activeAnalyses -= 1;
+  }
+}
+
+async function withPrefetchSlot<T>(run: () => Promise<T>): Promise<T> {
+  if (activePrefetches >= PREFETCH_CONCURRENCY || prefetchWaiters.length > 0) {
+    await new Promise<void>((resolve) => prefetchWaiters.push(resolve));
+  }
+  activePrefetches += 1;
+  try {
+    return await run();
+  } finally {
+    activePrefetches -= 1;
+    const next = prefetchWaiters.shift();
+    if (next) next();
   }
 }
 
@@ -256,6 +281,123 @@ async function downloadOsuFile(beatmapId: number): Promise<{ content: string; ex
   }
 }
 
+export interface SkillProfilerBeatmapPreflight {
+  supported: boolean;
+  available: number[];
+  missing: number[];
+}
+
+export interface SkillProfilerBeatmapPrefetchResult {
+  supported: boolean;
+  requested: number;
+  alreadyAvailable: number;
+  missing: number;
+  downloaded: number;
+  failed: Array<{ beatmapId: number; reason: string }>;
+}
+
+function uniqueBeatmapIds(beatmapIds: readonly number[]): number[] {
+  return [...new Set(beatmapIds
+    .map((value) => Number(value))
+    .filter((value) => Number.isSafeInteger(value) && value > 0))];
+}
+
+/**
+ * Ask the local workbench which .osu files are already available. This is a
+ * cheap index lookup and never enters the Python analysis worker pool.
+ * Older workbench processes do not expose /api/preflight, so callers retain
+ * the old lazy-import path when the endpoint is unavailable.
+ */
+export async function scanSkillProfilerBeatmaps(
+  beatmapIds: readonly number[],
+): Promise<SkillProfilerBeatmapPreflight> {
+  const ids = uniqueBeatmapIds(beatmapIds);
+  if (!ids.length) return { supported: true, available: [], missing: [] };
+  try {
+    const result = await postProfiler('/api/preflight', { beatmap_ids: ids });
+    const rows = Array.isArray(result?.beatmaps) ? result.beatmaps : [];
+    const available = ids.filter((beatmapId) => rows.some((row: any) =>
+      Number(row?.beatmap_id) === beatmapId && row?.available === true));
+    return {
+      supported: true,
+      available,
+      missing: ids.filter((beatmapId) => !available.includes(beatmapId)),
+    };
+  } catch (error: any) {
+    const message = String(error?.message || error);
+    if (/\b(?:NOT_FOUND|HTTP_404|SKILL_PROFILER_HTTP_404)\b/i.test(message)) {
+      return { supported: false, available: [], missing: [] };
+    }
+    throw error;
+  }
+}
+
+async function importBeatmapWithDownload(beatmapId: number): Promise<void> {
+  const existing = beatmapPrefetchInflight.get(beatmapId);
+  if (existing) return existing;
+  const pending = withPrefetchSlot(async () => {
+    const imported = await downloadOsuFile(beatmapId);
+    await postProfiler('/api/import', { beatmap_id: beatmapId, ...imported });
+  });
+  beatmapPrefetchInflight.set(beatmapId, pending);
+  try {
+    await pending;
+  } finally {
+    if (beatmapPrefetchInflight.get(beatmapId) === pending) {
+      beatmapPrefetchInflight.delete(beatmapId);
+    }
+  }
+}
+
+export async function prefetchSkillProfilerBeatmaps(
+  beatmapIds: readonly number[],
+  knownMissingIds?: readonly number[],
+): Promise<SkillProfilerBeatmapPrefetchResult> {
+  const ids = uniqueBeatmapIds(beatmapIds);
+  const preflight = knownMissingIds
+    ? { supported: true, available: ids.filter((id) => !knownMissingIds.includes(id)), missing: uniqueBeatmapIds(knownMissingIds) }
+    : await scanSkillProfilerBeatmaps(ids);
+  if (!preflight.supported) {
+    return {
+      supported: false,
+      requested: ids.length,
+      alreadyAvailable: 0,
+      missing: 0,
+      downloaded: 0,
+      failed: [],
+    };
+  }
+  const missing = preflight.missing.filter((beatmapId) => ids.includes(beatmapId));
+  const outcomes = await Promise.all(missing.map(async (beatmapId) => {
+    try {
+      await importBeatmapWithDownload(beatmapId);
+      return { beatmapId, ok: true as const };
+    } catch (error: any) {
+      return {
+        beatmapId,
+        ok: false as const,
+        reason: String(error?.message || error).slice(0, 160),
+      };
+    }
+  }));
+  return {
+    supported: true,
+    requested: ids.length,
+    alreadyAvailable: preflight.available.length,
+    missing: missing.length,
+    downloaded: outcomes.filter((outcome) => outcome.ok).length,
+    failed: outcomes
+      .filter((outcome): outcome is { beatmapId: number; ok: false; reason: string } => !outcome.ok)
+      .map(({ beatmapId, reason }) => ({ beatmapId, reason })),
+  };
+}
+
+export async function ensureSkillProfilerBeatmap(beatmapId: number): Promise<void> {
+  const preflight = await scanSkillProfilerBeatmaps([beatmapId]);
+  if (preflight.supported && preflight.available.includes(beatmapId)) return;
+  await importBeatmapWithDownload(beatmapId);
+}
+
 function finiteNumber(value: unknown): number | null {
   const number = Number(value);
   return Number.isFinite(number) ? number : null;
@@ -383,8 +525,7 @@ export async function requestSkillProfilerAnalysisWithFetch(
   } catch (error: any) {
     const message = String(error?.message || error);
     if (!/^(?:BID_NOT_FOUND|OSU_FILE_MISSING):/.test(message)) throw error;
-    const imported = await downloadOsuFile(beatmapId);
-    await postProfiler('/api/import', { beatmap_id: beatmapId, ...imported });
+    await ensureSkillProfilerBeatmap(beatmapId);
     return requestSkillProfilerAnalysis(beatmapId, mods);
   }
 }
