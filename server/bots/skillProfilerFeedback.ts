@@ -32,7 +32,7 @@ export function compactSkillProfilerSnapshot(analysis: any): Record<string, unkn
   const axes = Object.fromEntries(
     Object.entries(analysis?.axes || {}).map(([axis, raw]: [string, any]) => [axis, {
       stars: Number.isFinite(Number(raw?.stars)) ? Number(raw.stars) : null,
-      confidence: String(raw?.confidence || 'UNKNOWN'),
+      confidence: String(raw?.confidence || 'UNVERIFIED'),
       unit: String(raw?.unit || ''),
     }]),
   );
@@ -53,15 +53,15 @@ export function compactSkillProfilerSnapshot(analysis: any): Record<string, unkn
       : [],
     axes,
     archetype: {
-      status: String(analysis?.archetype?.status || 'UNKNOWN'),
-      primaryType: String(analysis?.archetype?.primary_type || 'UNKNOWN'),
+      status: String(analysis?.archetype?.status || 'UNVERIFIED'),
+      primaryType: String(analysis?.archetype?.primary_type || 'UNVERIFIED'),
       dominantAxes: Array.isArray(analysis?.archetype?.dominant_axes)
         ? analysis.archetype.dominant_axes.map((axis: unknown) => String(axis))
         : [],
-      confidence: String(analysis?.archetype?.confidence || 'UNKNOWN'),
+      confidence: String(analysis?.archetype?.confidence || 'UNVERIFIED'),
     },
-    algorithmId: String(analysis?.identity?.algorithm_id || 'UNKNOWN'),
-    mapDemandVersion: String(analysis?.identity?.map_demand_version || 'UNKNOWN'),
+    algorithmId: String(analysis?.identity?.algorithm_id || 'UNVERIFIED_ALGORITHM'),
+    mapDemandVersion: String(analysis?.identity?.map_demand_version || 'UNVERIFIED_VERSION'),
   };
 }
 

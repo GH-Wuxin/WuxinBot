@@ -56,7 +56,7 @@ function axisCard(analysis: any, axis: string): Record<string, unknown> {
     key: axis,
     label: AXIS_LABELS[axis] || axis,
     value: finite(item.stars),
-    confidence: String(item.confidence || 'UNKNOWN'),
+    confidence: String(item.confidence || 'UNVERIFIED'),
     unit: item.unit === 'bounded_0_10' ? 'bounded_0_10' : 'star_equivalent',
   };
 }
