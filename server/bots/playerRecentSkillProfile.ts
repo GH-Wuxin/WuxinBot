@@ -17,6 +17,7 @@ import {
 } from './playerSkillProfile.js';
 import {
   getSkillProfilerIdentity,
+  skillProfilerAxisValue,
   requestSkillProfilerAnalysisCachedWithFetch,
   type SkillProfilerIdentity,
 } from './skillProfiler.js';
@@ -39,6 +40,8 @@ export function recentProfileCacheKey(osuId: number, identity: SkillProfilerIden
     RECENT_PROFILE_CACHE_POLICY_ID,
     identity.algorithmId,
     identity.mapDemandVersion,
+    identity.unifiedScaleId,
+    identity.unifiedCalibrationKey,
     osuId,
   ]);
 }
@@ -224,7 +227,10 @@ async function buildUncached(osuId: number): Promise<Record<string, any>> {
       const analysis = await requestSkillProfilerAnalysisCachedWithFetch(group.beatmapId, group.mods);
       if (analysis?.status !== 'OK' || !analysis?.axes) throw new Error(`ANALYSIS_${analysis?.status || 'INVALID'}`);
       const demand = {} as Record<PlayerSkillAxis, number>;
-      for (const axis of PLAYER_SKILL_AXES) demand[axis] = Number(analysis.axes?.[axis]?.stars);
+      for (const axis of PLAYER_SKILL_AXES) {
+        const measurement = skillProfilerAxisValue(analysis, axis);
+        demand[axis] = measurement.value === null ? NaN : measurement.value;
+      }
       if (!validRecentDemand(totalStars, demand, score)) throw new Error('OUT_OF_DOMAIN');
       const quality = scoreAchievementQuality(score);
       const result = {} as Record<PlayerSkillAxis, number>;

@@ -90,12 +90,12 @@ try {
   assert.equal(direct.ok, true);
   assert.deepEqual(observedPayload, { beatmap_id: 4288226, mods: ['HD'] }, 'adapter forwards only the validated contract');
   assert.match(direct.content, /九维需求/);
-  assert.match(direct.content, /Jump Aim：11\.2★/);
-  assert.match(direct.content, /Stamina：9\.2\/10/);
-  assert.match(direct.content, /（0\.9\.0；/);
+  assert.match(direct.content, /Jump Aim：11\.20★/);
+  assert.match(direct.content, /Stamina：9\.20\/10/);
+  assert.match(direct.content, /发布：MAP_DEMAND_ATOMIC_V07 · v0\.9\.0/);
   assert.ok(!direct.content.includes('G:\\private'), 'absolute local path never reaches model evidence');
   assert.ok(!direct.content.includes('private/fixture.osu'), 'relative local path never reaches model evidence');
-  assert.equal(direct.metadata.actualExecutor, 'osu_skill_profiler_v095');
+  assert.equal(direct.metadata.actualExecutor, 'osu_skill_profiler_v040');
 
   let round = 0;
   let envelope;
@@ -123,7 +123,7 @@ try {
   assert.equal(loop.toolCallsMade, 1, 'Profiler participates in the normal Agent V2 loop');
   assert.equal(envelope.status, 'success');
   assert.equal(envelope.tool.name, 'osu_analyze_beatmap_skills');
-  assert.equal(envelope.evidence.metadata.actualExecutor, 'osu_skill_profiler_v095');
+  assert.equal(envelope.evidence.metadata.actualExecutor, 'osu_skill_profiler_v040');
   assert.match(loop.text, /实验性估计/);
 
   const missing = await executeToolCall({

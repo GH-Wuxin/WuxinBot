@@ -39,6 +39,8 @@ assert.deepEqual(JSON.parse(recentBaseKey), [
   RECENT_PROFILE_CACHE_POLICY_ID,
   'A8',
   'beta8',
+  null,
+  null,
   19244792,
 ]);
 assert.notEqual(recentBaseKey,

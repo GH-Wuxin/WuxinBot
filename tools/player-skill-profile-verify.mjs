@@ -207,6 +207,8 @@ assert.deepEqual(JSON.parse(beta8Cache), [
   PLAYER_SKILL_QUALITY_POLICY_ID,
   'A8',
   'beta8',
+  null,
+  null,
   19244792,
   50,
 ]);
