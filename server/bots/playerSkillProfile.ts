@@ -3,10 +3,15 @@ import { getUserBestScores, getUserById } from '../osu/api.js';
 import { normalizedScoreMods } from '../osu/scoreMetrics.js';
 import {
   getSkillProfilerIdentity,
+  skillProfilerConcurrency,
   skillProfilerAxisValue,
   requestSkillProfilerAnalysisCachedWithFetch,
+  scanSkillProfilerBeatmaps,
+  prefetchSkillProfilerBeatmaps,
+  type SkillProfilerBeatmapPrefetchResult,
   type SkillProfilerIdentity,
 } from './skillProfiler.js';
+import { reservePlayerAnalysis } from './playerAnalysisQueue.js';
 import { saveAndGetCqCode } from './render.js';
 import { renderPlayerSkillComparisonCard, renderPlayerSkillProfileCard } from './playerSkillComparisonCard.js';
 import { PLAYER_SKILL_TITLE_POLICY_ID, PLAYER_SKILL_TITLES } from './playerSkillTitles.js';
@@ -114,7 +119,7 @@ export interface AnalyzedBp {
 
 const PLAYER_PROFILE_LIMIT = 50;
 const BP_RANK_DECAY = 0.95;
-const PROFILE_ANALYSIS_CONCURRENCY = 3;
+const PROFILE_ANALYSIS_CONCURRENCY = skillProfilerConcurrency();
 const PLAYER_PROFILE_CACHE_TTL_MS = 30 * 60_000;
 const playerProfileCache = new Map<string, { at: number; payload: Record<string, unknown> }>();
 const STAR_EQUIVALENT_PLAYER_AXES = new Set<PlayerSkillAxis>([
@@ -145,6 +150,27 @@ export interface PlayerSkillIdentity {
 export interface PlayerSkillEvidenceSummary {
   sampleCount: number;
   effectiveSampleSize: number;
+}
+
+type PreparedBpScore = {
+  score: any;
+  rank: number;
+  beatmapId: number;
+  mods: string[] | null;
+};
+
+export interface PreparedPlayerSkillProfile {
+  osuId: number;
+  safeLimit: number;
+  cacheKey: string;
+  profilerIdentity: SkillProfilerIdentity;
+  user: any;
+  scores: any[];
+  readyScores: PreparedBpScore[];
+  missingScores: PreparedBpScore[];
+  otherScores: PreparedBpScore[];
+  prefetch: Promise<SkillProfilerBeatmapPrefetchResult>;
+  cachedPayload?: Record<string, unknown>;
 }
 
 function finite(value: unknown): number | null {
@@ -514,7 +540,7 @@ export function aggregatePlayerSkillProfile(analyzed: AnalyzedBp[]): {
   };
 }
 
-export async function buildPlayerSkillProfilePayload(osuId: number, limit = PLAYER_PROFILE_LIMIT): Promise<Record<string, unknown>> {
+export async function preparePlayerSkillProfile(osuId: number, limit = PLAYER_PROFILE_LIMIT): Promise<PreparedPlayerSkillProfile> {
   const safeLimit = Math.max(1, Math.min(PLAYER_PROFILE_LIMIT, Math.floor(limit)));
   traceEvent('TOOL', 'Skill：读取 BP 与玩家资料', { status: 'running', osuId, requested: safeLimit });
   const profilerIdentity = await getSkillProfilerIdentity();
@@ -522,24 +548,99 @@ export async function buildPlayerSkillProfilePayload(osuId: number, limit = PLAY
   const cached = playerProfileCache.get(cacheKey);
   if (cached && Date.now() - cached.at < PLAYER_PROFILE_CACHE_TTL_MS) {
     traceEvent('TOOL', 'Skill：读取已完成画像缓存', { status: 'completed', osuId });
-    return cached.payload;
+    return {
+      osuId,
+      safeLimit,
+      cacheKey,
+      profilerIdentity,
+      user: null,
+      scores: [],
+      readyScores: [],
+      missingScores: [],
+      otherScores: [],
+      prefetch: Promise.resolve({
+        supported: true, requested: 0, alreadyAvailable: 0, missing: 0, downloaded: 0, failed: [],
+      }),
+      cachedPayload: cached.payload,
+    };
   }
   const [user, scores] = await Promise.all([
     getUserById(osuId, 'osu'),
     getUserBestScores(osuId, 'osu', safeLimit),
   ]);
+  const limitedScores = scores.slice(0, safeLimit);
+  const preparedScores: PreparedBpScore[] = limitedScores.map((score: any, index: number) => {
+    const beatmapId = Number(score?.beatmap?.id || score?.beatmap_id || 0);
+    let mods: string[] | null = null;
+    try { mods = scoreMods(score); } catch { /* preserve the existing per-score failure path */ }
+    return { score, rank: index + 1, beatmapId, mods };
+  });
+  const scanIds = preparedScores
+    .filter((entry) => Number.isSafeInteger(entry.beatmapId) && entry.beatmapId > 0 && entry.mods !== null)
+    .map((entry) => entry.beatmapId);
+  let preflight = { supported: false, available: [] as number[], missing: [] as number[] };
+  try {
+    preflight = await scanSkillProfilerBeatmaps(scanIds);
+  } catch (error: any) {
+    traceEvent('TOOL', 'Skill：BP预扫描不可用，回退按图处理', {
+      status: 'running', osuId, reason: String(error?.message || error).slice(0, 160),
+    });
+  }
+  const available = new Set(preflight.available);
+  const missing = new Set(preflight.missing);
+  const readyScores = preparedScores.filter((entry) => preflight.supported && available.has(entry.beatmapId));
+  const missingScores = preparedScores.filter((entry) => preflight.supported && missing.has(entry.beatmapId));
+  const otherScores = preparedScores.filter((entry) => !readyScores.includes(entry) && !missingScores.includes(entry));
+  traceEvent('TOOL', 'Skill：BP预扫描完成', {
+    status: 'running', osuId, total: preparedScores.length,
+    available: readyScores.length, missing: missingScores.length,
+  });
+  const prefetch = preflight.supported
+    ? prefetchSkillProfilerBeatmaps([...missing], [...missing])
+      .then((result) => {
+        traceEvent('TOOL', 'Skill：缺失谱面预取完成', {
+          status: 'running', osuId, requested: result.requested,
+          downloaded: result.downloaded, failed: result.failed.length,
+        });
+        return result;
+      })
+    : Promise.resolve({
+      supported: false, requested: 0, alreadyAvailable: 0, missing: 0, downloaded: 0, failed: [],
+    });
+  return {
+    osuId,
+    safeLimit,
+    cacheKey,
+    profilerIdentity,
+    user,
+    scores: limitedScores,
+    readyScores,
+    missingScores,
+    otherScores,
+    prefetch,
+  };
+}
+
+export async function buildPreparedPlayerSkillProfile(
+  prepared: PreparedPlayerSkillProfile,
+): Promise<Record<string, unknown>> {
+  if (prepared.cachedPayload) return prepared.cachedPayload;
+  const { osuId, safeLimit, cacheKey, profilerIdentity, user } = prepared;
   const analyzed: AnalyzedBp[] = [];
   const failures: Array<{ rank: number; beatmapId: number; reason: string }> = [];
   const modCounts = new Map<string, number>();
   const demandScaleCounts = new Map<string, number>();
-  const total = Math.min(scores.length, safeLimit);
+  const total = prepared.scores.length;
   const batchStarted = Date.now();
   let completed = 0;
   let failed = 0;
 
-  const scoreResults = await mapLimit(scores.slice(0, safeLimit), PROFILE_ANALYSIS_CONCURRENCY, async (score: any, index) => {
-    const rank = index + 1;
-    const beatmapId = Number(score?.beatmap?.id || score?.beatmap_id || 0);
+  const scoreResults: Array<any> = [];
+  const analyzeBatch = async (entries: PreparedBpScore[]) => {
+    if (!entries.length) return;
+    const batchResults = await mapLimit(entries, PROFILE_ANALYSIS_CONCURRENCY, async (entry) => {
+      const { score, rank, beatmapId } = entry;
+      let result: any;
     try {
       if (!Number.isSafeInteger(beatmapId) || beatmapId <= 0) throw new Error('BEATMAP_ID_MISSING');
       const mods = scoreMods(score);
@@ -558,7 +659,7 @@ export async function buildPlayerSkillProfilePayload(osuId: number, limit = PLAY
         demandAxes[axis] = value;
         demonstratedAxes[axis] = demonstratedAxisValue(axis, value, quality);
       }
-      return { ok: true as const, modLabel, analyzed: {
+      result = { ok: true as const, modLabel, analyzed: {
         rank,
         beatmapId,
         title: String(score?.beatmapset?.title || analysis?.beatmap?.title || `BID ${beatmapId}`),
@@ -575,7 +676,7 @@ export async function buildPlayerSkillProfilePayload(osuId: number, limit = PLAY
       } satisfies AnalyzedBp };
     } catch (error: any) {
       failed += 1;
-      return { ok: false as const, failure: { rank, beatmapId, reason: String(error?.message || error).slice(0, 160) } };
+      result = { ok: false as const, failure: { rank, beatmapId, reason: String(error?.message || error).slice(0, 160) } };
     } finally {
       completed += 1;
       traceEvent('TOOL', `Skill：已处理 ${completed}/${total}${failed ? `（失败 ${failed}）` : ''}`, {
@@ -583,7 +684,17 @@ export async function buildPlayerSkillProfilePayload(osuId: number, limit = PLAY
         osuId, rank, beatmapId, completed, total, failed,
       });
     }
-  });
+      return result;
+    });
+    scoreResults.push(...batchResults);
+  };
+
+  // Existing .osu files go first. Missing files are downloaded concurrently in
+  // the separate prefetch lane and only join the analysis batch afterwards.
+  await analyzeBatch(prepared.readyScores);
+  await prepared.prefetch;
+  await analyzeBatch(prepared.missingScores);
+  await analyzeBatch(prepared.otherScores);
   for (const result of scoreResults) {
     if (result.ok) {
       analyzed.push(result.analyzed);
@@ -649,6 +760,45 @@ export async function buildPlayerSkillProfilePayload(osuId: number, limit = PLAY
   // Reuse successful per-map results, but retry an incomplete batch next time.
   if (failures.length === 0) playerProfileCache.set(cacheKey, { at: Date.now(), payload });
   return payload;
+}
+
+const playerProfileInflight = new Map<string, Promise<Record<string, unknown>>>();
+
+export async function buildPlayerSkillProfilePayload(osuId: number, limit = PLAYER_PROFILE_LIMIT): Promise<Record<string, unknown>> {
+  const ticket = reservePlayerAnalysis(osuId);
+  traceEvent('TOOL', 'Skill：玩家进入计算队列', {
+    status: 'waiting', osuId, queuePosition: ticket.position,
+  });
+  try {
+    const prepared = await preparePlayerSkillProfile(osuId, limit);
+    if (prepared.cachedPayload) {
+      ticket.cancel();
+      return prepared.cachedPayload;
+    }
+    const existing = playerProfileInflight.get(prepared.cacheKey);
+    if (existing) {
+      ticket.cancel();
+      return existing;
+    }
+    const pending = ticket.run(async () => {
+      traceEvent('TOOL', 'Skill：开始计算当前玩家', {
+        status: 'running', osuId, queuePosition: ticket.position,
+        ready: prepared.readyScores.length, pendingDownload: prepared.missingScores.length,
+      });
+      return buildPreparedPlayerSkillProfile(prepared);
+    });
+    playerProfileInflight.set(prepared.cacheKey, pending);
+    try {
+      return await pending;
+    } finally {
+      if (playerProfileInflight.get(prepared.cacheKey) === pending) {
+        playerProfileInflight.delete(prepared.cacheKey);
+      }
+    }
+  } catch (error) {
+    ticket.cancel();
+    throw error;
+  }
 }
 
 export async function renderPlayerSkillProfile(osuId: number, limit = PLAYER_PROFILE_LIMIT): Promise<{

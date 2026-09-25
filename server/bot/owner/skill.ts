@@ -283,6 +283,13 @@ function modLabel(mods: string[]): string {
   return mods.length ? `+${mods.join('')}` : 'NM';
 }
 
+function mentionSkillRequester(ctx: OwnerHandlerContext, content: string): string {
+  const userId = String(ctx.event?.userId || '').trim();
+  if (ctx.event?.type !== 'group' || !/^\d+$/.test(userId)) return content;
+  const mention = `[CQ:at,qq=${userId}]`;
+  return String(content).includes(mention) ? String(content) : `${mention} ${content}`;
+}
+
 function feedbackGuidance(beatmapId: number, mods: string[]): string {
   const command = `/w cd ${beatmapId}${modSuffix(mods)}`;
   return [
@@ -334,11 +341,11 @@ export async function ownerSkillHandler(ctx: OwnerHandlerContext): Promise<Owner
     ]);
     if (left.id === right.id) throw new Error('请选择两个不同的玩家进行 Skill 对比。');
     if (ctx.sendMessage) {
-      await ctx.sendMessage(ctx.event, `正在用成绩质量与 BP 衰减对比 ${left.username} 和 ${right.username} 的 BP50，首次生成可能需要一两分钟……`);
+      await ctx.sendMessage(ctx.event, `正在用成绩质量与 BP 衰减对比 ${left.username} 和 ${right.username} 的 BP50，首次计算可能需要一段时间，请耐心等待；期间会持续更新进度……`);
     }
     const rendered = await renderPlayerSkillComparison(left.id, right.id, 50);
     if (!rendered) throw new Error('玩家 Skill 对比渲染器当前未连接，请稍后再试。');
-    if (ctx.sendMessage) await ctx.sendMessage(ctx.event, rendered.cqCode);
+    if (ctx.sendMessage) await ctx.sendMessage(ctx.event, mentionSkillRequester(ctx, rendered.cqCode));
     return { replied: Boolean(ctx.sendMessage), reason: `已生成 ${left.username} 与 ${right.username} 的 BP50 Skill 对比` };
   }
 
@@ -346,7 +353,7 @@ export async function ownerSkillHandler(ctx: OwnerHandlerContext): Promise<Owner
   if (recentRequest.matched) {
     const user = await resolveProfileUser(ctx, recentRequest.player);
     if (ctx.sendMessage) {
-      await ctx.sendMessage(ctx.event, `正在生成 ${user.username} 的 Recent Skill：优先读取最近 50 条，完成谱面不足时最多回溯 5 天……`);
+      await ctx.sendMessage(ctx.event, `正在生成 ${user.username} 的 Recent Skill，首次计算可能需要一段时间，请耐心等待；优先读取最近 50 条，最多回溯 5 天……`);
     }
     let timer: NodeJS.Timeout | undefined;
     try {
@@ -355,13 +362,13 @@ export async function ownerSkillHandler(ctx: OwnerHandlerContext): Promise<Owner
         timer.unref?.();
       });
       const rendered = await Promise.race([renderPlayerRecentSkillProfile(user.id), timeout]);
-      if (ctx.sendMessage) await ctx.sendMessage(ctx.event, rendered.cqCode);
+      if (ctx.sendMessage) await ctx.sendMessage(ctx.event, mentionSkillRequester(ctx, rendered.cqCode));
       return { replied: Boolean(ctx.sendMessage), reason: `已生成 ${user.username} 的 Recent Skill 画像` };
     } catch (error: any) {
       const message = String(error?.message || error);
       if (message === 'RECENT_SKILL_TIMEOUT') throw new Error('Recent Skill 生成超时；已保留成功的谱面分析缓存，请稍后重试。');
       const insufficient = /^RECENT_SKILL_INSUFFICIENT(?:_AFTER_FILTER)?:([0-9]+)$/.exec(message);
-      if (insufficient) throw new Error(`近期证据不足：回溯 5 天后只有 ${insufficient[1]} 张有效完成谱面，至少需要 5 张。`);
+      if (insufficient) throw new Error('近期证据暂不足，请稍后积累更多近期成绩后重试。');
       throw error;
     } finally {
       if (timer) clearTimeout(timer);
@@ -372,16 +379,12 @@ export async function ownerSkillHandler(ctx: OwnerHandlerContext): Promise<Owner
   if (profileRequest.matched) {
     const user = await resolveProfileUser(ctx, profileRequest.player);
     if (ctx.sendMessage) {
-      await ctx.sendMessage(ctx.event, `正在按成绩质量与 BP 衰减分析 ${user.username} 的真实 BP50，首次会逐张计算，请求追踪中可查看进度……`);
+      await ctx.sendMessage(ctx.event, `正在按成绩质量与 BP 衰减分析 ${user.username} 的真实 BP50，首次计算可能需要一段时间，请耐心等待；请求追踪中可查看进度……`);
     }
     const rendered = await renderPlayerSkillProfile(user.id, 50);
     if (!rendered) throw new Error('玩家 Skill 画像渲染器当前未连接，请稍后再试。');
-    const sample = rendered.payload.sample as { valid: number; requested: number; failed: number };
-    const partial = sample.failed > 0
-      ? `\n本次仅 ${sample.valid}/${sample.requested} 张纳入画像，存在超时或证据不足；可重试，已完成的谱面会复用缓存。`
-      : '';
-    if (ctx.sendMessage) await ctx.sendMessage(ctx.event, rendered.cqCode + partial);
-    return { replied: Boolean(ctx.sendMessage), reason: `已生成 ${user.username} 的 BP50 Skill 画像（${sample.valid}/${sample.requested} 有效）` };
+    if (ctx.sendMessage) await ctx.sendMessage(ctx.event, mentionSkillRequester(ctx, rendered.cqCode));
+    return { replied: Boolean(ctx.sendMessage), reason: `已生成 ${user.username} 的 BP50 Skill 画像` };
   }
 
   const request = parseSkillCommandRequest(ctx.commandArgs);
@@ -410,7 +413,7 @@ export async function ownerSkillHandler(ctx: OwnerHandlerContext): Promise<Owner
   ].filter(Boolean).join('\n');
   rememberProfilerRun(ctx, analysis, resolved.sourceLabel);
   const rendered = await renderSkillProfilerCard(analysis);
-  if (ctx.sendMessage) await ctx.sendMessage(ctx.event, rendered?.cqCode || fallbackText);
+  if (ctx.sendMessage) await ctx.sendMessage(ctx.event, mentionSkillRequester(ctx, rendered?.cqCode || fallbackText));
   return { replied: Boolean(ctx.sendMessage), reason: `Skill Profiler 已分析 BID ${resolved.beatmapId}` };
 }
 
