@@ -1,0 +1,2166 @@
+{
+  "audit": "QUICK_BRIDGE_RELIABILITY_AUDIT_V01",
+  "phase": "E_FALLBACK_GRAPH",
+  "generatedAt": "2026-08-15T16:31:59.672Z",
+  "branch": "fix/onebot-connection-lifecycle",
+  "head": "1658292",
+  "note": "Graphs derive from server/bot/quickRouter.ts handleQuickCommand and server/bots/executor.ts executeInternalBotCommand at 1658292 + audit instrumentation.",
+  "graphs": [
+    {
+      "key": "yumu:recent",
+      "definition": {
+        "source": "yumu",
+        "id": "recent",
+        "aliases": [
+          "p",
+          "pass",
+          "通过成绩",
+          "pr",
+          "re",
+          "recent",
+          "r",
+          "最近成绩",
+          "ps",
+          "passes",
+          "rs",
+          "recents",
+          "pw",
+          "rw",
+          "pass show",
+          "recent show"
+        ],
+        "capability": "recent",
+        "injectBinding": false,
+        "bridgeTimeoutMs": 60000
+      },
+      "path": [
+        {
+          "step": 1,
+          "node": "QUICK_GATES",
+          "detail": "globalPaused / group disabled / user blocked / silent mode / private non-owner / admin gate; silent handled, no bridge",
+          "externalWork": false
+        },
+        {
+          "step": 2,
+          "node": "GROUP_BOT_DISABLE_GUARD",
+          "detail": "groupBotConfig[groupId][source]===false -> handled:true replied:false reason group_bot_disabled:yumu",
+          "externalWork": false
+        },
+        {
+          "step": 3,
+          "node": "SUBJECT_RESOLUTION_BRIDGE",
+          "detail": "parseOsuArgs; explicit username or resolveInjectionUser(db binding); bare #N rebuilds \"!re <user> #N\"; unbound -> prompt reply and STOP",
+          "externalWork": "osu getUserById HTTP only when binding is numeric id",
+          "duplicateGroup": "RESOLVE_A"
+        },
+        {
+          "step": 4,
+          "node": "BRIDGE_ATTEMPT_1",
+          "bot": "yumu",
+          "command": "!r <resolved-user>",
+          "timeoutMs": 60000,
+          "context": {
+            "groupId": "770099",
+            "userId": "<original event.userId>",
+            "nickname": "<original nickname>",
+            "atTargets": "<match atTargets>"
+          },
+          "externalWork": "WS bridge to original bot"
+        },
+        {
+          "step": 5,
+          "node": "VISIBLE_SEND_BRIDGE",
+          "condition": "reply payload text/images non-empty",
+          "detail": "sendMessage(event, text+images)",
+          "externalWork": false
+        },
+        {
+          "step": 6,
+          "node": "OBSERVATION_BRIDGE",
+          "condition": "after visible send",
+          "detail": "text -> recordQuickContext([source] text, images); image-only -> fire-and-forget recordShadow -> buildQuickShadowSummary -> getUser + getUserRecentScores -> recordQuickContext",
+          "externalWork": "image-only: getUser + getUserRecentScores HTTP (shadow, after send)",
+          "duplicateGroup": "SHADOW_RECENT"
+        },
+        {
+          "step": 7,
+          "node": "BRIDGE_RETURN",
+          "condition": "payload non-empty",
+          "detail": "handled:true replied:true reason bridge:<source>; path ends",
+          "externalWork": false
+        },
+        {
+          "step": 8,
+          "node": "INTERNAL_FALLBACK",
+          "condition": "bridge threw or payload empty",
+          "detail": "falls through local handlers (none) -> internal engine capability recent",
+          "externalWork": false
+        },
+        {
+          "step": 9,
+          "node": "INTERNAL_ARG_PARSE",
+          "detail": "parseOsuArgs again; unbound guards re-checked via bindingUser",
+          "externalWork": false,
+          "duplicateGroup": "RESOLVE_A"
+        },
+        {
+          "step": 10,
+          "node": "EXECUTOR_PLAYER_RESOLUTION",
+          "detail": "executeInternalBotCommand -> resolveInternalPlayerTargetDetailed (binding / explicit / nickname / group-nickname search)",
+          "externalWork": false,
+          "duplicateGroup": "RESOLVE_A"
+        },
+        {
+          "step": 11,
+          "node": "EXECUTOR_OSU_USER_LOAD",
+          "detail": "loadInternalOsuUser -> osu api getUser/getUserById (requires OAuth/API)",
+          "externalWork": "HTTP getUser (up to ~15s per Wuxin osu api timeout)",
+          "duplicateGroup": "RESOLVE_A"
+        },
+        {
+          "step": 12,
+          "node": "BRIDGE_ATTEMPT_2",
+          "condition": "only for recent; hasLocalEndpoint(bridgeBot) and user load succeeded",
+          "bot": "yumu",
+          "command": "!r ${user.username}",
+          "timeoutMs": 60000,
+          "context": {
+            "groupId": "<original context.groupId> || 770099",
+            "userId": "<original userId>",
+            "nickname": "WuxinBridge",
+            "atTargets": []
+          },
+          "externalWork": "second WS bridge, same bot, same recent target",
+          "duplicateGroup": "DUP_BRIDGE_FALLBACK"
+        },
+        {
+          "step": 13,
+          "node": "BRIDGE_ATTEMPT_2_RETURN",
+          "condition": "bridgeReply text/images non-empty",
+          "detail": "executor returns image/text result -> quickPayload -> VISIBLE_SEND + recordQuickContext",
+          "externalWork": false
+        },
+        {
+          "step": 14,
+          "node": "OSU_RECENT_HTTP",
+          "condition": "bridge attempt 2 failed/empty or no endpoint",
+          "detail": "getUserRecentScores(user.id, osu, 1)",
+          "externalWork": "HTTP recent fetch",
+          "duplicateGroup": "THIRD_FETCH_IF_BRIDGE_2_RAN"
+        },
+        {
+          "step": 15,
+          "node": "ENRICH",
+          "detail": "enrichScoreStarRatings(attributes fetch)",
+          "externalWork": "HTTP attributes per score"
+        },
+        {
+          "step": 16,
+          "node": "RENDER",
+          "condition": "render server has clients",
+          "detail": "renderScoreCard yumu-image E5 panel",
+          "externalWork": "local render WS"
+        },
+        {
+          "step": 17,
+          "node": "INTERNAL_VISIBLE_SEND",
+          "detail": "quickPayload(result) -> sendMessage; text fallback always exists",
+          "externalWork": false
+        },
+        {
+          "step": 18,
+          "node": "INTERNAL_OBSERVATION",
+          "detail": "recordQuickContext(【快捷查询】... result content/images)",
+          "externalWork": false
+        },
+        {
+          "step": 19,
+          "node": "INTERNAL_ERROR_SEND",
+          "condition": "any step throws",
+          "detail": "sendMessage(error text) + recordQuickContext(\"查询失败：\"+error) -> reason recent_error",
+          "externalWork": false
+        }
+      ]
+    },
+    {
+      "key": "yumu:bp",
+      "definition": {
+        "source": "yumu",
+        "id": "bp",
+        "aliases": [
+          "bp",
+          "b",
+          "best",
+          "bestperformance",
+          "最成绩",
+          "最佳成绩",
+          "bpw",
+          "best show"
+        ],
+        "capability": "bp",
+        "injectBinding": false,
+        "bridgeTimeoutMs": 60000
+      },
+      "path": [
+        {
+          "step": 1,
+          "node": "QUICK_GATES",
+          "detail": "same as recent",
+          "externalWork": false
+        },
+        {
+          "step": 2,
+          "node": "GROUP_BOT_DISABLE_GUARD",
+          "detail": "same as recent",
+          "externalWork": false
+        },
+        {
+          "step": 3,
+          "node": "SUBJECT_RESOLUTION_BRIDGE",
+          "detail": "parseOsuArgs (bp ranges/#N) + resolveInjectionUser when no explicit username; unbound -> prompt reply and STOP",
+          "externalWork": "osu getUserById only for numeric binding",
+          "duplicateGroup": "RESOLVE_A"
+        },
+        {
+          "step": 4,
+          "node": "BRIDGE_ATTEMPT_1",
+          "bot": "yumu",
+          "command": "<! or / prefix><alias> [injected user] [args]",
+          "timeoutMs": 60000,
+          "context": {
+            "groupId": "770099",
+            "userId": "<original event.userId>",
+            "nickname": "<original nickname>",
+            "atTargets": "<match atTargets>"
+          },
+          "externalWork": "WS bridge"
+        },
+        {
+          "step": 5,
+          "node": "VISIBLE_SEND_BRIDGE",
+          "condition": "payload non-empty",
+          "externalWork": false
+        },
+        {
+          "step": 6,
+          "node": "OBSERVATION_BRIDGE",
+          "condition": "after visible send",
+          "detail": "text -> record; image-only -> recordShadow -> buildQuickShadowSummary (bp: getUser+getUserBestScores; info: getUser; pplus: getPlayerBars)",
+          "externalWork": "shadow HTTP/local aggregate refetch",
+          "duplicateGroup": "SHADOW_CAPABILITY"
+        },
+        {
+          "step": 7,
+          "node": "INTERNAL_FALLBACK",
+          "condition": "bridge threw or payload empty",
+          "detail": "internal engine capability",
+          "externalWork": false
+        },
+        {
+          "step": 8,
+          "node": "INTERNAL_ARG_PARSE_AND_RESOLUTION",
+          "detail": "parseOsuArgs + binding guards + resolveInternalPlayerTargetDetailed + loadInternalOsuUser (getUser/getUserById)",
+          "externalWork": "HTTP getUser",
+          "duplicateGroup": "RESOLVE_A"
+        },
+        {
+          "step": 9,
+          "node": "OSU_BP_HTTP",
+          "detail": "getUserBestScores(user.id, osu, selection.endRank)",
+          "externalWork": "HTTP best scores"
+        },
+        {
+          "step": 10,
+          "node": "ENRICH",
+          "detail": "enrichScoreStarRatings",
+          "externalWork": "HTTP attributes"
+        },
+        {
+          "step": 11,
+          "node": "RENDER",
+          "condition": "render server has clients",
+          "detail": "renderBpScores yumu-image panel",
+          "externalWork": "local render WS"
+        },
+        {
+          "step": 99,
+          "node": "INTERNAL_VISIBLE_SEND_OR_ERROR",
+          "detail": "quickPayload -> sendMessage; on throw sendMessage(error) + record(\"查询失败：...\")",
+          "externalWork": false
+        }
+      ]
+    },
+    {
+      "key": "yumu:bs",
+      "definition": {
+        "source": "yumu",
+        "id": "bs",
+        "aliases": [
+          "bs",
+          "bps",
+          "bests"
+        ],
+        "capability": "bp",
+        "injectBinding": false,
+        "bridgeTimeoutMs": 60000
+      },
+      "path": [
+        {
+          "step": 1,
+          "node": "QUICK_GATES",
+          "detail": "same as recent",
+          "externalWork": false
+        },
+        {
+          "step": 2,
+          "node": "GROUP_BOT_DISABLE_GUARD",
+          "detail": "same as recent",
+          "externalWork": false
+        },
+        {
+          "step": 3,
+          "node": "SUBJECT_RESOLUTION_BRIDGE",
+          "detail": "parseOsuArgs (bp ranges/#N) + resolveInjectionUser when no explicit username; unbound -> prompt reply and STOP",
+          "externalWork": "osu getUserById only for numeric binding",
+          "duplicateGroup": "RESOLVE_A"
+        },
+        {
+          "step": 4,
+          "node": "BRIDGE_ATTEMPT_1",
+          "bot": "yumu",
+          "command": "<! or / prefix><alias> [injected user] [args]",
+          "timeoutMs": 60000,
+          "context": {
+            "groupId": "770099",
+            "userId": "<original event.userId>",
+            "nickname": "<original nickname>",
+            "atTargets": "<match atTargets>"
+          },
+          "externalWork": "WS bridge"
+        },
+        {
+          "step": 5,
+          "node": "VISIBLE_SEND_BRIDGE",
+          "condition": "payload non-empty",
+          "externalWork": false
+        },
+        {
+          "step": 6,
+          "node": "OBSERVATION_BRIDGE",
+          "condition": "after visible send",
+          "detail": "text -> record; image-only -> recordShadow -> buildQuickShadowSummary (bp: getUser+getUserBestScores; info: getUser; pplus: getPlayerBars)",
+          "externalWork": "shadow HTTP/local aggregate refetch",
+          "duplicateGroup": "SHADOW_CAPABILITY"
+        },
+        {
+          "step": 7,
+          "node": "INTERNAL_FALLBACK",
+          "condition": "bridge threw or payload empty",
+          "detail": "internal engine capability",
+          "externalWork": false
+        },
+        {
+          "step": 8,
+          "node": "INTERNAL_ARG_PARSE_AND_RESOLUTION",
+          "detail": "parseOsuArgs + binding guards + resolveInternalPlayerTargetDetailed + loadInternalOsuUser (getUser/getUserById)",
+          "externalWork": "HTTP getUser",
+          "duplicateGroup": "RESOLVE_A"
+        },
+        {
+          "step": 9,
+          "node": "OSU_BP_HTTP",
+          "detail": "getUserBestScores(user.id, osu, selection.endRank)",
+          "externalWork": "HTTP best scores"
+        },
+        {
+          "step": 10,
+          "node": "ENRICH",
+          "detail": "enrichScoreStarRatings",
+          "externalWork": "HTTP attributes"
+        },
+        {
+          "step": 11,
+          "node": "RENDER",
+          "condition": "render server has clients",
+          "detail": "renderBpScores yumu-image panel",
+          "externalWork": "local render WS"
+        },
+        {
+          "step": 99,
+          "node": "INTERNAL_VISIBLE_SEND_OR_ERROR",
+          "detail": "quickPayload -> sendMessage; on throw sendMessage(error) + record(\"查询失败：...\")",
+          "externalWork": false
+        }
+      ]
+    },
+    {
+      "key": "yumu:pm",
+      "definition": {
+        "source": "yumu",
+        "id": "pm",
+        "aliases": [
+          "pm",
+          "pp-",
+          "ppminus",
+          "表现分减",
+          "pv",
+          "ppminus vs",
+          "pl",
+          "ppminus legacy"
+        ],
+        "capability": null,
+        "handler": null,
+        "injectBinding": true,
+        "bridgeTimeoutMs": 60000
+      },
+      "path": [
+        {
+          "step": 1,
+          "node": "QUICK_GATES",
+          "externalWork": false
+        },
+        {
+          "step": 2,
+          "node": "GROUP_BOT_DISABLE_GUARD",
+          "externalWork": false
+        },
+        {
+          "step": 3,
+          "node": "SUBJECT_RESOLUTION_BRIDGE",
+          "detail": "injectBinding only: parseOsuArgs + resolveInjectionUser; unbound -> prompt reply + STOP",
+          "externalWork": "osu getUserById only for numeric binding"
+        },
+        {
+          "step": 4,
+          "node": "BRIDGE_ATTEMPT_1",
+          "bot": "yumu",
+          "command": "<prefix><alias> [injected user]",
+          "timeoutMs": 60000,
+          "context": {
+            "groupId": "770099",
+            "userId": "<original event.userId>",
+            "nickname": "<original nickname>",
+            "atTargets": "<atTargets>"
+          },
+          "externalWork": "WS bridge"
+        },
+        {
+          "step": 5,
+          "node": "VISIBLE_SEND_BRIDGE",
+          "condition": "payload non-empty",
+          "externalWork": false
+        },
+        {
+          "step": 6,
+          "node": "OBSERVATION_BRIDGE",
+          "detail": "text -> record; image-only without capability/shadow user -> record(\"快捷指令查询完成（source 面板，结果见图片）\", images) (no shadow refetch)",
+          "externalWork": false
+        },
+        {
+          "step": 7,
+          "node": "LLM_PIPELINE_FALLTHROUGH",
+          "condition": "bridge threw or payload empty",
+          "detail": "log(\"unimplemented\", def.id); return handled:false -> bot.ts decideReply + LLM pipeline owns the message; pm/etx/rating/update have no query_osu capability, so no deterministic retry exists",
+          "externalWork": "LLM HTTP"
+        }
+      ]
+    },
+    {
+      "key": "yumu:etx",
+      "definition": {
+        "source": "yumu",
+        "id": "etx",
+        "aliases": [
+          "ex",
+          "et",
+          "etx",
+          "elite",
+          "eliteronix",
+          "精英分数",
+          "ev",
+          "etx vs",
+          "elite vs"
+        ],
+        "capability": null,
+        "handler": null,
+        "injectBinding": true,
+        "bridgeTimeoutMs": 60000
+      },
+      "path": [
+        {
+          "step": 1,
+          "node": "QUICK_GATES",
+          "externalWork": false
+        },
+        {
+          "step": 2,
+          "node": "GROUP_BOT_DISABLE_GUARD",
+          "externalWork": false
+        },
+        {
+          "step": 3,
+          "node": "SUBJECT_RESOLUTION_BRIDGE",
+          "detail": "injectBinding only: parseOsuArgs + resolveInjectionUser; unbound -> prompt reply + STOP",
+          "externalWork": "osu getUserById only for numeric binding"
+        },
+        {
+          "step": 4,
+          "node": "BRIDGE_ATTEMPT_1",
+          "bot": "yumu",
+          "command": "<prefix><alias> [injected user]",
+          "timeoutMs": 60000,
+          "context": {
+            "groupId": "770099",
+            "userId": "<original event.userId>",
+            "nickname": "<original nickname>",
+            "atTargets": "<atTargets>"
+          },
+          "externalWork": "WS bridge"
+        },
+        {
+          "step": 5,
+          "node": "VISIBLE_SEND_BRIDGE",
+          "condition": "payload non-empty",
+          "externalWork": false
+        },
+        {
+          "step": 6,
+          "node": "OBSERVATION_BRIDGE",
+          "detail": "text -> record; image-only without capability/shadow user -> record(\"快捷指令查询完成（source 面板，结果见图片）\", images) (no shadow refetch)",
+          "externalWork": false
+        },
+        {
+          "step": 7,
+          "node": "LLM_PIPELINE_FALLTHROUGH",
+          "condition": "bridge threw or payload empty",
+          "detail": "log(\"unimplemented\", def.id); return handled:false -> bot.ts decideReply + LLM pipeline owns the message; pm/etx/rating/update have no query_osu capability, so no deterministic retry exists",
+          "externalWork": "LLM HTTP"
+        }
+      ]
+    },
+    {
+      "key": "yumu:rating",
+      "definition": {
+        "source": "yumu",
+        "id": "rating",
+        "aliases": [
+          "ra",
+          "rating",
+          "mra",
+          "ym rating",
+          "sa",
+          "sra",
+          "series",
+          "series rating"
+        ],
+        "capability": null,
+        "handler": null,
+        "injectBinding": false,
+        "bridgeTimeoutMs": 60000
+      },
+      "path": [
+        {
+          "step": 1,
+          "node": "QUICK_GATES",
+          "externalWork": false
+        },
+        {
+          "step": 2,
+          "node": "GROUP_BOT_DISABLE_GUARD",
+          "externalWork": false
+        },
+        {
+          "step": 3,
+          "node": "SUBJECT_RESOLUTION_BRIDGE",
+          "detail": "injectBinding only: parseOsuArgs + resolveInjectionUser; unbound -> prompt reply + STOP",
+          "externalWork": "osu getUserById only for numeric binding"
+        },
+        {
+          "step": 4,
+          "node": "BRIDGE_ATTEMPT_1",
+          "bot": "yumu",
+          "command": "<prefix><alias> [injected user]",
+          "timeoutMs": 60000,
+          "context": {
+            "groupId": "770099",
+            "userId": "<original event.userId>",
+            "nickname": "<original nickname>",
+            "atTargets": "<atTargets>"
+          },
+          "externalWork": "WS bridge"
+        },
+        {
+          "step": 5,
+          "node": "VISIBLE_SEND_BRIDGE",
+          "condition": "payload non-empty",
+          "externalWork": false
+        },
+        {
+          "step": 6,
+          "node": "OBSERVATION_BRIDGE",
+          "detail": "text -> record; image-only without capability/shadow user -> record(\"快捷指令查询完成（source 面板，结果见图片）\", images) (no shadow refetch)",
+          "externalWork": false
+        },
+        {
+          "step": 7,
+          "node": "LLM_PIPELINE_FALLTHROUGH",
+          "condition": "bridge threw or payload empty",
+          "detail": "log(\"unimplemented\", def.id); return handled:false -> bot.ts decideReply + LLM pipeline owns the message; pm/etx/rating/update have no query_osu capability, so no deterministic retry exists",
+          "externalWork": "LLM HTTP"
+        }
+      ]
+    },
+    {
+      "key": "kanon:recent",
+      "definition": {
+        "source": "kanon",
+        "id": "recent",
+        "aliases": [
+          "re",
+          "recent",
+          "pr"
+        ],
+        "capability": "recent",
+        "injectBinding": false,
+        "bridgeTimeoutMs": 60000
+      },
+      "path": [
+        {
+          "step": 1,
+          "node": "QUICK_GATES",
+          "detail": "globalPaused / group disabled / user blocked / silent mode / private non-owner / admin gate; silent handled, no bridge",
+          "externalWork": false
+        },
+        {
+          "step": 2,
+          "node": "GROUP_BOT_DISABLE_GUARD",
+          "detail": "groupBotConfig[groupId][source]===false -> handled:true replied:false reason group_bot_disabled:kanon",
+          "externalWork": false
+        },
+        {
+          "step": 3,
+          "node": "SUBJECT_RESOLUTION_BRIDGE",
+          "detail": "parseOsuArgs; explicit username or resolveInjectionUser(db binding); bare #N rebuilds \"!re <user> #N\"; unbound -> prompt reply and STOP",
+          "externalWork": "osu getUserById HTTP only when binding is numeric id",
+          "duplicateGroup": "RESOLVE_A"
+        },
+        {
+          "step": 4,
+          "node": "BRIDGE_ATTEMPT_1",
+          "bot": "kanon",
+          "command": "!re <resolved-user>",
+          "timeoutMs": 60000,
+          "context": {
+            "groupId": "770099",
+            "userId": "<original event.userId>",
+            "nickname": "<original nickname>",
+            "atTargets": "<match atTargets>"
+          },
+          "externalWork": "WS bridge to original bot"
+        },
+        {
+          "step": 5,
+          "node": "VISIBLE_SEND_BRIDGE",
+          "condition": "reply payload text/images non-empty",
+          "detail": "sendMessage(event, text+images)",
+          "externalWork": false
+        },
+        {
+          "step": 6,
+          "node": "OBSERVATION_BRIDGE",
+          "condition": "after visible send",
+          "detail": "text -> recordQuickContext([source] text, images); image-only -> fire-and-forget recordShadow -> buildQuickShadowSummary -> getUser + getUserRecentScores -> recordQuickContext",
+          "externalWork": "image-only: getUser + getUserRecentScores HTTP (shadow, after send)",
+          "duplicateGroup": "SHADOW_RECENT"
+        },
+        {
+          "step": 7,
+          "node": "BRIDGE_RETURN",
+          "condition": "payload non-empty",
+          "detail": "handled:true replied:true reason bridge:<source>; path ends",
+          "externalWork": false
+        },
+        {
+          "step": 8,
+          "node": "INTERNAL_FALLBACK",
+          "condition": "bridge threw or payload empty",
+          "detail": "falls through local handlers (none) -> internal engine capability recent",
+          "externalWork": false
+        },
+        {
+          "step": 9,
+          "node": "INTERNAL_ARG_PARSE",
+          "detail": "parseOsuArgs again; unbound guards re-checked via bindingUser",
+          "externalWork": false,
+          "duplicateGroup": "RESOLVE_A"
+        },
+        {
+          "step": 10,
+          "node": "EXECUTOR_PLAYER_RESOLUTION",
+          "detail": "executeInternalBotCommand -> resolveInternalPlayerTargetDetailed (binding / explicit / nickname / group-nickname search)",
+          "externalWork": false,
+          "duplicateGroup": "RESOLVE_A"
+        },
+        {
+          "step": 11,
+          "node": "EXECUTOR_OSU_USER_LOAD",
+          "detail": "loadInternalOsuUser -> osu api getUser/getUserById (requires OAuth/API)",
+          "externalWork": "HTTP getUser (up to ~15s per Wuxin osu api timeout)",
+          "duplicateGroup": "RESOLVE_A"
+        },
+        {
+          "step": 12,
+          "node": "BRIDGE_ATTEMPT_2",
+          "condition": "only for recent; hasLocalEndpoint(bridgeBot) and user load succeeded",
+          "bot": "kanon",
+          "command": "!re ${user.username}",
+          "timeoutMs": 60000,
+          "context": {
+            "groupId": "<original context.groupId> || 770099",
+            "userId": "<original userId>",
+            "nickname": "WuxinBridge",
+            "atTargets": []
+          },
+          "externalWork": "second WS bridge, same bot, same recent target",
+          "duplicateGroup": "DUP_BRIDGE_FALLBACK"
+        },
+        {
+          "step": 13,
+          "node": "BRIDGE_ATTEMPT_2_RETURN",
+          "condition": "bridgeReply text/images non-empty",
+          "detail": "executor returns image/text result -> quickPayload -> VISIBLE_SEND + recordQuickContext",
+          "externalWork": false
+        },
+        {
+          "step": 14,
+          "node": "OSU_RECENT_HTTP",
+          "condition": "bridge attempt 2 failed/empty or no endpoint",
+          "detail": "getUserRecentScores(user.id, osu, 1)",
+          "externalWork": "HTTP recent fetch",
+          "duplicateGroup": "THIRD_FETCH_IF_BRIDGE_2_RAN"
+        },
+        {
+          "step": 15,
+          "node": "ENRICH",
+          "detail": "enrichScoreStarRatings(attributes fetch)",
+          "externalWork": "HTTP attributes per score"
+        },
+        {
+          "step": 16,
+          "node": "RENDER",
+          "condition": "render server has clients",
+          "detail": "renderScoreCard yumu-image E5 panel",
+          "externalWork": "local render WS"
+        },
+        {
+          "step": 17,
+          "node": "INTERNAL_VISIBLE_SEND",
+          "detail": "quickPayload(result) -> sendMessage; text fallback always exists",
+          "externalWork": false
+        },
+        {
+          "step": 18,
+          "node": "INTERNAL_OBSERVATION",
+          "detail": "recordQuickContext(【快捷查询】... result content/images)",
+          "externalWork": false
+        },
+        {
+          "step": 19,
+          "node": "INTERNAL_ERROR_SEND",
+          "condition": "any step throws",
+          "detail": "sendMessage(error text) + recordQuickContext(\"查询失败：\"+error) -> reason recent_error",
+          "externalWork": false
+        }
+      ]
+    },
+    {
+      "key": "kanon:bp",
+      "definition": {
+        "source": "kanon",
+        "id": "bp",
+        "aliases": [
+          "bp"
+        ],
+        "capability": "bp",
+        "injectBinding": false,
+        "bridgeTimeoutMs": 60000
+      },
+      "path": [
+        {
+          "step": 1,
+          "node": "QUICK_GATES",
+          "detail": "same as recent",
+          "externalWork": false
+        },
+        {
+          "step": 2,
+          "node": "GROUP_BOT_DISABLE_GUARD",
+          "detail": "same as recent",
+          "externalWork": false
+        },
+        {
+          "step": 3,
+          "node": "SUBJECT_RESOLUTION_BRIDGE",
+          "detail": "parseOsuArgs (bp ranges/#N) + resolveInjectionUser when no explicit username; unbound -> prompt reply and STOP",
+          "externalWork": "osu getUserById only for numeric binding",
+          "duplicateGroup": "RESOLVE_A"
+        },
+        {
+          "step": 4,
+          "node": "BRIDGE_ATTEMPT_1",
+          "bot": "kanon",
+          "command": "<! or / prefix><alias> [injected user] [args]",
+          "timeoutMs": 60000,
+          "context": {
+            "groupId": "770099",
+            "userId": "<original event.userId>",
+            "nickname": "<original nickname>",
+            "atTargets": "<match atTargets>"
+          },
+          "externalWork": "WS bridge"
+        },
+        {
+          "step": 5,
+          "node": "VISIBLE_SEND_BRIDGE",
+          "condition": "payload non-empty",
+          "externalWork": false
+        },
+        {
+          "step": 6,
+          "node": "OBSERVATION_BRIDGE",
+          "condition": "after visible send",
+          "detail": "text -> record; image-only -> recordShadow -> buildQuickShadowSummary (bp: getUser+getUserBestScores; info: getUser; pplus: getPlayerBars)",
+          "externalWork": "shadow HTTP/local aggregate refetch",
+          "duplicateGroup": "SHADOW_CAPABILITY"
+        },
+        {
+          "step": 7,
+          "node": "INTERNAL_FALLBACK",
+          "condition": "bridge threw or payload empty",
+          "detail": "internal engine capability",
+          "externalWork": false
+        },
+        {
+          "step": 8,
+          "node": "INTERNAL_ARG_PARSE_AND_RESOLUTION",
+          "detail": "parseOsuArgs + binding guards + resolveInternalPlayerTargetDetailed + loadInternalOsuUser (getUser/getUserById)",
+          "externalWork": "HTTP getUser",
+          "duplicateGroup": "RESOLVE_A"
+        },
+        {
+          "step": 9,
+          "node": "OSU_BP_HTTP",
+          "detail": "getUserBestScores(user.id, osu, selection.endRank)",
+          "externalWork": "HTTP best scores"
+        },
+        {
+          "step": 10,
+          "node": "ENRICH",
+          "detail": "enrichScoreStarRatings",
+          "externalWork": "HTTP attributes"
+        },
+        {
+          "step": 11,
+          "node": "RENDER",
+          "condition": "render server has clients",
+          "detail": "renderBpScores yumu-image panel",
+          "externalWork": "local render WS"
+        },
+        {
+          "step": 99,
+          "node": "INTERNAL_VISIBLE_SEND_OR_ERROR",
+          "detail": "quickPayload -> sendMessage; on throw sendMessage(error) + record(\"查询失败：...\")",
+          "externalWork": false
+        }
+      ]
+    },
+    {
+      "key": "kanon:bplist",
+      "definition": {
+        "source": "kanon",
+        "id": "bplist",
+        "aliases": [
+          "bplist",
+          "get bplist"
+        ],
+        "capability": "bplist",
+        "injectBinding": false,
+        "bridgeTimeoutMs": 60000
+      },
+      "path": [
+        {
+          "step": 1,
+          "node": "QUICK_GATES",
+          "detail": "same as recent",
+          "externalWork": false
+        },
+        {
+          "step": 2,
+          "node": "GROUP_BOT_DISABLE_GUARD",
+          "detail": "same as recent",
+          "externalWork": false
+        },
+        {
+          "step": 3,
+          "node": "SUBJECT_RESOLUTION_BRIDGE",
+          "detail": "parseOsuArgs (bp ranges/#N) + resolveInjectionUser when no explicit username; unbound -> prompt reply and STOP",
+          "externalWork": "osu getUserById only for numeric binding",
+          "duplicateGroup": "RESOLVE_A"
+        },
+        {
+          "step": 4,
+          "node": "BRIDGE_ATTEMPT_1",
+          "bot": "kanon",
+          "command": "<! or / prefix><alias> [injected user] [args]",
+          "timeoutMs": 60000,
+          "context": {
+            "groupId": "770099",
+            "userId": "<original event.userId>",
+            "nickname": "<original nickname>",
+            "atTargets": "<match atTargets>"
+          },
+          "externalWork": "WS bridge"
+        },
+        {
+          "step": 5,
+          "node": "VISIBLE_SEND_BRIDGE",
+          "condition": "payload non-empty",
+          "externalWork": false
+        },
+        {
+          "step": 6,
+          "node": "OBSERVATION_BRIDGE",
+          "condition": "after visible send",
+          "detail": "text -> record; image-only -> recordShadow -> buildQuickShadowSummary (bp: getUser+getUserBestScores; info: getUser; pplus: getPlayerBars)",
+          "externalWork": "shadow HTTP/local aggregate refetch",
+          "duplicateGroup": "SHADOW_CAPABILITY"
+        },
+        {
+          "step": 7,
+          "node": "INTERNAL_FALLBACK",
+          "condition": "bridge threw or payload empty",
+          "detail": "internal engine capability",
+          "externalWork": false
+        },
+        {
+          "step": 8,
+          "node": "INTERNAL_ARG_PARSE_AND_RESOLUTION",
+          "detail": "parseOsuArgs + binding guards + resolveInternalPlayerTargetDetailed + loadInternalOsuUser (getUser/getUserById)",
+          "externalWork": "HTTP getUser",
+          "duplicateGroup": "RESOLVE_A"
+        },
+        {
+          "step": 9,
+          "node": "OSU_BP_HTTP",
+          "detail": "getUserBestScores(user.id, osu, selection.endRank)",
+          "externalWork": "HTTP best scores"
+        },
+        {
+          "step": 10,
+          "node": "ENRICH",
+          "detail": "enrichScoreStarRatings",
+          "externalWork": "HTTP attributes"
+        },
+        {
+          "step": 11,
+          "node": "RENDER",
+          "condition": "render server has clients",
+          "detail": "renderBpScores yumu-image panel",
+          "externalWork": "local render WS"
+        },
+        {
+          "step": 99,
+          "node": "INTERNAL_VISIBLE_SEND_OR_ERROR",
+          "detail": "quickPayload -> sendMessage; on throw sendMessage(error) + record(\"查询失败：...\")",
+          "externalWork": false
+        }
+      ]
+    },
+    {
+      "key": "kanon:info",
+      "definition": {
+        "source": "kanon",
+        "id": "info",
+        "aliases": [
+          "info"
+        ],
+        "capability": "info",
+        "injectBinding": false,
+        "bridgeTimeoutMs": 60000
+      },
+      "path": [
+        {
+          "step": 1,
+          "node": "QUICK_GATES",
+          "detail": "same as recent",
+          "externalWork": false
+        },
+        {
+          "step": 2,
+          "node": "GROUP_BOT_DISABLE_GUARD",
+          "detail": "same as recent",
+          "externalWork": false
+        },
+        {
+          "step": 3,
+          "node": "SUBJECT_RESOLUTION_BRIDGE",
+          "detail": "parseOsuArgs (bp ranges/#N) + resolveInjectionUser when no explicit username; unbound -> prompt reply and STOP",
+          "externalWork": "osu getUserById only for numeric binding",
+          "duplicateGroup": "RESOLVE_A"
+        },
+        {
+          "step": 4,
+          "node": "BRIDGE_ATTEMPT_1",
+          "bot": "kanon",
+          "command": "<! or / prefix><alias> [injected user] [args]",
+          "timeoutMs": 60000,
+          "context": {
+            "groupId": "770099",
+            "userId": "<original event.userId>",
+            "nickname": "<original nickname>",
+            "atTargets": "<match atTargets>"
+          },
+          "externalWork": "WS bridge"
+        },
+        {
+          "step": 5,
+          "node": "VISIBLE_SEND_BRIDGE",
+          "condition": "payload non-empty",
+          "externalWork": false
+        },
+        {
+          "step": 6,
+          "node": "OBSERVATION_BRIDGE",
+          "condition": "after visible send",
+          "detail": "text -> record; image-only -> recordShadow -> buildQuickShadowSummary (bp: getUser+getUserBestScores; info: getUser; pplus: getPlayerBars)",
+          "externalWork": "shadow HTTP/local aggregate refetch",
+          "duplicateGroup": "SHADOW_CAPABILITY"
+        },
+        {
+          "step": 7,
+          "node": "INTERNAL_FALLBACK",
+          "condition": "bridge threw or payload empty",
+          "detail": "internal engine capability",
+          "externalWork": false
+        },
+        {
+          "step": 8,
+          "node": "INTERNAL_ARG_PARSE_AND_RESOLUTION",
+          "detail": "parseOsuArgs + binding guards + resolveInternalPlayerTargetDetailed + loadInternalOsuUser (getUser/getUserById)",
+          "externalWork": "HTTP getUser",
+          "duplicateGroup": "RESOLVE_A"
+        },
+        {
+          "step": 9,
+          "node": "RENDER_INFO",
+          "condition": "render server has clients",
+          "detail": "renderPlayerInfo: getUserBestScores(100) + enrich + render; card -> renderCompactInfoCard",
+          "externalWork": "HTTP best scores + attributes + local render"
+        },
+        {
+          "step": 10,
+          "node": "TEXT_FALLBACK",
+          "detail": "formatInternalInfoText with skillStore PP+ note",
+          "externalWork": false
+        },
+        {
+          "step": 99,
+          "node": "INTERNAL_VISIBLE_SEND_OR_ERROR",
+          "detail": "quickPayload -> sendMessage; on throw sendMessage(error) + record(\"查询失败：...\")",
+          "externalWork": false
+        }
+      ]
+    },
+    {
+      "key": "kanon:update",
+      "definition": {
+        "source": "kanon",
+        "id": "update",
+        "aliases": [
+          "update"
+        ],
+        "capability": null,
+        "handler": null,
+        "injectBinding": true,
+        "bridgeTimeoutMs": 60000
+      },
+      "path": [
+        {
+          "step": 1,
+          "node": "QUICK_GATES",
+          "externalWork": false
+        },
+        {
+          "step": 2,
+          "node": "GROUP_BOT_DISABLE_GUARD",
+          "externalWork": false
+        },
+        {
+          "step": 3,
+          "node": "SUBJECT_RESOLUTION_BRIDGE",
+          "detail": "injectBinding only: parseOsuArgs + resolveInjectionUser; unbound -> prompt reply + STOP",
+          "externalWork": "osu getUserById only for numeric binding"
+        },
+        {
+          "step": 4,
+          "node": "BRIDGE_ATTEMPT_1",
+          "bot": "kanon",
+          "command": "<prefix><alias> [injected user]",
+          "timeoutMs": 60000,
+          "context": {
+            "groupId": "770099",
+            "userId": "<original event.userId>",
+            "nickname": "<original nickname>",
+            "atTargets": "<atTargets>"
+          },
+          "externalWork": "WS bridge"
+        },
+        {
+          "step": 5,
+          "node": "VISIBLE_SEND_BRIDGE",
+          "condition": "payload non-empty",
+          "externalWork": false
+        },
+        {
+          "step": 6,
+          "node": "OBSERVATION_BRIDGE",
+          "detail": "text -> record; image-only without capability/shadow user -> record(\"快捷指令查询完成（source 面板，结果见图片）\", images) (no shadow refetch)",
+          "externalWork": false
+        },
+        {
+          "step": 7,
+          "node": "LLM_PIPELINE_FALLTHROUGH",
+          "condition": "bridge threw or payload empty",
+          "detail": "log(\"unimplemented\", def.id); return handled:false -> bot.ts decideReply + LLM pipeline owns the message; pm/etx/rating/update have no query_osu capability, so no deterministic retry exists",
+          "externalWork": "LLM HTTP"
+        }
+      ]
+    },
+    {
+      "key": "lazybot:pplus",
+      "definition": {
+        "source": "lazybot",
+        "id": "pplus",
+        "aliases": [
+          "plus",
+          "ppp"
+        ],
+        "capability": "pplus",
+        "injectBinding": false,
+        "bridgeTimeoutMs": 30000
+      },
+      "path": [
+        {
+          "step": 1,
+          "node": "QUICK_GATES",
+          "detail": "same as recent",
+          "externalWork": false
+        },
+        {
+          "step": 2,
+          "node": "GROUP_BOT_DISABLE_GUARD",
+          "detail": "same as recent",
+          "externalWork": false
+        },
+        {
+          "step": 3,
+          "node": "SUBJECT_RESOLUTION_BRIDGE",
+          "detail": "parseOsuArgs (bp ranges/#N) + resolveInjectionUser when no explicit username; unbound -> prompt reply and STOP",
+          "externalWork": "osu getUserById only for numeric binding",
+          "duplicateGroup": "RESOLVE_A"
+        },
+        {
+          "step": 4,
+          "node": "BRIDGE_ATTEMPT_1",
+          "bot": "lazybot",
+          "command": "<! or / prefix><alias> [injected user] [args]",
+          "timeoutMs": 30000,
+          "context": {
+            "groupId": "770099",
+            "userId": "<original event.userId>",
+            "nickname": "<original nickname>",
+            "atTargets": "<match atTargets>"
+          },
+          "externalWork": "WS bridge"
+        },
+        {
+          "step": 5,
+          "node": "VISIBLE_SEND_BRIDGE",
+          "condition": "payload non-empty",
+          "externalWork": false
+        },
+        {
+          "step": 6,
+          "node": "OBSERVATION_BRIDGE",
+          "condition": "after visible send",
+          "detail": "text -> record; image-only -> recordShadow -> buildQuickShadowSummary (bp: getUser+getUserBestScores; info: getUser; pplus: getPlayerBars)",
+          "externalWork": "shadow HTTP/local aggregate refetch",
+          "duplicateGroup": "SHADOW_CAPABILITY"
+        },
+        {
+          "step": 7,
+          "node": "INTERNAL_FALLBACK",
+          "condition": "bridge threw or payload empty",
+          "detail": "internal engine capability",
+          "externalWork": false
+        },
+        {
+          "step": 8,
+          "node": "INTERNAL_ARG_PARSE_AND_RESOLUTION",
+          "detail": "parseOsuArgs + binding guards + resolveInternalPlayerTargetDetailed + loadInternalOsuUser (getUser/getUserById)",
+          "externalWork": "HTTP getUser",
+          "duplicateGroup": "RESOLVE_A"
+        },
+        {
+          "step": 9,
+          "node": "PPLUS_LOCAL_AGGREGATE",
+          "detail": "getPlayerBars(user.id) against local PP+ aggregate",
+          "externalWork": "HTTP local PP+ aggregate"
+        },
+        {
+          "step": 99,
+          "node": "INTERNAL_VISIBLE_SEND_OR_ERROR",
+          "detail": "quickPayload -> sendMessage; on throw sendMessage(error) + record(\"查询失败：...\")",
+          "externalWork": false
+        }
+      ]
+    },
+    {
+      "key": "lazybot:bp",
+      "definition": {
+        "source": "lazybot",
+        "id": "bp",
+        "aliases": [
+          "bp",
+          "best",
+          "pbp",
+          "b",
+          "bsm"
+        ],
+        "capability": "bp",
+        "injectBinding": false,
+        "bridgeTimeoutMs": 30000
+      },
+      "path": [
+        {
+          "step": 1,
+          "node": "QUICK_GATES",
+          "detail": "same as recent",
+          "externalWork": false
+        },
+        {
+          "step": 2,
+          "node": "GROUP_BOT_DISABLE_GUARD",
+          "detail": "same as recent",
+          "externalWork": false
+        },
+        {
+          "step": 3,
+          "node": "SUBJECT_RESOLUTION_BRIDGE",
+          "detail": "parseOsuArgs (bp ranges/#N) + resolveInjectionUser when no explicit username; unbound -> prompt reply and STOP",
+          "externalWork": "osu getUserById only for numeric binding",
+          "duplicateGroup": "RESOLVE_A"
+        },
+        {
+          "step": 4,
+          "node": "BRIDGE_ATTEMPT_1",
+          "bot": "lazybot",
+          "command": "<! or / prefix><alias> [injected user] [args]",
+          "timeoutMs": 30000,
+          "context": {
+            "groupId": "770099",
+            "userId": "<original event.userId>",
+            "nickname": "<original nickname>",
+            "atTargets": "<match atTargets>"
+          },
+          "externalWork": "WS bridge"
+        },
+        {
+          "step": 5,
+          "node": "VISIBLE_SEND_BRIDGE",
+          "condition": "payload non-empty",
+          "externalWork": false
+        },
+        {
+          "step": 6,
+          "node": "OBSERVATION_BRIDGE",
+          "condition": "after visible send",
+          "detail": "text -> record; image-only -> recordShadow -> buildQuickShadowSummary (bp: getUser+getUserBestScores; info: getUser; pplus: getPlayerBars)",
+          "externalWork": "shadow HTTP/local aggregate refetch",
+          "duplicateGroup": "SHADOW_CAPABILITY"
+        },
+        {
+          "step": 7,
+          "node": "INTERNAL_FALLBACK",
+          "condition": "bridge threw or payload empty",
+          "detail": "internal engine capability",
+          "externalWork": false
+        },
+        {
+          "step": 8,
+          "node": "INTERNAL_ARG_PARSE_AND_RESOLUTION",
+          "detail": "parseOsuArgs + binding guards + resolveInternalPlayerTargetDetailed + loadInternalOsuUser (getUser/getUserById)",
+          "externalWork": "HTTP getUser",
+          "duplicateGroup": "RESOLVE_A"
+        },
+        {
+          "step": 9,
+          "node": "OSU_BP_HTTP",
+          "detail": "getUserBestScores(user.id, osu, selection.endRank)",
+          "externalWork": "HTTP best scores"
+        },
+        {
+          "step": 10,
+          "node": "ENRICH",
+          "detail": "enrichScoreStarRatings",
+          "externalWork": "HTTP attributes"
+        },
+        {
+          "step": 11,
+          "node": "RENDER",
+          "condition": "render server has clients",
+          "detail": "renderBpScores yumu-image panel",
+          "externalWork": "local render WS"
+        },
+        {
+          "step": 99,
+          "node": "INTERNAL_VISIBLE_SEND_OR_ERROR",
+          "detail": "quickPayload -> sendMessage; on throw sendMessage(error) + record(\"查询失败：...\")",
+          "externalWork": false
+        }
+      ]
+    },
+    {
+      "key": "lazybot:bplist",
+      "definition": {
+        "source": "lazybot",
+        "id": "bplist",
+        "aliases": [
+          "bplist"
+        ],
+        "capability": "bplist",
+        "injectBinding": false,
+        "bridgeTimeoutMs": 30000
+      },
+      "path": [
+        {
+          "step": 1,
+          "node": "QUICK_GATES",
+          "detail": "same as recent",
+          "externalWork": false
+        },
+        {
+          "step": 2,
+          "node": "GROUP_BOT_DISABLE_GUARD",
+          "detail": "same as recent",
+          "externalWork": false
+        },
+        {
+          "step": 3,
+          "node": "SUBJECT_RESOLUTION_BRIDGE",
+          "detail": "parseOsuArgs (bp ranges/#N) + resolveInjectionUser when no explicit username; unbound -> prompt reply and STOP",
+          "externalWork": "osu getUserById only for numeric binding",
+          "duplicateGroup": "RESOLVE_A"
+        },
+        {
+          "step": 4,
+          "node": "BRIDGE_ATTEMPT_1",
+          "bot": "lazybot",
+          "command": "<! or / prefix><alias> [injected user] [args]",
+          "timeoutMs": 30000,
+          "context": {
+            "groupId": "770099",
+            "userId": "<original event.userId>",
+            "nickname": "<original nickname>",
+            "atTargets": "<match atTargets>"
+          },
+          "externalWork": "WS bridge"
+        },
+        {
+          "step": 5,
+          "node": "VISIBLE_SEND_BRIDGE",
+          "condition": "payload non-empty",
+          "externalWork": false
+        },
+        {
+          "step": 6,
+          "node": "OBSERVATION_BRIDGE",
+          "condition": "after visible send",
+          "detail": "text -> record; image-only -> recordShadow -> buildQuickShadowSummary (bp: getUser+getUserBestScores; info: getUser; pplus: getPlayerBars)",
+          "externalWork": "shadow HTTP/local aggregate refetch",
+          "duplicateGroup": "SHADOW_CAPABILITY"
+        },
+        {
+          "step": 7,
+          "node": "INTERNAL_FALLBACK",
+          "condition": "bridge threw or payload empty",
+          "detail": "internal engine capability",
+          "externalWork": false
+        },
+        {
+          "step": 8,
+          "node": "INTERNAL_ARG_PARSE_AND_RESOLUTION",
+          "detail": "parseOsuArgs + binding guards + resolveInternalPlayerTargetDetailed + loadInternalOsuUser (getUser/getUserById)",
+          "externalWork": "HTTP getUser",
+          "duplicateGroup": "RESOLVE_A"
+        },
+        {
+          "step": 9,
+          "node": "OSU_BP_HTTP",
+          "detail": "getUserBestScores(user.id, osu, selection.endRank)",
+          "externalWork": "HTTP best scores"
+        },
+        {
+          "step": 10,
+          "node": "ENRICH",
+          "detail": "enrichScoreStarRatings",
+          "externalWork": "HTTP attributes"
+        },
+        {
+          "step": 11,
+          "node": "RENDER",
+          "condition": "render server has clients",
+          "detail": "renderBpScores yumu-image panel",
+          "externalWork": "local render WS"
+        },
+        {
+          "step": 99,
+          "node": "INTERNAL_VISIBLE_SEND_OR_ERROR",
+          "detail": "quickPayload -> sendMessage; on throw sendMessage(error) + record(\"查询失败：...\")",
+          "externalWork": false
+        }
+      ]
+    },
+    {
+      "key": "lazybot:recent",
+      "definition": {
+        "source": "lazybot",
+        "id": "recent",
+        "aliases": [
+          "pr",
+          "rp",
+          "playrecent",
+          "re",
+          "recent",
+          "p",
+          "r",
+          "ppr",
+          "pre"
+        ],
+        "capability": "recent",
+        "injectBinding": false,
+        "bridgeTimeoutMs": 30000
+      },
+      "path": [
+        {
+          "step": 1,
+          "node": "QUICK_GATES",
+          "detail": "globalPaused / group disabled / user blocked / silent mode / private non-owner / admin gate; silent handled, no bridge",
+          "externalWork": false
+        },
+        {
+          "step": 2,
+          "node": "GROUP_BOT_DISABLE_GUARD",
+          "detail": "groupBotConfig[groupId][source]===false -> handled:true replied:false reason group_bot_disabled:lazybot",
+          "externalWork": false
+        },
+        {
+          "step": 3,
+          "node": "SUBJECT_RESOLUTION_BRIDGE",
+          "detail": "parseOsuArgs; explicit username or resolveInjectionUser(db binding); bare #N rebuilds \"!re <user> #N\"; unbound -> prompt reply and STOP",
+          "externalWork": "osu getUserById HTTP only when binding is numeric id",
+          "duplicateGroup": "RESOLVE_A"
+        },
+        {
+          "step": 4,
+          "node": "BRIDGE_ATTEMPT_1",
+          "bot": "yumu",
+          "command": "!r <resolved-user>",
+          "timeoutMs": 30000,
+          "context": {
+            "groupId": "770099",
+            "userId": "<original event.userId>",
+            "nickname": "<original nickname>",
+            "atTargets": "<match atTargets>"
+          },
+          "externalWork": "WS bridge to original bot"
+        },
+        {
+          "step": 5,
+          "node": "VISIBLE_SEND_BRIDGE",
+          "condition": "reply payload text/images non-empty",
+          "detail": "sendMessage(event, text+images)",
+          "externalWork": false
+        },
+        {
+          "step": 6,
+          "node": "OBSERVATION_BRIDGE",
+          "condition": "after visible send",
+          "detail": "text -> recordQuickContext([source] text, images); image-only -> fire-and-forget recordShadow -> buildQuickShadowSummary -> getUser + getUserRecentScores -> recordQuickContext",
+          "externalWork": "image-only: getUser + getUserRecentScores HTTP (shadow, after send)",
+          "duplicateGroup": "SHADOW_RECENT"
+        },
+        {
+          "step": 7,
+          "node": "BRIDGE_RETURN",
+          "condition": "payload non-empty",
+          "detail": "handled:true replied:true reason bridge:<source>; path ends",
+          "externalWork": false
+        },
+        {
+          "step": 8,
+          "node": "INTERNAL_FALLBACK",
+          "condition": "bridge threw or payload empty",
+          "detail": "falls through local handlers (none) -> internal engine capability recent",
+          "externalWork": false
+        },
+        {
+          "step": 9,
+          "node": "INTERNAL_ARG_PARSE",
+          "detail": "parseOsuArgs again; unbound guards re-checked via bindingUser",
+          "externalWork": false,
+          "duplicateGroup": "RESOLVE_A"
+        },
+        {
+          "step": 10,
+          "node": "EXECUTOR_PLAYER_RESOLUTION",
+          "detail": "executeInternalBotCommand -> resolveInternalPlayerTargetDetailed (binding / explicit / nickname / group-nickname search)",
+          "externalWork": false,
+          "duplicateGroup": "RESOLVE_A"
+        },
+        {
+          "step": 11,
+          "node": "EXECUTOR_OSU_USER_LOAD",
+          "detail": "loadInternalOsuUser -> osu api getUser/getUserById (requires OAuth/API)",
+          "externalWork": "HTTP getUser (up to ~15s per Wuxin osu api timeout)",
+          "duplicateGroup": "RESOLVE_A"
+        },
+        {
+          "step": 12,
+          "node": "BRIDGE_ATTEMPT_2",
+          "condition": "only for recent; hasLocalEndpoint(bridgeBot) and user load succeeded",
+          "bot": "yumu",
+          "command": "!r ${user.username}",
+          "timeoutMs": 60000,
+          "context": {
+            "groupId": "<original context.groupId> || 770099",
+            "userId": "<original userId>",
+            "nickname": "WuxinBridge",
+            "atTargets": []
+          },
+          "externalWork": "second WS bridge, same bot, same recent target",
+          "duplicateGroup": "DUP_BRIDGE_FALLBACK"
+        },
+        {
+          "step": 13,
+          "node": "BRIDGE_ATTEMPT_2_RETURN",
+          "condition": "bridgeReply text/images non-empty",
+          "detail": "executor returns image/text result -> quickPayload -> VISIBLE_SEND + recordQuickContext",
+          "externalWork": false
+        },
+        {
+          "step": 14,
+          "node": "OSU_RECENT_HTTP",
+          "condition": "bridge attempt 2 failed/empty or no endpoint",
+          "detail": "getUserRecentScores(user.id, osu, 1)",
+          "externalWork": "HTTP recent fetch",
+          "duplicateGroup": "THIRD_FETCH_IF_BRIDGE_2_RAN"
+        },
+        {
+          "step": 15,
+          "node": "ENRICH",
+          "detail": "enrichScoreStarRatings(attributes fetch)",
+          "externalWork": "HTTP attributes per score"
+        },
+        {
+          "step": 16,
+          "node": "RENDER",
+          "condition": "render server has clients",
+          "detail": "renderScoreCard yumu-image E5 panel",
+          "externalWork": "local render WS"
+        },
+        {
+          "step": 17,
+          "node": "INTERNAL_VISIBLE_SEND",
+          "detail": "quickPayload(result) -> sendMessage; text fallback always exists",
+          "externalWork": false
+        },
+        {
+          "step": 18,
+          "node": "INTERNAL_OBSERVATION",
+          "detail": "recordQuickContext(【快捷查询】... result content/images)",
+          "externalWork": false
+        },
+        {
+          "step": 19,
+          "node": "INTERNAL_ERROR_SEND",
+          "condition": "any step throws",
+          "detail": "sendMessage(error text) + recordQuickContext(\"查询失败：\"+error) -> reason recent_error",
+          "externalWork": false
+        }
+      ]
+    },
+    {
+      "key": "lazybot:profile",
+      "definition": {
+        "source": "lazybot",
+        "id": "profile",
+        "aliases": [
+          "profile",
+          "info"
+        ],
+        "capability": "info",
+        "injectBinding": false,
+        "bridgeTimeoutMs": 30000
+      },
+      "path": [
+        {
+          "step": 1,
+          "node": "QUICK_GATES",
+          "detail": "same as recent",
+          "externalWork": false
+        },
+        {
+          "step": 2,
+          "node": "GROUP_BOT_DISABLE_GUARD",
+          "detail": "same as recent",
+          "externalWork": false
+        },
+        {
+          "step": 3,
+          "node": "SUBJECT_RESOLUTION_BRIDGE",
+          "detail": "parseOsuArgs (bp ranges/#N) + resolveInjectionUser when no explicit username; unbound -> prompt reply and STOP",
+          "externalWork": "osu getUserById only for numeric binding",
+          "duplicateGroup": "RESOLVE_A"
+        },
+        {
+          "step": 4,
+          "node": "BRIDGE_ATTEMPT_1",
+          "bot": "lazybot",
+          "command": "<! or / prefix><alias> [injected user] [args]",
+          "timeoutMs": 30000,
+          "context": {
+            "groupId": "770099",
+            "userId": "<original event.userId>",
+            "nickname": "<original nickname>",
+            "atTargets": "<match atTargets>"
+          },
+          "externalWork": "WS bridge"
+        },
+        {
+          "step": 5,
+          "node": "VISIBLE_SEND_BRIDGE",
+          "condition": "payload non-empty",
+          "externalWork": false
+        },
+        {
+          "step": 6,
+          "node": "OBSERVATION_BRIDGE",
+          "condition": "after visible send",
+          "detail": "text -> record; image-only -> recordShadow -> buildQuickShadowSummary (bp: getUser+getUserBestScores; info: getUser; pplus: getPlayerBars)",
+          "externalWork": "shadow HTTP/local aggregate refetch",
+          "duplicateGroup": "SHADOW_CAPABILITY"
+        },
+        {
+          "step": 7,
+          "node": "INTERNAL_FALLBACK",
+          "condition": "bridge threw or payload empty",
+          "detail": "internal engine capability",
+          "externalWork": false
+        },
+        {
+          "step": 8,
+          "node": "INTERNAL_ARG_PARSE_AND_RESOLUTION",
+          "detail": "parseOsuArgs + binding guards + resolveInternalPlayerTargetDetailed + loadInternalOsuUser (getUser/getUserById)",
+          "externalWork": "HTTP getUser",
+          "duplicateGroup": "RESOLVE_A"
+        },
+        {
+          "step": 9,
+          "node": "RENDER_INFO",
+          "condition": "render server has clients",
+          "detail": "renderPlayerInfo: getUserBestScores(100) + enrich + render; card -> renderCompactInfoCard",
+          "externalWork": "HTTP best scores + attributes + local render"
+        },
+        {
+          "step": 10,
+          "node": "TEXT_FALLBACK",
+          "detail": "formatInternalInfoText with skillStore PP+ note",
+          "externalWork": false
+        },
+        {
+          "step": 99,
+          "node": "INTERNAL_VISIBLE_SEND_OR_ERROR",
+          "detail": "quickPayload -> sendMessage; on throw sendMessage(error) + record(\"查询失败：...\")",
+          "externalWork": false
+        }
+      ]
+    },
+    {
+      "key": "lazybot:card",
+      "definition": {
+        "source": "lazybot",
+        "id": "card",
+        "aliases": [
+          "card"
+        ],
+        "capability": "card",
+        "injectBinding": false,
+        "bridgeTimeoutMs": 30000
+      },
+      "path": [
+        {
+          "step": 1,
+          "node": "QUICK_GATES",
+          "detail": "same as recent",
+          "externalWork": false
+        },
+        {
+          "step": 2,
+          "node": "GROUP_BOT_DISABLE_GUARD",
+          "detail": "same as recent",
+          "externalWork": false
+        },
+        {
+          "step": 3,
+          "node": "SUBJECT_RESOLUTION_BRIDGE",
+          "detail": "parseOsuArgs (bp ranges/#N) + resolveInjectionUser when no explicit username; unbound -> prompt reply and STOP",
+          "externalWork": "osu getUserById only for numeric binding",
+          "duplicateGroup": "RESOLVE_A"
+        },
+        {
+          "step": 4,
+          "node": "BRIDGE_ATTEMPT_1",
+          "bot": "lazybot",
+          "command": "<! or / prefix><alias> [injected user] [args]",
+          "timeoutMs": 30000,
+          "context": {
+            "groupId": "770099",
+            "userId": "<original event.userId>",
+            "nickname": "<original nickname>",
+            "atTargets": "<match atTargets>"
+          },
+          "externalWork": "WS bridge"
+        },
+        {
+          "step": 5,
+          "node": "VISIBLE_SEND_BRIDGE",
+          "condition": "payload non-empty",
+          "externalWork": false
+        },
+        {
+          "step": 6,
+          "node": "OBSERVATION_BRIDGE",
+          "condition": "after visible send",
+          "detail": "text -> record; image-only -> recordShadow -> buildQuickShadowSummary (bp: getUser+getUserBestScores; info: getUser; pplus: getPlayerBars)",
+          "externalWork": "shadow HTTP/local aggregate refetch",
+          "duplicateGroup": "SHADOW_CAPABILITY"
+        },
+        {
+          "step": 7,
+          "node": "INTERNAL_FALLBACK",
+          "condition": "bridge threw or payload empty",
+          "detail": "internal engine capability",
+          "externalWork": false
+        },
+        {
+          "step": 8,
+          "node": "INTERNAL_ARG_PARSE_AND_RESOLUTION",
+          "detail": "parseOsuArgs + binding guards + resolveInternalPlayerTargetDetailed + loadInternalOsuUser (getUser/getUserById)",
+          "externalWork": "HTTP getUser",
+          "duplicateGroup": "RESOLVE_A"
+        },
+        {
+          "step": 9,
+          "node": "RENDER_INFO",
+          "condition": "render server has clients",
+          "detail": "renderPlayerInfo: getUserBestScores(100) + enrich + render; card -> renderCompactInfoCard",
+          "externalWork": "HTTP best scores + attributes + local render"
+        },
+        {
+          "step": 10,
+          "node": "TEXT_FALLBACK",
+          "detail": "formatInternalInfoText with skillStore PP+ note",
+          "externalWork": false
+        },
+        {
+          "step": 99,
+          "node": "INTERNAL_VISIBLE_SEND_OR_ERROR",
+          "detail": "quickPayload -> sendMessage; on throw sendMessage(error) + record(\"查询失败：...\")",
+          "externalWork": false
+        }
+      ]
+    },
+    {
+      "key": "hydrant:self_profile",
+      "definition": {
+        "source": "hydrant",
+        "id": "self_profile",
+        "aliases": [
+          "~"
+        ],
+        "capability": null,
+        "handler": "self_profile",
+        "injectBinding": false,
+        "bridgeTimeoutMs": 60000
+      },
+      "path": [
+        {
+          "step": 1,
+          "node": "QUICK_GATES",
+          "externalWork": false
+        },
+        {
+          "step": 2,
+          "node": "GROUP_BOT_DISABLE_GUARD",
+          "externalWork": false
+        },
+        {
+          "step": 3,
+          "node": "STD_ONLY_GUARD",
+          "condition": "self_profile/at_profile only",
+          "detail": "mode note reply + STOP for non-std",
+          "externalWork": false
+        },
+        {
+          "step": 4,
+          "node": "SUBJECT_RESOLUTION_BRIDGE",
+          "detail": "self_profile/at_profile: resolveInjectionUser(db, qq) or unbound STOP; where qq=N: resolveInjectionUser",
+          "externalWork": "osu getUserById only for numeric binding"
+        },
+        {
+          "step": 5,
+          "node": "BRIDGE_ATTEMPT_1",
+          "bot": "hydrant",
+          "command": "where <resolved-user>",
+          "timeoutMs": 60000,
+          "context": {
+            "groupId": "770099",
+            "userId": "<original event.userId>",
+            "nickname": "<original nickname>",
+            "atTargets": "<atTargets>"
+          },
+          "externalWork": "WS bridge"
+        },
+        {
+          "step": 6,
+          "node": "VISIBLE_SEND_BRIDGE",
+          "condition": "payload non-empty",
+          "externalWork": false
+        },
+        {
+          "step": 7,
+          "node": "OBSERVATION_BRIDGE",
+          "detail": "text -> record; image-only -> recordShadow profile -> buildQuickShadowSummary -> getUser",
+          "externalWork": "shadow getUser HTTP",
+          "duplicateGroup": "SHADOW_PROFILE"
+        },
+        {
+          "step": 8,
+          "node": "INTERNAL_PROFILE_FALLBACK",
+          "condition": "bridge threw or payload empty",
+          "detail": "executeInternalBotCommand('hydrant','profile', username)",
+          "externalWork": false
+        },
+        {
+          "step": 9,
+          "node": "EXECUTOR_PLAYER_RESOLUTION",
+          "detail": "resolveInternalPlayerTargetDetailed + loadInternalOsuUser",
+          "externalWork": "HTTP getUser",
+          "duplicateGroup": "RESOLVE_A"
+        },
+        {
+          "step": 10,
+          "node": "PROFILE_TEXT",
+          "detail": "formatInternalProfileText(user)",
+          "externalWork": false
+        },
+        {
+          "step": 11,
+          "node": "VISIBLE_SEND_OR_ERROR",
+          "detail": "quickPayload -> sendMessage; on throw sendMessage(error) + record",
+          "externalWork": false
+        }
+      ]
+    },
+    {
+      "key": "hydrant:at_profile",
+      "definition": {
+        "source": "hydrant",
+        "id": "at_profile",
+        "aliases": [
+          "查"
+        ],
+        "capability": null,
+        "handler": "at_profile",
+        "injectBinding": false,
+        "bridgeTimeoutMs": 60000
+      },
+      "path": [
+        {
+          "step": 1,
+          "node": "QUICK_GATES",
+          "externalWork": false
+        },
+        {
+          "step": 2,
+          "node": "GROUP_BOT_DISABLE_GUARD",
+          "externalWork": false
+        },
+        {
+          "step": 3,
+          "node": "STD_ONLY_GUARD",
+          "condition": "self_profile/at_profile only",
+          "detail": "mode note reply + STOP for non-std",
+          "externalWork": false
+        },
+        {
+          "step": 4,
+          "node": "SUBJECT_RESOLUTION_BRIDGE",
+          "detail": "self_profile/at_profile: resolveInjectionUser(db, qq) or unbound STOP; where qq=N: resolveInjectionUser",
+          "externalWork": "osu getUserById only for numeric binding"
+        },
+        {
+          "step": 5,
+          "node": "BRIDGE_ATTEMPT_1",
+          "bot": "hydrant",
+          "command": "where <resolved-user>",
+          "timeoutMs": 60000,
+          "context": {
+            "groupId": "770099",
+            "userId": "<original event.userId>",
+            "nickname": "<original nickname>",
+            "atTargets": "<atTargets>"
+          },
+          "externalWork": "WS bridge"
+        },
+        {
+          "step": 6,
+          "node": "VISIBLE_SEND_BRIDGE",
+          "condition": "payload non-empty",
+          "externalWork": false
+        },
+        {
+          "step": 7,
+          "node": "OBSERVATION_BRIDGE",
+          "detail": "text -> record; image-only -> recordShadow profile -> buildQuickShadowSummary -> getUser",
+          "externalWork": "shadow getUser HTTP",
+          "duplicateGroup": "SHADOW_PROFILE"
+        },
+        {
+          "step": 8,
+          "node": "INTERNAL_PROFILE_FALLBACK",
+          "condition": "bridge threw or payload empty",
+          "detail": "executeInternalBotCommand('hydrant','profile', username)",
+          "externalWork": false
+        },
+        {
+          "step": 9,
+          "node": "EXECUTOR_PLAYER_RESOLUTION",
+          "detail": "resolveInternalPlayerTargetDetailed + loadInternalOsuUser",
+          "externalWork": "HTTP getUser",
+          "duplicateGroup": "RESOLVE_A"
+        },
+        {
+          "step": 10,
+          "node": "PROFILE_TEXT",
+          "detail": "formatInternalProfileText(user)",
+          "externalWork": false
+        },
+        {
+          "step": 11,
+          "node": "VISIBLE_SEND_OR_ERROR",
+          "detail": "quickPayload -> sendMessage; on throw sendMessage(error) + record",
+          "externalWork": false
+        }
+      ]
+    },
+    {
+      "key": "hydrant:where",
+      "definition": {
+        "source": "hydrant",
+        "id": "where",
+        "aliases": [
+          "where"
+        ],
+        "capability": null,
+        "handler": "where",
+        "injectBinding": false,
+        "bridgeTimeoutMs": 60000
+      },
+      "path": [
+        {
+          "step": 1,
+          "node": "QUICK_GATES",
+          "externalWork": false
+        },
+        {
+          "step": 2,
+          "node": "GROUP_BOT_DISABLE_GUARD",
+          "externalWork": false
+        },
+        {
+          "step": 3,
+          "node": "STD_ONLY_GUARD",
+          "condition": "self_profile/at_profile only",
+          "detail": "mode note reply + STOP for non-std",
+          "externalWork": false
+        },
+        {
+          "step": 4,
+          "node": "SUBJECT_RESOLUTION_BRIDGE",
+          "detail": "self_profile/at_profile: resolveInjectionUser(db, qq) or unbound STOP; where qq=N: resolveInjectionUser",
+          "externalWork": "osu getUserById only for numeric binding"
+        },
+        {
+          "step": 5,
+          "node": "BRIDGE_ATTEMPT_1",
+          "bot": "hydrant",
+          "command": "where <args>",
+          "timeoutMs": 60000,
+          "context": {
+            "groupId": "770099",
+            "userId": "<original event.userId>",
+            "nickname": "<original nickname>",
+            "atTargets": "<atTargets>"
+          },
+          "externalWork": "WS bridge"
+        },
+        {
+          "step": 6,
+          "node": "VISIBLE_SEND_BRIDGE",
+          "condition": "payload non-empty",
+          "externalWork": false
+        },
+        {
+          "step": 7,
+          "node": "OBSERVATION_BRIDGE",
+          "detail": "text -> record; image-only -> recordShadow profile -> buildQuickShadowSummary -> getUser",
+          "externalWork": "shadow getUser HTTP",
+          "duplicateGroup": "SHADOW_PROFILE"
+        },
+        {
+          "step": 8,
+          "node": "INTERNAL_PROFILE_FALLBACK",
+          "condition": "bridge threw or payload empty",
+          "detail": "executeInternalBotCommand('hydrant','profile', username)",
+          "externalWork": false
+        },
+        {
+          "step": 9,
+          "node": "EXECUTOR_PLAYER_RESOLUTION",
+          "detail": "resolveInternalPlayerTargetDetailed + loadInternalOsuUser",
+          "externalWork": "HTTP getUser",
+          "duplicateGroup": "RESOLVE_A"
+        },
+        {
+          "step": 10,
+          "node": "PROFILE_TEXT",
+          "detail": "formatInternalProfileText(user)",
+          "externalWork": false
+        },
+        {
+          "step": 11,
+          "node": "VISIBLE_SEND_OR_ERROR",
+          "detail": "quickPayload -> sendMessage; on throw sendMessage(error) + record",
+          "externalWork": false
+        }
+      ]
+    }
+  ],
+  "duplicateWork": [
+    {
+      "id": "DUP_BRIDGE_FALLBACK",
+      "group": "DUP_BRIDGE_FALLBACK",
+      "commands": [
+        "kanon:recent",
+        "yumu:recent"
+      ],
+      "detail": "quickRouter bridge attempt #1 and executor case-recent bridge attempt #2 both call the same local bot for the same user recent. Attempt #2 only after attempt #1 throws/returns empty AND player resolution + loadInternalOsuUser succeed.",
+      "classification": "COMPATIBILITY_LEGACY",
+      "reason": "internal engine fallback keeps original render priority; code comment documents intent. Repeated external recent work is possible when attempt #1 timed out mid-execution."
+    },
+    {
+      "id": "DUP_SHADOW_RECENT",
+      "group": "SHADOW_RECENT",
+      "commands": [
+        "kanon:recent",
+        "yumu:recent",
+        "lazybot:recent"
+      ],
+      "detail": "bridge image-only success -> after visible send, buildQuickShadowSummary re-runs getUser + getUserRecentScores to fabricate text context.",
+      "classification": "REQUIRED",
+      "reason": "image-only bridge results carry no text; context memory needs a factual summary."
+    },
+    {
+      "id": "DUP_SHADOW_BP",
+      "group": "SHADOW_CAPABILITY",
+      "commands": [
+        "yumu:bp",
+        "yumu:bs",
+        "kanon:bp",
+        "kanon:bplist",
+        "lazybot:bp",
+        "lazybot:bplist"
+      ],
+      "detail": "bridge image-only success -> shadow re-runs getUser + getUserBestScores.",
+      "classification": "REQUIRED",
+      "reason": "same image-only context rationale."
+    },
+    {
+      "id": "DUP_SHADOW_PPLUS",
+      "group": "SHADOW_CAPABILITY",
+      "commands": [
+        "lazybot:pplus"
+      ],
+      "detail": "bridge image-only success -> shadow re-runs getUser + getPlayerBars.",
+      "classification": "REQUIRED",
+      "reason": "same image-only context rationale."
+    },
+    {
+      "id": "DUP_SHADOW_PROFILE",
+      "group": "SHADOW_PROFILE",
+      "commands": [
+        "hydrant:self_profile",
+        "hydrant:at_profile",
+        "hydrant:where",
+        "kanon:info",
+        "lazybot:profile",
+        "lazybot:card"
+      ],
+      "detail": "bridge image-only success -> shadow re-runs getUser (profile/info/card).",
+      "classification": "REQUIRED",
+      "reason": "same image-only context rationale."
+    },
+    {
+      "id": "DUP_PLAYER_RESOLUTION",
+      "group": "RESOLVE_A",
+      "commands": [
+        "all bridged with capability or hydrant handlers"
+      ],
+      "detail": "quickRouter resolves binding for injection (resolveInjectionUser); internal fallback re-resolves via resolveInternalPlayerTargetDetailed + loadInternalOsuUser (getUser/getUserById). Two resolution passes on the fallback path.",
+      "classification": "ACCIDENTAL",
+      "reason": "no shared resolved user between router and executor; low latency but duplicate store reads and possibly duplicate getUser HTTP."
+    },
+    {
+      "id": "DUP_THIRD_RECENT_FETCH",
+      "group": "THIRD_FETCH_IF_BRIDGE_2_RAN",
+      "commands": [
+        "kanon:recent",
+        "yumu:recent"
+      ],
+      "detail": "if bridge attempt #2 also fails/empty, executor then runs getUserRecentScores -> third external recent-related fetch in one command turn.",
+      "classification": "ACCIDENTAL",
+      "reason": "unbounded-by-design fallback chain; only triggered in double-failure scenarios."
+    },
+    {
+      "id": "DUP_COMMAND_LOG_AND_CONTEXT_WRITES",
+      "commands": [
+        "all active quick commands"
+      ],
+      "detail": "writeCommandLog + recordQuickContext each perform separate store updates on the success path.",
+      "classification": "REQUIRED",
+      "reason": "audit log vs conversation context are distinct stores."
+    }
+  ]
+}

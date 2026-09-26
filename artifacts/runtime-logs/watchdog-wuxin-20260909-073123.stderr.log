@@ -1,0 +1,6 @@
+[quick] bridge kanon 发送失败（面板可能已发出）: 发送 QQ 消息失败：retcode 200 EventChecker Failed: NTEvent serviceAndMethod:NodeIKernelMsgService/sendMsg ListenerName:NodeIKernelMsgListener/onMsgInfoListUpdate EventRet:
+{
+    "result": 120,
+    "errMsg": ""
+}
+

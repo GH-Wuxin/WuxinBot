@@ -1,0 +1,225 @@
+{
+  "generated_at": "2026-09-26T11:09:27.096Z",
+  "tool_guidance_version": "p1b-v1",
+  "full_guidance_chars": 1098,
+  "empty_guidance_chars": 0,
+  "capabilities": [
+    {
+      "capability": "bp",
+      "guidance_chars": 486,
+      "guidance_lines": 8,
+      "listed_capabilities": [
+        "bp"
+      ],
+      "contains_only_itself": true,
+      "scoped_policy_ids": [],
+      "global_policy_ids": [
+        "P_GLOBAL_NO_FABRICATE",
+        "P_GLOBAL_NO_NUMBERS_WITHOUT_TOOL",
+        "P_GLOBAL_ROUTE_FACTS",
+        "P_GLOBAL_ATTRIBUTION",
+        "P_GLOBAL_STD_ONLY",
+        "P_GLOBAL_NO_MARKUP"
+      ],
+      "contains_recent_selector_line": false
+    },
+    {
+      "capability": "bp_type",
+      "guidance_chars": 582,
+      "guidance_lines": 9,
+      "listed_capabilities": [
+        "bp_type"
+      ],
+      "contains_only_itself": true,
+      "scoped_policy_ids": [
+        "P_BP_TYPE_SCOPED"
+      ],
+      "global_policy_ids": [
+        "P_GLOBAL_NO_FABRICATE",
+        "P_GLOBAL_NO_NUMBERS_WITHOUT_TOOL",
+        "P_GLOBAL_ROUTE_FACTS",
+        "P_GLOBAL_ATTRIBUTION",
+        "P_GLOBAL_STD_ONLY",
+        "P_GLOBAL_NO_MARKUP"
+      ],
+      "contains_recent_selector_line": false
+    },
+    {
+      "capability": "recent",
+      "guidance_chars": 702,
+      "guidance_lines": 10,
+      "listed_capabilities": [
+        "recent"
+      ],
+      "contains_only_itself": true,
+      "scoped_policy_ids": [
+        "P_RECENT_SCOPED"
+      ],
+      "global_policy_ids": [
+        "P_GLOBAL_NO_FABRICATE",
+        "P_GLOBAL_NO_NUMBERS_WITHOUT_TOOL",
+        "P_GLOBAL_ROUTE_FACTS",
+        "P_GLOBAL_ATTRIBUTION",
+        "P_GLOBAL_STD_ONLY",
+        "P_GLOBAL_NO_MARKUP"
+      ],
+      "contains_recent_selector_line": true
+    },
+    {
+      "capability": "info",
+      "guidance_chars": 488,
+      "guidance_lines": 8,
+      "listed_capabilities": [
+        "info"
+      ],
+      "contains_only_itself": true,
+      "scoped_policy_ids": [],
+      "global_policy_ids": [
+        "P_GLOBAL_NO_FABRICATE",
+        "P_GLOBAL_NO_NUMBERS_WITHOUT_TOOL",
+        "P_GLOBAL_ROUTE_FACTS",
+        "P_GLOBAL_ATTRIBUTION",
+        "P_GLOBAL_STD_ONLY",
+        "P_GLOBAL_NO_MARKUP"
+      ],
+      "contains_recent_selector_line": false
+    },
+    {
+      "capability": "profile",
+      "guidance_chars": 491,
+      "guidance_lines": 8,
+      "listed_capabilities": [
+        "profile"
+      ],
+      "contains_only_itself": true,
+      "scoped_policy_ids": [],
+      "global_policy_ids": [
+        "P_GLOBAL_NO_FABRICATE",
+        "P_GLOBAL_NO_NUMBERS_WITHOUT_TOOL",
+        "P_GLOBAL_ROUTE_FACTS",
+        "P_GLOBAL_ATTRIBUTION",
+        "P_GLOBAL_STD_ONLY",
+        "P_GLOBAL_NO_MARKUP"
+      ],
+      "contains_recent_selector_line": false
+    },
+    {
+      "capability": "ppplus",
+      "guidance_chars": 490,
+      "guidance_lines": 8,
+      "listed_capabilities": [
+        "ppplus"
+      ],
+      "contains_only_itself": true,
+      "scoped_policy_ids": [],
+      "global_policy_ids": [
+        "P_GLOBAL_NO_FABRICATE",
+        "P_GLOBAL_NO_NUMBERS_WITHOUT_TOOL",
+        "P_GLOBAL_ROUTE_FACTS",
+        "P_GLOBAL_ATTRIBUTION",
+        "P_GLOBAL_STD_ONLY",
+        "P_GLOBAL_NO_MARKUP"
+      ],
+      "contains_recent_selector_line": false
+    },
+    {
+      "capability": "skill",
+      "guidance_chars": 489,
+      "guidance_lines": 8,
+      "listed_capabilities": [
+        "skill"
+      ],
+      "contains_only_itself": true,
+      "scoped_policy_ids": [],
+      "global_policy_ids": [
+        "P_GLOBAL_NO_FABRICATE",
+        "P_GLOBAL_NO_NUMBERS_WITHOUT_TOOL",
+        "P_GLOBAL_ROUTE_FACTS",
+        "P_GLOBAL_ATTRIBUTION",
+        "P_GLOBAL_STD_ONLY",
+        "P_GLOBAL_NO_MARKUP"
+      ],
+      "contains_recent_selector_line": false
+    },
+    {
+      "capability": "recommend",
+      "guidance_chars": 634,
+      "guidance_lines": 9,
+      "listed_capabilities": [
+        "recommend"
+      ],
+      "contains_only_itself": true,
+      "scoped_policy_ids": [
+        "P_RECOMMEND_SCOPED"
+      ],
+      "global_policy_ids": [
+        "P_GLOBAL_NO_FABRICATE",
+        "P_GLOBAL_NO_NUMBERS_WITHOUT_TOOL",
+        "P_GLOBAL_ROUTE_FACTS",
+        "P_GLOBAL_ATTRIBUTION",
+        "P_GLOBAL_STD_ONLY",
+        "P_GLOBAL_NO_MARKUP"
+      ],
+      "contains_recent_selector_line": false
+    },
+    {
+      "capability": "beatmap_lookup",
+      "guidance_chars": 498,
+      "guidance_lines": 8,
+      "listed_capabilities": [
+        "beatmap_lookup"
+      ],
+      "contains_only_itself": true,
+      "scoped_policy_ids": [],
+      "global_policy_ids": [
+        "P_GLOBAL_NO_FABRICATE",
+        "P_GLOBAL_NO_NUMBERS_WITHOUT_TOOL",
+        "P_GLOBAL_ROUTE_FACTS",
+        "P_GLOBAL_ATTRIBUTION",
+        "P_GLOBAL_STD_ONLY",
+        "P_GLOBAL_NO_MARKUP"
+      ],
+      "contains_recent_selector_line": false
+    },
+    {
+      "capability": "pp_calc",
+      "guidance_chars": 573,
+      "guidance_lines": 9,
+      "listed_capabilities": [
+        "pp_calc"
+      ],
+      "contains_only_itself": true,
+      "scoped_policy_ids": [
+        "P_PP_CALC_SCOPED"
+      ],
+      "global_policy_ids": [
+        "P_GLOBAL_NO_FABRICATE",
+        "P_GLOBAL_NO_NUMBERS_WITHOUT_TOOL",
+        "P_GLOBAL_ROUTE_FACTS",
+        "P_GLOBAL_ATTRIBUTION",
+        "P_GLOBAL_STD_ONLY",
+        "P_GLOBAL_NO_MARKUP"
+      ],
+      "contains_recent_selector_line": false
+    },
+    {
+      "capability": "leaderboard",
+      "guidance_chars": 495,
+      "guidance_lines": 8,
+      "listed_capabilities": [
+        "leaderboard"
+      ],
+      "contains_only_itself": true,
+      "scoped_policy_ids": [],
+      "global_policy_ids": [
+        "P_GLOBAL_NO_FABRICATE",
+        "P_GLOBAL_NO_NUMBERS_WITHOUT_TOOL",
+        "P_GLOBAL_ROUTE_FACTS",
+        "P_GLOBAL_ATTRIBUTION",
+        "P_GLOBAL_STD_ONLY",
+        "P_GLOBAL_NO_MARKUP"
+      ],
+      "contains_recent_selector_line": false
+    }
+  ]
+}

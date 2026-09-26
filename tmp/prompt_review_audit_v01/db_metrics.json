@@ -1,0 +1,3881 @@
+{
+  "schema_version": "prompt_review_audit_db_metrics_v1",
+  "db_path": "%APPDATA%/Wuxin/db.json (read-only; secrets excluded)",
+  "usageEvents": {
+    "total_stored": 5000,
+    "by_kind": {
+      "memory": {
+        "n": 1866,
+        "prompt_total": 10726598,
+        "completion_total": 3481560,
+        "prompt_mean": 5748.4,
+        "prompt_p50": 5612.0,
+        "prompt_p90": 9718.0,
+        "prompt_p95": 10479.0,
+        "prompt_max": 18674
+      },
+      "image-memory-summary": {
+        "n": 885,
+        "prompt_total": 1384173,
+        "completion_total": 216727,
+        "prompt_mean": 1564.0,
+        "prompt_p50": 884,
+        "prompt_p90": 4298.4,
+        "prompt_p95": 4428.0,
+        "prompt_max": 16576
+      },
+      "CHAT_OR_LEGACY_NO_KIND": {
+        "n": 749,
+        "prompt_total": 5053493,
+        "completion_total": 164543,
+        "prompt_mean": 6747.0,
+        "prompt_p50": 6405,
+        "prompt_p90": 13803.2,
+        "prompt_p95": 14945.0,
+        "prompt_max": 24355
+      },
+      "reply-gate": {
+        "n": 647,
+        "prompt_total": 224072,
+        "completion_total": 25971,
+        "prompt_mean": 346.3,
+        "prompt_p50": 334,
+        "prompt_p90": 405.4,
+        "prompt_p95": 502.1,
+        "prompt_max": 778
+      },
+      "relationship": {
+        "n": 476,
+        "prompt_total": 791093,
+        "completion_total": 142318,
+        "prompt_mean": 1662.0,
+        "prompt_p50": 1042.0,
+        "prompt_p90": 5251.0,
+        "prompt_p95": 5883.0,
+        "prompt_max": 8326
+      },
+      "group-profile": {
+        "n": 333,
+        "prompt_total": 1501964,
+        "completion_total": 239016,
+        "prompt_mean": 4510.4,
+        "prompt_p50": 3259,
+        "prompt_p90": 7247.2,
+        "prompt_p95": 7628.8,
+        "prompt_max": 11488
+      },
+      "memory-recalc": {
+        "n": 43,
+        "prompt_total": 277238,
+        "completion_total": 83810,
+        "prompt_mean": 6447.4,
+        "prompt_p50": 6544,
+        "prompt_p90": 9471.6,
+        "prompt_p95": 10876.6,
+        "prompt_max": 13140
+      },
+      "memory-manual-recalc": {
+        "n": 1,
+        "prompt_total": 5638,
+        "completion_total": 2000,
+        "prompt_mean": 5638.0,
+        "prompt_p50": 5638,
+        "prompt_p90": 5638,
+        "prompt_p95": 5638,
+        "prompt_max": 5638
+      }
+    },
+    "by_model": {
+      "mimo-v2.5": {
+        "n": 2924,
+        "prompt_mean": 4447.5,
+        "completion_mean": 1292.1
+      },
+      "deepseek-v4-flash": {
+        "n": 1725,
+        "prompt_mean": 3157.4,
+        "completion_mean": 244.1
+      },
+      "deepseek-v4-pro": {
+        "n": 351,
+        "prompt_mean": 4311.3,
+        "completion_mean": 446.8
+      }
+    }
+  },
+  "toolCallLogs": {
+    "total": 130,
+    "by_capability": {
+      "recent": {
+        "n": 24,
+        "ok": 21,
+        "error": 3,
+        "latency_p50": 63334.0,
+        "latency_p90": 75910.1,
+        "latency_p95": 86746.2,
+        "latency_max": 159498.0
+      },
+      "recommend": {
+        "n": 19,
+        "ok": 15,
+        "error": 4,
+        "latency_p50": 4328.0,
+        "latency_p90": 29508.0,
+        "latency_p95": 32018.8,
+        "latency_max": 33592.0
+      },
+      "ppplus": {
+        "n": 12,
+        "ok": 12,
+        "error": 0,
+        "latency_p50": 401.0,
+        "latency_p90": 3595.4,
+        "latency_p95": 66153.1,
+        "latency_max": 142228.0
+      },
+      "info": {
+        "n": 12,
+        "ok": 10,
+        "error": 2,
+        "latency_p50": 10094.5,
+        "latency_p90": 21039.9,
+        "latency_p95": 24849.0,
+        "latency_max": 28946.0
+      },
+      "bp": {
+        "n": 12,
+        "ok": 11,
+        "error": 1,
+        "latency_p50": 6468.0,
+        "latency_p90": 21826.7,
+        "latency_p95": 24512.2,
+        "latency_max": 26132.0
+      },
+      "profile": {
+        "n": 38,
+        "ok": 34,
+        "error": 4,
+        "latency_p50": 383.0,
+        "latency_p90": 986.9,
+        "latency_p95": 1096.1,
+        "latency_max": 1371.0
+      },
+      "skill": {
+        "n": 1,
+        "ok": 1,
+        "error": 0,
+        "latency_p50": 162773.0,
+        "latency_p90": 162773.0,
+        "latency_p95": 162773.0,
+        "latency_max": 162773.0
+      },
+      "bp_type": {
+        "n": 12,
+        "ok": 11,
+        "error": 1,
+        "latency_p50": 1868.0,
+        "latency_p90": 31643.1,
+        "latency_p95": 33650.4,
+        "latency_max": 33866.0
+      }
+    }
+  },
+  "commandLogs": {
+    "total": 993,
+    "by_command": {
+      "/osu": {
+        "n": 348,
+        "ok": 334,
+        "error": 14,
+        "latency_p50": 28429.5,
+        "latency_p90": 222290.9,
+        "latency_p95": 329465.5,
+        "latency_max": 677091.0
+      },
+      "quick:recent": {
+        "n": 291,
+        "ok": 0,
+        "error": 291,
+        "latency_p50": null,
+        "latency_p90": null,
+        "latency_p95": null,
+        "latency_max": null
+      },
+      "quick:pplus": {
+        "n": 52,
+        "ok": 0,
+        "error": 52,
+        "latency_p50": null,
+        "latency_p90": null,
+        "latency_p95": null,
+        "latency_max": null
+      },
+      "quick:etx": {
+        "n": 44,
+        "ok": 0,
+        "error": 44,
+        "latency_p50": null,
+        "latency_p90": null,
+        "latency_p95": null,
+        "latency_max": null
+      },
+      "quick:self_profile": {
+        "n": 26,
+        "ok": 0,
+        "error": 26,
+        "latency_p50": null,
+        "latency_p90": null,
+        "latency_p95": null,
+        "latency_max": null
+      },
+      "quick:bp": {
+        "n": 25,
+        "ok": 0,
+        "error": 25,
+        "latency_p50": null,
+        "latency_p90": null,
+        "latency_p95": null,
+        "latency_max": null
+      },
+      "quick:score": {
+        "n": 25,
+        "ok": 0,
+        "error": 25,
+        "latency_p50": null,
+        "latency_p90": null,
+        "latency_p95": null,
+        "latency_max": null
+      },
+      "quick:info": {
+        "n": 20,
+        "ok": 0,
+        "error": 20,
+        "latency_p50": null,
+        "latency_p90": null,
+        "latency_p95": null,
+        "latency_max": null
+      },
+      "/me": {
+        "n": 20,
+        "ok": 20,
+        "error": 0,
+        "latency_p50": 1065.0,
+        "latency_p90": 2230.4,
+        "latency_p95": 6843.3,
+        "latency_max": 8235.0
+      },
+      "/ping": {
+        "n": 17,
+        "ok": 12,
+        "error": 5,
+        "latency_p50": 857.0,
+        "latency_p90": 2011.4,
+        "latency_p95": 3707.8,
+        "latency_max": 6459.0
+      },
+      "quick:oldavatar": {
+        "n": 11,
+        "ok": 0,
+        "error": 11,
+        "latency_p50": null,
+        "latency_p90": null,
+        "latency_p95": null,
+        "latency_max": null
+      },
+      "quick:bind": {
+        "n": 10,
+        "ok": 0,
+        "error": 10,
+        "latency_p50": null,
+        "latency_p90": null,
+        "latency_p95": null,
+        "latency_max": null
+      },
+      "quick:where": {
+        "n": 9,
+        "ok": 0,
+        "error": 9,
+        "latency_p50": null,
+        "latency_p90": null,
+        "latency_p95": null,
+        "latency_max": null
+      },
+      "/profile": {
+        "n": 9,
+        "ok": 5,
+        "error": 4,
+        "latency_p50": 1136.0,
+        "latency_p90": 8858.6,
+        "latency_p95": 10001.8,
+        "latency_max": 11145.0
+      },
+      "/help": {
+        "n": 8,
+        "ok": 8,
+        "error": 0,
+        "latency_p50": 1101.0,
+        "latency_p90": 1262.1,
+        "latency_p95": 1320.5,
+        "latency_max": 1379.0
+      },
+      "quick:bs": {
+        "n": 8,
+        "ok": 0,
+        "error": 8,
+        "latency_p50": null,
+        "latency_p90": null,
+        "latency_p95": null,
+        "latency_max": null
+      },
+      "quick:update": {
+        "n": 8,
+        "ok": 0,
+        "error": 8,
+        "latency_p50": null,
+        "latency_p90": null,
+        "latency_p95": null,
+        "latency_max": null
+      },
+      "quick:rating": {
+        "n": 6,
+        "ok": 0,
+        "error": 6,
+        "latency_p50": null,
+        "latency_p90": null,
+        "latency_p95": null,
+        "latency_max": null
+      },
+      "quick:todaybp": {
+        "n": 6,
+        "ok": 0,
+        "error": 6,
+        "latency_p50": null,
+        "latency_p90": null,
+        "latency_p95": null,
+        "latency_max": null
+      },
+      "quick:at_profile": {
+        "n": 5,
+        "ok": 0,
+        "error": 5,
+        "latency_p50": null,
+        "latency_p90": null,
+        "latency_p95": null,
+        "latency_max": null
+      },
+      "quick:dice": {
+        "n": 4,
+        "ok": 0,
+        "error": 4,
+        "latency_p50": null,
+        "latency_p90": null,
+        "latency_p95": null,
+        "latency_max": null
+      },
+      "quick:link": {
+        "n": 4,
+        "ok": 0,
+        "error": 4,
+        "latency_p50": null,
+        "latency_p90": null,
+        "latency_p95": null,
+        "latency_max": null
+      },
+      "quick:bpcard": {
+        "n": 4,
+        "ok": 0,
+        "error": 4,
+        "latency_p50": null,
+        "latency_p90": null,
+        "latency_p95": null,
+        "latency_max": null
+      },
+      "quick:ping": {
+        "n": 3,
+        "ok": 0,
+        "error": 3,
+        "latency_p50": null,
+        "latency_p90": null,
+        "latency_p95": null,
+        "latency_max": null
+      },
+      "quick:help": {
+        "n": 3,
+        "ok": 0,
+        "error": 3,
+        "latency_p50": null,
+        "latency_p90": null,
+        "latency_p95": null,
+        "latency_max": null
+      },
+      "quick:pm": {
+        "n": 3,
+        "ok": 0,
+        "error": 3,
+        "latency_p50": null,
+        "latency_p90": null,
+        "latency_p95": null,
+        "latency_max": null
+      },
+      "quick:match": {
+        "n": 3,
+        "ok": 0,
+        "error": 3,
+        "latency_p50": null,
+        "latency_p90": null,
+        "latency_p95": null,
+        "latency_max": null
+      },
+      "/model": {
+        "n": 3,
+        "ok": 3,
+        "error": 0,
+        "latency_p50": 4474.0,
+        "latency_p90": 7589.2,
+        "latency_p95": 7978.6,
+        "latency_max": 8368.0
+      },
+      "/usage": {
+        "n": 2,
+        "ok": 2,
+        "error": 0,
+        "latency_p50": 1365.5,
+        "latency_p90": 1436.3,
+        "latency_p95": 1445.2,
+        "latency_max": 1454.0
+      },
+      "/exp": {
+        "n": 2,
+        "ok": 2,
+        "error": 0,
+        "latency_p50": 1095.5,
+        "latency_p90": 1232.7,
+        "latency_p95": 1249.8,
+        "latency_max": 1267.0
+      },
+      "quick:friend": {
+        "n": 2,
+        "ok": 0,
+        "error": 2,
+        "latency_p50": null,
+        "latency_p90": null,
+        "latency_p95": null,
+        "latency_max": null
+      },
+      "/osubind": {
+        "n": 1,
+        "ok": 0,
+        "error": 1,
+        "latency_p50": 615.0,
+        "latency_p90": 615.0,
+        "latency_p95": 615.0,
+        "latency_max": 615.0
+      },
+      "/plus": {
+        "n": 1,
+        "ok": 0,
+        "error": 1,
+        "latency_p50": 169.0,
+        "latency_p90": 169.0,
+        "latency_p95": 169.0,
+        "latency_max": 169.0
+      },
+      "quick:quickplay": {
+        "n": 1,
+        "ok": 0,
+        "error": 1,
+        "latency_p50": null,
+        "latency_p90": null,
+        "latency_p95": null,
+        "latency_max": null
+      },
+      "/36444011": {
+        "n": 1,
+        "ok": 0,
+        "error": 1,
+        "latency_p50": 805.0,
+        "latency_p90": 805.0,
+        "latency_p95": 805.0,
+        "latency_max": 805.0
+      },
+      "/[shk]sarrty_awa": {
+        "n": 1,
+        "ok": 0,
+        "error": 1,
+        "latency_p50": 634.0,
+        "latency_p90": 634.0,
+        "latency_p95": 634.0,
+        "latency_max": 634.0
+      },
+      "/summarize": {
+        "n": 1,
+        "ok": 1,
+        "error": 0,
+        "latency_p50": 7390.0,
+        "latency_p90": 7390.0,
+        "latency_p95": 7390.0,
+        "latency_max": 7390.0
+      },
+      "quick:bplist": {
+        "n": 1,
+        "ok": 0,
+        "error": 1,
+        "latency_p50": null,
+        "latency_p90": null,
+        "latency_p95": null,
+        "latency_max": null
+      },
+      "/pinf": {
+        "n": 1,
+        "ok": 0,
+        "error": 1,
+        "latency_p50": 838.0,
+        "latency_p90": 838.0,
+        "latency_p95": 838.0,
+        "latency_max": 838.0
+      },
+      "quick:map": {
+        "n": 1,
+        "ok": 0,
+        "error": 1,
+        "latency_p50": null,
+        "latency_p90": null,
+        "latency_p95": null,
+        "latency_max": null
+      },
+      "/top": {
+        "n": 1,
+        "ok": 1,
+        "error": 0,
+        "latency_p50": 1267.0,
+        "latency_p90": 1267.0,
+        "latency_p95": 1267.0,
+        "latency_max": 1267.0
+      },
+      "/summrize": {
+        "n": 1,
+        "ok": 0,
+        "error": 1,
+        "latency_p50": 1103.0,
+        "latency_p90": 1103.0,
+        "latency_p95": 1103.0,
+        "latency_max": 1103.0
+      },
+      "/group": {
+        "n": 1,
+        "ok": 1,
+        "error": 0,
+        "latency_p50": 1424.0,
+        "latency_p90": 1424.0,
+        "latency_p95": 1424.0,
+        "latency_max": 1424.0
+      }
+    }
+  },
+  "review": {
+    "osuAnalyses_total": 63,
+    "no_review_log": 0,
+    "eligible": 63,
+    "review_invoked_rounds": 63,
+    "review_unavailable": 0,
+    "analyses_review_all_pass": 53,
+    "analyses_with_quality_reject_only": 0,
+    "analyses_with_hard_reject": 10,
+    "effective_change_analyses": 10,
+    "effective_change_rate": 0.1587,
+    "pass_through_rate": 0.8413,
+    "verdict_counts": {
+      "PASS:none": 493,
+      "REJECT:hard": 11
+    }
+  },
+  "review_reject_classification": {
+    "CORRECT_INTERVENTION": 6,
+    "STYLE_ONLY_CHANGE": 1,
+    "UNKNOWN": 2,
+    "MEANINGFUL_SAFETY_CHANGE": 2
+  },
+  "review_samples": {
+    "pass": [
+      {
+        "createdAt": "2026-08-02T00:19:30.696Z",
+        "verdicts": [
+          {
+            "section": "profile",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "top",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "top5",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "mods",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "pplus",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "recent",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "classification",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "conclusion",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          }
+        ]
+      },
+      {
+        "createdAt": "2026-08-02T00:22:04.719Z",
+        "verdicts": [
+          {
+            "section": "profile",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "top",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "top5",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "mods",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "pplus",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "recent",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "classification",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "conclusion",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          }
+        ]
+      },
+      {
+        "createdAt": "2026-08-02T00:24:42.197Z",
+        "verdicts": [
+          {
+            "section": "profile",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "top",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "top5",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "mods",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "pplus",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "recent",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "classification",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "conclusion",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          }
+        ]
+      },
+      {
+        "createdAt": "2026-08-02T00:38:35.908Z",
+        "verdicts": [
+          {
+            "section": "profile",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "top",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "top5",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "mods",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "pplus",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "recent",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "classification",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "conclusion",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          }
+        ]
+      },
+      {
+        "createdAt": "2026-08-06T07:43:23.798Z",
+        "verdicts": [
+          {
+            "section": "profile",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "top",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "top5",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "mods",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "pplus",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "recent",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "classification",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "conclusion",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          }
+        ]
+      },
+      {
+        "createdAt": "2026-08-06T07:52:57.040Z",
+        "verdicts": [
+          {
+            "section": "profile",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "top",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "top5",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "mods",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "pplus",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "recent",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "classification",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "conclusion",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          }
+        ]
+      },
+      {
+        "createdAt": "2026-08-06T09:14:30.026Z",
+        "verdicts": [
+          {
+            "section": "profile",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "top",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "top5",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "mods",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "pplus",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "recent",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "classification",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "conclusion",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          }
+        ]
+      },
+      {
+        "createdAt": "2026-08-06T09:20:00.343Z",
+        "verdicts": [
+          {
+            "section": "profile",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "top",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "top5",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "mods",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "pplus",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "recent",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "classification",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "conclusion",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          }
+        ]
+      },
+      {
+        "createdAt": "2026-08-06T09:21:37.002Z",
+        "verdicts": [
+          {
+            "section": "profile",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "top",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "top5",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "mods",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "pplus",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "recent",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "classification",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "conclusion",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          }
+        ]
+      },
+      {
+        "createdAt": "2026-08-06T09:59:14.287Z",
+        "verdicts": [
+          {
+            "section": "profile",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "top",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "top5",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "mods",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "pplus",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "recent",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "classification",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "conclusion",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          }
+        ]
+      },
+      {
+        "createdAt": "2026-08-06T10:13:32.270Z",
+        "verdicts": [
+          {
+            "section": "profile",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "top",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "top5",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "mods",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "pplus",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "recent",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "classification",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "conclusion",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          }
+        ]
+      },
+      {
+        "createdAt": "2026-08-06T10:14:26.709Z",
+        "verdicts": [
+          {
+            "section": "profile",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "top",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "top5",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "mods",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "pplus",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "recent",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "classification",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "conclusion",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          }
+        ]
+      },
+      {
+        "createdAt": "2026-08-06T14:37:32.872Z",
+        "verdicts": [
+          {
+            "section": "profile",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "top",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "top5",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "mods",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "pplus",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "recent",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "classification",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "conclusion",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          }
+        ]
+      },
+      {
+        "createdAt": "2026-08-06T14:48:45.773Z",
+        "verdicts": [
+          {
+            "section": "profile",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "top",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "top5",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "mods",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "pplus",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "recent",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "classification",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "conclusion",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          }
+        ]
+      },
+      {
+        "createdAt": "2026-08-06T14:53:16.698Z",
+        "verdicts": [
+          {
+            "section": "profile",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "top",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "top5",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "mods",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "pplus",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "recent",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "classification",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "conclusion",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          }
+        ]
+      },
+      {
+        "createdAt": "2026-08-06T14:53:39.207Z",
+        "verdicts": [
+          {
+            "section": "profile",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "top",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "top5",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "mods",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "pplus",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "recent",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "classification",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "conclusion",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          }
+        ]
+      },
+      {
+        "createdAt": "2026-08-06T15:00:26.100Z",
+        "verdicts": [
+          {
+            "section": "profile",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "top",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "top5",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "mods",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "pplus",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "recent",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "classification",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "conclusion",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          }
+        ]
+      },
+      {
+        "createdAt": "2026-08-06T16:32:51.641Z",
+        "verdicts": [
+          {
+            "section": "profile",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "top",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "top5",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "mods",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "pplus",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "recent",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "classification",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "conclusion",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          }
+        ]
+      },
+      {
+        "createdAt": "2026-08-06T16:39:23.532Z",
+        "verdicts": [
+          {
+            "section": "profile",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "top",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "top5",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "mods",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "pplus",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "recent",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "classification",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "conclusion",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          }
+        ]
+      },
+      {
+        "createdAt": "2026-08-06T16:46:07.131Z",
+        "verdicts": [
+          {
+            "section": "profile",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "top",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "top5",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "mods",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "pplus",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "recent",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "classification",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "conclusion",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          }
+        ]
+      },
+      {
+        "createdAt": "2026-08-07T07:14:56.377Z",
+        "verdicts": [
+          {
+            "section": "profile",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "top",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "top5",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "mods",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "pplus",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "recent",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "classification",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "conclusion",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          }
+        ]
+      },
+      {
+        "createdAt": "2026-08-07T07:18:19.331Z",
+        "verdicts": [
+          {
+            "section": "profile",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "top",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "top5",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "mods",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "pplus",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "recent",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "classification",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "conclusion",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          }
+        ]
+      },
+      {
+        "createdAt": "2026-08-07T07:26:34.102Z",
+        "verdicts": [
+          {
+            "section": "profile",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "top",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "top5",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "mods",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "pplus",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "recent",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "classification",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "conclusion",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          }
+        ]
+      },
+      {
+        "createdAt": "2026-08-07T07:34:09.005Z",
+        "verdicts": [
+          {
+            "section": "profile",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "top",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "top5",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "mods",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "pplus",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "recent",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "classification",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "conclusion",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          }
+        ]
+      },
+      {
+        "createdAt": "2026-08-07T07:37:20.697Z",
+        "verdicts": [
+          {
+            "section": "profile",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "top",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "top5",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "mods",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "pplus",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "recent",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "classification",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "conclusion",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          }
+        ]
+      },
+      {
+        "createdAt": "2026-08-07T07:56:16.428Z",
+        "verdicts": [
+          {
+            "section": "profile",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "top",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "top5",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "mods",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "pplus",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "recent",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "classification",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "conclusion",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          }
+        ]
+      },
+      {
+        "createdAt": "2026-08-07T08:11:43.812Z",
+        "verdicts": [
+          {
+            "section": "profile",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "top",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "top5",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "mods",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "pplus",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "recent",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "classification",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "conclusion",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          }
+        ]
+      },
+      {
+        "createdAt": "2026-08-07T08:16:23.283Z",
+        "verdicts": [
+          {
+            "section": "profile",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "top",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "top5",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "mods",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "pplus",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "recent",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "classification",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "conclusion",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          }
+        ]
+      },
+      {
+        "createdAt": "2026-08-07T08:23:35.550Z",
+        "verdicts": [
+          {
+            "section": "profile",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "top",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "top5",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "mods",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "pplus",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "recent",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "classification",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "conclusion",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          }
+        ]
+      },
+      {
+        "createdAt": "2026-08-07T08:33:11.357Z",
+        "verdicts": [
+          {
+            "section": "profile",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "top",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "top5",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "mods",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "pplus",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "recent",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "classification",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "conclusion",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          }
+        ]
+      },
+      {
+        "createdAt": "2026-08-07T11:21:53.541Z",
+        "verdicts": [
+          {
+            "section": "profile",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "top",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "top5",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "mods",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "pplus",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "recent",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "classification",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "conclusion",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          }
+        ]
+      },
+      {
+        "createdAt": "2026-08-07T11:33:58.138Z",
+        "verdicts": [
+          {
+            "section": "profile",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "top",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "top5",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "mods",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "pplus",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "recent",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "classification",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "conclusion",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          }
+        ]
+      },
+      {
+        "createdAt": "2026-08-07T12:14:35.854Z",
+        "verdicts": [
+          {
+            "section": "profile",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "top",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "top5",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "mods",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "pplus",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "recent",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "classification",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "conclusion",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          }
+        ]
+      },
+      {
+        "createdAt": "2026-08-07T12:24:50.154Z",
+        "verdicts": [
+          {
+            "section": "profile",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "top",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "top5",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "mods",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "pplus",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "recent",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "classification",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "conclusion",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          }
+        ]
+      },
+      {
+        "createdAt": "2026-08-08T17:38:01.126Z",
+        "verdicts": [
+          {
+            "section": "profile",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "top",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "top5",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "mods",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "pplus",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "recent",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "classification",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "conclusion",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          }
+        ]
+      },
+      {
+        "createdAt": "2026-08-08T20:22:47.516Z",
+        "verdicts": [
+          {
+            "section": "profile",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "top",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "top5",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "mods",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "pplus",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "recent",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "classification",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "conclusion",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          }
+        ]
+      },
+      {
+        "createdAt": "2026-08-08T23:02:06.301Z",
+        "verdicts": [
+          {
+            "section": "profile",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "top",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "top5",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "mods",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "pplus",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "recent",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "classification",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "conclusion",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          }
+        ]
+      },
+      {
+        "createdAt": "2026-08-08T23:08:20.709Z",
+        "verdicts": [
+          {
+            "section": "profile",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "top",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "top5",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "mods",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "pplus",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "recent",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "classification",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "conclusion",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          }
+        ]
+      },
+      {
+        "createdAt": "2026-08-09T01:28:35.809Z",
+        "verdicts": [
+          {
+            "section": "profile",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "top",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "top5",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "mods",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "pplus",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "recent",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "classification",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "conclusion",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          }
+        ]
+      },
+      {
+        "createdAt": "2026-08-09T01:30:54.136Z",
+        "verdicts": [
+          {
+            "section": "profile",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "top",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "top5",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "mods",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "pplus",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "recent",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "classification",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "conclusion",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          }
+        ]
+      },
+      {
+        "createdAt": "2026-08-09T01:40:11.760Z",
+        "verdicts": [
+          {
+            "section": "profile",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "top",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "top5",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "mods",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "pplus",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "recent",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "classification",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "conclusion",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          }
+        ]
+      },
+      {
+        "createdAt": "2026-08-09T01:41:54.089Z",
+        "verdicts": [
+          {
+            "section": "profile",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "top",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "top5",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "mods",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "pplus",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "recent",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "classification",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "conclusion",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          }
+        ]
+      },
+      {
+        "createdAt": "2026-08-10T08:53:02.291Z",
+        "verdicts": [
+          {
+            "section": "profile",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "top",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "top5",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "mods",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "pplus",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "recent",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "classification",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "conclusion",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          }
+        ]
+      },
+      {
+        "createdAt": "2026-08-10T10:30:47.952Z",
+        "verdicts": [
+          {
+            "section": "profile",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "top",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "top5",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "mods",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "pplus",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "recent",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "classification",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "conclusion",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          }
+        ]
+      },
+      {
+        "createdAt": "2026-08-13T01:32:23.774Z",
+        "verdicts": [
+          {
+            "section": "profile",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "top",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "top5",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "mods",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "pplus",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "recent",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "classification",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "conclusion",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          }
+        ]
+      },
+      {
+        "createdAt": "2026-08-13T01:37:06.420Z",
+        "verdicts": [
+          {
+            "section": "profile",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "top",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "top5",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "mods",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "pplus",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "recent",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "classification",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "conclusion",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          }
+        ]
+      },
+      {
+        "createdAt": "2026-08-13T01:41:45.484Z",
+        "verdicts": [
+          {
+            "section": "profile",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "top",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "top5",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "mods",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "pplus",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "recent",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "classification",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "conclusion",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          }
+        ]
+      },
+      {
+        "createdAt": "2026-08-13T01:42:31.263Z",
+        "verdicts": [
+          {
+            "section": "profile",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "top",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "top5",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "mods",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "pplus",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "recent",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "classification",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "conclusion",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          }
+        ]
+      },
+      {
+        "createdAt": "2026-08-13T15:05:08.128Z",
+        "verdicts": [
+          {
+            "section": "profile",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "top",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "top5",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "mods",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "pplus",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "recent",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "classification",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "conclusion",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          }
+        ]
+      },
+      {
+        "createdAt": "2026-08-14T05:32:56.839Z",
+        "verdicts": [
+          {
+            "section": "profile",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "top",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "top5",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "mods",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "pplus",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "recent",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "classification",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "conclusion",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          }
+        ]
+      }
+    ],
+    "rewrite_or_hard_reject": [
+      {
+        "createdAt": "2026-08-06T09:26:03.729Z",
+        "rejects": [
+          {
+            "section": "profile",
+            "kind": "hard",
+            "reason": "注册至今约 2,174 天，报告写成约 6.0 年，与 verified_facts 的天数不符。"
+          }
+        ],
+        "verdicts": [
+          {
+            "section": "profile",
+            "result": "REJECT",
+            "kind": "hard",
+            "reason": "注册至今约 2,174 天，报告写成约 6.0 年，与 verified_facts 的天数不符。"
+          },
+          {
+            "section": "top",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "top5",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "mods",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "pplus",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "recent",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "classification",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "conclusion",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          }
+        ]
+      },
+      {
+        "createdAt": "2026-08-07T06:39:41.801Z",
+        "rejects": [
+          {
+            "section": "profile",
+            "kind": "hard",
+            "reason": "评级分布中 A 多于 S 被解释为“愿意死磕高难度、不在乎差一点点不拿 S”的玩法风格，属于把累计分布直接翻译成未提供的动机与行为模式。"
+          },
+          {
+            "section": "conclusion",
+            "kind": "hard",
+            "reason": "结论把 PP+ 的 Accuracy 9.72 与 Speed 2.76 直接翻译成“精准度和耐力型读图明显是强项，而爆发速度相对是短板”，将显示条相对高低写成具体操作能力。"
+          }
+        ],
+        "verdicts": [
+          {
+            "section": "profile",
+            "result": "REJECT",
+            "kind": "hard",
+            "reason": "评级分布中 A 多于 S 被解释为“愿意死磕高难度、不在乎差一点点不拿 S”的玩法风格，属于把累计分布直接翻译成未提供的动机与行为模式。"
+          },
+          {
+            "section": "top",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "top5",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "mods",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "pplus",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "recent",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "classification",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "conclusion",
+            "result": "REJECT",
+            "kind": "hard",
+            "reason": "结论把 PP+ 的 Accuracy 9.72 与 Speed 2.76 直接翻译成“精准度和耐力型读图明显是强项，而爆发速度相对是短板”，将显示条相对高低写成具体操作能力。"
+          }
+        ]
+      },
+      {
+        "createdAt": "2026-08-07T06:55:47.865Z",
+        "rejects": [
+          {
+            "section": "conclusion",
+            "kind": "hard",
+            "reason": "结论中“这个账号最像它自己的地方，是它把‘稳健’和‘贪心’揉在了一起”将 BP 中 NM 与 DT 的分布推断为“稳健”与“贪心”的因果性格描述，且“最近有点飘了”将 Recent 低 Acc 推断为具体行为状态，均超出简报允许的轻推断范围"
+          }
+        ],
+        "verdicts": [
+          {
+            "section": "profile",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "top",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "top5",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "mods",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "pplus",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "recent",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "classification",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "conclusion",
+            "result": "REJECT",
+            "kind": "hard",
+            "reason": "结论中“这个账号最像它自己的地方，是它把‘稳健’和‘贪心’揉在了一起”将 BP 中 NM 与 DT 的分布推断为“稳健”与“贪心”的因果性格描述，且“最近有点飘了”将 Recent 低 Acc 推断为具体行为状态，均超出简报允许的轻推断范围"
+          }
+        ]
+      },
+      {
+        "createdAt": "2026-08-07T07:40:54.066Z",
+        "rejects": [
+          {
+            "section": "top5",
+            "kind": "hard",
+            "reason": "BP5 中五张成绩均含 DT/NC，但报告称“核准的 DT/NC 数量是 0 张”，与 verified_facts 中 BP5 共同 Mod 为五张全部含 DT/NC 直接矛盾。"
+          }
+        ],
+        "verdicts": [
+          {
+            "section": "profile",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "top",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "top5",
+            "result": "REJECT",
+            "kind": "hard",
+            "reason": "BP5 中五张成绩均含 DT/NC，但报告称“核准的 DT/NC 数量是 0 张”，与 verified_facts 中 BP5 共同 Mod 为五张全部含 DT/NC 直接矛盾。"
+          },
+          {
+            "section": "mods",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "pplus",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "recent",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "classification",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "conclusion",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          }
+        ]
+      },
+      {
+        "createdAt": "2026-08-07T07:45:14.983Z",
+        "rejects": [
+          {
+            "section": "conclusion",
+            "kind": "hard",
+            "reason": "结论中“2,858 天的账号年龄配 18 天 6 小时的游玩时长”将账号年龄与游玩时长直接对比并暗示“裂缝”，但账号年龄是程序按当前日期计算的经过时间，与游玩时长无既定因果或矛盾关系，构成简报外事实拼接。"
+          }
+        ],
+        "verdicts": [
+          {
+            "section": "profile",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "top",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "top5",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "mods",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "pplus",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "recent",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "classification",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "conclusion",
+            "result": "REJECT",
+            "kind": "hard",
+            "reason": "结论中“2,858 天的账号年龄配 18 天 6 小时的游玩时长”将账号年龄与游玩时长直接对比并暗示“裂缝”，但账号年龄是程序按当前日期计算的经过时间，与游玩时长无既定因果或矛盾关系，构成简报外事实拼接。"
+          }
+        ]
+      },
+      {
+        "createdAt": "2026-08-07T08:05:45.829Z",
+        "rejects": [
+          {
+            "section": "conclusion",
+            "kind": "hard",
+            "reason": "结论中“4,036 天的账号还能保持这种 BP 厚度”将账号年龄写成 4,036 天，但 verified_facts 明确说明 4,036 天是程序按当前日期计算的经过时间，可换算成年/月，写出的数字必须与这个天数一致，此处直接使用天数作"
+          }
+        ],
+        "verdicts": [
+          {
+            "section": "profile",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "top",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "top5",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "mods",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "pplus",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "recent",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "classification",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "conclusion",
+            "result": "REJECT",
+            "kind": "hard",
+            "reason": "结论中“4,036 天的账号还能保持这种 BP 厚度”将账号年龄写成 4,036 天，但 verified_facts 明确说明 4,036 天是程序按当前日期计算的经过时间，可换算成年/月，写出的数字必须与这个天数一致，此处直接使用天数作"
+          }
+        ]
+      },
+      {
+        "createdAt": "2026-08-08T20:25:22.202Z",
+        "rejects": [
+          {
+            "section": "conclusion",
+            "kind": "hard",
+            "reason": "结论中“HR 只有1张还挂着 99.70% 的 Acc——唯1次碰 HR 就打出漂亮成绩，说明不是没能力，是压根不想换口味”将 HR 单次成绩推断为能力与意愿，且“平均每天摸不到两分钟”由 8 天 14 小时除以 6,920 天得出，但 8"
+          }
+        ],
+        "verdicts": [
+          {
+            "section": "profile",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "top",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "top5",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "mods",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "pplus",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "recent",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "classification",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "conclusion",
+            "result": "REJECT",
+            "kind": "hard",
+            "reason": "结论中“HR 只有1张还挂着 99.70% 的 Acc——唯1次碰 HR 就打出漂亮成绩，说明不是没能力，是压根不想换口味”将 HR 单次成绩推断为能力与意愿，且“平均每天摸不到两分钟”由 8 天 14 小时除以 6,920 天得出，但 8"
+          }
+        ]
+      },
+      {
+        "createdAt": "2026-08-08T23:04:55.737Z",
+        "rejects": [
+          {
+            "section": "conclusion",
+            "kind": "hard",
+            "reason": "结论中“HT 只出现 3 次却平均 Acc 高达 98.90%，说明不是靠慢速硬堆准度，而是真的能控”将 HT 的统计值直接解释为具体操作能力，属于把 PP+ 或聚合值翻译成未提供的操作能力。"
+          }
+        ],
+        "verdicts": [
+          {
+            "section": "profile",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "top",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "top5",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "mods",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "pplus",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "recent",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "classification",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "conclusion",
+            "result": "REJECT",
+            "kind": "hard",
+            "reason": "结论中“HT 只出现 3 次却平均 Acc 高达 98.90%，说明不是靠慢速硬堆准度，而是真的能控”将 HT 的统计值直接解释为具体操作能力，属于把 PP+ 或聚合值翻译成未提供的操作能力。"
+          }
+        ]
+      },
+      {
+        "createdAt": "2026-08-09T01:43:30.550Z",
+        "rejects": [
+          {
+            "section": "profile",
+            "kind": "hard",
+            "reason": "写有“80 万 pp 的账号”，与 verified_facts 中 8014.7pp 不符。"
+          }
+        ],
+        "verdicts": [
+          {
+            "section": "profile",
+            "result": "REJECT",
+            "kind": "hard",
+            "reason": "写有“80 万 pp 的账号”，与 verified_facts 中 8014.7pp 不符。"
+          },
+          {
+            "section": "top",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "top5",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "mods",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "pplus",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "recent",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "classification",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "conclusion",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          }
+        ]
+      },
+      {
+        "createdAt": "2026-08-14T07:19:01.776Z",
+        "rejects": [
+          {
+            "section": "conclusion",
+            "kind": "hard",
+            "reason": "结论中称“BP5 里4张 NM 加1张 DT”，但 BP5 实际为 #1-#3 NM、#4 NF、#5 DT，NF 被误写为 NM。"
+          }
+        ],
+        "verdicts": [
+          {
+            "section": "profile",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "top",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "top5",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "mods",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "pplus",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "recent",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "classification",
+            "result": "PASS",
+            "kind": null,
+            "reason": ""
+          },
+          {
+            "section": "conclusion",
+            "result": "REJECT",
+            "kind": "hard",
+            "reason": "结论中称“BP5 里4张 NM 加1张 DT”，但 BP5 实际为 #1-#3 NM、#4 NF、#5 DT，NF 被误写为 NM。"
+          }
+        ]
+      }
+    ],
+    "quality_only": [],
+    "unavailable": []
+  },
+  "decisions": {
+    "total_stored": 30000,
+    "since_2026_08_01": 18036,
+    "counts": {
+      "no_reply": 17639,
+      "reply": 397
+    }
+  },
+  "messages": {
+    "total_stored": 12000,
+    "by_role": {
+      "user": 11698,
+      "assistant": 302
+    }
+  },
+  "latency": {
+    "llm_latency": "LATENCY_DATA_UNAVAILABLE",
+    "tool_latency": "available in toolCallLogs",
+    "command_latency": "available in commandLogs"
+  }
+}

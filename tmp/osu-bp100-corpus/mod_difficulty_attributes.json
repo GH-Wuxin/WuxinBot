@@ -1,0 +1,2157 @@
+{
+  "meta": {
+    "generatedAt": "2026-09-20T18:30:20.913Z",
+    "endpoint": "POST https://osu.ppy.sh/api/v2/beatmaps/{beatmap}/attributes",
+    "note": "Official osu! (lazer/ppy) difficulty attributes for the exact mod set of each BP score. Aggregate only: no per-object strains. Not a substitute for the local ppy runtime.",
+    "ok": 100,
+    "failed": 0
+  },
+  "records": [
+    {
+      "key": "5119288:HDHR",
+      "beatmap_id": 5119288,
+      "mods": "HDHR",
+      "mods_array": [
+        "HD",
+        "HR"
+      ],
+      "bp": 1,
+      "pp": 563.893,
+      "attributes": {
+        "star_rating": 7.398550033569336,
+        "max_combo": 1675,
+        "aim_difficulty": 3.689460039138794,
+        "aim_difficult_slider_count": 62.48619842529297,
+        "speed_difficulty": 3.293950080871582,
+        "speed_note_count": 1006.4500122070312,
+        "slider_factor": 0.9962630271911621,
+        "aim_difficult_strain_count": 241.40499877929688,
+        "speed_difficult_strain_count": 591.7849731445312
+      }
+    },
+    {
+      "key": "4746232:HD",
+      "beatmap_id": 4746232,
+      "mods": "HD",
+      "mods_array": [
+        "HD"
+      ],
+      "bp": 2,
+      "pp": 541.607,
+      "attributes": {
+        "star_rating": 7.277569770812988,
+        "max_combo": 2106,
+        "aim_difficulty": 3.467449903488159,
+        "aim_difficult_slider_count": 107.1259994506836,
+        "speed_difficulty": 3.2547600269317627,
+        "speed_note_count": 670.5380249023438,
+        "slider_factor": 0.9993240237236023,
+        "aim_difficult_strain_count": 203.66299438476562,
+        "speed_difficult_strain_count": 446.35400390625
+      }
+    },
+    {
+      "key": "5258382:HD",
+      "beatmap_id": 5258382,
+      "mods": "HD",
+      "mods_array": [
+        "HD"
+      ],
+      "bp": 3,
+      "pp": 539.235,
+      "attributes": {
+        "star_rating": 7.501880168914795,
+        "max_combo": 2429,
+        "aim_difficulty": 3.541290044784546,
+        "aim_difficult_slider_count": 89.68309783935547,
+        "speed_difficulty": 3.412169933319092,
+        "speed_note_count": 1542.280029296875,
+        "slider_factor": 0.99959397315979,
+        "aim_difficult_strain_count": 124.68000030517578,
+        "speed_difficult_strain_count": 897.7860107421875
+      }
+    },
+    {
+      "key": "5675454:HDHR",
+      "beatmap_id": 5675454,
+      "mods": "HDHR",
+      "mods_array": [
+        "HD",
+        "HR"
+      ],
+      "bp": 4,
+      "pp": 523.51,
+      "attributes": {
+        "star_rating": 7.4339399337768555,
+        "max_combo": 935,
+        "aim_difficulty": 3.872380018234253,
+        "aim_difficult_slider_count": 46.99660110473633,
+        "speed_difficulty": 3.1108899116516113,
+        "speed_note_count": 490.8760070800781,
+        "slider_factor": 0.9945170283317566,
+        "aim_difficult_strain_count": 124.74600219726562,
+        "speed_difficult_strain_count": 236.16099548339844
+      }
+    },
+    {
+      "key": "4994500:HD",
+      "beatmap_id": 4994500,
+      "mods": "HD",
+      "mods_array": [
+        "HD"
+      ],
+      "bp": 5,
+      "pp": 520.608,
+      "attributes": {
+        "star_rating": 7.294859886169434,
+        "max_combo": 2180,
+        "aim_difficulty": 3.3238699436187744,
+        "aim_difficult_slider_count": 95.04550170898438,
+        "speed_difficulty": 3.447279930114746,
+        "speed_note_count": 1018.8699951171875,
+        "slider_factor": 0.985755980014801,
+        "aim_difficult_strain_count": 160.83200073242188,
+        "speed_difficult_strain_count": 520.2369995117188
+      }
+    },
+    {
+      "key": "4961220:HDHR",
+      "beatmap_id": 4961220,
+      "mods": "HDHR",
+      "mods_array": [
+        "HD",
+        "HR"
+      ],
+      "bp": 6,
+      "pp": 519.481,
+      "attributes": {
+        "star_rating": 7.455289840698242,
+        "max_combo": 897,
+        "aim_difficulty": 3.9405899047851562,
+        "aim_difficult_slider_count": 46.37310028076172,
+        "speed_difficulty": 2.971450090408325,
+        "speed_note_count": 479.6000061035156,
+        "slider_factor": 0.9991909861564636,
+        "aim_difficult_strain_count": 129.3489990234375,
+        "speed_difficult_strain_count": 318.65399169921875
+      }
+    },
+    {
+      "key": "5138461:HDHR",
+      "beatmap_id": 5138461,
+      "mods": "HDHR",
+      "mods_array": [
+        "HD",
+        "HR"
+      ],
+      "bp": 7,
+      "pp": 518.242,
+      "attributes": {
+        "star_rating": 7.3755598068237305,
+        "max_combo": 1092,
+        "aim_difficulty": 3.8066599369049072,
+        "aim_difficult_slider_count": 46.01240158081055,
+        "speed_difficulty": 3.098949909210205,
+        "speed_note_count": 720.9420166015625,
+        "slider_factor": 0.9994810223579407,
+        "aim_difficult_strain_count": 115.13099670410156,
+        "speed_difficult_strain_count": 392.697998046875
+      }
+    },
+    {
+      "key": "5211222:HDHR",
+      "beatmap_id": 5211222,
+      "mods": "HDHR",
+      "mods_array": [
+        "HD",
+        "HR"
+      ],
+      "bp": 8,
+      "pp": 511.225,
+      "attributes": {
+        "star_rating": 7.207119941711426,
+        "max_combo": 2365,
+        "aim_difficulty": 3.3939099311828613,
+        "aim_difficult_slider_count": 90.96289825439453,
+        "speed_difficulty": 3.3786098957061768,
+        "speed_note_count": 1486.6600341796875,
+        "slider_factor": 0.9956669807434082,
+        "aim_difficult_strain_count": 160.29100036621094,
+        "speed_difficult_strain_count": 821.9970092773438
+      }
+    },
+    {
+      "key": "4628575:HDHR",
+      "beatmap_id": 4628575,
+      "mods": "HDHR",
+      "mods_array": [
+        "HD",
+        "HR"
+      ],
+      "bp": 9,
+      "pp": 508.16,
+      "attributes": {
+        "star_rating": 7.263239860534668,
+        "max_combo": 969,
+        "aim_difficulty": 3.5506699085235596,
+        "aim_difficult_slider_count": 85.24109649658203,
+        "speed_difficulty": 3.3227999210357666,
+        "speed_note_count": 467.0780029296875,
+        "slider_factor": 0.9935950040817261,
+        "aim_difficult_strain_count": 203.89500427246094,
+        "speed_difficult_strain_count": 254.16799926757812
+      }
+    },
+    {
+      "key": "4847819:HDHR",
+      "beatmap_id": 4847819,
+      "mods": "HDHR",
+      "mods_array": [
+        "HD",
+        "HR"
+      ],
+      "bp": 10,
+      "pp": 506.174,
+      "attributes": {
+        "star_rating": 7.7118000984191895,
+        "max_combo": 479,
+        "aim_difficulty": 4.161180019378662,
+        "aim_difficult_slider_count": 31.44860076904297,
+        "speed_difficulty": 2.918100118637085,
+        "speed_note_count": 373.4930114746094,
+        "slider_factor": 0.9996200203895569,
+        "aim_difficult_strain_count": 159.7469940185547,
+        "speed_difficult_strain_count": 265.24200439453125
+      }
+    },
+    {
+      "key": "5684273:HDHR",
+      "beatmap_id": 5684273,
+      "mods": "HDHR",
+      "mods_array": [
+        "HD",
+        "HR"
+      ],
+      "bp": 11,
+      "pp": 505.65,
+      "attributes": {
+        "star_rating": 7.256509780883789,
+        "max_combo": 899,
+        "aim_difficulty": 3.8402199745178223,
+        "aim_difficult_slider_count": 23.772199630737305,
+        "speed_difficulty": 2.965320110321045,
+        "speed_note_count": 379.1159973144531,
+        "slider_factor": 0.9851409792900085,
+        "aim_difficult_strain_count": 81.28389739990234,
+        "speed_difficult_strain_count": 197.16400146484375
+      }
+    },
+    {
+      "key": "5358249:HD",
+      "beatmap_id": 5358249,
+      "mods": "HD",
+      "mods_array": [
+        "HD"
+      ],
+      "bp": 12,
+      "pp": 503.418,
+      "attributes": {
+        "star_rating": 7.629570007324219,
+        "max_combo": 3222,
+        "aim_difficulty": 3.7189300060272217,
+        "aim_difficult_slider_count": 481.0010070800781,
+        "speed_difficulty": 3.2466700077056885,
+        "speed_note_count": 1128.6600341796875,
+        "slider_factor": 0.9783390164375305,
+        "aim_difficult_strain_count": 462.135986328125,
+        "speed_difficult_strain_count": 459.19500732421875
+      }
+    },
+    {
+      "key": "4277533:HDHR",
+      "beatmap_id": 4277533,
+      "mods": "HDHR",
+      "mods_array": [
+        "HD",
+        "HR"
+      ],
+      "bp": 13,
+      "pp": 503.008,
+      "attributes": {
+        "star_rating": 7.20727014541626,
+        "max_combo": 1252,
+        "aim_difficulty": 3.69392991065979,
+        "aim_difficult_slider_count": 64.14569854736328,
+        "speed_difficulty": 3.0605199337005615,
+        "speed_note_count": 725.8770141601562,
+        "slider_factor": 0.9989029765129089,
+        "aim_difficult_strain_count": 130.29200744628906,
+        "speed_difficult_strain_count": 385.62701416015625
+      }
+    },
+    {
+      "key": "4975644:HD",
+      "beatmap_id": 4975644,
+      "mods": "HD",
+      "mods_array": [
+        "HD"
+      ],
+      "bp": 14,
+      "pp": 502.287,
+      "attributes": {
+        "star_rating": 7.076930046081543,
+        "max_combo": 3409,
+        "aim_difficulty": 3.2777700424194336,
+        "aim_difficult_slider_count": 175.94500732421875,
+        "speed_difficulty": 3.266940116882324,
+        "speed_note_count": 1248.8299560546875,
+        "slider_factor": 0.9967470169067383,
+        "aim_difficult_strain_count": 144.4029998779297,
+        "speed_difficult_strain_count": 731.5999755859375
+      }
+    },
+    {
+      "key": "5682464:HDHR",
+      "beatmap_id": 5682464,
+      "mods": "HDHR",
+      "mods_array": [
+        "HD",
+        "HR"
+      ],
+      "bp": 15,
+      "pp": 501.164,
+      "attributes": {
+        "star_rating": 7.168799877166748,
+        "max_combo": 927,
+        "aim_difficulty": 3.680910110473633,
+        "aim_difficult_slider_count": 23.575300216674805,
+        "speed_difficulty": 3.068660020828247,
+        "speed_note_count": 510.6369934082031,
+        "slider_factor": 0.9982950091362,
+        "aim_difficult_strain_count": 87.92729949951172,
+        "speed_difficult_strain_count": 265.8559875488281
+      }
+    },
+    {
+      "key": "5061151:HDHR",
+      "beatmap_id": 5061151,
+      "mods": "HDHR",
+      "mods_array": [
+        "HD",
+        "HR"
+      ],
+      "bp": 16,
+      "pp": 500.182,
+      "attributes": {
+        "star_rating": 7.189579963684082,
+        "max_combo": 512,
+        "aim_difficulty": 3.8156299591064453,
+        "aim_difficult_slider_count": 38.55070114135742,
+        "speed_difficulty": 2.9006099700927734,
+        "speed_note_count": 323.74200439453125,
+        "slider_factor": 0.9962810277938843,
+        "aim_difficult_strain_count": 131.4080047607422,
+        "speed_difficult_strain_count": 192.60800170898438
+      }
+    },
+    {
+      "key": "5034823:HD",
+      "beatmap_id": 5034823,
+      "mods": "HD",
+      "mods_array": [
+        "HD"
+      ],
+      "bp": 17,
+      "pp": 494.712,
+      "attributes": {
+        "star_rating": 7.208509922027588,
+        "max_combo": 3132,
+        "aim_difficulty": 3.1161201000213623,
+        "aim_difficult_slider_count": 249.69500732421875,
+        "speed_difficulty": 3.4728100299835205,
+        "speed_note_count": 1765.0699462890625,
+        "slider_factor": 0.9911590218544006,
+        "aim_difficult_strain_count": 316.9070129394531,
+        "speed_difficult_strain_count": 883.6680297851562
+      }
+    },
+    {
+      "key": "3784710:HD",
+      "beatmap_id": 3784710,
+      "mods": "HD",
+      "mods_array": [
+        "HD"
+      ],
+      "bp": 18,
+      "pp": 493.037,
+      "attributes": {
+        "star_rating": 7.463210105895996,
+        "max_combo": 1541,
+        "aim_difficulty": 3.6638600826263428,
+        "aim_difficult_slider_count": 121.4530029296875,
+        "speed_difficulty": 3.154560089111328,
+        "speed_note_count": 985.2369995117188,
+        "slider_factor": 0.9960309863090515,
+        "aim_difficult_strain_count": 394.593994140625,
+        "speed_difficult_strain_count": 537.385986328125
+      }
+    },
+    {
+      "key": "4572837:HD",
+      "beatmap_id": 4572837,
+      "mods": "HD",
+      "mods_array": [
+        "HD"
+      ],
+      "bp": 19,
+      "pp": 492.891,
+      "attributes": {
+        "star_rating": 7.058629989624023,
+        "max_combo": 3004,
+        "aim_difficulty": 3.110909938812256,
+        "aim_difficult_slider_count": 189.75799560546875,
+        "speed_difficulty": 3.283370018005371,
+        "speed_note_count": 2083.550048828125,
+        "slider_factor": 0.9987900257110596,
+        "aim_difficult_strain_count": 363.72601318359375,
+        "speed_difficult_strain_count": 1022.3300170898438
+      }
+    },
+    {
+      "key": "5132508:HD",
+      "beatmap_id": 5132508,
+      "mods": "HD",
+      "mods_array": [
+        "HD"
+      ],
+      "bp": 20,
+      "pp": 487.334,
+      "attributes": {
+        "star_rating": 7.007490158081055,
+        "max_combo": 2687,
+        "aim_difficulty": 2.9809300899505615,
+        "aim_difficult_slider_count": 318.4840087890625,
+        "speed_difficulty": 3.473449945449829,
+        "speed_note_count": 1021.3300170898438,
+        "slider_factor": 0.9926049709320068,
+        "aim_difficult_strain_count": 464.1659851074219,
+        "speed_difficult_strain_count": 532.2169799804688
+      }
+    },
+    {
+      "key": "5423414:HD",
+      "beatmap_id": 5423414,
+      "mods": "HD",
+      "mods_array": [
+        "HD"
+      ],
+      "bp": 21,
+      "pp": 487.269,
+      "attributes": {
+        "star_rating": 7.151889801025391,
+        "max_combo": 2985,
+        "aim_difficulty": 3.430910110473633,
+        "aim_difficult_slider_count": 254.9219970703125,
+        "speed_difficulty": 3.1866300106048584,
+        "speed_note_count": 1456.3299560546875,
+        "slider_factor": 0.9983270168304443,
+        "aim_difficult_strain_count": 371.74200439453125,
+        "speed_difficult_strain_count": 781.594970703125
+      }
+    },
+    {
+      "key": "5129350:HD",
+      "beatmap_id": 5129350,
+      "mods": "HD",
+      "mods_array": [
+        "HD"
+      ],
+      "bp": 22,
+      "pp": 486.535,
+      "attributes": {
+        "star_rating": 7.865489959716797,
+        "max_combo": 2372,
+        "aim_difficulty": 4.035789966583252,
+        "aim_difficult_slider_count": 102.24099731445312,
+        "speed_difficulty": 3.196500062942505,
+        "speed_note_count": 1034,
+        "slider_factor": 0.9923480153083801,
+        "aim_difficult_strain_count": 155.10000610351562,
+        "speed_difficult_strain_count": 632.510986328125
+      }
+    },
+    {
+      "key": "1537566:HD",
+      "beatmap_id": 1537566,
+      "mods": "HD",
+      "mods_array": [
+        "HD"
+      ],
+      "bp": 23,
+      "pp": 479.023,
+      "attributes": {
+        "star_rating": 7.4323201179504395,
+        "max_combo": 2424,
+        "aim_difficulty": 3.5339200496673584,
+        "aim_difficult_slider_count": 238.68899536132812,
+        "speed_difficulty": 3.324079990386963,
+        "speed_note_count": 941.7470092773438,
+        "slider_factor": 0.9998409748077393,
+        "aim_difficult_strain_count": 201.08700561523438,
+        "speed_difficult_strain_count": 560.2100219726562
+      }
+    },
+    {
+      "key": "5440133:HD",
+      "beatmap_id": 5440133,
+      "mods": "HD",
+      "mods_array": [
+        "HD"
+      ],
+      "bp": 24,
+      "pp": 473.337,
+      "attributes": {
+        "star_rating": 7.5989298820495605,
+        "max_combo": 3012,
+        "aim_difficulty": 3.597749948501587,
+        "aim_difficult_slider_count": 142.2259979248047,
+        "speed_difficulty": 3.446310043334961,
+        "speed_note_count": 1422.4000244140625,
+        "slider_factor": 0.9933459758758545,
+        "aim_difficult_strain_count": 331.9700012207031,
+        "speed_difficult_strain_count": 698.5789794921875
+      }
+    },
+    {
+      "key": "5064561:HD",
+      "beatmap_id": 5064561,
+      "mods": "HD",
+      "mods_array": [
+        "HD"
+      ],
+      "bp": 25,
+      "pp": 473.328,
+      "attributes": {
+        "star_rating": 7.740059852600098,
+        "max_combo": 2695,
+        "aim_difficulty": 3.766860008239746,
+        "aim_difficult_slider_count": 98.40010070800781,
+        "speed_difficulty": 3.447809934616089,
+        "speed_note_count": 1539.300048828125,
+        "slider_factor": 0.9928929805755615,
+        "aim_difficult_strain_count": 241.91299438476562,
+        "speed_difficult_strain_count": 975.4810180664062
+      }
+    },
+    {
+      "key": "4704022:HDHR",
+      "beatmap_id": 4704022,
+      "mods": "HDHR",
+      "mods_array": [
+        "HD",
+        "HR"
+      ],
+      "bp": 26,
+      "pp": 472.016,
+      "attributes": {
+        "star_rating": 7.231060028076172,
+        "max_combo": 2407,
+        "aim_difficulty": 3.281630039215088,
+        "aim_difficult_slider_count": 69.60399627685547,
+        "speed_difficulty": 3.5107600688934326,
+        "speed_note_count": 1495.5,
+        "slider_factor": 0.9904339909553528,
+        "aim_difficult_strain_count": 163.01499938964844,
+        "speed_difficult_strain_count": 761.31298828125
+      }
+    },
+    {
+      "key": "5262236:HD",
+      "beatmap_id": 5262236,
+      "mods": "HD",
+      "mods_array": [
+        "HD"
+      ],
+      "bp": 27,
+      "pp": 466.484,
+      "attributes": {
+        "star_rating": 7.262129783630371,
+        "max_combo": 634,
+        "aim_difficulty": 3.6186399459838867,
+        "aim_difficult_slider_count": 47.28799819946289,
+        "speed_difficulty": 3.2495601177215576,
+        "speed_note_count": 403.43798828125,
+        "slider_factor": 0.9976149797439575,
+        "aim_difficult_strain_count": 116.68699645996094,
+        "speed_difficult_strain_count": 216.5050048828125
+      }
+    },
+    {
+      "key": "740044:HDHR",
+      "beatmap_id": 740044,
+      "mods": "HDHR",
+      "mods_array": [
+        "HD",
+        "HR"
+      ],
+      "bp": 28,
+      "pp": 464.618,
+      "attributes": {
+        "star_rating": 7.007750034332275,
+        "max_combo": 1364,
+        "aim_difficulty": 3.6547000408172607,
+        "aim_difficult_slider_count": 153.05999755859375,
+        "speed_difficulty": 2.8856799602508545,
+        "speed_note_count": 457.2170104980469,
+        "slider_factor": 0.9972500205039978,
+        "aim_difficult_strain_count": 180.36000061035156,
+        "speed_difficult_strain_count": 184.21600341796875
+      }
+    },
+    {
+      "key": "3671976:HD",
+      "beatmap_id": 3671976,
+      "mods": "HD",
+      "mods_array": [
+        "HD"
+      ],
+      "bp": 29,
+      "pp": 464.331,
+      "attributes": {
+        "star_rating": 7.128729820251465,
+        "max_combo": 3082,
+        "aim_difficulty": 3.4000000953674316,
+        "aim_difficult_slider_count": 301.59100341796875,
+        "speed_difficulty": 3.100709915161133,
+        "speed_note_count": 1289.8299560546875,
+        "slider_factor": 0.9931259751319885,
+        "aim_difficult_strain_count": 279.6000061035156,
+        "speed_difficult_strain_count": 571.8880004882812
+      }
+    },
+    {
+      "key": "5223159:HD",
+      "beatmap_id": 5223159,
+      "mods": "HD",
+      "mods_array": [
+        "HD"
+      ],
+      "bp": 30,
+      "pp": 463.752,
+      "attributes": {
+        "star_rating": 7.559000015258789,
+        "max_combo": 3708,
+        "aim_difficulty": 3.564069986343384,
+        "aim_difficult_slider_count": 245.5500030517578,
+        "speed_difficulty": 3.4609599113464355,
+        "speed_note_count": 1917.5899658203125,
+        "slider_factor": 0.9892669916152954,
+        "aim_difficult_strain_count": 393.55499267578125,
+        "speed_difficult_strain_count": 787.85498046875
+      }
+    },
+    {
+      "key": "5080973:HDHR",
+      "beatmap_id": 5080973,
+      "mods": "HDHR",
+      "mods_array": [
+        "HD",
+        "HR"
+      ],
+      "bp": 31,
+      "pp": 462.758,
+      "attributes": {
+        "star_rating": 7.1209001541137695,
+        "max_combo": 2744,
+        "aim_difficulty": 3.2864298820495605,
+        "aim_difficult_slider_count": 222.09800720214844,
+        "speed_difficulty": 3.380460023880005,
+        "speed_note_count": 1234.5400390625,
+        "slider_factor": 0.9578070044517517,
+        "aim_difficult_strain_count": 196.21400451660156,
+        "speed_difficult_strain_count": 605.1649780273438
+      }
+    },
+    {
+      "key": "5671885:HD",
+      "beatmap_id": 5671885,
+      "mods": "HD",
+      "mods_array": [
+        "HD"
+      ],
+      "bp": 32,
+      "pp": 460.215,
+      "attributes": {
+        "star_rating": 7.471199989318848,
+        "max_combo": 932,
+        "aim_difficulty": 3.8653500080108643,
+        "aim_difficult_slider_count": 34.46139907836914,
+        "speed_difficulty": 3.077199935913086,
+        "speed_note_count": 471.7720031738281,
+        "slider_factor": 0.9926829934120178,
+        "aim_difficult_strain_count": 124.79000091552734,
+        "speed_difficult_strain_count": 251.91799926757812
+      }
+    },
+    {
+      "key": "4000950:HDHR",
+      "beatmap_id": 4000950,
+      "mods": "HDHR",
+      "mods_array": [
+        "HD",
+        "HR"
+      ],
+      "bp": 33,
+      "pp": 458.88,
+      "attributes": {
+        "star_rating": 7.333960056304932,
+        "max_combo": 2092,
+        "aim_difficulty": 3.6565699577331543,
+        "aim_difficult_slider_count": 123.51699829101562,
+        "speed_difficulty": 3.2616000175476074,
+        "speed_note_count": 1100.0799560546875,
+        "slider_factor": 0.9856939911842346,
+        "aim_difficult_strain_count": 277.67401123046875,
+        "speed_difficult_strain_count": 595.2990112304688
+      }
+    },
+    {
+      "key": "1256809:HD",
+      "beatmap_id": 1256809,
+      "mods": "HD",
+      "mods_array": [
+        "HD"
+      ],
+      "bp": 34,
+      "pp": 456.649,
+      "attributes": {
+        "star_rating": 7.245880126953125,
+        "max_combo": 4295,
+        "aim_difficulty": 3.392400026321411,
+        "aim_difficult_slider_count": 290.1310119628906,
+        "speed_difficulty": 3.318579912185669,
+        "speed_note_count": 1087.1400146484375,
+        "slider_factor": 0.9927769899368286,
+        "aim_difficult_strain_count": 223.63299560546875,
+        "speed_difficult_strain_count": 436.2449951171875
+      }
+    },
+    {
+      "key": "5186053:HD",
+      "beatmap_id": 5186053,
+      "mods": "HD",
+      "mods_array": [
+        "HD"
+      ],
+      "bp": 35,
+      "pp": 455.924,
+      "attributes": {
+        "star_rating": 7.3159499168396,
+        "max_combo": 2634,
+        "aim_difficulty": 3.610450029373169,
+        "aim_difficult_slider_count": 187.60800170898438,
+        "speed_difficulty": 3.1623198986053467,
+        "speed_note_count": 866.6110229492188,
+        "slider_factor": 0.9923989772796631,
+        "aim_difficult_strain_count": 200.76499938964844,
+        "speed_difficult_strain_count": 447.40301513671875
+      }
+    },
+    {
+      "key": "2850905:HDDT",
+      "beatmap_id": 2850905,
+      "mods": "HDDT",
+      "mods_array": [
+        "HD",
+        "DT"
+      ],
+      "bp": 36,
+      "pp": 455.647,
+      "attributes": {
+        "star_rating": 7.475769996643066,
+        "max_combo": 1615,
+        "aim_difficulty": 3.8231101036071777,
+        "aim_difficult_slider_count": 49.38059997558594,
+        "speed_difficulty": 2.9760100841522217,
+        "speed_note_count": 849.0280151367188,
+        "slider_factor": 0.997622013092041,
+        "aim_difficult_strain_count": 132.9340057373047,
+        "speed_difficult_strain_count": 368.67498779296875
+      }
+    },
+    {
+      "key": "5028070:HD",
+      "beatmap_id": 5028070,
+      "mods": "HD",
+      "mods_array": [
+        "HD"
+      ],
+      "bp": 37,
+      "pp": 453.634,
+      "attributes": {
+        "star_rating": 7.149409770965576,
+        "max_combo": 2765,
+        "aim_difficulty": 3.3638501167297363,
+        "aim_difficult_slider_count": 313.6719970703125,
+        "speed_difficulty": 3.1972899436950684,
+        "speed_note_count": 1454.22998046875,
+        "slider_factor": 0.9935290217399597,
+        "aim_difficult_strain_count": 255.7449951171875,
+        "speed_difficult_strain_count": 578.7490234375
+      }
+    },
+    {
+      "key": "5682373:HDHR",
+      "beatmap_id": 5682373,
+      "mods": "HDHR",
+      "mods_array": [
+        "HD",
+        "HR"
+      ],
+      "bp": 38,
+      "pp": 452.308,
+      "attributes": {
+        "star_rating": 6.97622013092041,
+        "max_combo": 931,
+        "aim_difficulty": 3.5732901096343994,
+        "aim_difficult_slider_count": 35.325199127197266,
+        "speed_difficulty": 2.9972500801086426,
+        "speed_note_count": 457.32000732421875,
+        "slider_factor": 0.9854310154914856,
+        "aim_difficult_strain_count": 85.47329711914062,
+        "speed_difficult_strain_count": 228.30099487304688
+      }
+    },
+    {
+      "key": "4944784:HDHR",
+      "beatmap_id": 4944784,
+      "mods": "HDHR",
+      "mods_array": [
+        "HD",
+        "HR"
+      ],
+      "bp": 39,
+      "pp": 451.787,
+      "attributes": {
+        "star_rating": 6.970190048217773,
+        "max_combo": 936,
+        "aim_difficulty": 3.4945499897003174,
+        "aim_difficult_slider_count": 91.44879913330078,
+        "speed_difficulty": 3.0475199222564697,
+        "speed_note_count": 345.0740051269531,
+        "slider_factor": 0.9970530271530151,
+        "aim_difficult_strain_count": 143.15199279785156,
+        "speed_difficult_strain_count": 204.44000244140625
+      }
+    },
+    {
+      "key": "2861267:HD",
+      "beatmap_id": 2861267,
+      "mods": "HD",
+      "mods_array": [
+        "HD"
+      ],
+      "bp": 40,
+      "pp": 450.715,
+      "attributes": {
+        "star_rating": 7.270430088043213,
+        "max_combo": 1733,
+        "aim_difficulty": 3.6219699382781982,
+        "aim_difficult_slider_count": 101.6969985961914,
+        "speed_difficulty": 3.1181800365448,
+        "speed_note_count": 804.1400146484375,
+        "slider_factor": 0.98853600025177,
+        "aim_difficult_strain_count": 162.30299377441406,
+        "speed_difficult_strain_count": 466.4020080566406
+      }
+    },
+    {
+      "key": "4892236:HD",
+      "beatmap_id": 4892236,
+      "mods": "HD",
+      "mods_array": [
+        "HD"
+      ],
+      "bp": 41,
+      "pp": 449.675,
+      "attributes": {
+        "star_rating": 7.372550010681152,
+        "max_combo": 1778,
+        "aim_difficulty": 3.6645100116729736,
+        "aim_difficult_slider_count": 39.21080017089844,
+        "speed_difficulty": 3.1798698902130127,
+        "speed_note_count": 809.0089721679688,
+        "slider_factor": 0.9953579902648926,
+        "aim_difficult_strain_count": 162.05099487304688,
+        "speed_difficult_strain_count": 517.8489990234375
+      }
+    },
+    {
+      "key": "667021:HDHR",
+      "beatmap_id": 667021,
+      "mods": "HDHR",
+      "mods_array": [
+        "HD",
+        "HR"
+      ],
+      "bp": 42,
+      "pp": 448.93,
+      "attributes": {
+        "star_rating": 6.944049835205078,
+        "max_combo": 5086,
+        "aim_difficulty": 3.369070053100586,
+        "aim_difficult_slider_count": 537.301025390625,
+        "speed_difficulty": 3.0761799812316895,
+        "speed_note_count": 816.8889770507812,
+        "slider_factor": 0.9863970279693604,
+        "aim_difficult_strain_count": 393.09600830078125,
+        "speed_difficult_strain_count": 393.1730041503906
+      }
+    },
+    {
+      "key": "4137259:HDHR",
+      "beatmap_id": 4137259,
+      "mods": "HDHR",
+      "mods_array": [
+        "HD",
+        "HR"
+      ],
+      "bp": 43,
+      "pp": 445.542,
+      "attributes": {
+        "star_rating": 7.314859867095947,
+        "max_combo": 739,
+        "aim_difficulty": 3.931570053100586,
+        "aim_difficult_slider_count": 28.840099334716797,
+        "speed_difficulty": 2.8235599994659424,
+        "speed_note_count": 328.25299072265625,
+        "slider_factor": 0.9976599812507629,
+        "aim_difficult_strain_count": 84.80390167236328,
+        "speed_difficult_strain_count": 175.85699462890625
+      }
+    },
+    {
+      "key": "2423981:HD",
+      "beatmap_id": 2423981,
+      "mods": "HD",
+      "mods_array": [
+        "HD"
+      ],
+      "bp": 44,
+      "pp": 445.394,
+      "attributes": {
+        "star_rating": 7.208340167999268,
+        "max_combo": 2500,
+        "aim_difficulty": 3.180180072784424,
+        "aim_difficult_slider_count": 160.197998046875,
+        "speed_difficulty": 3.5134599208831787,
+        "speed_note_count": 931.947998046875,
+        "slider_factor": 0.9972050189971924,
+        "aim_difficult_strain_count": 157.0330047607422,
+        "speed_difficult_strain_count": 430.89300537109375
+      }
+    },
+    {
+      "key": "5284284:HD",
+      "beatmap_id": 5284284,
+      "mods": "HD",
+      "mods_array": [
+        "HD"
+      ],
+      "bp": 45,
+      "pp": 443.647,
+      "attributes": {
+        "star_rating": 7.345900058746338,
+        "max_combo": 3092,
+        "aim_difficulty": 3.3017001152038574,
+        "aim_difficult_slider_count": 380.2340087890625,
+        "speed_difficulty": 3.4913699626922607,
+        "speed_note_count": 1388.9200439453125,
+        "slider_factor": 0.9975240230560303,
+        "aim_difficult_strain_count": 486.3869934082031,
+        "speed_difficult_strain_count": 636.1160278320312
+      }
+    },
+    {
+      "key": "693195:HDHR",
+      "beatmap_id": 693195,
+      "mods": "HDHR",
+      "mods_array": [
+        "HD",
+        "HR"
+      ],
+      "bp": 46,
+      "pp": 443.617,
+      "attributes": {
+        "star_rating": 6.8633198738098145,
+        "max_combo": 1264,
+        "aim_difficulty": 3.606679916381836,
+        "aim_difficult_slider_count": 211.16200256347656,
+        "speed_difficulty": 2.76023006439209,
+        "speed_note_count": 316.33599853515625,
+        "slider_factor": 0.984063982963562,
+        "aim_difficult_strain_count": 231.76400756835938,
+        "speed_difficult_strain_count": 149.71499633789062
+      }
+    },
+    {
+      "key": "1754777:HD",
+      "beatmap_id": 1754777,
+      "mods": "HD",
+      "mods_array": [
+        "HD"
+      ],
+      "bp": 47,
+      "pp": 442.638,
+      "attributes": {
+        "star_rating": 7.081160068511963,
+        "max_combo": 2261,
+        "aim_difficulty": 3.2500500679016113,
+        "aim_difficult_slider_count": 262.53399658203125,
+        "speed_difficulty": 3.3010599613189697,
+        "speed_note_count": 878.927001953125,
+        "slider_factor": 0.999413013458252,
+        "aim_difficult_strain_count": 259.4590148925781,
+        "speed_difficult_strain_count": 538.073974609375
+      }
+    },
+    {
+      "key": "4865935:HD",
+      "beatmap_id": 4865935,
+      "mods": "HD",
+      "mods_array": [
+        "HD"
+      ],
+      "bp": 48,
+      "pp": 442.269,
+      "attributes": {
+        "star_rating": 7.38631010055542,
+        "max_combo": 1548,
+        "aim_difficulty": 3.6610701084136963,
+        "aim_difficult_slider_count": 74.10389709472656,
+        "speed_difficulty": 3.180530071258545,
+        "speed_note_count": 402.70098876953125,
+        "slider_factor": 0.9995239973068237,
+        "aim_difficult_strain_count": 275.85101318359375,
+        "speed_difficult_strain_count": 262.77301025390625
+      }
+    },
+    {
+      "key": "1170505:HD",
+      "beatmap_id": 1170505,
+      "mods": "HD",
+      "mods_array": [
+        "HD"
+      ],
+      "bp": 49,
+      "pp": 441.101,
+      "attributes": {
+        "star_rating": 7.474339962005615,
+        "max_combo": 3683,
+        "aim_difficulty": 3.5099000930786133,
+        "aim_difficult_slider_count": 398.98199462890625,
+        "speed_difficulty": 3.3741400241851807,
+        "speed_note_count": 912.1599731445312,
+        "slider_factor": 0.9875379800796509,
+        "aim_difficult_strain_count": 360.27801513671875,
+        "speed_difficult_strain_count": 421.74798583984375
+      }
+    },
+    {
+      "key": "4684761:HD",
+      "beatmap_id": 4684761,
+      "mods": "HD",
+      "mods_array": [
+        "HD"
+      ],
+      "bp": 50,
+      "pp": 440.255,
+      "attributes": {
+        "star_rating": 7.311110019683838,
+        "max_combo": 4363,
+        "aim_difficulty": 3.432529926300049,
+        "aim_difficult_slider_count": 233.2449951171875,
+        "speed_difficulty": 3.354569911956787,
+        "speed_note_count": 1203.8399658203125,
+        "slider_factor": 0.9919099807739258,
+        "aim_difficult_strain_count": 194.5469970703125,
+        "speed_difficult_strain_count": 527.781005859375
+      }
+    },
+    {
+      "key": "657916:HDHR",
+      "beatmap_id": 657916,
+      "mods": "HDHR",
+      "mods_array": [
+        "HD",
+        "HR"
+      ],
+      "bp": 51,
+      "pp": 438.304,
+      "attributes": {
+        "star_rating": 7.470860004425049,
+        "max_combo": 1876,
+        "aim_difficulty": 3.784450054168701,
+        "aim_difficult_slider_count": 225.3350067138672,
+        "speed_difficulty": 3.2094600200653076,
+        "speed_note_count": 689.25,
+        "slider_factor": 0.9919949769973755,
+        "aim_difficult_strain_count": 242.76600646972656,
+        "speed_difficult_strain_count": 314.3559875488281
+      }
+    },
+    {
+      "key": "5426594:HD",
+      "beatmap_id": 5426594,
+      "mods": "HD",
+      "mods_array": [
+        "HD"
+      ],
+      "bp": 52,
+      "pp": 437.263,
+      "attributes": {
+        "star_rating": 7.331399917602539,
+        "max_combo": 1674,
+        "aim_difficulty": 3.663209915161133,
+        "aim_difficult_slider_count": 36.795101165771484,
+        "speed_difficulty": 3.1762900352478027,
+        "speed_note_count": 825.9199829101562,
+        "slider_factor": 0.9969369769096375,
+        "aim_difficult_strain_count": 157.56700134277344,
+        "speed_difficult_strain_count": 536.780029296875
+      }
+    },
+    {
+      "key": "5108662:HD",
+      "beatmap_id": 5108662,
+      "mods": "HD",
+      "mods_array": [
+        "HD"
+      ],
+      "bp": 53,
+      "pp": 432.283,
+      "attributes": {
+        "star_rating": 6.981989860534668,
+        "max_combo": 2658,
+        "aim_difficulty": 3.2850499153137207,
+        "aim_difficult_slider_count": 204.72300720214844,
+        "speed_difficulty": 3.1854701042175293,
+        "speed_note_count": 809.9420166015625,
+        "slider_factor": 0.996038019657135,
+        "aim_difficult_strain_count": 164.7169952392578,
+        "speed_difficult_strain_count": 487.364990234375
+      }
+    },
+    {
+      "key": "2330482:HD",
+      "beatmap_id": 2330482,
+      "mods": "HD",
+      "mods_array": [
+        "HD"
+      ],
+      "bp": 54,
+      "pp": 429.849,
+      "attributes": {
+        "star_rating": 6.975669860839844,
+        "max_combo": 820,
+        "aim_difficulty": 3.49783992767334,
+        "aim_difficult_slider_count": 65.35440063476562,
+        "speed_difficulty": 3.0053200721740723,
+        "speed_note_count": 401.6629943847656,
+        "slider_factor": 0.9983130097389221,
+        "aim_difficult_strain_count": 145.03199768066406,
+        "speed_difficult_strain_count": 234.6179962158203
+      }
+    },
+    {
+      "key": "5206607:HD",
+      "beatmap_id": 5206607,
+      "mods": "HD",
+      "mods_array": [
+        "HD"
+      ],
+      "bp": 55,
+      "pp": 429.558,
+      "attributes": {
+        "star_rating": 6.832499980926514,
+        "max_combo": 351,
+        "aim_difficulty": 3.5440900325775146,
+        "aim_difficult_slider_count": 13.64330005645752,
+        "speed_difficulty": 2.8717799186706543,
+        "speed_note_count": 280.28399658203125,
+        "slider_factor": 0.9983239769935608,
+        "aim_difficult_strain_count": 117.69100189208984,
+        "speed_difficult_strain_count": 187.60899353027344
+      }
+    },
+    {
+      "key": "767203:HDHR",
+      "beatmap_id": 767203,
+      "mods": "HDHR",
+      "mods_array": [
+        "HD",
+        "HR"
+      ],
+      "bp": 56,
+      "pp": 428.595,
+      "attributes": {
+        "star_rating": 7.260819911956787,
+        "max_combo": 2514,
+        "aim_difficulty": 3.674880027770996,
+        "aim_difficult_slider_count": 229.406005859375,
+        "speed_difficulty": 3.072930097579956,
+        "speed_note_count": 1087.219970703125,
+        "slider_factor": 0.9909769892692566,
+        "aim_difficult_strain_count": 307.94000244140625,
+        "speed_difficult_strain_count": 457.281005859375
+      }
+    },
+    {
+      "key": "930249:HD",
+      "beatmap_id": 930249,
+      "mods": "HD",
+      "mods_array": [
+        "HD"
+      ],
+      "bp": 57,
+      "pp": 428.134,
+      "attributes": {
+        "star_rating": 6.900879859924316,
+        "max_combo": 1267,
+        "aim_difficulty": 3.4650800228118896,
+        "aim_difficult_slider_count": 113.15299987792969,
+        "speed_difficulty": 2.998879909515381,
+        "speed_note_count": 367.66400146484375,
+        "slider_factor": 0.9784520268440247,
+        "aim_difficult_strain_count": 105.48400115966797,
+        "speed_difficult_strain_count": 187.60499572753906
+      }
+    },
+    {
+      "key": "3018109:HDHR",
+      "beatmap_id": 3018109,
+      "mods": "HDHR",
+      "mods_array": [
+        "HD",
+        "HR"
+      ],
+      "bp": 58,
+      "pp": 427.492,
+      "attributes": {
+        "star_rating": 6.6620402336120605,
+        "max_combo": 2376,
+        "aim_difficulty": 3.0915300846099854,
+        "aim_difficult_slider_count": 38.76089859008789,
+        "speed_difficulty": 3.074389934539795,
+        "speed_note_count": 1175.4300537109375,
+        "slider_factor": 0.9909989833831787,
+        "aim_difficult_strain_count": 138.91200256347656,
+        "speed_difficult_strain_count": 707.969970703125
+      }
+    },
+    {
+      "key": "4583961:HDDT",
+      "beatmap_id": 4583961,
+      "mods": "HDDT",
+      "mods_array": [
+        "HD",
+        "DT"
+      ],
+      "bp": 59,
+      "pp": 426.853,
+      "attributes": {
+        "star_rating": 6.787350177764893,
+        "max_combo": 672,
+        "aim_difficulty": 3.585089921951294,
+        "aim_difficult_slider_count": 53.79560089111328,
+        "speed_difficulty": 2.5686800479888916,
+        "speed_note_count": 135.072998046875,
+        "slider_factor": 0.9931970238685608,
+        "aim_difficult_strain_count": 116.19200134277344,
+        "speed_difficult_strain_count": 67.4896011352539
+      }
+    },
+    {
+      "key": "5038991:HD",
+      "beatmap_id": 5038991,
+      "mods": "HD",
+      "mods_array": [
+        "HD"
+      ],
+      "bp": 60,
+      "pp": 425.512,
+      "attributes": {
+        "star_rating": 7.142429828643799,
+        "max_combo": 2812,
+        "aim_difficulty": 3.15910005569458,
+        "aim_difficult_slider_count": 310.239013671875,
+        "speed_difficulty": 3.43107008934021,
+        "speed_note_count": 1168.77001953125,
+        "slider_factor": 0.9797469973564148,
+        "aim_difficult_strain_count": 346.5539855957031,
+        "speed_difficult_strain_count": 531.5919799804688
+      }
+    },
+    {
+      "key": "2477065:HDHR",
+      "beatmap_id": 2477065,
+      "mods": "HDHR",
+      "mods_array": [
+        "HD",
+        "HR"
+      ],
+      "bp": 61,
+      "pp": 425.025,
+      "attributes": {
+        "star_rating": 6.749489784240723,
+        "max_combo": 1635,
+        "aim_difficulty": 3.3961400985717773,
+        "aim_difficult_slider_count": 116.98200225830078,
+        "speed_difficulty": 2.944200038909912,
+        "speed_note_count": 491.0660095214844,
+        "slider_factor": 0.9950339794158936,
+        "aim_difficult_strain_count": 133.31399536132812,
+        "speed_difficult_strain_count": 254.16700744628906
+      }
+    },
+    {
+      "key": "2126752:HD",
+      "beatmap_id": 2126752,
+      "mods": "HD",
+      "mods_array": [
+        "HD"
+      ],
+      "bp": 62,
+      "pp": 423.592,
+      "attributes": {
+        "star_rating": 7.020470142364502,
+        "max_combo": 3050,
+        "aim_difficulty": 3.2595601081848145,
+        "aim_difficult_slider_count": 146.76600646972656,
+        "speed_difficulty": 3.1922900676727295,
+        "speed_note_count": 1349.75,
+        "slider_factor": 0.9991819858551025,
+        "aim_difficult_strain_count": 209.48300170898438,
+        "speed_difficult_strain_count": 706.4869995117188
+      }
+    },
+    {
+      "key": "5040092:HDHR",
+      "beatmap_id": 5040092,
+      "mods": "HDHR",
+      "mods_array": [
+        "HD",
+        "HR"
+      ],
+      "bp": 63,
+      "pp": 421.747,
+      "attributes": {
+        "star_rating": 7.0036702156066895,
+        "max_combo": 546,
+        "aim_difficulty": 3.6579298973083496,
+        "aim_difficult_slider_count": 21.185199737548828,
+        "speed_difficulty": 2.9513399600982666,
+        "speed_note_count": 371.0419921875,
+        "slider_factor": 0.9970149993896484,
+        "aim_difficult_strain_count": 90.9729995727539,
+        "speed_difficult_strain_count": 191.35299682617188
+      }
+    },
+    {
+      "key": "4968396:HDHR",
+      "beatmap_id": 4968396,
+      "mods": "HDHR",
+      "mods_array": [
+        "HD",
+        "HR"
+      ],
+      "bp": 64,
+      "pp": 420.714,
+      "attributes": {
+        "star_rating": 7.0208001136779785,
+        "max_combo": 858,
+        "aim_difficulty": 3.651639938354492,
+        "aim_difficult_slider_count": 44.43090057373047,
+        "speed_difficulty": 2.9141600131988525,
+        "speed_note_count": 395.00299072265625,
+        "slider_factor": 0.9920690059661865,
+        "aim_difficult_strain_count": 113.63300323486328,
+        "speed_difficult_strain_count": 234.58599853515625
+      }
+    },
+    {
+      "key": "4815899:HD",
+      "beatmap_id": 4815899,
+      "mods": "HD",
+      "mods_array": [
+        "HD"
+      ],
+      "bp": 65,
+      "pp": 420.423,
+      "attributes": {
+        "star_rating": 7.1957597732543945,
+        "max_combo": 1743,
+        "aim_difficulty": 3.503959894180298,
+        "aim_difficult_slider_count": 146.92100524902344,
+        "speed_difficulty": 3.154020071029663,
+        "speed_note_count": 828.6719970703125,
+        "slider_factor": 0.9984009861946106,
+        "aim_difficult_strain_count": 172.99099731445312,
+        "speed_difficult_strain_count": 501.4830017089844
+      }
+    },
+    {
+      "key": "3665005:HDHR",
+      "beatmap_id": 3665005,
+      "mods": "HDHR",
+      "mods_array": [
+        "HD",
+        "HR"
+      ],
+      "bp": 66,
+      "pp": 419.153,
+      "attributes": {
+        "star_rating": 6.671370029449463,
+        "max_combo": 2408,
+        "aim_difficulty": 3.1984899044036865,
+        "aim_difficult_slider_count": 211.86099243164062,
+        "speed_difficulty": 3.032939910888672,
+        "speed_note_count": 1000.4600219726562,
+        "slider_factor": 0.9907270073890686,
+        "aim_difficult_strain_count": 252.72000122070312,
+        "speed_difficult_strain_count": 462.8919982910156
+      }
+    },
+    {
+      "key": "4020786:HDHR",
+      "beatmap_id": 4020786,
+      "mods": "HDHR",
+      "mods_array": [
+        "HD",
+        "HR"
+      ],
+      "bp": 67,
+      "pp": 418.739,
+      "attributes": {
+        "star_rating": 7.384329795837402,
+        "max_combo": 1965,
+        "aim_difficulty": 3.700200080871582,
+        "aim_difficult_slider_count": 188.42300415039062,
+        "speed_difficulty": 3.219520092010498,
+        "speed_note_count": 888.97900390625,
+        "slider_factor": 0.9963679909706116,
+        "aim_difficult_strain_count": 265.6180114746094,
+        "speed_difficult_strain_count": 433.0929870605469
+      }
+    },
+    {
+      "key": "845391:HDHR",
+      "beatmap_id": 845391,
+      "mods": "HDHR",
+      "mods_array": [
+        "HD",
+        "HR"
+      ],
+      "bp": 68,
+      "pp": 418.425,
+      "attributes": {
+        "star_rating": 6.911839962005615,
+        "max_combo": 1282,
+        "aim_difficulty": 3.5791399478912354,
+        "aim_difficult_slider_count": 191.83200073242188,
+        "speed_difficulty": 2.834350109100342,
+        "speed_note_count": 531.8800048828125,
+        "slider_factor": 0.977849006652832,
+        "aim_difficult_strain_count": 188.87399291992188,
+        "speed_difficult_strain_count": 223.322998046875
+      }
+    },
+    {
+      "key": "4599213:HD",
+      "beatmap_id": 4599213,
+      "mods": "HD",
+      "mods_array": [
+        "HD"
+      ],
+      "bp": 69,
+      "pp": 417.032,
+      "attributes": {
+        "star_rating": 6.976990222930908,
+        "max_combo": 3233,
+        "aim_difficulty": 2.992530107498169,
+        "aim_difficult_slider_count": 192.30099487304688,
+        "speed_difficulty": 3.378109931945801,
+        "speed_note_count": 1874.719970703125,
+        "slider_factor": 0.9911680221557617,
+        "aim_difficult_strain_count": 259.4670104980469,
+        "speed_difficult_strain_count": 977.4869995117188
+      }
+    },
+    {
+      "key": "2872154:HD",
+      "beatmap_id": 2872154,
+      "mods": "HD",
+      "mods_array": [
+        "HD"
+      ],
+      "bp": 70,
+      "pp": 414.985,
+      "attributes": {
+        "star_rating": 6.893599987030029,
+        "max_combo": 1880,
+        "aim_difficulty": 3.2552099227905273,
+        "aim_difficult_slider_count": 181.73599243164062,
+        "speed_difficulty": 3.148010015487671,
+        "speed_note_count": 873.4140014648438,
+        "slider_factor": 0.9929929971694946,
+        "aim_difficult_strain_count": 276.23199462890625,
+        "speed_difficult_strain_count": 552.8989868164062
+      }
+    },
+    {
+      "key": "5145068:HDHR",
+      "beatmap_id": 5145068,
+      "mods": "HDHR",
+      "mods_array": [
+        "HD",
+        "HR"
+      ],
+      "bp": 71,
+      "pp": 413.178,
+      "attributes": {
+        "star_rating": 6.8810200691223145,
+        "max_combo": 947,
+        "aim_difficulty": 3.379930019378662,
+        "aim_difficult_slider_count": 125.81999969482422,
+        "speed_difficulty": 3.154560089111328,
+        "speed_note_count": 292.7829895019531,
+        "slider_factor": 0.9803150296211243,
+        "aim_difficult_strain_count": 198.9550018310547,
+        "speed_difficult_strain_count": 173.9949951171875
+      }
+    },
+    {
+      "key": "884664:HDHR",
+      "beatmap_id": 884664,
+      "mods": "HDHR",
+      "mods_array": [
+        "HD",
+        "HR"
+      ],
+      "bp": 72,
+      "pp": 413.085,
+      "attributes": {
+        "star_rating": 7.301760196685791,
+        "max_combo": 1535,
+        "aim_difficulty": 3.779449939727783,
+        "aim_difficult_slider_count": 117.69499969482422,
+        "speed_difficulty": 3.1171300411224365,
+        "speed_note_count": 364.01800537109375,
+        "slider_factor": 0.9950550198554993,
+        "aim_difficult_strain_count": 173.46600341796875,
+        "speed_difficult_strain_count": 192.5919952392578
+      }
+    },
+    {
+      "key": "5574279:HDHR",
+      "beatmap_id": 5574279,
+      "mods": "HDHR",
+      "mods_array": [
+        "HD",
+        "HR"
+      ],
+      "bp": 73,
+      "pp": 410.895,
+      "attributes": {
+        "star_rating": 7.261300086975098,
+        "max_combo": 249,
+        "aim_difficulty": 3.9816699028015137,
+        "aim_difficult_slider_count": 17.193099975585938,
+        "speed_difficulty": 2.815769910812378,
+        "speed_note_count": 113.2040023803711,
+        "slider_factor": 0.9851719737052917,
+        "aim_difficult_strain_count": 68.17120361328125,
+        "speed_difficult_strain_count": 75.60810089111328
+      }
+    },
+    {
+      "key": "4816640:HDHR",
+      "beatmap_id": 4816640,
+      "mods": "HDHR",
+      "mods_array": [
+        "HD",
+        "HR"
+      ],
+      "bp": 74,
+      "pp": 409.997,
+      "attributes": {
+        "star_rating": 6.758810043334961,
+        "max_combo": 1733,
+        "aim_difficulty": 3.327039957046509,
+        "aim_difficult_slider_count": 195.21800231933594,
+        "speed_difficulty": 3.030280113220215,
+        "speed_note_count": 656.3690185546875,
+        "slider_factor": 0.996878981590271,
+        "aim_difficult_strain_count": 181.53799438476562,
+        "speed_difficult_strain_count": 349.2019958496094
+      }
+    },
+    {
+      "key": "1727980:HDHR",
+      "beatmap_id": 1727980,
+      "mods": "HDHR",
+      "mods_array": [
+        "HD",
+        "HR"
+      ],
+      "bp": 75,
+      "pp": 409.436,
+      "attributes": {
+        "star_rating": 7.1923298835754395,
+        "max_combo": 1364,
+        "aim_difficulty": 3.8271100521087646,
+        "aim_difficult_slider_count": 179.5,
+        "speed_difficulty": 2.861599922180176,
+        "speed_note_count": 155.677001953125,
+        "slider_factor": 0.9915770292282104,
+        "aim_difficult_strain_count": 118.55999755859375,
+        "speed_difficult_strain_count": 92.7238998413086
+      }
+    },
+    {
+      "key": "5275552:HD",
+      "beatmap_id": 5275552,
+      "mods": "HD",
+      "mods_array": [
+        "HD"
+      ],
+      "bp": 76,
+      "pp": 407.95,
+      "attributes": {
+        "star_rating": 7.01455020904541,
+        "max_combo": 2418,
+        "aim_difficulty": 3.309950113296509,
+        "aim_difficult_slider_count": 97.11830139160156,
+        "speed_difficulty": 3.1969900131225586,
+        "speed_note_count": 1173.9300537109375,
+        "slider_factor": 0.9891830086708069,
+        "aim_difficult_strain_count": 233.43099975585938,
+        "speed_difficult_strain_count": 661.8369750976562
+      }
+    },
+    {
+      "key": "4511021:HD",
+      "beatmap_id": 4511021,
+      "mods": "HD",
+      "mods_array": [
+        "HD"
+      ],
+      "bp": 77,
+      "pp": 406.02,
+      "attributes": {
+        "star_rating": 7.203559875488281,
+        "max_combo": 2592,
+        "aim_difficulty": 3.067039966583252,
+        "aim_difficult_slider_count": 147.73800659179688,
+        "speed_difficulty": 3.514780044555664,
+        "speed_note_count": 1364.3499755859375,
+        "slider_factor": 0.9958299994468689,
+        "aim_difficult_strain_count": 296.12200927734375,
+        "speed_difficult_strain_count": 692.2760009765625
+      }
+    },
+    {
+      "key": "1494828:HD",
+      "beatmap_id": 1494828,
+      "mods": "HD",
+      "mods_array": [
+        "HD"
+      ],
+      "bp": 78,
+      "pp": 405.964,
+      "attributes": {
+        "star_rating": 7.114140033721924,
+        "max_combo": 2362,
+        "aim_difficulty": 3.4372599124908447,
+        "aim_difficult_slider_count": 180.91200256347656,
+        "speed_difficulty": 3.068540096282959,
+        "speed_note_count": 784.2949829101562,
+        "slider_factor": 0.998045027256012,
+        "aim_difficult_strain_count": 241.2570037841797,
+        "speed_difficult_strain_count": 304.7820129394531
+      }
+    },
+    {
+      "key": "4410462:HD",
+      "beatmap_id": 4410462,
+      "mods": "HD",
+      "mods_array": [
+        "HD"
+      ],
+      "bp": 79,
+      "pp": 405.682,
+      "attributes": {
+        "star_rating": 7.332900047302246,
+        "max_combo": 1794,
+        "aim_difficulty": 3.7076199054718018,
+        "aim_difficult_slider_count": 133.31500244140625,
+        "speed_difficulty": 3.1035399436950684,
+        "speed_note_count": 338.364990234375,
+        "slider_factor": 0.9914330244064331,
+        "aim_difficult_strain_count": 228.6439971923828,
+        "speed_difficult_strain_count": 137.7530059814453
+      }
+    },
+    {
+      "key": "4943355:HD",
+      "beatmap_id": 4943355,
+      "mods": "HD",
+      "mods_array": [
+        "HD"
+      ],
+      "bp": 80,
+      "pp": 404.4,
+      "attributes": {
+        "star_rating": 7.154280185699463,
+        "max_combo": 989,
+        "aim_difficulty": 3.5377800464630127,
+        "aim_difficult_slider_count": 57.644798278808594,
+        "speed_difficulty": 3.1114699840545654,
+        "speed_note_count": 408.60400390625,
+        "slider_factor": 0.9965360164642334,
+        "aim_difficult_strain_count": 111.82499694824219,
+        "speed_difficult_strain_count": 248.80999755859375
+      }
+    },
+    {
+      "key": "5082120:HD",
+      "beatmap_id": 5082120,
+      "mods": "HD",
+      "mods_array": [
+        "HD"
+      ],
+      "bp": 81,
+      "pp": 404.138,
+      "attributes": {
+        "star_rating": 7.093070030212402,
+        "max_combo": 1438,
+        "aim_difficulty": 3.2089500427246094,
+        "aim_difficult_slider_count": 140.22999572753906,
+        "speed_difficulty": 3.418950080871582,
+        "speed_note_count": 731.5609741210938,
+        "slider_factor": 0.9947289824485779,
+        "aim_difficult_strain_count": 232.50599670410156,
+        "speed_difficult_strain_count": 374.27801513671875
+      }
+    },
+    {
+      "key": "4453223:HD",
+      "beatmap_id": 4453223,
+      "mods": "HD",
+      "mods_array": [
+        "HD"
+      ],
+      "bp": 82,
+      "pp": 402.441,
+      "attributes": {
+        "star_rating": 6.931429862976074,
+        "max_combo": 700,
+        "aim_difficulty": 3.6524899005889893,
+        "aim_difficult_slider_count": 77.56919860839844,
+        "speed_difficulty": 2.739190101623535,
+        "speed_note_count": 402.7030029296875,
+        "slider_factor": 0.996554970741272,
+        "aim_difficult_strain_count": 162.77200317382812,
+        "speed_difficult_strain_count": 199.64500427246094
+      }
+    },
+    {
+      "key": "5045143:HDHR",
+      "beatmap_id": 5045143,
+      "mods": "HDHR",
+      "mods_array": [
+        "HD",
+        "HR"
+      ],
+      "bp": 83,
+      "pp": 401.951,
+      "attributes": {
+        "star_rating": 6.593959808349609,
+        "max_combo": 1827,
+        "aim_difficulty": 3.2408299446105957,
+        "aim_difficult_slider_count": 157.65699768066406,
+        "speed_difficulty": 2.9684898853302,
+        "speed_note_count": 633.427001953125,
+        "slider_factor": 0.9919779896736145,
+        "aim_difficult_strain_count": 216.656005859375,
+        "speed_difficult_strain_count": 323.1340026855469
+      }
+    },
+    {
+      "key": "609843:HD",
+      "beatmap_id": 609843,
+      "mods": "HD",
+      "mods_array": [
+        "HD"
+      ],
+      "bp": 84,
+      "pp": 400.623,
+      "attributes": {
+        "star_rating": 6.984429836273193,
+        "max_combo": 1600,
+        "aim_difficulty": 3.1976099014282227,
+        "aim_difficult_slider_count": 190.39199829101562,
+        "speed_difficulty": 3.296070098876953,
+        "speed_note_count": 589.3720092773438,
+        "slider_factor": 0.9907029867172241,
+        "aim_difficult_strain_count": 235.0030059814453,
+        "speed_difficult_strain_count": 292.63299560546875
+      }
+    },
+    {
+      "key": "5377422:HDHR",
+      "beatmap_id": 5377422,
+      "mods": "HDHR",
+      "mods_array": [
+        "HD",
+        "HR"
+      ],
+      "bp": 85,
+      "pp": 399.957,
+      "attributes": {
+        "star_rating": 6.88293981552124,
+        "max_combo": 587,
+        "aim_difficulty": 3.389930009841919,
+        "aim_difficult_slider_count": 54.31919860839844,
+        "speed_difficulty": 3.1941800117492676,
+        "speed_note_count": 267.614013671875,
+        "slider_factor": 0.976078987121582,
+        "aim_difficult_strain_count": 126.51899719238281,
+        "speed_difficult_strain_count": 134.9530029296875
+      }
+    },
+    {
+      "key": "4914171:HDHR",
+      "beatmap_id": 4914171,
+      "mods": "HDHR",
+      "mods_array": [
+        "HD",
+        "HR"
+      ],
+      "bp": 86,
+      "pp": 398.041,
+      "attributes": {
+        "star_rating": 7.011819839477539,
+        "max_combo": 780,
+        "aim_difficulty": 3.529789924621582,
+        "aim_difficult_slider_count": 10.812800407409668,
+        "speed_difficulty": 3.0733299255371094,
+        "speed_note_count": 574.5850219726562,
+        "slider_factor": 0.9926069974899292,
+        "aim_difficult_strain_count": 93.87329864501953,
+        "speed_difficult_strain_count": 414.09100341796875
+      }
+    },
+    {
+      "key": "495776:HD",
+      "beatmap_id": 495776,
+      "mods": "HD",
+      "mods_array": [
+        "HD"
+      ],
+      "bp": 87,
+      "pp": 396.992,
+      "attributes": {
+        "star_rating": 7.1946001052856445,
+        "max_combo": 2649,
+        "aim_difficulty": 3.328089952468872,
+        "aim_difficult_slider_count": 287.8630065917969,
+        "speed_difficulty": 3.290440082550049,
+        "speed_note_count": 1033.5899658203125,
+        "slider_factor": 0.990854024887085,
+        "aim_difficult_strain_count": 283.9530029296875,
+        "speed_difficult_strain_count": 511.08599853515625
+      }
+    },
+    {
+      "key": "3355394:HDHR",
+      "beatmap_id": 3355394,
+      "mods": "HDHR",
+      "mods_array": [
+        "HD",
+        "HR"
+      ],
+      "bp": 88,
+      "pp": 395.502,
+      "attributes": {
+        "star_rating": 6.731880187988281,
+        "max_combo": 1558,
+        "aim_difficulty": 3.3186399936676025,
+        "aim_difficult_slider_count": 35.28739929199219,
+        "speed_difficulty": 2.9750099182128906,
+        "speed_note_count": 633.4810180664062,
+        "slider_factor": 0.9959149956703186,
+        "aim_difficult_strain_count": 94.125,
+        "speed_difficult_strain_count": 373.5199890136719
+      }
+    },
+    {
+      "key": "4381212:HDHR",
+      "beatmap_id": 4381212,
+      "mods": "HDHR",
+      "mods_array": [
+        "HD",
+        "HR"
+      ],
+      "bp": 89,
+      "pp": 394.875,
+      "attributes": {
+        "star_rating": 6.946269989013672,
+        "max_combo": 362,
+        "aim_difficulty": 3.6663899421691895,
+        "aim_difficult_slider_count": 15.093199729919434,
+        "speed_difficulty": 2.834160089492798,
+        "speed_note_count": 268.6619873046875,
+        "slider_factor": 0.9968209862709045,
+        "aim_difficult_strain_count": 115.41699981689453,
+        "speed_difficult_strain_count": 177.08099365234375
+      }
+    },
+    {
+      "key": "4570744:HDDT",
+      "beatmap_id": 4570744,
+      "mods": "HDDT",
+      "mods_array": [
+        "HD",
+        "DT"
+      ],
+      "bp": 90,
+      "pp": 394.505,
+      "attributes": {
+        "star_rating": 6.855690002441406,
+        "max_combo": 1104,
+        "aim_difficulty": 3.5262300968170166,
+        "aim_difficult_slider_count": 156.01300048828125,
+        "speed_difficulty": 2.8184099197387695,
+        "speed_note_count": 177.99600219726562,
+        "slider_factor": 0.9990450143814087,
+        "aim_difficult_strain_count": 163.13800048828125,
+        "speed_difficult_strain_count": 78.04789733886719
+      }
+    },
+    {
+      "key": "4165290:HD",
+      "beatmap_id": 4165290,
+      "mods": "HD",
+      "mods_array": [
+        "HD"
+      ],
+      "bp": 91,
+      "pp": 394.296,
+      "attributes": {
+        "star_rating": 7.3624701499938965,
+        "max_combo": 2661,
+        "aim_difficulty": 3.666300058364868,
+        "aim_difficult_slider_count": 303.6419982910156,
+        "speed_difficulty": 3.201620101928711,
+        "speed_note_count": 1214.4100341796875,
+        "slider_factor": 0.9999499917030334,
+        "aim_difficult_strain_count": 183.43499755859375,
+        "speed_difficult_strain_count": 572.6500244140625
+      }
+    },
+    {
+      "key": "5109853:HDHR",
+      "beatmap_id": 5109853,
+      "mods": "HDHR",
+      "mods_array": [
+        "HD",
+        "HR"
+      ],
+      "bp": 92,
+      "pp": 391.759,
+      "attributes": {
+        "star_rating": 6.585639953613281,
+        "max_combo": 1670,
+        "aim_difficulty": 2.9184699058532715,
+        "aim_difficult_slider_count": 89.6332015991211,
+        "speed_difficulty": 3.2447800636291504,
+        "speed_note_count": 847.9840087890625,
+        "slider_factor": 0.9961410164833069,
+        "aim_difficult_strain_count": 271.135986328125,
+        "speed_difficult_strain_count": 473.0570068359375
+      }
+    },
+    {
+      "key": "1957638:HD",
+      "beatmap_id": 1957638,
+      "mods": "HD",
+      "mods_array": [
+        "HD"
+      ],
+      "bp": 93,
+      "pp": 391.631,
+      "attributes": {
+        "star_rating": 6.921510219573975,
+        "max_combo": 3905,
+        "aim_difficulty": 3.2388100624084473,
+        "aim_difficult_slider_count": 554.1950073242188,
+        "speed_difficulty": 3.127340078353882,
+        "speed_note_count": 2301.449951171875,
+        "slider_factor": 0.9942860007286072,
+        "aim_difficult_strain_count": 464.6180114746094,
+        "speed_difficult_strain_count": 1139.5400390625
+      }
+    },
+    {
+      "key": "4571942:HDHR",
+      "beatmap_id": 4571942,
+      "mods": "HDHR",
+      "mods_array": [
+        "HD",
+        "HR"
+      ],
+      "bp": 94,
+      "pp": 389.789,
+      "attributes": {
+        "star_rating": 6.675909996032715,
+        "max_combo": 1935,
+        "aim_difficulty": 2.9471399784088135,
+        "aim_difficult_slider_count": 224.9010009765625,
+        "speed_difficulty": 3.2619400024414062,
+        "speed_note_count": 914.7659912109375,
+        "slider_factor": 0.9804059863090515,
+        "aim_difficult_strain_count": 220.86700439453125,
+        "speed_difficult_strain_count": 485.0419921875
+      }
+    },
+    {
+      "key": "3570727:HD",
+      "beatmap_id": 3570727,
+      "mods": "HD",
+      "mods_array": [
+        "HD"
+      ],
+      "bp": 95,
+      "pp": 389.031,
+      "attributes": {
+        "star_rating": 6.677330017089844,
+        "max_combo": 764,
+        "aim_difficulty": 3.390500068664551,
+        "aim_difficult_slider_count": 44.489601135253906,
+        "speed_difficulty": 2.8552300930023193,
+        "speed_note_count": 283.10400390625,
+        "slider_factor": 0.994720995426178,
+        "aim_difficult_strain_count": 99.59750366210938,
+        "speed_difficult_strain_count": 154.9530029296875
+      }
+    },
+    {
+      "key": "1635388:HD",
+      "beatmap_id": 1635388,
+      "mods": "HD",
+      "mods_array": [
+        "HD"
+      ],
+      "bp": 96,
+      "pp": 389.02,
+      "attributes": {
+        "star_rating": 7.3577399253845215,
+        "max_combo": 1463,
+        "aim_difficulty": 3.7776401042938232,
+        "aim_difficult_slider_count": 107.70500183105469,
+        "speed_difficulty": 3.027129888534546,
+        "speed_note_count": 239.697998046875,
+        "slider_factor": 0.9979900121688843,
+        "aim_difficult_strain_count": 159.19000244140625,
+        "speed_difficult_strain_count": 128.47799682617188
+      }
+    },
+    {
+      "key": "2077120:HDHR",
+      "beatmap_id": 2077120,
+      "mods": "HDHR",
+      "mods_array": [
+        "HD",
+        "HR"
+      ],
+      "bp": 97,
+      "pp": 388.047,
+      "attributes": {
+        "star_rating": 7.019020080566406,
+        "max_combo": 2724,
+        "aim_difficulty": 3.498379945755005,
+        "aim_difficult_slider_count": 436.55499267578125,
+        "speed_difficulty": 3.0639400482177734,
+        "speed_note_count": 889.2230224609375,
+        "slider_factor": 0.9880369901657104,
+        "aim_difficult_strain_count": 297.5480041503906,
+        "speed_difficult_strain_count": 391.95599365234375
+      }
+    },
+    {
+      "key": "2766688:HD",
+      "beatmap_id": 2766688,
+      "mods": "HD",
+      "mods_array": [
+        "HD"
+      ],
+      "bp": 98,
+      "pp": 386.443,
+      "attributes": {
+        "star_rating": 7.351789951324463,
+        "max_combo": 2684,
+        "aim_difficulty": 3.6013600826263428,
+        "aim_difficult_slider_count": 273.78399658203125,
+        "speed_difficulty": 3.083430051803589,
+        "speed_note_count": 1254.18994140625,
+        "slider_factor": 0.8780990242958069,
+        "aim_difficult_strain_count": 135.79299926757812,
+        "speed_difficult_strain_count": 689.9840087890625
+      }
+    },
+    {
+      "key": "1868547:HDHR",
+      "beatmap_id": 1868547,
+      "mods": "HDHR",
+      "mods_array": [
+        "HD",
+        "HR"
+      ],
+      "bp": 99,
+      "pp": 386.202,
+      "attributes": {
+        "star_rating": 6.879049777984619,
+        "max_combo": 796,
+        "aim_difficulty": 3.6093900203704834,
+        "aim_difficult_slider_count": 86.50550079345703,
+        "speed_difficulty": 2.834709882736206,
+        "speed_note_count": 215.61199951171875,
+        "slider_factor": 0.9887970089912415,
+        "aim_difficult_strain_count": 93.20210266113281,
+        "speed_difficult_strain_count": 121.94599914550781
+      }
+    },
+    {
+      "key": "4859466:HD",
+      "beatmap_id": 4859466,
+      "mods": "HD",
+      "mods_array": [
+        "HD"
+      ],
+      "bp": 100,
+      "pp": 385.414,
+      "attributes": {
+        "star_rating": 7.204780101776123,
+        "max_combo": 2334,
+        "aim_difficulty": 3.6149001121520996,
+        "aim_difficult_slider_count": 131.83900451660156,
+        "speed_difficulty": 3.064160108566284,
+        "speed_note_count": 1163.6700439453125,
+        "slider_factor": 0.9948769807815552,
+        "aim_difficult_strain_count": 251.64599609375,
+        "speed_difficult_strain_count": 667.9669799804688
+      }
+    }
+  ]
+}

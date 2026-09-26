@@ -1,0 +1,91 @@
+{
+  "generated_at": "2026-09-26T11:09:27.096Z",
+  "tool_guidance_version": "p1b-v1",
+  "scoping_rule": "GLOBAL_WHEN_ANY_TOOL_EXPOSED policies always present when any capability is exposed; CAPABILITY_SCOPED policies present only when at least one requiredCapabilities value is in the selected exposure.",
+  "global_policies": [
+    {
+      "id": "P_GLOBAL_NO_FABRICATE",
+      "scope": "GLOBAL_WHEN_ANY_TOOL_EXPOSED",
+      "text": "你必须通过 query_osu 获取真实 osu! 数据",
+      "chars": 28,
+      "observed_in_every_nonempty_subset": true
+    },
+    {
+      "id": "P_GLOBAL_NO_NUMBERS_WITHOUT_TOOL",
+      "scope": "GLOBAL_WHEN_ANY_TOOL_EXPOSED",
+      "text": "任何 pp/星数/acc/排名数字都必须来自工具返回",
+      "chars": 26,
+      "observed_in_every_nonempty_subset": true
+    },
+    {
+      "id": "P_GLOBAL_ROUTE_FACTS",
+      "scope": "GLOBAL_WHEN_ANY_TOOL_EXPOSED",
+      "text": "日常闲聊不需要工具",
+      "chars": 9,
+      "observed_in_every_nonempty_subset": true
+    },
+    {
+      "id": "P_GLOBAL_ATTRIBUTION",
+      "scope": "GLOBAL_WHEN_ANY_TOOL_EXPOSED",
+      "text": "引用任何查询结果时必须先说玩家名",
+      "chars": 16,
+      "observed_in_every_nonempty_subset": true
+    },
+    {
+      "id": "P_GLOBAL_STD_ONLY",
+      "scope": "GLOBAL_WHEN_ANY_TOOL_EXPOSED",
+      "text": "本 bot 只支持 osu!std",
+      "chars": 17,
+      "observed_in_every_nonempty_subset": true
+    },
+    {
+      "id": "P_GLOBAL_NO_MARKUP",
+      "scope": "GLOBAL_WHEN_ANY_TOOL_EXPOSED",
+      "text": "回复正文永远不要输出 XML/DSML",
+      "chars": 19,
+      "observed_in_every_nonempty_subset": true
+    }
+  ],
+  "scoped_policies": [
+    {
+      "id": "P_BP_TYPE_SCOPED",
+      "scope": "CAPABILITY_SCOPED",
+      "requiredCapabilities": [
+        "bp_type"
+      ],
+      "text": "涉及 BP 类型/占比/串图/跳图/aim/alt/tech/stream",
+      "chars": 37,
+      "observed_only_in_exposures": true
+    },
+    {
+      "id": "P_RECOMMEND_SCOPED",
+      "scope": "CAPABILITY_SCOPED",
+      "requiredCapabilities": [
+        "recommend"
+      ],
+      "text": "玩家要求推图/推荐谱面/打什么图时",
+      "chars": 17,
+      "observed_only_in_exposures": true
+    },
+    {
+      "id": "P_PP_CALC_SCOPED",
+      "scope": "CAPABILITY_SCOPED",
+      "requiredCapabilities": [
+        "pp_calc"
+      ],
+      "text": "pp 计算必须调用 capability=pp_calc",
+      "chars": 28,
+      "observed_only_in_exposures": true
+    },
+    {
+      "id": "P_RECENT_SCOPED",
+      "scope": "CAPABILITY_SCOPED",
+      "requiredCapabilities": [
+        "recent"
+      ],
+      "text": "profile/info/skill 等结果不含 recent",
+      "chars": 31,
+      "observed_only_in_exposures": true
+    }
+  ]
+}

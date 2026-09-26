@@ -107,7 +107,7 @@ async function main() {
     assert(
       r.sent.length === 1
         && r.sent[0].startsWith('osu! 命令：\n/w osu bind')
-        && r.sent[0].includes('/w skill profile [玩家名]')
+        && r.sent[0].includes('/w info [玩家名或 p:[完整玩家名或ID]]')
         && r.sent[0].includes('/w skill <BP名次或BID> [+Mods]')
         && r.sent[0].includes('/w cd <BID> [+Mods] <反馈>')
         && !r.sent[0].includes('/w osu recent'),

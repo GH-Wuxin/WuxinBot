@@ -1,0 +1,48 @@
+QQ AI ChatBot server running at http://127.0.0.1:8787
+[yumu-image] Render server listening on ws://127.0.0.1:8389
+[yumu-image] Client authenticated, pid=17524
+[group-bot-config] Written shared config: G:\My pack\Agent Work\codex_work\napcat-local-bots\configs\group-bot-config.json
+[group-bot-config] Written shared config: G:\My pack\Agent Work\codex_work\napcat-local-bots\configs\group-bot-config.json
+[reasoning-shadow] {"ts":1786354451055,"turnId":"374020473","callRole":"tool_planner","level":"max","source":"rule","reasonCode":"tool_selection","actualModel":"deepseek-v4-flash","finishReason":"stop","reasoningTokens":0,"completionTokens":77,"totalTokens":6935,"latencyMs":18668,"toolCalls":0,"textEmpty":false}
+[yumu-image] Render client disconnected
+[yumu-image] Client authenticated, pid=17524
+[yumu-image] Render client disconnected
+[yumu-image] Client authenticated, pid=17524
+[yumu-image] Render client disconnected
+[yumu-image] Client authenticated, pid=17524
+[group-bot-config] Written shared config: G:\My pack\Agent Work\codex_work\napcat-local-bots\configs\group-bot-config.json
+[group-bot-config] Written shared config: G:\My pack\Agent Work\codex_work\napcat-local-bots\configs\group-bot-config.json
+[reasoning-shadow] {"ts":1786371600629,"turnId":"655264365","callRole":"tool_planner","level":"max","source":"rule","reasonCode":"tool_selection","actualModel":"deepseek-v4-pro","finishReason":"stop","reasoningTokens":0,"completionTokens":27,"totalTokens":6378,"latencyMs":13920,"toolCalls":0,"textEmpty":false}
+[group-bot-config] Written shared config: G:\My pack\Agent Work\codex_work\napcat-local-bots\configs\group-bot-config.json
+[reasoning-shadow] {"ts":1786371909638,"turnId":"492875197","callRole":"tool_planner","level":"max","source":"rule","reasonCode":"tool_selection","actualModel":"deepseek-v4-flash","finishReason":"stop","reasoningTokens":0,"completionTokens":66,"totalTokens":6067,"latencyMs":4052,"toolCalls":0,"textEmpty":false}
+[yumu-image] Render client disconnected
+[yumu-image] Client authenticated, pid=17524
+[reasoning-shadow] {"ts":1786404194250,"turnId":"1985113568","callRole":"tool_planner","level":"max","source":"rule","reasonCode":"tool_selection","actualModel":"deepseek-v4-flash","finishReason":"stop","reasoningTokens":0,"completionTokens":21,"totalTokens":6405,"latencyMs":1556,"toolCalls":0,"textEmpty":false}
+[yumu-image] Render client disconnected
+[yumu-image] Client authenticated, pid=17524
+[yumu-image] Render client disconnected
+[yumu-image] Client authenticated, pid=17524
+[yumu-image] Render client disconnected
+[yumu-image] Client authenticated, pid=17524
+[yumu-image] Render client disconnected
+[yumu-image] Client authenticated, pid=17524
+[reasoning-shadow] {"ts":1786439776013,"turnId":"166152151","callRole":"tool_planner","level":"max","source":"rule","reasonCode":"tool_selection","actualModel":"deepseek-v4-pro","finishReason":"stop","reasoningTokens":0,"completionTokens":23,"totalTokens":7781,"latencyMs":1996,"toolCalls":0,"textEmpty":false}
+[reasoning-shadow] {"ts":1786439821747,"turnId":"940795063","callRole":"tool_planner","level":"max","source":"rule","reasonCode":"tool_selection","actualModel":"deepseek-v4-pro","finishReason":"stop","reasoningTokens":0,"completionTokens":16,"totalTokens":7492,"latencyMs":2970,"toolCalls":0,"textEmpty":false}
+[reasoning-shadow] {"ts":1786439822679,"turnId":"940795063","callRole":"rewrite","level":"max","source":"escalation","reasonCode":"fast_failure_escalation","actualModel":"deepseek-v4-flash","finishReason":"stop","reasoningTokens":0,"completionTokens":12,"totalTokens":280,"latencyMs":929,"toolCalls":0,"textEmpty":false}
+[reasoning-shadow] {"ts":1786439996936,"turnId":"1644754705","callRole":"tool_planner","level":"max","source":"rule","reasonCode":"tool_selection","actualModel":"deepseek-v4-flash","finishReason":"stop","reasoningTokens":0,"completionTokens":35,"totalTokens":6463,"latencyMs":2510,"toolCalls":0,"textEmpty":false}
+[reasoning-shadow] {"ts":1786440380451,"turnId":"1339537041","callRole":"tool_planner","level":"max","source":"rule","reasonCode":"tool_selection","actualModel":"deepseek-v4-flash","finishReason":"stop","reasoningTokens":0,"completionTokens":32,"totalTokens":6609,"latencyMs":1439,"toolCalls":0,"textEmpty":false}
+[reasoning-shadow] {"ts":1786440430986,"turnId":"1682435233","callRole":"tool_planner","level":"max","source":"rule","reasonCode":"tool_selection","actualModel":"deepseek-v4-flash","finishReason":"tool_calls","reasoningTokens":0,"completionTokens":130,"totalTokens":6727,"latencyMs":2409,"toolCalls":1,"textEmpty":false}
+[reasoning-shadow] {"ts":1786440473214,"turnId":"1682435233","callRole":"decorative_lead","level":"off","source":"rule","reasonCode":"direct_delivery","actualModel":"deepseek-v4-flash","finishReason":"stop","reasoningTokens":0,"completionTokens":95,"totalTokens":6029,"latencyMs":2556,"toolCalls":0,"textEmpty":false}
+[group-bot-config] Written shared config: G:\My pack\Agent Work\codex_work\napcat-local-bots\configs\group-bot-config.json
+[group-bot-config] Written shared config: G:\My pack\Agent Work\codex_work\napcat-local-bots\configs\group-bot-config.json
+[group-bot-config] Written shared config: G:\My pack\Agent Work\codex_work\napcat-local-bots\configs\group-bot-config.json
+[group-bot-config] Written shared config: G:\My pack\Agent Work\codex_work\napcat-local-bots\configs\group-bot-config.json
+[group-bot-config] Written shared config: G:\My pack\Agent Work\codex_work\napcat-local-bots\configs\group-bot-config.json
+[reasoning-shadow] {"ts":1786458970085,"turnId":"27972074","callRole":"decorative_lead","level":"off","source":"rule","reasonCode":"direct_delivery","actualModel":"deepseek-v4-pro","finishReason":"stop","reasoningTokens":0,"completionTokens":125,"totalTokens":6415,"latencyMs":3448,"toolCalls":0,"textEmpty":false}
+[reasoning-shadow] {"ts":1786459084769,"turnId":"990171637","callRole":"tool_planner","level":"max","source":"rule","reasonCode":"tool_selection","actualModel":"deepseek-v4-pro","finishReason":"tool_calls","reasoningTokens":0,"completionTokens":69,"totalTokens":6995,"latencyMs":5857,"toolCalls":1,"textEmpty":true}
+[reasoning-shadow] {"ts":1786459091188,"turnId":"1807549320","callRole":"tool_planner","level":"max","source":"rule","reasonCode":"tool_selection","actualModel":"deepseek-v4-pro","finishReason":"tool_calls","reasoningTokens":0,"completionTokens":75,"totalTokens":6897,"latencyMs":1713,"toolCalls":1,"textEmpty":false}
+[reasoning-shadow] {"ts":1786459140529,"turnId":"1915881252","callRole":"tool_planner","level":"max","source":"rule","reasonCode":"tool_selection","actualModel":"deepseek-v4-pro","finishReason":"tool_calls","reasoningTokens":0,"completionTokens":69,"totalTokens":7049,"latencyMs":7133,"toolCalls":1,"textEmpty":true}
+[reasoning-shadow] {"ts":1786459151272,"turnId":"1915881252","callRole":"decorative_lead","level":"off","source":"rule","reasonCode":"direct_delivery","actualModel":"deepseek-v4-pro","finishReason":"stop","reasoningTokens":0,"completionTokens":364,"totalTokens":6817,"latencyMs":5779,"toolCalls":0,"textEmpty":false}
+[reasoning-shadow] {"ts":1786461012992,"turnId":"517192826","callRole":"tool_planner","level":"max","source":"rule","reasonCode":"tool_selection","actualModel":"deepseek-v4-pro","finishReason":"tool_calls","reasoningTokens":0,"completionTokens":79,"totalTokens":7301,"latencyMs":4506,"toolCalls":1,"textEmpty":false}
+[reasoning-shadow] {"ts":1786461031805,"turnId":"517192826","callRole":"decorative_lead","level":"off","source":"rule","reasonCode":"direct_delivery","actualModel":"deepseek-v4-pro","finishReason":"stop","reasoningTokens":0,"completionTokens":392,"totalTokens":7121,"latencyMs":6361,"toolCalls":0,"textEmpty":false}
+[reasoning-shadow] {"ts":1786461742654,"turnId":"2125959413","callRole":"tool_planner","level":"max","source":"rule","reasonCode":"tool_selection","actualModel":"deepseek-v4-pro","finishReason":"stop","reasoningTokens":0,"completionTokens":39,"totalTokens":7248,"latencyMs":3003,"toolCalls":0,"textEmpty":false}

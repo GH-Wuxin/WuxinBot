@@ -1,0 +1,287 @@
+{
+  "label": "iteration-15d-flash-v81",
+  "playerSet": "golden",
+  "startedAt": "2026-08-01T18:12:37.028Z",
+  "apiBase": "http://127.0.0.1:8787",
+  "players": [
+    {
+      "key": "mrekk",
+      "id": 7562902,
+      "startedAt": "2026-08-01T18:12:37.680Z",
+      "finishedAt": "2026-08-01T18:13:06.355Z",
+      "outputFile": "01-mrekk.txt",
+      "metadata": {
+        "target": "mrekk",
+        "displayName": "mrekk",
+        "osuUserId": 7562902,
+        "createdAt": "2026-08-01T18:13:05.753Z",
+        "analysisModel": "deepseek-v4-flash",
+        "formatVersion": 81,
+        "conclusionSource": "llm",
+        "conclusionValidationReasons": [],
+        "sectionCommentsSource": "llm",
+        "sectionCommentSources": {
+          "profile": "llm",
+          "top": "llm",
+          "top5": "llm",
+          "mods": "llm",
+          "pplus": "llm",
+          "recent": "llm",
+          "classification": "llm"
+        },
+        "sectionCommentsValidationReasons": [],
+        "generationTrace": {
+          "sectionComments": [
+            {
+              "trigger": "initial",
+              "trace": [
+                {
+                  "attempt": 1,
+                  "outcome": "accepted",
+                  "reasons": []
+                }
+              ]
+            }
+          ],
+          "conclusion": [
+            {
+              "trigger": "initial",
+              "trace": [
+                {
+                  "attempt": 1,
+                  "outcome": "accepted",
+                  "reasons": []
+                }
+              ]
+            }
+          ],
+          "final": {
+            "sectionCommentsSource": "llm",
+            "sectionCommentSources": {
+              "profile": "llm",
+              "top": "llm",
+              "top5": "llm",
+              "mods": "llm",
+              "pplus": "llm",
+              "recent": "llm",
+              "classification": "llm"
+            },
+            "conclusionSource": "llm",
+            "fullReportFallback": false
+          }
+        },
+        "reviewLog": [],
+        "bestCount": 100,
+        "recentCount": 50,
+        "hasPPlus": true,
+        "errors": []
+      }
+    },
+    {
+      "key": "wuxin",
+      "id": 19244792,
+      "startedAt": "2026-08-01T18:13:07.316Z",
+      "finishedAt": "2026-08-01T18:13:48.477Z",
+      "outputFile": "02-wuxin.txt",
+      "metadata": {
+        "target": "[SHK]Wuxin",
+        "displayName": "[SHK]Wuxin",
+        "osuUserId": 19244792,
+        "createdAt": "2026-08-01T18:13:48.157Z",
+        "analysisModel": "deepseek-v4-flash",
+        "formatVersion": 81,
+        "conclusionSource": "fallback",
+        "conclusionValidationReasons": [
+          "把当前成绩构成扩写成了玩家意志、尝试过程或未来偏好",
+          "声称 BP 中没有 HR，但核准数据实际有 41 张"
+        ],
+        "sectionCommentsSource": "llm",
+        "sectionCommentSources": {
+          "profile": "llm",
+          "top": "llm",
+          "top5": "llm",
+          "mods": "llm",
+          "pplus": "llm",
+          "recent": "llm",
+          "classification": "llm"
+        },
+        "sectionCommentsValidationReasons": [],
+        "generationTrace": {
+          "sectionComments": [
+            {
+              "trigger": "initial",
+              "trace": [
+                {
+                  "attempt": 1,
+                  "outcome": "rejected",
+                  "reasons": [
+                    "profile 短评语义终审：分析对象 [SHK]Wuxin 的性别未知，不能擅自使用“他/她”",
+                    "profile 擅自猜测了目标玩家性别",
+                    "top 短评语义终审：BP 中 >=7★ 的核准数量为 70 张，不是 100 张",
+                    "top5 短评语义终审：把未经证据支持的原因或状态写成了事实：手感",
+                    "mods 短评语义终审：分析对象 [SHK]Wuxin 的性别未知，不能擅自使用“他/她”",
+                    "mods 擅自猜测了目标玩家性别",
+                    "pplus 短评语义终审：分析对象 [SHK]Wuxin 的性别未知，不能擅自使用“他/她”",
+                    "pplus 短评语义终审：stream 只有 87/100 张，不能写成 BP 全部或清一色都是该类型",
+                    "pplus 擅自猜测了目标玩家性别",
+                    "top5 短评编造了简报未提供的谱面内容或操作感受",
+                    "pplus 把当前显示较低的维度写成了确定能力弱项"
+                  ]
+                },
+                {
+                  "attempt": 2,
+                  "outcome": "accepted",
+                  "reasons": []
+                }
+              ]
+            }
+          ],
+          "conclusion": [
+            {
+              "trigger": "initial",
+              "trace": [
+                {
+                  "attempt": 1,
+                  "outcome": "rejected",
+                  "reasons": [
+                    "把当前 Mod 构成扩写成了玩家动机、习惯、胆量或已适应程度"
+                  ]
+                },
+                {
+                  "attempt": 2,
+                  "outcome": "rejected",
+                  "reasons": [
+                    "声称 BP 中没有 HR，但核准数据实际有 41 张"
+                  ]
+                },
+                {
+                  "attempt": 3,
+                  "outcome": "rejected",
+                  "reasons": [
+                    "把当前成绩构成扩写成了玩家意志、尝试过程或未来偏好",
+                    "声称 BP 中没有 HR，但核准数据实际有 41 张"
+                  ]
+                }
+              ]
+            }
+          ],
+          "final": {
+            "sectionCommentsSource": "llm",
+            "sectionCommentSources": {
+              "profile": "llm",
+              "top": "llm",
+              "top5": "llm",
+              "mods": "llm",
+              "pplus": "llm",
+              "recent": "llm",
+              "classification": "llm"
+            },
+            "conclusionSource": "fallback",
+            "fullReportFallback": false
+          }
+        },
+        "reviewLog": [],
+        "bestCount": 100,
+        "recentCount": 6,
+        "hasPPlus": true,
+        "errors": []
+      }
+    },
+    {
+      "key": "ahahhaha",
+      "id": 39873822,
+      "startedAt": "2026-08-01T18:13:50.605Z",
+      "finishedAt": "2026-08-01T18:14:18.222Z",
+      "outputFile": "03-ahahhaha.txt",
+      "metadata": {
+        "target": "ahahhaha",
+        "displayName": "ahahhaha",
+        "osuUserId": 39873822,
+        "createdAt": "2026-08-01T18:14:17.943Z",
+        "analysisModel": "deepseek-v4-flash",
+        "formatVersion": 81,
+        "conclusionSource": "llm",
+        "conclusionValidationReasons": [],
+        "sectionCommentsSource": "llm",
+        "sectionCommentSources": {
+          "profile": "llm",
+          "top": "llm",
+          "top5": "llm",
+          "mods": "llm",
+          "pplus": "llm",
+          "recent": "llm",
+          "classification": "llm"
+        },
+        "sectionCommentsValidationReasons": [],
+        "generationTrace": {
+          "sectionComments": [
+            {
+              "trigger": "initial",
+              "trace": [
+                {
+                  "attempt": 1,
+                  "outcome": "rejected",
+                  "reasons": [
+                    "top 短评语义终审：把未经证据支持的原因或状态写成了事实：手感",
+                    "recent 短评语义终审：Recent 没有记录时不能把空白猜成休息、未游玩或现实状态"
+                  ]
+                },
+                {
+                  "attempt": 2,
+                  "outcome": "rejected",
+                  "reasons": [
+                    "top 短评遗漏关键分布：22/33 张低于 95%，必须明确指出当前结果尚未收稳"
+                  ]
+                },
+                {
+                  "attempt": 3,
+                  "outcome": "accepted",
+                  "reasons": []
+                }
+              ]
+            }
+          ],
+          "conclusion": [
+            {
+              "trigger": "initial",
+              "trace": [
+                {
+                  "attempt": 1,
+                  "outcome": "rejected",
+                  "reasons": [
+                    "包含未经输入提供的设备、身体或 replay 机制：键盘"
+                  ]
+                },
+                {
+                  "attempt": 2,
+                  "outcome": "accepted",
+                  "reasons": []
+                }
+              ]
+            }
+          ],
+          "final": {
+            "sectionCommentsSource": "llm",
+            "sectionCommentSources": {
+              "profile": "llm",
+              "top": "llm",
+              "top5": "llm",
+              "mods": "llm",
+              "pplus": "llm",
+              "recent": "llm",
+              "classification": "llm"
+            },
+            "conclusionSource": "llm",
+            "fullReportFallback": false
+          }
+        },
+        "reviewLog": [],
+        "bestCount": 33,
+        "recentCount": 0,
+        "hasPPlus": true,
+        "errors": []
+      }
+    }
+  ],
+  "finishedAt": "2026-08-01T18:14:19.072Z"
+}

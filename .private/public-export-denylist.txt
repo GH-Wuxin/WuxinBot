@@ -1,0 +1,8 @@
+# Local-only denylist for public export. Never commit this file.
+570341031
+3861208813
+3312171148
+wdy570341031@163.com
+[SHK]Wuxin
+[SHK]yourenegg
+C:\Users\asus

@@ -58,8 +58,8 @@ console.log('=== 1. requiredTool: tool executes before LLM ===');
       db: { settings: {} },
       messages: [{ role: 'user', content: '看看我bp1' }],
       tools: DEFAULT_TOOLS,
-      userId: '570341031',
-      event: { type: 'group', groupId: '682910196', userId: '570341031', text: '看看我bp1' },
+      userId: 'REDACTED_QQ_001',
+      event: { type: 'group', groupId: 'REDACTED_GROUP_001', userId: 'REDACTED_QQ_001', text: '看看我bp1' },
       maxIterations: 4,
       requiredTool: { toolName: 'list_bots', args: {} },
     },
@@ -115,8 +115,8 @@ console.log('\n=== 2. requiredTool: LLM second tool_call is impossible ===');
       db: { settings: {} },
       messages: [{ role: 'user', content: '看看我bp1' }],
       tools: DEFAULT_TOOLS,
-      userId: '570341031',
-      event: { type: 'group', groupId: '682910196', userId: '570341031', text: '看看我bp1' },
+      userId: 'REDACTED_QQ_001',
+      event: { type: 'group', groupId: 'REDACTED_GROUP_001', userId: 'REDACTED_QQ_001', text: '看看我bp1' },
       maxIterations: 4,
       requiredTool: { toolName: 'list_bots', args: {} },
     },
@@ -146,13 +146,13 @@ console.log('\n=== 3. requiredTool: 10 repeated calls all execute ===');
           { role: 'user', content: '看看我bp1' },
           // Simulate accumulated history from previous calls
           ...Array.from({ length: i - 1 }, (_, j) => [
-            { role: 'user', content: `[${String(j + 12).padStart(2, '0')}:00] Wux1n: [CQ:at,qq=3861208813] 看看我bp1` },
+            { role: 'user', content: `[${String(j + 12).padStart(2, '0')}:00] Tester: [CQ:at,qq=REDACTED_QQ_002] 看看我bp1` },
             { role: 'assistant', content: `[${String(j + 12).padStart(2, '0')}:01] 机器人: HDHR 98.94%, 563.9pp...` },
           ]).flat(),
         ],
         tools: DEFAULT_TOOLS,
-        userId: '570341031',
-        event: { type: 'group', groupId: '682910196', userId: '570341031', text: '看看我bp1' },
+        userId: 'REDACTED_QQ_001',
+        event: { type: 'group', groupId: 'REDACTED_GROUP_001', userId: 'REDACTED_QQ_001', text: '看看我bp1' },
         maxIterations: 4,
         requiredTool: { toolName: 'list_bots', args: {} },
       },
@@ -193,8 +193,8 @@ console.log('\n=== 4. Normal path: LLM autonomy preserved ===');
       db: { settings: {} },
       messages: [{ role: 'user', content: '看看我bp1' }],
       tools: DEFAULT_TOOLS,
-      userId: '570341031',
-      event: { type: 'group', groupId: '682910196', userId: '570341031', text: '看看我bp1' },
+      userId: 'REDACTED_QQ_001',
+      event: { type: 'group', groupId: 'REDACTED_GROUP_001', userId: 'REDACTED_QQ_001', text: '看看我bp1' },
       sendMessage: async () => {},
       maxIterations: 1,
       // NO requiredTool
@@ -239,7 +239,7 @@ console.log('\n=== 5. Intent classifier integration ===');
 // ═══════════════════════════════════════════════════════
 // 6. requiredTool: lead failure does not discard payload
 // ═══════════════════════════════════════════════════════
-console.log('\n=== 6. requiredTool: LLM failure preserves direct payload ===');
+console.log('\n=== 6. requiredTool: LLM failure preserves data without a direct payload ===');
 
 {
   const result = await runToolLoop(
@@ -248,16 +248,16 @@ console.log('\n=== 6. requiredTool: LLM failure preserves direct payload ===');
       db: { settings: {} },
       messages: [{ role: 'user', content: '看看我bp1' }],
       tools: DEFAULT_TOOLS,
-      userId: '570341031',
-      event: { type: 'group', groupId: '682910196', userId: '570341031', text: '看看我bp1' },
+      userId: 'REDACTED_QQ_001',
+      event: { type: 'group', groupId: 'REDACTED_GROUP_001', userId: 'REDACTED_QQ_001', text: '看看我bp1' },
       maxIterations: 4,
       requiredTool: { toolName: 'list_bots', args: {} },
     },
   );
 
-  assert(result.text === '', 'lead failure: text must be empty (cosmetic lead failed)');
+  assert(result.text.includes('已查询到的数据摘录'), 'synthesis failure without a payload must return safe source data');
   assert(result.toolCallsMade === 1, 'lead failure: tool must have executed before the crash');
-  pass('required-tool-lead-failure-payload-preserved');
+  pass('required-tool-synthesis-failure-data-preserved');
 }
 
 // ═══════════════════════════════════════════════════════
@@ -288,9 +288,9 @@ console.log('\n=== 8. /w osu analyze path is separate ===');
 
 {
   // /w osu commands should NOT trigger requiredTool (they go through handleOwnerCommand)
-  assert(detectRequiredOsuTool('/w osu analyze [SHK]Wuxin') === null, '/w osu analyze must not trigger requiredTool');
+  assert(detectRequiredOsuTool('/w osu analyze [TST]Alpha') === null, '/w osu analyze must not trigger requiredTool');
   assert(detectRequiredOsuTool('/w osu recent') === null, '/w osu recent must not trigger requiredTool');
-  assert(detectRequiredOsuTool('/w osu bind [SHK]Wuxin') === null, '/w osu bind must not trigger requiredTool');
+  assert(detectRequiredOsuTool('/w osu bind [TST]Alpha') === null, '/w osu bind must not trigger requiredTool');
   pass('w-osu-commands-not-captured');
 }
 

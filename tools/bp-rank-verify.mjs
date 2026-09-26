@@ -204,7 +204,10 @@ const qqBot = {
     params: [],
     returns: 'text',
   }],
-  responsePolicy: { textSettleMs: 0, progressSettleMs: 0 },
+  // The fixture settles responses synchronously, so the post-call drain
+  // quarantine (added by 38a7117 for late-response absorption) must not block
+  // the back-to-back BP routing cases in this file.
+  responsePolicy: { textSettleMs: 0, progressSettleMs: 0, textDrainMs: 0, imageDrainMs: 0, timeoutDrainMs: 0 },
 };
 const qqDb = {
   settings: {
@@ -216,15 +219,15 @@ const result = await executeToolCall(
   toolCall('bp10-offline', {
     bot: qqBot.id,
     command: 'bp',
-    username: '[SHK]Wuxin',
+    username: '[TST]Alpha',
     bp_rank: 10,
   }),
   {
     db: qqDb,
-    userId: '570341031',
+    userId: 'REDACTED_QQ_001',
     // Explicit tool parameters have priority even if the model-facing event
     // text contains a different rank.
-    event: { type: 'private', userId: '570341031', text: '看看我 BP1' },
+    event: { type: 'private', userId: 'REDACTED_QQ_001', text: '看看我 BP1' },
     sendMessage: async (_event, text) => {
       sentCommand = String(text);
       assert(tryResolveBotResponse(qqDb, {
@@ -238,7 +241,7 @@ const result = await executeToolCall(
   },
 );
 assert(result.ok, 'ranked BP tool call must complete');
-assert(sentCommand === '/bp [SHK]Wuxin #10', 'ranked BP selector must be carried in the bot command');
+assert(sentCommand === '/bp [TST]Alpha #10', 'ranked BP selector must be carried in the bot command');
 assert(result.metadata?.bpStart === 10 && result.metadata?.bpEnd === 10, 'BP ranks must remain in tool metadata');
 assert(result.directContent === '#10 Fixture BP', 'text fallback must be delivered verbatim');
 
@@ -247,12 +250,12 @@ const fallbackResult = await executeToolCall(
   toolCall('bp1-event-fallback', {
     bot: qqBot.id,
     command: 'bp',
-    username: '[SHK]Wuxin',
+    username: '[TST]Alpha',
   }),
   {
     db: qqDb,
-    userId: '570341031',
-    event: { type: 'private', userId: '570341031', text: '看看我BP1' },
+    userId: 'REDACTED_QQ_001',
+    event: { type: 'private', userId: 'REDACTED_QQ_001', text: '看看我BP1' },
     sendMessage: async (_event, text) => {
       fallbackCommand = String(text);
       assert(tryResolveBotResponse(qqDb, {
@@ -266,7 +269,7 @@ const fallbackResult = await executeToolCall(
   },
 );
 assert(fallbackResult.ok, 'event-text BP1 fallback must complete');
-assert(fallbackCommand === '/bp [SHK]Wuxin #1', 'event-text BP1 must survive a model call that omitted bp_rank');
+assert(fallbackCommand === '/bp [TST]Alpha #1', 'event-text BP1 must survive a model call that omitted bp_rank');
 assert(
   fallbackResult.metadata?.bpStart === 1 && fallbackResult.metadata?.bpEnd === 1,
   'event-derived BP1 must remain in tool metadata',

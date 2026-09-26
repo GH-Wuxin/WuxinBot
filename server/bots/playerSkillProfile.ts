@@ -1,34 +1,71 @@
+import { traceEvent } from '../requestTrace.js';
 import { getUserBestScores, getUserById } from '../osu/api.js';
 import { normalizedScoreMods } from '../osu/scoreMetrics.js';
-import { requestSkillProfilerAnalysisCachedWithFetch } from './skillProfiler.js';
+import {
+  getSkillProfilerIdentity,
+  skillProfilerConcurrency,
+  skillProfilerAxisValue,
+  requestSkillProfilerAnalysisCachedWithFetch,
+  scanSkillProfilerBeatmaps,
+  prefetchSkillProfilerBeatmaps,
+  type SkillProfilerBeatmapPrefetchResult,
+  type SkillProfilerIdentity,
+} from './skillProfiler.js';
+import { reservePlayerAnalysis } from './playerAnalysisQueue.js';
 import { saveAndGetCqCode } from './render.js';
 import { renderPlayerSkillComparisonCard, renderPlayerSkillProfileCard } from './playerSkillComparisonCard.js';
+import { lookupSkillByOsuId } from './skills.js';
+import { PLAYER_SKILL_TITLE_POLICY_ID, PLAYER_SKILL_TITLES } from './playerSkillTitles.js';
+export { PLAYER_SKILL_TITLE_POLICY_ID, PLAYER_SKILL_TITLES } from './playerSkillTitles.js';
+import {
+  PLAYER_SKILL_AXIS_LABELS as SHARED_PLAYER_SKILL_AXIS_LABELS,
+  PLAYER_SKILL_AXIS_ORDER,
+} from './playerSkillAxes.js';
 
-export const PLAYER_SKILL_AXES = [
-  'aim_control',
-  'jump_aim',
-  'spatial_precision',
-  'flow_aim',
-  'raw_speed',
-  'finger_control',
-  'stamina',
-  'endurance',
-  'reading',
-] as const;
+export const PLAYER_SKILL_AXES = PLAYER_SKILL_AXIS_ORDER;
 
 export type PlayerSkillAxis = typeof PLAYER_SKILL_AXES[number];
 
-export const PLAYER_SKILL_AXIS_LABELS: Readonly<Record<PlayerSkillAxis, string>> = {
-  aim_control: 'Aim Control',
-  jump_aim: 'Jump Aim',
-  spatial_precision: 'Micro Precision',
-  flow_aim: 'Flow Aim',
-  raw_speed: 'Raw Speed',
-  finger_control: 'Finger Control',
-  stamina: 'Stamina',
-  endurance: 'Endurance',
-  reading: 'Reading',
+export const PLAYER_SKILL_TIERS = ['BEGINNER', 'PLAYER', 'EXPERT', 'WORLD_CLASS'] as const;
+export type PlayerSkillTier = typeof PLAYER_SKILL_TIERS[number];
+export type PlayerSkillRatingStatus = 'RATED' | 'INSUFFICIENT_EVIDENCE';
+
+export const PLAYER_SKILL_ARCHETYPES = [
+  'ALL_ROUNDER',
+  'AIM',
+  'JUMP',
+  'FLOW',
+  'PRECISION',
+  'CONTROL',
+  'FLOW_SPEED',
+  'SPEED',
+  'RHYTHM',
+  'STAMINA',
+  'ENDURANCE',
+  'READING',
+  'TECH',
+] as const;
+export type PlayerSkillArchetype = typeof PLAYER_SKILL_ARCHETYPES[number];
+
+export const PLAYER_SKILL_QUALITY_POLICY_ID = 'ACC_COMBO_QUALITY_V03';
+
+export const PLAYER_SKILL_ARCHETYPE_LABELS: Readonly<Record<PlayerSkillArchetype, string>> = {
+  ALL_ROUNDER: 'All-Rounder',
+  AIM: 'Aim',
+  JUMP: 'Jump Aim',
+  FLOW: 'Flow Aim',
+  PRECISION: 'Precision Aim',
+  CONTROL: 'Aim Control',
+  FLOW_SPEED: 'Flow Speed',
+  SPEED: 'Speed',
+  RHYTHM: 'Rhythm Control',
+  STAMINA: 'Stamina',
+  ENDURANCE: 'Endurance',
+  READING: 'Reading',
+  TECH: 'Technical',
 };
+
+export const PLAYER_SKILL_AXIS_LABELS = SHARED_PLAYER_SKILL_AXIS_LABELS;
 
 const SUPPORTED_PROFILER_MODS = new Set(['NF', 'EZ', 'HD', 'HR', 'SD', 'HT', 'DT', 'PF']);
 const PROFILER_MOD_ORDER = ['NF', 'EZ', 'HD', 'HR', 'SD', 'DT', 'HT', 'PF'];
@@ -52,6 +89,8 @@ export interface ScoreAchievementQuality {
 export interface AnalyzedBp {
   rank: number;
   beatmapId: number;
+  title?: string;
+  version?: string;
   mods: string[];
   pp: number;
   accuracy: number;
@@ -59,14 +98,65 @@ export interface AnalyzedBp {
   scoreQuality?: ScoreAchievementQuality;
   axes: Record<PlayerSkillAxis, number>;
   demandAxes?: Record<PlayerSkillAxis, number>;
+  demandScale?: 'unified' | 'v040_axis' | 'mixed';
   primaryType: string;
 }
 
 const PLAYER_PROFILE_LIMIT = 50;
 const BP_RANK_DECAY = 0.95;
-const PROFILE_ANALYSIS_CONCURRENCY = 3;
+const PROFILE_ANALYSIS_CONCURRENCY = skillProfilerConcurrency();
 const PLAYER_PROFILE_CACHE_TTL_MS = 30 * 60_000;
 const playerProfileCache = new Map<string, { at: number; payload: Record<string, unknown> }>();
+const STAR_EQUIVALENT_PLAYER_AXES = new Set<PlayerSkillAxis>([
+  'aim_control',
+  'jump_aim',
+  'spatial_precision',
+  'flow_aim',
+  'raw_speed',
+  'finger_control',
+  'reading',
+]);
+
+export type AggregatedPlayerAxis = {
+  key: PlayerSkillAxis;
+  label: string;
+  ceiling: number;
+  median: number;
+};
+
+export interface PlayerSkillIdentity {
+  status: PlayerSkillRatingStatus;
+  tier: PlayerSkillTier | null;
+  archetype: PlayerSkillArchetype;
+  title: string;
+  tierScore: number;
+}
+
+export interface PlayerSkillEvidenceSummary {
+  sampleCount: number;
+  effectiveSampleSize: number;
+}
+
+type PreparedBpScore = {
+  score: any;
+  rank: number;
+  beatmapId: number;
+  mods: string[] | null;
+};
+
+export interface PreparedPlayerSkillProfile {
+  osuId: number;
+  safeLimit: number;
+  cacheKey: string;
+  profilerIdentity: SkillProfilerIdentity;
+  user: any;
+  scores: any[];
+  readyScores: PreparedBpScore[];
+  missingScores: PreparedBpScore[];
+  otherScores: PreparedBpScore[];
+  prefetch: Promise<SkillProfilerBeatmapPrefetchResult>;
+  cachedPayload?: Record<string, unknown>;
+}
 
 function finite(value: unknown): number | null {
   if (value === null || value === undefined || value === '') return null;
@@ -121,10 +211,11 @@ export function scoreAchievementQuality(score: any): ScoreAchievementQuality {
   const missCount = Math.max(0, Number(score?.statistics?.count_miss ?? score?.statistics?.miss ?? 0));
   const missRate = objectCount > 0 ? clamp01(missCount / objectCount) : (missCount > 0 ? 1 : 0);
   const fullCombo = missCount === 0 && (score?.perfect === true || comboRatio >= 0.985);
-  const accuracyQuality = smoothstep((accuracy - 0.75) / 0.245);
-  const comboQuality = Math.sqrt(comboRatio);
+  const accuracyQuality = smoothstep((accuracy - 0.75) / 0.245)
+    * Math.exp(-10 * Math.max(0, 0.97 - accuracy));
+  const comboQuality = Math.sqrt(comboRatio) * Math.sqrt(Math.min(1, comboRatio / 0.50));
   const missQuality = Math.exp(-missRate * 36);
-  const overall = clamp01(accuracyQuality * 0.40 + comboQuality * 0.40 + missQuality * 0.20);
+  const overall = clamp01(accuracyQuality * 0.40 + comboQuality * (0.55 + 0.05 * missQuality));
   return {
     accuracy: rounded(accuracy * 100, 2),
     comboRatio: rounded(comboRatio, 3),
@@ -138,15 +229,15 @@ export function scoreAchievementQuality(score: any): ScoreAchievementQuality {
 }
 
 const AXIS_QUALITY_WEIGHTS: Readonly<Record<PlayerSkillAxis, readonly [number, number, number]>> = {
-  aim_control: [0.25, 0.55, 0.20],
-  jump_aim: [0.15, 0.65, 0.20],
-  spatial_precision: [0.25, 0.55, 0.20],
-  flow_aim: [0.25, 0.50, 0.25],
-  raw_speed: [0.65, 0.15, 0.20],
-  finger_control: [0.65, 0.15, 0.20],
-  stamina: [0.55, 0.20, 0.25],
-  endurance: [0.35, 0.35, 0.30],
-  reading: [0.30, 0.45, 0.25],
+  aim_control: [0.25, 0.70, 0.05],
+  jump_aim: [0.15, 0.80, 0.05],
+  spatial_precision: [0.25, 0.70, 0.05],
+  flow_aim: [0.25, 0.70, 0.05],
+  raw_speed: [0.65, 0.30, 0.05],
+  finger_control: [0.65, 0.30, 0.05],
+  stamina: [0.55, 0.40, 0.05],
+  endurance: [0.35, 0.60, 0.05],
+  reading: [0.30, 0.65, 0.05],
 };
 
 export function demonstratedAxisValue(axis: PlayerSkillAxis, demand: number, quality: ScoreAchievementQuality): number {
@@ -154,8 +245,7 @@ export function demonstratedAxisValue(axis: PlayerSkillAxis, demand: number, qua
   const [accuracyWeight, comboWeight, missWeight] = AXIS_QUALITY_WEIGHTS[axis];
   const evidence = clamp01(
     quality.accuracyQuality * accuracyWeight
-    + quality.comboQuality * comboWeight
-    + quality.missQuality * missWeight
+    + quality.comboQuality * (comboWeight + quality.missQuality * missWeight)
   );
   // A pass on a hard map still proves something, so the score never erases the
   // map demand. It cannot, however, claim the full demand without a convincing
@@ -170,13 +260,14 @@ export function demonstratedAxisValue(axis: PlayerSkillAxis, demand: number, qua
   const extremeDemandLoad = Math.max(0, demandValue - 6) / 4;
   const reciprocalRetention = 1 / (1 + 1.25 * jointFailure * extremeDemandLoad);
 
-  // A genuinely excellent FC is positive evidence rather than merely the
-  // absence of a penalty. Keep the bonus deliberately small and continuous so
-  // 99%+ FCs can edge above map demand without starting another inflation loop.
-  const excellence = quality.fullCombo && quality.accuracy >= 99
-    ? smoothstep((quality.accuracy - 98.5) / 1.2)
-    : 0;
-  const excellenceBonus = 1 + 0.04 * excellence;
+  // Accuracy excellence also rewards non-FCs. Miss only refines combo evidence;
+  // it no longer supplies a separate source of demonstrated ability.
+  // Exponential excellence: 99% -> 4%, SS -> 15%, with increasing slope.
+  // Continue the same curve below 99% until it reaches zero (about 98.682%).
+  const accuracyBonus = Math.max(0, 0.04
+    + 0.11 * Math.expm1(Math.min(100, quality.accuracy) - 99) / Math.expm1(1));
+  const fullComboBonus = quality.fullCombo ? 0.04 * quality.accuracyQuality : 0;
+  const excellenceBonus = 1 + accuracyBonus + fullComboBonus;
   return demandValue * achievementMultiplier * reciprocalRetention * excellenceBonus;
 }
 
@@ -227,17 +318,167 @@ export function rounded(value: number, digits = 1): number {
   return Math.round(value * multiplier) / multiplier;
 }
 
-function titleCase(value: unknown): string {
-  return String(value || 'Balanced')
-    .toLowerCase()
-    .replaceAll('_', ' ')
-    .replace(/\b\w/g, (letter) => letter.toUpperCase());
+function playerAxisStrength(axis: AggregatedPlayerAxis): number {
+  return axis.ceiling * 0.68 + axis.median * 0.32;
+}
+
+function playerWorldStrength(axis: AggregatedPlayerAxis): number {
+  const ceilingCap = STAR_EQUIVALENT_PLAYER_AXES.has(axis.key) ? 10 : 8.8;
+  return Math.min(axis.ceiling, ceilingCap) * 0.68 + axis.median * 0.32;
+}
+
+function pairIncludes(pair: ReadonlySet<PlayerSkillAxis>, left: PlayerSkillAxis, right: PlayerSkillAxis): boolean {
+  return pair.size === 2 && pair.has(left) && pair.has(right);
+}
+
+function singleAxisArchetype(axis: PlayerSkillAxis): PlayerSkillArchetype {
+  if (axis === 'jump_aim') return 'JUMP';
+  if (axis === 'flow_aim') return 'FLOW';
+  if (axis === 'spatial_precision') return 'PRECISION';
+  if (axis === 'aim_control') return 'CONTROL';
+  if (axis === 'raw_speed') return 'SPEED';
+  if (axis === 'finger_control') return 'RHYTHM';
+  if (axis === 'stamina') return 'STAMINA';
+  if (axis === 'endurance') return 'ENDURANCE';
+  return 'READING';
+}
+
+function pairedAxisArchetype(top: PlayerSkillAxis, second: PlayerSkillAxis): PlayerSkillArchetype {
+  const pair = new Set<PlayerSkillAxis>([top, second]);
+  if (pairIncludes(pair, 'flow_aim', 'raw_speed')) return 'FLOW_SPEED';
+  if (pairIncludes(pair, 'flow_aim', 'finger_control')) return 'TECH';
+  if (
+    pairIncludes(pair, 'jump_aim', 'spatial_precision')
+    || pairIncludes(pair, 'jump_aim', 'aim_control')
+    || pairIncludes(pair, 'jump_aim', 'flow_aim')
+    || pairIncludes(pair, 'aim_control', 'spatial_precision')
+    || pairIncludes(pair, 'flow_aim', 'aim_control')
+    || pairIncludes(pair, 'flow_aim', 'spatial_precision')
+  ) {
+    return 'AIM';
+  }
+  if (pairIncludes(pair, 'raw_speed', 'finger_control')) return 'RHYTHM';
+  if (
+    pairIncludes(pair, 'raw_speed', 'stamina')
+    || pairIncludes(pair, 'raw_speed', 'endurance')
+  ) {
+    return 'SPEED';
+  }
+  if (
+    pairIncludes(pair, 'flow_aim', 'stamina')
+    || pairIncludes(pair, 'flow_aim', 'endurance')
+  ) {
+    return 'FLOW';
+  }
+  if (pairIncludes(pair, 'stamina', 'endurance')) return 'ENDURANCE';
+  if (
+    pairIncludes(pair, 'reading', 'finger_control')
+    || pairIncludes(pair, 'reading', 'aim_control')
+    || pairIncludes(pair, 'reading', 'spatial_precision')
+  ) {
+    return 'TECH';
+  }
+  return singleAxisArchetype(top);
+}
+
+export function inferPlayerSkillIdentity(
+  axes: AggregatedPlayerAxis[],
+  evidence: PlayerSkillEvidenceSummary = { sampleCount: 50, effectiveSampleSize: 50 },
+): PlayerSkillIdentity {
+  if (!axes.length) throw new Error('PLAYER_SKILL_IDENTITY_NO_AXES');
+  const ranked = [...axes]
+    .map((axis) => ({ ...axis, strength: playerAxisStrength(axis) }))
+    .sort((left, right) => (
+      right.strength - left.strength
+      || PLAYER_SKILL_AXES.indexOf(left.key) - PLAYER_SKILL_AXES.indexOf(right.key)
+    ));
+  const top = ranked[0];
+  const second = ranked[1] || top;
+  const breadth = ranked[Math.min(6, ranked.length - 1)].strength;
+  const tierScore = top.strength;
+
+  let archetype: PlayerSkillArchetype;
+  if (top.strength - breadth <= 0.8) {
+    archetype = 'ALL_ROUNDER';
+  } else {
+    const coPrimary = top.strength - second.strength <= 1.0
+      && second.strength >= top.strength * 0.82;
+    archetype = coPrimary
+      ? pairedAxisArchetype(top.key, second.key)
+      : singleAxisArchetype(top.key);
+  }
+
+  const rated = evidence.sampleCount >= 12 && evidence.effectiveSampleSize >= 10;
+  if (!rated) {
+    return {
+      status: 'INSUFFICIENT_EVIDENCE',
+      tier: null,
+      archetype,
+      title: 'UNRATED',
+      tierScore: rounded(tierScore, 2),
+    };
+  }
+
+  let tier: PlayerSkillTier;
+  if (tierScore < 3.5) {
+    tier = 'BEGINNER';
+  } else {
+    // World titles require a full-enough profile in addition to the P80/P50
+    // shape.  The first route rewards an exceptional repeated specialty; the
+    // second covers genuinely world-class broad players whose axes stay just
+    // below 10 instead of requiring artificial overflow.
+    const worldSupport = evidence.sampleCount >= 30 && evidence.effectiveSampleSize >= 20;
+    const exceptionalSpecialty = ranked.slice(0, 2).some((axis) => {
+      if (STAR_EQUIVALENT_PLAYER_AXES.has(axis.key)) {
+        // Overflow remains visible on the card, but it must not let four narrow
+        // outliers manufacture a world title without a strong BP50 baseline.
+        return axis.ceiling >= 10 && playerWorldStrength(axis) >= 9;
+      }
+      return axis.ceiling >= 8.8 && playerWorldStrength(axis) >= 8.2;
+    });
+    const broadWorldClass = top.ceiling >= 9
+      && top.median >= 6.5
+      && playerWorldStrength(top) >= 8.5
+      && playerWorldStrength(second) >= 7.5;
+    if (worldSupport && (exceptionalSpecialty || broadWorldClass)) tier = 'WORLD_CLASS';
+    else if (tierScore >= 6.5) tier = 'EXPERT';
+    else tier = 'PLAYER';
+  }
+  return {
+    status: 'RATED',
+    tier,
+    archetype,
+    title: PLAYER_SKILL_TITLES[archetype][tier],
+    tierScore: rounded(tierScore, 2),
+  };
+}
+
+export function playerProfileCacheKey(
+  osuId: number,
+  limit: number,
+  identity: SkillProfilerIdentity,
+): string {
+  return JSON.stringify([
+    PLAYER_SKILL_TITLE_POLICY_ID,
+    PLAYER_SKILL_QUALITY_POLICY_ID,
+    identity.algorithmId,
+    identity.mapDemandVersion,
+    identity.unifiedScaleId,
+    identity.unifiedCalibrationKey,
+    osuId,
+    limit,
+  ]);
 }
 
 export function aggregatePlayerSkillProfile(analyzed: AnalyzedBp[]): {
-  axes: Array<{ key: PlayerSkillAxis; label: string; ceiling: number; median: number }>;
+  axes: AggregatedPlayerAxis[];
   primaryAxes: string[];
   profileType: string;
+  profileTitle: string;
+  profileStatus: PlayerSkillRatingStatus;
+  profileTier: PlayerSkillTier | null;
+  profileArchetype: PlayerSkillArchetype;
+  profileTierScore: number;
 } {
   if (!analyzed.length) throw new Error('PLAYER_SKILL_PROFILE_NO_VALID_BP');
   const axes = PLAYER_SKILL_AXES.map((axis) => {
@@ -257,34 +498,134 @@ export function aggregatePlayerSkillProfile(analyzed: AnalyzedBp[]): {
     };
   });
   const primaryAxes = [...axes]
-    .sort((left, right) => (right.ceiling * 0.68 + right.median * 0.32) - (left.ceiling * 0.68 + left.median * 0.32))
+    .sort((left, right) => playerAxisStrength(right) - playerAxisStrength(left))
     .slice(0, 2)
     .map((axis) => axis.label);
-  const typeWeights = new Map<string, number>();
-  for (const item of analyzed) {
-    const type = titleCase(item.primaryType);
-    typeWeights.set(type, (typeWeights.get(type) || 0) + item.weight * Number(item.scoreQuality?.overall ?? 1));
-  }
-  const profileType = [...typeWeights.entries()].sort((left, right) => right[1] - left[1])[0]?.[0] || 'Balanced';
-  return { axes, primaryAxes, profileType };
+  const positiveWeights = analyzed
+    .map((item) => Number(item.weight))
+    .filter((weight) => Number.isFinite(weight) && weight > 0);
+  const weightSum = positiveWeights.reduce((sum, weight) => sum + weight, 0);
+  const squaredWeightSum = positiveWeights.reduce((sum, weight) => sum + weight * weight, 0);
+  const effectiveSampleSize = squaredWeightSum > 0 ? weightSum * weightSum / squaredWeightSum : 0;
+  const identity = inferPlayerSkillIdentity(axes, {
+    sampleCount: analyzed.length,
+    effectiveSampleSize,
+  });
+  return {
+    axes,
+    primaryAxes,
+    // Keep type and title separate: type names the aggregate specialty, while
+    // title adds the evidence tier.  Neither is a vote over per-map labels.
+    profileType: PLAYER_SKILL_ARCHETYPE_LABELS[identity.archetype],
+    profileTitle: identity.title,
+    profileStatus: identity.status,
+    profileTier: identity.tier,
+    profileArchetype: identity.archetype,
+    profileTierScore: identity.tierScore,
+  };
 }
 
-export async function buildPlayerSkillProfilePayload(osuId: number, limit = PLAYER_PROFILE_LIMIT): Promise<Record<string, unknown>> {
+export async function preparePlayerSkillProfile(osuId: number, limit = PLAYER_PROFILE_LIMIT): Promise<PreparedPlayerSkillProfile> {
   const safeLimit = Math.max(1, Math.min(PLAYER_PROFILE_LIMIT, Math.floor(limit)));
-  const cacheKey = `${osuId}:${safeLimit}`;
+  traceEvent('TOOL', 'Skill：读取 BP 与玩家资料', { status: 'running', osuId, requested: safeLimit });
+  const profilerIdentity = await getSkillProfilerIdentity();
+  const cacheKey = playerProfileCacheKey(osuId, safeLimit, profilerIdentity);
   const cached = playerProfileCache.get(cacheKey);
-  if (cached && Date.now() - cached.at < PLAYER_PROFILE_CACHE_TTL_MS) return cached.payload;
+  if (cached && Date.now() - cached.at < PLAYER_PROFILE_CACHE_TTL_MS) {
+    traceEvent('TOOL', 'Skill：读取已完成画像缓存', { status: 'completed', osuId });
+    return {
+      osuId,
+      safeLimit,
+      cacheKey,
+      profilerIdentity,
+      user: null,
+      scores: [],
+      readyScores: [],
+      missingScores: [],
+      otherScores: [],
+      prefetch: Promise.resolve({
+        supported: true, requested: 0, alreadyAvailable: 0, missing: 0, downloaded: 0, failed: [],
+      }),
+      cachedPayload: cached.payload,
+    };
+  }
   const [user, scores] = await Promise.all([
     getUserById(osuId, 'osu'),
     getUserBestScores(osuId, 'osu', safeLimit),
   ]);
+  const limitedScores = scores.slice(0, safeLimit);
+  const preparedScores: PreparedBpScore[] = limitedScores.map((score: any, index: number) => {
+    const beatmapId = Number(score?.beatmap?.id || score?.beatmap_id || 0);
+    let mods: string[] | null = null;
+    try { mods = scoreMods(score); } catch { /* preserve the existing per-score failure path */ }
+    return { score, rank: index + 1, beatmapId, mods };
+  });
+  const scanIds = preparedScores
+    .filter((entry) => Number.isSafeInteger(entry.beatmapId) && entry.beatmapId > 0 && entry.mods !== null)
+    .map((entry) => entry.beatmapId);
+  let preflight = { supported: false, available: [] as number[], missing: [] as number[] };
+  try {
+    preflight = await scanSkillProfilerBeatmaps(scanIds);
+  } catch (error: any) {
+    traceEvent('TOOL', 'Skill：BP预扫描不可用，回退按图处理', {
+      status: 'running', osuId, reason: String(error?.message || error).slice(0, 160),
+    });
+  }
+  const available = new Set(preflight.available);
+  const missing = new Set(preflight.missing);
+  const readyScores = preparedScores.filter((entry) => preflight.supported && available.has(entry.beatmapId));
+  const missingScores = preparedScores.filter((entry) => preflight.supported && missing.has(entry.beatmapId));
+  const otherScores = preparedScores.filter((entry) => !readyScores.includes(entry) && !missingScores.includes(entry));
+  traceEvent('TOOL', 'Skill：BP预扫描完成', {
+    status: 'running', osuId, total: preparedScores.length,
+    available: readyScores.length, missing: missingScores.length,
+  });
+  const prefetch = preflight.supported
+    ? prefetchSkillProfilerBeatmaps([...missing], [...missing])
+      .then((result) => {
+        traceEvent('TOOL', 'Skill：缺失谱面预取完成', {
+          status: 'running', osuId, requested: result.requested,
+          downloaded: result.downloaded, failed: result.failed.length,
+        });
+        return result;
+      })
+    : Promise.resolve({
+      supported: false, requested: 0, alreadyAvailable: 0, missing: 0, downloaded: 0, failed: [],
+    });
+  return {
+    osuId,
+    safeLimit,
+    cacheKey,
+    profilerIdentity,
+    user,
+    scores: limitedScores,
+    readyScores,
+    missingScores,
+    otherScores,
+    prefetch,
+  };
+}
+
+export async function buildPreparedPlayerSkillProfile(
+  prepared: PreparedPlayerSkillProfile,
+): Promise<Record<string, unknown>> {
+  if (prepared.cachedPayload) return prepared.cachedPayload;
+  const { osuId, safeLimit, cacheKey, profilerIdentity, user } = prepared;
   const analyzed: AnalyzedBp[] = [];
   const failures: Array<{ rank: number; beatmapId: number; reason: string }> = [];
   const modCounts = new Map<string, number>();
+  const demandScaleCounts = new Map<string, number>();
+  const total = prepared.scores.length;
+  const batchStarted = Date.now();
+  let completed = 0;
+  let failed = 0;
 
-  const scoreResults = await mapLimit(scores.slice(0, safeLimit), PROFILE_ANALYSIS_CONCURRENCY, async (score: any, index) => {
-    const rank = index + 1;
-    const beatmapId = Number(score?.beatmap?.id || score?.beatmap_id || 0);
+  const scoreResults: Array<any> = [];
+  const analyzeBatch = async (entries: PreparedBpScore[]) => {
+    if (!entries.length) return;
+    const batchResults = await mapLimit(entries, PROFILE_ANALYSIS_CONCURRENCY, async (entry) => {
+      const { score, rank, beatmapId } = entry;
+      let result: any;
     try {
       if (!Number.isSafeInteger(beatmapId) || beatmapId <= 0) throw new Error('BEATMAP_ID_MISSING');
       const mods = scoreMods(score);
@@ -294,15 +635,20 @@ export async function buildPlayerSkillProfilePayload(osuId: number, limit = PLAY
       const quality = scoreAchievementQuality(score);
       const demandAxes = {} as Record<PlayerSkillAxis, number>;
       const demonstratedAxes = {} as Record<PlayerSkillAxis, number>;
+      const demandScales = new Set<'unified' | 'v040_axis'>();
       for (const axis of PLAYER_SKILL_AXES) {
-        const value = finite(analysis.axes?.[axis]?.stars);
+        const measurement = skillProfilerAxisValue(analysis, axis);
+        const value = measurement.value;
         if (value === null) throw new Error(`AXIS_${axis.toUpperCase()}_MISSING`);
+        demandScales.add(measurement.scale);
         demandAxes[axis] = value;
         demonstratedAxes[axis] = demonstratedAxisValue(axis, value, quality);
       }
-      return { ok: true as const, modLabel, analyzed: {
+      result = { ok: true as const, modLabel, analyzed: {
         rank,
         beatmapId,
+        title: String(score?.beatmapset?.title || analysis?.beatmap?.title || `BID ${beatmapId}`),
+        version: String(score?.beatmap?.version || analysis?.beatmap?.version || ''),
         mods,
         pp: finite(score?.pp) || 0,
         accuracy: quality.accuracy,
@@ -310,16 +656,36 @@ export async function buildPlayerSkillProfilePayload(osuId: number, limit = PLAY
         scoreQuality: quality,
         axes: demonstratedAxes,
         demandAxes,
+        demandScale: demandScales.size === 1 ? [...demandScales][0] : 'mixed',
         primaryType: String(analysis?.archetype?.primary_type || 'BALANCED'),
       } satisfies AnalyzedBp };
     } catch (error: any) {
-      return { ok: false as const, failure: { rank, beatmapId, reason: String(error?.message || error).slice(0, 160) } };
+      failed += 1;
+      result = { ok: false as const, failure: { rank, beatmapId, reason: String(error?.message || error).slice(0, 160) } };
+    } finally {
+      completed += 1;
+      traceEvent('TOOL', `Skill：已处理 ${completed}/${total}${failed ? `（失败 ${failed}）` : ''}`, {
+        status: 'running', durationMs: Date.now() - batchStarted,
+        osuId, rank, beatmapId, completed, total, failed,
+      });
     }
-  });
+      return result;
+    });
+    scoreResults.push(...batchResults);
+  };
+
+  // Existing .osu files go first. Missing files are downloaded concurrently in
+  // the separate prefetch lane and only join the analysis batch afterwards.
+  await analyzeBatch(prepared.readyScores);
+  await prepared.prefetch;
+  await analyzeBatch(prepared.missingScores);
+  await analyzeBatch(prepared.otherScores);
   for (const result of scoreResults) {
     if (result.ok) {
       analyzed.push(result.analyzed);
       modCounts.set(result.modLabel, (modCounts.get(result.modLabel) || 0) + 1);
+      const scale = result.analyzed.demandScale || 'v040_axis';
+      demandScaleCounts.set(scale, (demandScaleCounts.get(scale) || 0) + 1);
     } else {
       failures.push(result.failure);
     }
@@ -327,6 +693,7 @@ export async function buildPlayerSkillProfilePayload(osuId: number, limit = PLAY
 
   const aggregate = aggregatePlayerSkillProfile(analyzed);
   const stats: any = user.statistics || {};
+  const storedSkill = lookupSkillByOsuId(osuId, 'osu');
   const payload = {
     player: {
       osuId: user.id,
@@ -334,6 +701,10 @@ export async function buildPlayerSkillProfilePayload(osuId: number, limit = PLAY
       avatarUrl: user.avatar_url,
       coverUrl: user.cover_url || user.avatar_url,
       countryCode: user.country_code || '',
+      isActive: user.is_active,
+      isDeleted: user.is_deleted,
+      isRanked: stats.is_ranked,
+      lastVisit: user.last_visit || null,
       globalRank: finite(stats.global_rank),
       countryRank: finite(stats.country_rank),
       pp: finite(stats.pp),
@@ -352,16 +723,69 @@ export async function buildPlayerSkillProfilePayload(osuId: number, limit = PLAY
       modCounts: [...modCounts.entries()]
         .sort((left, right) => right[1] - left[1])
         .map(([mods, count]) => ({ mods, count })),
+      demandScales: [...demandScaleCounts.entries()]
+        .sort((left, right) => right[1] - left[1])
+        .map(([scale, count]) => ({ scale, count })),
     },
     profile: {
-      methodology: 'BP50 score-adjusted demand · reciprocal low-ACC×low-combo hard-demand penalty · FC excellence ≤4% · 0.95^(rank-1) · weighted P80/P50',
+      methodology: 'BP50 score-adjusted demand · attached unified star-equivalent scale when available · reciprocal low-ACC×low-combo hard-demand penalty · exponential ACC excellence 99%=4%, SS=15% + FC ≤4% · miss refines combo only · 0.95^(rank-1) · weighted P80/P50 · aggregate specialty four-tier title',
       primaryAxes: aggregate.primaryAxes,
       profileType: aggregate.profileType,
+      profileTitle: aggregate.profileTitle,
+      profileStatus: aggregate.profileStatus,
+      profileTier: aggregate.profileTier,
+      profileArchetype: aggregate.profileArchetype,
+      profileTierScore: aggregate.profileTierScore,
+      titlePolicy: PLAYER_SKILL_TITLE_POLICY_ID,
+      qualityPolicy: PLAYER_SKILL_QUALITY_POLICY_ID,
+      profilerIdentity,
       axes: aggregate.axes,
     },
+    ppPlus: storedSkill?.ppPlus || null,
+    rows: analyzed,
   };
-  playerProfileCache.set(cacheKey, { at: Date.now(), payload });
+  // Reuse successful per-map results, but retry an incomplete batch next time.
+  if (failures.length === 0) playerProfileCache.set(cacheKey, { at: Date.now(), payload });
   return payload;
+}
+
+const playerProfileInflight = new Map<string, Promise<Record<string, unknown>>>();
+
+export async function buildPlayerSkillProfilePayload(osuId: number, limit = PLAYER_PROFILE_LIMIT): Promise<Record<string, unknown>> {
+  const ticket = reservePlayerAnalysis(osuId);
+  traceEvent('TOOL', 'Skill：玩家进入计算队列', {
+    status: 'waiting', osuId, queuePosition: ticket.position,
+  });
+  try {
+    const prepared = await preparePlayerSkillProfile(osuId, limit);
+    if (prepared.cachedPayload) {
+      ticket.cancel();
+      return prepared.cachedPayload;
+    }
+    const existing = playerProfileInflight.get(prepared.cacheKey);
+    if (existing) {
+      ticket.cancel();
+      return existing;
+    }
+    const pending = ticket.run(async () => {
+      traceEvent('TOOL', 'Skill：开始计算当前玩家', {
+        status: 'running', osuId, queuePosition: ticket.position,
+        ready: prepared.readyScores.length, pendingDownload: prepared.missingScores.length,
+      });
+      return buildPreparedPlayerSkillProfile(prepared);
+    });
+    playerProfileInflight.set(prepared.cacheKey, pending);
+    try {
+      return await pending;
+    } finally {
+      if (playerProfileInflight.get(prepared.cacheKey) === pending) {
+        playerProfileInflight.delete(prepared.cacheKey);
+      }
+    }
+  } catch (error) {
+    ticket.cancel();
+    throw error;
+  }
 }
 
 export async function renderPlayerSkillProfile(osuId: number, limit = PLAYER_PROFILE_LIMIT): Promise<{
@@ -370,6 +794,11 @@ export async function renderPlayerSkillProfile(osuId: number, limit = PLAYER_PRO
   payload: Record<string, unknown>;
 } | null> {
   const payload = await buildPlayerSkillProfilePayload(osuId, limit);
+  const sample = payload.sample as { valid: number; requested: number; failures: unknown[] };
+  traceEvent('TOOL', 'Skill：生成画像图片', {
+    status: 'running', valid: sample.valid, requested: sample.requested,
+    failures: sample.failures,
+  });
   const buffer = await renderPlayerSkillProfileCard(payload);
   return {
     buffer,

@@ -1,5 +1,4 @@
 import {
-  enrichInternalScoreStarRatings,
   executeToolCall,
   formatInternalInfoText,
   formatInternalProfileText,
@@ -10,6 +9,7 @@ import {
   tryResolveBotResponse,
 } from '../server/bots/executor.ts';
 import { validateOperation } from '../server/bots/guard.ts';
+import { enrichScoreStarRatings } from '../server/osu/starRating.ts';
 import {
   DEFAULT_BOTS,
   availableCommands,
@@ -31,16 +31,16 @@ function toolCall(id, name, args) {
 
 const safeByName = validateOperation({
   type: 'query_bot',
-  params: { bot: 'yumu', command: 'recent', username: '[SHK]Wuxin' },
+  params: { bot: 'yumu', command: 'recent', username: '[TST]Alpha' },
 });
 assert(safeByName.ok, 'query_bot command key/name must not trip the system-command guard');
 assert(validateOperation({
   type: 'query_bot',
-  params: { bot: 'yumu', command: 'profile', username: '[SHK]Wuxin' },
+  params: { bot: 'yumu', command: 'profile', username: '[TST]Alpha' },
 }).ok, 'the legitimate profile command must not be mistaken for a file-system operation');
 assert(!validateOperation({
   type: 'query_bot',
-  params: { bot: 'yumu', command: 'read_file', username: '[SHK]Wuxin' },
+  params: { bot: 'yumu', command: 'read_file', username: '[TST]Alpha' },
 }).ok, 'file-system operation tokens separated by underscores must remain blocked');
 
 const safeByTrigger = validateOperation({
@@ -96,27 +96,27 @@ assert(ordinaryToolAnswer.ok, 'ordinary informational tools must still execute')
 assert(!ordinaryToolAnswer.directContent, 'ordinary tool Q&A must remain available for LLM summarization');
 
 const bindingTarget = resolveInternalPlayerTarget(
-  { osuBindings: { '570341031': 1234567 } },
-  '570341031',
+  { osuBindings: { 'REDACTED_QQ_001': 1234567 } },
+  'REDACTED_QQ_001',
   '',
 );
 assert(bindingTarget?.kind === 'id' && bindingTarget.value === 1234567, 'numeric osuBindings value must resolve as osu! user ID');
 const stringBindingTarget = resolveInternalPlayerTarget(
-  { osuBindings: { '570341031': '1234567' } },
-  '570341031',
+  { osuBindings: { 'REDACTED_QQ_001': '1234567' } },
+  'REDACTED_QQ_001',
   '',
 );
 assert(stringBindingTarget?.kind === 'id' && stringBindingTarget.value === 1234567, 'serialized numeric binding must resolve as osu! user ID');
 const explicitTarget = resolveInternalPlayerTarget(
-  { osuBindings: { '570341031': 1234567 } },
-  '570341031',
-  '[SHK]Wuxin',
+  { osuBindings: { 'REDACTED_QQ_001': 1234567 } },
+  'REDACTED_QQ_001',
+  '[TST]Alpha',
 );
-assert(explicitTarget?.kind === 'username' && explicitTarget.value === '[SHK]Wuxin', 'explicit username must override binding');
+assert(explicitTarget?.kind === 'username' && explicitTarget.value === '[TST]Alpha', 'explicit username must override binding');
 
 const userFixture = {
   id: 2,
-  username: '[SHK]Wuxin',
+  username: '[TST]Alpha',
   country_code: 'CN',
   country: { name: 'China' },
   avatar_url: '',
@@ -175,29 +175,37 @@ const scoreFixture = {
   weight: { pp: 500.0 },
 };
 let requestedAttributes = null;
-const [enrichedScore] = await enrichInternalScoreStarRatings(
+const [enrichedScore] = (await enrichScoreStarRatings(
   [scoreFixture],
   'osu',
   async (beatmapId, mode, mods) => {
     requestedAttributes = { beatmapId, mode, mods };
     return { attributes: { star_rating: 7.48 } };
   },
-);
+)).scores;
 assert(requestedAttributes?.beatmapId === 1002, 'attributes request must use the score beatmap ID');
 assert(requestedAttributes?.mode === 'osu', 'attributes request must use the score ruleset');
 assert(requestedAttributes?.mods.join(',') === 'DT,HD', 'attributes request must include the complete normalized Mod set');
 assert(enrichedScore.star_rating_source === 'modded', 'Modded score must be marked as officially enriched');
 const scoreLine = formatInternalScoreLine(enrichedScore, { index: 1, includeWeight: true });
 assert(scoreLine.includes('测试曲 [Another]'), 'score line must read title from beatmapset');
+assert(scoreLine.includes('BID 1002'), 'score line must expose the beatmap ID for downstream tools');
 assert(scoreLine.includes('7.48★') && !scoreLine.includes('4.90★'), 'score line must use official Mod-adjusted stars');
 assert(scoreLine.includes('98.15%') && !scoreLine.includes('0.98%'), 'score accuracy must be converted from API ratio to percent');
 assert(scoreLine.includes('HDDT'), 'display must preserve the score Mod order');
 
-const [failedStarScore] = await enrichInternalScoreStarRatings(
+const topLevelBidLine = formatInternalScoreLine({
+  ...enrichedScore,
+  beatmap_id: 1003,
+  beatmap: { ...enrichedScore.beatmap, id: 0 },
+});
+assert(topLevelBidLine.includes('BID 1003'), 'score line must fall back to top-level beatmap_id');
+
+const [failedStarScore] = (await enrichScoreStarRatings(
   [scoreFixture],
   'osu',
   async () => { throw new Error('fixture failure'); },
-);
+)).scores;
 const failedStarLine = formatInternalScoreLine(failedStarScore);
 assert(failedStarScore.star_rating_source === 'unavailable', 'failed attributes lookup must be marked unavailable');
 assert(failedStarLine.includes('星数暂不可用'), 'failed attributes lookup must not fall back to base stars');
@@ -206,7 +214,7 @@ const qqBot = {
   id: 'fixturebot',
   name: 'Fixture Bot',
   description: 'fixture',
-  qq: '3861208813',
+  qq: 'REDACTED_QQ_002',
   channel: 'qq_private',
   enabled: true,
   commands: [{
@@ -254,8 +262,8 @@ const loopResult = await runToolLoop(
     db: qqDb,
     messages: [{ role: 'user', content: 'show score' }],
     tools: buildBotToolSchemas(qqDb.settings.botRegistry),
-    userId: '570341031',
-    event: { type: 'private', userId: '570341031', text: 'show score' },
+    userId: 'REDACTED_QQ_001',
+    event: { type: 'private', userId: 'REDACTED_QQ_001', text: 'show score' },
     sendMessage: async () => {
       const resolved = tryResolveBotResponse(qqDb, {
         type: 'private',
@@ -276,7 +284,7 @@ assert(!completionCalls[1].tools?.length, 'final completion after the cap must h
 assert(!JSON.stringify(completionCalls[1].messages).includes('example.invalid'), 'image paths/URLs must not be exposed to the LLM');
 
 const completeBpList = [
-  '[SHK]Wuxin 的前 10 个最佳成绩：',
+  '[TST]Alpha 的前 10 个最佳成绩：',
   ...Array.from({ length: 10 }, (_, index) =>
     `  #${index + 1} ${index === 1 ? 'Sidetracked Day' : `Fixture Song ${index + 1}`} | 7.${String(index).padStart(2, '0')}★ | HD | 99.00% | ${560 - index}.0pp`
   ),
@@ -291,7 +299,7 @@ const listBot = {
     params: [],
     returns: 'text',
   }],
-  responsePolicy: { textSettleMs: 10, progressSettleMs: 20 },
+  responsePolicy: { textSettleMs: 10, progressSettleMs: 20, imageDrainMs: 15, textDrainMs: 15, timeoutDrainMs: 15 },
 };
 const listDb = {
   settings: {
@@ -314,7 +322,7 @@ const directListResult = await runToolLoop(
               tool_calls: [toolCall('qq-bp-list', 'query_bot', {
                 bot: listBot.id,
                 command: 'bp',
-                username: '[SHK]Wuxin',
+                username: '[TST]Alpha',
               })],
             },
           }],
@@ -335,7 +343,7 @@ const directListResult = await runToolLoop(
             tool_calls: [toolCall('ignored-repeat-query', 'query_bot', {
               bot: listBot.id,
               command: 'bp',
-              username: '[SHK]Wuxin',
+              username: '[TST]Alpha',
             })],
           },
         }],
@@ -346,8 +354,8 @@ const directListResult = await runToolLoop(
     db: listDb,
     messages: [{ role: 'user', content: '看看我的 BP' }],
     tools: buildBotToolSchemas(listDb.settings.botRegistry),
-    userId: '570341031',
-    event: { type: 'private', userId: '570341031', text: '看看我的 BP' },
+    userId: 'REDACTED_QQ_001',
+    event: { type: 'private', userId: 'REDACTED_QQ_001', text: '看看我的 BP' },
     sendMessage: async () => {
       const resolved = tryResolveBotResponse(listDb, {
         type: 'private',
@@ -372,6 +380,7 @@ assert(
   'LLM must be told to write only a short lead for direct content'
 );
 assert(!listCompletionCalls[1].tools?.length, 'the cosmetic lead turn after direct delivery must not expose tools again');
+await new Promise((resolve) => setTimeout(resolve, 30));
 
 let failedLeadCalls = 0;
 const directResultAfterLeadFailure = await runToolLoop(
@@ -388,7 +397,7 @@ const directResultAfterLeadFailure = await runToolLoop(
             tool_calls: [toolCall('qq-bp-list-lead-failure', 'query_bot', {
               bot: listBot.id,
               command: 'bp',
-              username: '[SHK]Wuxin',
+              username: '[TST]Alpha',
             })],
           },
         }],
@@ -399,8 +408,8 @@ const directResultAfterLeadFailure = await runToolLoop(
     db: listDb,
     messages: [{ role: 'user', content: '看看我的 BP' }],
     tools: buildBotToolSchemas(listDb.settings.botRegistry),
-    userId: '570341031',
-    event: { type: 'private', userId: '570341031', text: '看看我的 BP' },
+    userId: 'REDACTED_QQ_001',
+    event: { type: 'private', userId: 'REDACTED_QQ_001', text: '看看我的 BP' },
     sendMessage: async () => {
       const resolved = tryResolveBotResponse(listDb, {
         type: 'private',
@@ -431,17 +440,20 @@ const groupDb = {
     botRegistry: { bots: [groupBot], updatedAt: new Date(0).toISOString() },
   },
 };
+const SHORT_DRAIN_POLICY = { imageMs: 15, textMs: 15, timeoutMs: 15 };
 const groupOnePromise = registerPendingBotCall({
   correlationId: 'not-prefixed-a',
   botId: groupBot.id,
   channel: 'qq_group',
   groupId: '100',
+  drainPolicy: SHORT_DRAIN_POLICY,
 }, 2_000);
 const groupTwoPromise = registerPendingBotCall({
   correlationId: 'not-prefixed-b',
   botId: groupBot.id,
   channel: 'qq_group',
   groupId: '200',
+  drainPolicy: SHORT_DRAIN_POLICY,
 }, 2_000);
 assert(tryResolveBotResponse(groupDb, {
   type: 'group',
@@ -468,6 +480,9 @@ const stagedBot = {
   responsePolicy: {
     textSettleMs: 20,
     progressSettleMs: 80,
+    imageDrainMs: 15,
+    textDrainMs: 15,
+    timeoutDrainMs: 15,
   },
 };
 const stagedDb = {
@@ -480,6 +495,7 @@ const stagedPromise = registerPendingBotCall({
   botId: stagedBot.id,
   channel: 'qq_group',
   groupId: '300',
+  drainPolicy: SHORT_DRAIN_POLICY,
 }, 1_000);
 let stagedSettled = false;
 void stagedPromise.then(() => { stagedSettled = true; });
@@ -503,6 +519,7 @@ assert(tryResolveBotResponse(stagedDb, {
 }), 'the final image after a progress message must still resolve the pending request');
 const stagedResult = await stagedPromise;
 assert(stagedResult.images[0]?.endsWith('/final-panel.png'), 'the final image must survive a staged bot response');
+await new Promise((resolve) => setTimeout(resolve, 30));
 assert(!stagedResult.text.includes('正在查询'), 'progress chatter must not leak into an image result');
 
 const pureTextPromise = registerPendingBotCall({
@@ -510,6 +527,7 @@ const pureTextPromise = registerPendingBotCall({
   botId: stagedBot.id,
   channel: 'qq_group',
   groupId: '300',
+  drainPolicy: SHORT_DRAIN_POLICY,
 }, 1_000);
 assert(tryResolveBotResponse(stagedDb, {
   type: 'group',
@@ -520,6 +538,7 @@ assert(tryResolveBotResponse(stagedDb, {
   messageId: 'text-final-1',
 }), 'a pure-text terminal response must be consumed');
 const pureTextResult = await pureTextPromise;
+await new Promise((resolve) => setTimeout(resolve, 30));
 assert(pureTextResult.ok && pureTextResult.text === '查询失败：该玩家不存在', 'a pure-text result must complete after the configurable quiet window');
 
 const busyBot = {
@@ -538,19 +557,20 @@ const heldRoutePromise = registerPendingBotCall({
   botId: busyBot.id,
   channel: 'qq_group',
   groupId: '400',
+  drainPolicy: SHORT_DRAIN_POLICY,
 }, 1_000);
 let busyRouteSends = 0;
 const busyRouteResult = await executeToolCall(
   toolCall('busy-route-call', 'query_bot', {
     bot: busyBot.id,
     command: 'recent',
-    username: '[SHK]Wuxin',
+    username: '[TST]Alpha',
   }),
   {
     db: busyDb,
-    userId: '570341031',
+    userId: 'REDACTED_QQ_001',
     groupId: '400',
-    event: { type: 'group', groupId: '400', userId: '570341031', text: 'query' },
+    event: { type: 'group', groupId: '400', userId: 'REDACTED_QQ_001', text: 'query' },
     sendMessage: async () => { busyRouteSends += 1; },
   },
 );
@@ -571,6 +591,7 @@ const progressOnlyPromise = registerPendingBotCall({
   botId: stagedBot.id,
   channel: 'qq_group',
   groupId: '300',
+  drainPolicy: SHORT_DRAIN_POLICY,
 }, 1_000);
 assert(tryResolveBotResponse(stagedDb, {
   type: 'group',
@@ -581,6 +602,6 @@ assert(tryResolveBotResponse(stagedDb, {
   messageId: 'progress-only-1',
 }), 'a progress-only response must be consumed');
 const progressOnlyResult = await progressOnlyPromise;
-assert(progressOnlyResult.ok && progressOnlyResult.text.includes('正在查询'), 'a progress-only bot must still terminate at its configured grace period');
+assert(!progressOnlyResult.ok && progressOnlyResult.text.includes('正在查询'), 'progress-only must terminate without pretending a result exists');
 
 console.log('PASS bot harness: guard, registry, bindings, official score metrics, tool cap, images and QQ routing');

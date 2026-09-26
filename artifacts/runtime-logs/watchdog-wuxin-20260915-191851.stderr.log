@@ -1,0 +1,9 @@
+[crash] uncaughtException: Error: WuxinBot 已有实例运行（PID 32708，端口 8787，数据目录 C:\Users\asus\AppData\Roaming\Wuxin）
+    at acquireInstanceLock (G:\QQ-AI-ChatBot\server\instanceLock.ts:81:36)
+    at <anonymous> (G:\QQ-AI-ChatBot\server\index.ts:118:23)
+    at ModuleJob.run (node:internal/modules/esm/module_job:271:25)
+    at async onImport.tracePromise.__proto__ (node:internal/modules/esm/loader:578:26)
+    at async asyncRunEntryPointWithESMLoader (node:internal/modules/run_main:116:5) {
+  code: 'WUXIN_INSTANCE_ALREADY_RUNNING'
+}
+[crash] uncaughtException logged to G:\QQ-AI-ChatBot\logs\crash-2026-09-15T11-18-54-040Z.log

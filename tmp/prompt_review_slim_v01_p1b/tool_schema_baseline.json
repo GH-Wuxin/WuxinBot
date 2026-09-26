@@ -1,0 +1,118 @@
+[
+  {
+    "type": "function",
+    "function": {
+      "name": "query_osu",
+      "description": "查询 osu! 数据（Wuxin 内部：osu! API v2、PP+、skill store、rosu pp 估算；图片由 yumu-image 渲染）。可用查询：bp（最佳成绩（单张 #N 或范围 N-M，最多 100 张，一张图））；bp_type（BP 谱面类型分析（用户问 BP 类型/占比/结构/构成/串图/跳图/aim/alt/tech/stream 时调用；osu!oracle 对 Top100 分类，仅 osu!std，训练范围约 5★-9★，结果按真实分布回复，禁止编造））；recent（最近一次 osu! 成绩（含图片））；info（玩家信息卡（含图片））；profile（玩家资料文本）；ppplus（PP+ 维度分析）；skill（玩家技能雷达）；recommend（谱面推荐（协同过滤：与你同分段的玩家在打的图；玩家要求推图/推荐谱面/打什么图/有没有适合我的图时调用，数据来自 osu! API v2））；beatmap_lookup（谱面信息与星数（玩家问“这图多少星/多少 AR/多久/谁做的”时调用；beatmap_id 必填；可选 mods 返回官方带 mod 星数））；pp_calc（估算某张图给定 acc/combo/miss 的 pp（rosu 估算，不是官方精确值；beatmap_id 必填，可选 mods/accuracy(0-100)/combo/misses；回复时必须说明是估算值）。SS/FC 估算就是 accuracy=100、misses=0、combo=max_combo。用户说“我bp1/我bp几”时没有 beatmap_id：先调 capability=bp 取该 BP 的谱面（beatmap_id 与 mods），再调本 capability；玩家问“如果我bp1 SS 了能有多少 pp”这类假设题必须走这条链实际计算，禁止直接编数字）；leaderboard（谱面全球榜单（玩家问“榜一多少/前几是谁”时调用；beatmap_id 必填，可选 mods/limit(1-50)））。玩家要求推图/推荐谱面/打什么图时使用 capability=recommend，username 可填任意 osu! 用户名（不需要提问者已绑定）。数据来自真实 API，不是你凭记忆编的。pp_calc 返回的是 rosu 估算值，引用时说明是估算。没有 capability 枚举之外的查询类型，禁止编造参数。回答中出现的任何 pp/星数/acc/排名数字都必须来自工具返回：玩家要精确计算而你还没调用对应工具时，必须先调用工具再答；工具没返回或失败时禁止报数（哪怕标注“大概”），只能说明还没算出来或服务不可用。玩家上轮说“要/好/算/帮我算”确认时，先真的调用工具计算再回复，不能只查一次成绩就说“算好了”。不要在你的回复正文里输出任何 XML/DSML/tool_calls 格式的调用文本，工具调用只通过结构化 tool_calls 执行。",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "capability": {
+            "type": "string",
+            "enum": [
+              "bp",
+              "bp_type",
+              "recent",
+              "info",
+              "profile",
+              "ppplus",
+              "skill",
+              "recommend",
+              "beatmap_lookup",
+              "pp_calc",
+              "leaderboard"
+            ],
+            "description": "查询类型"
+          },
+          "username": {
+            "type": "string",
+            "description": "osu! 用户名。不填则用提问玩家的绑定账号。",
+            "maxLength": 128
+          },
+          "bot": {
+            "type": "string",
+            "description": "用户点名要用的 bot 时填对应 id。仅 capability=recent 使用：yumu → !r，kanon → !re；其他 bot 点名会由系统明确提示并降级为内部查询。其他查询类型请勿填写。",
+            "enum": [
+              "yumu",
+              "kanon"
+            ]
+          },
+          "bp_rank": {
+            "type": "integer",
+            "description": "BP 单张名次，与 bp_start/bp_end 互斥。仅 capability=bp 使用。",
+            "minimum": 1,
+            "maximum": 100
+          },
+          "bp_start": {
+            "type": "integer",
+            "description": "BP 范围起始（含），与 bp_end 同时填，最多 100 张。与 bp_rank 互斥。仅 capability=bp 使用。",
+            "minimum": 1,
+            "maximum": 100
+          },
+          "bp_end": {
+            "type": "integer",
+            "description": "BP 范围结束（含）。仅 capability=bp 使用。",
+            "minimum": 1,
+            "maximum": 100
+          },
+          "beatmap_id": {
+            "type": "integer",
+            "description": "谱面 ID（beatmap_lookup / pp_calc / leaderboard 必填）。",
+            "minimum": 1
+          },
+          "mods": {
+            "type": "string",
+            "description": "mod 组合，成对双字母，如 HDHR / HDDT（仅 beatmap_lookup / pp_calc / leaderboard 使用）。",
+            "maxLength": 16,
+            "pattern": "^([A-Za-z]{2})*$"
+          },
+          "accuracy": {
+            "type": "number",
+            "description": "acc 百分比（pp_calc 用，0-100；不填按 100 算）。",
+            "minimum": 0.01,
+            "maximum": 100
+          },
+          "combo": {
+            "type": "integer",
+            "description": "连击数（pp_calc 用；不填按 FC/max combo 算）。",
+            "minimum": 0
+          },
+          "misses": {
+            "type": "integer",
+            "description": "miss 数（pp_calc 用；不填按 0 算）。",
+            "minimum": 0,
+            "maximum": 999
+          },
+          "limit": {
+            "type": "integer",
+            "description": "榜单条数（leaderboard 用；不填 10 条）。",
+            "minimum": 1,
+            "maximum": 50
+          }
+        },
+        "required": [
+          "capability"
+        ]
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "get_player_skill",
+      "description": "获取已记录的玩家 osu! 技能水平快照（PP、排名、领域强弱、常用 Mods、分析摘要）。注意：这是之前分析时保存的快照，可能过时，且不含最近成绩。查询实时数据（最近成绩、最新 PP、当前状态）必须用 query_osu。",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "player": {
+            "type": "string",
+            "description": "osu! 用户名或 QQ 号"
+          }
+        },
+        "required": [
+          "player"
+        ]
+      }
+    }
+  }
+]

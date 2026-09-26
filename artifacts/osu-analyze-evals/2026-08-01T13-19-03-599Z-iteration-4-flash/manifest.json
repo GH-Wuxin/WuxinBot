@@ -1,0 +1,2395 @@
+{
+  "label": "iteration-4-flash",
+  "playerSet": "golden",
+  "startedAt": "2026-08-01T13:19:03.601Z",
+  "apiBase": "http://127.0.0.1:8787",
+  "players": [
+    {
+      "key": "mrekk",
+      "id": 7562902,
+      "startedAt": "2026-08-01T13:19:04.340Z",
+      "finishedAt": "2026-08-01T13:19:55.672Z",
+      "outputFile": "01-mrekk.txt",
+      "metadata": {
+        "target": "mrekk",
+        "displayName": "mrekk",
+        "osuUserId": 7562902,
+        "createdAt": "2026-08-01T13:19:55.366Z",
+        "analysisModel": "deepseek-v4-flash",
+        "formatVersion": 70,
+        "conclusionSource": "llm",
+        "conclusionValidationReasons": [],
+        "sectionCommentsSource": "llm",
+        "sectionCommentSources": {
+          "profile": "llm",
+          "top": "llm",
+          "top5": "llm",
+          "mods": "llm",
+          "pplus": "llm",
+          "recent": "llm",
+          "classification": "llm"
+        },
+        "sectionCommentsValidationReasons": [],
+        "generationTrace": {
+          "sectionComments": [
+            {
+              "trigger": "initial",
+              "trace": [
+                {
+                  "attempt": 1,
+                  "outcome": "rejected",
+                  "reasons": [
+                    "top5 复用了冷却表达“咬得很紧”"
+                  ]
+                },
+                {
+                  "attempt": 2,
+                  "outcome": "accepted",
+                  "reasons": []
+                }
+              ]
+            },
+            {
+              "trigger": "review-round-1",
+              "trace": [
+                {
+                  "attempt": 1,
+                  "outcome": "accepted",
+                  "reasons": []
+                }
+              ]
+            }
+          ],
+          "conclusion": [
+            {
+              "trigger": "initial",
+              "trace": [
+                {
+                  "attempt": 1,
+                  "outcome": "rejected",
+                  "reasons": [
+                    "复用了冷却表达“这个账号最扎眼”",
+                    "复用了冷却表达“最扎眼的地方”"
+                  ]
+                },
+                {
+                  "attempt": 2,
+                  "outcome": "rejected",
+                  "reasons": [
+                    "复用了冷却表达“这个账号最扎眼”",
+                    "复用了冷却表达“最扎眼的地方”"
+                  ]
+                },
+                {
+                  "attempt": 3,
+                  "outcome": "accepted",
+                  "reasons": []
+                }
+              ]
+            },
+            {
+              "trigger": "review-round-1",
+              "trace": [
+                {
+                  "attempt": 1,
+                  "outcome": "rejected",
+                  "reasons": [
+                    "复用了冷却表达“这个账号最扎眼”",
+                    "复用了冷却表达“最扎眼的地方”"
+                  ]
+                },
+                {
+                  "attempt": 2,
+                  "outcome": "rejected",
+                  "reasons": [
+                    "复用了冷却表达“这个账号最扎眼”",
+                    "复用了冷却表达“最扎眼的地方”"
+                  ]
+                },
+                {
+                  "attempt": 3,
+                  "outcome": "accepted",
+                  "reasons": []
+                }
+              ]
+            },
+            {
+              "trigger": "review-round-2",
+              "trace": [
+                {
+                  "attempt": 1,
+                  "outcome": "accepted",
+                  "reasons": []
+                }
+              ]
+            }
+          ],
+          "final": {
+            "sectionCommentsSource": "llm",
+            "sectionCommentSources": {
+              "profile": "llm",
+              "top": "llm",
+              "top5": "llm",
+              "mods": "llm",
+              "pplus": "llm",
+              "recent": "llm",
+              "classification": "llm"
+            },
+            "conclusionSource": "llm",
+            "fullReportFallback": false
+          }
+        },
+        "reviewLog": [
+          {
+            "round": 1,
+            "verdicts": [
+              {
+                "section": "profile",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "top",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "top5",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "mods",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "pplus",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "recent",
+                "result": "REJECT",
+                "reason": "把 Recent 与 BP 的差异写成'随手玩'，属于确定性伪因果，且'换着花样试图'暗示练习动机，简报明确禁止列举练习、疲劳等可能故事"
+              },
+              {
+                "section": "classification",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "conclusion",
+                "result": "REJECT",
+                "reason": "结论中'把人类反应极限往外推了一截'是超出简报依据的群体性能力断言，且'全世界也就这一个'缺乏简报支撑"
+              }
+            ],
+            "rejects": [
+              {
+                "section": "recent",
+                "reason": "把 Recent 与 BP 的差异写成'随手玩'，属于确定性伪因果，且'换着花样试图'暗示练习动机，简报明确禁止列举练习、疲劳等可能故事"
+              },
+              {
+                "section": "conclusion",
+                "reason": "结论中'把人类反应极限往外推了一截'是超出简报依据的群体性能力断言，且'全世界也就这一个'缺乏简报支撑"
+              }
+            ]
+          },
+          {
+            "round": 2,
+            "verdicts": [
+              {
+                "section": "profile",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "top",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "top5",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "mods",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "pplus",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "recent",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "classification",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "conclusion",
+                "result": "REJECT",
+                "reason": "确定性伪因果：把 Recent 与 BP 的差异写成'最近在干什么'并暗示 NM 反差有故事，且'把人类反应极限往外推'是简报外能力断言"
+              }
+            ],
+            "rejects": [
+              {
+                "section": "conclusion",
+                "reason": "确定性伪因果：把 Recent 与 BP 的差异写成'最近在干什么'并暗示 NM 反差有故事，且'把人类反应极限往外推'是简报外能力断言"
+              }
+            ]
+          },
+          {
+            "round": 3,
+            "verdicts": [
+              {
+                "section": "profile",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "top",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "top5",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "mods",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "pplus",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "recent",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "classification",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "conclusion",
+                "result": "PASS",
+                "reason": ""
+              }
+            ],
+            "rejects": []
+          }
+        ],
+        "bestCount": 100,
+        "recentCount": 50,
+        "hasPPlus": true,
+        "errors": []
+      }
+    },
+    {
+      "key": "cryshina",
+      "id": 14715160,
+      "startedAt": "2026-08-01T13:19:56.934Z",
+      "finishedAt": "2026-08-01T13:20:42.553Z",
+      "outputFile": "02-cryshina.txt",
+      "metadata": {
+        "target": "cryshina",
+        "displayName": "cryshina",
+        "osuUserId": 14715160,
+        "createdAt": "2026-08-01T13:20:42.256Z",
+        "analysisModel": "deepseek-v4-flash",
+        "formatVersion": 70,
+        "conclusionSource": "fallback",
+        "conclusionValidationReasons": [
+          "把 Jump 低值写成'偏科偏得理直气壮'，将数据差异断言为玩家性格/选择，且'如果哪天摘掉加速'属于未提供数据的推测性机制描述"
+        ],
+        "sectionCommentsSource": "llm",
+        "sectionCommentSources": {
+          "profile": "llm",
+          "top": "llm",
+          "top5": "llm",
+          "mods": "llm",
+          "pplus": "llm",
+          "recent": "llm",
+          "classification": "llm"
+        },
+        "sectionCommentsValidationReasons": [],
+        "generationTrace": {
+          "sectionComments": [
+            {
+              "trigger": "initial",
+              "trace": [
+                {
+                  "attempt": 1,
+                  "outcome": "rejected",
+                  "reasons": [
+                    "profile 擅自用中文数词换算了账号年龄",
+                    "profile 短评语义终审：擅自用中文数词换算了账号年龄",
+                    "profile 短评语义终审：把核准游玩次数压缩成了“万/千次”约数",
+                    "profile 短评语义终审：包含简报外数字: 21",
+                    "profile 短评包含简报外数字: 21"
+                  ]
+                },
+                {
+                  "attempt": 2,
+                  "outcome": "accepted",
+                  "reasons": []
+                }
+              ]
+            }
+          ],
+          "conclusion": [
+            {
+              "trigger": "initial",
+              "trace": [
+                {
+                  "attempt": 1,
+                  "outcome": "rejected",
+                  "reasons": [
+                    "复用了冷却表达“多看两眼”"
+                  ]
+                },
+                {
+                  "attempt": 2,
+                  "outcome": "accepted",
+                  "reasons": []
+                }
+              ]
+            },
+            {
+              "trigger": "review-round-1",
+              "trace": [
+                {
+                  "attempt": 1,
+                  "outcome": "rejected",
+                  "reasons": [
+                    "把未经证据支持的原因或状态写成了事实：手感"
+                  ]
+                },
+                {
+                  "attempt": 2,
+                  "outcome": "accepted",
+                  "reasons": []
+                }
+              ]
+            },
+            {
+              "trigger": "review-round-2",
+              "trace": [
+                {
+                  "attempt": 1,
+                  "outcome": "rejected",
+                  "reasons": [
+                    "复用了冷却表达“多看两眼”"
+                  ]
+                },
+                {
+                  "attempt": 2,
+                  "outcome": "accepted",
+                  "reasons": []
+                }
+              ]
+            }
+          ],
+          "final": {
+            "sectionCommentsSource": "llm",
+            "sectionCommentSources": {
+              "profile": "llm",
+              "top": "llm",
+              "top5": "llm",
+              "mods": "llm",
+              "pplus": "llm",
+              "recent": "llm",
+              "classification": "llm"
+            },
+            "conclusionSource": "fallback",
+            "fullReportFallback": false
+          }
+        },
+        "reviewLog": [
+          {
+            "round": 1,
+            "verdicts": [
+              {
+                "section": "profile",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "top",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "top5",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "mods",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "pplus",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "recent",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "classification",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "conclusion",
+                "result": "REJECT",
+                "reason": "确定性伪因果：把 Jump 低值写成与 Speed 差快三倍并称'偏科偏得理直气壮'，且'以这份列表的执念'把当前 BP 构成断言为永久偏好/动机"
+              }
+            ],
+            "rejects": [
+              {
+                "section": "conclusion",
+                "reason": "确定性伪因果：把 Jump 低值写成与 Speed 差快三倍并称'偏科偏得理直气壮'，且'以这份列表的执念'把当前 BP 构成断言为永久偏好/动机"
+              }
+            ]
+          },
+          {
+            "round": 2,
+            "verdicts": [
+              {
+                "section": "profile",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "top",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "top5",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "mods",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "pplus",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "recent",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "classification",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "conclusion",
+                "result": "REJECT",
+                "reason": "把当前 BP 构成写成永久习惯与性格（'整个人泡在高速流里的形状'、'这份执念倒是很诚实'），且'如果哪天摘掉加速用原速重打'属于未提供数据的推测，违反数据字段误称与确定性伪因果边界"
+              }
+            ],
+            "rejects": [
+              {
+                "section": "conclusion",
+                "reason": "把当前 BP 构成写成永久习惯与性格（'整个人泡在高速流里的形状'、'这份执念倒是很诚实'），且'如果哪天摘掉加速用原速重打'属于未提供数据的推测，违反数据字段误称与确定性伪因果边界"
+              }
+            ]
+          },
+          {
+            "round": 3,
+            "verdicts": [
+              {
+                "section": "profile",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "top",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "top5",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "mods",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "pplus",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "recent",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "classification",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "conclusion",
+                "result": "REJECT",
+                "reason": "把 Jump 低值写成'偏科偏得理直气壮'，将数据差异断言为玩家性格/选择，且'如果哪天摘掉加速'属于未提供数据的推测性机制描述"
+              }
+            ],
+            "rejects": [
+              {
+                "section": "conclusion",
+                "reason": "把 Jump 低值写成'偏科偏得理直气壮'，将数据差异断言为玩家性格/选择，且'如果哪天摘掉加速'属于未提供数据的推测性机制描述"
+              }
+            ]
+          }
+        ],
+        "bestCount": 100,
+        "recentCount": 0,
+        "hasPPlus": true,
+        "errors": []
+      }
+    },
+    {
+      "key": "oliwakami",
+      "id": 3046750,
+      "startedAt": "2026-08-01T13:20:45.681Z",
+      "finishedAt": "2026-08-01T13:21:29.106Z",
+      "outputFile": "03-oliwakami.txt",
+      "metadata": {
+        "target": "[SHK]oliwakami",
+        "displayName": "[SHK]oliwakami",
+        "osuUserId": 3046750,
+        "createdAt": "2026-08-01T13:21:28.712Z",
+        "analysisModel": "deepseek-v4-flash",
+        "formatVersion": 70,
+        "conclusionSource": "llm",
+        "conclusionValidationReasons": [],
+        "sectionCommentsSource": "llm",
+        "sectionCommentSources": {
+          "profile": "llm",
+          "top": "llm",
+          "top5": "llm",
+          "mods": "llm",
+          "pplus": "llm",
+          "recent": "llm",
+          "classification": "llm"
+        },
+        "sectionCommentsValidationReasons": [],
+        "generationTrace": {
+          "sectionComments": [
+            {
+              "trigger": "initial",
+              "trace": [
+                {
+                  "attempt": 1,
+                  "outcome": "rejected",
+                  "reasons": [
+                    "profile 短评语义终审：把核准游玩次数改写成了不可核验的中文约数",
+                    "pplus 复用了冷却表达“方向对得上”"
+                  ]
+                },
+                {
+                  "attempt": 2,
+                  "outcome": "accepted",
+                  "reasons": []
+                }
+              ]
+            },
+            {
+              "trigger": "review-round-1",
+              "trace": [
+                {
+                  "attempt": 1,
+                  "outcome": "accepted",
+                  "reasons": []
+                }
+              ]
+            }
+          ],
+          "conclusion": [
+            {
+              "trigger": "initial",
+              "trace": [
+                {
+                  "attempt": 1,
+                  "outcome": "rejected",
+                  "reasons": [
+                    "综合结论没有让 rank 或 pp 进入账号分量判断"
+                  ]
+                },
+                {
+                  "attempt": 2,
+                  "outcome": "rejected",
+                  "reasons": [
+                    "复用了冷却表达“方向对得上”"
+                  ]
+                },
+                {
+                  "attempt": 3,
+                  "outcome": "accepted",
+                  "reasons": []
+                }
+              ]
+            },
+            {
+              "trigger": "review-round-1",
+              "trace": [
+                {
+                  "attempt": 1,
+                  "outcome": "accepted",
+                  "reasons": []
+                }
+              ]
+            },
+            {
+              "trigger": "review-round-2",
+              "trace": [
+                {
+                  "attempt": 1,
+                  "outcome": "accepted",
+                  "reasons": []
+                }
+              ]
+            }
+          ],
+          "final": {
+            "sectionCommentsSource": "llm",
+            "sectionCommentSources": {
+              "profile": "llm",
+              "top": "llm",
+              "top5": "llm",
+              "mods": "llm",
+              "pplus": "llm",
+              "recent": "llm",
+              "classification": "llm"
+            },
+            "conclusionSource": "llm",
+            "fullReportFallback": false
+          }
+        },
+        "reviewLog": [
+          {
+            "round": 1,
+            "verdicts": [
+              {
+                "section": "profile",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "top",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "top5",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "mods",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "pplus",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "recent",
+                "result": "REJECT",
+                "reason": "把 Recent 与 BP 的差异写成'是在放松玩，还是随手试了什么'，虽带猜测语气但未明确承认原因未知，且'倒像账号藏着另一面'将样本差异引申为账号隐藏面，接近确定性伪因果"
+              },
+              {
+                "section": "classification",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "conclusion",
+                "result": "REJECT",
+                "reason": "结论中'手感确实漂亮'把 HDHR 高 Acc 归因于手感，属确定性伪因果；'账号藏着另一面'把 Recent 样本差异写成账号隐藏属性，超出数据边界"
+              }
+            ],
+            "rejects": [
+              {
+                "section": "recent",
+                "reason": "把 Recent 与 BP 的差异写成'是在放松玩，还是随手试了什么'，虽带猜测语气但未明确承认原因未知，且'倒像账号藏着另一面'将样本差异引申为账号隐藏面，接近确定性伪因果"
+              },
+              {
+                "section": "conclusion",
+                "reason": "结论中'手感确实漂亮'把 HDHR 高 Acc 归因于手感，属确定性伪因果；'账号藏着另一面'把 Recent 样本差异写成账号隐藏属性，超出数据边界"
+              }
+            ]
+          },
+          {
+            "round": 2,
+            "verdicts": [
+              {
+                "section": "profile",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "top",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "top5",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "mods",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "pplus",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "recent",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "classification",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "conclusion",
+                "result": "REJECT",
+                "reason": "把 Recent 两次 EZ 低 Acc 写成'账号藏着另一面没露出来'，暗示存在未展示的游玩侧面，属于确定性伪因果/机制编造；且'倒像'虽有猜测语气但未明确承认原因未知，与简报'原因未知'边界不符"
+              }
+            ],
+            "rejects": [
+              {
+                "section": "conclusion",
+                "reason": "把 Recent 两次 EZ 低 Acc 写成'账号藏着另一面没露出来'，暗示存在未展示的游玩侧面，属于确定性伪因果/机制编造；且'倒像'虽有猜测语气但未明确承认原因未知，与简报'原因未知'边界不符"
+              }
+            ]
+          },
+          {
+            "round": 3,
+            "verdicts": [
+              {
+                "section": "profile",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "top",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "top5",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "mods",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "pplus",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "recent",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "classification",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "conclusion",
+                "result": "PASS",
+                "reason": ""
+              }
+            ],
+            "rejects": []
+          }
+        ],
+        "bestCount": 100,
+        "recentCount": 2,
+        "hasPPlus": true,
+        "errors": []
+      }
+    },
+    {
+      "key": "wuxin",
+      "id": 19244792,
+      "startedAt": "2026-08-01T13:21:31.092Z",
+      "finishedAt": "2026-08-01T13:22:15.120Z",
+      "outputFile": "04-wuxin.txt",
+      "metadata": {
+        "target": "[SHK]Wuxin",
+        "displayName": "[SHK]Wuxin",
+        "osuUserId": 19244792,
+        "createdAt": "2026-08-01T13:22:14.772Z",
+        "analysisModel": "deepseek-v4-flash",
+        "formatVersion": 70,
+        "conclusionSource": "llm",
+        "conclusionValidationReasons": [],
+        "sectionCommentsSource": "llm",
+        "sectionCommentSources": {
+          "profile": "llm",
+          "top": "llm",
+          "top5": "llm",
+          "mods": "llm",
+          "pplus": "llm",
+          "recent": "llm",
+          "classification": "llm"
+        },
+        "sectionCommentsValidationReasons": [],
+        "generationTrace": {
+          "sectionComments": [
+            {
+              "trigger": "initial",
+              "trace": [
+                {
+                  "attempt": 1,
+                  "outcome": "rejected",
+                  "reasons": [
+                    "profile 短评语义终审：把核准游玩次数改写成了不可核验的中文约数",
+                    "mods 短评语义终审：把未经证据支持的原因或状态写成了事实：刻意"
+                  ]
+                },
+                {
+                  "attempt": 2,
+                  "outcome": "rejected",
+                  "reasons": [
+                    "profile 短评语义终审：把核准游玩次数改写成了不可核验的中文约数"
+                  ]
+                },
+                {
+                  "attempt": 3,
+                  "outcome": "accepted",
+                  "reasons": []
+                }
+              ]
+            }
+          ],
+          "conclusion": [
+            {
+              "trigger": "initial",
+              "trace": [
+                {
+                  "attempt": 1,
+                  "outcome": "rejected",
+                  "reasons": [
+                    "综合结论没有让 rank 或 pp 进入账号分量判断",
+                    "复用了冷却表达“这个账号最扎眼”",
+                    "复用了冷却表达“最扎眼的地方”"
+                  ]
+                },
+                {
+                  "attempt": 2,
+                  "outcome": "rejected",
+                  "reasons": [
+                    "复用了冷却表达“多看两眼”"
+                  ]
+                },
+                {
+                  "attempt": 3,
+                  "outcome": "accepted",
+                  "reasons": []
+                }
+              ]
+            },
+            {
+              "trigger": "review-round-1",
+              "trace": [
+                {
+                  "attempt": 1,
+                  "outcome": "accepted",
+                  "reasons": []
+                }
+              ]
+            },
+            {
+              "trigger": "review-round-2",
+              "trace": [
+                {
+                  "attempt": 1,
+                  "outcome": "accepted",
+                  "reasons": []
+                }
+              ]
+            }
+          ],
+          "final": {
+            "sectionCommentsSource": "llm",
+            "sectionCommentSources": {
+              "profile": "llm",
+              "top": "llm",
+              "top5": "llm",
+              "mods": "llm",
+              "pplus": "llm",
+              "recent": "llm",
+              "classification": "llm"
+            },
+            "conclusionSource": "llm",
+            "fullReportFallback": false
+          }
+        },
+        "reviewLog": [
+          {
+            "round": 1,
+            "verdicts": [
+              {
+                "section": "profile",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "top",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "top5",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "mods",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "pplus",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "recent",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "classification",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "conclusion",
+                "result": "REJECT",
+                "reason": "把 Recent 与 BP 的 Acc 差异写成状态波动，属于确定性伪因果，且'状态波动成这样'未保留未知"
+              }
+            ],
+            "rejects": [
+              {
+                "section": "conclusion",
+                "reason": "把 Recent 与 BP 的 Acc 差异写成状态波动，属于确定性伪因果，且'状态波动成这样'未保留未知"
+              }
+            ]
+          },
+          {
+            "round": 2,
+            "verdicts": [
+              {
+                "section": "profile",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "top",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "top5",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "mods",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "pplus",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "recent",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "classification",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "conclusion",
+                "result": "REJECT",
+                "reason": "把 Recent 与 BP 的 Acc 差异写成状态波动，属于确定性伪因果，且'状态波动成这样'未保留未知原因"
+              }
+            ],
+            "rejects": [
+              {
+                "section": "conclusion",
+                "reason": "把 Recent 与 BP 的 Acc 差异写成状态波动，属于确定性伪因果，且'状态波动成这样'未保留未知原因"
+              }
+            ]
+          },
+          {
+            "round": 3,
+            "verdicts": [
+              {
+                "section": "profile",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "top",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "top5",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "mods",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "pplus",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "recent",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "classification",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "conclusion",
+                "result": "PASS",
+                "reason": ""
+              }
+            ],
+            "rejects": []
+          }
+        ],
+        "bestCount": 100,
+        "recentCount": 6,
+        "hasPPlus": true,
+        "errors": []
+      }
+    },
+    {
+      "key": "ben-jiang",
+      "id": 7983528,
+      "startedAt": "2026-08-01T13:22:16.663Z",
+      "finishedAt": "2026-08-01T13:22:59.509Z",
+      "outputFile": "05-ben-jiang.txt",
+      "metadata": {
+        "target": "Ben Jiang",
+        "displayName": "Ben Jiang",
+        "osuUserId": 7983528,
+        "createdAt": "2026-08-01T13:22:59.209Z",
+        "analysisModel": "deepseek-v4-flash",
+        "formatVersion": 70,
+        "conclusionSource": "fallback",
+        "conclusionValidationReasons": [
+          "把 PP+ 低项与 BP 谱面分类写成因果对应关系，且将 EZDT 成绩解读为'玩心'，属于确定性伪因果与机制编造"
+        ],
+        "sectionCommentsSource": "llm",
+        "sectionCommentSources": {
+          "profile": "llm",
+          "top": "llm",
+          "top5": "llm",
+          "mods": "llm",
+          "pplus": "llm",
+          "recent": "llm",
+          "classification": "llm"
+        },
+        "sectionCommentsValidationReasons": [],
+        "generationTrace": {
+          "sectionComments": [
+            {
+              "trigger": "initial",
+              "trace": [
+                {
+                  "attempt": 1,
+                  "outcome": "parse_error",
+                  "reasons": [
+                    "没有输出可解析的七区块 JSON"
+                  ]
+                },
+                {
+                  "attempt": 2,
+                  "outcome": "accepted",
+                  "reasons": []
+                }
+              ]
+            }
+          ],
+          "conclusion": [
+            {
+              "trigger": "initial",
+              "trace": [
+                {
+                  "attempt": 1,
+                  "outcome": "rejected",
+                  "reasons": [
+                    "包含简报外数字: 12",
+                    "综合结论没有让 rank 或 pp 进入账号分量判断"
+                  ]
+                },
+                {
+                  "attempt": 2,
+                  "outcome": "rejected",
+                  "reasons": [
+                    "把未经证据支持的原因或状态写成了事实：随便打"
+                  ]
+                },
+                {
+                  "attempt": 3,
+                  "outcome": "rejected",
+                  "reasons": [
+                    "把未经证据支持的原因或状态写成了事实：随便打"
+                  ]
+                }
+              ]
+            },
+            {
+              "trigger": "review-round-1",
+              "trace": [
+                {
+                  "attempt": 1,
+                  "outcome": "accepted",
+                  "reasons": []
+                }
+              ]
+            },
+            {
+              "trigger": "review-round-2",
+              "trace": [
+                {
+                  "attempt": 1,
+                  "outcome": "rejected",
+                  "reasons": [
+                    "复用了冷却表达“多看两眼”"
+                  ]
+                },
+                {
+                  "attempt": 2,
+                  "outcome": "rejected",
+                  "reasons": [
+                    "复用了冷却表达“这个账号最扎眼”",
+                    "复用了冷却表达“最扎眼的地方”"
+                  ]
+                },
+                {
+                  "attempt": 3,
+                  "outcome": "accepted",
+                  "reasons": []
+                }
+              ]
+            }
+          ],
+          "final": {
+            "sectionCommentsSource": "llm",
+            "sectionCommentSources": {
+              "profile": "llm",
+              "top": "llm",
+              "top5": "llm",
+              "mods": "llm",
+              "pplus": "llm",
+              "recent": "llm",
+              "classification": "llm"
+            },
+            "conclusionSource": "fallback",
+            "fullReportFallback": false
+          }
+        },
+        "reviewLog": [
+          {
+            "round": 1,
+            "verdicts": [
+              {
+                "section": "profile",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "top",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "top5",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "mods",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "pplus",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "recent",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "classification",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "conclusion",
+                "result": "REJECT",
+                "reason": "把 PP+ 低项 Speed/Stamina 与 BP 的 aim 分类写成因果对应，且'不是不会别的，是没必要'把低项解释成能力选择，属确定性伪因果与能力机制编造"
+              }
+            ],
+            "rejects": [
+              {
+                "section": "conclusion",
+                "reason": "把 PP+ 低项 Speed/Stamina 与 BP 的 aim 分类写成因果对应，且'不是不会别的，是没必要'把低项解释成能力选择，属确定性伪因果与能力机制编造"
+              }
+            ]
+          },
+          {
+            "round": 2,
+            "verdicts": [
+              {
+                "section": "profile",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "top",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "top5",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "mods",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "pplus",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "recent",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "classification",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "conclusion",
+                "result": "REJECT",
+                "reason": "把 PP+ 低项与 BP 谱面分类写成因果对应（'跟 BP 里 81% 的 aim 分类正好对上'），且'EZDT 透出玩心'、'自我认知'、'克制就是他的风格'均属确定性心理与能力推断，简报无依据"
+              }
+            ],
+            "rejects": [
+              {
+                "section": "conclusion",
+                "reason": "把 PP+ 低项与 BP 谱面分类写成因果对应（'跟 BP 里 81% 的 aim 分类正好对上'），且'EZDT 透出玩心'、'自我认知'、'克制就是他的风格'均属确定性心理与能力推断，简报无依据"
+              }
+            ]
+          },
+          {
+            "round": 3,
+            "verdicts": [
+              {
+                "section": "profile",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "top",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "top5",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "mods",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "pplus",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "recent",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "classification",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "conclusion",
+                "result": "REJECT",
+                "reason": "把 PP+ 低项与 BP 谱面分类写成因果对应关系，且将 EZDT 成绩解读为'玩心'，属于确定性伪因果与机制编造"
+              }
+            ],
+            "rejects": [
+              {
+                "section": "conclusion",
+                "reason": "把 PP+ 低项与 BP 谱面分类写成因果对应关系，且将 EZDT 成绩解读为'玩心'，属于确定性伪因果与机制编造"
+              }
+            ]
+          }
+        ],
+        "bestCount": 100,
+        "recentCount": 0,
+        "hasPPlus": true,
+        "errors": []
+      }
+    },
+    {
+      "key": "nakanooooo",
+      "id": 36077706,
+      "startedAt": "2026-08-01T13:23:02.747Z",
+      "finishedAt": "2026-08-01T13:23:47.036Z",
+      "outputFile": "06-nakanooooo.txt",
+      "metadata": {
+        "target": "NakanoOoOo",
+        "displayName": "NakanoOoOo",
+        "osuUserId": 36077706,
+        "createdAt": "2026-08-01T13:23:46.424Z",
+        "analysisModel": "deepseek-v4-flash",
+        "formatVersion": 70,
+        "conclusionSource": "fallback",
+        "conclusionValidationReasons": [
+          "把六维与Mods结构写成因果：'跟BP里86张NM、DT/NC只有9张的结构对得上：这位玩家没在追高速，而是在自己舒服的区间里把准度磨到极致'，将数据并列关系断言为玩家动机与能力机制"
+        ],
+        "sectionCommentsSource": "llm",
+        "sectionCommentSources": {
+          "profile": "llm",
+          "top": "llm",
+          "top5": "llm",
+          "mods": "llm",
+          "pplus": "llm",
+          "recent": "llm",
+          "classification": "llm"
+        },
+        "sectionCommentsValidationReasons": [],
+        "generationTrace": {
+          "sectionComments": [
+            {
+              "trigger": "initial",
+              "trace": [
+                {
+                  "attempt": 1,
+                  "outcome": "rejected",
+                  "reasons": [
+                    "profile 短评语义终审：把核准游玩次数压缩成了“万/千次”约数",
+                    "profile 短评语义终审：把未经证据支持的原因或状态写成了事实：攒出来"
+                  ]
+                },
+                {
+                  "attempt": 2,
+                  "outcome": "accepted",
+                  "reasons": []
+                }
+              ]
+            }
+          ],
+          "conclusion": [
+            {
+              "trigger": "initial",
+              "trace": [
+                {
+                  "attempt": 1,
+                  "outcome": "rejected",
+                  "reasons": [
+                    "综合结论没有让 rank 或 pp 进入账号分量判断",
+                    "复用了冷却表达“这个账号最扎眼”"
+                  ]
+                },
+                {
+                  "attempt": 2,
+                  "outcome": "accepted",
+                  "reasons": []
+                }
+              ]
+            },
+            {
+              "trigger": "review-round-1",
+              "trace": [
+                {
+                  "attempt": 1,
+                  "outcome": "rejected",
+                  "reasons": [
+                    "把 PP+ 相对低项扩写成了具体能力结论：Speed 柱会不会"
+                  ]
+                },
+                {
+                  "attempt": 2,
+                  "outcome": "rejected",
+                  "reasons": [
+                    "擅自用中文数词换算了账号年龄",
+                    "把未经证据支持的原因或状态写成了事实：手感"
+                  ]
+                },
+                {
+                  "attempt": 3,
+                  "outcome": "accepted",
+                  "reasons": []
+                }
+              ]
+            },
+            {
+              "trigger": "review-round-2",
+              "trace": [
+                {
+                  "attempt": 1,
+                  "outcome": "rejected",
+                  "reasons": [
+                    "擅自用中文数词换算了账号年龄"
+                  ]
+                },
+                {
+                  "attempt": 2,
+                  "outcome": "accepted",
+                  "reasons": []
+                }
+              ]
+            }
+          ],
+          "final": {
+            "sectionCommentsSource": "llm",
+            "sectionCommentSources": {
+              "profile": "llm",
+              "top": "llm",
+              "top5": "llm",
+              "mods": "llm",
+              "pplus": "llm",
+              "recent": "llm",
+              "classification": "llm"
+            },
+            "conclusionSource": "fallback",
+            "fullReportFallback": false
+          }
+        },
+        "reviewLog": [
+          {
+            "round": 1,
+            "verdicts": [
+              {
+                "section": "profile",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "top",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "top5",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "mods",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "pplus",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "recent",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "classification",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "conclusion",
+                "result": "REJECT",
+                "reason": "把 BP 中 86 张 NM、DT/NC 仅 9 张的结构直接断言为玩家没在追高速、在自己舒服区间把准度磨到极致，属于确定性伪因果；且 Recent 一次样本被写成好奇平时打图状态，虽带语气但未明确承认未知，且与结论中能力机制断言相连"
+              }
+            ],
+            "rejects": [
+              {
+                "section": "conclusion",
+                "reason": "把 BP 中 86 张 NM、DT/NC 仅 9 张的结构直接断言为玩家没在追高速、在自己舒服区间把准度磨到极致，属于确定性伪因果；且 Recent 一次样本被写成好奇平时打图状态，虽带语气但未明确承认未知，且与结论中能力机制断言相连"
+              }
+            ]
+          },
+          {
+            "round": 2,
+            "verdicts": [
+              {
+                "section": "profile",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "top",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "top5",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "mods",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "pplus",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "recent",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "classification",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "conclusion",
+                "result": "REJECT",
+                "reason": "把六维与Mods结构写成因果：'这位玩家没在追高速，而是在自己舒服的区间里把准度磨到极致'，将数据差异断言为玩家选择与练习结果"
+              }
+            ],
+            "rejects": [
+              {
+                "section": "conclusion",
+                "reason": "把六维与Mods结构写成因果：'这位玩家没在追高速，而是在自己舒服的区间里把准度磨到极致'，将数据差异断言为玩家选择与练习结果"
+              }
+            ]
+          },
+          {
+            "round": 3,
+            "verdicts": [
+              {
+                "section": "profile",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "top",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "top5",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "mods",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "pplus",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "recent",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "classification",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "conclusion",
+                "result": "REJECT",
+                "reason": "把六维与Mods结构写成因果：'跟BP里86张NM、DT/NC只有9张的结构对得上：这位玩家没在追高速，而是在自己舒服的区间里把准度磨到极致'，将数据并列关系断言为玩家动机与能力机制"
+              }
+            ],
+            "rejects": [
+              {
+                "section": "conclusion",
+                "reason": "把六维与Mods结构写成因果：'跟BP里86张NM、DT/NC只有9张的结构对得上：这位玩家没在追高速，而是在自己舒服的区间里把准度磨到极致'，将数据并列关系断言为玩家动机与能力机制"
+              }
+            ]
+          }
+        ],
+        "bestCount": 100,
+        "recentCount": 1,
+        "hasPPlus": true,
+        "errors": []
+      }
+    },
+    {
+      "key": "elicyann",
+      "id": 37673654,
+      "startedAt": "2026-08-01T13:23:48.059Z",
+      "finishedAt": "2026-08-01T13:24:12.696Z",
+      "outputFile": "07-elicyann.txt",
+      "metadata": {
+        "target": "ElicyAnn",
+        "displayName": "ElicyAnn",
+        "osuUserId": 37673654,
+        "createdAt": "2026-08-01T13:24:10.954Z",
+        "analysisModel": "deepseek-v4-flash",
+        "formatVersion": 70,
+        "conclusionSource": "fallback",
+        "conclusionValidationReasons": [
+          "综合结论没有让 rank 或 pp 进入账号分量判断"
+        ],
+        "sectionCommentsSource": "llm",
+        "sectionCommentSources": {
+          "profile": "llm",
+          "top": "llm",
+          "top5": "llm",
+          "mods": "llm",
+          "pplus": "llm",
+          "recent": "llm",
+          "classification": "llm"
+        },
+        "sectionCommentsValidationReasons": [],
+        "generationTrace": {
+          "sectionComments": [
+            {
+              "trigger": "initial",
+              "trace": [
+                {
+                  "attempt": 1,
+                  "outcome": "rejected",
+                  "reasons": [
+                    "profile 短评语义终审：把成绩分布写成了未经提供的感受、意图或操作机制：没往更硬的图堆",
+                    "top5 短评语义终审：包含未经输入提供的设备、身体或 replay 机制：replay",
+                    "mods 短评语义终审：把未经证据支持的原因或状态写成了事实：懒得",
+                    "pplus 把六维显示条扩写成了未经提供的具体操作能力"
+                  ]
+                },
+                {
+                  "attempt": 2,
+                  "outcome": "rejected",
+                  "reasons": [
+                    "mods 短评语义终审：把当前成绩构成写成了未经提供的偏好或感受：DT是没试过还是不喜欢"
+                  ]
+                },
+                {
+                  "attempt": 3,
+                  "outcome": "accepted",
+                  "reasons": []
+                }
+              ]
+            }
+          ],
+          "conclusion": [
+            {
+              "trigger": "initial",
+              "trace": [
+                {
+                  "attempt": 1,
+                  "outcome": "rejected",
+                  "reasons": [
+                    "综合结论没有让 rank 或 pp 进入账号分量判断",
+                    "复用了冷却表达“这个账号最扎眼”",
+                    "复用了冷却表达“最扎眼的地方”",
+                    "复用了冷却表达“焊在一起”"
+                  ]
+                },
+                {
+                  "attempt": 2,
+                  "outcome": "rejected",
+                  "reasons": [
+                    "综合结论没有让 rank 或 pp 进入账号分量判断"
+                  ]
+                },
+                {
+                  "attempt": 3,
+                  "outcome": "rejected",
+                  "reasons": [
+                    "综合结论没有让 rank 或 pp 进入账号分量判断"
+                  ]
+                }
+              ]
+            }
+          ],
+          "final": {
+            "sectionCommentsSource": "llm",
+            "sectionCommentSources": {
+              "profile": "llm",
+              "top": "llm",
+              "top5": "llm",
+              "mods": "llm",
+              "pplus": "llm",
+              "recent": "llm",
+              "classification": "llm"
+            },
+            "conclusionSource": "fallback",
+            "fullReportFallback": false
+          }
+        },
+        "reviewLog": [
+          {
+            "round": 1,
+            "verdicts": [
+              {
+                "section": "profile",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "top",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "top5",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "mods",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "pplus",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "recent",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "classification",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "conclusion",
+                "result": "PASS",
+                "reason": ""
+              }
+            ],
+            "rejects": []
+          }
+        ],
+        "bestCount": 100,
+        "recentCount": 42,
+        "hasPPlus": true,
+        "errors": []
+      }
+    },
+    {
+      "key": "13451b",
+      "id": 37397005,
+      "startedAt": "2026-08-01T13:24:15.434Z",
+      "finishedAt": "2026-08-01T13:24:58.974Z",
+      "outputFile": "08-13451b.txt",
+      "metadata": {
+        "target": "13451b",
+        "displayName": "13451b",
+        "osuUserId": 37397005,
+        "createdAt": "2026-08-01T13:24:58.644Z",
+        "analysisModel": "deepseek-v4-flash",
+        "formatVersion": 70,
+        "conclusionSource": "fallback",
+        "conclusionValidationReasons": [
+          "把 Flow 垫底与 NF 出现 11 次写成同一副骨架的边角料，构成确定性伪因果；且把 Recent 高星低 Acc 写成'碰更重的东西'，虽带'像是'但未明确承认原因未知"
+        ],
+        "sectionCommentsSource": "mixed",
+        "sectionCommentSources": {
+          "profile": "llm",
+          "top": "fallback",
+          "top5": "llm",
+          "mods": "llm",
+          "pplus": "llm",
+          "recent": "llm",
+          "classification": "llm"
+        },
+        "sectionCommentsValidationReasons": [],
+        "generationTrace": {
+          "sectionComments": [
+            {
+              "trigger": "initial",
+              "trace": [
+                {
+                  "attempt": 1,
+                  "outcome": "parse_error",
+                  "reasons": [
+                    "没有输出可解析的七区块 JSON"
+                  ]
+                },
+                {
+                  "attempt": 2,
+                  "outcome": "rejected",
+                  "reasons": [
+                    "profile 擅自用中文数词换算了账号年龄",
+                    "profile 短评语义终审：擅自用中文数词换算了账号年龄",
+                    "profile 短评语义终审：把核准游玩次数改写成了不可核验的中文约数",
+                    "top 短评语义终审：BP 中 55/100 张低于 95%，不能把整体写成稳定或高准确率已收稳",
+                    "top5 短评语义终审：把未经证据支持的原因或状态写成了事实：手感",
+                    "classification 短评语义终审：包含简报外数字: 22",
+                    "top5 短评编造了简报未提供的谱面内容或操作感受",
+                    "classification 短评包含简报外数字: 22"
+                  ]
+                },
+                {
+                  "attempt": 3,
+                  "outcome": "rejected",
+                  "reasons": [
+                    "top 短评语义终审：BP 中 55/100 张低于 95%，不能把整体写成稳定或高准确率已收稳"
+                  ]
+                }
+              ]
+            },
+            {
+              "trigger": "review-round-1",
+              "trace": [
+                {
+                  "attempt": 1,
+                  "outcome": "accepted",
+                  "reasons": []
+                }
+              ]
+            }
+          ],
+          "conclusion": [
+            {
+              "trigger": "initial",
+              "trace": [
+                {
+                  "attempt": 1,
+                  "outcome": "rejected",
+                  "reasons": [
+                    "复用了冷却表达“方向对得上”"
+                  ]
+                },
+                {
+                  "attempt": 2,
+                  "outcome": "accepted",
+                  "reasons": []
+                }
+              ]
+            },
+            {
+              "trigger": "review-round-1",
+              "trace": [
+                {
+                  "attempt": 1,
+                  "outcome": "accepted",
+                  "reasons": []
+                }
+              ]
+            },
+            {
+              "trigger": "review-round-2",
+              "trace": [
+                {
+                  "attempt": 1,
+                  "outcome": "accepted",
+                  "reasons": []
+                }
+              ]
+            }
+          ],
+          "final": {
+            "sectionCommentsSource": "mixed",
+            "sectionCommentSources": {
+              "profile": "llm",
+              "top": "fallback",
+              "top5": "llm",
+              "mods": "llm",
+              "pplus": "llm",
+              "recent": "llm",
+              "classification": "llm"
+            },
+            "conclusionSource": "fallback",
+            "fullReportFallback": false
+          }
+        },
+        "reviewLog": [
+          {
+            "round": 1,
+            "verdicts": [
+              {
+                "section": "profile",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "top",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "top5",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "mods",
+                "result": "REJECT",
+                "reason": "把 NF 高星数低 Acc 说成'开着NF在试更难的图'，将数据差异断言为试图动机，属确定性伪因果"
+              },
+              {
+                "section": "pplus",
+                "result": "REJECT",
+                "reason": "把 Flow/Stamina 低值写成'耐力相关的维度还没跟上'，将低项解释为能力不足，属机制编造"
+              },
+              {
+                "section": "recent",
+                "result": "REJECT",
+                "reason": "'最近的状态比BP时期飘了不少'把 Recent 与 BP 的差异断言为状态变化，原因未知被写成确定事实"
+              },
+              {
+                "section": "classification",
+                "result": "REJECT",
+                "reason": "'stream和tech的占比明显少，可能还没怎么碰'把样本占比低写成未接触的偏好/能力推断，属确定性伪因果"
+              },
+              {
+                "section": "conclusion",
+                "result": "REJECT",
+                "reason": "'像是有些图开着保命才啃完的'把 NF 低 Acc 解释为保命动机；'手还没完全跟上'把 Recent 差异写成能力未跟上，均属确定性伪因果"
+              }
+            ],
+            "rejects": [
+              {
+                "section": "mods",
+                "reason": "把 NF 高星数低 Acc 说成'开着NF在试更难的图'，将数据差异断言为试图动机，属确定性伪因果"
+              },
+              {
+                "section": "pplus",
+                "reason": "把 Flow/Stamina 低值写成'耐力相关的维度还没跟上'，将低项解释为能力不足，属机制编造"
+              },
+              {
+                "section": "recent",
+                "reason": "'最近的状态比BP时期飘了不少'把 Recent 与 BP 的差异断言为状态变化，原因未知被写成确定事实"
+              },
+              {
+                "section": "classification",
+                "reason": "'stream和tech的占比明显少，可能还没怎么碰'把样本占比低写成未接触的偏好/能力推断，属确定性伪因果"
+              },
+              {
+                "section": "conclusion",
+                "reason": "'像是有些图开着保命才啃完的'把 NF 低 Acc 解释为保命动机；'手还没完全跟上'把 Recent 差异写成能力未跟上，均属确定性伪因果"
+              }
+            ]
+          },
+          {
+            "round": 2,
+            "verdicts": [
+              {
+                "section": "profile",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "top",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "top5",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "mods",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "pplus",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "recent",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "classification",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "conclusion",
+                "result": "REJECT",
+                "reason": "结论中'最近明显在往更难的图伸手，手还没完全跟上'将Recent与BP的差异断言为练习/能力原因，且'像是有些图开着保命才啃完的'把NF解释为保命动机，均属确定性伪因果"
+              }
+            ],
+            "rejects": [
+              {
+                "section": "conclusion",
+                "reason": "结论中'最近明显在往更难的图伸手，手还没完全跟上'将Recent与BP的差异断言为练习/能力原因，且'像是有些图开着保命才啃完的'把NF解释为保命动机，均属确定性伪因果"
+              }
+            ]
+          },
+          {
+            "round": 3,
+            "verdicts": [
+              {
+                "section": "profile",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "top",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "top5",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "mods",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "pplus",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "recent",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "classification",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "conclusion",
+                "result": "REJECT",
+                "reason": "把 Flow 垫底与 NF 出现 11 次写成同一副骨架的边角料，构成确定性伪因果；且把 Recent 高星低 Acc 写成'碰更重的东西'，虽带'像是'但未明确承认原因未知"
+              }
+            ],
+            "rejects": [
+              {
+                "section": "conclusion",
+                "reason": "把 Flow 垫底与 NF 出现 11 次写成同一副骨架的边角料，构成确定性伪因果；且把 Recent 高星低 Acc 写成'碰更重的东西'，虽带'像是'但未明确承认原因未知"
+              }
+            ]
+          }
+        ],
+        "bestCount": 100,
+        "recentCount": 10,
+        "hasPPlus": true,
+        "errors": []
+      }
+    },
+    {
+      "key": "ahahhaha",
+      "id": 39873822,
+      "startedAt": "2026-08-01T13:25:01.147Z",
+      "finishedAt": "2026-08-01T13:25:30.705Z",
+      "outputFile": "09-ahahhaha.txt",
+      "metadata": {
+        "target": "ahahhaha",
+        "displayName": "ahahhaha",
+        "osuUserId": 39873822,
+        "createdAt": "2026-08-01T13:25:30.326Z",
+        "analysisModel": "deepseek-v4-flash",
+        "formatVersion": 70,
+        "conclusionSource": "llm",
+        "conclusionValidationReasons": [],
+        "sectionCommentsSource": "llm",
+        "sectionCommentSources": {
+          "profile": "llm",
+          "top": "llm",
+          "top5": "llm",
+          "mods": "llm",
+          "pplus": "llm",
+          "recent": "llm",
+          "classification": "llm"
+        },
+        "sectionCommentsValidationReasons": [],
+        "generationTrace": {
+          "sectionComments": [
+            {
+              "trigger": "initial",
+              "trace": [
+                {
+                  "attempt": 1,
+                  "outcome": "rejected",
+                  "reasons": [
+                    "profile 擅自用中文数词换算了账号年龄",
+                    "profile 短评语义终审：擅自用中文数词换算了账号年龄",
+                    "top5 短评语义终审：把未经证据支持的原因或状态写成了事实：手感",
+                    "pplus 短评语义终审：把 PP+ 维度名称翻译成了未经提供的具体操作能力：跳跃相关的条先露头，其他都还没长出来",
+                    "top5 短评编造了简报未提供的谱面内容或操作感受"
+                  ]
+                },
+                {
+                  "attempt": 2,
+                  "outcome": "rejected",
+                  "reasons": [
+                    "profile 擅自用中文数词换算了账号年龄",
+                    "profile 短评语义终审：擅自用中文数词换算了账号年龄",
+                    "pplus 短评语义终审：把 PP+ 维度名称翻译成了未经提供的具体操作能力：跳跃相关的条先露头，其他都还没长出来"
+                  ]
+                },
+                {
+                  "attempt": 3,
+                  "outcome": "accepted",
+                  "reasons": []
+                }
+              ]
+            },
+            {
+              "trigger": "review-round-1",
+              "trace": [
+                {
+                  "attempt": 1,
+                  "outcome": "accepted",
+                  "reasons": []
+                }
+              ]
+            }
+          ],
+          "conclusion": [
+            {
+              "trigger": "initial",
+              "trace": [
+                {
+                  "attempt": 1,
+                  "outcome": "rejected",
+                  "reasons": [
+                    "把核准游玩次数改写成了不可核验的中文约数",
+                    "包含简报外数字: 200",
+                    "综合结论没有让 rank 或 pp 进入账号分量判断"
+                  ]
+                },
+                {
+                  "attempt": 2,
+                  "outcome": "rejected",
+                  "reasons": [
+                    "把核准游玩次数改写成了不可核验的中文约数",
+                    "包含简报外数字: 200"
+                  ]
+                },
+                {
+                  "attempt": 3,
+                  "outcome": "rejected",
+                  "reasons": [
+                    "把核准游玩次数改写成了不可核验的中文约数",
+                    "包含简报外数字: 200"
+                  ]
+                }
+              ]
+            }
+          ],
+          "final": {
+            "sectionCommentsSource": "llm",
+            "sectionCommentSources": {
+              "profile": "llm",
+              "top": "llm",
+              "top5": "llm",
+              "mods": "llm",
+              "pplus": "llm",
+              "recent": "llm",
+              "classification": "llm"
+            },
+            "conclusionSource": "llm",
+            "fullReportFallback": false
+          }
+        },
+        "reviewLog": [
+          {
+            "round": 1,
+            "verdicts": [
+              {
+                "section": "profile",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "top",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "top5",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "mods",
+                "result": "REJECT",
+                "reason": "把当前 BP 的 Mod 构成写成'从一开始就在用 HR 给自己加难度'，属于确定性伪因果，简报未提供时间顺序或动机证据"
+              },
+              {
+                "section": "pplus",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "recent",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "classification",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "conclusion",
+                "result": "PASS",
+                "reason": ""
+              }
+            ],
+            "rejects": [
+              {
+                "section": "mods",
+                "reason": "把当前 BP 的 Mod 构成写成'从一开始就在用 HR 给自己加难度'，属于确定性伪因果，简报未提供时间顺序或动机证据"
+              }
+            ]
+          },
+          {
+            "round": 2,
+            "verdicts": [
+              {
+                "section": "profile",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "top",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "top5",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "mods",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "pplus",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "recent",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "classification",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "conclusion",
+                "result": "PASS",
+                "reason": ""
+              }
+            ],
+            "rejects": []
+          }
+        ],
+        "bestCount": 33,
+        "recentCount": 0,
+        "hasPPlus": true,
+        "errors": []
+      }
+    }
+  ],
+  "finishedAt": "2026-08-01T13:25:33.385Z"
+}

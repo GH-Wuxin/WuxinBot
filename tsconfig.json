@@ -12,5 +12,10 @@
     "skipLibCheck": true,
     "types": ["node"]
   },
-  "include": ["server/**/*.ts"]
+  "include": [
+    "server/**/*.ts",
+    "tools/agent-runtime/**/*.ts",
+    "tools/agent-replay.ts",
+    "tools/agent-runtime-campaign.ts"
+  ]
 }

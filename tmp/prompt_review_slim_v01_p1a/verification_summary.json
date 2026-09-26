@@ -1,0 +1,25 @@
+{
+  "schema_version": "prompt_review_slim_p1a_verification_summary_v1",
+  "generated_at_utc": "2026-08-17T12:45:00Z",
+  "results": [
+    {"suite": "npm run typecheck", "exit": 0, "status": "PASS"},
+    {"suite": "tools/prompt-review-slim-phase0-verify.mjs", "exit": 0, "status": "PASS", "checks": 45},
+    {"suite": "tools/prompt-review-slim-p1a-verify.mjs", "exit": 0, "status": "PASS", "checks": 63},
+    {"suite": "tools/kb-verify.mjs", "exit": 0, "status": "PASS", "checks": 56},
+    {"suite": "tools/osu-fixture-verify.mjs", "exit": 0, "status": "PASS", "notes": "All osu! analyzer fixture tests PASSED"},
+    {"suite": "tools/quick-router-verify.mjs", "exit": 0, "status": "PASS", "checks": 121},
+    {"suite": "tools/vision-verify.mjs", "exit": 0, "status": "PASS", "notes": "All vision verification tests PASSED"},
+    {"suite": "git diff --check", "exit": 0, "status": "PASS"}
+  ],
+  "behavioral_equivalence": {
+    "tool_exposure": "UNCHANGED (buildBotToolSchemas untouched)",
+    "tool_schema": "UNCHANGED (serializer unchanged; description output byte-equivalent)",
+    "command_routing": "UNCHANGED (/w deterministic path untouched)",
+    "natural_language_routing": "UNCHANGED (intent/required-tool functions untouched; quick-router verify PASS)",
+    "permissions": "UNCHANGED",
+    "kb": "UNCHANGED (kb-verify PASS)",
+    "persona": "UNCHANGED",
+    "rewrite": "UNCHANGED (Phase0 verifier PASS)",
+    "analyze_reviewer": "UNCHANGED (osu fixture verify PASS)"
+  }
+}

@@ -1,0 +1,5 @@
+[quick] bridge yumu 失败，回退内部引擎: yumu 调用超时（60s）
+WARNING: option --ssl-verify-server-cert is disabled, because of an insecure passwordless login.
+WARNING: option --ssl-verify-server-cert is disabled, because of an insecure passwordless login.
+[quick] bridge yumu 发送失败（面板可能已发出）: OneBot HTTP 请求超时 12 秒
+[quick] 未绑定提示发送失败: OneBot HTTP 请求超时 12 秒

@@ -1,0 +1,41 @@
+[PP+] player/info oliwakami failed (HTTP 500, code 400): lol server goes boooom
+[osu analyze] 区块短评第 1 次未通过： [
+  'profile 短评语义终审：分析对象 [SHK]trytodupe 的性别未知，不能擅自使用“他/她”',
+  'profile 短评语义终审：账号年龄核准为约 6.8 年，与“19 年”不符',
+  'profile 擅自猜测了目标玩家性别',
+  'mods 短评语义终审：分析对象 [SHK]trytodupe 的性别未知，不能擅自使用“他/她”',
+  'mods 擅自猜测了目标玩家性别',
+  'recent 短评语义终审：把两批样本平均星数接近误写成了同一难度的谱面或单图关系',
+  'classification 短评语义终审：分析对象 [SHK]trytodupe 的性别未知，不能擅自使用“他/她”',
+  'classification 短评语义终审：把 osu!oracle 的 alt 分类误写成了跳图',
+  'classification 擅自猜测了目标玩家性别'
+]
+[osu analyze] 硬错误修复后仍未通过： [
+  'profile 短评语义终审：账号年龄核准为约 6.8 年，与“19 年”不符',
+  'classification 短评语义终审：分析对象 [SHK]trytodupe 的性别未知，不能擅自使用“他/她”',
+  'classification 擅自猜测了目标玩家性别'
+]
+[osu analyze] 区块短评第 2 次未通过： [ 'recent 短评语义终审：把两批样本平均星数接近误写成了同一难度的谱面或单图关系' ]
+[osu analyze] 独立审查记录意见（不重写、不降级）： conclusion[hard]=结论中“这个账号最像它自己的地方，是它把‘稳健’和‘贪心’揉在了一起”将 BP 中 NM 与 DT 的分布推断为“稳健”与“贪心”的因果性格描述，且“最近有点飘了”将 Recent 低 Acc 推断为具体行为状态，均超出简报允许的轻推断范围
+node:internal/deps/undici/undici:13502
+      Error.captureStackTrace(err);
+            ^
+
+TypeError: fetch failed
+    at node:internal/deps/undici/undici:13502:13
+    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)
+    at async fetchWithTimeout (G:\QQ-AI-ChatBot\server\onebot.ts:37:12)
+    at async sendOneBotMessage (G:\QQ-AI-ChatBot\server\onebot.ts:103:20)
+    at async sendAsReply (G:\QQ-AI-ChatBot\server\osu\commands.ts:378:5)
+    at async drainQueue (G:\QQ-AI-ChatBot\server\osu\commands.ts:1114:37) {
+  [cause]: Error: connect ECONNREFUSED 127.0.0.1:3000
+      at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1634:16) {
+    errno: -4078,
+    code: 'ECONNREFUSED',
+    syscall: 'connect',
+    address: '127.0.0.1',
+    port: 3000
+  }
+}
+
+Node.js v22.14.0

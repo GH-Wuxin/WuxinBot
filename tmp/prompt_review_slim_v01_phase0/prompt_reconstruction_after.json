@@ -1,0 +1,35 @@
+{
+  "generated_at": "2026-09-26T11:09:27.563Z",
+  "cases": {
+    "A_normal_chat": {
+      "system_chars": 6311,
+      "user_chars": 374,
+      "history_chars": 199
+    },
+    "B_osu_question_no_tool": {
+      "system_chars": 6446,
+      "user_chars": 374,
+      "history_chars": 199
+    },
+    "C_natural_tool_trigger": {
+      "system_chars": 6446,
+      "user_chars": 376,
+      "history_chars": 199
+    },
+    "D_slash_command": {
+      "system_chars": 5458,
+      "user_chars": 387,
+      "history_chars": 199
+    },
+    "E_kb_hit": {
+      "system_chars": 6905,
+      "user_chars": 378,
+      "history_chars": 199
+    },
+    "F_serious": {
+      "system_chars": 5303,
+      "user_chars": 378,
+      "history_chars": 199
+    }
+  }
+}

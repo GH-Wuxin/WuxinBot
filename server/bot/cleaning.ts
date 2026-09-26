@@ -177,7 +177,7 @@ export function normalizeMessage(message) {
     .replace(/\[CQ:file[^\]]*\]/g, '[文件]')
     .trim();
   // NapCat escapes literal CQ-reserved characters in raw_message, including
-  // brackets in valid usernames such as "[SHK]Wuxin". Decode only after real
+  // brackets in valid usernames such as "[TST]Alpha". Decode only after real
   // CQ segments have been handled so escaped user text cannot become a
   // synthetic control segment during normalization.
   return decodeCqValue(normalized).trim();
@@ -233,8 +233,8 @@ export function hasVisualPlaceholder(text) {
 }
 
 export function asksToInspectVisual(text) {
-  // Pure [图片]/[表情包] messages should be ignored. Only explain the visual
-  // limitation when the user adds real text asking the bot to inspect it.
+  // A pure placeholder is not itself an explicit inspection request. The
+  // reply gate handles it separately when a real image payload is available.
   const raw = String(text || '').replace(/\[CQ:(?:at|reply)[^\]]+\]/g, ' ');
   // Pattern 2: "看上文图片/看上面的图/看看之前的图" — no [图片] placeholder but
   // user explicitly asks to look at images in context or quoted messages.

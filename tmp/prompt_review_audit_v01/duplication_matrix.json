@@ -1,0 +1,128 @@
+{
+  "semantic_groups": [
+    {
+      "semantic": "osu 数据必须调 query_osu、禁止编数字/猜 bp_type/recommend",
+      "code": [
+        "server/bot.ts deterministic required-tool/bp_type/recommend guard"
+      ],
+      "system": [
+        "server/bot/persona.ts 推图/pp_calc 段",
+        "server/bot.ts tool availability note"
+      ],
+      "persona": [
+        "server/bot/persona.ts PIPPI_CORE 推图段"
+      ],
+      "descriptor": [
+        "server/bot/commands/*.meta.ts"
+      ],
+      "tool_schema": [
+        "server/bots/agentCapabilities.ts buildQueryOsuDescription",
+        "server/bots/capabilityCatalog.ts"
+      ],
+      "KB": [
+        "server/bot/commands/index.ts buildCapabilitySummaryDocs",
+        "KB build 自动命令文档"
+      ],
+      "review": [
+        "server/osu/analyzer.ts buildAnalysisReviewerPrompt verified_facts gate"
+      ]
+    },
+    {
+      "semantic": "推荐必须 recommend + BID 交付 + 失败不编图",
+      "code": [
+        "server/bot.ts recommend hard guard"
+      ],
+      "system": [
+        "server/bot.ts tool note",
+        "server/bot/persona.ts 推图段"
+      ],
+      "persona": [
+        "server/bot/persona.ts 推图段"
+      ],
+      "descriptor": [],
+      "tool_schema": [
+        "server/bots/capabilityCatalog.ts recommend",
+        "server/bots/agentCapabilities.ts"
+      ],
+      "KB": [
+        "capability summary docs"
+      ],
+      "review": []
+    },
+    {
+      "semantic": "bp_type 必须确定性路由",
+      "code": [
+        "server/bot.ts detectBpTypeAnalysisIntent"
+      ],
+      "system": [
+        "server/bot.ts tool note"
+      ],
+      "persona": [],
+      "descriptor": [
+        "server/bot/commands quick.meta / osu.meta (若出现)"
+      ],
+      "tool_schema": [
+        "server/bots/capabilityCatalog.ts bp_type"
+      ],
+      "KB": [
+        "capability summary docs"
+      ],
+      "review": []
+    },
+    {
+      "semantic": "owner 权限",
+      "code": [
+        "server/bot/owner/router.ts",
+        "server/bot/commands/types.ts canViewCommand"
+      ],
+      "system": [
+        "server/bot/prompt.ts facts owner 优先"
+      ],
+      "persona": [],
+      "descriptor": [
+        "server/bot/commands/owner.meta.ts"
+      ],
+      "tool_schema": [
+        "buildCapabilitySummaryDocs owner audience"
+      ],
+      "KB": [
+        "owner audience summaries"
+      ],
+      "review": []
+    },
+    {
+      "semantic": "视觉能力诚实说明",
+      "code": [
+        "server/bot/prompt.ts visualCapabilityNotice",
+        "server/bot/reply.ts visualLimitationReply"
+      ],
+      "system": [
+        "server/bot/prompt.ts factualCtx"
+      ],
+      "persona": [],
+      "descriptor": [],
+      "tool_schema": [],
+      "KB": [],
+      "review": []
+    },
+    {
+      "semantic": "身份/不自称 AI/不自我否定",
+      "code": [
+        "server/bot/prompt.ts anchorText + selfNegationBan"
+      ],
+      "system": [
+        "server/bot/persona.ts PIPPI_CORE"
+      ],
+      "persona": [
+        "server/bot/persona.ts PIPPI_CORE"
+      ],
+      "descriptor": [],
+      "tool_schema": [],
+      "KB": [],
+      "review": [
+        "server/bot/reply.ts rewriteNormalReply identity clause"
+      ]
+    }
+  ],
+  "notes": "matrix records locations where same semantic appears; duplication between code enforcement and prompt guidance is not automatically removable because code=SECURITY_ENFORCEMENT and prompt=MODEL_GUIDANCE serve different purposes."
+}

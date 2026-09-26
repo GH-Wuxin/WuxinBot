@@ -1,0 +1,236 @@
+{
+  "audit": {
+    "id": "WUXINBOT_REFACTOR_AUDIT_V01",
+    "date": "2026-08-15",
+    "branch": "fix/onebot-connection-lifecycle",
+    "head": "63b992e",
+    "read_only": true,
+    "final_verdict": "B",
+    "final_verdict_text": "只做少量 targeted refactor，继续功能开发。当前架构没有到需要系统性重构的程度。"
+  },
+  "candidates": [
+    {
+      "id": "C01",
+      "title": "owner.meta 权限镜像 / 帮助双写 / 缺失命令描述符",
+      "classification": "LOCAL_CLEANUP",
+      "evidence": [
+        "server/bot/commands/owner.meta.ts:30-36 手写 permFromKey 镜像 store.ts defaultCommandPermissions",
+        "store.ts:220-222 将 me/nick/style 设为 trusted，owner.meta.ts:34 却归为 all",
+        "ownerCommands.ts:181-243 静态 help 字符串与 meta 驱动的 buildHelpText 双写",
+        "/w relation 有运行时实现但 OWNER_COMMANDS 无描述符（ownerCommands.ts:789-828 vs owner.meta.ts 全文）",
+        "store.ts:245 的 profileRetry 权限 key 无任何生产使用点"
+      ],
+      "current_failure_mode": "帮助/KB 显示权限与运行时权限不一致；新增命令可能只出现在运行时或只出现在 catalog；未知 prompt 分支继续发送可能过期的静态帮助。",
+      "expected_benefit": "命令权限/描述单一事实源，消除用户可见的权限误导。",
+      "regression_risk": "低。改动集中在纯 metadata 与 help 渲染。",
+      "prerequisites": "先补一条 catalog↔store 权限一致性 verify。",
+      "recommended_scope": "仅收敛权限映射与帮助来源；不移动任何 executor 逻辑。"
+    },
+    {
+      "id": "C02",
+      "title": "Capability 目录合并（agent meta ↔ executor registry ↔ quick capability）",
+      "classification": "TARGETED_REFACTOR",
+      "evidence": [
+        "AGENT_CAPABILITY_META 与 INTERNAL_CAPABILITIES 双写能力名与描述（agentCapabilities.ts:20-33 vs registry.ts:105-118）",
+        "pplus/ppplus 双拼写（quick.meta.ts:25 vs agentCapabilities.ts:26/registry.ts:111）",
+        "pp_calc 描述在 meta 与 executor registry 间漂移",
+        "auditAgentCapabilityRegistry 已存在但只检查名称存在性，不检查参数 schema/guard/quick 边界"
+      ],
+      "current_failure_mode": "改能力时必须同步改多处；LLM 看到的描述、guard 接受的参数、executor 注册表可能漂移；拼写歧义导致 capability 被 guard 拒绝。",
+      "expected_benefit": "单一能力目录派生 schema/guard/executor 支持集；新增能力只加一行 descriptor。",
+      "regression_risk": "中低。12 个能力全部已由 verifier 覆盖，改动可用 agent-capability/query-osu-policy verifier 对拍。",
+      "prerequisites": "C01 完成；确认 quick 侧 score/card/bplist 与 agent 侧能力边界是显式设计并写进 descriptor。",
+      "recommended_scope": "合并目录与派生 schema，不做插件系统。"
+    },
+    {
+      "id": "C03",
+      "title": "query_external_bot 死路径与 pending call 泄漏",
+      "classification": "LOCAL_CLEANUP",
+      "evidence": [
+        "buildBotToolSchemas 在配置外部 bot 时生成 query_external_bot（registry.ts:228-244）",
+        "guard.ALLOWED_OPERATIONS 不含 query_external_bot（guard.ts:10-18），validateOperation 必定拒绝",
+        "executor.ts:893-894 sendMessage 失败时不 cancel pendingBotCall，而 query_bot 分支会 cancel（executor.ts:1116-1121）"
+      ],
+      "current_failure_mode": "工具可见但不可调用；外部路径异常时 20s pending 占用 route；存在未闭环的 pending timer。",
+      "expected_benefit": "消除 LLM 看到死工具与 route 泄漏，policy 与 schema 一致。",
+      "regression_risk": "低。当前默认四个 bot 全为 internal，外部路径默认不执行。",
+      "prerequisites": "决定外部 QQ bot 是否近期启用。",
+      "recommended_scope": "二选一：移除 schema 暴露，或加入 whitelist 并补齐 cancel；不要同时保留矛盾状态。"
+    },
+    {
+      "id": "C04",
+      "title": "replyQueues 锁所有权收归 queue.ts",
+      "classification": "TARGETED_REFACTOR",
+      "evidence": [
+        "queue.ts:94 定义 replyQueues；queue.ts:111-149 负责 drain 与释放",
+        "bot.ts:611 直接 push queueState.queue；bot.ts:614 直接写 queueState.locked=true"
+      ],
+      "current_failure_mode": "同一生命周期字段由两个模块分写，后续新增 drain/取消路径容易遗漏锁释放。",
+      "expected_benefit": "队列成为自包含状态机，acquire/release/drain 单文件可审计。",
+      "regression_risk": "中低。queue-verify 与 queue-merge-images-verify 已覆盖现有语义，抽函数后可复用。",
+      "prerequisites": "无。",
+      "recommended_scope": "仅新增 acquireReplySlot/releaseReplySlot/enqueue API；不改变排队/合并行为。"
+    },
+    {
+      "id": "C05",
+      "title": "turn 级 abort / wall-clock / 渲染超时",
+      "classification": "TARGETED_REFACTOR",
+      "evidence": [
+        "processIncoming 无任何取消或总超时（bot.ts:347-354）",
+        "runToolLoop 只有 maxIterations=4，无 wall-clock（bot.ts:849；executor.ts:2261-2831）",
+        "llm.ts 的 AbortController 只在内部闭环，不向 caller 暴露（llm.ts:396-433）",
+        "多处渲染调用无单次超时（executor.ts:1747-1758,1796-1807,1820-1852,1954-1964,2038-2076）"
+      ],
+      "current_failure_mode": "hung render/LLM/网络可长期占住 per-member 锁；关机/队列 TTL 无法终止正在执行的 turn。",
+      "expected_benefit": "可观察、可取消、可超时的 turn 生命周期。",
+      "regression_risk": "中。触及 LLM/tool/render 所有 await 点；需要完整 lifecycle verifier 与离线 replay。",
+      "prerequisites": "C04 完成；llm.ts 增加 caller AbortSignal 的独立测试。",
+      "recommended_scope": "只加外层 signal + wall-clock + 渲染超时，不改变重试策略。"
+    },
+    {
+      "id": "C06",
+      "title": "external bot bridge 统一 adapter contract",
+      "classification": "TARGETED_REFACTOR",
+      "evidence": [
+        "query_bot 与 query_external_bot 近重复 correlation/send/settle（executor.ts:879-907 vs 1080-1159）",
+        "CQ 解析两套（localBridge.ts:116-156 vs executor.ts:326-343）",
+        "BP 解析三处（executor.ts:390-485、quickRouter.ts:157-245、intent.ts:32-40）",
+        "四个 bot 的端口/鉴权/self-id/echo-ack/虚拟群等特例集中在 localBridge 与 quickRouter"
+      ],
+      "current_failure_mode": "外部 bot 路径每次改动要同步多处；错误归一化与取消语义不一致。",
+      "expected_benefit": "一个 BotBridge 接口承载 local WS、QQ relay、internal engine；外部 bot 启用成本下降。",
+      "regression_risk": "中高。涉及真实外部 bot 协议兼容性。",
+      "prerequisites": "必须已有真实外部 QQ bot 启用计划；先完成 C03；保留 localBridge/echo-ack/渲染特例作为 adapter 内部实现。",
+      "recommended_scope": "只做契约统一与去重，不重构 yumu-image/renderer 协议。"
+    },
+    {
+      "id": "C07",
+      "title": "ownerCommands 单函数拆分",
+      "classification": "TARGETED_REFACTOR",
+      "evidence": [
+        "runOwnerCommand 从 142 行到文件末尾，约 1600 行、34 个 if 分支（ownerCommands.ts:142-1741）",
+        "模块 fan-out 16，导入 cleaning/prompt/reply/gate 等大面 API"
+      ],
+      "current_failure_mode": "单个函数修改的 diff 与认知负担大；实现与 meta.handlerKey 的对应靠约定。",
+      "expected_benefit": "每个命令组独立 handler，权限/help/executor 映射更直观。",
+      "regression_risk": "中。命令行为分散且有大量旧指令回归。",
+      "prerequisites": "C01 完成；按 meta 组别迁移并有 owner-command replay。",
+      "recommended_scope": "只做机械拆分，不改变任何命令语义。"
+    },
+    {
+      "id": "C08",
+      "title": "OneBot generation guard 与 late probe 防护",
+      "classification": "LOCAL_CLEANUP",
+      "evidence": [
+        "onebot.ts:391-417 的 async message handler 在 await 后仍可写当前 connectionStatus/syncHealth",
+        "probeGetStatus 无 shutdown/generation 检查（onebot.ts:213-259）",
+        "setOneBotConnected 先写 transportConnected 再由 setOneBotDetail 纠正（health.ts:82-83；onebot.ts:197-198）"
+      ],
+      "current_failure_mode": "旧 socket 的迟到 async 尾部或迟到 probe 在 shutdown/替换后写脏状态；镜像更新顺序脆弱。",
+      "expected_benefit": "连接状态机对 stale continuation 免疫。",
+      "regression_risk": "低。onebot-lifecycle/status verifier 已覆盖主要路径。",
+      "prerequisites": "无。",
+      "recommended_scope": "增加 epoch/shutdown flag；不要引入新的状态机层。"
+    },
+    {
+      "id": "C09",
+      "title": "settings god bag 类型化与 owner 收敛",
+      "classification": "TARGETED_REFACTOR",
+      "evidence": [
+        "DbSettings 带 index signature（types.ts:83），大量字段类型缺失",
+        "约 20 个模块直接读 db.settings.*；index.ts 与 ownerCommands.ts 是主要写入口",
+        "GUI /api/settings 只按现有 key 过滤，缺少分字段校验（index.ts:698-729）"
+      ],
+      "current_failure_mode": "feature flag 无统一 schema/校验，字段拼写错误只能靠运行时或 verifier 发现。",
+      "expected_benefit": "配置写入有类型与校验边界，新增 flag 可发现。",
+      "regression_risk": "中。需要迁移 GUI 与所有读取点。",
+      "prerequisites": "功能稳定期再动；先清 C01/C02。",
+      "recommended_scope": "只补 schema/owner，不引入远程配置中心。"
+    },
+    {
+      "id": "C10",
+      "title": "verifier 双写收敛",
+      "classification": "NO_REFACTOR",
+      "evidence": [
+        "70 个 verifier 中 query_osu 名称出现 112 次、leaderboard 48 次、query_bot 31 次",
+        "query-osu-policy-verify.mjs:51-92 手写约 25 条 guard 用例",
+        "quick-router-verify.mjs:87-135 手写 quick 匹配表"
+      ],
+      "current_failure_mode": "改生产规则必须同步改测试，否则测试失败；但当前测试网络阻止了错误上线。",
+      "expected_benefit": "由 descriptor 派生断言可减少同步成本。",
+      "regression_risk": "中。测试覆盖面本身是资产，不应立即重写。",
+      "prerequisites": "C02 完成后再把 verifier 逐步切换为 descriptor 驱动。",
+      "recommended_scope": "本轮不实施。"
+    },
+    {
+      "id": "C11",
+      "title": "OneBot 状态机进一步框架化",
+      "classification": "NO_REFACTOR",
+      "evidence": [
+        "connectionStatus 是唯一 canonical state（onebotStatus.ts:104-358）",
+        "onebot.ts 是唯一编排者；health.ts 是派生镜像",
+        "lifecycle verifier 覆盖 error+close/accept-close/shutdown/CONNECTING replacement"
+      ],
+      "current_failure_mode": "无当前失败模式；仅剩 C08 的局部缝隙。",
+      "expected_benefit": "进一步框架化收益接近零。",
+      "regression_risk": "高，重写状态机无业务收益。",
+      "prerequisites": "无。",
+      "recommended_scope": "保持现状，只做 C08。"
+    },
+    {
+      "id": "C12",
+      "title": "executor.ts 大规模拆分",
+      "classification": "DO_NOT_TOUCH_NOW",
+      "evidence": [
+        "2622 行、fan-out 20、14 个 fix 提交",
+        "内部包含 tool dispatch、pending correlation、internal capability executor 三层"
+      ],
+      "current_failure_mode": "单文件大、churn 高，但逻辑边界清晰；没有当前 lifecycle 缺陷。",
+      "expected_benefit": "拆分可读性提升。",
+      "regression_risk": "高。所有 agent tool 路径与外部 bot 路由都经过这里。",
+      "prerequisites": "C02/C03/C05/C06 完成后才考虑。",
+      "recommended_scope": "本轮不拆。"
+    },
+    {
+      "id": "C13",
+      "title": "osu analyzer / match listener / store 持久化",
+      "classification": "DO_NOT_TOUCH_NOW",
+      "evidence": [
+        "analyzer.ts 2005 行自洽；match.ts 已修 cursor/race；store.ts 有 atomic write/retention/corrupt recovery"
+      ],
+      "current_failure_mode": "无当前失败模式；这些区域是最近修复密集但已稳定。",
+      "expected_benefit": "暂无。",
+      "regression_risk": "高。",
+      "prerequisites": "无。",
+      "recommended_scope": "不要为了行数或美观去动。"
+    },
+    {
+      "id": "C14",
+      "title": "registry ↔ agentCapabilities import cycle",
+      "classification": "NO_REFACTOR",
+      "evidence": [
+        "registry.ts:3 ↔ agentCapabilities.ts:8 形成静态环，但 agentCapabilities 只在函数体内用 INTERNAL_CAPABILITIES",
+        "executor ↔ bpTypeAnalysis 是 dynamic import 打破的良性环"
+      ],
+      "current_failure_mode": "无运行时故障；环只是能力目录双写的结构症状。",
+      "expected_benefit": "随 C02 自然消除。",
+      "regression_risk": "单独拆环低收益。",
+      "prerequisites": "C02。",
+      "recommended_scope": "随 C02 处理，不单独动。"
+    },
+    {
+      "id": "C15",
+      "title": "bindingSync 同步 execFileSync 阻塞请求路径",
+      "classification": "LOCAL_CLEANUP",
+      "evidence": [
+        "bindingSync.ts:70-76 用 execFileSync 调用 MariaDB CLI",
+        "index.ts:304-305 在 /api/osu/bindings 中 await syncLazybotBinding"
+      ],
+      "current_failure_mode": "MariaDB CLI 慢/挂起时阻塞 Node event loop，影响整个 bot。",
+      "expected_benefit": "移除请求路径阻塞。",
+      "regression_risk": "低。绑定主记录仍以 Wuxin db 为准。",
+      "prerequisites": "无。",
+      "recommended_scope": "改为后台队列或异步 worker，不改变绑定语义。"
+    }
+  ]
+}

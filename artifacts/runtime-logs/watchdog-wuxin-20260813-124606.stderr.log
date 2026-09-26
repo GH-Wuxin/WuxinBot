@@ -1,0 +1,11 @@
+[quick] bridge yumu 失败，回退内部引擎: yumu 调用超时（60s）
+[quick] bridge kanon 发送失败（面板可能已发出）: OneBot HTTP 请求超时 12 秒
+[quickMemory] 影子查询失败 (recent/Averator): This operation was aborted
+[quick] 未绑定提示发送失败: OneBot HTTP 请求超时 12 秒
+[quick] bridge kanon 失败，回退内部引擎: kanon 调用超时（60s）
+[PP+] player/info oliwakami failed (HTTP 500, code 400): lol server goes boooom
+[osu analyze] 结论第 1 次未通过： [ '没有核准的精确 Mod 组合同时包含 EZ 与 FL，不能把它们写成同一张成绩' ]
+[osu analyze] 结论硬错误修复后仍未通过： [ '没有核准的精确 Mod 组合同时包含 EZ 与 FL，不能把它们写成同一张成绩' ]
+[osu analyze] 结论第 2 次未通过： [ '把 90/100 张带 DT 的成绩夸写成了全部或几乎每张' ]
+[osu analyze] 结论硬错误修复后仍未通过： [ '把 90/100 张带 DT 的成绩夸写成了全部或几乎每张' ]
+[osu analyze] windpipeey (windpipeey) 的非致命错误： [ 'Mod 后星数获取失败: 16 组谱面/Mod 组合；这些成绩不参与星数统计' ]

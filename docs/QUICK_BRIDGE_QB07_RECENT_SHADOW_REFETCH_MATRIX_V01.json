@@ -1,0 +1,129 @@
+{
+  "phase": "QUICK_BRIDGE_QB07_RECENT_SHADOW_REFETCH",
+  "generatedAt": "2026-08-16T18:00:00+08:00",
+  "classification": "DESIGN_REQUIRED",
+  "classificationSub": {
+    "duplicateNature": "CONFIRMED_REDUNDANT_WORK (image-only bridge success fires an observer shadow refetch)",
+    "currentNecessity": "CURRENT_ARCHITECTURE_REQUIRED (the refetch is the only way to preserve follow-up context semantics because the bridge returns rendered output only)",
+    "fixRequirement": "eliminating the refetch requires extending the bridge result contract or changing the visible rendering source; a local request-scoped handoff alone cannot supply the missing structured score"
+  },
+  "productionBehaviorChanged": false,
+  "committed": false,
+  "pushed": false,
+  "callGraphs": {
+    "kanonRecentSuccess": "matchQuickCommand -> handleQuickCommandInner -> bridge (callLocalBot kanon, group 770099) -> reply.text non-empty -> sendMessage(payload) -> record('[kanon] '+bridgeText, images) -> NO shadow fetch (quickRouter.ts:628-663, 648-649)",
+    "yumuRecentSuccessImageOnly": "matchQuickCommand -> bridge (callLocalBot yumu, group 770099) -> reply.text empty / images present -> sendMessage(image) -> recordShadow(recent, bridgeUser, reply.images) fires void IIFE -> buildQuickShadowSummary -> getUser(username) + getUserRecentScores(user.id,'osu',1) -> recordQuickContext(summary, images) (quickRouter.ts:638-662, quickMemory.ts:97-129)",
+    "lazybotToYumuFallback": "SLASH lazybot recent -> quickRouter bridge lazybot fails -> capability recent -> executeInternalBotCommand('lazybot','recent') -> executor bridgeBot='yumu' (cross-target preserved because bridgeAlreadyAttemptedFor='lazybot') -> yumu bridge image-only -> executor returns {content:'<user> 最近一次 osu! 成绩：', images} -> quickPayload(image) -> record(content placeholder, images) -> NO shadow refetch (executor.ts:1719-1762)",
+    "bridgeFailureExecutorFallback": "quickRouter bridge yumu fails -> executeInternalBotCommand('yumu','recent') with bridgeAlreadyAttemptedFor='yumu' (P0_2 skips second same-target bridge) -> resolveInternalPlayerTargetDetailed (binding id) -> loadInternalOsuUser (getUserById) -> getUserRecentScores(user.id,'osu',1) -> enrichScoreStarRatings (no extra fetch for NM) -> formatInternalScoreLine -> optional renderScoreCard -> result content/image -> quickPayload -> record(content, images) (executor.ts:1687-1799, quickRouter.ts:823-861)",
+    "agentOrDirectExecutorRecent": "query_osu capability=recent -> executeInternalBotCommand('wuxin_internal'|bot) -> same internal chain -> tool result content goes into the LLM conversation directly; no quickMemory observer path (executor.ts:701-829, 1719-1799)",
+    "followUpTurn": "db.messages inContext entries -> recentGroupMessages/prompt build (prompt.ts:185-189) includes the assistant shadow summary or recorded text"
+  },
+  "fetchGraphCurrent": {
+    "yumuImageOnlySuccess": {
+      "primary": "target-side recent domain fetch inside Yumu (Wuxin cannot observe or reuse)",
+      "observer": "Wuxin-side getUser(username) + getUserRecentScores(user.id,'osu',1) = 1 semantic recent fetch + 1 user-resolution fetch",
+      "classification": "OBSERVATION_SHADOW_REFETCH",
+      "sameSemanticRecentFetches": 2,
+      "p02Removed": "same-request second same-target bridge after failure"
+    },
+    "kanonTextSuccess": {
+      "primary": "target-side render",
+      "observer": "reuses bridge text; 0 Wuxin-side fetches",
+      "classification": "SAME_REQUEST_DUPLICATE absent",
+      "sameSemanticRecentFetches": 1
+    },
+    "bridgeFailure": {
+      "primary": "bridge attempt (fails)",
+      "fallback": "getUserById + getUserRecentScores (+attributes if mods)",
+      "classification": "REQUIRED_FALLBACK",
+      "sameSemanticRecentFetches": 1,
+      "p02": "second same-target bridge suppressed (verified connection count == 1)"
+    },
+    "lazybotToYumu": {
+      "primary": "lazybot attempt (fails)",
+      "fallback": "yumu bridge attempt",
+      "classification": "REQUIRED_FALLBACK (cross-target, NOT counted as duplicate)",
+      "sameSemanticRecentFetches": "1 target-side (yumu); Wuxin-side 0",
+      "note": "follow-up context records a placeholder because yumu returned image-only; documented semantic gap, not a duplicate fetch"
+    },
+    "agentOrDirect": {
+      "classification": "INDEPENDENT_FOLLOWUP_FETCH or single authoritative fetch per turn",
+      "sameSemanticRecentFetches": 1
+    }
+  },
+  "authoritativeResult": {
+    "bridgeSuccess": "LocalBotReply { text, images, frames } only — rendered output. No structured score/domain object crosses the bridge (verified runtime shape + source).",
+    "executorInternal": "a structured score object exists transiently (rawScores + enriched scores) but InternalBotCommandResult { content, images?, final? } discards it after text formatting.",
+    "imagePath": "image file/CQ code only; the pre-render data lives inside the target bot, not Wuxin.",
+    "quickRouter": "receives only capability/username/images/bpSelection for shadow work; no domain object is handed off (source-verified).",
+    "observerNeeds": "username + one recent score text line (and structured score fields for richer follow-up).",
+    "followUpNeeds": "text summary is sufficient for current context window; structured score would improve '第一把怎么回事' without reparsing.",
+    "renderedTextReparsing": "NONE today and forbidden by design (verifier asserts quickMemory never reads reply.text)."
+  },
+  "whyDesignRequired": [
+    "Yumu/Kanon bridge protocol returns rendered text/images only (LocalBotReply); no domain object is available to hand off",
+    "the observer requires domain facts, and the only Wuxin-side source is a fresh osu API fetch",
+    "a local handoff without a domain object would force parsing rendered output (forbidden) or dropping the observation (forbidden)",
+    "fetching authoritative data first and rendering internally would change the visible artifact (original target panel semantics)",
+    "therefore eliminating the refetch requires a protocol extension (domainResult/observationPayload across the bridge), a target-side change, or a visible-rendering architecture decision"
+  ],
+  "designOptions": [
+    {
+      "id": "D1",
+      "name": "extend LocalBotReply/bridge contract with optional domainResult or observationPayload when a target can provide it",
+      "impact": "satisfies the ideal once/for yumu and kanon, but targets do not currently expose domain data through the OneBot WS path; effectively a target-side protocol change",
+      "recommendation": "DESIGN-FIRST, not implementable locally today"
+    },
+    {
+      "id": "D2",
+      "name": "single Wuxin-side authoritative fetch + internal renderer for image-only recent",
+      "impact": "one semantic fetch feeds both renderer and observer; changes visible panel source (loses original target rendering)",
+      "recommendation": "requires explicit product decision on visible semantics"
+    },
+    {
+      "id": "D3",
+      "name": "defer observation detail: record username+capability placeholder now, let follow-up LLM call query_osu recent",
+      "impact": "removes post-success refetch; follow-up turn pays one INDEPENDENT_FOLLOWUP_FETCH; context freshness improves but immediate context detail is lost",
+      "recommendation": "smallest change if freshness tradeoff is accepted; still a semantic decision, not implemented"
+    },
+    {
+      "id": "D4",
+      "name": "request-scoped QuickExecutionResult { reply, domainResult?, observationPayload? }",
+      "impact": "correct shape for future handoff; only helps paths that already own a domain object (executor internal), which do not refetch today",
+      "recommendation": "adopt as the contract when a fix is authorized"
+    }
+  ],
+  "qb08": {
+    "verdict": "QB-08 REMAINS",
+    "evidence": "QB-07 verifier yumu phase measured route return at ~110ms while the delayed shadow recent fetch (500ms) had not completed; context-ready strictly follows visible reply. No production change was made, so the visible-vs-context race is unchanged."
+  },
+  "verifier": {
+    "file": "tools/quick-bridge-qb07-shadow-refetch-verify.mjs",
+    "phases": "7/7",
+    "checks": 39,
+    "detail": {
+      "yumu-image-success": "10/10 (visible image, one bridge, route non-blocking, shadow summary, shadow counts, no second bridge, no unhandled)",
+      "kanon-text-success": "5/5 (bridge text reused; zero Wuxin fetches)",
+      "bridge-fail-executor": "6/6 (REQUIRED_FALLBACK one recent fetch; P0_2 one bridge attempt; authoritative text recorded; no shadow)",
+      "lazybot-yumu": "5/5 (cross-target fallback preserved: lazy=1 yumu=1; no Wuxin recent fetch; placeholder context gap documented)",
+      "shadow-failure": "5/5 (visible success, one bridge, one shadow attempt, generic fallback record, no unhandled rejection)",
+      "concurrency": "3/3 (two users + same user twice: 2 Alpha + 1 Beta summaries, no cross-contamination, 3 bridges)",
+      "shape": "5/5 (bridge reply rendered-only, no domain handoff, shadow refetches domain, no rendered-text reparsing)"
+    }
+  },
+  "regression": {
+    "gitDiffCheck": "clean",
+    "npmRunCheck": "PASS (typecheck + vite build + sanity + security)",
+    "p02": "23/23",
+    "quickRouter": "121/121",
+    "botHarness": "PASS",
+    "verifyAllNote": "not re-run in this phase; no production code changed"
+  },
+  "files": [
+    "docs/QUICK_BRIDGE_QB07_RECENT_SHADOW_REFETCH_AUDIT_V01.md",
+    "docs/QUICK_BRIDGE_QB07_RECENT_SHADOW_REFETCH_MATRIX_V01.json",
+    "tools/quick-bridge-qb07-shadow-refetch-verify.mjs"
+  ],
+  "productionFilesModified": "none",
+  "gitStatus": "untracked: QB-07 three files + prior excluded untracked items (.private/, REPOSITORY_HYGIENE_AUDIT.md, recommend-semantic-consistency-audit.md, trunk-source-boundary-audit.md); HEAD 713ea7e"
+}

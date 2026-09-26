@@ -15,7 +15,6 @@ import path from 'node:path';
 
 const testDataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'wuxin-relationship-gui-'));
 process.env.DATA_DIR = testDataDir;
-const dbPath = path.join(testDataDir, 'db.json');
 
 function assert(cond, msg) {
   if (!cond) throw new Error(`FAIL: ${msg}`);
@@ -25,8 +24,7 @@ async function main() {
   const { ensureStore, readDb, writeDb } = await import('../server/store.ts');
   ensureStore();
 
-  const originalRaw = fs.readFileSync(dbPath, 'utf8').replace(/^﻿/, '');
-  const original = JSON.parse(originalRaw);
+  const original = structuredClone(readDb());
 
   try {
     // Setup test data

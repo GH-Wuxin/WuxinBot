@@ -87,6 +87,16 @@ try {
   assert(after.settings.model === 'deepseek-chat' && after.settings.apiKey === 'ds-secret', '/w model must atomically restore DeepSeek profile');
   assert(sent.some((text) => text.includes('Mimo / OpenAI 兼容接口')), 'command reply must report the selected provider');
 
+  after.settings.llmProvider = 'codex-app-server';
+  after.settings.codexModel = 'gpt-5.6-luna';
+  writeDb(after);
+  await processIncoming(event('/w model gpt-5.6-terra'), async (_event, text) => sent.push(String(text)));
+  after = readDb();
+  assert(after.settings.codexModel === 'gpt-5.6-terra', '/w model must switch codexModel while Codex is active');
+  assert(after.settings.model === 'deepseek-chat', '/w model must preserve the API fallback model while Codex is active');
+  assert(publicDb(after).settings.effectiveModel === 'gpt-5.6-terra', 'public state must expose the actual Codex model');
+  assert(sent.some((text) => text.includes('当前模型：gpt-5.6-terra') || text.includes('已切换模型：gpt-5.6-terra')), 'command reply must report the actual Codex model');
+
   const masked = publicDb(after).settings;
   assert(masked.apiKey === '已填写' && masked.deepseekApiKey === '已填写' && masked.mimoApiKey === '已填写', 'all provider keys must be masked');
   console.log('PASS model/provider switching: migration, GUI, QQ command, request routing, secret masking');

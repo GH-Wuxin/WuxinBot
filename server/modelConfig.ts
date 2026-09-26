@@ -1,7 +1,22 @@
 export const DEEPSEEK_BASE_URL = 'https://api.deepseek.com';
+export const DEEPSEEK_FLASH_MODEL = 'deepseek-v4-flash';
+export const DEEPSEEK_FLASH_VISION_MODEL = 'deepseek-v4-flash-vision-exp';
 export const MIMO_BASE_URL = 'https://token-plan-cn.xiaomimimo.com/v1';
 
 export type ModelFamily = 'deepseek' | 'mimo' | null;
+
+/**
+ * Keep the stable Wuxin-facing Flash id while routing it to DeepSeek's
+ * image-capable experimental endpoint on the wire.
+ */
+export function resolveDeepSeekWireModel(value: unknown) {
+  const model = String(value || '').trim();
+  return model === DEEPSEEK_FLASH_MODEL ? DEEPSEEK_FLASH_VISION_MODEL : model;
+}
+
+export function isDeepSeekVisionModel(value: unknown) {
+  return resolveDeepSeekWireModel(value) === DEEPSEEK_FLASH_VISION_MODEL;
+}
 
 export function looksLikeMimoEndpoint(value: unknown) {
   return /(mimo|xiaomimimo|token-plan-cn)/i.test(String(value || ''));
@@ -26,6 +41,20 @@ export function providerFamily(settings: Record<string, any>): ModelFamily {
 
 function clean(value: unknown) {
   return String(value || '').trim();
+}
+
+/**
+ * Return the model that the active transport will actually request.
+ *
+ * `settings.model` is intentionally kept as the API/fallback profile while
+ * Codex App Server is active, so it must not be used as the runtime model
+ * identity in prompts, telemetry, commands, or the dashboard.
+ */
+export function activeModelName(settings: Record<string, any>) {
+  if (clean(settings.llmProvider) === 'codex-app-server') {
+    return clean(settings.codexModel) || 'gpt-5.6-luna';
+  }
+  return clean(settings.model) || '未设置';
 }
 
 function isPlaceholder(value: unknown) {
@@ -62,6 +91,11 @@ export function activateModelProfile(settings: Record<string, any>, requestedMod
   const model = clean(requestedModel === undefined ? next.model : requestedModel);
   const family = modelFamily(model);
   if (model) next.model = model;
+
+  // Codex App Server has its own `codexModel`. Keep the existing API model and
+  // credentials untouched as a rollback/fallback profile instead of letting a
+  // deepseek-/mimo- model name silently switch this provider back off.
+  if (clean(next.llmProvider) === 'codex-app-server') return next;
 
   if (family === 'mimo') {
     next.llmProvider = 'openai-compatible';
@@ -109,6 +143,21 @@ export function updateProviderSettings(current: Record<string, any>, incoming: R
   const keepSecret = (value: unknown) => !clean(value) || isPlaceholder(value);
   if (keepSecret(incoming.deepseekApiKey)) next.deepseekApiKey = saved.deepseekApiKey;
   if (keepSecret(incoming.mimoApiKey)) next.mimoApiKey = saved.mimoApiKey;
+
+  if (clean(incoming.llmProvider) === 'codex-app-server') {
+    if (clean(saved.llmProvider) !== 'codex-app-server') {
+      next.codexFallbackProvider = clean(saved.llmProvider) || 'deepseek';
+      next.codexFallbackModel = clean(saved.model) || 'deepseek-v4-flash';
+    }
+    next.llmProvider = 'codex-app-server';
+    // API fields remain the last working fallback profile and are never
+    // replaced by the browser's secret placeholders.
+    next.apiKey = saved.apiKey;
+    next.apiBaseUrl = saved.apiBaseUrl;
+    next.model = saved.model;
+    return ensureProviderProfiles(next);
+  }
+
   const requestedModel = clean(incoming.model === undefined ? saved.model : incoming.model);
   const requestedFamily = modelFamily(requestedModel) ||
     (looksLikeMimoEndpoint(incoming.apiBaseUrl) ? 'mimo' : null) ||
@@ -134,6 +183,7 @@ export function updateProviderSettings(current: Record<string, any>, incoming: R
 }
 
 export function activeProviderLabel(settings: Record<string, any>) {
+  if (clean(settings.llmProvider) === 'codex-app-server') return 'ChatGPT / Codex App Server';
   const family = modelFamily(settings.model) || providerFamily(settings);
   return family === 'mimo' ? 'Mimo / OpenAI 兼容接口' : 'DeepSeek';
 }

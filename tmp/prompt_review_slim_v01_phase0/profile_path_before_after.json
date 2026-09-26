@@ -1,0 +1,12 @@
+{
+  "after_system_chars": 6272,
+  "after_user_chars": 375,
+  "group_profile_block_chars": 116,
+  "relationship_block_chars": 75,
+  "estimated_before_user_chars": 566,
+  "estimated_delta_user_chars": 191,
+  "system_contains_group_profile": true,
+  "user_contains_group_profile": false,
+  "system_contains_relationship": true,
+  "user_contains_relationship": false
+}

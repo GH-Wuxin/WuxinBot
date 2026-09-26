@@ -1,11 +1,45 @@
 // Tool executor: handles LLM tool calls, runs the tool loop, manages bot communication.
+import { createHash } from 'node:crypto';
+import { mergeLlmUsage } from '../usage.js';
 import type { LlmToolCall, ToolResult, BotResponse, LlmTool, BotCommand } from './types.js';
-import { validateOperation, sanitizeToolResult, isSafeToolResult } from './guard.js';
+import {
+  validateOperation,
+  sanitizeToolResult,
+  isSafeToolResult,
+  looksLikeToolCallMarkup,
+  stripToolCallMarkup,
+  parseToolCallMarkup,
+} from './guard.js';
+import { updateDb, nowIso, MAX_TOOL_LOGS } from '../store.js';
 import { loadRegistry, enabledBots, findBot, findCommand, availableCommands, internalCapabilitySupported, INTERNAL_CAPABILITIES } from './registry.js';
+import { normalizeCapabilityName } from './capabilityCatalog.js';
+import {
+  buildV2ModelToolResult,
+  normalizeAgentToolCall,
+  osuCapabilityForToolCall,
+} from './agentToolContracts.js';
+import { markLatencySpan } from '../perf/latencyTrace.js';
+import { traceEvent } from '../requestTrace.js';
 import { lookupSkill, lookupSkillByQQ } from './skills.js';
 import { getRenderServer } from './renderServer.js';
-import { normalizedScoreMods, scoreStarRating } from '../osu/scoreMetrics.js';
+import { scoreStarRating } from '../osu/scoreMetrics.js';
+import { enrichScoreStarRatings } from '../osu/starRating.js';
 import type { OsuMode, OsuScore, OsuUser } from '../osu/types.js';
+import { describeFilters, isEmptyFilters } from '../osu/recommendFilters.js';
+import type { RecommendFilters } from '../osu/recommendFilters.js';
+import { thinkingParamsForLevel } from '../bot/llm.js';
+import type { LlmCompletionMeta } from '../bot/llm.js';
+import { emptyTurnState, reasoningEnabledFor, reasoningInput } from '../bot/reasoningRouter.js';
+import type {
+  LlmCallRole,
+  ReasoningDecision,
+  ReasoningLevel,
+  ReasoningInput,
+  ReasoningShadowRecord,
+  ReasoningShadowSink,
+  ReasoningTurnState,
+} from '../bot/reasoningRouter.js';
+import { executeSkillProfilerAnalysis } from './skillProfiler.js';
 
 // ── Pending bot responses (correlationId → resolver) ──
 
@@ -21,11 +55,57 @@ const pendingBotCalls = new Map<string, {
   resolve: (response: BotResponse) => void;
   timeout: NodeJS.Timeout;
   settleTimer?: NodeJS.Timeout;
+  drainPolicy?: PendingDrainPolicy;
 }>();
+
+// In-flight recommend executions keyed by
+// `${userId}:${username}:${normalizedRequestText}`. A model may emit two
+// recommend tool calls for the same request; the second call should share the
+// first result instead of re-running the engine and tripping the cooldown
+// mid-flight. Different filter requests from the same player must NOT share a
+// result, hence the request text is part of the key.
+const inFlightRecommends = new Map<string, Promise<Awaited<ReturnType<typeof executeInternalBotCommand>>>>();
 
 const BOT_RESPONSE_TIMEOUT_MS = 20_000;
 const BOT_TEXT_SETTLE_MS = 1_200;
 const BOT_PROGRESS_SETTLE_MS = 10_000;
+const BOT_IMAGE_DRAIN_MS = 2_000;
+const BOT_TEXT_DRAIN_MS = 5_000;
+const BOT_TIMEOUT_DRAIN_MS = 10_000;
+
+/**
+ * Route lifecycle drain. External QQ bots cannot echo our correlation id, so
+ * after a pending call finishes we keep the route in a short draining window:
+ * messages from the bot during this window are treated as tail messages of the
+ * just-finished request and absorbed, and new calls on the same route are
+ * rejected. This prevents a late response (e.g. after a timeout) from being
+ * claimed by the next request.
+ */
+const routeDrainUntil = new Map<string, number>();
+const routeDrainTimers = new Map<string, NodeJS.Timeout>();
+
+function routeDrainKey(botId: string, channel: string, groupId?: string): string {
+  return `${botId}\u0000${channel}\u0000${String(groupId || '')}`;
+}
+
+function setRouteDrain(key: string, drainMs: number): void {
+  const existing = routeDrainTimers.get(key);
+  if (existing) clearTimeout(existing);
+  const drainUntil = Date.now() + drainMs;
+  routeDrainUntil.set(key, drainUntil);
+  const timer = setTimeout(() => {
+    routeDrainUntil.delete(key);
+    routeDrainTimers.delete(key);
+  }, drainMs);
+  timer.unref?.();
+  routeDrainTimers.set(key, timer);
+}
+
+interface PendingDrainPolicy {
+  imageMs: number;
+  textMs: number;
+  timeoutMs: number;
+}
 
 type PendingBotCall = (typeof pendingBotCalls extends Map<string, infer T> ? T : never);
 
@@ -39,6 +119,9 @@ function responsePolicy(db: any, bot: any): {
   textSettleMs: number;
   progressSettleMs: number;
   progressKeywords: string[];
+  imageDrainMs: number;
+  textDrainMs: number;
+  timeoutDrainMs: number;
 } {
   const local = bot?.responsePolicy && typeof bot.responsePolicy === 'object'
     ? bot.responsePolicy
@@ -57,7 +140,19 @@ function responsePolicy(db: any, bot: any): {
       local.progressSettleMs ?? settings.botResponseProgressSettleMs,
       BOT_PROGRESS_SETTLE_MS
     ),
-    progressKeywords: progressKeywords.map((value: unknown) => String(value).trim()).filter(Boolean)
+    progressKeywords: progressKeywords.map((value: unknown) => String(value).trim()).filter(Boolean),
+    imageDrainMs: boundedDelay(
+      local.imageDrainMs ?? settings.botResponseImageDrainMs,
+      BOT_IMAGE_DRAIN_MS
+    ),
+    textDrainMs: boundedDelay(
+      local.textDrainMs ?? settings.botResponseTextDrainMs,
+      BOT_TEXT_DRAIN_MS
+    ),
+    timeoutDrainMs: boundedDelay(
+      local.timeoutDrainMs ?? settings.botResponseTimeoutDrainMs,
+      BOT_TIMEOUT_DRAIN_MS
+    ),
   };
 }
 
@@ -77,13 +172,23 @@ function finishPendingBotCall(entry: PendingBotCall, timeoutWithoutContent = fal
   if (entry.settleTimer) clearTimeout(entry.settleTimer);
   pendingBotCalls.delete(entry.correlationId);
 
+  // Late messages from the request we just finished can still arrive: a
+  // timeout tail, a text->image panel, or a trailing caption. Keep the route
+  // draining so those messages are absorbed instead of claiming the next call.
+  const policy = entry.drainPolicy;
+  const drainMs = timeoutWithoutContent
+    ? (policy?.timeoutMs ?? BOT_TIMEOUT_DRAIN_MS)
+    : (entry.images.length > 0
+        ? (policy?.imageMs ?? BOT_IMAGE_DRAIN_MS)
+        : (policy?.textMs ?? BOT_TEXT_DRAIN_MS));
+  setRouteDrain(routeDrainKey(entry.botId, entry.channel, entry.groupId), drainMs);
   const substantive = entry.textParts.filter((part) => !part.progress).map((part) => part.text);
   const allText = entry.textParts.map((part) => part.text);
   const selectedText = substantive.length > 0
     ? substantive
     : (entry.images.length > 0 ? [] : allText);
   const text = [...new Set(selectedText)].join('\n').trim();
-  const ok = Boolean(text || entry.images.length > 0);
+  const ok = Boolean(substantive.some(text => text.trim()) || entry.images.length > 0);
   entry.resolve({
     correlationId: entry.correlationId,
     botId: entry.botId,
@@ -91,7 +196,7 @@ function finishPendingBotCall(entry: PendingBotCall, timeoutWithoutContent = fal
     text,
     images: [...entry.images],
     rawMessageId: entry.rawMessageId,
-    error: ok ? undefined : (timeoutWithoutContent ? '机器人响应超时' : undefined)
+    error: ok ? undefined : '机器人未返回查询结果（仅进度或响应超时）'
   });
 }
 
@@ -102,17 +207,43 @@ function schedulePendingSettlement(entry: PendingBotCall, delayMs: number): void
 
 // ── Register a pending call ──
 
+function routeFailureToolMessage(botName: string, error: unknown): string {
+  const message = error instanceof Error ? error.message : String(error || '');
+  if (message.startsWith('bot_route_draining')) {
+    return `${botName} 上一条查询还在收尾，请稍等几秒再试。`;
+  }
+  return `向 ${botName} 发送指令失败: ${message}`;
+}
+
 export function registerPendingBotCall(
   request: {
     correlationId: string;
     botId: string;
     channel: 'qq_private' | 'qq_group';
     groupId?: string;
+    drainPolicy?: PendingDrainPolicy;
   },
   timeoutMs: number = BOT_RESPONSE_TIMEOUT_MS
 ): Promise<BotResponse> {
   const { correlationId, botId, channel } = request;
   const groupId = request.groupId ? String(request.groupId) : undefined;
+  const drainKey = routeDrainKey(botId, channel, groupId);
+  const drainUntil = routeDrainUntil.get(drainKey);
+  if (drainUntil !== undefined && Date.now() < drainUntil) {
+    const remainingMs = drainUntil - Date.now();
+    throw new Error(
+      `bot_route_draining: ${botId}/${channel}${groupId ? `/${groupId}` : ''} (${Math.ceil(remainingMs / 1000)}s)`
+    );
+  }
+  if (drainUntil !== undefined) {
+    // Lazy cleanup in case a timer was lost; expired drains must not stick.
+    routeDrainUntil.delete(drainKey);
+    const staleTimer = routeDrainTimers.get(drainKey);
+    if (staleTimer) {
+      clearTimeout(staleTimer);
+      routeDrainTimers.delete(drainKey);
+    }
+  }
   const routeBusy = [...pendingBotCalls.values()].some((pending) =>
     pending.botId === botId &&
     pending.channel === channel &&
@@ -132,7 +263,12 @@ export function registerPendingBotCall(
       images: [],
       rawMessageId: '',
       resolve,
-      timeout: undefined as unknown as NodeJS.Timeout
+      timeout: undefined as unknown as NodeJS.Timeout,
+      drainPolicy: request.drainPolicy ?? {
+        imageMs: BOT_IMAGE_DRAIN_MS,
+        textMs: BOT_TEXT_DRAIN_MS,
+        timeoutMs: BOT_TIMEOUT_DRAIN_MS,
+      },
     };
     entry.timeout = setTimeout(() => finishPendingBotCall(entry, true), timeoutMs);
     pendingBotCalls.set(correlationId, entry);
@@ -175,6 +311,14 @@ export function tryResolveBotResponse(
   if (candidateBots.length === 0) return false;
   const candidateBotIds = new Set(candidateBots.map((bot) => bot.id));
 
+  // While the route is draining, absorb messages from the bot as tail
+  // responses of the previous request instead of resolving the next one.
+  const draining = candidateBots.some((candidate) => {
+    const until = routeDrainUntil.get(routeDrainKey(candidate.id, eventChannel, eventGroupId));
+    return until !== undefined && Date.now() < until;
+  });
+  if (draining) return true;
+
   // A QQ bot normally does not echo our correlation ID. Match only calls on
   // the exact bot/channel/group route, then resolve that route's oldest
   // request. Other groups and private calls remain independent.
@@ -192,6 +336,11 @@ export function tryResolveBotResponse(
   const text = String(event.text || '').replace(/^\s*\[图片\]\s*$/, '').trim();
   const images = (event.images || []).map((img) => img.url || img.file || '').filter(Boolean);
   const policy = responsePolicy(db, bot);
+  entry.drainPolicy = {
+    imageMs: policy.imageDrainMs,
+    textMs: policy.textDrainMs,
+    timeoutMs: policy.timeoutDrainMs,
+  };
   if (text) {
     const progress = looksLikeProgressResponse(text, policy.progressKeywords);
     if (!entry.textParts.some((part) => part.text === text)) {
@@ -375,7 +524,11 @@ function directContentForBotResult(
   images: string[] = [],
 ): string | undefined {
   const text = String(content || '').trim();
-  if (!text || images.length > 0) return undefined;
+  if (!text) return undefined;
+  // Recommendations must keep their structured text (names + BIDs) even when
+  // beatmap cards are rendered: the cards alone do not carry the identifiers.
+  const isRecommend = String(command?.name || '').toLocaleLowerCase() === 'recommend';
+  if (images.length > 0 && !isRecommend) return undefined;
 
   const lines = text.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
   const looksLikeStructuredResult =
@@ -395,7 +548,7 @@ function directContentForBotResult(
   return undefined;
 }
 
-export async function executeToolCall(
+async function executeToolCallInner(
   toolCall: LlmToolCall,
   context: {
     db: any;
@@ -411,13 +564,14 @@ export async function executeToolCall(
   let args: Record<string, unknown> = {};
 
   try {
-    args = JSON.parse(toolCall.function.arguments || '{}');
+    args = JSON.parse(toolCall.function.arguments);
+    if (!args || typeof args !== 'object' || Array.isArray(args)) throw new Error('Expected object');
   } catch {
     return {
       toolCallId: toolCall.id,
       ok: false,
-      content: '',
-      error: `无法解析工具参数: ${toolCall.function.arguments}`
+      content: '工具参数必须是有效的 JSON 对象，请修正后重试。',
+      error: 'INVALID_TOOL_ARGUMENTS'
     };
   }
 
@@ -458,7 +612,11 @@ export async function executeToolCall(
       // Resolve through QQ binding if the player identifier looks like a QQ or nickname
       let record = lookupSkill(player);
       if (!record) {
-        const target = resolveInternalPlayerTarget(context.db, context.userId, player);
+        const target = resolveInternalPlayerTarget(context.db, context.userId, player, {
+          nickname: String(context.event?.nickname || ''),
+          atTargets: context.event?.atTargets,
+          groupId: context.groupId,
+        });
         if (target) {
           try {
             const user = await loadInternalOsuUser(target);
@@ -488,30 +646,68 @@ export async function executeToolCall(
       };
     }
 
+    case 'osu_analyze_beatmap_skills': {
+      return executeSkillProfilerAnalysis(toolCall.id, args);
+    }
+
     case 'get_recent_score': {
-      // For now, returns the recent summary from skill record
+      // Real-time recent scores from osu! API v2 (NOT the skill snapshot).
+      // The skill store often lacks recentSummary; returning the snapshot here
+      // made the LLM believe the player had no recent plays.
       const requestedPlayer = String(args.player || '').trim();
       const player = requestedPlayer || String(userId || '').trim();
-      const record = player ? lookupSkill(player) : undefined;
-      if (!record) {
+      const target = resolveInternalPlayerTarget(db, String(userId || ''), player, {
+        nickname: String(context.event?.nickname || ''),
+        atTargets: context.event?.atTargets,
+        groupId: context.groupId,
+      });
+      if (!target) {
         return {
           toolCallId: toolCall.id,
           ok: true,
-          content: `没有找到玩家 "${player}" 的最近成绩记录。`
+          content: '无法确定要查询的 osu! 用户：未绑定账号且未指定用户名。请先用 /w osu bind 绑定，或直接给出 osu! 用户名。'
         };
       }
 
+      let user: OsuUser;
+      try {
+        user = await loadInternalOsuUser(target);
+      } catch (error) {
+        return {
+          toolCallId: toolCall.id,
+          ok: false,
+          content: `找不到 osu! 用户 "${player}"：${String((error as Error)?.message || error)}`,
+          error: String((error as Error)?.message || error)
+        };
+      }
+
+      const { getUserRecentScores } = await import('../osu/api.js');
+      let rawScores: OsuScore[];
+      try {
+        rawScores = await getUserRecentScores(user.id, 'osu', 3);
+      } catch (error) {
+        return {
+          toolCallId: toolCall.id,
+          ok: false,
+          content: `查询 ${user.username} 最近成绩失败：${String((error as Error)?.message || error)}`,
+          error: String((error as Error)?.message || error)
+        };
+      }
+
+      if (!Array.isArray(rawScores) || rawScores.length === 0) {
+        return {
+          toolCallId: toolCall.id,
+          ok: true,
+          content: `${user.username} 的实时 recent 查询：osu! API 未返回记录（可能最近没有提交成绩，或新成绩尚未同步）。这仅代表没有近期记录，不代表账号从未打过图；技能快照请用 get_player_skill。`
+        };
+      }
+
+      const enriched = (await enrichScoreStarRatings(rawScores, 'osu')).scores;
+      const lines = enriched.map((score, index) => formatInternalScoreLine(score, { index: index + 1 }));
       return {
         toolCallId: toolCall.id,
         ok: true,
-        content: [
-          `${record.osuUsername} 的技能记录：`,
-          `PP: ${record.pp.toLocaleString()}，全球排名 #${record.rank.toLocaleString()}`,
-          `准确率: ${record.accuracy.toFixed(1)}%`,
-          record.recentSummary ? `最近表现: ${record.recentSummary}` : '',
-          record.summary ? `总体评价: ${record.summary}` : '',
-          `最后分析时间: ${record.lastAnalyzed}`,
-        ].filter(Boolean).join('\n')
+        content: `${user.username} 最近成绩（实时 osu! API）：\n${lines.join('\n')}`
       };
     }
 
@@ -526,6 +722,41 @@ export async function executeToolCall(
         return { toolCallId: toolCall.id, ok: false, content: `未知的 osu! 查询类型 "${capability}"。支持：${INTERNAL_CAPABILITIES.map((c) => c.name).join('、')}`, error: `unsupported_capability: ${capability}` };
       }
 
+      // Beatmap-centric capabilities (Phase B): separate plumbing from the
+      // player-centric internal bot commands.
+      if (capability === 'beatmap_lookup' || capability === 'pp_calc' || capability === 'leaderboard') {
+        try {
+          const { runBeatmapLookup, runPpCalc, runLeaderboard } = await import('./beatmapCapabilities.js');
+          const content = capability === 'beatmap_lookup'
+            ? await runBeatmapLookup(args)
+            : capability === 'pp_calc'
+              ? await runPpCalc(args)
+              : await runLeaderboard(args);
+          return {
+            toolCallId: toolCall.id,
+            ok: true,
+            content,
+            metadata: {
+              requestId: toolCall.id,
+              requestedCapability: capability,
+              actualExecutor: 'wuxin_internal',
+              dataSource: capability === 'pp_calc' ? 'yumu_rosu' : 'osu_api',
+              renderer: 'none',
+              command: capability,
+              args: { capability, beatmap_id: args.beatmap_id, mods: args.mods },
+              success: true,
+            },
+          };
+        } catch (err) {
+          return {
+            toolCallId: toolCall.id,
+            ok: false,
+            content: `${capability} 查询失败: ${String((err as Error)?.message || err)}`,
+            error: String((err as Error)?.message || err),
+          };
+        }
+      }
+
       const oIsBp = capability === 'bp';
       const oHasBpRank = hasQueryParam(args, 'bp_rank') && !hasQueryParam(args, 'bp_start');
       const oHasBpRange = hasQueryParam(args, 'bp_start') || hasQueryParam(args, 'bp_end');
@@ -537,17 +768,73 @@ export async function executeToolCall(
               : (parseBpSelectionFromUserText(String(context.event?.text || '')).selection || resolveBpQuerySelection({})))
         : undefined;
 
+      const recommendRequestText = String(context.event?.text || '')
+        .trim()
+        .toLowerCase()
+        .replace(/\s+/g, ' ');
+      const recommendKey = capability === 'recommend'
+        ? `${String(context.event?.userId || 'anon')}:${String(oUsername || '').trim().toLowerCase()}:${recommendRequestText}`
+        : '';
+      const pendingRecommend = recommendKey ? inFlightRecommends.get(recommendKey) : undefined;
+
+      if (capability === 'recommend' && context.sendMessage && context.event && !pendingRecommend) {
+        try {
+          await context.sendMessage(context.event, '（正在翻同分段玩家的成绩单…可能要等半分钟）');
+        } catch {
+          // Hint is non-fatal; the tool result still arrives through the loop.
+        }
+      }
+
       try {
-        const rawResult = await executeInternalBotCommand(
-          'wuxin_internal',
-          capability,
-          oUsername || '',
-          context,
-          oBpSelection,
-        );
-        const result = typeof rawResult === 'string'
-          ? { content: rawResult, images: [] as string[] }
-          : { content: rawResult.content, images: rawResult.images || [] };
+        const internalBotId = ['yumu', 'kanon', 'hydrant', 'lazybot'].includes(String(args.bot || ''))
+          ? String(args.bot)
+          : 'wuxin_internal';
+        let rawResult;
+        if (pendingRecommend) {
+          rawResult = await pendingRecommend;
+        } else {
+          const run = executeInternalBotCommand(
+            internalBotId,
+            capability,
+            oUsername || '',
+            context,
+            oBpSelection,
+            capability === 'recommend'
+              ? { translateRecommendFilters: true }
+              : (capability === 'bp' || capability === 'bplist')
+                ? { enrichBpEstimates: true }
+                : undefined,
+          );
+          if (recommendKey) inFlightRecommends.set(recommendKey, run);
+          try {
+            rawResult = await run;
+          } finally {
+            if (recommendKey && inFlightRecommends.get(recommendKey) === run) {
+              inFlightRecommends.delete(recommendKey);
+            }
+          }
+        }
+        const result: { content: string; images: string[]; final?: boolean } =
+          typeof rawResult === 'string'
+            ? { content: rawResult, images: [] as string[] }
+            : { content: rawResult.content, images: rawResult.images || [], final: rawResult.final };
+        if (result.final) {
+          return {
+            toolCallId: toolCall.id,
+            ok: true,
+            content: String(result.content || ''),
+            final: true,
+            directContent: String(result.content || ''),
+            metadata: {
+              requestId: toolCall.id,
+              requestedCapability: capability,
+              actualExecutor: 'wuxin_internal',
+              command: capability,
+              success: true,
+              terminal: 'recommend_cooldown',
+            },
+          };
+        }
         return {
           toolCallId: toolCall.id,
           ok: true,
@@ -606,7 +893,18 @@ export async function executeToolCall(
       }
       try {
         const correlationId = `${extBot.id}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
-        const responsePromise = registerPendingBotCall({ correlationId, botId: extBot.id, channel: extBot.channel, groupId: extBot.channel === 'qq_group' ? String(extBot.groupId || context.groupId || '') : undefined });
+        const drainPolicy = responsePolicy(db, extBot);
+        const responsePromise = registerPendingBotCall({
+          correlationId,
+          botId: extBot.id,
+          channel: extBot.channel,
+          groupId: extBot.channel === 'qq_group' ? String(extBot.groupId || context.groupId || '') : undefined,
+          drainPolicy: {
+            imageMs: drainPolicy.imageDrainMs,
+            textMs: drainPolicy.textDrainMs,
+            timeoutMs: drainPolicy.timeoutDrainMs,
+          },
+        });
         const botEvent = { ...context.event, type: extBot.channel === 'qq_group' ? 'group' : 'private', userId: extBot.channel === 'qq_group' ? undefined : extBot.qq, groupId: extBot.channel === 'qq_group' ? String(extBot.groupId || context.groupId || '') : undefined, text: extCommand, messageId: `bot_cmd_${Date.now()}`, raw: context.event.raw || {} };
         await context.sendMessage(botEvent, extCommand);
         const response = await responsePromise;
@@ -620,7 +918,7 @@ export async function executeToolCall(
         }
         return { toolCallId: toolCall.id, ok: false, content: `${extBot.name} 查询失败: ${response.error || '无响应'}`, metadata: { requestedBot: extBot.id, actualExecutor: extBot.id, success: false } };
       } catch (err) {
-        return { toolCallId: toolCall.id, ok: false, content: `向 ${extBot.name} 发送指令失败: ${String(err?.message || err)}`, metadata: { requestedBot: extBot.id, success: false } };
+        return { toolCallId: toolCall.id, ok: false, content: routeFailureToolMessage(extBot.name, err), metadata: { requestedBot: extBot.id, success: false } };
       }
     }
 
@@ -799,6 +1097,7 @@ export async function executeToolCall(
           const targetGroupId = bot.channel === 'qq_group'
             ? String(bot.groupId || context.groupId || '')
             : undefined;
+          const botResponsePolicy = responsePolicy(db, bot);
           if (bot.channel === 'qq_group' && !targetGroupId) {
             return {
               toolCallId: toolCall.id,
@@ -811,7 +1110,12 @@ export async function executeToolCall(
             correlationId,
             botId: bot.id,
             channel: bot.channel,
-            groupId: targetGroupId
+            groupId: targetGroupId,
+            drainPolicy: {
+              imageMs: botResponsePolicy.imageDrainMs,
+              textMs: botResponsePolicy.textDrainMs,
+              timeoutMs: botResponsePolicy.timeoutDrainMs,
+            },
           });
 
           const botEvent = {
@@ -864,7 +1168,7 @@ export async function executeToolCall(
           return {
             toolCallId: toolCall.id,
             ok: false,
-            content: `向 ${bot.name} 发送指令失败: ${String(err?.message || err)}`,
+            content: routeFailureToolMessage(bot.name, err),
             error: String(err?.message || err)
           };
         }
@@ -887,6 +1191,136 @@ export async function executeToolCall(
   }
 }
 
+// ── Tool-call audit ──
+// Every query_osu invocation (including deterministic required-tool routes)
+// is recorded so "did the tool actually run" can be answered from the DB
+// instead of inferred from reply text. Audit writes are non-fatal.
+function writeToolCallAudit(  toolCall: LlmToolCall,
+  context: {
+    db: any;
+    userId: string;
+    groupId?: string;
+    event?: any;
+  },
+  result: ToolResult,
+  latencyMs: number,
+): void {
+  if (String(toolCall.function?.name || '') !== 'query_osu') return;
+  let args: Record<string, unknown> = {};
+  try {
+    args = JSON.parse(toolCall.function.arguments || '{}');
+  } catch {
+    // Malformed args are still worth auditing; keep the empty object.
+  }
+  try {
+    const event = context.event || {};
+    updateDb((draft) => {
+      draft.toolCallLogs = draft.toolCallLogs || [];
+      draft.toolCallLogs.push({
+        id: crypto.randomUUID(),
+        createdAt: nowIso(),
+        groupId: String(event.groupId ?? context.groupId ?? ''),
+        userId: String(event.userId ?? context.userId ?? ''),
+        nickname: String(event.nickname ?? ''),
+        messageId: String(event.messageId ?? ''),
+        toolCallId: toolCall.id,
+        capability: String(args.capability ?? ''),
+        args,
+        ok: Boolean(result.ok),
+        error: result.error ? String(result.error).slice(0, 300) : '',
+        contentLength: String(result.content ?? '').length,
+        latencyMs,
+      });
+      draft.toolCallLogs = draft.toolCallLogs.slice(-MAX_TOOL_LOGS);
+    });
+  } catch {
+    // Auditing must never break the chat path.
+  }
+}
+
+// ── Unmet-capability telemetry (Phase D) ──
+// When the model tried to do something no tool supports, record it so future
+// capability decisions come from observed demand instead of manual log mining.
+const MAX_UNMET_LOGS = 2000;
+
+type UnmetReason = 'NO_TOOL_MATCH' | 'TOOL_NOT_CAPABLE' | 'TOOL_ARGUMENT_UNRESOLVED' | 'TOOL_PERMISSION_DENIED';
+
+function recordUnmetCapability(
+  toolCall: LlmToolCall,
+  context: { db: any; userId: string; groupId?: string; event?: any },
+  reason: UnmetReason,
+): void {
+  try {
+    let args: Record<string, unknown> = {};
+    try {
+      args = JSON.parse(toolCall.function?.arguments || '{}');
+    } catch {
+      // Malformed args still carry the tool name.
+    }
+    const text = String(context.event?.text ?? '');
+    const userTextHash = createHash('sha256').update(text).digest('hex').slice(0, 16);
+    const event = context.event || {};
+    updateDb((draft) => {
+      draft.unmetCapabilities = draft.unmetCapabilities || [];
+      draft.unmetCapabilities.push({
+        id: crypto.randomUUID(),
+        createdAt: nowIso(),
+        groupId: String(event.groupId ?? context.groupId ?? ''),
+        userId: String(event.userId ?? context.userId ?? ''),
+        toolName: String(toolCall.function?.name || ''),
+        intent: String(args.capability || toolCall.function?.name || ''),
+        reason,
+        userTextHash,
+      });
+      draft.unmetCapabilities = draft.unmetCapabilities.slice(-MAX_UNMET_LOGS);
+    });
+  } catch {
+    // Telemetry must never break the chat path.
+  }
+}
+
+/**
+ * Public tool executor: wraps the inner dispatcher so every query_osu call is
+ * audited with capability/user/timing even when the inner path returns early.
+ */
+export async function executeToolCall(
+  toolCall: LlmToolCall,
+  context: ToolExecutionContext,
+): Promise<ToolResult> {
+  const canonicalToolCall = normalizeAgentToolCall(toolCall);
+  const startedAt = Date.now();
+  let result: ToolResult;
+  try {
+    result = await executeToolCallInner(canonicalToolCall, context);
+  } catch (error: any) {
+    result = {
+      toolCallId: toolCall.id,
+      ok: false,
+      content: '',
+      error: String(error?.message || error),
+    };
+    writeToolCallAudit(canonicalToolCall, context, result, Date.now() - startedAt);
+    throw error;
+  }
+  if (!result.ok) {
+    let args: Record<string, unknown> = {};
+    try {
+      args = JSON.parse(canonicalToolCall.function?.arguments || '{}');
+    } catch { /* non-fatal */ }
+    const capability = String(args?.capability || '').trim();
+    const errorText = String(result.error || '');
+    if (errorText.startsWith('unknown_tool') || errorText.includes('不允许的操作类型')) {
+      recordUnmetCapability(canonicalToolCall, context, 'NO_TOOL_MATCH');
+    } else if (String(canonicalToolCall.function?.name || '') === 'query_osu' && capability && !internalCapabilitySupported(capability)) {
+      recordUnmetCapability(canonicalToolCall, context, 'TOOL_NOT_CAPABLE');
+    } else if (String(canonicalToolCall.function?.name || '') === 'query_osu' && capability) {
+      recordUnmetCapability(canonicalToolCall, context, 'TOOL_ARGUMENT_UNRESOLVED');
+    }
+  }
+  writeToolCallAudit(canonicalToolCall, context, result, Date.now() - startedAt);
+  return result;
+}
+
 // ── Internal bot command execution ──
 
 export interface InternalPlayerTarget {
@@ -894,16 +1328,12 @@ export interface InternalPlayerTarget {
   value: number | string;
 }
 
-interface InternalBotCommandResult {
+export interface InternalBotCommandResult {
   content: string;
   images?: string[];
+  /** Terminal deterministic reply: deliver verbatim, skip the LLM lead. */
+  final?: boolean;
 }
-
-type BeatmapAttributeFetcher = (
-  beatmapId: number,
-  mode: OsuMode,
-  mods: string[]
-) => Promise<{ attributes?: { star_rating?: number } }>;
 
 function scoreModAcronyms(score: OsuScore): string[] {
   const rawMods: unknown[] = Array.isArray((score as any).mods) ? (score as any).mods : [];
@@ -917,33 +1347,176 @@ function scoreModAcronyms(score: OsuScore): string[] {
   return [...new Set<string>(acronyms)];
 }
 
-function scoreMods(score: OsuScore): string[] {
-  return normalizedScoreMods({ mods: scoreModAcronyms(score) } as Pick<OsuScore, 'mods'>);
+/** Normalize an osu!/QQ name without deleting legal username characters. */
+export function normalizePlayerName(name: string): string {
+  return String(name || '')
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, ' ')
+    .trim();
 }
 
-export function resolveInternalPlayerTarget(
+/**
+ * A bound leading community tag may be omitted by the requester, but two
+ * explicitly tagged names are never collapsed together. osu! stores brackets
+ * as ordinary username characters rather than a separate clan-tag field.
+ */
+function requestedNameMatchesBinding(requested: string, bound: string): boolean {
+  const requestedKey = normalizePlayerName(requested);
+  const boundKey = normalizePlayerName(bound);
+  if (!requestedKey || !boundKey) return false;
+  if (requestedKey === boundKey) return true;
+  if (/\[[^\]]*\]/.test(requestedKey)) return false;
+  const boundWithoutLeadingTags = boundKey.replace(/^(?:\[[^\]]+\]\s*)+/, '').trim();
+  return requestedKey === boundWithoutLeadingTags;
+}
+
+function bindingId(binding: unknown): number {
+  if (typeof binding === 'number' && Number.isFinite(binding) && binding > 0) return binding;
+  if (typeof binding === 'string' && /^\d+$/.test(binding.trim())) return Number(binding.trim());
+  if (binding && typeof binding === 'object') {
+    const id = Number((binding as any).osuUserId ?? (binding as any).userId ?? (binding as any).id ?? 0);
+    if (Number.isFinite(id) && id > 0) return id;
+  }
+  return 0;
+}
+
+function bindingUsername(binding: unknown): string {
+  if (typeof binding === 'string') return binding.trim();
+  if (binding && typeof binding === 'object') {
+    return String((binding as any).osuUsername ?? (binding as any).username ?? '').trim();
+  }
+  return '';
+}
+
+/** Latest QQ that used the given nickname in a group (newest message wins). */
+function findQqByNickname(db: any, groupId: string, nickname: string): string | null {
+  const needle = normalizePlayerName(nickname);
+  if (!needle || !groupId) return null;
+  const messages = Array.isArray(db?.messages) ? db.messages : [];
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const m = messages[i];
+    if (!m || m.role === 'assistant' || String(m.groupId || '') !== String(groupId)) continue;
+    const nick = String(m.nickname || '').trim();
+    if (!nick) continue;
+    if (normalizePlayerName(nick) === needle) return String(m.userId || '');
+  }
+  return null;
+}
+
+export interface TargetResolutionExtra {
+  /** Requester's QQ nickname (used to block unbound nickname guesses). */
+  nickname?: string;
+  /** QQ numbers @-mentioned in the same message. */
+  atTargets?: string[];
+  /** Current group id (used to resolve group nicknames to bindings). */
+  groupId?: string;
+}
+
+export type TargetResolutionReason =
+  | 'resolved'
+  | 'no_target'
+  | 'unbound_requester_nickname'
+  | 'group_member_unbound';
+
+export interface TargetResolutionResult {
+  target: InternalPlayerTarget | null;
+  reason: TargetResolutionReason;
+}
+
+/**
+ * Resolve a requested player to a real osu! account.
+ *
+ * Order of trust:
+ * 1. Requester's own binding when the requested name matches it (clan-tag
+ *    insensitive) — never let `foxtrot` hit a different account than the
+ *    bound `[TST]Foxtrot`.
+ * 2. @-mentioned QQ's binding.
+ * 3. Requester using their own unbound QQ nickname as an osu username is
+ *    blocked — guessing by nickname misattributes other people's data.
+ * 4. Group nickname → QQ → binding.
+ * 5. Anything else is treated as an explicit osu username and queried as-is.
+ */
+export function resolveInternalPlayerTargetDetailed(
   db: any,
   requestingUserId: string,
-  explicitUsername: string
-): InternalPlayerTarget | null {
+  explicitUsername: string,
+  extra: TargetResolutionExtra = {},
+): TargetResolutionResult {
   const explicit = String(explicitUsername || '').trim();
-  if (explicit) return { kind: 'username', value: explicit };
-
   const binding = db?.osuBindings?.[String(requestingUserId)];
-  if (typeof binding === 'number' && Number.isFinite(binding) && binding > 0) {
-    return { kind: 'id', value: binding };
+  const requesterName = bindingUsername(binding);
+
+  if (explicit) {
+    // 1) Requester's own binding wins on name match.
+    if (requesterName && requestedNameMatchesBinding(explicit, requesterName)) {
+      const id = bindingId(binding);
+      return id > 0
+        ? { target: { kind: 'id', value: id }, reason: 'resolved' }
+        : { target: { kind: 'username', value: requesterName }, reason: 'resolved' };
+    }
+
+    // 2) @-mentioned member's binding wins on name match.
+    const atTargets = Array.isArray(extra.atTargets) ? extra.atTargets.map(String) : [];
+    for (const qq of atTargets) {
+      const memberBinding = db?.osuBindings?.[qq];
+      const memberName = bindingUsername(memberBinding);
+      if (memberName && requestedNameMatchesBinding(explicit, memberName)) {
+        const id = bindingId(memberBinding);
+        return id > 0
+          ? { target: { kind: 'id', value: id }, reason: 'resolved' }
+          : { target: { kind: 'username', value: memberName }, reason: 'resolved' };
+      }
+    }
+
+    // 3) Unbound requester guessing their own QQ nickname as osu username.
+    const requesterNickname = String(extra.nickname || '').trim();
+    if (!binding && requesterNickname && normalizePlayerName(explicit) === normalizePlayerName(requesterNickname)) {
+      return { target: null, reason: 'unbound_requester_nickname' };
+    }
+
+    // 4) Group nickname → QQ → binding; never guess an unbound member's account.
+    if (extra.groupId) {
+      const qq = findQqByNickname(db, extra.groupId, explicit);
+      if (qq) {
+        const memberBinding = db?.osuBindings?.[String(qq)];
+        const memberName = bindingUsername(memberBinding);
+        if (memberName) {
+          const id = bindingId(memberBinding);
+          return id > 0
+            ? { target: { kind: 'id', value: id }, reason: 'resolved' }
+            : { target: { kind: 'username', value: memberName }, reason: 'resolved' };
+        }
+        return { target: null, reason: 'group_member_unbound' };
+      }
+    }
+
+    // 5) Explicit osu username.
+    return { target: { kind: 'username', value: explicit }, reason: 'resolved' };
   }
-  if (typeof binding === 'string' && binding.trim()) {
-    const value = binding.trim();
-    return /^\d+$/.test(value)
-      ? { kind: 'id', value: Number(value) }
-      : { kind: 'username', value };
+
+  // No explicit username: an @-mentioned member takes precedence over the
+  // requester. Ignore the bot's own QQ, which is commonly @-mentioned merely
+  // to trigger a response.
+  const mentionedQqs = (Array.isArray(extra.atTargets) ? extra.atTargets : [])
+    .map(String)
+    .filter((qq) => qq && qq !== String(db?.settings?.selfQq || ''));
+  if (mentionedQqs.length > 0) {
+    for (const qq of mentionedQqs) {
+      const memberBinding = db?.osuBindings?.[qq];
+      const memberName = bindingUsername(memberBinding);
+      const id = bindingId(memberBinding);
+      if (id > 0) return { target: { kind: 'id', value: id }, reason: 'resolved' };
+      if (memberName) return { target: { kind: 'username', value: memberName }, reason: 'resolved' };
+    }
+    return { target: null, reason: 'group_member_unbound' };
   }
-  if (binding && typeof binding === 'object') {
-    const id = Number(binding.osuUserId ?? binding.userId ?? binding.id ?? 0);
-    if (Number.isFinite(id) && id > 0) return { kind: 'id', value: id };
-    const username = String(binding.osuUsername ?? binding.username ?? '').trim();
-    if (username) return { kind: 'username', value: username };
+
+  // No explicit or mentioned target: fall back to the requester's binding.
+  if (binding) {
+    const id = bindingId(binding);
+    if (id > 0) return { target: { kind: 'id', value: id }, reason: 'resolved' };
+    if (requesterName) return { target: { kind: 'username', value: requesterName }, reason: 'resolved' };
   }
 
   // Read-only legacy fallback for databases created before osuBindings.
@@ -951,7 +1524,18 @@ export function resolveInternalPlayerTarget(
     (user: any) => String(user.userId) === String(requestingUserId)
   );
   const legacyUsername = String(legacyUser?.osuUsername || '').trim();
-  return legacyUsername ? { kind: 'username', value: legacyUsername } : null;
+  return legacyUsername
+    ? { target: { kind: 'username', value: legacyUsername }, reason: 'resolved' }
+    : { target: null, reason: 'no_target' };
+}
+
+export function resolveInternalPlayerTarget(
+  db: any,
+  requestingUserId: string,
+  explicitUsername: string,
+  extra: TargetResolutionExtra = {},
+): InternalPlayerTarget | null {
+  return resolveInternalPlayerTargetDetailed(db, requestingUserId, explicitUsername, extra).target;
 }
 
 export async function loadInternalOsuUser(target: InternalPlayerTarget): Promise<OsuUser> {
@@ -959,63 +1543,6 @@ export async function loadInternalOsuUser(target: InternalPlayerTarget): Promise
   return target.kind === 'id'
     ? getUserById(Number(target.value), 'osu')
     : getUser(String(target.value), 'osu');
-}
-
-/**
- * Enrich score stars with osu!'s official beatmap-attributes endpoint. A
- * Modded score whose attributes request fails is marked unavailable so its
- * base difficulty can never masquerade as the played difficulty.
- */
-export async function enrichInternalScoreStarRatings(
-  scores: OsuScore[],
-  mode: OsuMode = 'osu',
-  fetchAttributes?: BeatmapAttributeFetcher
-): Promise<OsuScore[]> {
-  const attributeFetcher = fetchAttributes ||
-    (await import('../osu/api.js')).getBeatmapAttributes;
-  const unique = new Map<string, { beatmapId: number; mods: string[] }>();
-  for (const score of scores) {
-    const mods = scoreMods(score);
-    if (mods.length === 0) continue;
-    const beatmapId = Number(score.beatmap?.id || 0);
-    if (beatmapId <= 0) continue;
-    const key = `${beatmapId}:${mode}:${mods.join(',')}`;
-    if (!unique.has(key)) unique.set(key, { beatmapId, mods });
-  }
-
-  const { mapLimit } = await import('./render.js');
-  const taskResults = await mapLimit([...unique.entries()], 10, async ([key, entry]) => {
-    try {
-      const result = await attributeFetcher(entry.beatmapId, mode, entry.mods);
-      const stars = Number(result.attributes?.star_rating || 0);
-      return [key, stars > 0 ? stars : null] as const;
-    } catch {
-      return [key, null] as const;
-    }
-  });
-  const tasks = new Map<string, number | null>(taskResults);
-
-  return Promise.all(scores.map(async (score) => {
-    const mods = scoreMods(score);
-    if (mods.length === 0) {
-      return { ...score, star_rating_source: 'base' as const };
-    }
-    const beatmapId = Number(score.beatmap?.id || 0);
-    const key = `${beatmapId}:${mode}:${mods.join(',')}`;
-    const stars = beatmapId > 0 && tasks.has(key) ? tasks.get(key)! : null;
-    if (!stars) {
-      return {
-        ...score,
-        modded_star_rating: undefined,
-        star_rating_source: 'unavailable' as const,
-      };
-    }
-    return {
-      ...score,
-      modded_star_rating: stars,
-      star_rating_source: 'modded' as const,
-    };
-  }));
 }
 
 function scoreTitle(score: OsuScore): string {
@@ -1037,10 +1564,12 @@ export function formatInternalScoreLine(
   const accuracy = scoreAccuracyPercent(score);
   const mods = scoreModAcronyms(score);
   const beatmap = score.beatmap || ({} as OsuScore['beatmap']);
+  const beatmapId = Number(beatmap.id || (score as any).beatmap_id || 0);
   const prefix = options.index ? `#${options.index} ` : '';
   const difficulty = beatmap.version ? ` [${beatmap.version}]` : '';
   const fields = [
     `[${score.rank || 'F'}] ${scoreTitle(score)}${difficulty}`,
+    beatmapId > 0 ? `BID ${beatmapId}` : 'BID 暂不可用',
     stars > 0 ? `${stars.toFixed(2)}★` : '星数暂不可用',
     mods.length ? mods.join('') : 'NM',
     accuracy === null ? 'Acc ?' : `${accuracy.toFixed(2)}%`,
@@ -1131,17 +1660,65 @@ export function formatInternalInfoText(user: OsuUser, ppPlusNote = ''): string {
   ].filter(Boolean).join('\n');
 }
 
-async function executeInternalBotCommand(
+export async function executeInternalBotCommand(
   botId: string,
   commandName: string,
   username: string,
-  context: { db: any; userId: string; groupId?: string },
+  context: { db: any; userId: string; groupId?: string; event?: any; isOwner?: boolean; beatmapId?: number },
   bpSelection?: BpQuerySelection,
+  options?: {
+    translateRecommendFilters?: boolean;
+    enrichBpEstimates?: boolean;
+    /** Request-scoped: the caller already attempted a local bridge for THIS
+     *  top-level request with this bot id (quickRouter bridge #1). The recent
+     *  case then skips its duplicate same-target bridge and goes internal.
+     *  A different bot id does not suppress a deliberate cross-target
+     *  compatibility fallback (e.g. lazybot recent -> yumu). */
+    bridgeAlreadyAttemptedFor?: string;
+  },
+  traceId?: string | null,
 ): Promise<string | InternalBotCommandResult> {
   const { db, userId } = context;
+  // Command-side alias normalization: quick.meta uses the legacy two-p alias
+  // `pplus`; the canonical capability catalog and LLM enum use three-p
+  // `ppplus`. Normalizing here keeps the two spellings behavior-identical.
+  commandName = normalizeCapabilityName(commandName);
 
-  const target = resolveInternalPlayerTarget(db, userId, username);
+  // Match watching does not need a resolved player (the command carries a
+  // match id); handle it before the player resolution below.
+  if (commandName === 'match') {
+    const { matchManager } = await import('../osu/match.js');
+    const result = await matchManager.handleCommand(
+      db,
+      { groupId: context.groupId, userId: String(userId) },
+      String(context.event?.text || '').replace(/^[!/]?ml\s*/i, ''),
+      Boolean(context.isOwner),
+    );
+    return {
+      content: result.text || '',
+      images: result.images || [],
+    };
+  }
+
+  const resolution = resolveInternalPlayerTargetDetailed(db, userId, username, {
+    nickname: String(context.event?.nickname || ''),
+    atTargets: context.event?.atTargets,
+    groupId: context.groupId,
+  });
+  const target = resolution.target;
   if (!target) {
+    if (resolution.reason === 'unbound_requester_nickname') {
+      throw new Error(
+        '你还没有绑定 osu! 账号，且我不能凭 QQ 昵称猜测你的 osu! 用户名。' +
+        '请先用 /w osu bind <用户名> 绑定，或提供准确的 osu! 用户名/主页链接。'
+      );
+    }
+    if (resolution.reason === 'group_member_unbound') {
+      throw new Error(
+        `群友“${username}”还没有绑定 osu! 账号，无法确认目标账号。` +
+        '请先让他用 /w osu bind 绑定，或提供准确的 osu! 用户名。'
+      );
+    }
     throw new Error('无法确定要查询的 osu! 用户名。请先使用 /w osu bind 绑定账号，或在指令中指定用户名。');
   }
 
@@ -1156,30 +1733,154 @@ async function executeInternalBotCommand(
 
   switch (commandName) {
     case 'recent': {
-      const { getUserRecentScores } = await import('../osu/api.js');
-      const rawScores = await getUserRecentScores(user.id, 'osu', 1);
-      if (!Array.isArray(rawScores) || rawScores.length === 0) {
-        return `${user.username} 最近没有 osu! 成绩记录。`;
+      // Prefer the original yumu panel (full E5 data: pp breakdown, if-FC pp,
+      // density, retry/fail) via the local bridge; internal render is fallback.
+      const { hasLocalEndpoint, callLocalBot } = await import('./localBridge.js');
+      // Route to the bot the user asked for: kanon recent is `!re` (includes
+      // fails), yumu recent is `!r`; hydrant/lazybot have no recent → internal.
+      const bridgeBot = botId === 'kanon' ? 'kanon' : 'yumu';
+      const bridgeCommand = bridgeBot === 'kanon'
+        ? `!re ${user.username}`
+        : `!r ${user.username}`;
+      const bridgeAlreadyAttempted = options?.bridgeAlreadyAttemptedFor === bridgeBot;
+      if (bridgeAlreadyAttempted) {
+        // QUICK_BRIDGE_FIX_P0_2: quickRouter already tried this exact
+        // same-target bridge for this top-level quick command and it failed.
+        // Blindly retrying can hit target-side same-sender/same-command dedup
+        // (Kanon) or repeat expensive recent work (Yumu). Skip straight to
+        // the internal osu! recent implementation.
+        if (traceId) markLatencySpan(traceId, 'recent_bridge_skipped', { bot: bridgeBot, reason: 'bridge_already_attempted' });
+      } else if (hasLocalEndpoint(bridgeBot)) {
+        try {
+          if (traceId) markLatencySpan(traceId, 'recent_bridge_start', { bot: bridgeBot });
+          const bridgeReply = await callLocalBot(
+            bridgeBot,
+            bridgeCommand,
+            {
+              groupId: context.groupId || '770099',
+              userId: String(userId),
+              nickname: 'WuxinBridge',
+              atTargets: [],
+            },
+            60_000,
+          );
+          if (traceId) markLatencySpan(traceId, 'recent_bridge_done', { bot: bridgeBot });
+          if (bridgeReply && (bridgeReply.text || bridgeReply.images.length > 0)) {
+            // A rendered third-party panel is useful presentation, but its
+            // prose/image may omit the beatmap ID. Re-fetch one structured
+            // score so the Agent can chain recent -> beatmap/skill tools
+            // without OCR or title matching. Failure stays explicit; never
+            // fabricate an ID from the panel.
+            let identityLine = 'BID 暂不可用（桥接结果未提供，且结构化 recent 补查失败）';
+            try {
+              const { getUserRecentScores } = await import('../osu/api.js');
+              const identityScores = await getUserRecentScores(user.id, 'osu', 1);
+              if (Array.isArray(identityScores) && identityScores.length > 0) {
+                const [identityScore] = (await enrichScoreStarRatings(identityScores, 'osu')).scores;
+                identityLine = formatInternalScoreLine(identityScore, { includeCombo: true });
+              }
+            } catch {
+              // The bridge result is still deliverable, but the missing BID
+              // must remain visible instead of being silently omitted.
+            }
+            return {
+              content: [
+                bridgeReply.text || `${user.username} 最近一次 osu! 成绩：`,
+                `结构化谱面标识：${identityLine}`,
+              ].join('\n'),
+              images: bridgeReply.images,
+            };
+          }
+        } catch {
+          if (traceId) markLatencySpan(traceId, 'recent_bridge_failed', { bot: bridgeBot });
+          // Fall through to the internal renderer.
+        }
       }
 
-      const [score] = await enrichInternalScoreStarRatings(rawScores, 'osu');
+      const { getUserRecentScores } = await import('../osu/api.js');
+      if (traceId) markLatencySpan(traceId, 'osu_api_request_start', { scope: 'recent' });
+      const rawScores = await getUserRecentScores(user.id, 'osu', 1);
+      if (traceId) markLatencySpan(traceId, 'osu_api_request_done', { scope: 'recent' });
+      if (!Array.isArray(rawScores) || rawScores.length === 0) {
+        return `${user.username} 最近没有 osu! 成绩记录（osu! API 未返回，可能最近没有提交成绩，或新成绩尚未同步）。`;
+      }
+
+      if (traceId) markLatencySpan(traceId, 'enrichment_start');
+      const [score] = (await enrichScoreStarRatings(rawScores, 'osu')).scores;
+      if (traceId) markLatencySpan(traceId, 'enrichment_done');
+      if (traceId) markLatencySpan(traceId, 'result_build_start');
       const scoreLine = formatInternalScoreLine(score, { includeCombo: true });
+      if (traceId) markLatencySpan(traceId, 'result_build_done');
 
       // Try to render a score image via yumu-image
       if (getRenderServer().hasClients()) {
         try {
-          const { renderCompactScoreCard } = await import('./render.js');
-          const rendered = await renderCompactScoreCard(user, scoreForRenderer(score));
+          // 雨沐 original single-score panel (E5), same as its !r/!p output.
+          const { renderScoreCard } = await import('./render.js');
+          if (traceId) markLatencySpan(traceId, 'render_start');
+          const rendered = await renderScoreCard(scoreForRenderer(score), user, null);
+          if (traceId) markLatencySpan(traceId, 'render_done', { rendered: Boolean(rendered) });
           if (rendered) {
             return {
               content: `${user.username} 最近一次 osu! 成绩：\n${scoreLine}`,
               images: [rendered.cqCode]
             };
           }
-        } catch { /* fall through to text */ }
+        } catch {
+          if (traceId) markLatencySpan(traceId, 'render_failed');
+          /* fall through to text */
+        }
       }
 
       return `${user.username} 最近一次 osu! 成绩：\n${scoreLine}`;
+    }
+
+    case 'score': {
+      // Player's own best score on a specific beatmap (`!s <bid>` / `!score <bid>` / `/s <bid>`).
+      const beatmapId = Number(context.beatmapId || 0);
+      if (!Number.isInteger(beatmapId) || beatmapId <= 0) {
+        throw new Error('请提供谱面 BID，例如 !s 4270382。');
+      }
+      const { getUserBeatmapScore } = await import('../osu/api.js');
+      let score: OsuScore;
+      try {
+        score = await getUserBeatmapScore(user.id, beatmapId, 'osu');
+      } catch (error) {
+        return `${user.username} 在 BID ${beatmapId} 上没有查到成绩（${String(error?.message || error)}）。`;
+      }
+      // The beatmap-scoped score endpoint often omits beatmapset metadata;
+      // fetch it so text and the E5 panel show the real title/artist.
+      if (!score?.beatmapset?.title && !score?.beatmap?.beatmapset?.title) {
+        try {
+          const { getBeatmap } = await import('../osu/api.js');
+          const beatmap = await getBeatmap(beatmapId);
+          if (beatmap) {
+            score = {
+              ...score,
+              beatmap: score.beatmap || beatmap,
+              beatmapset: beatmap.beatmapset || (score as any).beatmapset,
+            };
+          }
+        } catch { /* metadata enrichment is non-fatal */ }
+      }
+      const [enriched] = (await enrichScoreStarRatings([score], 'osu')).scores;
+      const scoreLine = formatInternalScoreLine(enriched, { includeCombo: true });
+
+      // Same 雨沐 E5 single-score panel as `!r`/`!p`.
+      if (getRenderServer().hasClients()) {
+        try {
+          const { renderScoreCard } = await import('./render.js');
+          const rendered = await renderScoreCard(scoreForRenderer(enriched), user, null);
+          if (rendered) {
+            return {
+              content: `${user.username} 在 BID ${beatmapId} 的成绩：\n${scoreLine}`,
+              images: [rendered.cqCode],
+            };
+          }
+        } catch { /* fall through to text */ }
+      }
+
+      return `${user.username} 在 BID ${beatmapId} 的成绩：\n${scoreLine}`;
     }
 
     case 'profile': {
@@ -1188,19 +1889,39 @@ async function executeInternalBotCommand(
 
     case 'info':
     case 'card': {
-      // Try to render a player info card via yumu-image
+      // `info` renders yumu's full player-info panel (D3, same as `/i`);
+      // `card` keeps the separate Gamma info card (`/ic` / `信息卡片`).
       if (getRenderServer().hasClients()) {
         try {
-          const { renderCompactInfoCard } = await import('./render.js');
-          const rendered = await renderCompactInfoCard(user);
-          if (rendered) {
-            return {
-              content: [
-                `${user.username} 的 osu! 信息卡：`,
-                `PP: ${(user.statistics?.pp || 0).toLocaleString()} | 全球 #${(user.statistics?.global_rank || 0).toLocaleString()} | 准确率 ${(user.statistics?.hit_accuracy || 0).toFixed(2)}%`
-              ].join('\n'),
-              images: [rendered.cqCode]
-            };
+          if (commandName === 'info') {
+            const { renderPlayerInfo } = await import('./render.js');
+            const { getUserBestScores } = await import('../osu/api.js');
+            const rawScores = await getUserBestScores(user.id, 'osu', 100);
+            if (Array.isArray(rawScores) && rawScores.length > 0) {
+              const enriched = (await enrichScoreStarRatings(rawScores, 'osu')).scores;
+              const rendered = await renderPlayerInfo(user, enriched);
+              if (rendered) {
+                return {
+                  content: [
+                    `${user.username} 的 osu! 信息：`,
+                    `PP: ${(user.statistics?.pp || 0).toLocaleString()} | 全球 #${(user.statistics?.global_rank || 0).toLocaleString()} | 准确率 ${(user.statistics?.hit_accuracy || 0).toFixed(2)}%`
+                  ].join('\n'),
+                  images: [rendered.cqCode]
+                };
+              }
+            }
+          } else {
+            const { renderCompactInfoCard } = await import('./render.js');
+            const rendered = await renderCompactInfoCard(user);
+            if (rendered) {
+              return {
+                content: [
+                  `${user.username} 的 osu! 信息卡：`,
+                  `PP: ${(user.statistics?.pp || 0).toLocaleString()} | 全球 #${(user.statistics?.global_rank || 0).toLocaleString()} | 准确率 ${(user.statistics?.hit_accuracy || 0).toFixed(2)}%`
+                ].join('\n'),
+                images: [rendered.cqCode]
+              };
+            }
           }
         } catch { /* fall through to text */ }
       }
@@ -1229,8 +1950,94 @@ async function executeInternalBotCommand(
       // osu!oracle BP type analysis. Deterministic tool result so the LLM can
       // never fabricate proportions: it only decides WHEN to call this tool.
       const { runBpTypeAnalysis } = await import('./bpTypeAnalysis.js');
-      const text = await runBpTypeAnalysis(db, String(userId), username);
+      const text = await runBpTypeAnalysis(db, String(userId), username, {
+        nickname: String(context.event?.nickname || ''),
+        atTargets: context.event?.atTargets,
+        groupId: context.groupId,
+      });
       return { content: text };
+    }
+
+    case 'recommend': {
+      // Real-time collaborative filtering recommendation (osu!helper style).
+      // Shares cooldown / anti-repeat / candidate cache with the quick routes.
+      const {
+        recommendForPlayer,
+        checkRecommendCooldown,
+        loadRecommendHistory,
+        markRecommendation,
+        formatRecommendLine,
+      } = await import('../osu/recommender.js');
+
+      const cooldownMs = checkRecommendCooldown(db, user.id);
+      if (cooldownMs > 0) {
+        return {
+          content: `${user.username} 刚推过图，${Math.ceil(cooldownMs / 60_000)} 分钟后再来换口味吧。本轮没有重新推荐，也没有重新检查上一批是否符合本次筛选条件。`,
+          final: true,
+        };
+      }
+
+      // Natural-language filters are translated by a dedicated L2 model into a
+      // canonical statement, then parsed deterministically. Only the LLM tool
+      // path enables this; quick routes (`!推荐` etc.) stay unfiltered.
+      let filters: RecommendFilters | undefined;
+      let filterStatement = '';
+      if (options?.translateRecommendFilters) {
+        const { translateRecommendFilters } = await import('../osu/recommendFilters.js');
+        const translated = await translateRecommendFilters(String(context.event?.text || ''), db);
+        if (!translated.ok) {
+          throw new Error(translated.reason || '没听懂你要的筛选条件，暂时没法按这个条件推图。');
+        }
+        filters = translated.filters;
+        filterStatement = translated.statement || describeFilters(translated.filters);
+      }
+
+      const exclude = loadRecommendHistory(db, user.id);
+      const result = await recommendForPlayer(target, db, {
+        count: 3,
+        excludeBeatmapsetIds: exclude,
+        filters,
+        filterStatement: filterStatement || undefined,
+      });
+      if (!result.ok) {
+        throw new Error(result.reason || '暂时推不了图。');
+      }
+
+      try {
+        markRecommendation(user.id, result.candidates);
+      } catch {
+        // Persistence is non-fatal; the recommendation itself already exists.
+      }
+
+      const lines = result.candidates.map((c, i) => formatRecommendLine(c, i));
+      const filterNote = filters && !isEmptyFilters(filters)
+        ? `（按你的要求筛选：${describeFilters(filters)}）`
+        : '';
+      const recoStats = result.stats || ({} as NonNullable<typeof result.stats>);
+      const starText = recoStats.topStarMax
+        ? `，Top 基础星数 ${(recoStats.topStarMean || 0).toFixed(1)}-${recoStats.topStarMax.toFixed(1)}★`
+        : '';
+      const moddedStarText = recoStats.topModdedStarMax
+        ? `，带Mod ${(recoStats.topModdedStarMean || 0).toFixed(1)}-${recoStats.topModdedStarMax.toFixed(1)}★`
+        : '';
+      const modsText = recoStats.topMods?.length ? `，主玩 ${recoStats.topMods.join('+')}` : '';
+      const playerContext = `目标玩家：${user.username}（PP ${(user.statistics?.pp || 0).toLocaleString()}，全球 #${(user.statistics?.global_rank || 0).toLocaleString()}${starText}${moddedStarText}${modsText}）`;
+      const content = `${playerContext}\n\n${user.username} 的谱面推荐${filterNote}：\n${lines.join('\n\n')}`;
+
+      let images: string[] = [];
+      if (getRenderServer().hasClients()) {
+        try {
+          const { renderBeatmapCard } = await import('./render.js');
+          for (const c of result.candidates) {
+            const rendered = await renderBeatmapCard(c);
+            if (rendered) images.push(rendered.cqCode);
+          }
+        } catch {
+          // Images are an enhancement; text + links remain available.
+        }
+      }
+
+      return { content, images };
     }
 
     case 'bp':
@@ -1248,10 +2055,10 @@ async function executeInternalBotCommand(
         return `${user.username} 没有 BP${selection.startRank} 的成绩记录。`;
       }
 
-      const scores = await enrichInternalScoreStarRatings(
+      const scores = (await enrichScoreStarRatings(
         selectedScores.map((entry) => entry.score),
         'osu',
-      );
+      )).scores;
       const rankedScores = scores.map((score, index) => ({
         rank: selectedScores[index].rank,
         score,
@@ -1261,23 +2068,62 @@ async function executeInternalBotCommand(
       const label = actualStart === actualEnd
         ? `BP${actualStart}`
         : `BP${actualStart}-${actualEnd}`;
+
+      // SS 估算 + pp 构成 + 密度：仅 LLM 工具路径启用（快速指令保持原渲染与延迟）。
+      let ssEnrichments: Array<any> | null = null;
+      let enrichmentHelpers: { beatmapDensity: any; formatBpEnrichmentSuffix: any } | null = null;
+      if (options?.enrichBpEstimates) {
+        const helpers = await import('./beatmapCapabilities.js');
+        enrichmentHelpers = helpers;
+        ssEnrichments = await helpers.enrichBpScoresWithSs(
+          rankedScores.map((entry) => {
+            const score = entry.score;
+            const statistics = (score as any).statistics || {};
+            return {
+              beatmapId: Number(score.beatmap?.id || 0),
+              mods: scoreModAcronyms(score),
+              accuracy: Number(score.accuracy || 0) > 0 ? Number(score.accuracy) * 100 : 100,
+              combo: Number(score.max_combo) > 0 ? Number(score.max_combo) : null,
+              misses: Number(statistics.miss || 0),
+            };
+          }),
+        );
+      }
+
       const lines = [`${user.username} 的 ${label}：`];
-      for (const entry of rankedScores) {
+      rankedScores.forEach((entry, index) => {
+        const enrichment = ssEnrichments?.[index] ?? null;
+        let suffix = '';
+        if (ssEnrichments && enrichmentHelpers) {
+          const density = entry.score.beatmap ? enrichmentHelpers.beatmapDensity(entry.score.beatmap) : null;
+          suffix = enrichmentHelpers.formatBpEnrichmentSuffix(
+            enrichment?.ssPp ?? null,
+            enrichment?.breakdown ?? null,
+            density,
+          );
+        }
         lines.push(`  ${formatInternalScoreLine(entry.score, {
           index: entry.rank,
           includeWeight: true,
-        })}`);
-      }
+        })}${suffix}`);
+      });
       const content = lines.join('\n');
 
       if (getRenderServer().hasClients()) {
         try {
           if (rankedScores.length === 1) {
             const { renderScoreCard } = await import('./render.js');
+            const enrichment = ssEnrichments?.[0] ?? null;
             const rendered = await renderScoreCard(
               scoreForRenderer(rankedScores[0].score),
               user,
               rankedScores[0].rank,
+              enrichment
+                ? {
+                    attributes: enrichment.attributes ?? null,
+                    density26: enrichment.density26 ?? null,
+                  }
+                : undefined,
             );
             if (rendered) {
               return { content, images: [rendered.cqCode] };
@@ -1315,11 +2161,11 @@ async function executeInternalBotCommand(
         const bars = await getPlayerBars(user.id);
         if (bars) {
           const entries = Object.entries(bars)
-            .filter(([, v]) => v > 0)
+            .filter(([key, v]) => key !== 'ppTotal' && v > 0)
             .sort(([, a], [, b]) => b - a);
           if (entries.length === 0) return `${user.username} 的 PP+ 数据为空。`;
           const barLines = entries.map(([k, v]) => `  ${k}: ${'█'.repeat(Math.min(Math.round(v), 20))} ${v.toFixed(2)}`);
-          return [`${user.username} 的 PP+ 维度（满分 15.0）：`, ...barLines].join('\n');
+          return [`${user.username} 的 PP+ 维度（15.0 = 基准线，可超出）：`, ...barLines].join('\n');
         }
       } catch {
         // PP+ service unavailable — use cached skill data
@@ -1369,7 +2215,9 @@ function formatSkillResult(record: any): string {
     `- PP+ 维度: ${ppPlus}`,
     `- 常用 Mods: ${mods}`,
     record.summary ? `- 分析摘要: ${record.summary}` : '',
-    record.recentSummary ? `- 最近表现: ${record.recentSummary}` : '',
+    record.recentSummary
+      ? `- 最近表现: ${record.recentSummary}（快照，最后更新: ${record.lastRecentAnalyzed || record.lastAnalyzed}）`
+      : '- 快照中无最近表现数据（不代表玩家最近没有成绩；实时最近成绩请调用最近成绩工具）',
     `- 最后分析: ${record.lastAnalyzed}`,
   ].filter(Boolean).join('\n');
 }
@@ -1380,6 +2228,42 @@ export interface RequiredTool {
   toolName: string;
   args: Record<string, unknown>;
 }
+
+/**
+ * A model-first turn may plan freely, but it cannot finish normally until a
+ * successful, safe tool result matching this requirement has been observed.
+ */
+export interface EvidenceRequirement extends RequiredTool {}
+
+export interface ToolExecutionContext {
+  db: any;
+  userId: string;
+  groupId?: string;
+  sendMessage?: (event: any, text: string, extra?: any) => Promise<any>;
+  event?: any;
+  selfQq?: string;
+}
+
+export type ToolExecutor = (
+  toolCall: LlmToolCall,
+  context: ToolExecutionContext,
+) => Promise<ToolResult>;
+
+// AGENT_TOOL_SURFACE_HARDENING_V01 A2 — hard tool-call budget.
+// maxIterations only bounds LLM rounds. These two bounds are the real
+// executor-side limits:
+//   - per response: a single assistant message may dispatch at most 4 calls;
+//   - per turn: a whole user/processIncoming turn may dispatch at most 8 calls
+//     TOTAL across every runToolLoop invoked for that turn (bot.ts can run a
+//     second requiredTool=recommend loop after the first; callers carry the
+//     budget with toolCallsExecutedBeforeLoop).
+// Evidence for the conservative values: replay fixtures and production seams
+// observe 0..2 settled calls per turn (recommend/bp chains); 4/8 keeps every
+// legitimate chain while bounding a malicious 100-call response. Excess calls
+// are never executed: they receive a synthetic tool result and the loop goes
+// straight to safe synthesis, preserving any direct payload already collected.
+export const AGENT_MAX_TOOL_CALLS_PER_RESPONSE = 4;
+export const AGENT_MAX_TOOL_CALLS_PER_TURN = 8;
 
 export interface ToolLoopOptions {
   db: any;
@@ -1397,6 +2281,35 @@ export interface ToolLoopOptions {
   label?: string;
   /** When set, execute this tool before the first LLM call. LLM only writes a short lead. */
   requiredTool?: RequiredTool;
+  /** Model-first evidence invariant. A bounded deterministic fallback runs if unmet. */
+  evidenceRequirement?: EvidenceRequirement;
+  /**
+   * When true, the structured tool payload is returned verbatim for the caller
+   * to append after the LLM lead (command-style delivery). When false (default,
+   * natural chat), named-bot panels the executor tagged as direct-delivery
+   * products (DIRECT_RESULT_COMMANDS / structured text panels) are still
+   * returned verbatim; deterministic osu data routes and ordinary tool Q&A
+   * stay inside the tool message and the LLM must integrate the key facts
+   * into its own reply instead.
+   */
+  deliverDirectContent?: boolean;
+  /** Keep the model in the planning loop after collecting a panel/image. */
+  continueAfterDirectPayload?: boolean;
+  /** Skip an identical successful call if the model repeats it in one loop. */
+  deduplicateToolCalls?: boolean;
+  /** Return typed evidence envelopes to the model instead of prose blobs. */
+  structuredToolResults?: boolean;
+  /** Shadow reasoning: per-turn id + router. Recording only; never applied. */
+  turnId?: string;
+  reasoningRouter?: ReasoningShadowSink;
+  /** Test seam for fully offline replay. Production defaults to executeToolCall. */
+  executeToolCallFn?: ToolExecutor;
+  /**
+   * Tool calls already executed earlier in the SAME user/processIncoming turn
+   * by a previous runToolLoop. bot.ts passes this when the recommendation hard
+   * guard runs a second loop. Charged against AGENT_MAX_TOOL_CALLS_PER_TURN.
+   */
+  toolCallsExecutedBeforeLoop?: number;
 }
 
 export interface ToolLoopResult {
@@ -1404,45 +2317,326 @@ export interface ToolLoopResult {
   usage: any;
   toolCallsMade: number;
   iterations: number;
+  /** True when a query_osu recommend tool call completed successfully this turn. */
+  recommendToolCalled: boolean;
   /** Image references/CQ codes are kept out of LLM messages and returned to the caller. */
   images: string[];
   /** Structured text that the caller must append verbatim after the short LLM lead. */
   directContent: string;
+  /** A2 accounting: calls not executed because a hard cap was reached. */
+  toolCallsSkippedByCap?: number;
+  /** A2 accounting: true when either hard cap stopped execution this turn. */
+  hardCapReached?: boolean;
+  /** Total executed tool calls across all runToolLoop invocations of this turn. */
+  toolCallsMadeThisTurn?: number;
+  /** Whether this loop (including its bounded fallback) satisfied required evidence. */
+  evidenceRequirementSatisfied?: boolean;
+  /** True when the model did not satisfy evidence and the deterministic fallback ran. */
+  evidenceFallbackExecuted?: boolean;
+}
+
+/** Preserve completed work when a caller starts a bounded corrective loop. */
+export function mergeToolLoopResults(previous: ToolLoopResult, next: ToolLoopResult): ToolLoopResult {
+  return {
+    ...next,
+    usage: mergeLlmUsage(previous.usage, next.usage),
+    images: [...new Set([...(previous.images || []), ...(next.images || [])])],
+    directContent: [...new Set([previous.directContent, next.directContent].filter(Boolean))].join('\n\n'),
+    toolCallsMade: previous.toolCallsMade + next.toolCallsMade,
+    iterations: previous.iterations + next.iterations,
+    recommendToolCalled: previous.recommendToolCalled || next.recommendToolCalled,
+    toolCallsSkippedByCap: (previous.toolCallsSkippedByCap || 0) + (next.toolCallsSkippedByCap || 0),
+    hardCapReached: previous.hardCapReached || next.hardCapReached,
+    evidenceRequirementSatisfied: previous.evidenceRequirementSatisfied || next.evidenceRequirementSatisfied,
+    evidenceFallbackExecuted: previous.evidenceFallbackExecuted || next.evidenceFallbackExecuted,
+  };
+}
+
+function parsedCanonicalToolArgs(toolCall: LlmToolCall): Record<string, unknown> {
+  const canonical = normalizeAgentToolCall(toolCall);
+  try {
+    const parsed = JSON.parse(canonical.function.arguments || '{}');
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
+function evidenceValueEquals(key: string, expected: unknown, actual: unknown): boolean {
+  if (key === 'username') {
+    return normalizePlayerName(String(expected || '')) === normalizePlayerName(String(actual || ''));
+  }
+  if (typeof expected === 'number' || typeof actual === 'number') {
+    const left = Number(expected);
+    const right = Number(actual);
+    return Number.isFinite(left) && Number.isFinite(right) && left === right;
+  }
+  return String(expected ?? '').trim().toLowerCase() === String(actual ?? '').trim().toLowerCase();
+}
+
+/** Match capability plus the detector's explicit constraints, not raw JSON ordering. */
+function toolResultSatisfiesEvidence(
+  requirement: EvidenceRequirement | undefined,
+  toolCall: LlmToolCall,
+  result: ToolResult,
+  safeContent: string,
+): boolean {
+  if (!requirement || !result.ok || !isSafeToolResult(safeContent)) return false;
+  const canonical = normalizeAgentToolCall(toolCall);
+  if (String(canonical.function.name || '') !== String(requirement.toolName || '')) return false;
+
+  const callArgs = parsedCanonicalToolArgs(toolCall);
+  const resultArgs = result.metadata?.args && typeof result.metadata.args === 'object'
+    ? result.metadata.args as Record<string, unknown>
+    : {};
+  for (const [key, expected] of Object.entries(requirement.args || {})) {
+    if (expected === undefined || key === 'compact') continue;
+    const actual = resultArgs[key] ?? callArgs[key];
+    if (actual === undefined || !evidenceValueEquals(key, expected, actual)) return false;
+  }
+  return true;
 }
 
 function sanitizeDirectDeliveryContent(content: string): string {
+  const links: string[] = [];
   return String(content || '')
     // Never allow an intercepted QQ bot to inject a second CQ operation. Images
     // are already carried in ToolResult.images and appended structurally.
     .replace(/\[CQ:[^\]]+\]/gi, '')
+    // Official osu! beatmap links are safe and useful; stash them in
+    // slash-free placeholders before the path-hiding rules run.
+    .replace(/(https?:\/\/osu\.ppy\.sh\/beatmaps\/\d+)/g, (match) => {
+      links.push(match);
+      return `__OSU_MAP_LINK_${links.length - 1}__`;
+    })
     .replace(/[A-Za-z]:[\\/][^\s,，。]*/g, '[路径已隐藏]')
     .replace(/\/[^\s,，。]+\/[^\s,，。]+/g, '[路径已隐藏]')
     .replace(/\\[^\s,，。]+\\[^\s,，。]+/g, '[路径已隐藏]')
+    .replace(/__OSU_MAP_LINK_(\d+)__/g, (_, index) => links[Number(index)])
     .replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/g, '')
     .replace(/\r\n?/g, '\n')
     .trim();
 }
 
+/**
+ * Model responses that write tool invocations as literal XML/DSML text must
+ * never reach the chat. When a direct payload (panel/image) already exists,
+ * the lead is cosmetic and pure markup is dropped so the caller uses its
+ * deterministic fallback lead. Without a payload, pure markup becomes a
+ * neutral fallback instead of a silent failure.
+ */
+const TOOL_MARKUP_FALLBACK_TEXT = '这个问题我暂时答不上来，你换个说法，或者让我查点具体数据试试？';
+
+function sanitizeToolReplyText(text: string): string {
+  const raw = String(text || '');
+  if (!looksLikeToolCallMarkup(raw)) return raw;
+  return stripToolCallMarkup(raw);
+}
+
+function finalReplyText(text: string): string {
+  const raw = String(text || '');
+  if (!looksLikeToolCallMarkup(raw)) return raw;
+  return stripToolCallMarkup(raw) || TOOL_MARKUP_FALLBACK_TEXT;
+}
+
 export async function runToolLoop(
-  completeChatFn: (db: any, options: any) => Promise<{ text: string; usage: any }>,
+  completeChatFn: (db: any, options: any) => Promise<{
+    text: string;
+    usage: any;
+    meta?: LlmCompletionMeta;
+    raw?: unknown;
+  }>,
   options: ToolLoopOptions
 ): Promise<ToolLoopResult> {
   const {
     db, messages, tools, userId, groupId,
     sendMessage, event, selfQq,
     maxIterations = 5, temperature, maxTokens, model, label,
-    requiredTool
+    requiredTool, evidenceRequirement, deliverDirectContent = false,
+    continueAfterDirectPayload = false, deduplicateToolCalls = false,
+    structuredToolResults = false
   } = options;
+  const executeToolCallFn = options.executeToolCallFn || executeToolCall;
+  const executeTracedToolCall = async (toolCall: any, toolContext: any) => {
+    const startedAt = Date.now();
+    const toolName = String(toolCall?.function?.name || 'unknown');
+    let traceArguments = toolCall?.function?.arguments || {};
+    try { traceArguments = JSON.parse(String(traceArguments)); } catch { /* redactor handles raw text */ }
+    traceEvent('TOOL', 'tool_call_started', {
+      status: 'running',
+      toolCallId: toolCall?.id,
+      toolName,
+      arguments: traceArguments,
+    });
+    try {
+      const result = await executeToolCallFn(toolCall, toolContext);
+      traceEvent('TOOL', 'tool_call_completed', {
+        status: result?.ok ? 'ok' : 'error',
+        durationMs: Date.now() - startedAt,
+        toolCallId: toolCall?.id,
+        toolName,
+        ok: Boolean(result?.ok),
+        error: result?.error || '',
+        contentLength: String(result?.content || '').length,
+        imageCount: result?.images?.length || 0,
+      });
+      return result;
+    } catch (error) {
+      traceEvent('TOOL', 'tool_call_failed', {
+        status: 'error',
+        durationMs: Date.now() - startedAt,
+        toolCallId: toolCall?.id,
+        toolName,
+        error: error?.message || String(error),
+      });
+      throw error;
+    }
+  };
+
+  // Shared user-turn budget. The recommendation hard guard in bot.ts may run a
+  // second runToolLoop after the first; each loop reports the turn total and
+  // the caller feeds it back through toolCallsExecutedBeforeLoop.
+  const parsedPriorCalls = Number(options.toolCallsExecutedBeforeLoop || 0);
+  const toolCallsExecutedBeforeLoop = Number.isFinite(parsedPriorCalls)
+    ? Math.max(0, Math.min(AGENT_MAX_TOOL_CALLS_PER_TURN, Math.floor(parsedPriorCalls)))
+    : 0;
+  const turnToolCallsMade = (): number =>
+    Math.min(AGENT_MAX_TOOL_CALLS_PER_TURN, toolCallsExecutedBeforeLoop + toolCallsMade);
 
   let currentMessages = [...messages];
-  let totalUsage = { total_tokens: 0, prompt_tokens: 0, completion_tokens: 0 };
+  let totalUsage: any = { total_tokens: 0, prompt_tokens: 0, completion_tokens: 0 };
   let toolCallsMade = 0;
   let iterations = 0;
+  let recommendToolCalled = false;
+  let lastToolFailed = false;
+  let toolCallsSkippedByCap = 0;
+  let hardCapReached = false;
+  let evidenceRequirementSatisfied = false;
   const collectedImages: string[] = [];
   const collectedDirectContent: string[] = [];
+  const successfulToolCallSignatures = new Set<string>();
+
+  const mergeEvidenceFallback = async (): Promise<ToolLoopResult> => {
+    const fallback = await runToolLoop(completeChatFn, {
+      ...options,
+      messages: currentMessages,
+      requiredTool: evidenceRequirement,
+      evidenceRequirement,
+      deliverDirectContent: deliverDirectContent || evidenceRequirement?.args?.capability === 'recommend',
+      toolCallsExecutedBeforeLoop: turnToolCallsMade(),
+    });
+    const combinedImages = [...collectedImages];
+    for (const image of fallback.images || []) {
+      if (!combinedImages.includes(image)) combinedImages.push(image);
+    }
+    const combinedDirect = [...collectedDirectContent];
+    if (fallback.directContent && !combinedDirect.includes(fallback.directContent)) {
+      combinedDirect.push(fallback.directContent);
+    }
+    return {
+      ...fallback,
+      usage: mergeLlmUsage(totalUsage, fallback.usage),
+      toolCallsMade: toolCallsMade + fallback.toolCallsMade,
+      iterations: iterations + fallback.iterations,
+      recommendToolCalled: recommendToolCalled || fallback.recommendToolCalled,
+      images: combinedImages,
+      directContent: combinedDirect.filter(Boolean).join('\n\n'),
+      toolCallsSkippedByCap: toolCallsSkippedByCap + (fallback.toolCallsSkippedByCap || 0),
+      hardCapReached: hardCapReached || Boolean(fallback.hardCapReached),
+      toolCallsMadeThisTurn: fallback.toolCallsMadeThisTurn ?? turnToolCallsMade(),
+      evidenceRequirementSatisfied: Boolean(fallback.evidenceRequirementSatisfied),
+      evidenceFallbackExecuted: true,
+    };
+  };
+
+  const toolCallSignature = (toolCall: LlmToolCall): string => {
+    const canonical = normalizeAgentToolCall(toolCall);
+    let args: unknown = canonical.function.arguments || '{}';
+    try {
+      const parsed = JSON.parse(String(args));
+      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+        args = Object.fromEntries(Object.entries(parsed).sort(([left], [right]) => left.localeCompare(right)));
+      } else {
+        args = parsed;
+      }
+    } catch { /* raw arguments remain part of the signature */ }
+    return `${canonical.function.name}:${JSON.stringify(args)}`;
+  };
+  const syntheticModelToolError = (toolCall: LlmToolCall, content: string, error: string): string =>
+    structuredToolResults
+      ? buildV2ModelToolResult(toolCall, {
+          toolCallId: toolCall.id,
+          ok: false,
+          content,
+          error,
+        }, {
+          safeContent: content,
+          imageCount: 0,
+          directContentAttached: false,
+          nextStepHint: '该调用没有产生新证据。请使用已有证据、修正参数、改用其他工具，或在无法继续时明确说明。',
+        })
+      : content;
+  const turnId = options.turnId || `turn_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+  const reasoningRouter = options.reasoningRouter;
+  let reasoningTurn: ReasoningTurnState = emptyTurnState();
+  const reasoningRecords: ReasoningShadowRecord[] = [];
+  const wireEnabled = reasoningEnabledFor(db);
+  const wireForLevel = (level: ReasoningLevel) => thinkingParamsForLevel(level, wireEnabled);
+  const decideCall = (
+    callRole: LlmCallRole,
+    input: ReasoningInput,
+  ): ReasoningDecision => {
+    const decision = reasoningRouter
+      ? reasoningRouter.resolve(input, reasoningTurn)
+      : { level: 'off', source: 'rule', reasonCode: 'fast_default' } as const;
+    if (reasoningRouter) reasoningTurn = reasoningRouter.mergeTurn(reasoningTurn, decision);
+    return decision;
+  };
+  const recordCall = (
+    callRole: LlmCallRole,
+    input: ReasoningInput,
+    meta: LlmCompletionMeta | null,
+    decision: ReasoningDecision,
+  ): void => {
+    if (!reasoningRouter) return;
+    const record: ReasoningShadowRecord = {
+      turnId,
+      ts: Date.now(),
+      callRole,
+      decision,
+      input,
+      actual: meta,
+    };
+    reasoningRecords.push(record);
+    reasoningRouter.record(record);
+  };
 
   // ── Required tool: execute before LLM, LLM only writes lead ──
   if (requiredTool) {
+    // The required call is part of the SAME user-turn budget. When a previous
+    // loop already consumed the turn cap (recommendation hard guard case), the
+    // deterministic tool must NOT execute and must not ask the LLM for a
+    // fabricated answer.
+    if (turnToolCallsMade() >= AGENT_MAX_TOOL_CALLS_PER_TURN) {
+      console.warn(
+        `[agent] requiredTool "${requiredTool.toolName}" refused: user-turn tool budget exhausted ` +
+        `(${turnToolCallsMade()}/${AGENT_MAX_TOOL_CALLS_PER_TURN})`,
+      );
+      return {
+        text: '本轮工具调用已达上限，这次查询没有执行，请稍后再试。',
+        usage: totalUsage,
+        toolCallsMade: 0,
+        iterations: 0,
+        recommendToolCalled: false,
+        images: [],
+        directContent: '',
+        toolCallsSkippedByCap: 1,
+        hardCapReached: true,
+        toolCallsMadeThisTurn: turnToolCallsMade(),
+        evidenceRequirementSatisfied: false,
+      };
+    }
+
     iterations = 1;
     toolCallsMade = 1;
 
@@ -1455,11 +2649,112 @@ export async function runToolLoop(
       }
     };
 
-    const result = await executeToolCall(syntheticCall, {
+    const result = await executeTracedToolCall(syntheticCall, {
       db, userId, groupId, sendMessage, event, selfQq
     });
+    if (
+      result.ok &&
+      requiredTool.toolName === 'query_osu' &&
+      requiredTool.args.capability === 'recommend'
+    ) {
+      recommendToolCalled = true;
+    }
+
+    // Terminal deterministic reply (recommendation cooldown): deliver
+    // verbatim and never let the LLM lead or comment on it.
+    if (result.final) {
+      const terminalSafeContent = sanitizeToolResult(result.directContent || result.content);
+      const terminalSatisfied = toolResultSatisfiesEvidence(
+        evidenceRequirement,
+        syntheticCall,
+        result,
+        terminalSafeContent,
+      );
+      if (evidenceRequirement && !terminalSatisfied) {
+        return {
+          text: '[系统] 工具返回结果与本轮取证要求不匹配，无法生成有数据依据的回答。',
+          usage: totalUsage,
+          toolCallsMade: 1,
+          iterations: 1,
+          recommendToolCalled,
+          images: [],
+          directContent: '',
+          toolCallsSkippedByCap: 0,
+          hardCapReached: false,
+          toolCallsMadeThisTurn: turnToolCallsMade(),
+          evidenceRequirementSatisfied: false,
+        };
+      }
+      return {
+        text: '',
+        usage: totalUsage,
+        toolCallsMade: 1,
+        iterations: 1,
+        recommendToolCalled,
+        images: [],
+        directContent: sanitizeDirectDeliveryContent(result.directContent || result.content),
+        toolCallsSkippedByCap: 0,
+        hardCapReached: false,
+        toolCallsMadeThisTurn: turnToolCallsMade(),
+        evidenceRequirementSatisfied: terminalSatisfied,
+      };
+    }
+
+    // Deterministic routing owns failures: the LLM never gets a chance to
+    // improvise a recommendation (or any data) when the tool itself failed.
+    if (!result.ok) {
+      return {
+        text: String(result.content || '查询失败，请稍后再试。'),
+        usage: totalUsage,
+        toolCallsMade: 1,
+        iterations: 1,
+        recommendToolCalled,
+        images: [],
+        directContent: '',
+        toolCallsSkippedByCap: 0,
+        hardCapReached: false,
+        toolCallsMadeThisTurn: turnToolCallsMade(),
+        evidenceRequirementSatisfied: false,
+      };
+    }
 
     const safeContent = sanitizeToolResult(result.content);
+    if (evidenceRequirement && !isSafeToolResult(safeContent)) {
+      return {
+        text: '[系统] 查询结果未通过安全校验，本轮无法生成有数据依据的回答。',
+        usage: totalUsage,
+        toolCallsMade: 1,
+        iterations: 1,
+        recommendToolCalled,
+        images: [],
+        directContent: '',
+        toolCallsSkippedByCap: 0,
+        hardCapReached: false,
+        toolCallsMadeThisTurn: turnToolCallsMade(),
+        evidenceRequirementSatisfied: false,
+      };
+    }
+    evidenceRequirementSatisfied = toolResultSatisfiesEvidence(
+      evidenceRequirement,
+      syntheticCall,
+      result,
+      safeContent,
+    );
+    if (evidenceRequirement && !evidenceRequirementSatisfied) {
+      return {
+        text: '[系统] 工具返回结果与本轮取证要求不匹配，无法生成有数据依据的回答。',
+        usage: totalUsage,
+        toolCallsMade: 1,
+        iterations: 1,
+        recommendToolCalled,
+        images: [],
+        directContent: '',
+        toolCallsSkippedByCap: 0,
+        hardCapReached: false,
+        toolCallsMadeThisTurn: turnToolCallsMade(),
+        evidenceRequirementSatisfied: false,
+      };
+    }
     if (isSafeToolResult(safeContent)) {
       if (result.ok) {
         for (const image of result.images || []) {
@@ -1468,9 +2763,15 @@ export async function runToolLoop(
             collectedImages.push(imageRef);
           }
         }
-        const dc = sanitizeDirectDeliveryContent(result.directContent || '');
-        if (dc && isSafeToolResult(dc) && !collectedDirectContent.includes(dc)) {
-          collectedDirectContent.push(dc);
+        // Deterministic natural-language osu routes keep the payload as
+        // reference material for the LLM unless the caller opted into
+        // command-style delivery (recommend). Panels from named-bot calls are
+        // handled in the normal loop below, where the tool name is known.
+        if (deliverDirectContent) {
+          const dc = sanitizeDirectDeliveryContent(result.directContent || '');
+          if (dc && isSafeToolResult(dc) && !collectedDirectContent.includes(dc)) {
+            collectedDirectContent.push(dc);
+          }
         }
       }
 
@@ -1483,12 +2784,22 @@ export async function runToolLoop(
         content: null,
         tool_calls: [syntheticCall]
       });
+      let toolNote = '';
+      if (collectedDirectContent.length > 0) {
+        toolNote = '[交付说明：系统会在你的回复后原样附上完整结果。你可以根据上面的数据给出 pippi 的自然评价——说出你的真实看法，不用限制长度。但有一个硬规则：你引用的任何数字（PP、准确率、星数、combo）和 Mod 组合必须与上面工具返回的数据逐字一致，不准脑补、不准美化、不准四舍五入。]';
+      } else if (hasDirect) {
+        toolNote = deliverDirectContent
+          ? '[结果图片会由系统附上。请给出一句简短、自然的引导或短评，不要复述任何条目。]'
+          : '[结果图片会由系统附上。你可以自然点评这张图，但不要把工具返回的原始数据整段贴出来。]';
+      } else if (result.ok) {
+        toolNote = deliverDirectContent
+          ? ''
+          : '[数据仅供你参考：请把关键信息自然地融入回答，不要贴完整原始报表，也不要逐条复述条目；禁止用“查好了/看完了”之类的空话代替实际内容。结果图片（如有）会由系统附上。]';
+      }
       currentMessages.push({
         role: 'tool',
         tool_call_id: syntheticCall.id,
-        content: hasDirect
-          ? `${safeContent}\n\n[交付说明：系统会在你的回复后原样附上完整结果。你可以根据上面的数据给出 pippi 的自然评价——说出你的真实看法，不用限制长度。但有一个硬规则：你引用的任何数字（PP、准确率、星数、combo）和 Mod 组合必须与上面工具返回的数据逐字一致，不准脑补、不准美化、不准四舍五入。]`
-          : safeContent
+        content: toolNote ? `${safeContent}\n\n${toolNote}` : safeContent
       });
     } else {
       currentMessages.push({
@@ -1503,7 +2814,24 @@ export async function runToolLoop(
       });
     }
 
-    // LLM turn — tools disabled, only writes a short lead
+    const noDirectPayload = collectedImages.length === 0 && collectedDirectContent.length === 0;
+    const leadRole: LlmCallRole = noDirectPayload ? 'tool_synthesis' : 'decorative_lead';
+    // Keep complete source lines: do not cut numbers or fabricate a summary.
+    const sourceLines = isSafeToolResult(safeContent)
+      ? sanitizeDirectDeliveryContent(safeContent).split('\n').filter(line => line.trim() && line.length <= 400).slice(0, 6)
+      : [];
+    const synthesisFallback = noDirectPayload && sourceLines.length
+      ? `自动整理失败，以下为已查询到的数据摘录：\n${sourceLines.join('\n')}`
+      : (noDirectPayload ? '[系统] 已完成查询，但结果无法安全展示，请稍后重试。' : '');
+    const leadInput = reasoningInput(leadRole, {
+      requiredTool: true,
+      toolSelectionRequired: false,
+      toolCallsMade: 1,
+      iterations: 1,
+      maxIterations,
+      hasDirectPayload: !noDirectPayload,
+    });
+    const leadDecision = decideCall(leadRole, leadInput);
     let leadResponse;
     try {
       leadResponse = await completeChatFn(db, {
@@ -1511,40 +2839,105 @@ export async function runToolLoop(
         temperature,
         maxTokens,
         model,
-        label: label ? `${label} [required lead]` : undefined
+        ...wireForLevel(leadDecision.level),
+        label: label ? `${label} [required lead]` : undefined,
+        traceRole: leadRole,
+        tracePurpose: 'required_tool_lead',
       });
     } catch {
-      // Lead is cosmetic — return the direct payload without it
+      // Only a real direct payload makes the LLM text optional.
       return {
-        text: '',
+        text: synthesisFallback,
         usage: totalUsage,
         toolCallsMade,
         iterations,
+        recommendToolCalled,
         images: collectedImages,
-        directContent: collectedDirectContent.join('\n\n')
+        directContent: collectedDirectContent.join('\n\n'),
+        toolCallsSkippedByCap: 0,
+        hardCapReached: false,
+        toolCallsMadeThisTurn: turnToolCallsMade(),
+        evidenceRequirementSatisfied,
       };
     }
 
+    recordCall(leadRole, leadInput, leadResponse?.meta || null, leadDecision);
+
     if (leadResponse.usage) {
-      totalUsage.total_tokens += leadResponse.usage.total_tokens || 0;
-      totalUsage.prompt_tokens += leadResponse.usage.prompt_tokens || 0;
-      totalUsage.completion_tokens += leadResponse.usage.completion_tokens || 0;
+      totalUsage = mergeLlmUsage(totalUsage, leadResponse.usage);
+    }
+
+    let leadText = sanitizeToolReplyText(leadResponse.text);
+    if (!leadText && looksLikeToolCallMarkup(String(leadResponse.text || '')) && noDirectPayload) {
+      // The lead came back as pure tool-call markup and there is no direct
+      // payload to fall back on: retry once with an explicit corrective turn
+      // so the query result is not silently lost behind "查好了。"-style text.
+      currentMessages.push({
+        role: 'user',
+        content: '[系统] 你上一条只输出了工具调用标记，用户什么都没收到。请直接用自然语言给出简短评价或说明，禁止输出任何 XML/DSML/tool_calls/invoke/parameter 文本。',
+      });
+      try {
+        const retryResponse = await completeChatFn(db, {
+          messages: currentMessages,
+          temperature,
+          maxTokens,
+          model,
+          ...wireForLevel(leadDecision.level),
+          label: label ? `${label} [required lead retry]` : undefined,
+          traceRole: leadRole,
+          tracePurpose: 'required_tool_lead_retry',
+        });
+        recordCall(leadRole, leadInput, retryResponse?.meta || null, leadDecision);
+        if (retryResponse.usage) {
+          totalUsage = mergeLlmUsage(totalUsage, retryResponse.usage);
+        }
+        leadText = sanitizeToolReplyText(retryResponse.text);
+      } catch {
+        leadText = '';
+      }
     }
 
     return {
-      text: leadResponse.text,
+      text: leadText || synthesisFallback,
       usage: totalUsage,
       toolCallsMade,
       iterations,
+      recommendToolCalled,
       images: collectedImages,
-      directContent: collectedDirectContent.join('\n\n')
+      directContent: collectedDirectContent.join('\n\n'),
+      toolCallsSkippedByCap: 0,
+      hardCapReached: false,
+      toolCallsMadeThisTurn: turnToolCallsMade(),
+      evidenceRequirementSatisfied,
     };
   }
 
   while (iterations < maxIterations) {
     iterations++;
     const hasDirectPayload = collectedDirectContent.length > 0 || collectedImages.length > 0;
+    const directPayloadIsTerminal = hasDirectPayload && !continueAfterDirectPayload &&
+      (!evidenceRequirement || evidenceRequirementSatisfied);
 
+    // A5 — previousToolFailed is batch/turn-level sticky: it means "at least
+    // one tool failed since the last planner decision", not "the single most
+    // recent tool failed". Consume the snapshot for this planner input, then
+    // reset; the executor loop below re-accumulates failures for the next
+    // planner round.
+    const previousToolFailed = lastToolFailed;
+    lastToolFailed = false;
+
+    const plannerInput = reasoningInput(directPayloadIsTerminal ? 'decorative_lead' : 'tool_planner', {
+      requiredTool: false,
+      toolSelectionRequired: !directPayloadIsTerminal && Array.isArray(tools) && tools.length > 0,
+      toolCallsMade,
+      iterations,
+      maxIterations,
+      hasDirectPayload,
+      previousToolFailed,
+    });
+    const plannerDecision = decideCall(plannerInput.callRole, plannerInput);
+    const plannerWire = wireForLevel(plannerDecision.level);
+    const thinkingOn = plannerWire.thinking?.type === 'enabled';
     let response;
     try {
       response = await completeChatFn(db, {
@@ -1552,12 +2945,18 @@ export async function runToolLoop(
         // A direct payload is already the requested product. The next model
         // turn is only a cosmetic lead, so tools must be disabled or some
         // providers will issue the same query_bot call again.
-        tools: hasDirectPayload ? undefined : tools,
-        tool_choice: hasDirectPayload ? undefined : 'auto',
+        tools: directPayloadIsTerminal ? undefined : tools,
+        // Contract A: with tools present, auto is already the default, so
+        // omit tool_choice on thinking calls; keep explicit auto on fast calls.
+        tool_choice: directPayloadIsTerminal || thinkingOn ? undefined : 'auto',
+        ...plannerWire,
         temperature,
         maxTokens,
         model,
-        label: label ? `${label} [工具循环 ${iterations}]` : undefined
+        label: label ? `${label} [工具循环 ${iterations}]` : undefined,
+        traceRole: plannerInput.callRole,
+        tracePurpose: directPayloadIsTerminal ? 'tool_result_lead' : 'tool_planning',
+        retainToolsOnEmpty: Boolean(evidenceRequirement && !evidenceRequirementSatisfied),
       });
     } catch (error) {
       // Once a trusted direct payload has been collected, the follow-up LLM is
@@ -1566,23 +2965,31 @@ export async function runToolLoop(
       // deterministic fallback. Initial calls and ordinary tools still fail
       // normally so errors are not hidden.
       if (collectedDirectContent.length > 0 || collectedImages.length > 0) {
+        if (evidenceRequirement && !evidenceRequirementSatisfied) {
+          return mergeEvidenceFallback();
+        }
         return {
           text: '',
           usage: totalUsage,
           toolCallsMade,
           iterations,
+          recommendToolCalled,
           images: collectedImages,
-          directContent: collectedDirectContent.join('\n\n')
+          directContent: collectedDirectContent.join('\n\n'),
+          toolCallsSkippedByCap,
+          hardCapReached,
+          toolCallsMadeThisTurn: turnToolCallsMade(),
+          evidenceRequirementSatisfied,
         };
       }
       throw error;
     }
 
+    recordCall(plannerInput.callRole, plannerInput, response?.meta || null, plannerDecision);
+
     // Merge usage
     if (response.usage) {
-      totalUsage.total_tokens += response.usage.total_tokens || 0;
-      totalUsage.prompt_tokens += response.usage.prompt_tokens || 0;
-      totalUsage.completion_tokens += response.usage.completion_tokens || 0;
+      totalUsage = mergeLlmUsage(totalUsage, response.usage);
     }
 
     // Check for tool calls in the response
@@ -1593,52 +3000,191 @@ export async function runToolLoop(
     // Tools were intentionally absent on this cosmetic lead turn. Even if a
     // non-conforming provider still emits tool_calls, never execute them after
     // the complete direct payload has already been obtained.
-    if (hasDirectPayload) {
+    if (directPayloadIsTerminal) {
       return {
-        text: response.text,
+        text: sanitizeToolReplyText(response.text),
         usage: totalUsage,
         toolCallsMade,
         iterations,
+        recommendToolCalled,
         images: collectedImages,
-        directContent: collectedDirectContent.join('\n\n')
+        directContent: collectedDirectContent.join('\n\n'),
+        toolCallsSkippedByCap,
+        hardCapReached,
+        toolCallsMadeThisTurn: turnToolCallsMade(),
+        evidenceRequirementSatisfied,
       };
     }
 
-    // If no tool calls, we have the final answer
-    if (!message?.tool_calls?.length) {
+    // Structured tool calls are the primary protocol. Some providers also (or
+    // instead) emit the invocation as XML/DSML text in `content`; parse that
+    // markup so it goes through the same validated executor instead of being
+    // returned to the user verbatim.
+    let toolCalls: LlmToolCall[] = message?.tool_calls || [];
+    if (!toolCalls.length && looksLikeToolCallMarkup(response.text || '')) {
+      const parsed = parseToolCallMarkup(response.text || '');
+      if (parsed.length) {
+        // Only tool names exposed in this round's schema may be routed from
+        // text markup. Unknown names are dropped: a model cannot summon a tool
+        // that was never offered in this loop.
+        const exposedNames = new Set(
+          (tools || []).map((tool: LlmTool) => tool?.function?.name).filter((name: unknown): name is string => Boolean(name)),
+        );
+        const allowed = parsed.filter((call) => exposedNames.has(call.name));
+        toolCalls = allowed.map((call, index) => ({
+          id: `dsml_${Date.now()}_${index}_${Math.random().toString(36).slice(2, 7)}`,
+          type: 'function',
+          function: {
+            name: call.name,
+            arguments: JSON.stringify(call.args || {})
+          }
+        }));
+      }
+    }
+
+    if (structuredToolResults) {
+      traceEvent('TOOL', 'agent_planner_decision', {
+        status: toolCalls.length > 0 ? 'running' : 'ok',
+        iteration: iterations,
+        decision: toolCalls.length > 0 ? 'call_tools' : 'finish',
+        toolNames: toolCalls.map((call) => call.function?.name || 'unknown'),
+        evidenceMessagesAvailable: currentMessages.filter((item) => item.role === 'tool').length,
+      });
+    }
+
+    // If no tool calls (structured or parsed), we have the final answer.
+    if (!toolCalls.length) {
+      if (evidenceRequirement && !evidenceRequirementSatisfied) {
+        return mergeEvidenceFallback();
+      }
       return {
-        text: response.text,
+        text: finalReplyText(response.text),
         usage: totalUsage,
         toolCallsMade,
         iterations,
+        recommendToolCalled,
         images: collectedImages,
-        directContent: collectedDirectContent.join('\n\n')
+        directContent: collectedDirectContent.join('\n\n'),
+        toolCallsSkippedByCap,
+        hardCapReached,
+        toolCallsMadeThisTurn: turnToolCallsMade(),
+        evidenceRequirementSatisfied,
       };
     }
-
-    // Process tool calls
-    const toolCalls: LlmToolCall[] = message.tool_calls;
 
     // Add assistant message with tool calls
     currentMessages.push({
       role: 'assistant',
-      content: message.content || '',
-      tool_calls: toolCalls
+      content: message?.content || '',
+      tool_calls: toolCalls,
+      // DeepSeek thinking contract: preserve reasoning_content on the
+      // assistant tool_calls message so the next tool-result round carries it.
+      ...(typeof message?.reasoning_content === 'string' && message.reasoning_content
+        ? { reasoning_content: message.reasoning_content }
+        : {})
     });
 
-    // Execute each tool call
-    for (const tc of toolCalls) {
-      const result = await executeToolCall(tc, {
-        db, userId, groupId, sendMessage, event, selfQq
-      });
+    // A2 — hard tool-call budget. Never trust maxIterations to bound the work:
+    // a single response may contain an arbitrary number of tool_calls. The
+    // executable allowance for this batch is min(per-response cap, remaining
+    // SHARED turn budget); everything beyond it gets a synthetic "not executed"
+    // result so the assistant/tool message alternation stays balanced.
+    const turnRemaining = Math.max(0, AGENT_MAX_TOOL_CALLS_PER_TURN - turnToolCallsMade());
+    const executableThisResponse = Math.min(AGENT_MAX_TOOL_CALLS_PER_RESPONSE, turnRemaining);
+    const overflowThisResponse = Math.max(0, toolCalls.length - executableThisResponse);
+    if (overflowThisResponse > 0) {
+      toolCallsSkippedByCap += overflowThisResponse;
+      hardCapReached = true;
+      console.warn(
+        `[agent] tool-call hard cap reached: ${toolCalls.length} call(s) in this response, ` +
+        `executed ${turnToolCallsMade()}/${AGENT_MAX_TOOL_CALLS_PER_TURN} this user turn so far, ` +
+        `executing ${executableThisResponse}, skipping ${overflowThisResponse} ` +
+        `(per-response ${AGENT_MAX_TOOL_CALLS_PER_RESPONSE}, per-turn ${AGENT_MAX_TOOL_CALLS_PER_TURN})`,
+      );
+    }
 
-      // Sanitize and validate result
-      const safeContent = sanitizeToolResult(result.content);
-      if (!isSafeToolResult(safeContent)) {
+    // Execute each tool call
+    for (let callIndex = 0; callIndex < toolCalls.length; callIndex++) {
+      const tc = toolCalls[callIndex];
+      if (callIndex >= executableThisResponse) {
+        const skippedByResponse = callIndex >= AGENT_MAX_TOOL_CALLS_PER_RESPONSE;
+        const content = `[系统] 达到工具调用上限（${skippedByResponse ? '单轮响应' : '本轮总计'}），此调用未执行。`;
         currentMessages.push({
           role: 'tool',
           tool_call_id: tc.id,
-          content: '[工具结果被安全过滤器拦截]'
+          content: syntheticModelToolError(tc, content, 'TOOL_CALL_LIMIT_REACHED')
+        });
+        continue;
+      }
+
+      let callDeliversDirect = deliverDirectContent;
+      if (!callDeliversDirect) {
+        callDeliversDirect = osuCapabilityForToolCall(tc) === 'recommend';
+      }
+
+      const callSignature = toolCallSignature(tc);
+      if (deduplicateToolCalls && successfulToolCallSignatures.has(callSignature)) {
+        traceEvent('TOOL', 'tool_call_duplicate_skipped', {
+          status: 'skipped',
+          toolCallId: tc.id,
+          toolName: tc.function?.name || '',
+        });
+        const content = '[系统] 完全相同的工具调用本轮已经成功执行；本次未重复执行。请使用已有结果继续判断，或修改参数后再调用。';
+        currentMessages.push({
+          role: 'tool',
+          tool_call_id: tc.id,
+          content: syntheticModelToolError(tc, content, 'DUPLICATE_TOOL_CALL_SKIPPED'),
+        });
+        continue;
+      }
+
+      const result = await executeTracedToolCall(tc, {
+        db, userId, groupId, sendMessage, event, selfQq
+      });
+      // Accounting is tied to the executor boundary, not to whether its
+      // returned content is safe enough to expose to the LLM. Reaching this
+      // line means one tool call actually executed and settled with a result.
+      toolCallsMade++;
+      lastToolFailed = lastToolFailed || !result.ok;
+      if (result.ok && deduplicateToolCalls) successfulToolCallSignatures.add(callSignature);
+      if (result.ok && !recommendToolCalled) {
+        recommendToolCalled = osuCapabilityForToolCall(tc) === 'recommend';
+      }
+
+      const safeContent = sanitizeToolResult(result.content);
+      if (toolResultSatisfiesEvidence(evidenceRequirement, tc, result, safeContent)) {
+        evidenceRequirementSatisfied = true;
+      }
+
+      // Terminal deterministic reply: stop the loop immediately and deliver
+      // verbatim; the LLM never sees the result and cannot add claims.
+      if (result.final) {
+        if (evidenceRequirement && !evidenceRequirementSatisfied) {
+          return mergeEvidenceFallback();
+        }
+        const finalDirect = sanitizeDirectDeliveryContent(result.directContent || result.content);
+        return {
+          text: '',
+          usage: totalUsage,
+          toolCallsMade,
+          iterations,
+          recommendToolCalled,
+          images: collectedImages,
+          directContent: [...collectedDirectContent, finalDirect].filter(Boolean).join('\n\n'),
+          toolCallsSkippedByCap,
+          hardCapReached,
+          toolCallsMadeThisTurn: turnToolCallsMade(),
+          evidenceRequirementSatisfied,
+        };
+      }
+
+      // Sanitize and validate result
+      if (!isSafeToolResult(safeContent)) {
+        const content = '[工具结果被安全过滤器拦截]';
+        currentMessages.push({
+          role: 'tool',
+          tool_call_id: tc.id,
+          content: syntheticModelToolError(tc, content, 'TOOL_RESULT_SAFETY_FILTERED')
         });
         continue;
       }
@@ -1652,11 +3198,20 @@ export async function runToolLoop(
           }
         }
 
-        const directContent = sanitizeDirectDeliveryContent(result.directContent || '');
-        if (directContent && isSafeToolResult(directContent)) {
-          acceptedDirectContent = directContent;
-          if (!collectedDirectContent.includes(directContent)) {
-            collectedDirectContent.push(directContent);
+        // Named-bot (query_bot) results tagged as direct-delivery products are
+        // panels from an explicitly invoked bot and must be delivered verbatim
+        // even in natural chat: the LLM only writes a short lead and is never
+        // asked to reconstruct the panel (that caused the truncated "#2 Sid..."
+        // regression). Deterministic query_osu natural routes stay reference-
+        // only unless callDeliversDirect opts into command-style delivery.
+        const isNamedBotTool = String(tc.function?.name || '') === 'query_bot';
+        if (callDeliversDirect || (isNamedBotTool && result.directContent)) {
+          const directContent = sanitizeDirectDeliveryContent(result.directContent || '');
+          if (directContent && isSafeToolResult(directContent)) {
+            acceptedDirectContent = directContent;
+            if (!collectedDirectContent.includes(directContent)) {
+              collectedDirectContent.push(directContent);
+            }
           }
         }
       }
@@ -1664,36 +3219,98 @@ export async function runToolLoop(
       const hasDirectDelivery = Boolean(
         result.ok && ((result.images?.length || 0) > 0 || acceptedDirectContent)
       );
+      let toolNote = '';
+      if (acceptedDirectContent) {
+        toolNote = '[交付说明：系统会在你的回复后原样附上完整结果。你可以根据上面的数据给出 pippi 的自然评价——说出你的真实看法，不用限制长度。但有一个硬规则：你引用的任何数字（PP、准确率、星数、combo）和 Mod 组合必须与上面工具返回的数据逐字一致，不准脑补、不准美化、不准四舍五入。]';
+      } else if (hasDirectDelivery) {
+        toolNote = deliverDirectContent
+          ? '[结果图片会由系统附上。请给出一句简短、自然的引导或短评，不要复述任何条目。]'
+          : continueAfterDirectPayload
+            ? '[结果图片会由系统附上。先判断任务是否还需要其他证据：需要就继续调用工具，足够了再自然回答；不要整段复述原始数据。]'
+            : '[结果图片会由系统附上。你可以自然点评这张图，但不要把工具返回的原始数据整段贴出来。]';
+      } else if (result.ok) {
+        toolNote = deliverDirectContent
+          ? ''
+          : '[数据仅供你参考：请把关键信息自然地融入回答，不要贴完整原始报表，也不要逐条复述条目；禁止用“查好了/看完了”之类的空话代替实际内容。结果图片（如有）会由系统附上。]';
+      }
+      const modelToolContent = structuredToolResults
+        ? buildV2ModelToolResult(tc, result, {
+            safeContent,
+            imageCount: result.ok ? (result.images?.length || 0) : 0,
+            directContentAttached: Boolean(acceptedDirectContent),
+            nextStepHint: toolNote || undefined,
+          })
+        : toolNote ? `${safeContent}\n\n${toolNote}` : safeContent;
       currentMessages.push({
         role: 'tool',
         tool_call_id: tc.id,
-        content: hasDirectDelivery
-          ? `${safeContent}\n\n[交付说明：系统会在你的回复后原样附上完整结果。你可以根据上面的数据给出 pippi 的自然评价——说出你的真实看法，不用限制长度。但有一个硬规则：你引用的任何数字（PP、准确率、星数、combo）和 Mod 组合必须与上面工具返回的数据逐字一致，不准脑补、不准美化、不准四舍五入。]`
-          : safeContent
+        content: modelToolContent
       });
-
-      toolCallsMade++;
+      if (structuredToolResults) {
+        traceEvent('TOOL', 'tool_evidence_returned_to_model', {
+          status: result.ok ? 'ok' : 'error',
+          iteration: iterations,
+          toolCallId: tc.id,
+          toolName: tc.function?.name || '',
+          capability: osuCapabilityForToolCall(tc) || null,
+          evidenceLength: safeContent.length,
+          imageCount: result.ok ? (result.images?.length || 0) : 0,
+          directContentAttached: Boolean(acceptedDirectContent),
+          modelWillDecideAgain: true,
+        });
+      }
     }
+
+    // A2 — once either hard cap has been tripped, stop accepting model
+    // decisions. All outstanding calls in this batch already received a
+    // synthetic "not executed" result, so the message history stays balanced
+    // and we fall straight through to final synthesis.
+    if (hardCapReached) break;
+  }
+
+  if (evidenceRequirement && !evidenceRequirementSatisfied) {
+    return mergeEvidenceFallback();
   }
 
   // Max iterations reached — ask LLM for final answer
+  let finalPrompt: string;
+  if (collectedDirectContent.length > 0) {
+    finalPrompt = '请给出一句简短、自然的引导或短评。完整工具结果会由系统原样附上，不要复述任何条目，也不要再调用工具。';
+  } else if (collectedImages.length > 0) {
+    finalPrompt = deliverDirectContent
+      ? '结果图片会由系统附上。请给出一句简短、自然的引导或短评，不要复述任何条目，也不要再调用工具。'
+      : '结果图片会由系统附上。请基于图片内容给出一句自然点评，不要把工具返回的原始数据整段贴出来，也不要再调用工具。';
+  } else {
+    finalPrompt = '请基于以上工具调用结果给出 pippi 的自然评价，不要再调用工具。';
+  }
   currentMessages.push({
     role: 'user',
-    content: collectedDirectContent.length > 0 || collectedImages.length > 0
-      ? '请给出一句简短、自然的引导或短评。完整工具结果会由系统原样附上，不要复述任何条目，也不要再调用工具。'
-      : '请基于以上工具调用结果给出 pippi 的自然评价，不要再调用工具。'
+    content: finalPrompt
   });
 
+  const synthesisInput = reasoningInput('tool_synthesis', {
+    requiredTool: false,
+    toolSelectionRequired: false,
+    toolCallsMade,
+    iterations,
+    maxIterations,
+    hasDirectPayload: collectedDirectContent.length > 0 || collectedImages.length > 0,
+    previousToolFailed: lastToolFailed,
+  });
+  const synthesisDecision = decideCall('tool_synthesis', synthesisInput);
   let finalResponse;
   try {
     finalResponse = await completeChatFn(db, {
       messages: currentMessages,
       // Deliberately omit tools after the cap. A prompt alone cannot guarantee
       // that a tool-capable model will stop emitting calls.
+      ...wireForLevel(synthesisDecision.level),
       temperature,
       maxTokens,
       model,
-      label: label ? `${label} [最终回答]` : undefined
+      label: label ? `${label} [最终回答]` : undefined,
+      traceRole: 'tool_synthesis',
+      tracePurpose: 'tool_result_synthesis',
     });
   } catch (error) {
     if (collectedDirectContent.length > 0 || collectedImages.length > 0) {
@@ -1702,25 +3319,35 @@ export async function runToolLoop(
         usage: totalUsage,
         toolCallsMade,
         iterations,
+        recommendToolCalled,
         images: collectedImages,
-        directContent: collectedDirectContent.join('\n\n')
+        directContent: collectedDirectContent.join('\n\n'),
+        toolCallsSkippedByCap,
+        hardCapReached,
+        toolCallsMadeThisTurn: turnToolCallsMade(),
+        evidenceRequirementSatisfied,
       };
     }
     throw error;
   }
 
+  recordCall('tool_synthesis', synthesisInput, finalResponse?.meta || null, synthesisDecision);
+
   if (finalResponse.usage) {
-    totalUsage.total_tokens += finalResponse.usage.total_tokens || 0;
-    totalUsage.prompt_tokens += finalResponse.usage.prompt_tokens || 0;
-    totalUsage.completion_tokens += finalResponse.usage.completion_tokens || 0;
+    totalUsage = mergeLlmUsage(totalUsage, finalResponse.usage);
   }
 
   return {
-    text: finalResponse.text,
+    text: finalReplyText(finalResponse.text),
     usage: totalUsage,
     toolCallsMade,
     iterations,
+    recommendToolCalled,
     images: collectedImages,
-    directContent: collectedDirectContent.join('\n\n')
+    directContent: collectedDirectContent.join('\n\n'),
+    toolCallsSkippedByCap,
+    hardCapReached,
+    toolCallsMadeThisTurn: turnToolCallsMade(),
+    evidenceRequirementSatisfied,
   };
 }

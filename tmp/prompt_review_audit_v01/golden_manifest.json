@@ -1,0 +1,181 @@
+{
+  "schema_version": "prompt_review_golden_manifest_v1",
+  "purpose": "candidate golden behavior corpus for future A/B slimdown; no expected prose rewritten",
+  "case_count": 15,
+  "category_coverage": [
+    "KB_hit",
+    "KB_miss",
+    "ambiguous_request",
+    "genuinely_sensitive_boundary",
+    "group_admin",
+    "multi_turn",
+    "natural_language_tool_call",
+    "normal_chat",
+    "normal_content_that_review_may_false_positive",
+    "osu_analysis_with_review",
+    "osu_lookup",
+    "owner_command",
+    "persona-heavy_chat",
+    "slash_command",
+    "tool_failure"
+  ],
+  "cases": [
+    {
+      "case_id": "normal_chat_real",
+      "source": {
+        "kind": "db.messages",
+        "id": "REDACTED_f7611fb43c"
+      },
+      "category": "normal_chat",
+      "expected_invariant": "reply is pippi persona, no tool call, no self-negation",
+      "sensitive_data_redacted": true
+    },
+    {
+      "case_id": "osu_lookup_real",
+      "source": {
+        "kind": "db.messages",
+        "id": "REDACTED_8b1e87d1ea"
+      },
+      "category": "osu_lookup",
+      "expected_invariant": "osu data question must route to query_osu or deterministic quick command, no invented numbers",
+      "sensitive_data_redacted": true
+    },
+    {
+      "case_id": "tool_failure_real",
+      "source": {
+        "kind": "db.toolCallLogs",
+        "id": "REDACTED_7c95018a41",
+        "capability": "recent"
+      },
+      "category": "tool_failure",
+      "expected_invariant": "failure must be surfaced honestly; no fabricated data",
+      "sensitive_data_redacted": true
+    },
+    {
+      "case_id": "natural_language_tool_call_real",
+      "source": {
+        "kind": "db.toolCallLogs",
+        "id": "REDACTED_73fa16e537",
+        "capability": "bp_type"
+      },
+      "category": "natural_language_tool_call",
+      "expected_invariant": "natural-language data request executes query_osu before reply; reply uses returned facts",
+      "sensitive_data_redacted": true
+    },
+    {
+      "case_id": "slash_command_real",
+      "source": {
+        "kind": "db.commandLogs",
+        "id": "REDACTED_1a4dee025c",
+        "command": "/group",
+        "status": "ok"
+      },
+      "category": "slash_command",
+      "expected_invariant": "slash command is deterministic; no normal-chat prompt path",
+      "sensitive_data_redacted": true
+    },
+    {
+      "case_id": "owner_command_real",
+      "source": {
+        "kind": "db.commandLogs",
+        "id": "REDACTED_335416f12b",
+        "command": "quick:info",
+        "status": null
+      },
+      "category": "owner_command",
+      "expected_invariant": "owner command permission enforced by deterministic role gate",
+      "sensitive_data_redacted": true
+    },
+    {
+      "case_id": "osu_analysis_review_real",
+      "source": {
+        "kind": "db.osuAnalyses",
+        "createdAt": "2026-08-14T07:28:11.730Z",
+        "review": true
+      },
+      "category": "osu_analysis_with_review",
+      "expected_invariant": "full analysis passes mechanical gates then independent fact review; hard REJECT downgrades deterministically",
+      "sensitive_data_redacted": true
+    },
+    {
+      "case_id": "kb_hit_synthetic",
+      "source": {
+        "kind": "synthetic",
+        "source": "tmp/prompt_review_audit_v01/reconstruct_prompts.mjs"
+      },
+      "category": "KB_hit",
+      "expected_invariant": "KB injection respects 1500-char quota and source fences",
+      "sensitive_data_redacted": true
+    },
+    {
+      "case_id": "kb_miss_synthetic",
+      "source": {
+        "kind": "synthetic",
+        "source": "tmp/prompt_review_audit_v01/reconstruct_prompts.mjs"
+      },
+      "category": "KB_miss",
+      "expected_invariant": "KB disabled/route none -> no KB block; byte-identical legacy prompt",
+      "sensitive_data_redacted": true
+    },
+    {
+      "case_id": "multi_turn_synthetic",
+      "source": {
+        "kind": "synthetic",
+        "source": "reconstruction history"
+      },
+      "category": "multi_turn",
+      "expected_invariant": "history is timestamped and bounded; assistant/user roles preserved",
+      "sensitive_data_redacted": true
+    },
+    {
+      "case_id": "ambiguous_request_synthetic",
+      "source": {
+        "kind": "synthetic",
+        "source": "code path: quick-router vs natural chat"
+      },
+      "category": "ambiguous_request",
+      "expected_invariant": "ambiguous 查/搜 must not eat osu data intent or named-bot requests",
+      "sensitive_data_redacted": true
+    },
+    {
+      "case_id": "review_false_positive_synthetic",
+      "source": {
+        "kind": "synthetic",
+        "source": "server/bot/reply.ts isWeirdReply"
+      },
+      "category": "normal_content_that_review_may_false_positive",
+      "expected_invariant": "normal long reply >180 chars may trigger rewrite guard; expected invariant is no semantic change",
+      "sensitive_data_redacted": true
+    },
+    {
+      "case_id": "sensitive_boundary_synthetic",
+      "source": {
+        "kind": "synthetic",
+        "source": "reconstruction case F_serious"
+      },
+      "category": "genuinely_sensitive_boundary",
+      "expected_invariant": "serious scene must be handled seriously; safety controls stay",
+      "sensitive_data_redacted": true
+    },
+    {
+      "case_id": "persona_heavy_chat_synthetic",
+      "source": {
+        "kind": "synthetic",
+        "source": "reconstruction case A/G"
+      },
+      "category": "persona-heavy_chat",
+      "expected_invariant": "persona stays pippi without tool misuse or fabricated data",
+      "sensitive_data_redacted": true
+    },
+    {
+      "case_id": "group_admin_command_synthetic",
+      "source": {
+        "kind": "synthetic",
+        "source": "server/bot/commands/types.ts canViewCommand + commandLogs admin samples"
+      },
+      "category": "group_admin",
+      "expected_invariant": "group-admin command visibility determined by descriptor permission, not prompt text",
+      "sensitive_data_redacted": true
+    }
+  ]
+}

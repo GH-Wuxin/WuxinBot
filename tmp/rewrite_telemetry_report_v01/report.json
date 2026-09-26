@@ -1,0 +1,23 @@
+{
+  "status": "NO_DATA",
+  "generated_at": "2026-08-17T06:10:36.139Z",
+  "window": {
+    "since_label": "all time",
+    "from": null,
+    "to": null
+  },
+  "event_count": 0,
+  "data_quality": {
+    "total_records_seen": 0,
+    "valid_records": 0,
+    "malformed_records": 0,
+    "unknown_result_records": 0,
+    "missing_created_at": 0,
+    "missing_usage": 0,
+    "invalid_negative_tokens": 0,
+    "invalid_negative_latency": 0,
+    "invalid_char_counts": 0
+  },
+  "analysis": null,
+  "day_trend": []
+}

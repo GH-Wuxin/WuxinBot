@@ -1,0 +1,26 @@
+{
+  "reply_gate_llm": {
+    "n": 647,
+    "p50": 1753,
+    "p90": 5909.399999999999,
+    "p95": 8877.699999999975,
+    "max": 17840
+  },
+  "command_deterministic": {
+    "n": 418,
+    "p50": 8261.0,
+    "p90": 198903.00000000006,
+    "p95": 281998.2499999998,
+    "max": 677091
+  },
+  "tool_execution": {
+    "n": 130,
+    "p50": 1440.0,
+    "p90": 63503.4,
+    "p95": 70035.64999999998,
+    "max": 162773
+  },
+  "main_chat_llm": "LATENCY_DATA_UNAVAILABLE",
+  "analyze_generation_llm": "LATENCY_DATA_UNAVAILABLE",
+  "analyze_review_llm": "LATENCY_DATA_UNAVAILABLE"
+}

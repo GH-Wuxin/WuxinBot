@@ -1,0 +1,273 @@
+{
+  "audit": "QUICK_BRIDGE_QB03_POLICY_AUDIT_V01",
+  "generatedAt": "2026-08-16T05:33:51.073Z",
+  "branch": "fix/onebot-connection-lifecycle",
+  "head": "1658292",
+  "simpleWatchdogVerdicts": {
+    "5s": "UNSAFE - proven: successful Yumu p95 ~35s visible; a legitimate 5s+ silent-processing call would be killed",
+    "10s": "UNSAFE - same evidence; Kanon ok (n=4 max 5.5s) but Hydrant upstream 100s and LazyBot unbounded",
+    "15s": "UNSAFE - kills Yumu p50/p95 tail and any slow Hydrant upstream",
+    "30s": "UNSAFE - sits at Yumu observed p95 boundary (~35s); one valid success over threshold disproves a hard watchdog"
+  },
+  "ackOnlyVerdict": "UNSAFE today - bridged families never emit receipt-only ACKs; ACK-only traffic is not a defined progress state and cannot safely trigger failure",
+  "unrelatedFrameVerdict": "UNSAFE - unrelated frames carry no receipt/execution semantics",
+  "healthProbeVerdict": "CONDITIONALLY_SAFE as a pre-bridge preflight only; it cannot classify in-flight silence (probe success != command execution)",
+  "adaptiveTimeoutVerdict": "INSUFFICIENT_EVIDENCE - per-family/command n is too small to build distributions",
+  "retryReconnectVerdict": "UNSAFE for QB-03 - duplicates external work; Kanon dedup makes same-command retry silently useless (QB-02 already removed same-request duplicate bridges)",
+  "targetReceiptAckFeasibility": {
+    "kanon": "FEASIBLE - OneBot server has msgAction hook; add one synthetic action frame (e.g. get_status-like or custom action) with echo correlation after message parse",
+    "yumu": "FEASIBLE - Shiro Bot event handler can emit an action frame on receipt; requires target patch",
+    "hydrant": "FEASIBLE - Hydrant command pipeline can CallRawJObjectAsync a receipt action before execution",
+    "lazybot": "FEASIBLE - CommandListener can send a receipt via Bot.sendGroupMsg-like raw action; paused deployment lowers priority"
+  },
+  "targetExecutionProgressFeasibility": {
+    "kanon": "FEASIBLE with moderate effort (explicit executing frame around command Execute)",
+    "yumu": "FEASIBLE with moderate effort (service start hooks)",
+    "hydrant": "FEASIBLE (emit progress action before osu API await)",
+    "lazybot": "FEASIBLE but low priority while paused"
+  },
+  "falseNegativeRiskRanking": [
+    {
+      "rank": 1,
+      "scenario": "LazyBot upstream HTTP hang (no timeout) - indefinite legitimate silence",
+      "risk": "VERY_HIGH"
+    },
+    {
+      "rank": 2,
+      "scenario": "Hydrant osu API up to 100s + Puppeteer screenshot fallback",
+      "risk": "VERY_HIGH"
+    },
+    {
+      "rank": 3,
+      "scenario": "Yumu osu API retries + 20s render fallback; observed p95 ~35s visible",
+      "risk": "VERY_HIGH for <=30s watchdogs"
+    },
+    {
+      "rank": 4,
+      "scenario": "Kanon Flurl default 100s upstream (IAM/Kagami null-return paths can also be silent)",
+      "risk": "HIGH"
+    },
+    {
+      "rank": 5,
+      "scenario": "target event-loop stalls / high load delaying reply frames past a watchdog",
+      "risk": "HIGH"
+    },
+    {
+      "rank": 6,
+      "scenario": "legitimate duplicate drop (Kanon dedup / Yumu same-second filter / LazyBot in-flight dedup)",
+      "risk": "MEDIUM (false-negative per call, but drop is target-intended)"
+    }
+  ],
+  "policies": [
+    {
+      "id": "P1",
+      "name": "fixed no-frame timeout 5/10/15/20/30s",
+      "complexity": "LOW",
+      "protocolChange": false,
+      "wuxinOnly": true,
+      "falseNegativeRisk": "VERY HIGH (proven: yumu p95 ~35s; hydrant upstream 100s; lazybot unbounded)",
+      "falsePositiveRisk": "LOW",
+      "latencyBenefit": "HIGH when it fires",
+      "compatibilityRisk": "LOW",
+      "evidenceQuality": "STRONG_DISPROOF for short thresholds",
+      "classification": "UNSAFE for 5/10/15/20; 30s still kills yumu p95 tail -> UNSAFE",
+      "recommended": false
+    },
+    {
+      "id": "P2",
+      "name": "family-specific no-frame timeout",
+      "complexity": "LOW",
+      "protocolChange": false,
+      "wuxinOnly": true,
+      "falseNegativeRisk": "Kanon MEDIUM (n=4 max 5.5s but 100s upstream possible); Yumu HIGH; Hydrant HIGH; LazyBot INSUFFICIENT_EVIDENCE",
+      "falsePositiveRisk": "LOW",
+      "latencyBenefit": "HIGH",
+      "compatibilityRisk": "LOW",
+      "evidenceQuality": "PARTIAL",
+      "classification": "CONDITIONALLY_SAFE only if family thresholds proven; no family currently has enough evidence",
+      "recommended": false
+    },
+    {
+      "id": "P3",
+      "name": "command-specific no-frame timeout",
+      "complexity": "MEDIUM",
+      "protocolChange": false,
+      "wuxinOnly": true,
+      "falseNegativeRisk": "HIGH; per-command latency distributions not measured (recent vs bp vs pplus differ)",
+      "falsePositiveRisk": "LOW",
+      "latencyBenefit": "HIGH",
+      "compatibilityRisk": "LOW",
+      "evidenceQuality": "INSUFFICIENT",
+      "classification": "INSUFFICIENT_EVIDENCE",
+      "recommended": false
+    },
+    {
+      "id": "P4",
+      "name": "WS open but zero inbound frames for X seconds",
+      "complexity": "LOW",
+      "protocolChange": false,
+      "wuxinOnly": true,
+      "falseNegativeRisk": "SAME as P1/P2: legitimate long processing produces zero frames",
+      "falsePositiveRisk": "LOW",
+      "latencyBenefit": "HIGH",
+      "compatibilityRisk": "LOW",
+      "evidenceQuality": "STRONG_DISPROOF for short X",
+      "classification": "UNSAFE for 5/10/15/30 (evidence)",
+      "recommended": false
+    },
+    {
+      "id": "P5",
+      "name": "ACK-only for X seconds",
+      "complexity": "LOW",
+      "protocolChange": false,
+      "wuxinOnly": true,
+      "falseNegativeRisk": "HIGH: ACK-only cannot occur on bridged commands before completion, but a hung target sending only its normal action then slow backend is indistinguishable from receipt; and limiter can delay actions",
+      "falsePositiveRisk": "MEDIUM",
+      "latencyBenefit": "LOW-MEDIUM",
+      "compatibilityRisk": "LOW",
+      "evidenceQuality": "PARTIAL",
+      "classification": "CONDITIONALLY_SAFE only with target-progress semantics; otherwise UNSAFE",
+      "recommended": false
+    },
+    {
+      "id": "P6",
+      "name": "unrelated-frame-only for X seconds",
+      "complexity": "LOW",
+      "protocolChange": false,
+      "wuxinOnly": true,
+      "falseNegativeRisk": "VERY HIGH: unrelated frames are absent during legitimate silence too",
+      "falsePositiveRisk": "LOW",
+      "latencyBenefit": "LOW",
+      "compatibilityRisk": "LOW",
+      "evidenceQuality": "WEAK",
+      "classification": "UNSAFE (no progress meaning)",
+      "recommended": false
+    },
+    {
+      "id": "P7",
+      "name": "target health probe before/after bridge",
+      "complexity": "MEDIUM",
+      "protocolChange": false,
+      "wuxinOnly": true,
+      "falseNegativeRisk": "MEDIUM: probe success != command receipt/execution; probe failure at T0 is useful but bridge itself proves transport",
+      "falsePositiveRisk": "LOW-MEDIUM (probe cost/latency)",
+      "latencyBenefit": "MEDIUM (preflight avoids doomed attempts)",
+      "compatibilityRisk": "LOW-MEDIUM",
+      "evidenceQuality": "PARTIAL",
+      "classification": "CONDITIONALLY_SAFE as preflight only; not a QB-03 in-flight policy",
+      "recommended": "optional future, not now"
+    },
+    {
+      "id": "P8",
+      "name": "target-side receipt acknowledgement protocol",
+      "complexity": "MEDIUM (target changes)",
+      "protocolChange": true,
+      "wuxinOnly": false,
+      "falseNegativeRisk": "LOW once deployed: receipt distinguishes never-received from accepted-but-slow",
+      "falsePositiveRisk": "LOW",
+      "latencyBenefit": "HIGH (fast fail only when target never received)",
+      "compatibilityRisk": "HIGH (modifies all four bots; old versions need fallback)",
+      "evidenceQuality": "DESIGN_ONLY",
+      "classification": "SAFE direction, NOT currently available",
+      "recommended": "preferred long-term"
+    },
+    {
+      "id": "P9",
+      "name": "target-side execution-start acknowledgement",
+      "complexity": "MEDIUM-HIGH (target changes)",
+      "protocolChange": true,
+      "wuxinOnly": false,
+      "falseNegativeRisk": "LOW",
+      "falsePositiveRisk": "LOW",
+      "latencyBenefit": "MEDIUM (distinguishes queued vs executing)",
+      "compatibilityRisk": "HIGH",
+      "evidenceQuality": "DESIGN_ONLY",
+      "classification": "SAFE direction, NOT currently available",
+      "recommended": "optional extension after P8"
+    },
+    {
+      "id": "P10",
+      "name": "explicit negative ACK / handled:false protocol",
+      "complexity": "MEDIUM (target changes)",
+      "protocolChange": true,
+      "wuxinOnly": false,
+      "falseNegativeRisk": "LOW",
+      "falsePositiveRisk": "LOW (only terminal negatives fail fast)",
+      "latencyBenefit": "HIGH for known-silent causes",
+      "compatibilityRisk": "HIGH",
+      "evidenceQuality": "DESIGN_ONLY",
+      "classification": "SAFE direction, NOT currently available",
+      "recommended": "part of P8 proposal"
+    },
+    {
+      "id": "P11",
+      "name": "command-correlated progress/echo frame",
+      "complexity": "MEDIUM-HIGH (target changes)",
+      "protocolChange": true,
+      "wuxinOnly": false,
+      "falseNegativeRisk": "LOW",
+      "falsePositiveRisk": "LOW",
+      "latencyBenefit": "MEDIUM",
+      "compatibilityRisk": "HIGH",
+      "evidenceQuality": "DESIGN_ONLY",
+      "classification": "SAFE direction, NOT currently available",
+      "recommended": "false until P8 exists"
+    },
+    {
+      "id": "P12",
+      "name": "adaptive timeout based on historical latency",
+      "complexity": "HIGH",
+      "protocolChange": false,
+      "wuxinOnly": true,
+      "falseNegativeRisk": "MEDIUM-HIGH (distributions unknown; cold start; target-side stalls)",
+      "falsePositiveRisk": "LOW",
+      "latencyBenefit": "MEDIUM",
+      "compatibilityRisk": "MEDIUM",
+      "evidenceQuality": "INSUFFICIENT (n too small per family/command)",
+      "classification": "INSUFFICIENT_EVIDENCE",
+      "recommended": false
+    },
+    {
+      "id": "P13",
+      "name": "circuit breaker after repeated silent failures",
+      "complexity": "MEDIUM",
+      "protocolChange": false,
+      "wuxinOnly": true,
+      "falseNegativeRisk": "LOW per request once opened, but global suppression can mask recovery; no health signal to close reliably",
+      "falsePositiveRisk": "MEDIUM",
+      "latencyBenefit": "HIGH after repeated failures",
+      "compatibilityRisk": "MEDIUM",
+      "evidenceQuality": "PARTIAL",
+      "classification": "CONDITIONALLY_SAFE with strong evidence; not yet needed",
+      "recommended": false
+    },
+    {
+      "id": "P14",
+      "name": "one immediate reconnect/retry",
+      "complexity": "LOW-MEDIUM",
+      "protocolChange": false,
+      "wuxinOnly": true,
+      "falseNegativeRisk": "LOW-MEDIUM but duplicates work and Kanon dedup makes retries useless for same command",
+      "falsePositiveRisk": "MEDIUM (double execution cost)",
+      "latencyBenefit": "LOW for QB-03",
+      "compatibilityRisk": "MEDIUM",
+      "evidenceQuality": "STRONG (P0_2 shows duplicate bridges are the problem)",
+      "classification": "UNSAFE for QB-03 (duplicate external work; Kanon dedup)",
+      "recommended": false
+    },
+    {
+      "id": "P15",
+      "name": "preserve existing full timeout",
+      "complexity": "NONE",
+      "protocolChange": false,
+      "wuxinOnly": true,
+      "falseNegativeRisk": "NONE",
+      "falsePositiveRisk": "NONE (but pathology remains)",
+      "latencyBenefit": "NONE",
+      "compatibilityRisk": "NONE",
+      "evidenceQuality": "STRONG",
+      "classification": "SAFE",
+      "recommended": true
+    }
+  ]
+}

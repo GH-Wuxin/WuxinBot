@@ -1,22 +1,110 @@
 import 'dotenv/config';
 import crypto from 'node:crypto';
 import net from 'node:net';
+import fs from 'node:fs';
+import path from 'node:path';
 import express from 'express';
-import { ensureStore, publicDb, readDb, updateDb, upsertBy, nowIso, saveConfigSnapshot, listConfigSnapshots, restoreConfigSnapshot } from './store.js';
+import { ensureStore, currentStorageRevision, publicDb, publicMemory, readDb, updateDb, upsertBy, nowIso, saveConfigSnapshot, listConfigSnapshots, restoreConfigSnapshot } from './store.js';
 import { createBackup, listBackups, restoreBackup, deleteBackup, pruneAutoBackups } from './backup.js';
-import { connectOneBot, getOneBotStatus, handleOneBotEvent, sendOneBotMessage } from './onebot.js';
-import { processIncoming, decideReply, getReplyQueueStats } from './bot.js';
+import { connectOneBot, getOneBotStatus, handleOneBotEvent, sendOneBotMessage, shutdownOneBot } from './onebot.js';
+import { processIncoming, decideReply } from './bot.js';
+import { getReplyQueueStats } from './bot/queue.js';
 import { buildPrompt } from './bot/prompt.js';
 import { callLLM } from './bot/llm.js';
 import { getHealth, getRecalcProgress, startRecalc, tickRecalc, stopRecalc, finishRecalc } from './health.js';
+import { getKbHealth } from './bot/knowledgeBase.js';
 import { getGroupProfile, updateGroupProfile, clearGroupProfile, hasGroupProfileContent } from './bot/groupProfile.js';
 import { getRelationshipProfile, updateRelationshipProfile, clearRelationshipProfile, isSubstantiveRelationshipProfile } from './bot/relationshipProfile.js';
-import { commitMemoryProfileResult, updateMemoryProfile } from './bot/memory.js';
+import { getMemoryProfileQueueStatus, maybeUpdateMemoryProfile } from './bot/memory.js';
 import { evaluateTrustScores } from './bot/trust.js';
 import { decayInactiveUsers } from './bot/experience.js';
 import { queryProfileLogs, getProfileLogStats } from './bot/profileLog.js';
 import { updateProviderSettings } from './modelConfig.js';
-import { startRenderServer } from './bots/renderServer.js';
+import { getRenderServer, startRenderServer } from './bots/renderServer.js';
+import { removeLazybotBinding, syncLazybotBinding } from './bots/bindingSync.js';
+import { sharedGroupBotConfigPath } from './bots/externalPaths.js';
+import { acquireInstanceLock } from './instanceLock.js';
+import { listRequestTraces, subscribeRequestTraces } from './requestTrace.js';
+import {
+  getCodexAccountStatus,
+  getCodexRateLimits,
+  listCodexModels,
+  logoutCodexAccount,
+  shutdownCodexAppServer,
+  startCodexChatGptLogin,
+} from './codexAppServer.js';
+
+const port = Number(process.env.PORT || 8787);
+let releaseInstanceLock = () => {};
+
+function releaseServerInstanceLock() {
+  try { releaseInstanceLock(); } catch { /* best-effort process cleanup */ }
+}
+
+// ── Process guards (P0-A) ──
+// These exist to leave a stack + exit reason behind, NOT to swallow errors
+// and keep running. uncaughtException / unhandledRejection still terminate
+// the process. Before exiting they make a best-effort request to close the
+// OneBot WS (listeners are detached and ws.close() is called, but process.exit
+// may not wait for the close handshake to finish). SIGINT/SIGTERM use the same
+// cleanup plus a short 200ms grace period.
+function writeCrashLog(kind, error) {
+  try {
+    const dir = path.join(process.cwd(), 'logs');
+    fs.mkdirSync(dir, { recursive: true });
+    const filename = path.join(dir, `crash-${new Date().toISOString().replace(/[:.]/g, '-')}.log`);
+    const stack = error?.stack || String(error);
+    fs.writeFileSync(filename, `[${kind}] ${new Date().toISOString()}\n${stack}\n`, 'utf8');
+    console.error(`[crash] ${kind} logged to ${filename}`);
+  } catch (writeError) {
+    console.error('[crash] failed to write crash log:', String(writeError?.message || writeError));
+  }
+}
+
+process.on('uncaughtException', (error) => {
+  console.error('[crash] uncaughtException:', error);
+  writeCrashLog('uncaughtException', error);
+  try {
+    shutdownOneBot();
+  } catch (shutdownError) {
+    console.error('[crash] shutdownOneBot failed:', String(shutdownError?.message || shutdownError));
+  }
+  shutdownCodexAppServer();
+  releaseServerInstanceLock();
+  process.exit(1);
+});
+
+process.on('unhandledRejection', (reason) => {
+  const error = reason instanceof Error ? reason : new Error(String(reason));
+  console.error('[crash] unhandledRejection:', error);
+  writeCrashLog('unhandledRejection', error);
+  try {
+    shutdownOneBot();
+  } catch (shutdownError) {
+    console.error('[crash] shutdownOneBot failed:', String(shutdownError?.message || shutdownError));
+  }
+  shutdownCodexAppServer();
+  releaseServerInstanceLock();
+  process.exit(1);
+});
+
+function gracefulShutdown(signal) {
+  console.log(`[shutdown] ${signal} received, requesting OneBot connection close`);
+  try {
+    shutdownOneBot();
+  } catch (error) {
+    console.error('[shutdown] shutdownOneBot failed:', String(error?.message || error));
+  }
+  shutdownCodexAppServer();
+  releaseServerInstanceLock();
+  // Best effort only: ws.close() is requested but a 200ms grace period cannot
+  // guarantee the close handshake completes before process exit.
+  setTimeout(() => process.exit(0), 200);
+}
+
+process.on('SIGINT', () => gracefulShutdown('SIGINT'));
+process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
+process.on('exit', releaseServerInstanceLock);
 
 // Node 20.11.1 crashes with ERR_INTERNAL_ASSERTION in internalConnectMultiple
 // when many outbound sockets race IPv4/IPv6 auto-selection (happy eyeballs).
@@ -27,13 +115,22 @@ try {
   // Older/other runtimes simply keep the default.
 }
 
+releaseInstanceLock = acquireInstanceLock(port);
 ensureStore();
+
+// Authentication is consulted on every API request. Keep this one scalar in
+// memory instead of synchronously parsing the entire (currently ~34 MB) JSON
+// store for health/state polling. Mutating restore/settings routes refresh it.
+let cachedAdminPassword = String(readDb().settings.adminPassword || '');
+function refreshCachedAdminPassword(db = readDb()) {
+  cachedAdminPassword = String(db?.settings?.adminPassword || '');
+}
 
 const app = express();
 app.use(express.json({ limit: '2mb' }));
 
 const SAFE_ID = /^[A-Za-z0-9_-]{1,64}$/;
-const GROUP_MODES = new Set(['silent', 'mention', 'light', 'natural']);
+const GROUP_MODES = new Set(['silent', 'mention', 'light', 'natural', 'osu']);
 const USER_POLICIES = new Set(['normal', 'whitelist', 'priority', 'muted', 'blocked', 'admin', 'owner']);
 
 function safeSecretEqual(actual, expected) {
@@ -45,7 +142,7 @@ function safeSecretEqual(actual, expected) {
 // The GUI remains open when no password is configured. Once ADMIN_PASSWORD or
 // the GUI password field is set, every API call must authenticate.
 app.use('/api', (req, res, next) => {
-  const expected = String(readDb().settings.adminPassword || '');
+  const expected = cachedAdminPassword;
   if (!expected) return next();
   const supplied = req.get('x-wuxin-admin-password') || '';
   if (!safeSecretEqual(supplied, expected)) {
@@ -83,8 +180,138 @@ function ok(data = {}) {
   return { ok: true, ...data };
 }
 
+// Mutations should not echo the entire database back to the browser. The
+// console can refresh through /api/state, while memory samples are loaded only
+// by the memory detail endpoint. Keeping this response contract compact also
+// prevents a settings save or context cleanup from blocking the UI on a
+// multi-megabyte JSON parse.
+function compactDbResponse(db = readDb()) {
+  return {
+    revision: currentStorageRevision(),
+    db: publicDb(db, { includeMemorySamples: false }),
+  };
+}
+
 app.get('/api/state', (_req, res) => {
-  res.json(ok({ db: publicDb(), oneBot: getOneBotStatus() }));
+  // Samples are only needed after opening a specific memory in the console.
+  // Keeping them out of the global heartbeat avoids sending megabytes every
+  // ten seconds to every open console tab.
+  const revision = currentStorageRevision();
+  res.json(ok({ revision, db: publicDb(readDb(), { includeMemorySamples: false }), oneBot: getOneBotStatus() }));
+});
+
+app.get('/api/state/revision', (_req, res) => {
+  res.json(ok({ revision: currentStorageRevision() }));
+});
+
+app.get('/api/codex/status', async (_req, res) => {
+  const status = await getCodexAccountStatus(readDb().settings);
+  res.json(ok({ status }));
+});
+
+app.get('/api/codex/models', async (_req, res) => {
+  try {
+    res.json(ok({ models: await listCodexModels(readDb().settings) }));
+  } catch (error) {
+    res.status(502).json({ ok: false, error: `Codex 模型列表读取失败：${String(error?.message || error).slice(0, 300)}` });
+  }
+});
+
+app.get('/api/codex/rate-limits', async (_req, res) => {
+  try {
+    res.json(ok({ limits: await getCodexRateLimits(readDb().settings) }));
+  } catch (error) {
+    res.status(502).json({ ok: false, error: `Codex 额度读取失败：${String(error?.message || error).slice(0, 300)}` });
+  }
+});
+
+app.post('/api/codex/login', async (_req, res) => {
+  try {
+    const login = await startCodexChatGptLogin(readDb().settings);
+    res.json(ok({ login }));
+  } catch (error) {
+    res.status(502).json({ ok: false, error: `ChatGPT 登录启动失败：${String(error?.message || error).slice(0, 300)}` });
+  }
+});
+
+app.post('/api/codex/logout', async (_req, res) => {
+  try {
+    res.json(ok({ status: await logoutCodexAccount(readDb().settings) }));
+  } catch (error) {
+    res.status(502).json({ ok: false, error: `ChatGPT 退出登录失败：${String(error?.message || error).slice(0, 300)}` });
+  }
+});
+
+app.get('/api/request-traces', (req, res) => {
+  res.json(ok({ traces: listRequestTraces(Number(req.query.limit || 80)) }));
+});
+
+app.get('/api/request-traces/stream', (req, res) => {
+  res.status(200);
+  res.setHeader('Content-Type', 'text/event-stream; charset=utf-8');
+  res.setHeader('Cache-Control', 'no-cache, no-transform');
+  res.setHeader('Connection', 'keep-alive');
+  res.setHeader('X-Accel-Buffering', 'no');
+  res.flushHeaders?.();
+
+  const send = (payload) => {
+    try {
+      if (!res.writableEnded) res.write(`data: ${JSON.stringify(payload)}\n\n`);
+    } catch {
+      // Connection cleanup below handles disconnected console clients.
+    }
+  };
+  const sendBatch = (payloads) => {
+    if (!payloads.length || res.writableEnded) return;
+    try {
+      res.write(payloads.map((payload) => `data: ${JSON.stringify(payload)}\n\n`).join(''));
+    } catch {
+      // Connection cleanup below handles disconnected console clients.
+    }
+  };
+  send({ type: 'snapshot', traces: listRequestTraces(Number(req.query.limit || 80)) });
+  const pendingTraces = new Map();
+  let traceFlushTimer = null;
+  const flushTraces = () => {
+    traceFlushTimer = null;
+    if (!pendingTraces.size) return;
+    const payloads = [...pendingTraces.values()].map((trace) => ({ type: 'upsert', trace }));
+    pendingTraces.clear();
+    sendBatch(payloads);
+  };
+  const unsubscribe = subscribeRequestTraces((trace) => {
+    const traceId = String((trace as any)?.id || '');
+    if (!traceId) return;
+    pendingTraces.set(traceId, trace);
+    if (!traceFlushTimer) traceFlushTimer = setTimeout(flushTraces, 100);
+  });
+  if (!unsubscribe) {
+    send({ type: 'error', error: 'trace_stream_capacity' });
+    res.end();
+    return;
+  }
+  const heartbeat = setInterval(() => {
+    try { if (!res.writableEnded) res.write(': heartbeat\n\n'); } catch { /* close handler cleans up */ }
+  }, 15_000);
+  heartbeat.unref?.();
+  let cleaned = false;
+  const cleanup = () => {
+    if (cleaned) return;
+    cleaned = true;
+    clearInterval(heartbeat);
+    if (traceFlushTimer) clearTimeout(traceFlushTimer);
+    pendingTraces.clear();
+    unsubscribe();
+  };
+  req.once('close', cleanup);
+  res.once('close', cleanup);
+});
+
+// KB v4.1 status — admin-only via the global /api password guard. Exposes
+// collection status/doc counts/content SHA/build time/error codes only.
+// Never exposes raw query text, community content, absolute paths or stacks.
+app.get('/api/kb/status', (_req, res) => {
+  res.json(ok({ kb: getKbHealth() }));
 });
 
 // ── Group bot config ──
@@ -108,7 +335,7 @@ app.post('/api/group-bot-config', async (req, res) => {
   try {
     const fs = await import('node:fs');
     const path = await import('node:path');
-    const sharedConfigPath = 'G:/My pack/Agent Work/codex_work/napcat-local-bots/configs/group-bot-config.json';
+    const sharedConfigPath = sharedGroupBotConfigPath();
     const dir = path.dirname(sharedConfigPath);
     if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
     let shared = {};
@@ -124,6 +351,409 @@ app.post('/api/group-bot-config', async (req, res) => {
   res.json(ok({ config: db.groupBotConfig || {} }));
 });
 
+// ── osu! console API ──
+
+// A persisted `running` marker is useful for the GUI, but it cannot prove that
+// work still exists after a server crash/restart. Only this process-local set
+// may suppress a duplicate start; stale disk markers are overwritten.
+
+function tcpProbe(port, host = '127.0.0.1', timeoutMs = 800) {
+  return new Promise((resolve) => {
+    const socket = net.connect({ port, host });
+    const done = (ok) => { try { socket.destroy(); } catch { /* noop */ } resolve(ok); };
+    socket.setTimeout(timeoutMs);
+    socket.once('connect', () => done(true));
+    socket.once('timeout', () => done(false));
+    socket.once('error', () => done(false));
+  });
+}
+
+function osuBindingList(db = readDb()) {
+  return Object.entries(db.osuBindings || {}).map(([qq, value]) => {
+    const b: any = value && typeof value === 'object' ? value : { id: value };
+    const id = Number(b.osuUserId ?? b.userId ?? b.id ?? 0);
+    return {
+      qq,
+      id: Number.isFinite(id) && id > 0 ? id : 0,
+      username: String(b.osuUsername ?? b.username ?? '').trim(),
+    };
+  }).sort((a, b) => a.qq.localeCompare(b.qq));
+}
+
+app.get('/api/osu/status', async (_req, res) => {
+  const db = readDb();
+  const health = getHealth();
+  const botPorts = { yumu: 8388, kanon: 7700, hydrant: 8800, lazybot: 1145 };
+  const bots = [];
+  for (const [id, port] of Object.entries(botPorts)) {
+    bots.push({ id, port, up: await tcpProbe(Number(port)) });
+  }
+
+  const osuLogs = (db.commandLogs || []).filter((c) => String(c.command || '') === '/osu');
+  const analyzeCount = osuLogs.filter((c) => String(c.subCommand || '') === 'analyze').length;
+  const bindCount = osuLogs.filter((c) => String(c.subCommand || '') === 'bind').length;
+
+  res.json(ok({
+    health: { api429Count: health.osu.api429Count, renderFailures: health.osu.renderFailures },
+    bots,
+    renderer: {
+      listeningPort: getRenderServer().getListeningPort(),
+      hasClients: getRenderServer().hasClients(),
+    },
+    bindings: osuBindingList(db),
+    stats: {
+      analyzeCount,
+      bindCount,
+    },
+  }));
+});
+
+app.post('/api/osu/bindings', async (req, res) => {
+  const { action, qq, username } = req.body || {};
+  if (!['add', 'remove'].includes(action)) {
+    return res.status(400).json({ ok: false, error: 'action 必须是 add 或 remove' });
+  }
+  const qqStr = String(qq || '').trim();
+  if (!/^\d{5,12}$/.test(qqStr)) {
+    return res.status(400).json({ ok: false, error: 'QQ 号格式不正确' });
+  }
+  if (action === 'remove') {
+    updateDb((db) => {
+      if (db.osuBindings) delete db.osuBindings[qqStr];
+    });
+    const syncResult = await removeLazybotBinding(qqStr);
+    if (!syncResult.ok && !syncResult.skipped) {
+      console.error(`[bind] GUI LazyBot 解绑同步失败: ${syncResult.error || '未知错误'}`);
+    }
+    return res.json(ok({ bindings: osuBindingList() }));
+  }
+  const name = String(username || '').trim();
+  if (!name) return res.status(400).json({ ok: false, error: '缺少 osu 用户名' });
+  try {
+    const { getUser } = await import('./osu/api.js');
+    const user = await getUser(name);
+    if (!user?.id) throw new Error('用户不存在');
+    updateDb((db) => {
+      db.osuBindings = db.osuBindings || {};
+      db.osuBindings[qqStr] = { id: user.id, username: String(user.username || name) };
+    });
+    const syncResult = await syncLazybotBinding(qqStr, {
+      id: user.id,
+      username: String(user.username || name),
+    });
+    if (!syncResult.ok && !syncResult.skipped) {
+      console.error(`[bind] GUI LazyBot 绑定同步失败: ${syncResult.error || '未知错误'}`);
+    }
+    res.json(ok({ bindings: osuBindingList() }));
+  } catch {
+    res.status(400).json({ ok: false, error: `osu! 用户 "${name}" 查不到。` });
+  }
+});
+
+// ── osu! console player APIs ──
+
+function osuIdParam(req, res) {
+  const value = String(req.params.id || '').trim();
+  if (!/^\d{1,12}$/.test(value)) {
+    res.status(400).json({ ok: false, error: '玩家 ID 格式不正确' });
+    return null;
+  }
+  return Number(value);
+}
+
+function scoreModAcronyms(score) {
+  const rawMods = Array.isArray(score?.mods) ? score.mods : [];
+  const acronyms = rawMods.map((mod) => {
+    if (typeof mod === 'string') return mod;
+    if (mod && typeof mod === 'object' && 'acronym' in mod) return String(mod.acronym || '');
+    return '';
+  }).map((mod) => mod.toUpperCase()).filter((mod) => mod && mod !== 'NM');
+  return [...new Set(acronyms)];
+}
+
+function consoleScoreRow(score, rank = null) {
+  const beatmap = score?.beatmap || {};
+  const beatmapset = beatmap?.beatmapset || {};
+  const accuracy = Number(score?.accuracy);
+  return {
+    bpRank: rank,
+    id: Number(score?.id ?? score?.best_id ?? 0),
+    mode: String(score?.mode || 'osu'),
+    title: String(beatmapset?.title_unicode || beatmapset?.title || '未知谱面'),
+    artist: String(beatmapset?.artist_unicode || beatmapset?.artist || ''),
+    mapper: String(beatmapset?.creator || ''),
+    version: String(beatmap?.version || ''),
+    bid: Number(beatmap?.id || score?.beatmap_id || 0),
+    sid: Number(beatmapset?.id || beatmap?.beatmapset_id || 0),
+    stars: Number(score?.difficulty_rating ?? beatmap?.difficulty_rating ?? 0),
+    mods: scoreModAcronyms(score),
+    acc: Number.isFinite(accuracy) && accuracy >= 0 && accuracy <= 1 ? accuracy * 100 : accuracy,
+    max_combo: Number(score?.max_combo || 0),
+    max_combo_total: Number(beatmap?.max_combo || 0),
+    pp: Number(score?.pp || 0),
+    weighted_pp: Number(score?.weight?.pp ?? 0),
+    rank: String(score?.rank || 'F'),
+    score: Number(score?.score ?? score?.total_score ?? 0),
+    date: score?.ended_at || score?.created_at || '',
+    passed: score?.passed !== false,
+  };
+}
+
+function playerView(user) {
+  const stats = user?.statistics || {};
+  const level = stats?.level || {};
+  const grades = stats?.grade_counts || {};
+  const badges = Array.isArray(user?.badges)
+    ? user.badges.map((badge) => ({
+        description: String(badge?.description || ''),
+        image_url: String(badge?.image_url || ''),
+        awarded_at: badge?.awarded_at || '',
+      }))
+    : [];
+  const rankHistory = Array.isArray(user?.rank_history?.data)
+    ? user.rank_history.data.slice(-90)
+    : [];
+  return {
+    id: Number(user?.id || 0),
+    username: String(user?.username || ''),
+    avatar_url: String(user?.avatar_url || ''),
+    country_code: String(user?.country?.code || user?.country_code || ''),
+    country_name: String(user?.country?.name || ''),
+    is_supporter: Boolean(user?.is_supporter),
+    pp: Number(stats?.pp || 0),
+    global_rank: Number(stats?.global_rank || stats?.rank || 0),
+    country_rank: Number(stats?.country_rank || 0),
+    accuracy: Number(stats?.hit_accuracy || 0),
+    play_count: Number(stats?.play_count || 0),
+    play_time: Number(stats?.play_time || 0),
+    level: Number(level?.current || 0),
+    level_progress: Number(level?.progress || 0),
+    max_combo: Number(stats?.maximum_combo || 0),
+    total_hits: Number(stats?.total_hits || 0),
+    join_date: user?.join_date || '',
+    grade_counts: {
+      ssh: Number(grades?.ssh || 0),
+      ss: Number(grades?.ss || 0),
+      sh: Number(grades?.sh || 0),
+      s: Number(grades?.s || 0),
+      a: Number(grades?.a || 0),
+    },
+    badges,
+    rank_history: rankHistory,
+  };
+}
+
+async function loadPlayerSnapshot(osuId, force = false) {
+  const { getUserById } = await import('./osu/api.js');
+  const { getStoredProfile, setStoredProfile } = await import('./osu/profileStore.js');
+  const stored = getStoredProfile(osuId);
+  if (stored && !force) {
+    return { fetchedAt: stored.fetchedAt, player: playerView(stored.user), stored: true };
+  }
+  const user = await getUserById(osuId, 'osu', { force });
+  setStoredProfile(osuId, user);
+  return { fetchedAt: getStoredProfile(osuId).fetchedAt, player: playerView(user), stored: false };
+}
+
+async function enrichScoreMetadata(rows) {
+  const missing = rows.filter((row) => !row.title || row.title === '未知谱面');
+  if (missing.length === 0) return;
+  const { getBeatmap } = await import('./osu/api.js');
+  await Promise.all(missing.map(async (row) => {
+    if (!row.bid) return;
+    try {
+      const beatmap = await getBeatmap(row.bid);
+      const beatmapset: any = (beatmap as any)?.beatmapset || {};
+      row.title = String(beatmapset.title_unicode || beatmapset.title || row.title);
+      row.artist = String(beatmapset.artist_unicode || beatmapset.artist || row.artist);
+      row.mapper = String(beatmapset.creator || row.mapper);
+      row.version = String(beatmap?.version || row.version);
+      row.max_combo_total = Number(beatmap?.max_combo || row.max_combo_total);
+    } catch { /* keep fallback values */ }
+  }));
+}
+
+app.get('/api/osu/search', async (req, res) => {
+  const name = String(req.query.name || '').trim();
+  if (!name) return res.status(400).json({ ok: false, error: '缺少玩家名' });
+  try {
+    const { getUser } = await import('./osu/api.js');
+    const user = await getUser(name);
+    res.json(ok({
+      player: {
+        id: Number(user?.id || 0),
+        username: String(user?.username || ''),
+        avatar_url: String(user?.avatar_url || ''),
+      },
+    }));
+  } catch {
+    res.status(404).json({ ok: false, error: `osu! 玩家 "${name}" 不存在` });
+  }
+});
+
+app.get('/api/osu/player/:id', async (req, res) => {
+  const osuId = osuIdParam(req, res);
+  if (osuId === null) return;
+  try {
+    res.json(ok({ profile: await loadPlayerSnapshot(osuId) }));
+  } catch (error) {
+    res.status(404).json({ ok: false, error: `获取玩家失败：${String(error?.message || error).slice(0, 200)}` });
+  }
+});
+
+app.post('/api/osu/player/:id/refresh', async (req, res) => {
+  const osuId = osuIdParam(req, res);
+  if (osuId === null) return;
+  try {
+    res.json(ok({ profile: await loadPlayerSnapshot(osuId, true) }));
+  } catch (error) {
+    res.status(502).json({ ok: false, error: `刷新失败：${String(error?.message || error).slice(0, 200)}` });
+  }
+});
+
+app.get('/api/osu/player/:id/bp', async (req, res) => {
+  const osuId = osuIdParam(req, res);
+  if (osuId === null) return;
+  const start = Math.max(1, Math.min(100, Number(req.query.start) || 1));
+  const end = Math.max(start, Math.min(100, Number(req.query.end) || Math.min(10, start + 9)));
+  try {
+    const { getUserBestScores } = await import('./osu/api.js');
+    const { enrichScoreStarRatings } = await import('./osu/starRating.js');
+    const raw = await getUserBestScores(osuId, 'osu', end);
+    const enriched = (await enrichScoreStarRatings(raw, 'osu')).scores;
+    const bp = enriched
+      .slice(start - 1, end)
+      .map((score, index) => consoleScoreRow(score, start + index));
+    await enrichScoreMetadata(bp);
+    res.json(ok({ bp, total: (raw || []).length, start, end }));
+  } catch (error) {
+    res.status(502).json({ ok: false, error: `BP 获取失败：${String(error?.message || error).slice(0, 200)}` });
+  }
+});
+
+app.get('/api/osu/player/:id/recent', async (req, res) => {
+  const osuId = osuIdParam(req, res);
+  if (osuId === null) return;
+  const limit = Math.max(1, Math.min(50, Number(req.query.limit) || 10));
+  try {
+    const { getUserRecentScores } = await import('./osu/api.js');
+    const { enrichScoreStarRatings } = await import('./osu/starRating.js');
+    const raw = await getUserRecentScores(osuId, 'osu', limit);
+    const enriched = (await enrichScoreStarRatings(raw, 'osu')).scores;
+    const recent = enriched.map((score) => consoleScoreRow(score));
+    await enrichScoreMetadata(recent);
+    res.json(ok({ recent }));
+  } catch (error) {
+    res.status(502).json({ ok: false, error: `最近成绩获取失败：${String(error?.message || error).slice(0, 200)}` });
+  }
+});
+
+// `/pplus` is the canonical spelling used by the GUI and documentation.
+// Keep the accidentally shipped `/ppplus` path as a compatibility alias.
+app.get(['/api/osu/player/:id/pplus', '/api/osu/player/:id/ppplus'], async (req, res) => {
+  const osuId = osuIdParam(req, res);
+  if (osuId === null) return;
+  try {
+    const { getPlayerBars } = await import('./osu/pplus.js');
+    const bars = await getPlayerBars(osuId);
+    res.json(ok({ bars: bars || null }));
+  } catch {
+    res.json(ok({ bars: null }));
+  }
+});
+
+app.get('/api/osu/player/:id/bptype', async (req, res) => {
+  const osuId = osuIdParam(req, res);
+  if (osuId === null) return;
+  try {
+    const { runBpTypeAnalysis } = await import('./bots/bpTypeAnalysis.js');
+    const db = readDb();
+    const stored = (await import('./osu/profileStore.js')).getStoredProfile(osuId);
+    const username = stored?.user?.username || '';
+    const text = await runBpTypeAnalysis(db, `console-${osuId}`, username);
+    res.json(ok({ text }));
+  } catch (error) {
+    res.status(502).json({ ok: false, error: `BP 类型分析失败：${String(error?.message || error).slice(0, 200)}` });
+  }
+});
+
+app.get('/api/osu/player/:id/skill', async (req, res) => {
+  const osuId = osuIdParam(req, res);
+  if (osuId === null) return;
+  const db = readDb();
+  const stored = (await import('./osu/profileStore.js')).getStoredProfile(osuId);
+  const username = String(stored?.user?.username || '').toLowerCase();
+  const record = (db.skillStore?.records || []).find(
+    (r) => String(r.osuUsername || '').toLowerCase() === username,
+  ) || null;
+  res.json(ok({ record: record ? {
+    osuUsername: record.osuUsername,
+    pp: record.pp,
+    rank: record.rank,
+    accuracy: record.accuracy,
+    playCount: record.playCount,
+    hoursPlayed: record.hoursPlayed,
+    ppPlus: record.ppPlus || null,
+    topMods: record.topMods || [],
+    summary: record.summary || '',
+    recentSummary: record.recentSummary || '',
+    lastAnalyzed: record.lastAnalyzed || '',
+  } : null }));
+});
+
+app.get('/api/osu/player/:id/analyze', async (req, res) => {
+  const osuId = osuIdParam(req, res);
+  if (osuId === null) return;
+  const { getStoredAnalysis } = await import('./osu/profileStore.js');
+  res.json(ok({ analysis: getStoredAnalysis(osuId) }));
+});
+
+app.post('/api/osu/player/:id/analyze', async (req, res) => {
+  const osuId = osuIdParam(req, res);
+  if (osuId === null) return;
+  const { getStoredAnalysis, setStoredAnalysis } = await import('./osu/profileStore.js');
+  const current = getStoredAnalysis(osuId);
+  if (current?.status === 'running') {
+    return res.status(202).json(ok({ analysis: current, started: false }));
+  }
+
+  const startedAt = nowIso();
+  const running = { status: 'running' as const, at: startedAt };
+  setStoredAnalysis(osuId, running);
+  res.status(202).json(ok({ analysis: running, started: true }));
+
+  void (async () => {
+    try {
+      const db = readDb();
+      const { runAnalyzerMvp } = await import('./osu/analyzerMvp.js');
+      const result = await runAnalyzerMvp(db, osuId, 'osu', {
+        playerName: String(osuId),
+        perspective: 'unknown',
+      });
+      setStoredAnalysis(osuId, {
+        status: 'done',
+        at: startedAt,
+        finishedAt: nowIso(),
+        text: result.text,
+        source: result.source,
+        provider: result.provider,
+        model: result.model,
+        formatVersion: 91,
+        validationReasons: result.validationReasons,
+        bestCount: result.collection.bestScores.length,
+        recentCount: result.collection.recentScores.length,
+      });
+    } catch (error) {
+      setStoredAnalysis(osuId, {
+        status: 'error',
+        at: startedAt,
+        finishedAt: nowIso(),
+        error: String(error?.message || error).slice(0, 500),
+      });
+    }
+  })();
+});
+
 app.get('/api/diagnostics', (_req, res) => {
   const db = readDb();
   const report = {
@@ -134,6 +764,7 @@ app.get('/api/diagnostics', (_req, res) => {
       platform: process.platform
     },
     oneBot: getOneBotStatus(),
+    kb: getKbHealth(),
     settings: publicDb(db).settings,
     groups: db.groups,
     users: db.users,
@@ -150,7 +781,7 @@ app.get('/api/diagnostics', (_req, res) => {
 });
 
 app.post('/api/settings', (req, res) => {
-  updateDb((db) => {
+  const updatedDb = updateDb((db) => {
     saveConfigSnapshot(db);
     const incoming = Object.fromEntries(
       Object.entries(req.body || {}).filter(([key]) => Object.prototype.hasOwnProperty.call(db.settings, key))
@@ -179,11 +810,12 @@ app.post('/api/settings', (req, res) => {
       ));
     }
   });
-  res.json(ok({ db: publicDb() }));
+  refreshCachedAdminPassword(updatedDb);
+  res.json(ok(compactDbResponse(updatedDb)));
 });
 
 app.post('/api/search/test-local', async (_req, res) => {
-  const testUrl = 'http://127.0.0.1:8080/search?q=test&format=json';
+  const testUrl = 'http://127.0.0.1:8080/search?q=test&format=json&language=zh-CN&safesearch=1';
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), 5000);
   try {
@@ -193,7 +825,7 @@ app.post('/api/search/test-local', async (_req, res) => {
     });
     if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
     const data = await resp.json();
-    if (!data || (!data.results && !data.query && data.results === undefined)) {
+    if (!data || !Array.isArray(data.results)) {
       throw new Error('响应格式不符合 SearXNG');
     }
     res.json(ok({ baseUrl: 'http://127.0.0.1:8080' }));
@@ -229,14 +861,28 @@ app.post('/api/groups', (req, res) => {
       cooldownSec
     });
   });
-  res.json(ok({ db: publicDb() }));
+  res.json(ok(compactDbResponse()));
 });
 
 app.delete('/api/groups/:groupId', (req, res) => {
+  const groupId = String(req.params.groupId || '');
   updateDb((db) => {
-    db.groups = db.groups.filter((group) => String(group.groupId) !== String(req.params.groupId));
+    db.groups = db.groups.filter((group) => String(group.groupId) !== groupId);
+    db.users = (db.users || []).filter((user) => String(user.groupId) !== groupId);
+    db.messages = (db.messages || []).filter((message) => String(message.groupId) !== groupId);
+    db.decisions = (db.decisions || []).filter((decision) => String(decision.groupId) !== groupId);
+    db.commandLogs = (db.commandLogs || []).filter((log) => String(log.groupId) !== groupId);
+    db.groupProfiles = (db.groupProfiles || []).filter((profile) => String(profile.groupId) !== groupId);
+    db.relationshipProfiles = (db.relationshipProfiles || []).filter((profile) => String(profile.groupId) !== groupId);
+    if (db.groupBotConfig) delete db.groupBotConfig[groupId];
+    for (const key of Object.keys(db.pendingPairCounts || {})) {
+      if (key.startsWith(groupId + ':')) delete db.pendingPairCounts[key];
+    }
+    for (const key of Object.keys(db.groupExperience || {})) {
+      if (key.startsWith(groupId + ':')) delete db.groupExperience[key];
+    }
   });
-  res.json(ok({ db: publicDb() }));
+  res.json(ok(compactDbResponse()));
 });
 
 app.post('/api/users', (req, res) => {
@@ -276,7 +922,7 @@ app.post('/api/users', (req, res) => {
       createdAt: nowIso()
     });
   });
-  res.json(ok({ db: publicDb() }));
+  res.json(ok(compactDbResponse()));
 });
 
 app.delete('/api/users/:groupId/:userId', (req, res) => {
@@ -285,7 +931,7 @@ app.delete('/api/users/:groupId/:userId', (req, res) => {
       (user) => !(String(user.groupId) === String(req.params.groupId) && String(user.userId) === String(req.params.userId))
     );
   });
-  res.json(ok({ db: publicDb() }));
+  res.json(ok(compactDbResponse()));
 });
 
 app.post('/api/memories/:userId', (req, res) => {
@@ -314,7 +960,7 @@ app.post('/api/memories/:userId', (req, res) => {
     if (existingIndex >= 0) db.memories[existingIndex] = { ...db.memories[existingIndex], ...entry };
     else db.memories.push({ ...entry, id: crypto.randomUUID(), messageCount: 0, pendingCount: 0, groupsSeen: [], samples: [], createdAt: nowIso() });
   });
-  res.json(ok({ db: publicDb() }));
+  res.json(ok(compactDbResponse()));
 });
 
 app.post('/api/memories/:userId/recalculate', async (req, res) => {
@@ -328,12 +974,15 @@ app.post('/api/memories/:userId/recalculate', async (req, res) => {
     return res.status(400).json({ ok: false, error: `可用画像样本不足：样本 ${storedUsableSamples} 条，历史消息 ${historicalMessages} 条` });
   }
   try {
-    const result = await updateMemoryProfile(db, memory);
-    const outcome = commitMemoryProfileResult(userId, result, {
-      model: db.settings.model,
-      kind: 'memory-manual-recalc'
+    const outcome = await maybeUpdateMemoryProfile({
+      type: 'private', groupId: '', userId, nickname: memory.nickname || userId,
+      messageId: `memory-manual-recalc:${userId}:${Date.now()}`
+    }, {
+      force: true,
+      kind: 'memory-manual-recalc',
     });
-    res.json(ok({ outcome, runId: result.runId, usage: result.usage || {}, db: publicDb() }));
+    if (!outcome.ok) return res.status(400).json({ ok: false, error: outcome.reason || outcome.error || '画像更新失败', ...compactDbResponse() });
+    res.json(ok({ ...compactDbResponse(), outcome, runId: outcome.runId, usage: outcome.usage || {} }));
   } catch (error) {
     updateDb((draft) => {
       const target = (draft.memories || []).find((entry) => String(entry.userId) === userId);
@@ -346,7 +995,7 @@ app.post('/api/memories/:userId/recalculate', async (req, res) => {
       if (!draft.usage) draft.usage = { totalTokens: 0, promptTokens: 0, completionTokens: 0, requests: 0, replies: 0, errors: 0 };
       draft.usage.errors = Number(draft.usage.errors || 0) + 1;
     });
-    res.status(400).json({ ok: false, error: error.message || String(error), db: publicDb() });
+    res.status(400).json({ ok: false, error: error.message || String(error), ...compactDbResponse() });
   }
 });
 
@@ -354,7 +1003,7 @@ app.delete('/api/memories/:userId', (req, res) => {
   updateDb((db) => {
     db.memories = (db.memories || []).filter((memory) => String(memory.userId) !== String(req.params.userId));
   });
-  res.json(ok({ db: publicDb() }));
+  res.json(ok(compactDbResponse()));
 });
 
 app.post('/api/onebot/connect', (_req, res) => {
@@ -410,7 +1059,7 @@ app.post('/api/simulate', async (req, res) => {
     nickname: req.body.nickname || '测试群友',
     text: req.body.text || ''
   });
-  res.json(ok({ result, db: publicDb() }));
+  res.json(ok({ result, ...compactDbResponse() }));
 });
 
 // Decision sandbox — reads DB, applies overrides, returns decision+context, never writes
@@ -429,6 +1078,7 @@ app.post('/api/sandbox', async (req, res) => {
   const useMemory = body.useMemory !== false;
   const useGroupProfile = body.useGroupProfile !== false;
   const useRelationship = body.useRelationship !== false;
+  const useSkill = body.useSkill !== false;
   const callLlm = body.callLlm === true;
 
   // Get real or overridden data
@@ -448,7 +1098,12 @@ app.post('/api/sandbox', async (req, res) => {
 
   // Context preview
   const sandboxEvent = { type: 'group', groupId, userId, nickname, text, atTargets };
-  const messages = buildPrompt(db, group, sandboxEvent, userPolicy);
+  const messages = buildPrompt(db, group, sandboxEvent, userPolicy, {
+    includeSkill: useSkill,
+    includeMemory: useMemory,
+    includeGroupProfile: useGroupProfile,
+    includeRelationship: useRelationship,
+  });
   const promptPreview = messages.map((m) => `[${m.role}]\n${m.content.slice(0, 500)}`).join('\n\n---\n\n').slice(0, 3000);
 
   // Profile previews
@@ -462,7 +1117,12 @@ app.post('/api/sandbox', async (req, res) => {
   let usage = null;
   if (callLlm && decision.shouldReply) {
     try {
-      const ai = await callLLM(db, messages.slice(-10), db.settings.enableWebSearch ? (db.settings.webSearchMode || 'balanced') : null, { maxTokens: 300 });
+      // Keep the system prompt (persona) at all costs; only the recent history
+      // is trimmed when the context is longer than the sandbox budget.
+      const llmMessages = messages.length > 10
+        ? [messages[0], ...messages.slice(-9)]
+        : messages;
+      const ai = await callLLM(db, llmMessages, db.settings.enableWebSearch ? (db.settings.webSearchMode || 'balanced') : null, { maxTokens: 300 });
       replyPreview = ai.text || '';
       usage = ai.usage || null;
     } catch (e) { replyPreview = `LLM 调用失败: ${e.message}`; }
@@ -491,7 +1151,7 @@ app.post('/api/clear-context/:groupId', (req, res) => {
     db.decisions = db.decisions.filter((decision) => String(decision.groupId) !== String(req.params.groupId));
     db.commandLogs = (db.commandLogs || []).filter((log) => String(log.groupId) !== String(req.params.groupId));
   });
-  res.json(ok({ db: publicDb() }));
+  res.json(ok(compactDbResponse()));
 });
 
 app.post('/api/clear-context', (_req, res) => {
@@ -500,7 +1160,7 @@ app.post('/api/clear-context', (_req, res) => {
     db.decisions = [];
     db.commandLogs = [];
   });
-  res.json(ok({ db: publicDb() }));
+  res.json(ok(compactDbResponse()));
 });
 
 // Health
@@ -554,26 +1214,55 @@ function relationshipPairKey(userA, userB) {
   return [String(userA), String(userB)].sort().join(':');
 }
 
-function displayNameForUser(db, groupId, userId) {
-  const u = (db.users || []).find((x) => String(x.userId) === String(userId) && String(x.groupId) === String(groupId));
-  if (u?.customName) return u.customName;
-  if (u?.nickname) return u.nickname;
-  const mem = (db.memories || []).find((m) => String(m.userId) === String(userId));
-  if (mem?.nickname) return mem.nickname;
-  const recent = [...(db.messages || [])].reverse().find((m) => String(m.userId) === String(userId) && m.nickname);
-  if (recent?.nickname) return recent.nickname;
-  return String(userId);
+function createDisplayNameResolver(db) {
+  const userNames = new Map();
+  for (const user of db.users || []) {
+    const key = `${String(user.groupId)}:${String(user.userId)}`;
+    const name = user.customName || user.nickname;
+    if (name && !userNames.has(key)) userNames.set(key, String(name));
+  }
+
+  const memoryNames = new Map();
+  for (const memory of db.memories || []) {
+    const userId = String(memory.userId);
+    if (memory.nickname && !memoryNames.has(userId)) memoryNames.set(userId, String(memory.nickname));
+  }
+
+  // The old resolver searched the message history backwards for every name.
+  // Build that same latest-name lookup once per response instead of repeating
+  // an O(profileCount * messageCount) scan.
+  const recentNames = new Map();
+  const messages = db.messages || [];
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    const message = messages[index];
+    const userId = String(message.userId || '');
+    if (message.nickname && userId && !recentNames.has(userId)) {
+      recentNames.set(userId, String(message.nickname));
+    }
+  }
+
+  return (groupId, userId) => {
+    const normalizedGroupId = String(groupId);
+    const normalizedUserId = String(userId);
+    return userNames.get(`${normalizedGroupId}:${normalizedUserId}`)
+      || memoryNames.get(normalizedUserId)
+      || recentNames.get(normalizedUserId)
+      || normalizedUserId;
+  };
 }
 
 app.get('/api/relationship-profiles', (_req, res) => {
   const db = readDb();
-  const profiles = (db.relationshipProfiles || [])
-    .filter(isSubstantiveRelationshipProfile)
+  const displayNameForUser = createDisplayNameResolver(db);
+  const groupNames = new Map((db.groups || []).map((group) => [String(group.groupId), group.name || String(group.groupId)]));
+  const substantiveProfiles = (db.relationshipProfiles || []).filter(isSubstantiveRelationshipProfile);
+  const profileKeys = new Set(substantiveProfiles.map((profile) => `${String(profile.groupId)}:${profile.pairKey}`));
+  const profiles = substantiveProfiles
     .map((p) => ({
       ...p,
-      groupName: db.groups?.find((g) => String(g.groupId) === String(p.groupId))?.name || p.groupId,
-      userAName: displayNameForUser(db, p.groupId, p.userA),
-      userBName: displayNameForUser(db, p.groupId, p.userB),
+      groupName: groupNames.get(String(p.groupId)) || p.groupId,
+      userAName: displayNameForUser(p.groupId, p.userA),
+      userBName: displayNameForUser(p.groupId, p.userB),
     }));
   const pendingPairCounts = db.pendingPairCounts || {};
   const candidates = Object.entries(pendingPairCounts)
@@ -582,12 +1271,12 @@ app.get('/api/relationship-profiles', (_req, res) => {
       if (parts.length !== 3 || Number(count) <= 0) return null;
       const [groupId, userA, userB] = parts;
       const pairKey = relationshipPairKey(userA, userB);
-      if (profiles.some((p) => String(p.groupId) === groupId && p.pairKey === pairKey)) return null;
+      if (profileKeys.has(`${groupId}:${pairKey}`)) return null;
       return {
         groupId, userA, userB, pairKey, count: Number(count),
-        groupName: db.groups?.find((g) => String(g.groupId) === groupId)?.name || groupId,
-        userAName: displayNameForUser(db, groupId, userA),
-        userBName: displayNameForUser(db, groupId, userB),
+        groupName: groupNames.get(groupId) || groupId,
+        userAName: displayNameForUser(groupId, userA),
+        userBName: displayNameForUser(groupId, userB),
       };
     })
     .filter(Boolean)
@@ -632,6 +1321,13 @@ app.delete('/api/relationship-profiles/:groupId/:userA/:userB', (req, res) => {
   res.json(ok({ deleted: result.ok }));
 });
 
+app.get('/api/memories/:userId', (req, res) => {
+  const userId = String(req.params.userId || '').trim();
+  const memory = (readDb().memories || []).find((entry) => String(entry.userId) === userId);
+  if (!memory) return res.status(404).json({ ok: false, error: '没有找到这个用户的长期记忆' });
+  res.json(ok({ memory: publicMemory(memory, true) }));
+});
+
 // Profile log routes
 app.get('/api/profile-logs', (req, res) => {
   const { userId, runId, event, limit, offset } = req.query;
@@ -643,7 +1339,7 @@ app.get('/api/profile-logs', (req, res) => {
     offset: offset ? Number(offset) : 0,
   });
   const stats = getProfileLogStats();
-  res.json(ok({ logs, stats }));
+  res.json(ok({ logs, stats: { ...stats, queue: getMemoryProfileQueueStatus() } }));
 });
 
 // Backup routes
@@ -663,6 +1359,7 @@ app.post('/api/backups', (req, res) => {
 app.post('/api/backups/:name/restore', (req, res) => {
   const result = restoreBackup(req.params.name);
   if (!result.ok) return res.status(400).json({ ok: false, error: result.error });
+  refreshCachedAdminPassword();
   res.json(ok({ restored: result.name }));
 });
 
@@ -681,7 +1378,6 @@ setInterval(() => { evaluateTrustScores(); }, 4 * 60 * 60 * 1000);
 // Decay XP for inactive users every 6 hours
 setInterval(() => { decayInactiveUsers(); }, 6 * 60 * 60 * 1000);
 
-const port = Number(process.env.PORT || 8787);
 // Recalc progress
 app.get('/api/recalc-status', (_req, res) => { res.json(ok(getRecalcProgress())); });
 
@@ -696,15 +1392,16 @@ app.post('/api/recalc', (_req, res) => {
     const rels = (db.relationshipProfiles || []).filter((r) => r.enabled !== false);
     const total = mems.length + gps.length + rels.length;
     startRecalc(total, '正在重算全部画像');
-    const { updateMemoryProfile } = await import('./bot/memory.js');
+    const { maybeUpdateMemoryProfile } = await import('./bot/memory.js');
     const { updateGroupProfile } = await import('./bot/groupProfile.js');
     const { updateRelationshipProfile } = await import('./bot/relationshipProfile.js');
     for (const mem of mems) {
       if (getRecalcProgress().stopped) break;
       try {
-        const latestDb = readDb();
-        const result = await updateMemoryProfile(latestDb, mem);
-        commitMemoryProfileResult(mem.userId, result, { model: latestDb.settings.model, kind: 'memory-recalc' });
+        await maybeUpdateMemoryProfile({
+          type: 'private', groupId: '', userId: String(mem.userId), nickname: mem.nickname || String(mem.userId),
+          messageId: `memory-recalc:${mem.userId}:${Date.now()}`
+        }, { force: true, kind: 'memory-recalc' });
       } catch { /* skip */ }
       tickRecalc();
     }
@@ -741,10 +1438,13 @@ app.get('/api/config-snapshots', (_req, res) => {
 
 app.post('/api/config-snapshots/:index/restore', (req, res) => {
   const index = parseInt(req.params.index, 10);
-  updateDb((db) => {
-    if (!restoreConfigSnapshot(db, index)) return res.status(400).json({ ok: false, error: '无效的快照索引' });
-    res.json(ok({ restored: true }));
+  let restored = false;
+  const updatedDb = updateDb((db) => {
+    restored = restoreConfigSnapshot(db, index);
   });
+  if (!restored) return res.status(400).json({ ok: false, error: '无效的快照索引' });
+  refreshCachedAdminPassword(updatedDb);
+  res.json(ok({ restored: true }));
 });
 
 // JSON error handler — never return HTML error pages to the GUI
@@ -753,7 +1453,24 @@ app.use((err, _req, res, _next) => {
   res.status(err?.status || err?.statusCode || 500).json({ ok: false, error: message });
 });
 
-app.listen(port, '127.0.0.1', () => {
+app.listen(port, '127.0.0.1', async () => {
+  const { setMatchSender, matchManager } = await import('./osu/match.js');
+  const { sendOneBotMessage } = await import('./onebot.js');
+  const { migrateLegacyLevels } = await import('./bot/experience.js');
+  setMatchSender(sendOneBotMessage);
+  try {
+    const migrated = migrateLegacyLevels();
+    if (migrated > 0) console.log(`[experience] 已迁移 ${migrated} 条旧等级数据`);
+  } catch (error) {
+    console.error('[experience] 等级迁移失败:', String(error?.message || error));
+  }
+  try {
+    void matchManager.restore(readDb()).catch((error) => {
+      console.error('[match] 恢复监听失败:', String(error?.message || error));
+    });
+  } catch (error) {
+    console.error('[match] 恢复监听失败:', String(error?.message || error));
+  }
   console.log(`QQ AI ChatBot server running at http://127.0.0.1:${port}`);
   connectOneBot();
   // Start Wuxin's local yumu-image endpoint on 8389. The renderer keeps its

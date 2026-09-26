@@ -1,0 +1,6 @@
+QQ AI ChatBot server running at http://127.0.0.1:8787
+[yumu-image] Render server listening on ws://127.0.0.1:8389
+[yumu-image] Client authenticated, pid=31472
+[kb] {"route":"community_style","reason":"casual_chat","decisionSource":"db","groupHash":"1cb0da1fc5072302","collections":["community_style:1"],"documentIds":["community_style:W00137514"],"scores":[2.8559],"dropped":["no_lexical_overlap","no_lexical_overlap","no_lexical_overlap","no_lexical_overlap","no_lexical_overlap","no_lexical_overlap","no_lexical_overlap","no_lexical_overlap","no_lexical_overlap","no_lexical_overlap","no_lexical_overlap","no_lexical_overlap"],"injectedChars":36,"elapsedMs":30}
+[reasoning-shadow] {"ts":1787653455137,"turnId":"60297690","callRole":"tool_planner","level":"max","source":"rule","reasonCode":"tool_selection","actualModel":"deepseek-v4-flash-vision-exp","finishReason":"stop","reasoningTokens":55,"completionTokens":87,"totalTokens":8737,"latencyMs":3650,"toolCalls":0,"textEmpty":false}
+[yumu-image] Render client disconnected

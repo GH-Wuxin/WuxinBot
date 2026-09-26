@@ -1,0 +1,14 @@
+import fs from 'node:fs';
+const DIR = 'G:\\QQ-AI-ChatBot\\tmp\\osu-bp100-corpus';
+const a = JSON.parse(fs.readFileSync(DIR + '\\mod_difficulty_attributes.json', 'utf8'));
+const j = JSON.parse(fs.readFileSync(DIR + '\\join_index.json', 'utf8'));
+console.log('ATTRIBUTE_KEYS: ' + Object.keys(a.records[0].attributes).join(', '));
+console.log('HDDT: ' + a.records.filter((r) => r.mods === 'HDDT').map((r) => 'BP' + r.bp + ' ' + r.beatmap_id + ' ' + r.attributes.star_rating.toFixed(3) + 'sr').join(' | '));
+const ars = j.rows.map((r) => r.official_approach_rate);
+console.log('official modded AR: ' + Math.min(...ars).toFixed(2) + ' - ' + Math.max(...ars).toFixed(2));
+const sr = j.rows.map((r) => r.official_star_rating);
+console.log('official modded SR: ' + Math.min(...sr).toFixed(3) + ' - ' + Math.max(...sr).toFixed(3));
+const nomod = j.rows.map((r) => r.star_rating_api);
+console.log('nomod SR range: ' + Math.min(...nomod).toFixed(3) + ' - ' + Math.max(...nomod).toFixed(3));
+const hd = j.rows.filter((r) => r.mods.includes('HD')).length;
+console.log('maps whose mods include HD: ' + hd + '/100');

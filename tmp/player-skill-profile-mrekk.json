@@ -1,0 +1,93 @@
+{
+  "player": {
+    "osuId": 7562902,
+    "username": "mrekk",
+    "avatarUrl": "https://a.ppy.sh/7562902?1787055713.jpeg",
+    "coverUrl": "https://assets.ppy.sh/user-cover-presets/3/32ddb3eb261e38a82067f9ef4ea96c12f6abf8bd228e6413330f9d351420301b.jpeg",
+    "countryCode": "AU",
+    "globalRank": 1,
+    "countryRank": 1,
+    "pp": 32141.9,
+    "accuracy": 98.2591
+  },
+  "sample": {
+    "requested": 20,
+    "valid": 20,
+    "failed": 0,
+    "failures": [],
+    "modCounts": [
+      {
+        "mods": "HDDT",
+        "count": 14
+      },
+      {
+        "mods": "HDHRDT",
+        "count": 6
+      }
+    ]
+  },
+  "profile": {
+    "methodology": "BP20 weighted P80 / weighted median",
+    "primaryAxes": [
+      "Jump Aim",
+      "Aim Control"
+    ],
+    "profileType": "Jump Aim Dominant",
+    "axes": [
+      {
+        "key": "aim_control",
+        "label": "Aim Control",
+        "ceiling": 11,
+        "median": 10.8
+      },
+      {
+        "key": "jump_aim",
+        "label": "Jump Aim",
+        "ceiling": 14.6,
+        "median": 13.1
+      },
+      {
+        "key": "spatial_precision",
+        "label": "Spatial Precision",
+        "ceiling": 8.5,
+        "median": 8
+      },
+      {
+        "key": "flow_aim",
+        "label": "Flow Aim",
+        "ceiling": 6.2,
+        "median": 4.8
+      },
+      {
+        "key": "raw_speed",
+        "label": "Raw Speed",
+        "ceiling": 7,
+        "median": 6.4
+      },
+      {
+        "key": "finger_control",
+        "label": "Finger Control",
+        "ceiling": 7.3,
+        "median": 6.6
+      },
+      {
+        "key": "stamina",
+        "label": "Stamina",
+        "ceiling": 10,
+        "median": 9.6
+      },
+      {
+        "key": "endurance",
+        "label": "Endurance",
+        "ceiling": 7.7,
+        "median": 5.1
+      },
+      {
+        "key": "reading",
+        "label": "Reading",
+        "ceiling": 9.6,
+        "median": 9.2
+      }
+    ]
+  }
+}
