@@ -3,6 +3,10 @@ import { createHash, randomUUID } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { getDataDir } from '../store.js';
+import {
+  PLAYER_SKILL_AXIS_LABELS,
+  PLAYER_SKILL_AXIS_ORDER,
+} from './playerSkillAxes.js';
 
 export const SKILL_PROFILER_TOOL_NAME = 'osu_analyze_beatmap_skills';
 const DEFAULT_SKILL_PROFILER_URL = 'http://127.0.0.1:8767';
@@ -29,17 +33,12 @@ export interface SkillProfilerIdentity {
   unifiedCalibrationKey: string;
 }
 
-const AXIS_LABELS: Readonly<Record<string, string>> = {
-  aim_control: 'Aim Control',
-  stamina: 'Stamina',
-  endurance: 'Endurance',
-  raw_speed: 'Raw Speed',
-  jump_aim: 'Jump Aim',
-  spatial_precision: 'Micro Precision',
-  flow_aim: 'Flow Aim',
-  finger_control: 'Finger Control',
-  reading: 'Reading',
-};
+const AXIS_LABELS = PLAYER_SKILL_AXIS_LABELS;
+const AXIS_DESCRIPTION = PLAYER_SKILL_AXIS_ORDER.map((axis) =>
+  axis === 'spatial_precision'
+    ? `${AXIS_LABELS[axis]}（小目标容错、落点稳定与微修正）`
+    : AXIS_LABELS[axis],
+).join('、');
 
 function profilerBaseUrl(): URL {
   const configured = String(process.env.SKILL_PROFILER_URL || DEFAULT_SKILL_PROFILER_URL).trim();
@@ -410,15 +409,18 @@ export function skillProfilerAxisValue(
   const item = analysis?.axes?.[axis] || {};
   const unifiedStatus = String(item?.unified_star_status || '').toUpperCase();
   const unifiedReady = analysis?.unified_measurements?.status === 'ATTACHED'
-    && ['ADMITTED', 'CANDIDATE'].includes(unifiedStatus);
+    && unifiedStatus === 'ADMITTED';
   const unifiedValue = finiteNumber(item?.unified_star_equivalent);
   if (unifiedReady && unifiedValue !== null) {
     return { value: unifiedValue, scale: 'unified', status: unifiedStatus };
   }
+  const candidateAttached = analysis?.unified_measurements?.status === 'ATTACHED'
+    && unifiedStatus === 'CANDIDATE'
+    && unifiedValue !== null;
   return {
     value: finiteNumber(item?.stars),
     scale: 'v040_axis',
-    status: String(item?.confidence || 'UNVERIFIED'),
+    status: candidateAttached ? 'CANDIDATE_NOT_ADMITTED' : String(item?.confidence || 'UNVERIFIED'),
   };
 }
 
@@ -460,6 +462,13 @@ export function formatSkillProfilerAnalysis(analysis: any): string {
   const sliderPressureScalar = finiteNumber(sliderPressure.scalar);
   const unified = analysis.unified_measurements || {};
   const unifiedAttached = unified.status === 'ATTACHED';
+  const candidateUnifiedCount = unifiedAttached
+    ? PLAYER_SKILL_AXIS_ORDER.filter((axis) => {
+        const item = analysis.axes?.[axis] || {};
+        return String(item.unified_star_status || '').toUpperCase() === 'CANDIDATE'
+          && finiteNumber(item.unified_star_equivalent) !== null;
+      }).length
+    : 0;
   const lines = [
     'Skill Profiler 本地确定性谱面需求分析（正式 v0.40；各维是谱面需求，不是 osu! 官方总星数，也不是玩家能力评价）',
     `谱面：${formatBeatmapTitle(beatmap)}`,
@@ -468,12 +477,15 @@ export function formatSkillProfilerAnalysis(analysis: any): string {
     `环境：AR ${finiteNumber(difficulty.ApproachRate ?? difficulty.AR)?.toFixed(1) ?? '未知'} · OD ${finiteNumber(difficulty.OverallDifficulty ?? difficulty.OD)?.toFixed(1) ?? '未知'} · CS ${finiteNumber(difficulty.CircleSize ?? difficulty.CS)?.toFixed(1) ?? '未知'}${bpm === null ? '' : ` · BPM ${bpm.toFixed(1)}`}${durationMs === null ? '' : ` · 时长 ${(durationMs / 1000).toFixed(0)}s`}${localStars === null ? '' : ` · 本地 NM 总星数 ${localStars.toFixed(2)}★`}`,
     '九维需求：',
   ];
+  if (candidateUnifiedCount > 0) {
+    lines.push(`统一量尺：${candidateUnifiedCount} 个维度为 CANDIDATE，尚未进入正式输出；以下使用 v0.40 原轴值。`);
+  }
   if (sliderPressureScalar === null) {
     lines.push(`SliderPressure：${String(sliderPressure.status || '未通过发布门')}（单位 normalized px/ms；不折算为加权星数）`);
   } else {
     lines.push(`SliderPressure：${sliderPressureScalar.toFixed(3)} normalized px/ms（支撑门通过；不折算为加权星数）`);
   }
-  for (const axis of Object.keys(AXIS_LABELS)) {
+  for (const axis of PLAYER_SKILL_AXIS_ORDER) {
     const item = analysis.axes[axis] || {};
     const measurement = skillProfilerAxisValue(analysis, axis);
     const legacy = finiteNumber(item.stars);
@@ -535,7 +547,7 @@ export function buildSkillProfilerToolSchema(): LlmTool {
     type: 'function',
     function: {
       name: SKILL_PROFILER_TOOL_NAME,
-      description: '使用正式 v0.40 分析一张本地已有的 osu!standard 谱面在 Aim Control、Stamina、Endurance、Raw Speed、Jump Aim、Micro Precision（小目标容错、落点稳定与微修正）、Flow Aim、Finger Control、Reading 九个维度上的谱面需求，并返回 SliderPressure 与实验性谱面类型。用户问“这图难在哪/是什么类型/某维度多难”时调用；结果不是玩家能力分析，也不是官方星数。',
+      description: `使用正式 v0.40 分析一张本地已有的 osu!standard 谱面在 ${AXIS_DESCRIPTION} 九个维度上的谱面需求，并返回 SliderPressure 与实验性谱面类型。用户问“这图难在哪/是什么类型/某维度多难”时调用；结果不是玩家能力分析，也不是官方星数。`,
       parameters: {
         type: 'object',
         properties: {

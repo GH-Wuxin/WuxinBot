@@ -23,7 +23,7 @@
 
 ## 定位
 
-知识库是 **可旁路的增量层**：总开关关闭时，`buildPrompt` 输出与接入前逐字节一致；`osu_analysis` 场景在任何加载/检索之前短路（零索引、零日志、零注入）；`osu_domain` 加载/检索失败时回退原有 `buildOsuTopicKnowledge` 关键词路径。Analyze V89 未修改。
+知识库是 **可旁路的增量层**：总开关关闭时，`buildPrompt` 输出与接入前逐字节一致；`osu_analysis` 场景在任何加载/检索之前短路（零索引、零日志、零注入）；`osu_domain` 加载/检索失败时回退原有 `buildOsuTopicKnowledge` 关键词路径。旧版 Analyze V89 保留作兼容；当前命令入口已切换到独立的 Analyze MVP 路径，由 `server/osu/analyzerMvp.ts` 负责数据证据包、单次 LLM 报告与事实校验。
 
 ## 三集合
 

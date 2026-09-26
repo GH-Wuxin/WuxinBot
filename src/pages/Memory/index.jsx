@@ -29,16 +29,42 @@ export function MemoryPage({ db, saveSettings, refreshState }) {
   }).sort((left, right) => Number(right.importanceLevel || 0) - Number(left.importanceLevel || 0) || Number(right.messageCount || 0) - Number(left.messageCount || 0));
   const [selectedId, setSelectedId] = useState(memories[0]?.userId || '');
   const selected = memories.find((memory) => String(memory.userId) === String(selectedId)) || memories[0];
+  const [memoryDetail, setMemoryDetail] = useState(null);
   const [draft, setDraft] = useState(selected || {});
   const [settingsDraft, setSettingsDraft] = useState(db.settings);
   const [profileDirty, setProfileDirty] = useState(false);
   const [settingsDirty, setSettingsDirty] = useState(false);
   const [recalcUserId, setRecalcUserId] = useState('');
+  const selectedStamp = selected?.updatedAt || '';
+
+  useEffect(() => {
+    if (!selectedId) {
+      setMemoryDetail(null);
+      return undefined;
+    }
+    const controller = new AbortController();
+    let cancelled = false;
+    setMemoryDetail(null);
+    api(`/api/memories/${selectedId}`, { signal: controller.signal, timeoutMs: 10000 })
+      .then((result) => {
+        if (!cancelled) setMemoryDetail(result.memory || null);
+      })
+      .catch((cause) => {
+        if (!cancelled && cause?.message !== '请求已取消') setMemoryDetail(null);
+      });
+    return () => {
+      cancelled = true;
+      controller.abort();
+    };
+  }, [selectedId, selectedStamp]);
 
   useEffect(() => {
     if (profileDirty) return;
-    setDraft(memories.find((memory) => String(memory.userId) === String(selectedId)) || memories[0] || {});
-  }, [db.memories, selectedId, profileDirty]);
+    const next = memoryDetail && String(memoryDetail.userId) === String(selectedId)
+      ? memoryDetail
+      : selected || {};
+    setDraft(next);
+  }, [memoryDetail, selectedId, selectedStamp, profileDirty]);
 
   useEffect(() => {
     if (!settingsDirty) setSettingsDraft(db.settings);
@@ -49,29 +75,32 @@ export function MemoryPage({ db, saveSettings, refreshState }) {
 
   const saveMemory = async () => {
     if (!draft.userId) return;
-    await api(`/api/memories/${draft.userId}`, { method: 'POST', body: draft });
+    await api(`/api/memories/${draft.userId}`, { method: 'POST', body: draft, timeoutMs: 15000 });
     setProfileDirty(false);
     await refreshState();
   };
   const deleteMemory = async () => {
     if (!draft.userId || !window.confirm(`删除 ${draft.nickname || draft.userId} 的长期记忆？`)) return;
-    await api(`/api/memories/${draft.userId}`, { method: 'DELETE' });
+    await api(`/api/memories/${draft.userId}`, { method: 'DELETE', timeoutMs: 15000 });
     setSelectedId('');
+    setMemoryDetail(null);
     setProfileDirty(false);
     await refreshState();
   };
   const recalcMemory = async () => {
     if (!draft.userId || recalcUserId) return;
     if (profileDirty && !window.confirm('当前画像编辑区有未保存修改。继续重算不会包含这些修改，是否继续？')) return;
-    setRecalcUserId(String(draft.userId));
+    const targetUserId = String(draft.userId);
+    setRecalcUserId(targetUserId);
     try {
-      const result = await api(`/api/memories/${draft.userId}/recalculate`, { method: 'POST' });
-      if (result.db) {
-        setProfileDirty(false);
-        await refreshState();
-        const next = (result.db.memories || []).find((memory) => String(memory.userId) === String(draft.userId));
-        if (next) setDraft(next);
-      } else await refreshState();
+      const result = await api(`/api/memories/${targetUserId}/recalculate`, { method: 'POST', timeoutMs: 130000 });
+      setProfileDirty(false);
+      await refreshState();
+      const detailResult = await api(`/api/memories/${targetUserId}`, { timeoutMs: 10000 });
+      if (detailResult.memory) {
+        setMemoryDetail(detailResult.memory);
+        setDraft(detailResult.memory);
+      }
       alert(`${draft.nickname || draft.userId} 画像重算完成：${result.outcome?.reason || '已完成'}`);
     } catch (cause) {
       await refreshState();
@@ -114,7 +143,7 @@ export function MemoryPage({ db, saveSettings, refreshState }) {
         <span className="console-search"><Search size={15} /><input aria-label="搜索长期记忆" placeholder="搜索昵称、QQ 或画像关键词" value={memSearch} onChange={(event) => setMemSearch(event.target.value)} /></span>
         <div className="memory-directory__list">{memories.map((memory) => {
           const exp = (db.experience || {})[String(memory.userId)];
-          return <button type="button" className={String(draft.userId) === String(memory.userId) ? 'is-selected' : ''} key={memory.userId} onClick={() => { setProfileDirty(false); setSelectedId(memory.userId); }}><strong>{memory.nickname || memory.userId}</strong><span>{memory.userId}</span><div><Pill tone="accent">记忆 Lv.{memory.importanceLevel || 0}</Pill><Pill>{memory.messageCount || 0} 条</Pill>{exp && <Pill tone="success">{levelPpLabel(exp)}</Pill>}</div></button>;
+          return <button type="button" className={String(draft.userId) === String(memory.userId) ? 'is-selected' : ''} key={memory.userId} onClick={() => { setProfileDirty(false); setMemoryDetail(null); setSelectedId(memory.userId); }}><strong>{memory.nickname || memory.userId}</strong><span>{memory.userId}</span><div><Pill tone="accent">记忆 Lv.{memory.importanceLevel || 0}</Pill><Pill>{memory.messageCount || 0} 条</Pill>{exp && <Pill tone="success">{levelPpLabel(exp)}</Pill>}</div></button>;
         })}{!memories.length && <EmptyState title="还没有长期记忆" description="有人积累足够消息后会自动出现。" />}</div>
       </Card>
 

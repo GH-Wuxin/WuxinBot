@@ -14,7 +14,7 @@ import { activeModelName } from '../modelConfig.js';
 const PROFILE_FIELDS = ['summary', 'traits', 'speechStyle', 'behavior', 'preferences'];
 const MEMORY_SWEEP_INTERVAL_MS = 90_000;
 const PROFILE_LLM_CIRCUIT_MS = 10 * 60_000;
-const PROFILE_UPDATE_TIMEOUT_MS = 70_000;
+const PROFILE_UPDATE_TIMEOUT_MS = 120_000;
 const PROFILE_RETRY_BACKOFF_MS = [5, 15, 30, 60].map((minutes) => minutes * 60_000);
 const profileUpdatePromises = new Map();
 let profileQueueTail = Promise.resolve();

@@ -5,16 +5,25 @@ import {renderMapSkillCard} from './skillCard/cards.js';
 const finite=(value:unknown):number|null=>value===null||value===undefined||value===''||!Number.isFinite(Number(value))?null:Number(value);
 const modsOf=(values:unknown)=>Array.isArray(values)?[...new Set(values.map(String).map(x=>x.trim().toUpperCase()).filter(x=>x&&x!=='NM'))]:[];
 
+function objectCount(beatmap:any):number|null{
+  const counts=['count_circles','count_sliders','count_spinners'].map((key)=>finite(beatmap?.[key]));
+  if(counts.every((value)=>value!==null))return counts.reduce((sum,value)=>sum+(value||0),0);
+  return finite(beatmap?.metadata?.counts?.objects);
+}
+
 export function buildSkillProfilerCardPayload(analysis:any,official:{beatmap?:any;starRating?:number|null}={}){
   if(analysis?.status!=='OK'||!analysis?.beatmap||!analysis?.axes)throw Error('SKILL_PROFILER_CARD_ANALYSIS_INVALID');
   const context=analysis.mod_context||{};
   const mods=modsOf(context.requested_mods?.length?context.requested_mods:context.effective_mods);
   const effective=modsOf(context.effective_mods??mods).filter(mod=>!['NF','SD','PF'].includes(mod));
   const setId=finite(analysis.beatmap.beatmapset_id);
+  const stars=finite(official.starRating)??(effective.length?null:finite(official.beatmap?.difficulty_rating)??finite(analysis.beatmap.local_nm_stars));
   return {
     analysis,mods,
-    stars:finite(official.starRating)??(effective.length?null:finite(official.beatmap?.difficulty_rating)??finite(analysis.beatmap.local_nm_stars)),
+    stars,
     nomodStars:finite(official.beatmap?.difficulty_rating),
+    objectCount:objectCount(official.beatmap)??finite(analysis.beatmap?.metadata?.counts?.objects),
+    starRatingLabel:effective.length?'MODDED STAR':'OSU! ORIGINAL STAR',
     coverUrl:setId&&setId>0?`https://assets.ppy.sh/beatmaps/${setId}/covers/fullsize.jpg`:'',
     official:{source:'osu! API v2',beatmapId:analysis.beatmap.beatmap_id},
   };

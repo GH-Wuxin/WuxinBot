@@ -10,6 +10,7 @@ import {
   renderPlayerSkillComparisonCard,
   renderPlayerSkillProfileCard,
 } from '../server/bots/playerSkillComparisonCard.ts';
+import {buildPlayerSkillCardHtml} from '../server/bots/skillCard/cards.ts';
 import { PLAYER_SKILL_AXES, PLAYER_SKILL_AXIS_LABELS } from '../server/bots/playerSkillProfile.ts';
 
 const testDataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'wuxin-player-skill-card-'));
@@ -45,6 +46,11 @@ assert.match(svg,/data-design="tier-radar-v2"/);
 assert.match(svg,/class="comparison-radar"/);
 assert.equal((svg.match(/class="axis-value"/g)||[]).length,9,'comparison radar shows all nine fixed dimensions');
 assert.match(svg,/data-axis-label="spatial_precision"/,'comparison preserves the Spatial Precision label');
+assert.deepEqual(
+  [...svg.matchAll(/data-axis-label="([^"]+)"/g)].map((match) => match[1]),
+  [...PLAYER_SKILL_AXES],
+  'comparison radar angles match the profile axis order',
+);
 assert.match(svg,/data-unit="independent"/,'Stamina and Endurance retain independent /10 units');
 assert.match(svg,/RightPlayer leads/,'the summary names the leading player rather than a generic profile lean');
 const leftRadarColor = svg.match(/data-left-color="([^"]+)"/)?.[1];
@@ -95,6 +101,12 @@ assert.ok(profilePng.length > 10_000, `profile PNG should be non-trivial, got ${
 assert.deepEqual([...profilePng.subarray(0, 8)], [137, 80, 78, 71, 13, 10, 26, 10]);
 const profileSize=await sharp(profilePng).metadata();
 assert.deepEqual({width:profileSize.width,height:profileSize.height},{width:1280,height:720});
+const profileHtml = buildPlayerSkillCardHtml(profile);
+assert.deepEqual(
+  [...profileHtml.matchAll(/data-axis-label="([^"]+)"/g)].map((match) => match[1]),
+  [...PLAYER_SKILL_AXES],
+  'profile radar angles use the same shared axis order',
+);
 const originalFetch = globalThis.fetch;
 let avatarAttempts = 0;
 const avatarUrl = `https://a.ppy.sh/999999?retry-fixture-${Date.now()}`;

@@ -423,6 +423,18 @@ export function allowedByOsuCommandOnlyMode(event, quickMatch = null) {
   return quickMatch?.def?.kind === 'osu';
 }
 
+function llmTurnLimitsForEvent(event) {
+  const text = String(event?.text || '').trim();
+  // osu Analyze spends most of its time collecting BP100/Recent/PP+ evidence
+  // before it makes the single Codex report call. The normal 180s conversation
+  // budget can expire during collection and incorrectly turn a healthy model
+  // into LLM_TURN_BUDGET_EXHAUSTED. Keep this exception narrow and explicit.
+  if (/^\/w(?:uxin)?\s+osu\s+analyze(?:\s|$)/i.test(text)) {
+    return { maxCalls: 4, timeoutMs: 600_000 };
+  }
+  return undefined;
+}
+
 export async function processIncoming(event, sendMessage = undefined, queuedDecision = undefined, isFromDrain = false) {
   const queueOwner = { key: '' };
   const requestId = requestTraceIdFor(event);
@@ -438,7 +450,10 @@ export async function processIncoming(event, sendMessage = undefined, queuedDeci
     });
     markActiveProcessing(1);
     try {
-      const result = await withLlmTurnPolicy(() => processIncomingInner(event, sendMessage, queuedDecision, isFromDrain, queueOwner));
+      const result = await withLlmTurnPolicy(
+        () => processIncomingInner(event, sendMessage, queuedDecision, isFromDrain, queueOwner),
+        llmTurnLimitsForEvent(event),
+      );
       finishRequestTrace(result?.error ? 'failed' : 'completed', {
         replied: Boolean(result?.replied),
         queued: Boolean(result?.queued),

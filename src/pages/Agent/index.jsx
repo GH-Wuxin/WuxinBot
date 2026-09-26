@@ -85,6 +85,7 @@ export function AgentPage({ db }) {
     try {
       const data = await api('/api/sandbox', {
         method: 'POST',
+        timeoutMs: callLlm ? 90000 : 20000,
         body: {
           groupId,
           userId: userId || 'sandbox-user',

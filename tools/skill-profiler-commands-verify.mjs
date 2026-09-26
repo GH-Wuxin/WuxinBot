@@ -114,7 +114,7 @@ process.env.OSU_BEATMAP_FILE_BASE_URL = `http://127.0.0.1:${port}/osu/`;
 try {
   const { ensureStore, readDb, writeDb } = await import('../server/store.ts');
   const { processIncoming } = await import('../server/bot.ts');
-  const { parsePlayerRecentSkillRequest, parsePlayerSkillComparisonRequest, parsePlayerSkillProfileRequest, parseSkillCommandRequest, parseSkillCommandTarget } = await import('../server/bot/owner/skill.ts');
+  const { parsePlayerInfoRequest, parsePlayerRecentSkillRequest, parsePlayerSkillComparisonRequest, parsePlayerSkillProfileRequest, parseSkillCommandRequest, parseSkillCommandTarget } = await import('../server/bot/owner/skill.ts');
   const { skillProfilerFeedbackPath } = await import('../server/bots/skillProfilerFeedback.ts');
   ensureStore();
   const db = readDb();
@@ -171,6 +171,9 @@ try {
   assert.deepEqual(parsePlayerSkillProfileRequest('profile p:[Tong Tong]'), { matched: true, player: 'Tong Tong' });
   assert.deepEqual(parsePlayerSkillProfileRequest('profile p:[[SHK]Hina]'), { matched: true, player: '[SHK]Hina' });
   assert.deepEqual(parsePlayerSkillProfileRequest('mrekk 20'), { matched: false });
+  assert.deepEqual(parsePlayerInfoRequest(''), { matched: true, player: '' });
+  assert.deepEqual(parsePlayerInfoRequest('mrekk'), { matched: true, player: 'mrekk' });
+  assert.deepEqual(parsePlayerInfoRequest('info p:[Tong Tong]'), { matched: true, player: 'Tong Tong' });
   assert.deepEqual(parsePlayerRecentSkillRequest('recent'), { matched: true, player: '' });
   assert.deepEqual(parsePlayerRecentSkillRequest('recent mrekk'), { matched: true, player: 'mrekk' });
   assert.deepEqual(parsePlayerRecentSkillRequest('recent p:[970]'), { matched: true, player: '970' });
@@ -195,7 +198,7 @@ try {
   assert.match(parsePlayerSkillComparisonRequest('compare mrekk').error, /玩家A/);
 
   const helpEntries = (await import('../server/bot/owner/help.ts')).ownerHelpEntries();
-  assert.ok(helpEntries.some((entry) => entry.canonicalSyntax.includes('/w skill profile [玩家名或 p:[完整玩家名或ID]]')));
+  assert.ok(helpEntries.some((entry) => entry.canonicalSyntax === '/w info [玩家名或 p:[完整玩家名或ID]]'));
   assert.ok(helpEntries.some((entry) => entry.canonicalSyntax.includes('recent [玩家名或 p:[完整玩家名或ID]]')));
   assert.ok(helpEntries.some((entry) => entry.canonicalSyntax.includes('compare <玩家A>')));
   assert.ok(helpEntries.some((entry) => entry.canonicalSyntax === '/w cd <BID> [+Mods] <反馈>'));
@@ -224,6 +227,13 @@ try {
   assert.deepEqual(profilerPayloads.at(-1), { beatmap_id: 4385157, mods: ['HD'] });
   assert.match(readDb().skillProfilerRuns.at(-1).sourceLabel, /Player With Spaces 的 BP#1/);
   assert.match(sent.at(-1), /\[CQ:image,/);
+
+  const callsBeforeLegacyProfile = profilerPayloads.length;
+  const legacyProfile = await processIncoming(event('/w skill profile mrekk', 'skill-legacy-profile'), sendMessage);
+  assert.equal(legacyProfile.replied, true);
+  assert.match(sent.at(-1), /已移除/);
+  assert.match(sent.at(-1), /\/w info/);
+  assert.equal(profilerPayloads.length, callsBeforeLegacyProfile);
 
   const direct = await processIncoming(event('/w skill 5648807 +HDDTPF', 'skill-bid'), sendMessage);
   assert.equal(direct.replied, true);

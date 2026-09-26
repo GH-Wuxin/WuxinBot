@@ -142,7 +142,7 @@ export function GroupsPage({ db, refreshState, saveSettings }) {
     setProfileEditing(false);
   };
   const saveGroup = async (payload = form) => runAction('save-group', async () => {
-    await api('/api/groups', { method: 'POST', body: payload });
+    await api('/api/groups', { method: 'POST', body: payload, timeoutMs: 15000 });
     await refreshState();
     setCreating(false);
     setSelectedId(payload.groupId);
@@ -159,7 +159,7 @@ export function GroupsPage({ db, refreshState, saveSettings }) {
     setBotToggles((current) => ({ ...current, [groupId]: { ...(current[groupId] || {}), [botId]: enabled } }));
     try {
       await runAction(`bot-${botId}`, async () => {
-        await api('/api/group-bot-config', { method: 'POST', body: { groupId, botId, enabled } });
+        await api('/api/group-bot-config', { method: 'POST', body: { groupId, botId, enabled }, timeoutMs: 15000 });
         await refreshState();
       });
     } catch {
@@ -168,16 +168,16 @@ export function GroupsPage({ db, refreshState, saveSettings }) {
   };
 
   const updateProfile = () => runAction('profile-update', async () => {
-    await api(`/api/group-profiles/${selectedGroup.groupId}/update`, { method: 'POST' });
+    await api(`/api/group-profiles/${selectedGroup.groupId}/update`, { method: 'POST', timeoutMs: 75000 });
     await refreshState();
   });
   const toggleProfile = () => runAction('profile-toggle', async () => {
-    await api(`/api/group-profiles/${selectedGroup.groupId}`, { method: 'PATCH', body: { enabled: !selectedProfile.enabled } });
+    await api(`/api/group-profiles/${selectedGroup.groupId}`, { method: 'PATCH', body: { enabled: !selectedProfile.enabled }, timeoutMs: 15000 });
     await refreshState();
   });
   const saveProfile = () => runAction('profile-save', async () => {
     const body = Object.fromEntries(profileFields.map(([field]) => [field, profileDraft[field] || '']));
-    await api(`/api/group-profiles/${selectedGroup.groupId}`, { method: 'PATCH', body });
+    await api(`/api/group-profiles/${selectedGroup.groupId}`, { method: 'PATCH', body, timeoutMs: 15000 });
     setProfileEditing(false);
     await refreshState();
   });
@@ -194,9 +194,9 @@ export function GroupsPage({ db, refreshState, saveSettings }) {
     const current = confirmation;
     if (!current) return;
     await runAction(`confirm-${current.kind}`, async () => {
-      if (current.kind === 'delete-group') await api(`/api/groups/${current.group.groupId}`, { method: 'DELETE' });
-      if (current.kind === 'clear-context') await api(`/api/clear-context/${current.group.groupId}`, { method: 'POST' });
-      if (current.kind === 'clear-profile') await api(`/api/group-profiles/${current.group.groupId}`, { method: 'DELETE' });
+      if (current.kind === 'delete-group') await api(`/api/groups/${current.group.groupId}`, { method: 'DELETE', timeoutMs: 15000 });
+      if (current.kind === 'clear-context') await api(`/api/clear-context/${current.group.groupId}`, { method: 'POST', timeoutMs: 15000 });
+      if (current.kind === 'clear-profile') await api(`/api/group-profiles/${current.group.groupId}`, { method: 'DELETE', timeoutMs: 15000 });
       setConfirmation(null);
       await refreshState();
       if (current.kind === 'delete-group') {

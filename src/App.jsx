@@ -27,6 +27,7 @@ export function App() {
   const [loadError, setLoadError] = useState('');
   const refreshInFlight = useRef(null);
   const refreshAbort = useRef(null);
+  const stateRevision = useRef('');
   const mounted = useRef(false);
 
   const refresh = useCallback(() => {
@@ -35,8 +36,11 @@ export function App() {
     refreshAbort.current = controller;
     const request = (async () => {
       try {
+        const revisionData = await api('/api/state/revision', { signal: controller.signal, timeoutMs: 5000 });
+        if (stateRevision.current && revisionData.revision === stateRevision.current) return;
         const data = await api('/api/state', { signal: controller.signal, timeoutMs: 10000 });
         if (mounted.current) {
+          stateRevision.current = data.revision || revisionData.revision || '';
           setState(data);
           setLoadError('');
         }
@@ -83,8 +87,9 @@ export function App() {
   }, [refresh]);
 
   const saveSettings = async (patch) => {
-    const data = await api('/api/settings', { method: 'POST', body: patch });
+    const data = await api('/api/settings', { method: 'POST', body: patch, timeoutMs: 15000 });
     rememberAdminPassword(patch.adminPassword);
+    if (data.revision) stateRevision.current = data.revision;
     setState((current) => ({ ...current, db: data.db }));
     setToast('已保存设置');
     setTimeout(() => setToast(''), 1800);
@@ -100,7 +105,7 @@ export function App() {
     onNavigate={setTab}
     db={db}
     oneBot={state.oneBot}
-    onStopAll={async () => { await api('/api/stop-all', { method: 'POST' }); refresh(); }}
+    onStopAll={async () => { await api('/api/stop-all', { method: 'POST', timeoutMs: 10000 }); refresh(); }}
     onPauseToggle={() => saveSettings({ globalPaused: !db.settings.globalPaused })}
   >
     {toast && <div className="toast">{toast}</div>}

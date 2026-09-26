@@ -11,8 +11,9 @@ i{font-style:normal}
 .brand b{font-size:18px;letter-spacing:-.3px;color:#eeeae1}
 .brand>span{font-size:11px;letter-spacing:1.8px;color:#8f9892}
 .map-top{height:98px;display:grid;grid-template-columns:154px minmax(0,1fr) 190px;gap:18px;align-items:center}
-.map-cover-frame{height:92px;background:var(--panel);overflow:hidden;border:1px solid var(--rule)}
+.map-cover-frame{height:92px;background:var(--panel);overflow:hidden;border:1px solid var(--rule);display:flex;align-items:center;justify-content:center}
 .map-cover{display:block;width:100%;height:100%;object-fit:cover;object-position:50% 42%;opacity:.82}
+.cover-placeholder{width:100%;height:100%;display:flex;align-items:center;justify-content:center;text-align:center;color:#77827c;font-size:10px;line-height:1.45;letter-spacing:1.2px;background:linear-gradient(135deg,color-mix(in srgb,var(--cover-tint,#71847c) 14%,var(--panel)),var(--panel))}
 .map-copy{min-width:0}
 .eyebrow{font-size:12px;line-height:1.2;letter-spacing:1.15px;color:#9da6a0;text-transform:uppercase;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .map-copy h1{margin:5px 0 3px;font-size:30px;line-height:1.08;font-weight:650;letter-spacing:-.4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
@@ -38,6 +39,7 @@ i{font-style:normal}
 .lead-line span{font-size:10px;letter-spacing:1.1px;color:#838d87}
 .lead-line b{font-size:17px;font-weight:650}
 .lead-line strong{margin-left:auto;font-size:25px;line-height:1;font-weight:650}
+.confidence-marker{margin-left:6px;color:#e5b765;font-size:11px;font-weight:700;vertical-align:4px}
 .skill-radar{display:block;width:100%;height:385px;overflow:visible}
 .skill-radar text{font-family:'Skill Sans','Segoe UI','Microsoft YaHei',sans-serif;font-variant-numeric:tabular-nums}
 .unit-note{margin-top:4px;font-size:10px;line-height:1.3;color:#7f8983;letter-spacing:.1px}

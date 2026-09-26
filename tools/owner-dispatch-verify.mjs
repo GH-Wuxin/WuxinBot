@@ -92,8 +92,9 @@ const BASELINE_OWNER_HELP = [
   ['refresh', '/w refresh', '触发全局重算（仅 owner）', 'memberPolicy', 'owner', 'owner', 'direct_only', 'refresh'],
   ['osuHelp', '/w osu help', 'osu! 命令帮助', 'osuHelp', 'all', 'public', 'listed', 'osu.help'],
   ['osuBind', '/w osu bind <osu用户名>', '绑定 osu! 账号', 'osuBind', 'all', 'public', 'listed', 'osu.bind'],
-  ['osuAnalyze', '/w osu analyze (@某人)', '玩家分析（已停用）', 'osuAnalyze', 'all', 'hidden', 'hidden', 'osu.analyze'],
-  ['skill', '/w skill profile [玩家名]；recent [玩家名或 p:[玩家ID]]；compare <玩家A> <玩家B>；<BP名次或BID> [+Mods]；<玩家名> <BP名次>', '生成 BP50 长期画像、最近五天发挥画像、玩家对比图，或分析单张 BP/BID', 'skill', 'all', 'public', 'listed', 'skill'],
+  ['osuAnalyze', '/w osu analyze [用户名]', '生成基于 BP、Recent 与 PP+ 证据的 LLM 玩家分析', 'osuAnalyze', 'all', 'public', 'listed', 'osu.analyze'],
+  ['info', '/w info [玩家名或 p:[完整玩家名或ID]]', '生成基于 BP50 的 Skill Profiler 玩家画像', 'info', 'all', 'public', 'listed', 'info'],
+  ['skill', '/w skill recent [玩家名或 p:[完整玩家名或ID]]；compare <玩家A> <玩家B>（空格/方括号名用 p:[完整玩家名或ID]）；<BP名次或BID> [+Mods]；<玩家名或 p:[完整玩家名或ID]> <BP名次>', '生成最近五天发挥画像、玩家对比图，或分析单张 BP/BID', 'skill', 'all', 'public', 'listed', 'skill'],
   ['skillFeedback', '/w cd <BID> [+Mods] <反馈>', '按 BID 与 Mod 反馈 Skill Profiler 判断；不写 Mod 表示 NM', 'skillFeedback', 'all', 'public', 'listed', 'skillFeedback'],
 ];
 
@@ -205,6 +206,7 @@ for (const file of handlerFiles) {
     ['/w group profile update', 'groupProfileEdit'],
     ['/w model list', 'modelShow'],
     ['/w model foo', 'modelSet'],
+    ['/w info mrekk', 'info'],
     ['/w op @1', 'memberPolicy'],
     ['/w deop @1', 'memberPolicy'],
   ];

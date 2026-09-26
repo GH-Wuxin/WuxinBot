@@ -1,4 +1,5 @@
 const ADMIN_PASSWORD_KEY = 'wuxinAdminPassword';
+const DEFAULT_TIMEOUT_MS = 30_000;
 
 let authPromptActive = false;
 let authPromptCancelled = false;
@@ -8,13 +9,13 @@ export function resetAdminAuthPrompt() {
 }
 
 export async function api(path, options = {}, allowAuthRetry = true) {
-  const { timeoutMs = 120000, signal: externalSignal, ...fetchOptions } = options;
+  const { timeoutMs = DEFAULT_TIMEOUT_MS, signal: externalSignal, ...fetchOptions } = options;
   const controller = new AbortController();
   let timedOut = false;
   const timeout = window.setTimeout(() => {
     timedOut = true;
     controller.abort();
-  }, Math.max(1000, Number(timeoutMs) || 120000));
+  }, Math.max(1000, Number(timeoutMs) || DEFAULT_TIMEOUT_MS));
   const abortFromCaller = () => controller.abort(externalSignal?.reason);
   if (externalSignal?.aborted) abortFromCaller();
   else externalSignal?.addEventListener('abort', abortFromCaller, { once: true });

@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { ChevronLeft, ChevronRight, ExternalLink, RefreshCw, Search, Sparkles, Trash2, UserRound, X } from 'lucide-react';
 import { api } from '../../lib/api.js';
 import { Button, Card, ConfirmDialog, EmptyState, ErrorState, IconButton, InlineHelp, Input, MetricCard, Pill, SectionHeader, SegmentedControl, StatusBadge } from '../../components/ui/index.jsx';
@@ -28,12 +28,16 @@ export function OsuPage({ db, refreshState }) {
   const [searchText, setSearchText] = useState('');
   const [drawer, setDrawer] = useState(null);
   const [unbind, setUnbind] = useState(null);
+  const statusInFlight = useRef(false);
 
   const load = async () => {
+    if (statusInFlight.current) return;
+    statusInFlight.current = true;
     try {
-      const nextStatus = await api('/api/osu/status');
+      const nextStatus = await api('/api/osu/status', { timeoutMs: 10000 });
       setStatus(nextStatus); setLoadError('');
     } catch (error) { setLoadError(error?.message || String(error)); }
+    finally { statusInFlight.current = false; }
   };
 
   useEffect(() => {
@@ -52,14 +56,14 @@ export function OsuPage({ db, refreshState }) {
     const query = searchText.trim();
     if (!query) return;
     if (/^\d{1,12}$/.test(query)) openPlayer(query);
-    else { const data = await api(`/api/osu/search?name=${encodeURIComponent(query)}`); openPlayer(data.player.id, data.player.username); }
+    else { const data = await api(`/api/osu/search?name=${encodeURIComponent(query)}`, { timeoutMs: 20000 }); openPlayer(data.player.id, data.player.username); }
   });
   const addBinding = () => run('binding-add', async () => {
-    await api('/api/osu/bindings', { method: 'POST', body: { action: 'add', qq, username: name } });
+    await api('/api/osu/bindings', { method: 'POST', body: { action: 'add', qq, username: name }, timeoutMs: 15000 });
     setQq(''); setName(''); await Promise.all([load(), refreshState()]);
   });
   const removeBinding = () => run('binding-remove', async () => {
-    await api('/api/osu/bindings', { method: 'POST', body: { action: 'remove', qq: unbind.qq } });
+    await api('/api/osu/bindings', { method: 'POST', body: { action: 'remove', qq: unbind.qq }, timeoutMs: 15000 });
     setUnbind(null); await Promise.all([load(), refreshState()]);
   });
   return <div className="osu-page">
@@ -100,7 +104,7 @@ function PlayerDrawer({ osuId, username, onClose }) {
 
   const loadProfile = async (force = false) => {
     setProfileError('');
-    try { const result = force ? await api(`/api/osu/player/${osuId}/refresh`, { method: 'POST' }) : await api(`/api/osu/player/${osuId}`); setProfile(result.profile); }
+    try { const result = force ? await api(`/api/osu/player/${osuId}/refresh`, { method: 'POST', timeoutMs: 30000 }) : await api(`/api/osu/player/${osuId}`, { timeoutMs: 20000 }); setProfile(result.profile); }
     catch (error) { setProfileError(error?.message || String(error)); }
   };
   useEffect(() => { loadProfile(); }, [osuId]);
@@ -114,21 +118,38 @@ function PlayerDrawer({ osuId, username, onClose }) {
 
   useEffect(() => {
     if (!profile) return;
-    if (tab === 'bp' && data.bp === undefined && !loading.bp) loadTab('bp', () => api(`/api/osu/player/${osuId}/bp?start=${(bpPage - 1) * 20 + 1}&end=${bpPage * 20}`));
-    else if (tab === 'recent' && data.recent === undefined && !loading.recent) loadTab('recent', () => api(`/api/osu/player/${osuId}/recent?limit=10`));
-    else if (tab === 'pplus' && data.pplus === undefined && !loading.pplus) loadTab('pplus', () => api(`/api/osu/player/${osuId}/pplus`));
-    else if (tab === 'bptype' && data.bptype === undefined && !loading.bptype) loadTab('bptype', () => api(`/api/osu/player/${osuId}/bptype`));
-    else if (tab === 'badges' && data.badges === undefined && !loading.badges) loadTab('badges', async () => { const result = await api(`/api/osu/player/${osuId}`); return { badges: result.profile.player.badges || [] }; });
-    else if (tab === 'analysis' && analysis === null) api(`/api/osu/player/${osuId}/analyze`).then((result) => setAnalysis(result.analysis)).catch(() => {});
+    if (tab === 'bp' && data.bp === undefined && !loading.bp) loadTab('bp', () => api(`/api/osu/player/${osuId}/bp?start=${(bpPage - 1) * 20 + 1}&end=${bpPage * 20}`, { timeoutMs: 60000 }));
+    else if (tab === 'recent' && data.recent === undefined && !loading.recent) loadTab('recent', () => api(`/api/osu/player/${osuId}/recent?limit=10`, { timeoutMs: 45000 }));
+    else if (tab === 'pplus' && data.pplus === undefined && !loading.pplus) loadTab('pplus', () => api(`/api/osu/player/${osuId}/pplus`, { timeoutMs: 20000 }));
+    else if (tab === 'bptype' && data.bptype === undefined && !loading.bptype) loadTab('bptype', () => api(`/api/osu/player/${osuId}/bptype`, { timeoutMs: 75000 }));
+    else if (tab === 'badges' && data.badges === undefined && !loading.badges) loadTab('badges', async () => { const result = await api(`/api/osu/player/${osuId}`, { timeoutMs: 20000 }); return { badges: result.profile.player.badges || [] }; });
+    else if (tab === 'analysis' && analysis === null) {
+      const controller = new AbortController();
+      api(`/api/osu/player/${osuId}/analyze`, { signal: controller.signal, timeoutMs: 15000 })
+        .then((result) => setAnalysis(result.analysis))
+        .catch(() => {});
+      return () => controller.abort();
+    }
   }, [tab, profile, data, loading, bpPage, osuId, analysis]);
 
   useEffect(() => {
     if (tab !== 'analysis' || analysis?.status !== 'running') return undefined;
-    const timer = setInterval(async () => { try { const result = await api(`/api/osu/player/${osuId}/analyze`); setAnalysis(result.analysis); } catch { /* keep last state */ } }, 5000);
-    return () => clearInterval(timer);
+    const controller = new AbortController();
+    let inFlight = false;
+    const poll = async () => {
+      if (inFlight) return;
+      inFlight = true;
+      try {
+        const result = await api(`/api/osu/player/${osuId}/analyze`, { signal: controller.signal, timeoutMs: 15000 });
+        if (!controller.signal.aborted) setAnalysis(result.analysis);
+      } catch { /* keep last state */ }
+      finally { inFlight = false; }
+    };
+    const timer = setInterval(poll, 5000);
+    return () => { clearInterval(timer); controller.abort(); };
   }, [tab, analysis?.status, osuId]);
 
-  const startAnalysis = async () => { setAnalyzing(true); try { const result = await api(`/api/osu/player/${osuId}/analyze`, { method: 'POST' }); setAnalysis(result.analysis); } finally { setAnalyzing(false); } };
+  const startAnalysis = async () => { setAnalyzing(true); try { const result = await api(`/api/osu/player/${osuId}/analyze`, { method: 'POST', timeoutMs: 15000 }); setAnalysis(result.analysis); } finally { setAnalyzing(false); } };
   const forceRefresh = async () => { setRefreshing(true); try { await loadProfile(true); } finally { setRefreshing(false); } };
   const player = profile?.player || null;
   const bpResult = data.bp;
@@ -194,5 +215,5 @@ function BadgesTab({ data, loading }) {
 }
 
 function AnalysisTab({ analysis, analyzing, onStart }) {
-  return <div className="osu-analysis"><div className="osu-analysis__actions"><Button variant="primary" icon={Sparkles} onClick={onStart} loading={analyzing} disabled={analysis?.status === 'running'}>{analysis?.status === 'running' ? '分析中' : '触发 LLM 分析'}</Button><InlineHelp>控制台触发不经过 QQ 侧冷却；同一玩家同时只运行一个任务。</InlineHelp></div>{analysis?.status === 'running' && <div className="osu-tab-state">分析生成中，完成后会自动显示…</div>}{analysis?.status === 'error' && <ErrorState title="分析失败" message={analysis.error} />}{analysis?.status === 'done' && <><p className="osu-analysis__time">完成于 {fmtDate(analysis.finishedAt)} · 开始于 {fmtDate(analysis.at)}</p><pre className="osu-analysis-text">{analysis.text}</pre></>}{!analysis && <EmptyState title="还没有分析记录" description="触发后会在这里展示当前玩家的完整报告。" />}</div>;
+  return <div className="osu-analysis"><div className="osu-analysis__actions"><Button variant="primary" icon={Sparkles} onClick={onStart} loading={analyzing} disabled={analysis?.status === 'running'}>{analysis?.status === 'running' ? '分析中' : '生成 Analyze 报告'}</Button><InlineHelp>控制台触发不经过 QQ 侧冷却；同一玩家同时只运行一个任务。</InlineHelp></div>{analysis?.status === 'running' && <div className="osu-tab-state">分析生成中，完成后会自动显示…</div>}{analysis?.status === 'error' && <ErrorState title="分析失败" message={analysis.error} />}{analysis?.status === 'done' && <><p className="osu-analysis__time">完成于 {fmtDate(analysis.finishedAt)} · 开始于 {fmtDate(analysis.at)}</p>{analysis.source === 'fallback' && <InlineHelp>本次 LLM 输出未通过事实校验，已显示确定性安全报告。</InlineHelp>}<pre className="osu-analysis-text">{analysis.text}</pre></>}{!analysis && <EmptyState title="还没有分析记录" description="触发后会在这里展示当前玩家的完整报告。" />}</div>;
 }

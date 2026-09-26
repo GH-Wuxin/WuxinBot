@@ -68,6 +68,7 @@ export type OwnerHandlerKey =
   | 'my'
   | 'recalc'
   | 'refresh'
+  | 'info'
   | 'skill'
   | 'skillFeedback'
   | 'osu.help'

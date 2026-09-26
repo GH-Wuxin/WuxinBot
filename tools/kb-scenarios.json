@@ -65,5 +65,6 @@
   { "id": "s064", "split": "manual", "scene": "casual", "text": "pippi都有什么功能", "expected": "capability_summary", "note": "能力总览" },
   { "id": "s065", "split": "manual", "scene": "casual", "text": "你会哪些指令", "expected": "capability_summary", "note": "能力总览" },
   { "id": "s066", "split": "manual", "scene": "casual", "text": "有什么指令", "expected": "capability_summary", "note": "能力总览" },
-  { "id": "s067", "split": "manual", "scene": "casual", "text": "pippi能做什么", "expected": "capability_summary", "note": "能力总览" }
+  { "id": "s067", "split": "manual", "scene": "casual", "text": "pippi能做什么", "expected": "capability_summary", "note": "能力总览" },
+  { "id": "s068", "split": "manual", "scene": "casual", "text": "pippi有哪些功能", "expected": "capability_summary", "note": "能力总览" }
 ]
