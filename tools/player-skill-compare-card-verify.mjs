@@ -38,12 +38,26 @@ const side = (username, colorOffset) => ({
       median: 4 + index * 0.4,
     })),
   },
+  ppPlus: {
+    jump: 12.4 + colorOffset / 100,
+    flow: 11.8 + colorOffset / 120,
+    speed: 10.6 + colorOffset / 140,
+    stamina: 9.7 + colorOffset / 160,
+    precision: 13.1 + colorOffset / 180,
+    accuracy: 12.2 + colorOffset / 200,
+  },
 });
 
 const comparisonPayload = { left: side('LeftPlayer', 0), right: side('RightPlayer', 200), limit: 50 };
 const svg = buildPlayerSkillComparisonSvg(comparisonPayload);
 assert.match(svg,/data-design="tier-radar-v2"/);
 assert.match(svg,/class="comparison-radar"/);
+assert.match(svg,/class="comparison-ppplus-radar"/,'comparison includes the PP+ radar');
+assert.equal((svg.match(/class="ppplus-axis-value"/g)||[]).length,6,'comparison PP+ radar shows all six dimensions');
+assert.equal((svg.match(/class="ppplus-dot (?:left|right)"/g)||[]).length,12,'comparison PP+ radar shows both players');
+assert.match(svg,/PP\+ PROFILE/);
+assert.match(svg,/PP\+ SOURCE · github\.com\/Apeuriox\/lazybot-pp-plus/,'comparison credits the PP+ source');
+assert.equal((svg.match(/data-tier-emblem="/g)||[]).length,2,'comparison carries both player Tier emblems');
 assert.equal((svg.match(/class="axis-value"/g)||[]).length,9,'comparison radar shows all nine fixed dimensions');
 assert.match(svg,/data-axis-label="spatial_precision"/,'comparison preserves the Spatial Precision label');
 assert.deepEqual(
@@ -52,7 +66,10 @@ assert.deepEqual(
   'comparison radar angles match the profile axis order',
 );
 assert.match(svg,/data-unit="independent"/,'Stamina and Endurance retain independent /10 units');
-assert.match(svg,/RightPlayer leads/,'the summary names the leading player rather than a generic profile lean');
+assert.match(svg,/RightPlayer leads by Skill Rating/,'the summary names the leader by Skill Rating');
+assert.match(svg,/SKILL RATING/,'comparison exposes the weighted Skill Rating');
+assert.match(svg,/data-left-rating="\d+"/);
+assert.match(svg,/data-right-rating="\d+"/);
 const leftRadarColor = svg.match(/data-left-color="([^"]+)"/)?.[1];
 const rightRadarColor = svg.match(/data-right-color="([^"]+)"/)?.[1];
 assert.match(svg,new RegExp(`<text[^>]*fill="${rightRadarColor}"[^>]*>\\+2\\.0</text>`),'positive deltas use the right-player tier color');
@@ -63,8 +80,8 @@ assert.doesNotMatch(svg,/<linearGradient id="compare-bg"/,'comparison uses the r
 assert.notEqual(leftRadarColor,rightRadarColor,'player radar accents come from their different Tiers');
 const closePayload = { left: side('LeftPlayer', 0), right: side('RightPlayer', 0), limit: 50 };
 const closeSvg = buildPlayerSkillComparisonSvg(closePayload);
-assert.match(closeSvg,/Overall close/);
-assert.equal((closeSvg.match(/Overall close/g)||[]).length,1,'close summary is not duplicated');
+assert.match(closeSvg,/Skill Rating tied/);
+assert.equal((closeSvg.match(/Skill Rating tied/g)||[]).length,1,'tied Skill Rating summary is not duplicated');
 assert.equal(closeSvg.match(/data-left-tier-color="([^"]+)"/)?.[1],closeSvg.match(/data-right-tier-color="([^"]+)"/)?.[1],'same-tier players retain one shared Tier identity color');
 assert.notEqual(closeSvg.match(/data-left-color="([^"]+)"/)?.[1],closeSvg.match(/data-right-color="([^"]+)"/)?.[1],'same-tier comparison series still have distinct player colors');
 assert.match(closeSvg,/data-marker="circle"/,'left radar series uses circle markers');
