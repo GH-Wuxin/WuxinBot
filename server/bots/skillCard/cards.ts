@@ -7,7 +7,7 @@ import {PLAYER_SKILL_AXIS_DEFINITIONS,PLAYER_SKILL_AXIS_ORDER} from '../playerSk
 
 export const SKILL_CARD_DESIGN_VERSION='PROFILE_20260925_RADAR_16X9_V4_OKLCH_TIER_PALETTE';
 
-const tierEmblemDataUrls:Record<string,string>=Object.fromEntries(
+export const tierEmblemDataUrls:Record<string,string>=Object.fromEntries(
   ['i','ii','iii','iv','v','vi','vii','viii','ix','x','xi','prism'].map((key)=>{
     try{
       const file=new URL(`./assets/tier-${key}.png`,import.meta.url);
