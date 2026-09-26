@@ -1,10 +1,12 @@
 import { getUserById, getUserRecentScores } from '../osu/api.js';
 import { enrichScoreStarRatings } from '../osu/starRating.js';
 import type { OsuScore } from '../osu/types.js';
+import { traceEvent } from '../requestTrace.js';
 import { saveAndGetCqCode } from './render.js';
 import { renderPlayerRecentSkillProfileCard } from './playerSkillComparisonCard.js';
 import {
-  buildPlayerSkillProfilePayload,
+  buildPreparedPlayerSkillProfile,
+  preparePlayerSkillProfile,
   demonstratedAxisValue,
   mapLimit,
   PLAYER_SKILL_AXES,
@@ -15,7 +17,16 @@ import {
   weightedQuantile,
   type PlayerSkillAxis,
 } from './playerSkillProfile.js';
-import { requestSkillProfilerAnalysisCachedWithFetch } from './skillProfiler.js';
+import {
+  getSkillProfilerIdentity,
+  skillProfilerConcurrency,
+  skillProfilerAxisValue,
+  requestSkillProfilerAnalysisCachedWithFetch,
+  scanSkillProfilerBeatmaps,
+  prefetchSkillProfilerBeatmaps,
+  type SkillProfilerIdentity,
+} from './skillProfiler.js';
+import { reservePlayerAnalysis } from './playerAnalysisQueue.js';
 
 const PAGE_SIZE = 50;
 const TARGET_COMPLETED_GROUPS = 25;
@@ -23,11 +34,23 @@ const MIN_COMPLETED_GROUPS = 5;
 const MAX_RAW_SCORES = 500;
 const MAX_AGE_MS = 5 * 24 * 60 * 60_000;
 const CACHE_TTL_MS = 5 * 60_000;
-const ANALYSIS_CONCURRENCY = 3;
-const recentCache = new Map<number, { at: number; payload: Record<string, any> }>();
-const recentInflight = new Map<number, Promise<Record<string, any>>>();
+const ANALYSIS_CONCURRENCY = skillProfilerConcurrency();
+export const RECENT_PROFILE_CACHE_POLICY_ID = 'RECENT_PROFILE_PROFILER_IDENTITY_V01';
+const recentCache = new Map<string, { at: number; payload: Record<string, any> }>();
+const recentInflight = new Map<string, Promise<Record<string, any>>>();
 
 export type RecentEvidence = 'SUFFICIENT' | 'LOWER_BOUND' | 'INSUFFICIENT';
+
+export function recentProfileCacheKey(osuId: number, identity: SkillProfilerIdentity): string {
+  return JSON.stringify([
+    RECENT_PROFILE_CACHE_POLICY_ID,
+    identity.algorithmId,
+    identity.mapDemandVersion,
+    identity.unifiedScaleId,
+    identity.unifiedCalibrationKey,
+    osuId,
+  ]);
+}
 
 export function recentScorePassed(score: any): boolean {
   if (typeof score?.passed === 'boolean') return score.passed;
@@ -191,49 +214,90 @@ export function aggregateRecentSkillProfile(groups: RecentAnalyzedGroup[], longT
   });
 }
 
-async function buildUncached(osuId: number): Promise<Record<string, any>> {
+async function buildUncached(osuId: number, prepared: Awaited<ReturnType<typeof preparePlayerSkillProfile>>): Promise<Record<string, any>> {
   const now = Date.now();
   const [user, collected, longTerm] = await Promise.all([
-    getUserById(osuId, 'osu'),
+    prepared.user || getUserById(osuId, 'osu'),
     collectRecentScores(osuId, now),
-    buildPlayerSkillProfilePayload(osuId, 50),
+    buildPreparedPlayerSkillProfile(prepared),
   ]);
   const enriched = await enrichScoreStarRatings(collected.scores, 'osu');
   const groups = groupRecentScores(enriched.scores);
   const completedGroups = groups.filter((group) => group.completed).length;
   if (completedGroups < MIN_COMPLETED_GROUPS) throw new Error(`RECENT_SKILL_INSUFFICIENT:${completedGroups}`);
   const failures: Array<{ beatmapId: number; reason: string }> = [];
-  const analyzed = await mapLimit(groups, ANALYSIS_CONCURRENCY, async (group): Promise<RecentAnalyzedGroup | null> => {
-    const score = bestAttempt(group);
-    try {
-      const totalStars = Number(score?.modded_star_rating ?? (group.mods.length ? NaN : score?.beatmap?.difficulty_rating));
-      const analysis = await requestSkillProfilerAnalysisCachedWithFetch(group.beatmapId, group.mods);
-      if (analysis?.status !== 'OK' || !analysis?.axes) throw new Error(`ANALYSIS_${analysis?.status || 'INVALID'}`);
-      const demand = {} as Record<PlayerSkillAxis, number>;
-      for (const axis of PLAYER_SKILL_AXES) demand[axis] = Number(analysis.axes?.[axis]?.stars);
-      if (!validRecentDemand(totalStars, demand, score)) throw new Error('OUT_OF_DOMAIN');
-      const quality = scoreAchievementQuality(score);
-      const result = {} as Record<PlayerSkillAxis, number>;
-      const failEvidence = recentFailureEvidence(score);
-      for (const axis of PLAYER_SKILL_AXES) {
-        result[axis] = demonstratedAxisValue(axis, demand[axis], quality) * (group.completed ? 1 : failEvidence);
-      }
-      const successfulAttempts = group.attempts.filter(recentScorePassed);
-      const stability = group.attempts.length <= 1 ? 1 : 0.85 + 0.15 * successfulAttempts.length / group.attempts.length;
-      return {
-        completed: group.completed,
-        recency: recentTimeWeight(Math.max(...group.attempts.map(scoreTime)), now),
-        quality: quality.overall,
-        stability,
-        failureEvidence: failEvidence,
-        demandAxes: demand,
-        axes: result,
-      };
-    } catch (error: any) {
-      failures.push({ beatmapId: group.beatmapId, reason: String(error?.message || error).slice(0, 120) });
-      return null;
-    }
+  let preflight = { supported: false, available: [] as number[], missing: [] as number[] };
+  try {
+    preflight = await scanSkillProfilerBeatmaps(groups.map((group) => group.beatmapId));
+  } catch (error: any) {
+    traceEvent('TOOL', 'Skill：近期谱面预扫描不可用，回退按图处理', {
+      status: 'running', osuId, reason: String(error?.message || error).slice(0, 160),
+    });
+  }
+  const available = new Set(preflight.available);
+  const missing = new Set(preflight.missing);
+  const readyGroups = groups.filter((group) => preflight.supported && available.has(group.beatmapId));
+  const missingGroups = groups.filter((group) => preflight.supported && missing.has(group.beatmapId));
+  const otherGroups = groups.filter((group) => !readyGroups.includes(group) && !missingGroups.includes(group));
+  traceEvent('TOOL', 'Skill：近期谱面预扫描完成', {
+    status: 'running', osuId, total: groups.length,
+    available: readyGroups.length, missing: missingGroups.length,
   });
+  const prefetch = preflight.supported
+    ? prefetchSkillProfilerBeatmaps([...missing], [...missing])
+      .then((result) => {
+        traceEvent('TOOL', 'Skill：近期缺失谱面预取完成', {
+          status: 'running', osuId, requested: result.requested,
+          downloaded: result.downloaded, failed: result.failed.length,
+        });
+        return result;
+      })
+    : Promise.resolve(null);
+  const analyzed: Array<RecentAnalyzedGroup | null> = [];
+  const analyzeBatch = async (batch: typeof groups) => {
+    if (!batch.length) return;
+    const results = await mapLimit(batch, ANALYSIS_CONCURRENCY, async (group): Promise<RecentAnalyzedGroup | null> => {
+      const score = bestAttempt(group);
+      try {
+        const totalStars = Number(score?.modded_star_rating ?? (group.mods.length ? NaN : score?.beatmap?.difficulty_rating));
+        const analysis = await requestSkillProfilerAnalysisCachedWithFetch(group.beatmapId, group.mods);
+        if (analysis?.status !== 'OK' || !analysis?.axes) throw new Error(`ANALYSIS_${analysis?.status || 'INVALID'}`);
+        const demand = {} as Record<PlayerSkillAxis, number>;
+        for (const axis of PLAYER_SKILL_AXES) {
+          const measurement = skillProfilerAxisValue(analysis, axis);
+          demand[axis] = measurement.value === null ? NaN : measurement.value;
+        }
+        if (!validRecentDemand(totalStars, demand, score)) throw new Error('OUT_OF_DOMAIN');
+        const quality = scoreAchievementQuality(score);
+        const result = {} as Record<PlayerSkillAxis, number>;
+        const failEvidence = recentFailureEvidence(score);
+        for (const axis of PLAYER_SKILL_AXES) {
+          result[axis] = demonstratedAxisValue(axis, demand[axis], quality) * (group.completed ? 1 : failEvidence);
+        }
+        const successfulAttempts = group.attempts.filter(recentScorePassed);
+        const stability = group.attempts.length <= 1 ? 1 : 0.85 + 0.15 * successfulAttempts.length / group.attempts.length;
+        return {
+          completed: group.completed,
+          recency: recentTimeWeight(Math.max(...group.attempts.map(scoreTime)), now),
+          quality: quality.overall,
+          stability,
+          failureEvidence: failEvidence,
+          demandAxes: demand,
+          axes: result,
+        };
+      } catch (error: any) {
+        failures.push({ beatmapId: group.beatmapId, reason: String(error?.message || error).slice(0, 120) });
+        return null;
+      }
+    });
+    analyzed.push(...results);
+  };
+  // Analyse local maps first while the separate prefetch lane downloads the
+  // missing recent maps. The same player still owns the analysis workers.
+  await analyzeBatch(readyGroups);
+  await prefetch;
+  await analyzeBatch(missingGroups);
+  await analyzeBatch(otherGroups);
   const valid = analyzed.filter((item): item is RecentAnalyzedGroup => Boolean(item));
   const validCompleted = valid.filter((item) => item.completed).length;
   if (validCompleted < MIN_COMPLETED_GROUPS) throw new Error(`RECENT_SKILL_INSUFFICIENT_AFTER_FILTER:${validCompleted}`);
@@ -256,18 +320,46 @@ async function buildUncached(osuId: number): Promise<Record<string, any>> {
 }
 
 export async function buildPlayerRecentSkillProfilePayload(osuId: number): Promise<Record<string, any>> {
-  const cached = recentCache.get(osuId);
+  const profilerIdentity = await getSkillProfilerIdentity();
+  const cacheKey = recentProfileCacheKey(osuId, profilerIdentity);
+  const cached = recentCache.get(cacheKey);
   if (cached && Date.now() - cached.at < CACHE_TTL_MS) return cached.payload;
-  const existing = recentInflight.get(osuId);
+  const existing = recentInflight.get(cacheKey);
   if (existing) return existing;
-  const pending = buildUncached(osuId);
-  recentInflight.set(osuId, pending);
+  const ticket = reservePlayerAnalysis(osuId);
+  traceEvent('TOOL', 'Skill：玩家进入近期计算队列', {
+    status: 'waiting', osuId, queuePosition: ticket.position,
+  });
+  let pending: Promise<Record<string, any>> | undefined;
   try {
+    const prepared = await preparePlayerSkillProfile(osuId, 50);
+    const refreshed = recentCache.get(cacheKey);
+    if (refreshed && Date.now() - refreshed.at < CACHE_TTL_MS) {
+      ticket.cancel();
+      return refreshed.payload;
+    }
+    const refreshedInflight = recentInflight.get(cacheKey);
+    if (refreshedInflight) {
+      ticket.cancel();
+      return refreshedInflight;
+    }
+    pending = ticket.run(async () => {
+      traceEvent('TOOL', 'Skill：开始计算当前玩家近期表现', {
+        status: 'running', osuId, queuePosition: ticket.position,
+      });
+      return buildUncached(osuId, prepared);
+    });
+    recentInflight.set(cacheKey, pending);
     const payload = await pending;
-    recentCache.set(osuId, { at: Date.now(), payload });
+    recentCache.set(cacheKey, { at: Date.now(), payload });
     return payload;
+  } catch (error) {
+    ticket.cancel();
+    throw error;
   } finally {
-    if (recentInflight.get(osuId) === pending) recentInflight.delete(osuId);
+    if (pending && recentInflight.get(cacheKey) === pending) {
+      recentInflight.delete(cacheKey);
+    }
   }
 }
 

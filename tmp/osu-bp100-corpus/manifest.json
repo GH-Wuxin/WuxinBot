@@ -1,0 +1,4264 @@
+{
+  "meta": {
+    "generatedAt": "2026-09-20T18:29:19.651Z",
+    "sourceExport": "SHK-Wuxin-bp100-osu-2026-09-20.json",
+    "player": "[SHK]Wuxin",
+    "playerId": 19244792,
+    "uniqueBeatmaps": 100,
+    "verification": "md5 of the downloaded .osu file compared against beatmap.checksum from osu! API v2"
+  },
+  "counts": {
+    "verified": 100,
+    "fromCache": 0,
+    "md5Mismatch": 0,
+    "failed": 0
+  },
+  "beatmaps": [
+    {
+      "beatmap_id": 5119288,
+      "file": "osu/5119288.osu",
+      "expected_md5": "f564dd5aaebca0b5b47c8c692d3fd201",
+      "source": "osu.ppy.sh",
+      "bytes": 49253,
+      "actual_md5": "f564dd5aaebca0b5b47c8c692d3fd201",
+      "format_ok": true,
+      "has_hitobjects": true,
+      "verified": true,
+      "in_game_hitobject_count": 1254,
+      "bp_entries": [
+        {
+          "bp": 1,
+          "mods": "HDHR",
+          "mods_array": [
+            "HD",
+            "HR"
+          ],
+          "pp": 563.893,
+          "accuracy": 0.9893673577884105,
+          "score_id": 5001453353
+        }
+      ],
+      "beatmap": {
+        "beatmapset_id": 2364885,
+        "artist": "Manticora",
+        "title": "Humiliation Supreme",
+        "version": "Extreme",
+        "creator": "Urition",
+        "status": "ranked",
+        "difficulty_rating": 6.59691,
+        "total_length": 152,
+        "bpm": 189.99,
+        "cs": 3.9,
+        "ar": 9.4,
+        "od": 9.2,
+        "hp": 5.1,
+        "count_circles": 1071,
+        "count_sliders": 182,
+        "count_spinners": 1
+      }
+    },
+    {
+      "beatmap_id": 4746232,
+      "file": "osu/4746232.osu",
+      "expected_md5": "dfeae0133e32266cf1205df69fd79a4e",
+      "source": "osu.ppy.sh",
+      "bytes": 64967,
+      "actual_md5": "dfeae0133e32266cf1205df69fd79a4e",
+      "format_ok": true,
+      "has_hitobjects": true,
+      "verified": true,
+      "in_game_hitobject_count": 1519,
+      "bp_entries": [
+        {
+          "bp": 2,
+          "mods": "HD",
+          "mods_array": [
+            "HD"
+          ],
+          "pp": 541.607,
+          "accuracy": 0.9956111476848803,
+          "score_id": 5001449934
+        }
+      ],
+      "beatmap": {
+        "beatmapset_id": 2162554,
+        "artist": "VINXIS",
+        "title": "Sidetracked Day",
+        "version": "Distraction",
+        "creator": "sytho",
+        "status": "ranked",
+        "difficulty_rating": 6.85626,
+        "total_length": 334,
+        "bpm": 188,
+        "cs": 3.8,
+        "ar": 9.5,
+        "od": 9.4,
+        "hp": 5.8,
+        "count_circles": 1115,
+        "count_sliders": 400,
+        "count_spinners": 4
+      }
+    },
+    {
+      "beatmap_id": 5258382,
+      "file": "osu/5258382.osu",
+      "expected_md5": "d30b27a061524147fe6cad8bfecd471f",
+      "source": "osu.ppy.sh",
+      "bytes": 75385,
+      "actual_md5": "d30b27a061524147fe6cad8bfecd471f",
+      "format_ok": true,
+      "has_hitobjects": true,
+      "verified": true,
+      "in_game_hitobject_count": 1933,
+      "bp_entries": [
+        {
+          "bp": 3,
+          "mods": "HD",
+          "mods_array": [
+            "HD"
+          ],
+          "pp": 539.235,
+          "accuracy": 0.9815485428522159,
+          "score_id": 5040816492
+        }
+      ],
+      "beatmap": {
+        "beatmapset_id": 2401111,
+        "artist": "Rhapsody",
+        "title": "Power of the Dragonflame",
+        "version": "Uri's Extreme",
+        "creator": "nebuwua",
+        "status": "ranked",
+        "difficulty_rating": 7.08728,
+        "total_length": 260,
+        "bpm": 190,
+        "cs": 4,
+        "ar": 9.5,
+        "od": 9.2,
+        "hp": 5,
+        "count_circles": 1682,
+        "count_sliders": 251,
+        "count_spinners": 0
+      }
+    },
+    {
+      "beatmap_id": 5675454,
+      "file": "osu/5675454.osu",
+      "expected_md5": "e82935102561a79f289b6d6e9111b782",
+      "source": "osu.ppy.sh",
+      "bytes": 27593,
+      "actual_md5": "e82935102561a79f289b6d6e9111b782",
+      "format_ok": true,
+      "has_hitobjects": true,
+      "verified": true,
+      "in_game_hitobject_count": 709,
+      "bp_entries": [
+        {
+          "bp": 4,
+          "mods": "HDHR",
+          "mods_array": [
+            "HD",
+            "HR"
+          ],
+          "pp": 523.51,
+          "accuracy": 0.9877762106252939,
+          "score_id": 5037975527
+        }
+      ],
+      "beatmap": {
+        "beatmapset_id": 2554421,
+        "artist": "Pythia",
+        "title": "Heartless (Cut Ver.)",
+        "version": "Maaadbot's Extreme",
+        "creator": "h6zy",
+        "status": "ranked",
+        "difficulty_rating": 6.68061,
+        "total_length": 90,
+        "bpm": 190,
+        "cs": 3.5,
+        "ar": 9.6,
+        "od": 9.6,
+        "hp": 4.8,
+        "count_circles": 581,
+        "count_sliders": 128,
+        "count_spinners": 0
+      }
+    },
+    {
+      "beatmap_id": 4994500,
+      "file": "osu/4994500.osu",
+      "expected_md5": "d0a78fbe6b720f832457fa4c2eff067b",
+      "source": "osu.ppy.sh",
+      "bytes": 76376,
+      "actual_md5": "d0a78fbe6b720f832457fa4c2eff067b",
+      "format_ok": true,
+      "has_hitobjects": true,
+      "verified": true,
+      "in_game_hitobject_count": 1617,
+      "bp_entries": [
+        {
+          "bp": 5,
+          "mods": "HD",
+          "mods_array": [
+            "HD"
+          ],
+          "pp": 520.608,
+          "accuracy": 0.9905174190888476,
+          "score_id": 5029364122
+        }
+      ],
+      "beatmap": {
+        "beatmapset_id": 2294086,
+        "artist": "Laser Imouto",
+        "title": "Prismatix",
+        "version": "kowari's Extreme",
+        "creator": "mizto",
+        "status": "ranked",
+        "difficulty_rating": 6.89195,
+        "total_length": 249,
+        "bpm": 200,
+        "cs": 3.8,
+        "ar": 9.5,
+        "od": 9.4,
+        "hp": 5,
+        "count_circles": 1207,
+        "count_sliders": 410,
+        "count_spinners": 0
+      }
+    },
+    {
+      "beatmap_id": 4961220,
+      "file": "osu/4961220.osu",
+      "expected_md5": "55a3bc730325ef00109874c4843a3644",
+      "source": "osu.ppy.sh",
+      "bytes": 29432,
+      "actual_md5": "55a3bc730325ef00109874c4843a3644",
+      "format_ok": true,
+      "has_hitobjects": true,
+      "verified": true,
+      "in_game_hitobject_count": 739,
+      "bp_entries": [
+        {
+          "bp": 6,
+          "mods": "HDHR",
+          "mods_array": [
+            "HD",
+            "HR"
+          ],
+          "pp": 519.481,
+          "accuracy": 0.9846639603067208,
+          "score_id": 5069328508
+        }
+      ],
+      "beatmap": {
+        "beatmapset_id": 2179269,
+        "artist": "SHIKI",
+        "title": "Pure Ruby (Game Ver.)",
+        "version": "Collab Another",
+        "creator": "mizto",
+        "status": "ranked",
+        "difficulty_rating": 6.51286,
+        "total_length": 117,
+        "bpm": 178,
+        "cs": 4.2,
+        "ar": 9.6,
+        "od": 9.4,
+        "hp": 6,
+        "count_circles": 607,
+        "count_sliders": 129,
+        "count_spinners": 3
+      }
+    },
+    {
+      "beatmap_id": 5138461,
+      "file": "osu/5138461.osu",
+      "expected_md5": "8f63f1f5f5c2e64c05d2454b35cea326",
+      "source": "osu.ppy.sh",
+      "bytes": 30376,
+      "actual_md5": "8f63f1f5f5c2e64c05d2454b35cea326",
+      "format_ok": true,
+      "has_hitobjects": true,
+      "verified": true,
+      "in_game_hitobject_count": 860,
+      "bp_entries": [
+        {
+          "bp": 7,
+          "mods": "HDHR",
+          "mods_array": [
+            "HD",
+            "HR"
+          ],
+          "pp": 518.242,
+          "accuracy": 0.985077519379845,
+          "score_id": 5072380265
+        }
+      ],
+      "beatmap": {
+        "beatmapset_id": 2378237,
+        "artist": "Cityyy",
+        "title": "Vibrant Springs",
+        "version": "Tranquility",
+        "creator": "-Tynamo",
+        "status": "ranked",
+        "difficulty_rating": 6.55293,
+        "total_length": 133,
+        "bpm": 181,
+        "cs": 4,
+        "ar": 9.5,
+        "od": 9,
+        "hp": 5,
+        "count_circles": 728,
+        "count_sliders": 130,
+        "count_spinners": 2
+      }
+    },
+    {
+      "beatmap_id": 5211222,
+      "file": "osu/5211222.osu",
+      "expected_md5": "fe0d339b918af27573bde55392bb391b",
+      "source": "osu.ppy.sh",
+      "bytes": 72887,
+      "actual_md5": "fe0d339b918af27573bde55392bb391b",
+      "format_ok": true,
+      "has_hitobjects": true,
+      "verified": true,
+      "in_game_hitobject_count": 1861,
+      "bp_entries": [
+        {
+          "bp": 8,
+          "mods": "HDHR",
+          "mods_array": [
+            "HD",
+            "HR"
+          ],
+          "pp": 511.225,
+          "accuracy": 0.9800286584273687,
+          "score_id": 5040812147
+        }
+      ],
+      "beatmap": {
+        "beatmapset_id": 2401111,
+        "artist": "Rhapsody",
+        "title": "Power of the Dragonflame",
+        "version": "shoyeu's Expert",
+        "creator": "nebuwua",
+        "status": "ranked",
+        "difficulty_rating": 6.45904,
+        "total_length": 260,
+        "bpm": 190,
+        "cs": 4,
+        "ar": 9.3,
+        "od": 9,
+        "hp": 5,
+        "count_circles": 1615,
+        "count_sliders": 245,
+        "count_spinners": 1
+      }
+    },
+    {
+      "beatmap_id": 4628575,
+      "file": "osu/4628575.osu",
+      "expected_md5": "355af2567e260f01300ce9d08a67d56a",
+      "source": "osu.ppy.sh",
+      "bytes": 28935,
+      "actual_md5": "355af2567e260f01300ce9d08a67d56a",
+      "format_ok": true,
+      "has_hitobjects": true,
+      "verified": true,
+      "in_game_hitobject_count": 726,
+      "bp_entries": [
+        {
+          "bp": 9,
+          "mods": "HDHR",
+          "mods_array": [
+            "HD",
+            "HR"
+          ],
+          "pp": 508.16,
+          "accuracy": 0.9917355371900827,
+          "score_id": 5040324816
+        }
+      ],
+      "beatmap": {
+        "beatmapset_id": 2091512,
+        "artist": "Mutsuhiko Izumi",
+        "title": "Snow Goose",
+        "version": "Sytho's Extra",
+        "creator": "Riana",
+        "status": "ranked",
+        "difficulty_rating": 6.58034,
+        "total_length": 97,
+        "bpm": 200,
+        "cs": 3.9,
+        "ar": 9.4,
+        "od": 9,
+        "hp": 5,
+        "count_circles": 588,
+        "count_sliders": 138,
+        "count_spinners": 0
+      }
+    },
+    {
+      "beatmap_id": 4847819,
+      "file": "osu/4847819.osu",
+      "expected_md5": "7adba14645d8bcabbc9d55d1d160bfd6",
+      "source": "osu.ppy.sh",
+      "bytes": 17003,
+      "actual_md5": "7adba14645d8bcabbc9d55d1d160bfd6",
+      "format_ok": true,
+      "has_hitobjects": true,
+      "verified": true,
+      "in_game_hitobject_count": 444,
+      "bp_entries": [
+        {
+          "bp": 10,
+          "mods": "HDHR",
+          "mods_array": [
+            "HD",
+            "HR"
+          ],
+          "pp": 506.174,
+          "accuracy": 0.9710960960960962,
+          "score_id": 5040796883
+        }
+      ],
+      "beatmap": {
+        "beatmapset_id": 2275012,
+        "artist": "kawaii vocaloid",
+        "title": "Sukitte 100-kai Itte (feat. Hatsune Miku)",
+        "version": "sukisukisukisukisukisukisukisukisukisuki",
+        "creator": "-Tynamo",
+        "status": "ranked",
+        "difficulty_rating": 6.5977,
+        "total_length": 54,
+        "bpm": 177,
+        "cs": 4.5,
+        "ar": 9.4,
+        "od": 9,
+        "hp": 4,
+        "count_circles": 410,
+        "count_sliders": 33,
+        "count_spinners": 1
+      }
+    },
+    {
+      "beatmap_id": 5684273,
+      "file": "osu/5684273.osu",
+      "expected_md5": "ef764af7848d211c058b312e0e1f35bc",
+      "source": "osu.ppy.sh",
+      "bytes": 24724,
+      "actual_md5": "ef764af7848d211c058b312e0e1f35bc",
+      "format_ok": true,
+      "has_hitobjects": true,
+      "verified": true,
+      "in_game_hitobject_count": 600,
+      "bp_entries": [
+        {
+          "bp": 11,
+          "mods": "HDHR",
+          "mods_array": [
+            "HD",
+            "HR"
+          ],
+          "pp": 505.65,
+          "accuracy": 0.9944444444444445,
+          "score_id": 5039848781
+        }
+      ],
+      "beatmap": {
+        "beatmapset_id": 2554421,
+        "artist": "Pythia",
+        "title": "Heartless (Cut Ver.)",
+        "version": "shoyeu's Extreme",
+        "creator": "h6zy",
+        "status": "ranked",
+        "difficulty_rating": 6.35794,
+        "total_length": 90,
+        "bpm": 190,
+        "cs": 4.2,
+        "ar": 9.2,
+        "od": 9,
+        "hp": 5,
+        "count_circles": 450,
+        "count_sliders": 150,
+        "count_spinners": 0
+      }
+    },
+    {
+      "beatmap_id": 5358249,
+      "file": "osu/5358249.osu",
+      "expected_md5": "0011d19b75e30c51507203f36b2c66b5",
+      "source": "osu.ppy.sh",
+      "bytes": 104869,
+      "actual_md5": "0011d19b75e30c51507203f36b2c66b5",
+      "format_ok": true,
+      "has_hitobjects": true,
+      "verified": true,
+      "in_game_hitobject_count": 2252,
+      "bp_entries": [
+        {
+          "bp": 12,
+          "mods": "HD",
+          "mods_array": [
+            "HD"
+          ],
+          "pp": 503.418,
+          "accuracy": 0.9958555358200119,
+          "score_id": 5048990855
+        }
+      ],
+      "beatmap": {
+        "beatmapset_id": 2423043,
+        "artist": "Hayakore Tatsumi",
+        "title": "Thousandth Sky (END of SUMMER Mix)",
+        "version": "Everlasting Summer",
+        "creator": "saido39",
+        "status": "ranked",
+        "difficulty_rating": 7.15202,
+        "total_length": 395,
+        "bpm": 190,
+        "cs": 4,
+        "ar": 9.5,
+        "od": 9,
+        "hp": 5,
+        "count_circles": 1581,
+        "count_sliders": 668,
+        "count_spinners": 3
+      }
+    },
+    {
+      "beatmap_id": 4277533,
+      "file": "osu/4277533.osu",
+      "expected_md5": "45ec2108ce7d2092973c70f1e22e9e99",
+      "source": "osu.ppy.sh",
+      "bytes": 37449,
+      "actual_md5": "45ec2108ce7d2092973c70f1e22e9e99",
+      "format_ok": true,
+      "has_hitobjects": true,
+      "verified": true,
+      "in_game_hitobject_count": 944,
+      "bp_entries": [
+        {
+          "bp": 13,
+          "mods": "HDHR",
+          "mods_array": [
+            "HD",
+            "HR"
+          ],
+          "pp": 503.008,
+          "accuracy": 0.9887005649717514,
+          "score_id": 5031928896
+        }
+      ],
+      "beatmap": {
+        "beatmapset_id": 1569753,
+        "artist": "Kuki Akumu",
+        "title": "Ki ga Kurutta Noise",
+        "version": "Emotion",
+        "creator": "Astronic",
+        "status": "ranked",
+        "difficulty_rating": 6.25469,
+        "total_length": 138,
+        "bpm": 180,
+        "cs": 4.5,
+        "ar": 9.4,
+        "od": 9.2,
+        "hp": 5.5,
+        "count_circles": 726,
+        "count_sliders": 218,
+        "count_spinners": 0
+      }
+    },
+    {
+      "beatmap_id": 4975644,
+      "file": "osu/4975644.osu",
+      "expected_md5": "cf2a8246f92d7ca140310919a8136e84",
+      "source": "osu.ppy.sh",
+      "bytes": 114586,
+      "actual_md5": "cf2a8246f92d7ca140310919a8136e84",
+      "format_ok": true,
+      "has_hitobjects": true,
+      "verified": true,
+      "in_game_hitobject_count": 2525,
+      "bp_entries": [
+        {
+          "bp": 14,
+          "mods": "HD",
+          "mods_array": [
+            "HD"
+          ],
+          "pp": 502.287,
+          "accuracy": 0.991023102310231,
+          "score_id": 4992950832
+        }
+      ],
+      "beatmap": {
+        "beatmapset_id": 2171371,
+        "artist": "Demetori",
+        "title": "Higan Kikou ~ View of The River Styx",
+        "version": "Extra Stage",
+        "creator": "dicecream",
+        "status": "ranked",
+        "difficulty_rating": 6.66097,
+        "total_length": 449,
+        "bpm": 182,
+        "cs": 4,
+        "ar": 9.6,
+        "od": 9.2,
+        "hp": 5,
+        "count_circles": 1888,
+        "count_sliders": 636,
+        "count_spinners": 1
+      }
+    },
+    {
+      "beatmap_id": 5682464,
+      "file": "osu/5682464.osu",
+      "expected_md5": "9d254f00ec1ce9c729f0c30434a19504",
+      "source": "osu.ppy.sh",
+      "bytes": 26411,
+      "actual_md5": "9d254f00ec1ce9c729f0c30434a19504",
+      "format_ok": true,
+      "has_hitobjects": true,
+      "verified": true,
+      "in_game_hitobject_count": 699,
+      "bp_entries": [
+        {
+          "bp": 15,
+          "mods": "HDHR",
+          "mods_array": [
+            "HD",
+            "HR"
+          ],
+          "pp": 501.164,
+          "accuracy": 0.9933237958989032,
+          "score_id": 5037703846
+        }
+      ],
+      "beatmap": {
+        "beatmapset_id": 2554421,
+        "artist": "Pythia",
+        "title": "Heartless (Cut Ver.)",
+        "version": "Uri's Extra",
+        "creator": "h6zy",
+        "status": "ranked",
+        "difficulty_rating": 6.44085,
+        "total_length": 90,
+        "bpm": 190,
+        "cs": 3.6,
+        "ar": 9.3,
+        "od": 9,
+        "hp": 5,
+        "count_circles": 576,
+        "count_sliders": 123,
+        "count_spinners": 0
+      }
+    },
+    {
+      "beatmap_id": 5061151,
+      "file": "osu/5061151.osu",
+      "expected_md5": "9d31a01f80b054bccf4c52e1d3d2e83b",
+      "source": "osu.ppy.sh",
+      "bytes": 17609,
+      "actual_md5": "9d31a01f80b054bccf4c52e1d3d2e83b",
+      "format_ok": true,
+      "has_hitobjects": true,
+      "verified": true,
+      "in_game_hitobject_count": 440,
+      "bp_entries": [
+        {
+          "bp": 16,
+          "mods": "HDHR",
+          "mods_array": [
+            "HD",
+            "HR"
+          ],
+          "pp": 500.182,
+          "accuracy": 0.9984848484848485,
+          "score_id": 5040316988
+        }
+      ],
+      "beatmap": {
+        "beatmapset_id": 2341780,
+        "artist": "Jun Ishikawa",
+        "title": "Green Greens",
+        "version": "Mekadon's Super Ability",
+        "creator": "Fatfan Kolek",
+        "status": "ranked",
+        "difficulty_rating": 6.45419,
+        "total_length": 57,
+        "bpm": 181,
+        "cs": 3.6,
+        "ar": 9.6,
+        "od": 9.4,
+        "hp": 4,
+        "count_circles": 372,
+        "count_sliders": 68,
+        "count_spinners": 0
+      }
+    },
+    {
+      "beatmap_id": 5034823,
+      "file": "osu/5034823.osu",
+      "expected_md5": "781e5d173a563a8e50c9c321ad0ba5ff",
+      "source": "osu.ppy.sh",
+      "bytes": 88199,
+      "actual_md5": "781e5d173a563a8e50c9c321ad0ba5ff",
+      "format_ok": true,
+      "has_hitobjects": true,
+      "verified": true,
+      "in_game_hitobject_count": 2373,
+      "bp_entries": [
+        {
+          "bp": 17,
+          "mods": "HD",
+          "mods_array": [
+            "HD"
+          ],
+          "pp": 494.712,
+          "accuracy": 0.983424638291895,
+          "score_id": 4995228604
+        }
+      ],
+      "beatmap": {
+        "beatmapset_id": 2342474,
+        "artist": "DJ SHARPNEL",
+        "title": "CYBER INDUCTANCE",
+        "version": "FINAL",
+        "creator": "mithew",
+        "status": "ranked",
+        "difficulty_rating": 6.73544,
+        "total_length": 290,
+        "bpm": 191,
+        "cs": 4.4,
+        "ar": 9.5,
+        "od": 9.5,
+        "hp": 5.5,
+        "count_circles": 1922,
+        "count_sliders": 449,
+        "count_spinners": 2
+      }
+    },
+    {
+      "beatmap_id": 3784710,
+      "file": "osu/3784710.osu",
+      "expected_md5": "e17a84084eaa252fbfc53c46375d6102",
+      "source": "osu.ppy.sh",
+      "bytes": 44675,
+      "actual_md5": "e17a84084eaa252fbfc53c46375d6102",
+      "format_ok": true,
+      "has_hitobjects": true,
+      "verified": true,
+      "in_game_hitobject_count": 1386,
+      "bp_entries": [
+        {
+          "bp": 18,
+          "mods": "HD",
+          "mods_array": [
+            "HD"
+          ],
+          "pp": 493.037,
+          "accuracy": 0.9915824915824916,
+          "score_id": 5028794895
+        }
+      ],
+      "beatmap": {
+        "beatmapset_id": 1842568,
+        "artist": "Andy Gillion",
+        "title": "Insert Coin",
+        "version": "Arcade Metal",
+        "creator": "-Sylvari",
+        "status": "ranked",
+        "difficulty_rating": 7.02703,
+        "total_length": 175,
+        "bpm": 180,
+        "cs": 4,
+        "ar": 9.6,
+        "od": 9.6,
+        "hp": 4,
+        "count_circles": 1231,
+        "count_sliders": 154,
+        "count_spinners": 1
+      }
+    },
+    {
+      "beatmap_id": 4572837,
+      "file": "osu/4572837.osu",
+      "expected_md5": "94a68bca511ba176d7600d830f2f495f",
+      "source": "osu.ppy.sh",
+      "bytes": 90569,
+      "actual_md5": "94a68bca511ba176d7600d830f2f495f",
+      "format_ok": true,
+      "has_hitobjects": true,
+      "verified": true,
+      "in_game_hitobject_count": 2665,
+      "bp_entries": [
+        {
+          "bp": 19,
+          "mods": "HD",
+          "mods_array": [
+            "HD"
+          ],
+          "pp": 492.891,
+          "accuracy": 0.9932457786116323,
+          "score_id": 5029350648
+        }
+      ],
+      "beatmap": {
+        "beatmapset_id": 2167421,
+        "artist": "Demetori",
+        "title": "Necrofantasia ~ Remix",
+        "version": "Youkai of Boundaries",
+        "creator": "Mimiliaa",
+        "status": "ranked",
+        "difficulty_rating": 6.5123,
+        "total_length": 333,
+        "bpm": 180,
+        "cs": 4,
+        "ar": 9.3,
+        "od": 9,
+        "hp": 5,
+        "count_circles": 2359,
+        "count_sliders": 305,
+        "count_spinners": 1
+      }
+    },
+    {
+      "beatmap_id": 5132508,
+      "file": "osu/5132508.osu",
+      "expected_md5": "445d2363eeaa987b63e8a8bf1ae50ca5",
+      "source": "osu.ppy.sh",
+      "bytes": 100673,
+      "actual_md5": "445d2363eeaa987b63e8a8bf1ae50ca5",
+      "format_ok": true,
+      "has_hitobjects": true,
+      "verified": true,
+      "in_game_hitobject_count": 1949,
+      "bp_entries": [
+        {
+          "bp": 20,
+          "mods": "HD",
+          "mods_array": [
+            "HD"
+          ],
+          "pp": 487.334,
+          "accuracy": 0.9989738327347357,
+          "score_id": 5029379950
+        }
+      ],
+      "beatmap": {
+        "beatmapset_id": 2376029,
+        "artist": "Fellowship",
+        "title": "The Frozen Land",
+        "version": "Preserved Anguish",
+        "creator": "sytho",
+        "status": "ranked",
+        "difficulty_rating": 6.6106,
+        "total_length": 302,
+        "bpm": 200,
+        "cs": 3.7,
+        "ar": 9.5,
+        "od": 9,
+        "hp": 5,
+        "count_circles": 1456,
+        "count_sliders": 493,
+        "count_spinners": 0
+      }
+    },
+    {
+      "beatmap_id": 5423414,
+      "file": "osu/5423414.osu",
+      "expected_md5": "6bea9a6ea0845f53bc113cd58f8511ac",
+      "source": "osu.ppy.sh",
+      "bytes": 94423,
+      "actual_md5": "6bea9a6ea0845f53bc113cd58f8511ac",
+      "format_ok": true,
+      "has_hitobjects": true,
+      "verified": true,
+      "in_game_hitobject_count": 2345,
+      "bp_entries": [
+        {
+          "bp": 21,
+          "mods": "HD",
+          "mods_array": [
+            "HD"
+          ],
+          "pp": 487.269,
+          "accuracy": 0.9914712153518124,
+          "score_id": 5053280692
+        }
+      ],
+      "beatmap": {
+        "beatmapset_id": 2474318,
+        "artist": "TEARS OF TRAGEDY",
+        "title": "Accept Yourself",
+        "version": "I Believe In It, The Story of A Dream",
+        "creator": "Frutiger_",
+        "status": "ranked",
+        "difficulty_rating": 6.75146,
+        "total_length": 344,
+        "bpm": 177,
+        "cs": 4,
+        "ar": 9.7,
+        "od": 9.5,
+        "hp": 4.5,
+        "count_circles": 1871,
+        "count_sliders": 474,
+        "count_spinners": 0
+      }
+    },
+    {
+      "beatmap_id": 5129350,
+      "file": "osu/5129350.osu",
+      "expected_md5": "02af836b9757286f47b0bcf47a9dd51a",
+      "source": "osu.ppy.sh",
+      "bytes": 71069,
+      "actual_md5": "02af836b9757286f47b0bcf47a9dd51a",
+      "format_ok": true,
+      "has_hitobjects": true,
+      "verified": true,
+      "in_game_hitobject_count": 1905,
+      "bp_entries": [
+        {
+          "bp": 22,
+          "mods": "HD",
+          "mods_array": [
+            "HD"
+          ],
+          "pp": 486.535,
+          "accuracy": 0.9905511811023622,
+          "score_id": 5032047609
+        }
+      ],
+      "beatmap": {
+        "beatmapset_id": 2375006,
+        "artist": "Demetori",
+        "title": "Pure Furies ~ Vengeance is Mine",
+        "version": "The pristine spiritual force that rejects life and death.",
+        "creator": "lazysloth900",
+        "status": "ranked",
+        "difficulty_rating": 7.49064,
+        "total_length": 298,
+        "bpm": 180,
+        "cs": 4.2,
+        "ar": 9.6,
+        "od": 9.6,
+        "hp": 5,
+        "count_circles": 1572,
+        "count_sliders": 333,
+        "count_spinners": 0
+      }
+    },
+    {
+      "beatmap_id": 1537566,
+      "file": "osu/1537566.osu",
+      "expected_md5": "2a29c58cc0ee5c74709d16ca84acf5ed",
+      "source": "osu.ppy.sh",
+      "bytes": 68777,
+      "actual_md5": "2a29c58cc0ee5c74709d16ca84acf5ed",
+      "format_ok": true,
+      "has_hitobjects": true,
+      "verified": true,
+      "in_game_hitobject_count": 1812,
+      "bp_entries": [
+        {
+          "bp": 23,
+          "mods": "HD",
+          "mods_array": [
+            "HD"
+          ],
+          "pp": 479.023,
+          "accuracy": 0.9822479764532744,
+          "score_id": 4994718654
+        }
+      ],
+      "beatmap": {
+        "beatmapset_id": 728276,
+        "artist": "VINXIS",
+        "title": "Sidetracked Day",
+        "version": "THREE DIMENSIONS",
+        "creator": "SnowNiNo_",
+        "status": "ranked",
+        "difficulty_rating": 6.99675,
+        "total_length": 337,
+        "bpm": 188,
+        "cs": 4,
+        "ar": 9.6,
+        "od": 10,
+        "hp": 6,
+        "count_circles": 1290,
+        "count_sliders": 520,
+        "count_spinners": 2
+      }
+    },
+    {
+      "beatmap_id": 5440133,
+      "file": "osu/5440133.osu",
+      "expected_md5": "9e710b11482eaeda718877d15f3d2885",
+      "source": "osu.ppy.sh",
+      "bytes": 85734,
+      "actual_md5": "9e710b11482eaeda718877d15f3d2885",
+      "format_ok": true,
+      "has_hitobjects": true,
+      "verified": true,
+      "in_game_hitobject_count": 2292,
+      "bp_entries": [
+        {
+          "bp": 24,
+          "mods": "HD",
+          "mods_array": [
+            "HD"
+          ],
+          "pp": 473.337,
+          "accuracy": 0.9822571262361838,
+          "score_id": 4986963662
+        }
+      ],
+      "beatmap": {
+        "beatmapset_id": 2475323,
+        "artist": "DJ SHARPNEL",
+        "title": "Pacific girls",
+        "version": "handstream",
+        "creator": "mithew",
+        "status": "ranked",
+        "difficulty_rating": 7.19461,
+        "total_length": 315,
+        "bpm": 195,
+        "cs": 4,
+        "ar": 9.7,
+        "od": 9.5,
+        "hp": 5,
+        "count_circles": 1936,
+        "count_sliders": 352,
+        "count_spinners": 4
+      }
+    },
+    {
+      "beatmap_id": 5064561,
+      "file": "osu/5064561.osu",
+      "expected_md5": "360467d9eccd6e855eede694992f83b4",
+      "source": "osu.ppy.sh",
+      "bytes": 105887,
+      "actual_md5": "360467d9eccd6e855eede694992f83b4",
+      "format_ok": true,
+      "has_hitobjects": true,
+      "verified": true,
+      "in_game_hitobject_count": 2131,
+      "bp_entries": [
+        {
+          "bp": 25,
+          "mods": "HD",
+          "mods_array": [
+            "HD"
+          ],
+          "pp": 473.328,
+          "accuracy": 0.9792742061629908,
+          "score_id": 4999604289
+        }
+      ],
+      "beatmap": {
+        "beatmapset_id": 2352829,
+        "artist": "TEARS OF TRAGEDY",
+        "title": "Epitaph",
+        "version": "Remembrance",
+        "creator": "Ayesha Altugle",
+        "status": "ranked",
+        "difficulty_rating": 7.35872,
+        "total_length": 335,
+        "bpm": 191,
+        "cs": 4,
+        "ar": 9.7,
+        "od": 9.7,
+        "hp": 5,
+        "count_circles": 1767,
+        "count_sliders": 362,
+        "count_spinners": 2
+      }
+    },
+    {
+      "beatmap_id": 4704022,
+      "file": "osu/4704022.osu",
+      "expected_md5": "bb0ab87debbf0a94967c68ccb83fbd96",
+      "source": "osu.ppy.sh",
+      "bytes": 65435,
+      "actual_md5": "bb0ab87debbf0a94967c68ccb83fbd96",
+      "format_ok": true,
+      "has_hitobjects": true,
+      "verified": true,
+      "in_game_hitobject_count": 1836,
+      "bp_entries": [
+        {
+          "bp": 26,
+          "mods": "HDHR",
+          "mods_array": [
+            "HD",
+            "HR"
+          ],
+          "pp": 472.016,
+          "accuracy": 0.9896514161220044,
+          "score_id": 5043575205
+        }
+      ],
+      "beatmap": {
+        "beatmapset_id": 2219231,
+        "artist": "Victorius",
+        "title": "Age of Tyranny",
+        "version": "shoyeu's Extra",
+        "creator": "Urition",
+        "status": "ranked",
+        "difficulty_rating": 6.68173,
+        "total_length": 211,
+        "bpm": 200,
+        "cs": 4,
+        "ar": 9.4,
+        "od": 9,
+        "hp": 5,
+        "count_circles": 1598,
+        "count_sliders": 238,
+        "count_spinners": 0
+      }
+    },
+    {
+      "beatmap_id": 5262236,
+      "file": "osu/5262236.osu",
+      "expected_md5": "94ef6cdd29ed69a223db353f5870f63c",
+      "source": "osu.ppy.sh",
+      "bytes": 22634,
+      "actual_md5": "94ef6cdd29ed69a223db353f5870f63c",
+      "format_ok": true,
+      "has_hitobjects": true,
+      "verified": true,
+      "in_game_hitobject_count": 505,
+      "bp_entries": [
+        {
+          "bp": 27,
+          "mods": "HD",
+          "mods_array": [
+            "HD"
+          ],
+          "pp": 466.484,
+          "accuracy": 0.9920792079207921,
+          "score_id": 5039960960
+        }
+      ],
+      "beatmap": {
+        "beatmapset_id": 2252339,
+        "artist": "Unlucky Morpheus",
+        "title": "FAITH",
+        "version": "PIXELGLORY'S EXTREME",
+        "creator": "h6zy",
+        "status": "ranked",
+        "difficulty_rating": 7.01181,
+        "total_length": 53,
+        "bpm": 200,
+        "cs": 4,
+        "ar": 9.7,
+        "od": 9.5,
+        "hp": 5,
+        "count_circles": 395,
+        "count_sliders": 109,
+        "count_spinners": 1
+      }
+    },
+    {
+      "beatmap_id": 740044,
+      "file": "osu/740044.osu",
+      "expected_md5": "d8c8342011ea862531156d7698f44526",
+      "source": "osu.ppy.sh",
+      "bytes": 45222,
+      "actual_md5": "d8c8342011ea862531156d7698f44526",
+      "format_ok": true,
+      "has_hitobjects": true,
+      "verified": true,
+      "in_game_hitobject_count": 1106,
+      "bp_entries": [
+        {
+          "bp": 28,
+          "mods": "HDHR",
+          "mods_array": [
+            "HD",
+            "HR"
+          ],
+          "pp": 464.618,
+          "accuracy": 0.9936708860759493,
+          "score_id": 5025788425
+        }
+      ],
+      "beatmap": {
+        "beatmapset_id": 334469,
+        "artist": "ALiCE'S EMOTiON",
+        "title": "Dark Flight Dreamer",
+        "version": "Last Spell",
+        "creator": "Natsu",
+        "status": "ranked",
+        "difficulty_rating": 6.43706,
+        "total_length": 189,
+        "bpm": 189,
+        "cs": 4,
+        "ar": 9,
+        "od": 9,
+        "hp": 7,
+        "count_circles": 857,
+        "count_sliders": 248,
+        "count_spinners": 1
+      }
+    },
+    {
+      "beatmap_id": 3671976,
+      "file": "osu/3671976.osu",
+      "expected_md5": "a9ec58b89b45f0c5df758ca20ef5ed3f",
+      "source": "osu.ppy.sh",
+      "bytes": 87646,
+      "actual_md5": "a9ec58b89b45f0c5df758ca20ef5ed3f",
+      "format_ok": true,
+      "has_hitobjects": true,
+      "verified": true,
+      "in_game_hitobject_count": 2148,
+      "bp_entries": [
+        {
+          "bp": 29,
+          "mods": "HD",
+          "mods_array": [
+            "HD"
+          ],
+          "pp": 464.331,
+          "accuracy": 0.9892147734326505,
+          "score_id": 5024448023
+        }
+      ],
+      "beatmap": {
+        "beatmapset_id": 1791832,
+        "artist": "SYU (from GALNERYUS)",
+        "title": "REASON",
+        "version": "Meaning of Life",
+        "creator": "hehe",
+        "status": "ranked",
+        "difficulty_rating": 6.65529,
+        "total_length": 327,
+        "bpm": 184,
+        "cs": 4,
+        "ar": 9.4,
+        "od": 9.4,
+        "hp": 4,
+        "count_circles": 1574,
+        "count_sliders": 574,
+        "count_spinners": 0
+      }
+    },
+    {
+      "beatmap_id": 5223159,
+      "file": "osu/5223159.osu",
+      "expected_md5": "e3e77dc232a0e85e5b142410ac6ef37f",
+      "source": "osu.ppy.sh",
+      "bytes": 107618,
+      "actual_md5": "e3e77dc232a0e85e5b142410ac6ef37f",
+      "format_ok": true,
+      "has_hitobjects": true,
+      "verified": true,
+      "in_game_hitobject_count": 3003,
+      "bp_entries": [
+        {
+          "bp": 30,
+          "mods": "HD",
+          "mods_array": [
+            "HD"
+          ],
+          "pp": 463.752,
+          "accuracy": 0.9871794871794872,
+          "score_id": 5001477931
+        }
+      ],
+      "beatmap": {
+        "beatmapset_id": 2406703,
+        "artist": "Hayakore Tatsumi",
+        "title": "Thousandth Sky",
+        "version": "Tsubasa+",
+        "creator": "Sanch-KK",
+        "status": "ranked",
+        "difficulty_rating": 7.15055,
+        "total_length": 433,
+        "bpm": 190,
+        "cs": 4,
+        "ar": 9.7,
+        "od": 9.3,
+        "hp": 4,
+        "count_circles": 2428,
+        "count_sliders": 572,
+        "count_spinners": 3
+      }
+    },
+    {
+      "beatmap_id": 5080973,
+      "file": "osu/5080973.osu",
+      "expected_md5": "a5492de7a342061a19eda100f4ddbc96",
+      "source": "osu.ppy.sh",
+      "bytes": 86143,
+      "actual_md5": "a5492de7a342061a19eda100f4ddbc96",
+      "format_ok": true,
+      "has_hitobjects": true,
+      "verified": true,
+      "in_game_hitobject_count": 2121,
+      "bp_entries": [
+        {
+          "bp": 31,
+          "mods": "HDHR",
+          "mods_array": [
+            "HD",
+            "HR"
+          ],
+          "pp": 462.758,
+          "accuracy": 0.9871915763004872,
+          "score_id": 4952110243
+        }
+      ],
+      "beatmap": {
+        "beatmapset_id": 150360,
+        "artist": "goreshit",
+        "title": "look at me tenderly",
+        "version": "(>///<)",
+        "creator": "Cyllinus",
+        "status": "ranked",
+        "difficulty_rating": 6.5123,
+        "total_length": 369,
+        "bpm": 192,
+        "cs": 4,
+        "ar": 9.3,
+        "od": 9,
+        "hp": 6,
+        "count_circles": 1666,
+        "count_sliders": 453,
+        "count_spinners": 2
+      }
+    },
+    {
+      "beatmap_id": 5671885,
+      "file": "osu/5671885.osu",
+      "expected_md5": "eb002ecc5635ef0312e88f6b793aefb9",
+      "source": "osu.ppy.sh",
+      "bytes": 25879,
+      "actual_md5": "eb002ecc5635ef0312e88f6b793aefb9",
+      "format_ok": true,
+      "has_hitobjects": true,
+      "verified": true,
+      "in_game_hitobject_count": 703,
+      "bp_entries": [
+        {
+          "bp": 32,
+          "mods": "HD",
+          "mods_array": [
+            "HD"
+          ],
+          "pp": 460.215,
+          "accuracy": 0.9919393077287814,
+          "score_id": 5039852391
+        }
+      ],
+      "beatmap": {
+        "beatmapset_id": 2554421,
+        "artist": "Pythia",
+        "title": "Heartless (Cut Ver.)",
+        "version": "Indifference",
+        "creator": "h6zy",
+        "status": "ranked",
+        "difficulty_rating": 7.18696,
+        "total_length": 90,
+        "bpm": 190,
+        "cs": 4,
+        "ar": 9.8,
+        "od": 10,
+        "hp": 5,
+        "count_circles": 586,
+        "count_sliders": 117,
+        "count_spinners": 0
+      }
+    },
+    {
+      "beatmap_id": 4000950,
+      "file": "osu/4000950.osu",
+      "expected_md5": "032711cd5c91d9534e78fb13dda4ae1d",
+      "source": "osu.ppy.sh",
+      "bytes": 71650,
+      "actual_md5": "032711cd5c91d9534e78fb13dda4ae1d",
+      "format_ok": true,
+      "has_hitobjects": true,
+      "verified": true,
+      "in_game_hitobject_count": 1516,
+      "bp_entries": [
+        {
+          "bp": 33,
+          "mods": "HDHR",
+          "mods_array": [
+            "HD",
+            "HR"
+          ],
+          "pp": 458.88,
+          "accuracy": 0.9848284960422163,
+          "score_id": 4995622740
+        }
+      ],
+      "beatmap": {
+        "beatmapset_id": 1913010,
+        "artist": "Twilight Force",
+        "title": "Valley of the Vale",
+        "version": "Nymphuwua's Expert Collab",
+        "creator": "nebuwua",
+        "status": "ranked",
+        "difficulty_rating": 6.56449,
+        "total_length": 213,
+        "bpm": 190,
+        "cs": 3.8,
+        "ar": 9.4,
+        "od": 9.2,
+        "hp": 5,
+        "count_circles": 1231,
+        "count_sliders": 284,
+        "count_spinners": 1
+      }
+    },
+    {
+      "beatmap_id": 1256809,
+      "file": "osu/1256809.osu",
+      "expected_md5": "cc4cbed3121f14b7d59ccc3d8164ae71",
+      "source": "osu.ppy.sh",
+      "bytes": 150899,
+      "actual_md5": "cc4cbed3121f14b7d59ccc3d8164ae71",
+      "format_ok": true,
+      "has_hitobjects": true,
+      "verified": true,
+      "in_game_hitobject_count": 3201,
+      "bp_entries": [
+        {
+          "bp": 34,
+          "mods": "HD",
+          "mods_array": [
+            "HD"
+          ],
+          "pp": 456.649,
+          "accuracy": 0.9937519525148392,
+          "score_id": 4995220088
+        }
+      ],
+      "beatmap": {
+        "beatmapset_id": 594170,
+        "artist": "Avenged Sevenfold",
+        "title": "Save Me",
+        "version": "Tragedy",
+        "creator": "Drummer",
+        "status": "ranked",
+        "difficulty_rating": 6.8374,
+        "total_length": 652,
+        "bpm": 190,
+        "cs": 4,
+        "ar": 9.5,
+        "od": 8.8,
+        "hp": 5.5,
+        "count_circles": 2195,
+        "count_sliders": 1003,
+        "count_spinners": 3
+      }
+    },
+    {
+      "beatmap_id": 5186053,
+      "file": "osu/5186053.osu",
+      "expected_md5": "a278de9e9b0edf7413e61ae11a889107",
+      "source": "osu.ppy.sh",
+      "bytes": 85359,
+      "actual_md5": "a278de9e9b0edf7413e61ae11a889107",
+      "format_ok": true,
+      "has_hitobjects": true,
+      "verified": true,
+      "in_game_hitobject_count": 2046,
+      "bp_entries": [
+        {
+          "bp": 35,
+          "mods": "HD",
+          "mods_array": [
+            "HD"
+          ],
+          "pp": 455.924,
+          "accuracy": 0.9806940371456501,
+          "score_id": 5035372413
+        }
+      ],
+      "beatmap": {
+        "beatmapset_id": 2394528,
+        "artist": "Demetori",
+        "title": "Hishin Matara ~ Four seasons where Starless disappeared.",
+        "version": "The Divinity of Secrets",
+        "creator": "Kyros_",
+        "status": "ranked",
+        "difficulty_rating": 6.93226,
+        "total_length": 383,
+        "bpm": 182,
+        "cs": 4.3,
+        "ar": 9.7,
+        "od": 9.8,
+        "hp": 5,
+        "count_circles": 1542,
+        "count_sliders": 503,
+        "count_spinners": 1
+      }
+    },
+    {
+      "beatmap_id": 2850905,
+      "file": "osu/2850905.osu",
+      "expected_md5": "2d82e07b34d84a59354530bd6ae4086c",
+      "source": "osu.ppy.sh",
+      "bytes": 46465,
+      "actual_md5": "2d82e07b34d84a59354530bd6ae4086c",
+      "format_ok": true,
+      "has_hitobjects": true,
+      "verified": true,
+      "in_game_hitobject_count": 1321,
+      "bp_entries": [
+        {
+          "bp": 36,
+          "mods": "HDDT",
+          "mods_array": [
+            "HD",
+            "DT"
+          ],
+          "pp": 455.647,
+          "accuracy": 0.978299268231138,
+          "score_id": 4904612221
+        }
+      ],
+      "beatmap": {
+        "beatmapset_id": 1379697,
+        "artist": "seleP",
+        "title": "ReLief",
+        "version": "Girl Chained Away From Happiness",
+        "creator": "P_O",
+        "status": "ranked",
+        "difficulty_rating": 4.89959,
+        "total_length": 307,
+        "bpm": 120,
+        "cs": 4,
+        "ar": 8,
+        "od": 8,
+        "hp": 6,
+        "count_circles": 1091,
+        "count_sliders": 229,
+        "count_spinners": 1
+      }
+    },
+    {
+      "beatmap_id": 5028070,
+      "file": "osu/5028070.osu",
+      "expected_md5": "121de0ac469a6297c3d030a8a64c902f",
+      "source": "osu.ppy.sh",
+      "bytes": 85256,
+      "actual_md5": "121de0ac469a6297c3d030a8a64c902f",
+      "format_ok": true,
+      "has_hitobjects": true,
+      "verified": true,
+      "in_game_hitobject_count": 2214,
+      "bp_entries": [
+        {
+          "bp": 37,
+          "mods": "HD",
+          "mods_array": [
+            "HD"
+          ],
+          "pp": 453.634,
+          "accuracy": 0.9856970791930142,
+          "score_id": 4962542040
+        }
+      ],
+      "beatmap": {
+        "beatmapset_id": 2340339,
+        "artist": "Yamajet feat. Hiura Masako",
+        "title": "Sunglow (Happy Hardcore Style)",
+        "version": "Daybreak",
+        "creator": "kowari",
+        "status": "ranked",
+        "difficulty_rating": 6.70079,
+        "total_length": 301,
+        "bpm": 180,
+        "cs": 3.9,
+        "ar": 9.4,
+        "od": 9.4,
+        "hp": 6,
+        "count_circles": 1677,
+        "count_sliders": 537,
+        "count_spinners": 0
+      }
+    },
+    {
+      "beatmap_id": 5682373,
+      "file": "osu/5682373.osu",
+      "expected_md5": "88246d7986d826f3e169c515f3fa298f",
+      "source": "osu.ppy.sh",
+      "bytes": 28074,
+      "actual_md5": "88246d7986d826f3e169c515f3fa298f",
+      "format_ok": true,
+      "has_hitobjects": true,
+      "verified": true,
+      "in_game_hitobject_count": 676,
+      "bp_entries": [
+        {
+          "bp": 38,
+          "mods": "HDHR",
+          "mods_array": [
+            "HD",
+            "HR"
+          ],
+          "pp": 452.308,
+          "accuracy": 0.9891518737672583,
+          "score_id": 5037700407
+        }
+      ],
+      "beatmap": {
+        "beatmapset_id": 2554421,
+        "artist": "Pythia",
+        "title": "Heartless (Cut Ver.)",
+        "version": "Zabrid's Expert",
+        "creator": "h6zy",
+        "status": "ranked",
+        "difficulty_rating": 6.23726,
+        "total_length": 90,
+        "bpm": 190,
+        "cs": 3.8,
+        "ar": 9.3,
+        "od": 9,
+        "hp": 4.8,
+        "count_circles": 547,
+        "count_sliders": 129,
+        "count_spinners": 0
+      }
+    },
+    {
+      "beatmap_id": 4944784,
+      "file": "osu/4944784.osu",
+      "expected_md5": "f498aa6a71e7d1e6874a010541ee332a",
+      "source": "osu.ppy.sh",
+      "bytes": 28365,
+      "actual_md5": "f498aa6a71e7d1e6874a010541ee332a",
+      "format_ok": true,
+      "has_hitobjects": true,
+      "verified": true,
+      "in_game_hitobject_count": 670,
+      "bp_entries": [
+        {
+          "bp": 39,
+          "mods": "HDHR",
+          "mods_array": [
+            "HD",
+            "HR"
+          ],
+          "pp": 451.787,
+          "accuracy": 0.9920398009950249,
+          "score_id": 4921359865
+        }
+      ],
+      "beatmap": {
+        "beatmapset_id": 2310753,
+        "artist": "VINXIS",
+        "title": "Sidetracked Day (Short Ver.)",
+        "version": "Nlxus's Extreme",
+        "creator": "Firiiu",
+        "status": "ranked",
+        "difficulty_rating": 6.28442,
+        "total_length": 127,
+        "bpm": 188,
+        "cs": 3.6,
+        "ar": 9.4,
+        "od": 9,
+        "hp": 5,
+        "count_circles": 471,
+        "count_sliders": 199,
+        "count_spinners": 0
+      }
+    },
+    {
+      "beatmap_id": 2861267,
+      "file": "osu/2861267.osu",
+      "expected_md5": "163eadc795223751bd9d6f0f031b0635",
+      "source": "osu.ppy.sh",
+      "bytes": 54334,
+      "actual_md5": "163eadc795223751bd9d6f0f031b0635",
+      "format_ok": true,
+      "has_hitobjects": true,
+      "verified": true,
+      "in_game_hitobject_count": 1360,
+      "bp_entries": [
+        {
+          "bp": 40,
+          "mods": "HD",
+          "mods_array": [
+            "HD"
+          ],
+          "pp": 450.715,
+          "accuracy": 0.9892156862745098,
+          "score_id": 4986468814
+        }
+      ],
+      "beatmap": {
+        "beatmapset_id": 1385020,
+        "artist": "Saint Snow",
+        "title": "DROPOUT!?",
+        "version": "GO TO THE WORLD!?",
+        "creator": "[Karcher]",
+        "status": "ranked",
+        "difficulty_rating": 6.92222,
+        "total_length": 228,
+        "bpm": 182,
+        "cs": 4.5,
+        "ar": 9.6,
+        "od": 9.5,
+        "hp": 6.5,
+        "count_circles": 1093,
+        "count_sliders": 263,
+        "count_spinners": 4
+      }
+    },
+    {
+      "beatmap_id": 4892236,
+      "file": "osu/4892236.osu",
+      "expected_md5": "afe05baaf96b41630039560f6dc4593f",
+      "source": "osu.ppy.sh",
+      "bytes": 53382,
+      "actual_md5": "afe05baaf96b41630039560f6dc4593f",
+      "format_ok": true,
+      "has_hitobjects": true,
+      "verified": true,
+      "in_game_hitobject_count": 1366,
+      "bp_entries": [
+        {
+          "bp": 41,
+          "mods": "HD",
+          "mods_array": [
+            "HD"
+          ],
+          "pp": 449.675,
+          "accuracy": 0.9837725719863348,
+          "score_id": 5032062257
+        }
+      ],
+      "beatmap": {
+        "beatmapset_id": 2262416,
+        "artist": "ke-ji feat. Nanahira",
+        "title": "Ange du Blanc Pur",
+        "version": "BMD's Absolution",
+        "creator": "Wen",
+        "status": "ranked",
+        "difficulty_rating": 7.00917,
+        "total_length": 236,
+        "bpm": 182,
+        "cs": 4,
+        "ar": 9.6,
+        "od": 9.6,
+        "hp": 6,
+        "count_circles": 1096,
+        "count_sliders": 270,
+        "count_spinners": 0
+      }
+    },
+    {
+      "beatmap_id": 667021,
+      "file": "osu/667021.osu",
+      "expected_md5": "de04901ea6b69571c6e196176d7f051a",
+      "source": "osu.ppy.sh",
+      "bytes": 139301,
+      "actual_md5": "de04901ea6b69571c6e196176d7f051a",
+      "format_ok": true,
+      "has_hitobjects": true,
+      "verified": true,
+      "in_game_hitobject_count": 3550,
+      "bp_entries": [
+        {
+          "bp": 42,
+          "mods": "HDHR",
+          "mods_array": [
+            "HD",
+            "HR"
+          ],
+          "pp": 448.93,
+          "accuracy": 0.9825352112676057,
+          "score_id": 5076220003
+        }
+      ],
+      "beatmap": {
+        "beatmapset_id": 297110,
+        "artist": "M.Iz",
+        "title": "Kakenukeru Anime Song Medley IV",
+        "version": "TWO DIMENSIONS",
+        "creator": "monstrata",
+        "status": "ranked",
+        "difficulty_rating": 6.33926,
+        "total_length": 808,
+        "bpm": 192,
+        "cs": 4,
+        "ar": 9,
+        "od": 8,
+        "hp": 4,
+        "count_circles": 2437,
+        "count_sliders": 1110,
+        "count_spinners": 3
+      }
+    },
+    {
+      "beatmap_id": 4137259,
+      "file": "osu/4137259.osu",
+      "expected_md5": "21144eb2b08839522d22beb9ea357ba1",
+      "source": "osu.ppy.sh",
+      "bytes": 21568,
+      "actual_md5": "21144eb2b08839522d22beb9ea357ba1",
+      "format_ok": true,
+      "has_hitobjects": true,
+      "verified": true,
+      "in_game_hitobject_count": 532,
+      "bp_entries": [
+        {
+          "bp": 43,
+          "mods": "HDHR",
+          "mods_array": [
+            "HD",
+            "HR"
+          ],
+          "pp": 445.542,
+          "accuracy": 0.9899749373433584,
+          "score_id": 4989275277
+        }
+      ],
+      "beatmap": {
+        "beatmapset_id": 1991315,
+        "artist": "Feint",
+        "title": "Tower Of Heaven (You Are Slaves) (Cut Ver.)",
+        "version": "Acme",
+        "creator": "Strategas",
+        "status": "ranked",
+        "difficulty_rating": 6.47073,
+        "total_length": 98,
+        "bpm": 175,
+        "cs": 3.9,
+        "ar": 9.4,
+        "od": 9.3,
+        "hp": 3,
+        "count_circles": 411,
+        "count_sliders": 120,
+        "count_spinners": 1
+      }
+    },
+    {
+      "beatmap_id": 2423981,
+      "file": "osu/2423981.osu",
+      "expected_md5": "de80c90aefa4dda6b04ee45c439c87c8",
+      "source": "osu.ppy.sh",
+      "bytes": 68977,
+      "actual_md5": "de80c90aefa4dda6b04ee45c439c87c8",
+      "format_ok": true,
+      "has_hitobjects": true,
+      "verified": true,
+      "in_game_hitobject_count": 1551,
+      "bp_entries": [
+        {
+          "bp": 44,
+          "mods": "HD",
+          "mods_array": [
+            "HD"
+          ],
+          "pp": 445.394,
+          "accuracy": 0.9937674618525683,
+          "score_id": 4998833632
+        }
+      ],
+      "beatmap": {
+        "beatmapset_id": 1151004,
+        "artist": "UNDEAD CORPORATION",
+        "title": "Embraced by the Flame",
+        "version": "Extra",
+        "creator": "Yumerios",
+        "status": "ranked",
+        "difficulty_rating": 6.83342,
+        "total_length": 242,
+        "bpm": 215,
+        "cs": 3.8,
+        "ar": 9.4,
+        "od": 9,
+        "hp": 5,
+        "count_circles": 1113,
+        "count_sliders": 438,
+        "count_spinners": 0
+      }
+    },
+    {
+      "beatmap_id": 5284284,
+      "file": "osu/5284284.osu",
+      "expected_md5": "50b7ba227d5ccf0d1a140f7fcb13a5fa",
+      "source": "osu.ppy.sh",
+      "bytes": 100874,
+      "actual_md5": "50b7ba227d5ccf0d1a140f7fcb13a5fa",
+      "format_ok": true,
+      "has_hitobjects": true,
+      "verified": true,
+      "in_game_hitobject_count": 2393,
+      "bp_entries": [
+        {
+          "bp": 45,
+          "mods": "HD",
+          "mods_array": [
+            "HD"
+          ],
+          "pp": 443.647,
+          "accuracy": 0.9922691182615964,
+          "score_id": 5039845495
+        }
+      ],
+      "beatmap": {
+        "beatmapset_id": 2427256,
+        "artist": "AISHA",
+        "title": "Radiant Dawn",
+        "version": "Golden Embers",
+        "creator": "-[Shady]-",
+        "status": "ranked",
+        "difficulty_rating": 6.91989,
+        "total_length": 317,
+        "bpm": 184,
+        "cs": 4.2,
+        "ar": 9.6,
+        "od": 8.8,
+        "hp": 6,
+        "count_circles": 1754,
+        "count_sliders": 638,
+        "count_spinners": 1
+      }
+    },
+    {
+      "beatmap_id": 693195,
+      "file": "osu/693195.osu",
+      "expected_md5": "93075d2451623b69859fb20ce6010efd",
+      "source": "osu.ppy.sh",
+      "bytes": 44359,
+      "actual_md5": "93075d2451623b69859fb20ce6010efd",
+      "format_ok": true,
+      "has_hitobjects": true,
+      "verified": true,
+      "in_game_hitobject_count": 975,
+      "bp_entries": [
+        {
+          "bp": 46,
+          "mods": "HDHR",
+          "mods_array": [
+            "HD",
+            "HR"
+          ],
+          "pp": 443.617,
+          "accuracy": 0.9876923076923076,
+          "score_id": 4945478219
+        }
+      ],
+      "beatmap": {
+        "beatmapset_id": 185250,
+        "artist": "ALiCE'S EMOTiON",
+        "title": "Dark Flight Dreamer",
+        "version": "CRN's Extra",
+        "creator": "Sakaue Nachi",
+        "status": "ranked",
+        "difficulty_rating": 6.2152,
+        "total_length": 189,
+        "bpm": 189,
+        "cs": 4,
+        "ar": 9.5,
+        "od": 8.5,
+        "hp": 7.5,
+        "count_circles": 694,
+        "count_sliders": 281,
+        "count_spinners": 0
+      }
+    },
+    {
+      "beatmap_id": 1754777,
+      "file": "osu/1754777.osu",
+      "expected_md5": "c48478f7a85e2b2368f1d383156319a0",
+      "source": "osu.ppy.sh",
+      "bytes": 74206,
+      "actual_md5": "c48478f7a85e2b2368f1d383156319a0",
+      "format_ok": true,
+      "has_hitobjects": true,
+      "verified": true,
+      "in_game_hitobject_count": 1692,
+      "bp_entries": [
+        {
+          "bp": 47,
+          "mods": "HD",
+          "mods_array": [
+            "HD"
+          ],
+          "pp": 442.638,
+          "accuracy": 0.9871946414499606,
+          "score_id": 4910667922
+        }
+      ],
+      "beatmap": {
+        "beatmapset_id": 838182,
+        "artist": "VINXIS",
+        "title": "Sidetracked Day",
+        "version": "Infinity Inside",
+        "creator": "DendyHere",
+        "status": "ranked",
+        "difficulty_rating": 6.6708,
+        "total_length": 337,
+        "bpm": 188,
+        "cs": 4.4,
+        "ar": 9.5,
+        "od": 9.6,
+        "hp": 5.5,
+        "count_circles": 1280,
+        "count_sliders": 409,
+        "count_spinners": 3
+      }
+    },
+    {
+      "beatmap_id": 4865935,
+      "file": "osu/4865935.osu",
+      "expected_md5": "faa456fa4a7307a632fbca9352f7477d",
+      "source": "osu.ppy.sh",
+      "bytes": 44474,
+      "actual_md5": "faa456fa4a7307a632fbca9352f7477d",
+      "format_ok": true,
+      "has_hitobjects": true,
+      "verified": true,
+      "in_game_hitobject_count": 1267,
+      "bp_entries": [
+        {
+          "bp": 48,
+          "mods": "HD",
+          "mods_array": [
+            "HD"
+          ],
+          "pp": 442.269,
+          "accuracy": 0.9765851091817943,
+          "score_id": 5001510140
+        }
+      ],
+      "beatmap": {
+        "beatmapset_id": 2282117,
+        "artist": "Sawawa",
+        "title": "Cosmic Drive",
+        "version": "Desire",
+        "creator": "k0alcj",
+        "status": "ranked",
+        "difficulty_rating": 7.03413,
+        "total_length": 225,
+        "bpm": 191,
+        "cs": 4,
+        "ar": 9.6,
+        "od": 9.4,
+        "hp": 5,
+        "count_circles": 1109,
+        "count_sliders": 158,
+        "count_spinners": 0
+      }
+    },
+    {
+      "beatmap_id": 1170505,
+      "file": "osu/1170505.osu",
+      "expected_md5": "bd6aea9634c95136ddfe7c91cf03f32d",
+      "source": "osu.ppy.sh",
+      "bytes": 125010,
+      "actual_md5": "bd6aea9634c95136ddfe7c91cf03f32d",
+      "format_ok": true,
+      "has_hitobjects": true,
+      "verified": true,
+      "in_game_hitobject_count": 2649,
+      "bp_entries": [
+        {
+          "bp": 49,
+          "mods": "HD",
+          "mods_array": [
+            "HD"
+          ],
+          "pp": 441.101,
+          "accuracy": 0.9862841323769976,
+          "score_id": 4957651020
+        }
+      ],
+      "beatmap": {
+        "beatmapset_id": 552726,
+        "artist": "Imperial Circus Dead Decadence",
+        "title": "Uta",
+        "version": "Redemption",
+        "creator": "pkk",
+        "status": "ranked",
+        "difficulty_rating": 7.05815,
+        "total_length": 528,
+        "bpm": 205,
+        "cs": 4.3,
+        "ar": 9.4,
+        "od": 9,
+        "hp": 5,
+        "count_circles": 1833,
+        "count_sliders": 813,
+        "count_spinners": 3
+      }
+    },
+    {
+      "beatmap_id": 4684761,
+      "file": "osu/4684761.osu",
+      "expected_md5": "ca32609c74330764c41f2c77274f4aaa",
+      "source": "osu.ppy.sh",
+      "bytes": 164611,
+      "actual_md5": "ca32609c74330764c41f2c77274f4aaa",
+      "format_ok": true,
+      "has_hitobjects": true,
+      "verified": true,
+      "in_game_hitobject_count": 3274,
+      "bp_entries": [
+        {
+          "bp": 50,
+          "mods": "HD",
+          "mods_array": [
+            "HD"
+          ],
+          "pp": 440.255,
+          "accuracy": 0.9926186112807982,
+          "score_id": 4998786484
+        }
+      ],
+      "beatmap": {
+        "beatmapset_id": 2211479,
+        "artist": "Avenged Sevenfold",
+        "title": "Save Me",
+        "version": "Vile World",
+        "creator": "Sayuka",
+        "status": "ranked",
+        "difficulty_rating": 6.93678,
+        "total_length": 651,
+        "bpm": 190,
+        "cs": 4,
+        "ar": 9.5,
+        "od": 9,
+        "hp": 5,
+        "count_circles": 2400,
+        "count_sliders": 872,
+        "count_spinners": 2
+      }
+    },
+    {
+      "beatmap_id": 657916,
+      "file": "osu/657916.osu",
+      "expected_md5": "6802e91a5a3ea77211abe3729a5bd84b",
+      "source": "osu.ppy.sh",
+      "bytes": 54070,
+      "actual_md5": "6802e91a5a3ea77211abe3729a5bd84b",
+      "format_ok": true,
+      "has_hitobjects": true,
+      "verified": true,
+      "in_game_hitobject_count": 1368,
+      "bp_entries": [
+        {
+          "bp": 51,
+          "mods": "HDHR",
+          "mods_array": [
+            "HD",
+            "HR"
+          ],
+          "pp": 438.304,
+          "accuracy": 0.9651559454191033,
+          "score_id": 5029766644
+        }
+      ],
+      "beatmap": {
+        "beatmapset_id": 292301,
+        "artist": "xi",
+        "title": "Blue Zenith",
+        "version": "RLC's Extra",
+        "creator": "Asphyxia",
+        "status": "ranked",
+        "difficulty_rating": 6.8285,
+        "total_length": 249,
+        "bpm": 200,
+        "cs": 4,
+        "ar": 9.2,
+        "od": 8.5,
+        "hp": 7,
+        "count_circles": 993,
+        "count_sliders": 373,
+        "count_spinners": 2
+      }
+    },
+    {
+      "beatmap_id": 5426594,
+      "file": "osu/5426594.osu",
+      "expected_md5": "289b62c192386b672d89b2a8a1309917",
+      "source": "osu.ppy.sh",
+      "bytes": 59414,
+      "actual_md5": "289b62c192386b672d89b2a8a1309917",
+      "format_ok": true,
+      "has_hitobjects": true,
+      "verified": true,
+      "in_game_hitobject_count": 1304,
+      "bp_entries": [
+        {
+          "bp": 52,
+          "mods": "HD",
+          "mods_array": [
+            "HD"
+          ],
+          "pp": 437.263,
+          "accuracy": 0.9823619631901841,
+          "score_id": 5074311629
+        }
+      ],
+      "beatmap": {
+        "beatmapset_id": 2475471,
+        "artist": "ke-ji feat. Nanahira",
+        "title": "Ange du Blanc Pur",
+        "version": "Ange du Blanc Pur",
+        "creator": "AngeDuBlancPur",
+        "status": "ranked",
+        "difficulty_rating": 7.00411,
+        "total_length": 236,
+        "bpm": 182,
+        "cs": 4.5,
+        "ar": 9.7,
+        "od": 9.5,
+        "hp": 5,
+        "count_circles": 1064,
+        "count_sliders": 239,
+        "count_spinners": 1
+      }
+    },
+    {
+      "beatmap_id": 5108662,
+      "file": "osu/5108662.osu",
+      "expected_md5": "3bb6ee9098f6a4317768cff9deb1ddbc",
+      "source": "osu.ppy.sh",
+      "bytes": 84069,
+      "actual_md5": "3bb6ee9098f6a4317768cff9deb1ddbc",
+      "format_ok": true,
+      "has_hitobjects": true,
+      "verified": true,
+      "in_game_hitobject_count": 1989,
+      "bp_entries": [
+        {
+          "bp": 53,
+          "mods": "HD",
+          "mods_array": [
+            "HD"
+          ],
+          "pp": 432.283,
+          "accuracy": 0.9882688117982236,
+          "score_id": 5055254412
+        }
+      ],
+      "beatmap": {
+        "beatmapset_id": 2368159,
+        "artist": "Demetori",
+        "title": "Hishin Matara ~ Four seasons where Starless disappeared.",
+        "version": "Extra Stage",
+        "creator": "Twiggykun",
+        "status": "ranked",
+        "difficulty_rating": 6.58373,
+        "total_length": 383,
+        "bpm": 182,
+        "cs": 4,
+        "ar": 9.6,
+        "od": 9.5,
+        "hp": 5,
+        "count_circles": 1482,
+        "count_sliders": 507,
+        "count_spinners": 0
+      }
+    },
+    {
+      "beatmap_id": 2330482,
+      "file": "osu/2330482.osu",
+      "expected_md5": "ec925abb8869a8b118941f550b89155c",
+      "source": "osu.ppy.sh",
+      "bytes": 26574,
+      "actual_md5": "ec925abb8869a8b118941f550b89155c",
+      "format_ok": true,
+      "has_hitobjects": true,
+      "verified": true,
+      "in_game_hitobject_count": 666,
+      "bp_entries": [
+        {
+          "bp": 54,
+          "mods": "HD",
+          "mods_array": [
+            "HD"
+          ],
+          "pp": 429.849,
+          "accuracy": 0.984984984984985,
+          "score_id": 5043079616
+        }
+      ],
+      "beatmap": {
+        "beatmapset_id": 1115534,
+        "artist": "Saint Snow",
+        "title": "DROPOUT!?",
+        "version": "Curse",
+        "creator": "Sotarks",
+        "status": "ranked",
+        "difficulty_rating": 6.65885,
+        "total_length": 105,
+        "bpm": 182,
+        "cs": 4.2,
+        "ar": 9.6,
+        "od": 9.8,
+        "hp": 6.6,
+        "count_circles": 549,
+        "count_sliders": 117,
+        "count_spinners": 0
+      }
+    },
+    {
+      "beatmap_id": 5206607,
+      "file": "osu/5206607.osu",
+      "expected_md5": "5bf547910770e97d0c5cb709fa9cdf92",
+      "source": "osu.ppy.sh",
+      "bytes": 12226,
+      "actual_md5": "5bf547910770e97d0c5cb709fa9cdf92",
+      "format_ok": true,
+      "has_hitobjects": true,
+      "verified": true,
+      "in_game_hitobject_count": 301,
+      "bp_entries": [
+        {
+          "bp": 55,
+          "mods": "HD",
+          "mods_array": [
+            "HD"
+          ],
+          "pp": 429.558,
+          "accuracy": 0.9977851605758582,
+          "score_id": 4998726982
+        }
+      ],
+      "beatmap": {
+        "beatmapset_id": 2086612,
+        "artist": "Shota Kageyama",
+        "title": "Sentou de Pinch!",
+        "version": "Rare & Mythical Extreme",
+        "creator": "Suzumiya",
+        "status": "ranked",
+        "difficulty_rating": 6.60611,
+        "total_length": 33,
+        "bpm": 177.98,
+        "cs": 4.5,
+        "ar": 9.5,
+        "od": 10,
+        "hp": 8.5,
+        "count_circles": 274,
+        "count_sliders": 26,
+        "count_spinners": 1
+      }
+    },
+    {
+      "beatmap_id": 767203,
+      "file": "osu/767203.osu",
+      "expected_md5": "da637bf3af7162f08708380e193977ee",
+      "source": "osu.ppy.sh",
+      "bytes": 80015,
+      "actual_md5": "da637bf3af7162f08708380e193977ee",
+      "format_ok": true,
+      "has_hitobjects": true,
+      "verified": true,
+      "in_game_hitobject_count": 2035,
+      "bp_entries": [
+        {
+          "bp": 56,
+          "mods": "HDHR",
+          "mods_array": [
+            "HD",
+            "HR"
+          ],
+          "pp": 428.595,
+          "accuracy": 0.9749385749385749,
+          "score_id": 5001516425
+        }
+      ],
+      "beatmap": {
+        "beatmapset_id": 347719,
+        "artist": "Demetori",
+        "title": "Kuuchuu ni Shizumu Kishinjou ~ Counter-Clock World",
+        "version": "Extra Stage",
+        "creator": "jonathanlfj",
+        "status": "ranked",
+        "difficulty_rating": 6.57967,
+        "total_length": 356,
+        "bpm": 185,
+        "cs": 4,
+        "ar": 9.3,
+        "od": 9,
+        "hp": 6.5,
+        "count_circles": 1635,
+        "count_sliders": 398,
+        "count_spinners": 2
+      }
+    },
+    {
+      "beatmap_id": 930249,
+      "file": "osu/930249.osu",
+      "expected_md5": "9488e124a46edc351456a43e85d79022",
+      "source": "osu.ppy.sh",
+      "bytes": 38710,
+      "actual_md5": "9488e124a46edc351456a43e85d79022",
+      "format_ok": true,
+      "has_hitobjects": true,
+      "verified": true,
+      "in_game_hitobject_count": 911,
+      "bp_entries": [
+        {
+          "bp": 57,
+          "mods": "HD",
+          "mods_array": [
+            "HD"
+          ],
+          "pp": 428.134,
+          "accuracy": 0.995609220636663,
+          "score_id": 4995134006
+        }
+      ],
+      "beatmap": {
+        "beatmapset_id": 384772,
+        "artist": "Yuaru",
+        "title": "Asu no Yozora Shoukaihan",
+        "version": "Sky Arrow",
+        "creator": "Akitoshi",
+        "status": "ranked",
+        "difficulty_rating": 6.62534,
+        "total_length": 173,
+        "bpm": 185,
+        "cs": 4.2,
+        "ar": 9.5,
+        "od": 9,
+        "hp": 7,
+        "count_circles": 648,
+        "count_sliders": 263,
+        "count_spinners": 0
+      }
+    },
+    {
+      "beatmap_id": 3018109,
+      "file": "osu/3018109.osu",
+      "expected_md5": "70b1226af3d8b76d859982b505c4ce11",
+      "source": "osu.ppy.sh",
+      "bytes": 69106,
+      "actual_md5": "70b1226af3d8b76d859982b505c4ce11",
+      "format_ok": true,
+      "has_hitobjects": true,
+      "verified": true,
+      "in_game_hitobject_count": 1742,
+      "bp_entries": [
+        {
+          "bp": 58,
+          "mods": "HDHR",
+          "mods_array": [
+            "HD",
+            "HR"
+          ],
+          "pp": 427.492,
+          "accuracy": 0.983926521239954,
+          "score_id": 4982250060
+        }
+      ],
+      "beatmap": {
+        "beatmapset_id": 1470072,
+        "artist": "Mage",
+        "title": "The Words I Never Said",
+        "version": "Regret",
+        "creator": "Strategas",
+        "status": "ranked",
+        "difficulty_rating": 5.90699,
+        "total_length": 312,
+        "bpm": 172,
+        "cs": 3.9,
+        "ar": 9.2,
+        "od": 9.2,
+        "hp": 5,
+        "count_circles": 1332,
+        "count_sliders": 404,
+        "count_spinners": 6
+      }
+    },
+    {
+      "beatmap_id": 4583961,
+      "file": "osu/4583961.osu",
+      "expected_md5": "0f6bfb11b59ae8f2557f2326452a81a1",
+      "source": "osu.ppy.sh",
+      "bytes": 23347,
+      "actual_md5": "0f6bfb11b59ae8f2557f2326452a81a1",
+      "format_ok": true,
+      "has_hitobjects": true,
+      "verified": true,
+      "in_game_hitobject_count": 537,
+      "bp_entries": [
+        {
+          "bp": 59,
+          "mods": "HDDT",
+          "mods_array": [
+            "HD",
+            "DT"
+          ],
+          "pp": 426.853,
+          "accuracy": 0.9937926753569212,
+          "score_id": 4652614542
+        }
+      ],
+      "beatmap": {
+        "beatmapset_id": 2171754,
+        "artist": "*namirin",
+        "title": "Daidai Genome",
+        "version": "Love & Lust",
+        "creator": "- Nilou -",
+        "status": "ranked",
+        "difficulty_rating": 4.62628,
+        "total_length": 203,
+        "bpm": 135,
+        "cs": 4,
+        "ar": 8,
+        "od": 8.2,
+        "hp": 6,
+        "count_circles": 414,
+        "count_sliders": 123,
+        "count_spinners": 0
+      }
+    },
+    {
+      "beatmap_id": 5038991,
+      "file": "osu/5038991.osu",
+      "expected_md5": "f0812a9f45237308355dd4730edc068a",
+      "source": "osu.ppy.sh",
+      "bytes": 75269,
+      "actual_md5": "f0812a9f45237308355dd4730edc068a",
+      "format_ok": true,
+      "has_hitobjects": true,
+      "verified": true,
+      "in_game_hitobject_count": 1994,
+      "bp_entries": [
+        {
+          "bp": 60,
+          "mods": "HD",
+          "mods_array": [
+            "HD"
+          ],
+          "pp": 425.512,
+          "accuracy": 0.9901370779003678,
+          "score_id": 5029368715
+        }
+      ],
+      "beatmap": {
+        "beatmapset_id": 2336672,
+        "artist": "FRASER EDWARDS",
+        "title": "Stop Saying We Sound Like Dragonforce",
+        "version": "Not Roupus' Legend",
+        "creator": "Sh4rq_",
+        "status": "ranked",
+        "difficulty_rating": 6.73425,
+        "total_length": 278,
+        "bpm": 200,
+        "cs": 4.2,
+        "ar": 9.5,
+        "od": 9.3,
+        "hp": 5,
+        "count_circles": 1549,
+        "count_sliders": 445,
+        "count_spinners": 0
+      }
+    },
+    {
+      "beatmap_id": 2477065,
+      "file": "osu/2477065.osu",
+      "expected_md5": "c46b1a459b950e5ea6569c23a811b9ea",
+      "source": "osu.ppy.sh",
+      "bytes": 48842,
+      "actual_md5": "c46b1a459b950e5ea6569c23a811b9ea",
+      "format_ok": true,
+      "has_hitobjects": true,
+      "verified": true,
+      "in_game_hitobject_count": 1044,
+      "bp_entries": [
+        {
+          "bp": 61,
+          "mods": "HDHR",
+          "mods_array": [
+            "HD",
+            "HR"
+          ],
+          "pp": 425.025,
+          "accuracy": 0.98786717752235,
+          "score_id": 4949010048
+        }
+      ],
+      "beatmap": {
+        "beatmapset_id": 1188740,
+        "artist": "ke-ji feat. Nanahira",
+        "title": "Ange du Blanc Pur",
+        "version": "Extra",
+        "creator": "Astronic",
+        "status": "ranked",
+        "difficulty_rating": 6.14934,
+        "total_length": 237,
+        "bpm": 182,
+        "cs": 4,
+        "ar": 9.3,
+        "od": 9,
+        "hp": 5.5,
+        "count_circles": 704,
+        "count_sliders": 339,
+        "count_spinners": 1
+      }
+    },
+    {
+      "beatmap_id": 2126752,
+      "file": "osu/2126752.osu",
+      "expected_md5": "bd5f494fec7463de91a0ff0819f88af8",
+      "source": "osu.ppy.sh",
+      "bytes": 79505,
+      "actual_md5": "bd5f494fec7463de91a0ff0819f88af8",
+      "format_ok": true,
+      "has_hitobjects": true,
+      "verified": true,
+      "in_game_hitobject_count": 2042,
+      "bp_entries": [
+        {
+          "bp": 62,
+          "mods": "HD",
+          "mods_array": [
+            "HD"
+          ],
+          "pp": 423.592,
+          "accuracy": 0.9705354227881162,
+          "score_id": 4946425896
+        }
+      ],
+      "beatmap": {
+        "beatmapset_id": 1016145,
+        "artist": "Victorius",
+        "title": "Twilight Skies",
+        "version": "Born to Conquer the Universe",
+        "creator": "xChorse",
+        "status": "ranked",
+        "difficulty_rating": 6.57032,
+        "total_length": 300,
+        "bpm": 180,
+        "cs": 4,
+        "ar": 9.5,
+        "od": 9.4,
+        "hp": 5.5,
+        "count_circles": 1562,
+        "count_sliders": 479,
+        "count_spinners": 1
+      }
+    },
+    {
+      "beatmap_id": 5040092,
+      "file": "osu/5040092.osu",
+      "expected_md5": "208b26c022726eeb15d58061150d2b21",
+      "source": "osu.ppy.sh",
+      "bytes": 17087,
+      "actual_md5": "208b26c022726eeb15d58061150d2b21",
+      "format_ok": true,
+      "has_hitobjects": true,
+      "verified": true,
+      "in_game_hitobject_count": 475,
+      "bp_entries": [
+        {
+          "bp": 63,
+          "mods": "HDHR",
+          "mods_array": [
+            "HD",
+            "HR"
+          ],
+          "pp": 421.747,
+          "accuracy": 0.9803508771929824,
+          "score_id": 4903574619
+        }
+      ],
+      "beatmap": {
+        "beatmapset_id": 2341780,
+        "artist": "Jun Ishikawa",
+        "title": "Green Greens",
+        "version": "Poyo!",
+        "creator": "Fatfan Kolek",
+        "status": "ranked",
+        "difficulty_rating": 6.31906,
+        "total_length": 56,
+        "bpm": 181,
+        "cs": 3.8,
+        "ar": 9.4,
+        "od": 9.4,
+        "hp": 4,
+        "count_circles": 438,
+        "count_sliders": 37,
+        "count_spinners": 0
+      }
+    },
+    {
+      "beatmap_id": 4968396,
+      "file": "osu/4968396.osu",
+      "expected_md5": "02682aae70c9ac48cd11bfb2e1dd8503",
+      "source": "osu.ppy.sh",
+      "bytes": 26383,
+      "actual_md5": "02682aae70c9ac48cd11bfb2e1dd8503",
+      "format_ok": true,
+      "has_hitobjects": true,
+      "verified": true,
+      "in_game_hitobject_count": 660,
+      "bp_entries": [
+        {
+          "bp": 64,
+          "mods": "HDHR",
+          "mods_array": [
+            "HD",
+            "HR"
+          ],
+          "pp": 420.714,
+          "accuracy": 0.9787878787878788,
+          "score_id": 4991135907
+        }
+      ],
+      "beatmap": {
+        "beatmapset_id": 2179269,
+        "artist": "SHIKI",
+        "title": "Pure Ruby (Game Ver.)",
+        "version": "Extreme",
+        "creator": "mizto",
+        "status": "ranked",
+        "difficulty_rating": 6.19727,
+        "total_length": 117,
+        "bpm": 178,
+        "cs": 4,
+        "ar": 9.4,
+        "od": 9.2,
+        "hp": 5.5,
+        "count_circles": 508,
+        "count_sliders": 149,
+        "count_spinners": 3
+      }
+    },
+    {
+      "beatmap_id": 4815899,
+      "file": "osu/4815899.osu",
+      "expected_md5": "9d137866366ff766a05888a1b2d7365a",
+      "source": "osu.ppy.sh",
+      "bytes": 52399,
+      "actual_md5": "9d137866366ff766a05888a1b2d7365a",
+      "format_ok": true,
+      "has_hitobjects": true,
+      "verified": true,
+      "in_game_hitobject_count": 1350,
+      "bp_entries": [
+        {
+          "bp": 65,
+          "mods": "HD",
+          "mods_array": [
+            "HD"
+          ],
+          "pp": 420.423,
+          "accuracy": 0.9869135802469136,
+          "score_id": 5001500922
+        }
+      ],
+      "beatmap": {
+        "beatmapset_id": 2262416,
+        "artist": "ke-ji feat. Nanahira",
+        "title": "Ange du Blanc Pur",
+        "version": "Saint",
+        "creator": "Wen",
+        "status": "ranked",
+        "difficulty_rating": 6.80641,
+        "total_length": 236,
+        "bpm": 182,
+        "cs": 4,
+        "ar": 9.5,
+        "od": 9.5,
+        "hp": 6,
+        "count_circles": 1075,
+        "count_sliders": 273,
+        "count_spinners": 2
+      }
+    },
+    {
+      "beatmap_id": 3665005,
+      "file": "osu/3665005.osu",
+      "expected_md5": "0e38c93a039ce202e33e26afbf747565",
+      "source": "osu.ppy.sh",
+      "bytes": 95481,
+      "actual_md5": "0e38c93a039ce202e33e26afbf747565",
+      "format_ok": true,
+      "has_hitobjects": true,
+      "verified": true,
+      "in_game_hitobject_count": 1676,
+      "bp_entries": [
+        {
+          "bp": 66,
+          "mods": "HDHR",
+          "mods_array": [
+            "HD",
+            "HR"
+          ],
+          "pp": 419.153,
+          "accuracy": 0.9808074781225139,
+          "score_id": 4964340454
+        }
+      ],
+      "beatmap": {
+        "beatmapset_id": 1781620,
+        "artist": "Fellowship",
+        "title": "Glory Days",
+        "version": "Maki's Extra",
+        "creator": "nebuwua",
+        "status": "ranked",
+        "difficulty_rating": 5.96997,
+        "total_length": 287,
+        "bpm": 178,
+        "cs": 4,
+        "ar": 9.3,
+        "od": 9,
+        "hp": 5.6,
+        "count_circles": 1287,
+        "count_sliders": 388,
+        "count_spinners": 1
+      }
+    },
+    {
+      "beatmap_id": 4020786,
+      "file": "osu/4020786.osu",
+      "expected_md5": "befaa50fdaab5329e53c9bfd4dc52ac9",
+      "source": "osu.ppy.sh",
+      "bytes": 69781,
+      "actual_md5": "befaa50fdaab5329e53c9bfd4dc52ac9",
+      "format_ok": true,
+      "has_hitobjects": true,
+      "verified": true,
+      "in_game_hitobject_count": 1437,
+      "bp_entries": [
+        {
+          "bp": 67,
+          "mods": "HDHR",
+          "mods_array": [
+            "HD",
+            "HR"
+          ],
+          "pp": 418.739,
+          "accuracy": 0.9670610067269775,
+          "score_id": 5074930866
+        }
+      ],
+      "beatmap": {
+        "beatmapset_id": 1943645,
+        "artist": "Vulpecula",
+        "title": "Crystallite Dream",
+        "version": "In Heartache's Profound Love",
+        "creator": "Urition",
+        "status": "ranked",
+        "difficulty_rating": 6.62322,
+        "total_length": 214,
+        "bpm": 187,
+        "cs": 4,
+        "ar": 9.5,
+        "od": 8.5,
+        "hp": 4.4,
+        "count_circles": 1099,
+        "count_sliders": 337,
+        "count_spinners": 1
+      }
+    },
+    {
+      "beatmap_id": 845391,
+      "file": "osu/845391.osu",
+      "expected_md5": "1dc9bfbad721797aa0d772c473b075e3",
+      "source": "osu.ppy.sh",
+      "bytes": 40842,
+      "actual_md5": "1dc9bfbad721797aa0d772c473b075e3",
+      "format_ok": true,
+      "has_hitobjects": true,
+      "verified": true,
+      "in_game_hitobject_count": 927,
+      "bp_entries": [
+        {
+          "bp": 68,
+          "mods": "HDHR",
+          "mods_array": [
+            "HD",
+            "HR"
+          ],
+          "pp": 418.425,
+          "accuracy": 0.9820208558072636,
+          "score_id": 5041227079
+        }
+      ],
+      "beatmap": {
+        "beatmapset_id": 128931,
+        "artist": "Feint",
+        "title": "Tower Of Heaven (You Are Slaves)",
+        "version": "Heaven",
+        "creator": "eLy",
+        "status": "ranked",
+        "difficulty_rating": 6.14621,
+        "total_length": 165,
+        "bpm": 175,
+        "cs": 4,
+        "ar": 9.2,
+        "od": 9,
+        "hp": 6,
+        "count_circles": 611,
+        "count_sliders": 315,
+        "count_spinners": 1
+      }
+    },
+    {
+      "beatmap_id": 4599213,
+      "file": "osu/4599213.osu",
+      "expected_md5": "1ad69431cce4883635af815a826c18d0",
+      "source": "osu.ppy.sh",
+      "bytes": 93034,
+      "actual_md5": "1ad69431cce4883635af815a826c18d0",
+      "format_ok": true,
+      "has_hitobjects": true,
+      "verified": true,
+      "in_game_hitobject_count": 2445,
+      "bp_entries": [
+        {
+          "bp": 69,
+          "mods": "HD",
+          "mods_array": [
+            "HD"
+          ],
+          "pp": 417.032,
+          "accuracy": 0.9891615541922291,
+          "score_id": 4964761175
+        }
+      ],
+      "beatmap": {
+        "beatmapset_id": 2133658,
+        "artist": "Dragon Guardian",
+        "title": "Tenkai e no Kippu",
+        "version": "Our Ascension to Heaven",
+        "creator": "Astronic",
+        "status": "ranked",
+        "difficulty_rating": 6.51259,
+        "total_length": 310,
+        "bpm": 190,
+        "cs": 3.6,
+        "ar": 9.4,
+        "od": 9,
+        "hp": 5.5,
+        "count_circles": 2003,
+        "count_sliders": 442,
+        "count_spinners": 0
+      }
+    },
+    {
+      "beatmap_id": 2872154,
+      "file": "osu/2872154.osu",
+      "expected_md5": "f239eb98ab78bfe8f2e106e6f6a056fb",
+      "source": "osu.ppy.sh",
+      "bytes": 57294,
+      "actual_md5": "f239eb98ab78bfe8f2e106e6f6a056fb",
+      "format_ok": true,
+      "has_hitobjects": true,
+      "verified": true,
+      "in_game_hitobject_count": 1482,
+      "bp_entries": [
+        {
+          "bp": 70,
+          "mods": "HD",
+          "mods_array": [
+            "HD"
+          ],
+          "pp": 414.985,
+          "accuracy": 0.9916779127305443,
+          "score_id": 4996938474
+        }
+      ],
+      "beatmap": {
+        "beatmapset_id": 1390922,
+        "artist": "Serenity",
+        "title": "Lionheart",
+        "version": "Extreme",
+        "creator": "AdeAAa",
+        "status": "ranked",
+        "difficulty_rating": 6.51479,
+        "total_length": 230,
+        "bpm": 180,
+        "cs": 4.2,
+        "ar": 9.6,
+        "od": 9.5,
+        "hp": 6,
+        "count_circles": 1212,
+        "count_sliders": 270,
+        "count_spinners": 0
+      }
+    },
+    {
+      "beatmap_id": 5145068,
+      "file": "osu/5145068.osu",
+      "expected_md5": "d3bdd9141771987e4399f336d85371c3",
+      "source": "osu.ppy.sh",
+      "bytes": 28944,
+      "actual_md5": "d3bdd9141771987e4399f336d85371c3",
+      "format_ok": true,
+      "has_hitobjects": true,
+      "verified": true,
+      "in_game_hitobject_count": 656,
+      "bp_entries": [
+        {
+          "bp": 71,
+          "mods": "HDHR",
+          "mods_array": [
+            "HD",
+            "HR"
+          ],
+          "pp": 413.178,
+          "accuracy": 0.9857723577235772,
+          "score_id": 4962065615
+        }
+      ],
+      "beatmap": {
+        "beatmapset_id": 2376493,
+        "artist": "Levaslater",
+        "title": "NNRT",
+        "version": "Extra",
+        "creator": "my angel shimon",
+        "status": "ranked",
+        "difficulty_rating": 6.27632,
+        "total_length": 130,
+        "bpm": 202,
+        "cs": 4,
+        "ar": 9.4,
+        "od": 9,
+        "hp": 5,
+        "count_circles": 463,
+        "count_sliders": 191,
+        "count_spinners": 2
+      }
+    },
+    {
+      "beatmap_id": 884664,
+      "file": "osu/884664.osu",
+      "expected_md5": "87c23892caf52ac3866e7ab7f7802956",
+      "source": "osu.ppy.sh",
+      "bytes": 61300,
+      "actual_md5": "87c23892caf52ac3866e7ab7f7802956",
+      "format_ok": true,
+      "has_hitobjects": true,
+      "verified": true,
+      "in_game_hitobject_count": 1165,
+      "bp_entries": [
+        {
+          "bp": 72,
+          "mods": "HDHR",
+          "mods_array": [
+            "HD",
+            "HR"
+          ],
+          "pp": 413.085,
+          "accuracy": 0.9796852646638055,
+          "score_id": 5048151414
+        }
+      ],
+      "beatmap": {
+        "beatmapset_id": 407175,
+        "artist": "FELT",
+        "title": "New World",
+        "version": "Illusion",
+        "creator": "Natsu",
+        "status": "ranked",
+        "difficulty_rating": 6.73224,
+        "total_length": 241,
+        "bpm": 195,
+        "cs": 4,
+        "ar": 9.3,
+        "od": 9,
+        "hp": 6.5,
+        "count_circles": 857,
+        "count_sliders": 307,
+        "count_spinners": 1
+      }
+    },
+    {
+      "beatmap_id": 5574279,
+      "file": "osu/5574279.osu",
+      "expected_md5": "90d69a31ad82cf4400865f5e13ecd76e",
+      "source": "osu.ppy.sh",
+      "bytes": 9738,
+      "actual_md5": "90d69a31ad82cf4400865f5e13ecd76e",
+      "format_ok": true,
+      "has_hitobjects": true,
+      "verified": true,
+      "in_game_hitobject_count": 188,
+      "bp_entries": [
+        {
+          "bp": 73,
+          "mods": "HDHR",
+          "mods_array": [
+            "HD",
+            "HR"
+          ],
+          "pp": 410.895,
+          "accuracy": 0.9787234042553191,
+          "score_id": 5034482573
+        }
+      ],
+      "beatmap": {
+        "beatmapset_id": 2522607,
+        "artist": "shuzeios",
+        "title": "intro",
+        "version": "extreme",
+        "creator": "-Adderall",
+        "status": "ranked",
+        "difficulty_rating": 6.24033,
+        "total_length": 34,
+        "bpm": 193,
+        "cs": 4.7,
+        "ar": 9.7,
+        "od": 9.5,
+        "hp": 5,
+        "count_circles": 139,
+        "count_sliders": 48,
+        "count_spinners": 1
+      }
+    },
+    {
+      "beatmap_id": 4816640,
+      "file": "osu/4816640.osu",
+      "expected_md5": "1c7032afaaa67d51e2aa87d7174f7261",
+      "source": "osu.ppy.sh",
+      "bytes": 50049,
+      "actual_md5": "1c7032afaaa67d51e2aa87d7174f7261",
+      "format_ok": true,
+      "has_hitobjects": true,
+      "verified": true,
+      "in_game_hitobject_count": 1214,
+      "bp_entries": [
+        {
+          "bp": 74,
+          "mods": "HDHR",
+          "mods_array": [
+            "HD",
+            "HR"
+          ],
+          "pp": 409.997,
+          "accuracy": 0.9791323448654585,
+          "score_id": 4939150146
+        }
+      ],
+      "beatmap": {
+        "beatmapset_id": 2262416,
+        "artist": "ke-ji feat. Nanahira",
+        "title": "Ange du Blanc Pur",
+        "version": "Extra",
+        "creator": "Wen",
+        "status": "ranked",
+        "difficulty_rating": 6.1658,
+        "total_length": 236,
+        "bpm": 182,
+        "cs": 4,
+        "ar": 9.3,
+        "od": 9.2,
+        "hp": 5.8,
+        "count_circles": 908,
+        "count_sliders": 304,
+        "count_spinners": 2
+      }
+    },
+    {
+      "beatmap_id": 1727980,
+      "file": "osu/1727980.osu",
+      "expected_md5": "72093d4692e1ac64167dc1ebbc0d6b9d",
+      "source": "osu.ppy.sh",
+      "bytes": 48034,
+      "actual_md5": "72093d4692e1ac64167dc1ebbc0d6b9d",
+      "format_ok": true,
+      "has_hitobjects": true,
+      "verified": true,
+      "in_game_hitobject_count": 945,
+      "bp_entries": [
+        {
+          "bp": 75,
+          "mods": "HDHR",
+          "mods_array": [
+            "HD",
+            "HR"
+          ],
+          "pp": 409.436,
+          "accuracy": 0.9873015873015873,
+          "score_id": 4952077154
+        }
+      ],
+      "beatmap": {
+        "beatmapset_id": 778657,
+        "artist": "DECO*27",
+        "title": "First Storm -Japanese Version-",
+        "version": "eINess' Extra",
+        "creator": "SkyFlame",
+        "status": "ranked",
+        "difficulty_rating": 6.60388,
+        "total_length": 228,
+        "bpm": 190,
+        "cs": 4,
+        "ar": 9.2,
+        "od": 9.2,
+        "hp": 7,
+        "count_circles": 573,
+        "count_sliders": 371,
+        "count_spinners": 1
+      }
+    },
+    {
+      "beatmap_id": 5275552,
+      "file": "osu/5275552.osu",
+      "expected_md5": "7a5ac8bdcfd2fb99f5621d19082f7559",
+      "source": "osu.ppy.sh",
+      "bytes": 91296,
+      "actual_md5": "7a5ac8bdcfd2fb99f5621d19082f7559",
+      "format_ok": true,
+      "has_hitobjects": true,
+      "verified": true,
+      "in_game_hitobject_count": 1855,
+      "bp_entries": [
+        {
+          "bp": 76,
+          "mods": "HD",
+          "mods_array": [
+            "HD"
+          ],
+          "pp": 407.95,
+          "accuracy": 0.9844564240790656,
+          "score_id": 4996936346
+        }
+      ],
+      "beatmap": {
+        "beatmapset_id": 2422339,
+        "artist": "GLORYHAMMER",
+        "title": "Infernus Ad Astra / Rise Of The Chaos Wizards",
+        "version": "tacoyaki5's Legend",
+        "creator": "GodHacc",
+        "status": "ranked",
+        "difficulty_rating": 6.62041,
+        "total_length": 314,
+        "bpm": 180,
+        "cs": 4.2,
+        "ar": 9.6,
+        "od": 9.3,
+        "hp": 4.5,
+        "count_circles": 1407,
+        "count_sliders": 447,
+        "count_spinners": 1
+      }
+    },
+    {
+      "beatmap_id": 4511021,
+      "file": "osu/4511021.osu",
+      "expected_md5": "722399bea0ac6e226e94cd72fc655061",
+      "source": "osu.ppy.sh",
+      "bytes": 72226,
+      "actual_md5": "722399bea0ac6e226e94cd72fc655061",
+      "format_ok": true,
+      "has_hitobjects": true,
+      "verified": true,
+      "in_game_hitobject_count": 1824,
+      "bp_entries": [
+        {
+          "bp": 77,
+          "mods": "HD",
+          "mods_array": [
+            "HD"
+          ],
+          "pp": 406.02,
+          "accuracy": 0.9798976608187134,
+          "score_id": 4989138892
+        }
+      ],
+      "beatmap": {
+        "beatmapset_id": 2142914,
+        "artist": "xi",
+        "title": "Ascension to Heaven",
+        "version": "Climax",
+        "creator": "sytho",
+        "status": "ranked",
+        "difficulty_rating": 6.74108,
+        "total_length": 298,
+        "bpm": 200,
+        "cs": 4,
+        "ar": 9.4,
+        "od": 9.4,
+        "hp": 5.7,
+        "count_circles": 1504,
+        "count_sliders": 315,
+        "count_spinners": 5
+      }
+    },
+    {
+      "beatmap_id": 1494828,
+      "file": "osu/1494828.osu",
+      "expected_md5": "257099a7bc15792928a55c1a8510e934",
+      "source": "osu.ppy.sh",
+      "bytes": 71026,
+      "actual_md5": "257099a7bc15792928a55c1a8510e934",
+      "format_ok": true,
+      "has_hitobjects": true,
+      "verified": true,
+      "in_game_hitobject_count": 1704,
+      "bp_entries": [
+        {
+          "bp": 78,
+          "mods": "HD",
+          "mods_array": [
+            "HD"
+          ],
+          "pp": 405.964,
+          "accuracy": 0.9929577464788732,
+          "score_id": 5057422537
+        }
+      ],
+      "beatmap": {
+        "beatmapset_id": 707032,
+        "artist": "yaseta",
+        "title": "Bluenation",
+        "version": "Grace",
+        "creator": "Meg",
+        "status": "ranked",
+        "difficulty_rating": 6.6731,
+        "total_length": 320,
+        "bpm": 180,
+        "cs": 4,
+        "ar": 9.5,
+        "od": 9,
+        "hp": 6,
+        "count_circles": 1143,
+        "count_sliders": 559,
+        "count_spinners": 2
+      }
+    },
+    {
+      "beatmap_id": 4410462,
+      "file": "osu/4410462.osu",
+      "expected_md5": "2d5567810def77a96d972dd94ffa03b1",
+      "source": "osu.ppy.sh",
+      "bytes": 60501,
+      "actual_md5": "2d5567810def77a96d972dd94ffa03b1",
+      "format_ok": true,
+      "has_hitobjects": true,
+      "verified": true,
+      "in_game_hitobject_count": 1419,
+      "bp_entries": [
+        {
+          "bp": 79,
+          "mods": "HD",
+          "mods_array": [
+            "HD"
+          ],
+          "pp": 405.682,
+          "accuracy": 0.984026309607705,
+          "score_id": 5029354833
+        }
+      ],
+      "beatmap": {
+        "beatmapset_id": 2102240,
+        "artist": "ShinRa-Bansho",
+        "title": "I",
+        "version": "Phantasm",
+        "creator": "Ratarok",
+        "status": "ranked",
+        "difficulty_rating": 7.00759,
+        "total_length": 288,
+        "bpm": 196,
+        "cs": 4,
+        "ar": 9.6,
+        "od": 9.4,
+        "hp": 4,
+        "count_circles": 1089,
+        "count_sliders": 329,
+        "count_spinners": 1
+      }
+    },
+    {
+      "beatmap_id": 4943355,
+      "file": "osu/4943355.osu",
+      "expected_md5": "a9f2d7b235db1cd27aa9851c25a6c645",
+      "source": "osu.ppy.sh",
+      "bytes": 30378,
+      "actual_md5": "a9f2d7b235db1cd27aa9851c25a6c645",
+      "format_ok": true,
+      "has_hitobjects": true,
+      "verified": true,
+      "in_game_hitobject_count": 714,
+      "bp_entries": [
+        {
+          "bp": 80,
+          "mods": "HD",
+          "mods_array": [
+            "HD"
+          ],
+          "pp": 404.4,
+          "accuracy": 0.9878618113912232,
+          "score_id": 4964352298
+        }
+      ],
+      "beatmap": {
+        "beatmapset_id": 2310753,
+        "artist": "VINXIS",
+        "title": "Sidetracked Day (Short Ver.)",
+        "version": "Lost",
+        "creator": "Firiiu",
+        "status": "ranked",
+        "difficulty_rating": 6.80085,
+        "total_length": 128,
+        "bpm": 188,
+        "cs": 4,
+        "ar": 9.6,
+        "od": 9.5,
+        "hp": 5,
+        "count_circles": 520,
+        "count_sliders": 194,
+        "count_spinners": 0
+      }
+    },
+    {
+      "beatmap_id": 5082120,
+      "file": "osu/5082120.osu",
+      "expected_md5": "0451c6236ae24b17b3a233d7e44c3d6a",
+      "source": "osu.ppy.sh",
+      "bytes": 45223,
+      "actual_md5": "0451c6236ae24b17b3a233d7e44c3d6a",
+      "format_ok": true,
+      "has_hitobjects": true,
+      "verified": true,
+      "in_game_hitobject_count": 1118,
+      "bp_entries": [
+        {
+          "bp": 81,
+          "mods": "HD",
+          "mods_array": [
+            "HD"
+          ],
+          "pp": 404.138,
+          "accuracy": 0.9701848539057841,
+          "score_id": 4936877323
+        }
+      ],
+      "beatmap": {
+        "beatmapset_id": 2358642,
+        "artist": "Raimukun",
+        "title": "Nyarlathotep's Dreamland",
+        "version": "Memory Infinity",
+        "creator": "Another Flower",
+        "status": "ranked",
+        "difficulty_rating": 6.75227,
+        "total_length": 136,
+        "bpm": 200,
+        "cs": 3.8,
+        "ar": 9.7,
+        "od": 9.3,
+        "hp": 4,
+        "count_circles": 892,
+        "count_sliders": 226,
+        "count_spinners": 0
+      }
+    },
+    {
+      "beatmap_id": 4453223,
+      "file": "osu/4453223.osu",
+      "expected_md5": "356020a74803abd8fe43a39ecdd2ec72",
+      "source": "osu.ppy.sh",
+      "bytes": 22613,
+      "actual_md5": "356020a74803abd8fe43a39ecdd2ec72",
+      "format_ok": true,
+      "has_hitobjects": true,
+      "verified": true,
+      "in_game_hitobject_count": 562,
+      "bp_entries": [
+        {
+          "bp": 82,
+          "mods": "HD",
+          "mods_array": [
+            "HD"
+          ],
+          "pp": 402.441,
+          "accuracy": 0.9869513641755635,
+          "score_id": 4981195051
+        }
+      ],
+      "beatmap": {
+        "beatmapset_id": 2119739,
+        "artist": "Junichi Masuda",
+        "title": "Battle! (Champion)",
+        "version": "Challenge!",
+        "creator": "jixxi",
+        "status": "ranked",
+        "difficulty_rating": 6.65977,
+        "total_length": 85,
+        "bpm": 187,
+        "cs": 4.4,
+        "ar": 9.6,
+        "od": 9.2,
+        "hp": 7,
+        "count_circles": 439,
+        "count_sliders": 123,
+        "count_spinners": 0
+      }
+    },
+    {
+      "beatmap_id": 5045143,
+      "file": "osu/5045143.osu",
+      "expected_md5": "64a5baaf629b5289fd4eb0df75ab51eb",
+      "source": "osu.ppy.sh",
+      "bytes": 58402,
+      "actual_md5": "64a5baaf629b5289fd4eb0df75ab51eb",
+      "format_ok": true,
+      "has_hitobjects": true,
+      "verified": true,
+      "in_game_hitobject_count": 1294,
+      "bp_entries": [
+        {
+          "bp": 83,
+          "mods": "HDHR",
+          "mods_array": [
+            "HD",
+            "HR"
+          ],
+          "pp": 401.951,
+          "accuracy": 0.9904688304997424,
+          "score_id": 4983662961
+        }
+      ],
+      "beatmap": {
+        "beatmapset_id": 2346142,
+        "artist": "Halozy feat. Nanahira",
+        "title": "Monosugoi Ikioi de Keine ga Monosugoi Uta",
+        "version": "AYAYA",
+        "creator": "Sotarks",
+        "status": "ranked",
+        "difficulty_rating": 5.9236,
+        "total_length": 237,
+        "bpm": 180,
+        "cs": 4,
+        "ar": 9.3,
+        "od": 9.2,
+        "hp": 5,
+        "count_circles": 955,
+        "count_sliders": 339,
+        "count_spinners": 0
+      }
+    },
+    {
+      "beatmap_id": 609843,
+      "file": "osu/609843.osu",
+      "expected_md5": "f4dc095eac5ff27848e86ec6c2baa3b8",
+      "source": "osu.ppy.sh",
+      "bytes": 57993,
+      "actual_md5": "f4dc095eac5ff27848e86ec6c2baa3b8",
+      "format_ok": true,
+      "has_hitobjects": true,
+      "verified": true,
+      "in_game_hitobject_count": 1215,
+      "bp_entries": [
+        {
+          "bp": 84,
+          "mods": "HD",
+          "mods_array": [
+            "HD"
+          ],
+          "pp": 400.623,
+          "accuracy": 0.9873799725651577,
+          "score_id": 4998789427
+        }
+      ],
+      "beatmap": {
+        "beatmapset_id": 267767,
+        "artist": "cosMo@BousouP",
+        "title": "Oceanus",
+        "version": "Divinity",
+        "creator": "Broccoly",
+        "status": "ranked",
+        "difficulty_rating": 6.61628,
+        "total_length": 219,
+        "bpm": 196,
+        "cs": 4,
+        "ar": 9.4,
+        "od": 8.5,
+        "hp": 7,
+        "count_circles": 878,
+        "count_sliders": 336,
+        "count_spinners": 1
+      }
+    },
+    {
+      "beatmap_id": 5377422,
+      "file": "osu/5377422.osu",
+      "expected_md5": "3113a0c6f3fcaa8d10d5fbf552bb5cc0",
+      "source": "osu.ppy.sh",
+      "bytes": 18486,
+      "actual_md5": "3113a0c6f3fcaa8d10d5fbf552bb5cc0",
+      "format_ok": true,
+      "has_hitobjects": true,
+      "verified": true,
+      "in_game_hitobject_count": 392,
+      "bp_entries": [
+        {
+          "bp": 85,
+          "mods": "HDHR",
+          "mods_array": [
+            "HD",
+            "HR"
+          ],
+          "pp": 399.957,
+          "accuracy": 0.985969387755102,
+          "score_id": 4996019870
+        }
+      ],
+      "beatmap": {
+        "beatmapset_id": 2445629,
+        "artist": "Unlucky Morpheus",
+        "title": "BPM210 no Shanghai Alice (Instrumental)",
+        "version": "HYPERPIGEON'S EXTRA",
+        "creator": "h6zy",
+        "status": "ranked",
+        "difficulty_rating": 6.31112,
+        "total_length": 49,
+        "bpm": 211,
+        "cs": 3.8,
+        "ar": 9.5,
+        "od": 9.2,
+        "hp": 5,
+        "count_circles": 306,
+        "count_sliders": 86,
+        "count_spinners": 0
+      }
+    },
+    {
+      "beatmap_id": 4914171,
+      "file": "osu/4914171.osu",
+      "expected_md5": "f424778f11427bcf018e69314d467e39",
+      "source": "osu.ppy.sh",
+      "bytes": 29031,
+      "actual_md5": "f424778f11427bcf018e69314d467e39",
+      "format_ok": true,
+      "has_hitobjects": true,
+      "verified": true,
+      "in_game_hitobject_count": 697,
+      "bp_entries": [
+        {
+          "bp": 86,
+          "mods": "HDHR",
+          "mods_array": [
+            "HD",
+            "HR"
+          ],
+          "pp": 398.041,
+          "accuracy": 0.9636537541846006,
+          "score_id": 4985437043
+        }
+      ],
+      "beatmap": {
+        "beatmapset_id": 2299790,
+        "artist": "Cityyy",
+        "title": "Running Man",
+        "version": "Relay Race",
+        "creator": "Astronic",
+        "status": "ranked",
+        "difficulty_rating": 6.2361,
+        "total_length": 116,
+        "bpm": 180,
+        "cs": 4.2,
+        "ar": 9.4,
+        "od": 9.4,
+        "hp": 6,
+        "count_circles": 634,
+        "count_sliders": 62,
+        "count_spinners": 1
+      }
+    },
+    {
+      "beatmap_id": 495776,
+      "file": "osu/495776.osu",
+      "expected_md5": "47fff42bfa1ecd2594ca314f4f893474",
+      "source": "osu.ppy.sh",
+      "bytes": 79821,
+      "actual_md5": "47fff42bfa1ecd2594ca314f4f893474",
+      "format_ok": true,
+      "has_hitobjects": true,
+      "verified": true,
+      "in_game_hitobject_count": 1985,
+      "bp_entries": [
+        {
+          "bp": 87,
+          "mods": "HD",
+          "mods_array": [
+            "HD"
+          ],
+          "pp": 396.992,
+          "accuracy": 0.9937867338371117,
+          "score_id": 5036699652
+        }
+      ],
+      "beatmap": {
+        "beatmapset_id": 210764,
+        "artist": "Xi",
+        "title": "Rokujuu Nenme no Shinsoku Saiban ~ Rapidity is a justice",
+        "version": "Justice",
+        "creator": "sjoy",
+        "status": "ranked",
+        "difficulty_rating": 6.75833,
+        "total_length": 325,
+        "bpm": 195,
+        "cs": 4.5,
+        "ar": 9.3,
+        "od": 9,
+        "hp": 6,
+        "count_circles": 1410,
+        "count_sliders": 572,
+        "count_spinners": 3
+      }
+    },
+    {
+      "beatmap_id": 3355394,
+      "file": "osu/3355394.osu",
+      "expected_md5": "24ddf8b85af3bfc5a9d986c12eb760f3",
+      "source": "osu.ppy.sh",
+      "bytes": 46477,
+      "actual_md5": "24ddf8b85af3bfc5a9d986c12eb760f3",
+      "format_ok": true,
+      "has_hitobjects": true,
+      "verified": true,
+      "in_game_hitobject_count": 1071,
+      "bp_entries": [
+        {
+          "bp": 88,
+          "mods": "HDHR",
+          "mods_array": [
+            "HD",
+            "HR"
+          ],
+          "pp": 395.502,
+          "accuracy": 0.9878618113912232,
+          "score_id": 4990194666
+        }
+      ],
+      "beatmap": {
+        "beatmapset_id": 1643829,
+        "artist": "Fred V",
+        "title": "Already Disappeared",
+        "version": "Irreplaceable",
+        "creator": "Strategas",
+        "status": "ranked",
+        "difficulty_rating": 6.03867,
+        "total_length": 249,
+        "bpm": 174,
+        "cs": 3.9,
+        "ar": 9.2,
+        "od": 10,
+        "hp": 5,
+        "count_circles": 823,
+        "count_sliders": 245,
+        "count_spinners": 3
+      }
+    },
+    {
+      "beatmap_id": 4381212,
+      "file": "osu/4381212.osu",
+      "expected_md5": "721136edbd791610c37a4d010217a823",
+      "source": "osu.ppy.sh",
+      "bytes": 12134,
+      "actual_md5": "721136edbd791610c37a4d010217a823",
+      "format_ok": true,
+      "has_hitobjects": true,
+      "verified": true,
+      "in_game_hitobject_count": 297,
+      "bp_entries": [
+        {
+          "bp": 89,
+          "mods": "HDHR",
+          "mods_array": [
+            "HD",
+            "HR"
+          ],
+          "pp": 394.875,
+          "accuracy": 0.9797979797979798,
+          "score_id": 4985897654
+        }
+      ],
+      "beatmap": {
+        "beatmapset_id": 2086612,
+        "artist": "Shota Kageyama",
+        "title": "Sentou de Pinch!",
+        "version": "-Tynamo's Extra",
+        "creator": "Suzumiya",
+        "status": "ranked",
+        "difficulty_rating": 6.12513,
+        "total_length": 33,
+        "bpm": 177.98,
+        "cs": 4.1,
+        "ar": 9.3,
+        "od": 9.3,
+        "hp": 7.5,
+        "count_circles": 274,
+        "count_sliders": 23,
+        "count_spinners": 0
+      }
+    },
+    {
+      "beatmap_id": 4570744,
+      "file": "osu/4570744.osu",
+      "expected_md5": "040c69d75091dc3e9398c8a0b1f2c4a0",
+      "source": "osu.ppy.sh",
+      "bytes": 36977,
+      "actual_md5": "040c69d75091dc3e9398c8a0b1f2c4a0",
+      "format_ok": true,
+      "has_hitobjects": true,
+      "verified": true,
+      "in_game_hitobject_count": 826,
+      "bp_entries": [
+        {
+          "bp": 90,
+          "mods": "HDDT",
+          "mods_array": [
+            "HD",
+            "DT"
+          ],
+          "pp": 394.505,
+          "accuracy": 0.9955609362389023,
+          "score_id": 4854777374
+        }
+      ],
+      "beatmap": {
+        "beatmapset_id": 2166472,
+        "artist": "KOTOKO",
+        "title": "Koi Kou Enishi",
+        "version": "Insane",
+        "creator": "suzusiro",
+        "status": "ranked",
+        "difficulty_rating": 4.65955,
+        "total_length": 227,
+        "bpm": 144,
+        "cs": 4,
+        "ar": 8.5,
+        "od": 7.5,
+        "hp": 5,
+        "count_circles": 573,
+        "count_sliders": 253,
+        "count_spinners": 0
+      }
+    },
+    {
+      "beatmap_id": 4165290,
+      "file": "osu/4165290.osu",
+      "expected_md5": "71c094bd6660119e66b3a1020b15c903",
+      "source": "osu.ppy.sh",
+      "bytes": 128924,
+      "actual_md5": "71c094bd6660119e66b3a1020b15c903",
+      "format_ok": true,
+      "has_hitobjects": true,
+      "verified": true,
+      "in_game_hitobject_count": 2014,
+      "bp_entries": [
+        {
+          "bp": 91,
+          "mods": "HD",
+          "mods_array": [
+            "HD"
+          ],
+          "pp": 394.296,
+          "accuracy": 0.9869248593181066,
+          "score_id": 5049194732
+        }
+      ],
+      "beatmap": {
+        "beatmapset_id": 2002962,
+        "artist": "ShadowStrike",
+        "title": "Fly With Me",
+        "version": "Reaching Destiny",
+        "creator": "nebuwua",
+        "status": "ranked",
+        "difficulty_rating": 7.02663,
+        "total_length": 286,
+        "bpm": 180,
+        "cs": 4.2,
+        "ar": 9.6,
+        "od": 9.4,
+        "hp": 5,
+        "count_circles": 1404,
+        "count_sliders": 610,
+        "count_spinners": 0
+      }
+    },
+    {
+      "beatmap_id": 5109853,
+      "file": "osu/5109853.osu",
+      "expected_md5": "97362716c14dfd7900cb082365f0fcab",
+      "source": "osu.ppy.sh",
+      "bytes": 46295,
+      "actual_md5": "97362716c14dfd7900cb082365f0fcab",
+      "format_ok": true,
+      "has_hitobjects": true,
+      "verified": true,
+      "in_game_hitobject_count": 1135,
+      "bp_entries": [
+        {
+          "bp": 92,
+          "mods": "HDHR",
+          "mods_array": [
+            "HD",
+            "HR"
+          ],
+          "pp": 391.759,
+          "accuracy": 0.9812041116005874,
+          "score_id": 4952094373
+        }
+      ],
+      "beatmap": {
+        "beatmapset_id": 2364885,
+        "artist": "Manticora",
+        "title": "Humiliation Supreme",
+        "version": "Extra",
+        "creator": "Urition",
+        "status": "ranked",
+        "difficulty_rating": 5.9837,
+        "total_length": 152,
+        "bpm": 189.99,
+        "cs": 3.8,
+        "ar": 9.3,
+        "od": 9,
+        "hp": 5,
+        "count_circles": 926,
+        "count_sliders": 208,
+        "count_spinners": 1
+      }
+    },
+    {
+      "beatmap_id": 1957638,
+      "file": "osu/1957638.osu",
+      "expected_md5": "3497511639e6dacbc5bbace7f00ddc16",
+      "source": "osu.ppy.sh",
+      "bytes": 113962,
+      "actual_md5": "3497511639e6dacbc5bbace7f00ddc16",
+      "format_ok": true,
+      "has_hitobjects": true,
+      "verified": true,
+      "in_game_hitobject_count": 2870,
+      "bp_entries": [
+        {
+          "bp": 93,
+          "mods": "HD",
+          "mods_array": [
+            "HD"
+          ],
+          "pp": 391.631,
+          "accuracy": 0.985075493612079,
+          "score_id": 4950615170
+        }
+      ],
+      "beatmap": {
+        "beatmapset_id": 862297,
+        "artist": "K A Z M A S A",
+        "title": "Bon Appetit S (Oldskool HappyHardcore Remix)",
+        "version": "Blend S",
+        "creator": "BarkingMadDog",
+        "status": "ranked",
+        "difficulty_rating": 6.47831,
+        "total_length": 367,
+        "bpm": 170,
+        "cs": 4,
+        "ar": 9.5,
+        "od": 9.5,
+        "hp": 5,
+        "count_circles": 1940,
+        "count_sliders": 930,
+        "count_spinners": 0
+      }
+    },
+    {
+      "beatmap_id": 4571942,
+      "file": "osu/4571942.osu",
+      "expected_md5": "2181475a1c2d5c7bd33bbc44b1d9014f",
+      "source": "osu.ppy.sh",
+      "bytes": 61433,
+      "actual_md5": "2181475a1c2d5c7bd33bbc44b1d9014f",
+      "format_ok": true,
+      "has_hitobjects": true,
+      "verified": true,
+      "in_game_hitobject_count": 1402,
+      "bp_entries": [
+        {
+          "bp": 94,
+          "mods": "HDHR",
+          "mods_array": [
+            "HD",
+            "HR"
+          ],
+          "pp": 389.789,
+          "accuracy": 0.977056585829767,
+          "score_id": 5038507034
+        }
+      ],
+      "beatmap": {
+        "beatmapset_id": 2156281,
+        "artist": "Porter Robinson",
+        "title": "Get Your Wish (Sewerslvt Remix)",
+        "version": "evth's extra",
+        "creator": "Daycore",
+        "status": "ranked",
+        "difficulty_rating": 6.10787,
+        "total_length": 232,
+        "bpm": 190,
+        "cs": 3.8,
+        "ar": 9.3,
+        "od": 8.8,
+        "hp": 4.5,
+        "count_circles": 1042,
+        "count_sliders": 360,
+        "count_spinners": 0
+      }
+    },
+    {
+      "beatmap_id": 3570727,
+      "file": "osu/3570727.osu",
+      "expected_md5": "753a3ef92e7d0d9700ffed4475cb7b1b",
+      "source": "osu.ppy.sh",
+      "bytes": 28682,
+      "actual_md5": "753a3ef92e7d0d9700ffed4475cb7b1b",
+      "format_ok": true,
+      "has_hitobjects": true,
+      "verified": true,
+      "in_game_hitobject_count": 576,
+      "bp_entries": [
+        {
+          "bp": 95,
+          "mods": "HD",
+          "mods_array": [
+            "HD"
+          ],
+          "pp": 389.031,
+          "accuracy": 0.9953703703703703,
+          "score_id": 5065786692
+        }
+      ],
+      "beatmap": {
+        "beatmapset_id": 1736814,
+        "artist": "Mitsuki",
+        "title": "Eeliaas",
+        "version": "EXPERT",
+        "creator": "Strategas",
+        "status": "ranked",
+        "difficulty_rating": 6.40919,
+        "total_length": 119,
+        "bpm": 180,
+        "cs": 4,
+        "ar": 9.7,
+        "od": 9.2,
+        "hp": 5.3,
+        "count_circles": 420,
+        "count_sliders": 155,
+        "count_spinners": 1
+      }
+    },
+    {
+      "beatmap_id": 1635388,
+      "file": "osu/1635388.osu",
+      "expected_md5": "c76bfd03a1614a66f751e106c64b1a89",
+      "source": "osu.ppy.sh",
+      "bytes": 49915,
+      "actual_md5": "c76bfd03a1614a66f751e106c64b1a89",
+      "format_ok": true,
+      "has_hitobjects": true,
+      "verified": true,
+      "in_game_hitobject_count": 1145,
+      "bp_entries": [
+        {
+          "bp": 96,
+          "mods": "HD",
+          "mods_array": [
+            "HD"
+          ],
+          "pp": 389.02,
+          "accuracy": 0.9857350800582242,
+          "score_id": 5042198674
+        }
+      ],
+      "beatmap": {
+        "beatmapset_id": 778657,
+        "artist": "DECO*27",
+        "title": "First Storm -Japanese Version-",
+        "version": "Arigatou",
+        "creator": "SkyFlame",
+        "status": "ranked",
+        "difficulty_rating": 7.04479,
+        "total_length": 228,
+        "bpm": 190,
+        "cs": 4.3,
+        "ar": 9.6,
+        "od": 9.4,
+        "hp": 5.5,
+        "count_circles": 854,
+        "count_sliders": 291,
+        "count_spinners": 0
+      }
+    },
+    {
+      "beatmap_id": 2077120,
+      "file": "osu/2077120.osu",
+      "expected_md5": "2070d7a0d1d878f3f46625daeef7a086",
+      "source": "osu.ppy.sh",
+      "bytes": 84346,
+      "actual_md5": "2070d7a0d1d878f3f46625daeef7a086",
+      "format_ok": true,
+      "has_hitobjects": true,
+      "verified": true,
+      "in_game_hitobject_count": 1721,
+      "bp_entries": [
+        {
+          "bp": 97,
+          "mods": "HDHR",
+          "mods_array": [
+            "HD",
+            "HR"
+          ],
+          "pp": 388.047,
+          "accuracy": 0.9803408870811544,
+          "score_id": 5029321838
+        }
+      ],
+      "beatmap": {
+        "beatmapset_id": 993306,
+        "artist": "ryu5150",
+        "title": "Louder than steel",
+        "version": "Onlybiscuit's Extra",
+        "creator": "Sotarks",
+        "status": "ranked",
+        "difficulty_rating": 6.37551,
+        "total_length": 276,
+        "bpm": 190,
+        "cs": 3.8,
+        "ar": 9.4,
+        "od": 9,
+        "hp": 5.2,
+        "count_circles": 1089,
+        "count_sliders": 632,
+        "count_spinners": 0
+      }
+    },
+    {
+      "beatmap_id": 2766688,
+      "file": "osu/2766688.osu",
+      "expected_md5": "a66845535c7c197e5af35d5d8f29c313",
+      "source": "osu.ppy.sh",
+      "bytes": 99211,
+      "actual_md5": "a66845535c7c197e5af35d5d8f29c313",
+      "format_ok": true,
+      "has_hitobjects": true,
+      "verified": true,
+      "in_game_hitobject_count": 1971,
+      "bp_entries": [
+        {
+          "bp": 98,
+          "mods": "HD",
+          "mods_array": [
+            "HD"
+          ],
+          "pp": 386.443,
+          "accuracy": 0.9906984610180957,
+          "score_id": 5063554441
+        }
+      ],
+      "beatmap": {
+        "beatmapset_id": 1335452,
+        "artist": "Halozy",
+        "title": "Genryuu Kaiko",
+        "version": "Nostalgia",
+        "creator": "Astronic",
+        "status": "ranked",
+        "difficulty_rating": 6.87477,
+        "total_length": 302,
+        "bpm": 173,
+        "cs": 4,
+        "ar": 9.3,
+        "od": 9,
+        "hp": 6,
+        "count_circles": 1426,
+        "count_sliders": 544,
+        "count_spinners": 1
+      }
+    },
+    {
+      "beatmap_id": 1868547,
+      "file": "osu/1868547.osu",
+      "expected_md5": "67f9cc851be2f8509628a8fd32bf12bf",
+      "source": "osu.ppy.sh",
+      "bytes": 26578,
+      "actual_md5": "67f9cc851be2f8509628a8fd32bf12bf",
+      "format_ok": false,
+      "has_hitobjects": true,
+      "verified": true,
+      "in_game_hitobject_count": 630,
+      "bp_entries": [
+        {
+          "bp": 99,
+          "mods": "HDHR",
+          "mods_array": [
+            "HD",
+            "HR"
+          ],
+          "pp": 386.202,
+          "accuracy": 0.975925925925926,
+          "score_id": 4949438779
+        }
+      ],
+      "beatmap": {
+        "beatmapset_id": 890270,
+        "artist": "bibuko",
+        "title": "Reizouko Mitara Pudding ga Nai",
+        "version": "Alphabet's Extra",
+        "creator": "DeRandom Otaku",
+        "status": "ranked",
+        "difficulty_rating": 6.37044,
+        "total_length": 118,
+        "bpm": 190,
+        "cs": 3.8,
+        "ar": 9.2,
+        "od": 8.7,
+        "hp": 5.3,
+        "count_circles": 490,
+        "count_sliders": 139,
+        "count_spinners": 1
+      }
+    },
+    {
+      "beatmap_id": 4859466,
+      "file": "osu/4859466.osu",
+      "expected_md5": "8c2d3482be820ce116aede064839c3a0",
+      "source": "osu.ppy.sh",
+      "bytes": 74945,
+      "actual_md5": "8c2d3482be820ce116aede064839c3a0",
+      "format_ok": true,
+      "has_hitobjects": true,
+      "verified": true,
+      "in_game_hitobject_count": 1767,
+      "bp_entries": [
+        {
+          "bp": 100,
+          "mods": "HD",
+          "mods_array": [
+            "HD"
+          ],
+          "pp": 385.414,
+          "accuracy": 0.9785889454819845,
+          "score_id": 5066160288
+        }
+      ],
+      "beatmap": {
+        "beatmapset_id": 2279760,
+        "artist": "Fellowship",
+        "title": "Hold Up Your Hearts (Again)",
+        "version": "Memorial Heartache",
+        "creator": "nebuwua",
+        "status": "ranked",
+        "difficulty_rating": 6.85119,
+        "total_length": 259,
+        "bpm": 174,
+        "cs": 4.3,
+        "ar": 9.7,
+        "od": 9.6,
+        "hp": 5,
+        "count_circles": 1347,
+        "count_sliders": 417,
+        "count_spinners": 3
+      }
+    }
+  ]
+}

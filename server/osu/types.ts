@@ -13,6 +13,9 @@ export interface OsuUser {
   avatar_url: string;
   cover_url?: string;
   is_online: boolean;
+  is_active?: boolean;
+  is_deleted?: boolean;
+  last_visit?: string | null;
   playstyle?: string[];
   join_date: string;
   statistics: OsuUserStats;
@@ -56,6 +59,7 @@ export interface OsuBeatmapset {
 
 export interface OsuBeatmap {
   id: number;
+  checksum?: string;
   beatmapset_id: number;
   mode: 'osu' | 'taiko' | 'fruits' | 'mania';
   difficulty_rating: number;
@@ -78,11 +82,14 @@ export interface OsuBeatmap {
 
 export interface OsuScore {
   id: number;
+  beatmap_id?: number;
   accuracy: number;
   max_combo: number;
   mods: string[];
   pp: number;
   rank: string;
+  passed?: boolean;
+  perfect?: boolean;
   score: number;
   statistics: {
     count_50: number;
@@ -95,6 +102,8 @@ export interface OsuScore {
   beatmap: OsuBeatmap;
   beatmapset: OsuBeatmapset;
   created_at: string;
+  /** ISO timestamp of when the score was set (v2 /scores/best includes this). */
+  ended_at?: string;
   mode: string;
   user_id: number;
   weight?: { percentage: number; pp: number };
@@ -105,6 +114,89 @@ export interface OsuScore {
 }
 
 export type OsuMode = 'osu' | 'taiko' | 'fruits' | 'mania';
+
+// ── osu! multiplayer match (v2 /matches) ──
+
+export interface OsuMatchUser {
+  id: number;
+  username: string;
+  country_code?: string;
+  avatar_url?: string;
+  is_bot?: boolean;
+  is_deleted?: boolean;
+  is_online?: boolean;
+  is_supporter?: boolean;
+  [key: string]: unknown;
+}
+
+export interface OsuLazerScore {
+  id?: number;
+  user_id: number;
+  score: number;
+  max_combo?: number;
+  mods: string[];
+  passed?: boolean;
+  accuracy?: number;
+  statistics?: {
+    count_300?: number;
+    count_100?: number;
+    count_50?: number;
+    count_miss?: number;
+    count_geki?: number;
+    count_katsu?: number;
+  };
+  /** Real osu! API v2 match score team/slot/pass metadata. */
+  match?: {
+    slot?: number;
+    team?: string | null;
+    pass?: boolean;
+  };
+  /** Legacy/renamed field used by local mocks only; real API does not return it. */
+  player_stat?: {
+    team?: string | null;
+    slot?: number;
+    pass?: boolean;
+  };
+  [key: string]: unknown;
+}
+
+export interface OsuMatchRound {
+  id: number;
+  beatmap?: OsuBeatmap | null;
+  beatmap_id: number;
+  start_time: string;
+  end_time?: string | null;
+  mode_int?: number;
+  mods: string[];
+  scores: OsuLazerScore[];
+  team_type: string;
+  scoring_type: string;
+}
+
+export interface OsuMatchEvent {
+  id: number;
+  detail: {
+    type: string;
+    text?: string;
+  };
+  timestamp: string;
+  user_id?: number | null;
+  game?: OsuMatchRound | null;
+}
+
+export interface OsuMatch {
+  match: {
+    id: number;
+    start_time: string;
+    end_time?: string | null;
+    name: string;
+  };
+  events: OsuMatchEvent[];
+  users: OsuMatchUser[];
+  first_event_id: number;
+  latest_event_id: number;
+  current_game_id?: number | null;
+}
 
 export interface OsuFixture {
   user: OsuUser;

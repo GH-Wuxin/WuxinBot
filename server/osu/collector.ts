@@ -1,11 +1,11 @@
 // Full player data collector. Parallelizes osu! API + PP+ aggregate calls.
 
-import { getBeatmapAttributes, getUser, getUserById, getUserBestScores, getUserRecentScores } from './api.js';
+import { getUser, getUserById, getUserBestScores, getUserRecentScores } from './api.js';
 import { getPlayerBars, formatBarsForPrompt } from './pplus.js';
 import { readDb } from '../store.js';
 import type { OsuUser, OsuScore, OsuMode, OsuFixture } from './types.js';
 import type { PPlusBars } from './pplus.js';
-import { normalizedScoreMods } from './scoreMetrics.js';
+import { enrichScoreStarRatings } from './starRating.js';
 
 export interface CollectorResult {
   user: OsuUser;
@@ -24,80 +24,43 @@ export interface RecentCollectorResult {
   errors: string[];
 }
 
-const STAR_ATTRIBUTE_CONCURRENCY = 8;
-
-interface StarAttributeTask {
-  key: string;
-  beatmapId: number;
-  mods: string[];
+export interface OneLineCollectorResult {
+  user: OsuUser;
+  bestScores: OsuScore[];
+  recentScores: OsuScore[];
+  errors: string[];
 }
 
-function starAttributeKey(score: OsuScore, mode: OsuMode): string | null {
-  const beatmapId = Number(score.beatmap?.id || 0);
-  if (beatmapId <= 0) return null;
-  return `${beatmapId}:${mode}:${normalizedScoreMods(score).join(',')}`;
-}
-
-async function enrichScoreStarRatings(
-  scores: OsuScore[],
-  mode: OsuMode
-): Promise<{ scores: OsuScore[]; failed: number }> {
-  const tasks = new Map<string, StarAttributeTask>();
-  for (const score of scores) {
-    const mods = normalizedScoreMods(score);
-    if (mods.length === 0) continue;
-    const key = starAttributeKey(score, mode);
-    if (!key || tasks.has(key)) continue;
-    tasks.set(key, { key, beatmapId: Number(score.beatmap.id), mods });
+/**
+ * Lightweight data path for the one-line roast. It deliberately skips PP+
+ * initialization, reference players and the legacy osu!oracle classifier.
+ */
+export async function collectPlayerOneLineData(
+  identifier: string | number,
+  mode: OsuMode = 'osu',
+): Promise<OneLineCollectorResult> {
+  const errors: string[] = [];
+  const isNumeric = typeof identifier === 'number' || /^\d+$/.test(String(identifier));
+  const user = isNumeric
+    ? await getUserById(Number(identifier), mode)
+    : await getUser(String(identifier), mode);
+  const [bestResult, recentResult] = await Promise.allSettled([
+    getUserBestScores(user.id, mode, 100),
+    getUserRecentScores(user.id, mode, 20),
+  ]);
+  let bestScores = bestResult.status === 'fulfilled' ? bestResult.value : [];
+  let recentScores = recentResult.status === 'fulfilled' ? recentResult.value : [];
+  if (bestResult.status === 'rejected') errors.push(`最佳成绩获取失败: ${bestResult.reason?.message || bestResult.reason}`);
+  if (recentResult.status === 'rejected') errors.push(`最近成绩获取失败: ${recentResult.reason?.message || recentResult.reason}`);
+  if (!bestScores.length) throw new Error(`${user.username} 没有可用的 BP 数据。`);
+  const bestCount = bestScores.length;
+  const enriched = await enrichScoreStarRatings([...bestScores, ...recentScores], mode);
+  bestScores = enriched.scores.slice(0, bestCount);
+  recentScores = enriched.scores.slice(bestCount);
+  if (enriched.failed > 0) {
+    errors.push(`Mod 后星数获取失败: ${enriched.failed} 组谱面/Mod 组合`);
   }
-
-  const ratings = new Map<string, number>();
-  const failedKeys = new Set<string>();
-  const pending = [...tasks.values()];
-  let cursor = 0;
-  const worker = async () => {
-    while (cursor < pending.length) {
-      const task = pending[cursor++];
-      try {
-        const result = await getBeatmapAttributes(task.beatmapId, mode, task.mods);
-        const starRating = Number(result.attributes?.star_rating || 0);
-        if (starRating <= 0) throw new Error('star_rating 缺失');
-        ratings.set(task.key, starRating);
-      } catch {
-        failedKeys.add(task.key);
-      }
-    }
-  };
-  await Promise.all(
-    Array.from(
-      { length: Math.min(STAR_ATTRIBUTE_CONCURRENCY, pending.length) },
-      () => worker()
-    )
-  );
-
-  return {
-    scores: scores.map(score => {
-      const mods = normalizedScoreMods(score);
-      if (mods.length === 0) {
-        return { ...score, star_rating_source: 'base' as const };
-      }
-      const key = starAttributeKey(score, mode);
-      const rating = key ? ratings.get(key) : undefined;
-      if (rating) {
-        return {
-          ...score,
-          modded_star_rating: rating,
-          star_rating_source: 'modded' as const,
-        };
-      }
-      return {
-        ...score,
-        modded_star_rating: undefined,
-        star_rating_source: 'unavailable' as const,
-      };
-    }),
-    failed: failedKeys.size,
-  };
+  return { user, bestScores, recentScores, errors };
 }
 
 export async function collectPlayerData(identifier: string | number, mode: OsuMode = 'osu'): Promise<CollectorResult> {
@@ -121,17 +84,15 @@ export async function collectPlayerData(identifier: string | number, mode: OsuMo
   // PP+ only for std — ensure data exists BEFORE building the analysis
   const usePPlus = mode === 'osu';
 
-  // ── PP+ pre-check: trigger update if missing or stale ──
+  // ── PP+ pre-check ──
+  // GET /player/info initializes an unseen player itself. Do not follow a slow
+  // or failed first initialization with /player/update: update only consumes
+  // recent scores and fails for perfectly valid players who have no recent
+  // passes. getPlayerBars already grants first-time initialization a long
+  // timeout.
   if (usePPlus) {
-    const { getPlayerBars, refreshPlayerPPlus: doRefresh } = await import('./pplus.js');
-    let bars = await getPlayerBars(userId);
-    if (!bars) {
-      // Player not in PP+ yet — trigger full update and wait
-      try {
-        await doRefresh(userId);
-        bars = await getPlayerBars(userId);
-      } catch { /* update might fail or timeout — proceed without PP+ */ }
-    }
+    const { getPlayerBars } = await import('./pplus.js');
+    const bars = await getPlayerBars(userId);
     if (bars) {
       pplusBars = bars;
     } else {
@@ -219,11 +180,8 @@ export async function collectRecentPlayerData(
   let pplusBars: PPlusBars | null = null;
   if (mode === 'osu') {
     try {
-      const { getPlayerBars, refreshPlayerPPlus } = await import('./pplus.js');
+      const { getPlayerBars } = await import('./pplus.js');
       pplusBars = await getPlayerBars(user.id);
-      if (!pplusBars) {
-        try { await refreshPlayerPPlus(user.id); pplusBars = await getPlayerBars(user.id); } catch {}
-      }
     } catch (e) { errors.push(`PP+ 数据获取失败: ${(e as Error).message}`); }
   }
 
@@ -249,7 +207,7 @@ export function formatPPlusForPrompt(pplusBars: PPlusBars | null, refBars: { lab
     }
   }
   lines.push('');
-  lines.push('尺度说明：0-15 格，15 = 基于世界精英基准。>12 接近天花板，10-12 精英，5-10 强，<5 低于专家基准。');
+  lines.push('尺度说明：15 = LazyBot expertPlus 基准线（原版显示上限，纯数据流不截断）。低于 15 时：>12 接近基准，10-12 精英，5-10 强，<5 低于专家基准；超过 15 表示该维度 raw 值已超过基准上限。');
   lines.push('不同维度可互相比较——已经是归一化后的值。');
   return lines.join('\n');
 }

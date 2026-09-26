@@ -1,0 +1,17 @@
+QQ AI ChatBot server running at http://127.0.0.1:8787
+[yumu-image] Render server listening on ws://127.0.0.1:8389
+[yumu-image] Client authenticated, pid=36780
+[yumu-image] Render client disconnected
+[yumu-image] Client authenticated, pid=36780
+[yumu-image] Render client disconnected
+[yumu-image] Client authenticated, pid=45212
+[yumu-image] Render client disconnected
+[yumu-image] Client authenticated, pid=45212
+[yumu-image] Render client disconnected
+[yumu-image] Client authenticated, pid=18108
+[kb] {"route":"community_style","reason":"casual_chat","decisionSource":"db","groupHash":"79db7aa4a0ada96c","collections":["community_style:1"],"documentIds":["community_style:W00205261"],"scores":[3.1298],"dropped":["no_lexical_overlap","no_lexical_overlap","no_lexical_overlap","no_lexical_overlap","no_lexical_overlap","no_lexical_overlap","no_lexical_overlap","no_lexical_overlap","no_lexical_overlap","no_lexical_overlap","no_lexical_overlap","no_lexical_overlap"],"injectedChars":30,"elapsedMs":20}
+[yumu-image] Render client disconnected
+[reasoning-shadow] {"ts":1787560783675,"turnId":"777777902","callRole":"tool_planner","level":"max","source":"rule","reasonCode":"tool_selection","actualModel":"deepseek-v4-flash-vision-exp","finishReason":"stop","reasoningTokens":373,"completionTokens":392,"totalTokens":9359,"latencyMs":42614,"toolCalls":0,"textEmpty":false}
+[yumu-image] Client authenticated, pid=34528
+[yumu-image] Render client disconnected
+[yumu-image] Client authenticated, pid=34528

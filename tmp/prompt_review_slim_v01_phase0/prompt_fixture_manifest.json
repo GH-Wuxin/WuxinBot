@@ -1,0 +1,84 @@
+{
+  "schema_version": "prompt_fixture_manifest_v1",
+  "verify_tool": "tools/prompt-review-slim-phase0-verify.mjs",
+  "fixture_count": 7,
+  "fixtures": [
+    {
+      "id": "F_A_normal_chat",
+      "path": "normal chat",
+      "protected_invariants": [
+        "system contains pippi core persona",
+        "system contains runtime facts structure",
+        "no tool guidance when tools are not exposed",
+        "no owner-only command metadata in prompt",
+        "visual capability notice is not duplicated into user facts"
+      ],
+      "locked_full_prose": false
+    },
+    {
+      "id": "F_B_tool_path",
+      "path": "natural-language osu tool path",
+      "protected_invariants": [
+        "query_osu and get_player_skill schemas exist",
+        "query_osu description contains no-fabrication invariant",
+        "tool schema unchanged across rebuilds"
+      ],
+      "locked_full_prose": false
+    },
+    {
+      "id": "F_C_kb_hit",
+      "path": "KB hit",
+      "protected_invariants": [
+        "knowledge block appears exactly once in system",
+        "no duplicate knowledge block in user message",
+        "fence/section structure present"
+      ],
+      "locked_full_prose": false
+    },
+    {
+      "id": "F_D_kb_miss",
+      "path": "KB miss",
+      "protected_invariants": [
+        "no empty KB wrapper",
+        "no meaningless placeholder"
+      ],
+      "locked_full_prose": false
+    },
+    {
+      "id": "F_E_owner_group_admin",
+      "path": "owner/group_admin permission",
+      "protected_invariants": [
+        "owner-only descriptor permission remains owner",
+        "admin cannot view/list owner-only via deterministic descriptor",
+        "owner can view via deterministic descriptor",
+        "prompt guidance does not grant permissions"
+      ],
+      "locked_full_prose": false
+    },
+    {
+      "id": "F_F_rewrite",
+      "path": "rewriteNormalReply",
+      "protected_invariants": [
+        "exactly one rewrite LLM call per invocation",
+        "model/provider/max_tokens/temperature unchanged",
+        "error/empty/timeout fallback preserves original",
+        "no recursive rewrite",
+        "telemetry write failure never alters reply",
+        "content_changed deterministic"
+      ],
+      "locked_full_prose": false
+    },
+    {
+      "id": "F_G_analyze_reviewer",
+      "path": "analyze reviewer",
+      "protected_invariants": [
+        "ENABLE_RUNTIME_LLM_FACT_REVIEW remains true",
+        "generator and reviewer model pins remain deepseek-v4-flash",
+        "reviewer prompt has no pippi persona and fact-checker semantics",
+        "reviewer input contains verified_facts + report structure",
+        "hard reject -> deterministic fallback path unchanged"
+      ],
+      "locked_full_prose": false
+    }
+  ]
+}

@@ -1,0 +1,23 @@
+{
+  "generated_at": "2026-09-26T11:09:27.096Z",
+  "verifier": "tools/prompt-review-slim-p1b-verify.mjs",
+  "tool_guidance_version": "p1b-v1",
+  "checks": 345,
+  "passed": 342,
+  "failed": 3,
+  "result": "P1B_VERIFIER_HAS_FAILURES",
+  "runtime_reachable_scoped_capabilities": [
+    "bp",
+    "bp_type",
+    "recent",
+    "recommend",
+    "info"
+  ],
+  "artifacts_written": [
+    "tmp/prompt_review_slim_v01_p1b/baseline_injection_matrix.json",
+    "tmp/prompt_review_slim_v01_p1b/capability_scope_matrix.json",
+    "tmp/prompt_review_slim_v01_p1b/policy_scope_map.json",
+    "tmp/prompt_review_slim_v01_p1b/before_after_budget.json",
+    "tmp/prompt_review_slim_v01_p1b/verification_summary.json"
+  ]
+}

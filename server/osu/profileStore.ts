@@ -14,6 +14,13 @@ export interface ConsoleAnalysisEntry {
   finishedAt?: string;
   text?: string;
   error?: string;
+  source?: 'llm' | 'fallback';
+  provider?: string;
+  model?: string;
+  formatVersion?: number;
+  validationReasons?: string[];
+  bestCount?: number;
+  recentCount?: number;
 }
 
 interface PlayerRecord {

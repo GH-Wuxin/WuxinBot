@@ -3,33 +3,42 @@ import { createHash, randomUUID } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { getDataDir } from '../store.js';
+import {
+  PLAYER_SKILL_AXIS_LABELS,
+  PLAYER_SKILL_AXIS_ORDER,
+} from './playerSkillAxes.js';
 
 export const SKILL_PROFILER_TOOL_NAME = 'osu_analyze_beatmap_skills';
 const DEFAULT_SKILL_PROFILER_URL = 'http://127.0.0.1:8767';
-const DEFAULT_TIMEOUT_MS = 30_000;
+const DEFAULT_TIMEOUT_MS = 60_000;
+const DEFAULT_SKILL_PROFILER_CONCURRENCY = 6;
+const MAX_SKILL_PROFILER_CONCURRENCY = 8;
+let activeAnalyses = 0;
+const analysisWaiters: Array<() => void> = [];
 const MAX_RESPONSE_BYTES = 256 * 1024;
 const MAX_OSU_FILE_BYTES = 4 * 1024 * 1024;
 const DEFAULT_OSU_FILE_BASE_URL = 'https://osu.ppy.sh/osu/';
 const IDENTITY_CACHE_TTL_MS = 30_000;
 let identityCache: { at: number; value: SkillProfilerIdentity } | null = null;
 const analysisInflight = new Map<string, Promise<any>>();
+const PREFETCH_CONCURRENCY = 4;
+const beatmapPrefetchInflight = new Map<number, Promise<void>>();
+let activePrefetches = 0;
+const prefetchWaiters: Array<() => void> = [];
 
 export interface SkillProfilerIdentity {
   algorithmId: string;
   mapDemandVersion: string;
+  unifiedScaleId: string;
+  unifiedCalibrationKey: string;
 }
 
-const AXIS_LABELS: Readonly<Record<string, string>> = {
-  aim_control: 'Aim Control',
-  stamina: 'Stamina',
-  endurance: 'Endurance',
-  raw_speed: 'Raw Speed',
-  jump_aim: 'Jump Aim',
-  spatial_precision: 'Micro Precision',
-  flow_aim: 'Flow Aim',
-  finger_control: 'Finger Control',
-  reading: 'Reading',
-};
+const AXIS_LABELS = PLAYER_SKILL_AXIS_LABELS;
+const AXIS_DESCRIPTION = PLAYER_SKILL_AXIS_ORDER.map((axis) =>
+  axis === 'spatial_precision'
+    ? `${AXIS_LABELS[axis]}（小目标容错、落点稳定与微修正）`
+    : AXIS_LABELS[axis],
+).join('、');
 
 function profilerBaseUrl(): URL {
   const configured = String(process.env.SKILL_PROFILER_URL || DEFAULT_SKILL_PROFILER_URL).trim();
@@ -48,6 +57,43 @@ function profilerBaseUrl(): URL {
 function profilerTimeoutMs(): number {
   const parsed = Number(process.env.SKILL_PROFILER_TIMEOUT_MS || DEFAULT_TIMEOUT_MS);
   return Number.isFinite(parsed) ? Math.max(1_000, Math.min(60_000, Math.round(parsed))) : DEFAULT_TIMEOUT_MS;
+}
+
+export function skillProfilerConcurrency(): number {
+  const parsed = Number(process.env.SKILL_PROFILER_CONCURRENCY);
+  if (!Number.isFinite(parsed)) return DEFAULT_SKILL_PROFILER_CONCURRENCY;
+  return Math.max(1, Math.min(MAX_SKILL_PROFILER_CONCURRENCY, Math.floor(parsed)));
+}
+
+async function withAnalysisSlot<T>(run: () => Promise<T>): Promise<T> {
+  // All profiles share the same Python workers. Wait outside the HTTP
+  // execution deadline instead of timing out in the server's work queue.
+  const concurrency = skillProfilerConcurrency();
+  if (activeAnalyses >= concurrency || analysisWaiters.length > 0) {
+    await new Promise<void>((resolve) => analysisWaiters.push(resolve));
+  }
+  activeAnalyses += 1;
+  try {
+    return await run();
+  } finally {
+    activeAnalyses -= 1;
+    const next = analysisWaiters.shift();
+    if (next) next();
+  }
+}
+
+async function withPrefetchSlot<T>(run: () => Promise<T>): Promise<T> {
+  if (activePrefetches >= PREFETCH_CONCURRENCY || prefetchWaiters.length > 0) {
+    await new Promise<void>((resolve) => prefetchWaiters.push(resolve));
+  }
+  activePrefetches += 1;
+  try {
+    return await run();
+  } finally {
+    activePrefetches -= 1;
+    const next = prefetchWaiters.shift();
+    if (next) next();
+  }
 }
 
 async function postProfiler(pathname: string, payload: Record<string, unknown>): Promise<any> {
@@ -111,9 +157,18 @@ async function getProfiler(pathname: string): Promise<any> {
 export async function getSkillProfilerIdentity(): Promise<SkillProfilerIdentity> {
   if (identityCache && Date.now() - identityCache.at < IDENTITY_CACHE_TTL_MS) return identityCache.value;
   const state = await getProfiler('/api/state');
+  const unified = state?.unified_measurements || {};
+  const contexts = unified?.contexts && typeof unified.contexts === 'object'
+    ? Object.entries(unified.contexts as Record<string, any>)
+      .sort(([left], [right]) => left.localeCompare(right))
+      .map(([context, payload]) => `${context}:${String((payload as any)?.calibration_id || '')}:${String((payload as any)?.status || '')}`)
+      .join('|')
+    : '';
   const value = {
-    algorithmId: String(state?.algorithm_id || 'UNKNOWN_ALGORITHM'),
-    mapDemandVersion: String(state?.map_demand_version || 'UNKNOWN_VERSION'),
+    algorithmId: String(state?.algorithm_id || 'UNVERIFIED_ALGORITHM'),
+    mapDemandVersion: String(state?.map_demand_version || 'UNVERIFIED_VERSION'),
+    unifiedScaleId: String(unified?.scale_id || 'UNIFIED_SCALE_UNCONFIGURED'),
+    unifiedCalibrationKey: contexts || 'UNIFIED_CALIBRATION_UNCONFIGURED',
   };
   identityCache = { at: Date.now(), value };
   return value;
@@ -178,7 +233,7 @@ function beatmapFileBaseUrl(): URL {
   return url;
 }
 
-async function downloadOsuFile(beatmapId: number): Promise<string> {
+async function downloadOsuFile(beatmapId: number): Promise<{ content: string; expected_md5?: string }> {
   const url = new URL(String(beatmapId), beatmapFileBaseUrl());
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), 20_000);
@@ -200,11 +255,23 @@ async function downloadOsuFile(beatmapId: number): Promise<string> {
     if (declaredLength > MAX_OSU_FILE_BYTES) throw new Error('OSU_FILE_TOO_LARGE');
     const bytes = Buffer.from(await response.arrayBuffer());
     if (!bytes.length || bytes.length > MAX_OSU_FILE_BYTES) throw new Error('OSU_FILE_TOO_LARGE');
-    const text = bytes.toString('utf8').replace(/^\uFEFF/, '');
-    if (!text.startsWith('osu file format v')) throw new Error('OSU_FILE_INVALID_HEADER');
-    const embedded = /^BeatmapID\s*:\s*(\d+)\s*$/im.exec(text);
-    if (!embedded || Number(embedded[1]) !== beatmapId) throw new Error('OSU_FILE_BID_MISMATCH');
-    return text;
+    const text = bytes.toString('utf8');
+    if (!text.replace(/^\uFEFF/, '').startsWith('osu file format v')) throw new Error('OSU_FILE_INVALID_HEADER');
+    if (!bytes.equals(Buffer.from(text, 'utf8'))) throw new Error('OSU_FILE_INVALID_ENCODING');
+    const embedded = /^BeatmapID\s*:[ \t]*([^\r\n]*)/im.exec(text);
+    const declaredBid = embedded ? Number(embedded[1]) : 0;
+    if (declaredBid === beatmapId) return { content: text };
+    if (declaredBid !== 0) throw new Error('OSU_FILE_BID_MISMATCH');
+    // Official v9 files may omit BeatmapID. Verify the requested map's API
+    // checksum and preserve the raw bytes; never insert an invented ID.
+    const { getBeatmap } = await import('../osu/api.js');
+    const metadata = await getBeatmap(beatmapId);
+    const checksum = String(metadata.checksum || '').toLowerCase();
+    if (metadata.id !== beatmapId || !/^[a-f0-9]{32}$/.test(checksum)
+      || createHash('md5').update(bytes).digest('hex') !== checksum) {
+      throw new Error('OSU_FILE_CHECKSUM_MISMATCH');
+    }
+    return { content: text, expected_md5: checksum };
   } catch (error: any) {
     if (error?.name === 'AbortError') throw new Error('OSU_FILE_DOWNLOAD_TIMEOUT');
     throw error;
@@ -213,9 +280,148 @@ async function downloadOsuFile(beatmapId: number): Promise<string> {
   }
 }
 
+export interface SkillProfilerBeatmapPreflight {
+  supported: boolean;
+  available: number[];
+  missing: number[];
+}
+
+export interface SkillProfilerBeatmapPrefetchResult {
+  supported: boolean;
+  requested: number;
+  alreadyAvailable: number;
+  missing: number;
+  downloaded: number;
+  failed: Array<{ beatmapId: number; reason: string }>;
+}
+
+function uniqueBeatmapIds(beatmapIds: readonly number[]): number[] {
+  return [...new Set(beatmapIds
+    .map((value) => Number(value))
+    .filter((value) => Number.isSafeInteger(value) && value > 0))];
+}
+
+/**
+ * Ask the local workbench which .osu files are already available. This is a
+ * cheap index lookup and never enters the Python analysis worker pool.
+ * Older workbench processes do not expose /api/preflight, so callers retain
+ * the old lazy-import path when the endpoint is unavailable.
+ */
+export async function scanSkillProfilerBeatmaps(
+  beatmapIds: readonly number[],
+): Promise<SkillProfilerBeatmapPreflight> {
+  const ids = uniqueBeatmapIds(beatmapIds);
+  if (!ids.length) return { supported: true, available: [], missing: [] };
+  try {
+    const result = await postProfiler('/api/preflight', { beatmap_ids: ids });
+    const rows = Array.isArray(result?.beatmaps) ? result.beatmaps : [];
+    const available = ids.filter((beatmapId) => rows.some((row: any) =>
+      Number(row?.beatmap_id) === beatmapId && row?.available === true));
+    return {
+      supported: true,
+      available,
+      missing: ids.filter((beatmapId) => !available.includes(beatmapId)),
+    };
+  } catch (error: any) {
+    const message = String(error?.message || error);
+    if (/\b(?:NOT_FOUND|HTTP_404|SKILL_PROFILER_HTTP_404)\b/i.test(message)) {
+      return { supported: false, available: [], missing: [] };
+    }
+    throw error;
+  }
+}
+
+async function importBeatmapWithDownload(beatmapId: number): Promise<void> {
+  const existing = beatmapPrefetchInflight.get(beatmapId);
+  if (existing) return existing;
+  const pending = withPrefetchSlot(async () => {
+    const imported = await downloadOsuFile(beatmapId);
+    await postProfiler('/api/import', { beatmap_id: beatmapId, ...imported });
+  });
+  beatmapPrefetchInflight.set(beatmapId, pending);
+  try {
+    await pending;
+  } finally {
+    if (beatmapPrefetchInflight.get(beatmapId) === pending) {
+      beatmapPrefetchInflight.delete(beatmapId);
+    }
+  }
+}
+
+export async function prefetchSkillProfilerBeatmaps(
+  beatmapIds: readonly number[],
+  knownMissingIds?: readonly number[],
+): Promise<SkillProfilerBeatmapPrefetchResult> {
+  const ids = uniqueBeatmapIds(beatmapIds);
+  const preflight = knownMissingIds
+    ? { supported: true, available: ids.filter((id) => !knownMissingIds.includes(id)), missing: uniqueBeatmapIds(knownMissingIds) }
+    : await scanSkillProfilerBeatmaps(ids);
+  if (!preflight.supported) {
+    return {
+      supported: false,
+      requested: ids.length,
+      alreadyAvailable: 0,
+      missing: 0,
+      downloaded: 0,
+      failed: [],
+    };
+  }
+  const missing = preflight.missing.filter((beatmapId) => ids.includes(beatmapId));
+  const outcomes = await Promise.all(missing.map(async (beatmapId) => {
+    try {
+      await importBeatmapWithDownload(beatmapId);
+      return { beatmapId, ok: true as const };
+    } catch (error: any) {
+      return {
+        beatmapId,
+        ok: false as const,
+        reason: String(error?.message || error).slice(0, 160),
+      };
+    }
+  }));
+  return {
+    supported: true,
+    requested: ids.length,
+    alreadyAvailable: preflight.available.length,
+    missing: missing.length,
+    downloaded: outcomes.filter((outcome) => outcome.ok).length,
+    failed: outcomes
+      .filter((outcome): outcome is { beatmapId: number; ok: false; reason: string } => !outcome.ok)
+      .map(({ beatmapId, reason }) => ({ beatmapId, reason })),
+  };
+}
+
+export async function ensureSkillProfilerBeatmap(beatmapId: number): Promise<void> {
+  const preflight = await scanSkillProfilerBeatmaps([beatmapId]);
+  if (preflight.supported && preflight.available.includes(beatmapId)) return;
+  await importBeatmapWithDownload(beatmapId);
+}
+
 function finiteNumber(value: unknown): number | null {
   const number = Number(value);
   return Number.isFinite(number) ? number : null;
+}
+
+export function skillProfilerAxisValue(
+  analysis: any,
+  axis: string,
+): { value: number | null; scale: 'unified' | 'v040_axis'; status: string } {
+  const item = analysis?.axes?.[axis] || {};
+  const unifiedStatus = String(item?.unified_star_status || '').toUpperCase();
+  const unifiedReady = analysis?.unified_measurements?.status === 'ATTACHED'
+    && unifiedStatus === 'ADMITTED';
+  const unifiedValue = finiteNumber(item?.unified_star_equivalent);
+  if (unifiedReady && unifiedValue !== null) {
+    return { value: unifiedValue, scale: 'unified', status: unifiedStatus };
+  }
+  const candidateAttached = analysis?.unified_measurements?.status === 'ATTACHED'
+    && unifiedStatus === 'CANDIDATE'
+    && unifiedValue !== null;
+  return {
+    value: finiteNumber(item?.stars),
+    scale: 'v040_axis',
+    status: candidateAttached ? 'CANDIDATE_NOT_ADMITTED' : String(item?.confidence || 'UNVERIFIED'),
+  };
 }
 
 function formatBeatmapTitle(beatmap: any): string {
@@ -232,7 +438,7 @@ function formatBeatmapTitle(beatmap: any): string {
 
 export function formatSkillProfilerAnalysis(analysis: any): string {
   if (analysis?.status !== 'OK' || !analysis?.axes || !analysis?.beatmap) {
-    throw new Error(`SKILL_PROFILER_ANALYSIS_NOT_OK: ${String(analysis?.status || 'UNKNOWN')}`);
+    throw new Error(`SKILL_PROFILER_ANALYSIS_NOT_OK: ${String(analysis?.status || 'UNVERIFIED')}`);
   }
   const beatmap = analysis.beatmap;
   const modContext = analysis.mod_context || {};
@@ -250,31 +456,55 @@ export function formatSkillProfilerAnalysis(analysis: any): string {
   const bpm = finiteNumber(analysis.analysis_context?.bpm_max);
   const durationMs = finiteNumber(analysis.analysis_context?.duration_ms);
   const localStars = finiteNumber(beatmap.local_nm_stars);
+  const identity = analysis.identity || {};
+  const release = analysis.release || {};
+  const sliderPressure = analysis.slider_pressure || analysis.map_demand?.slider_pressure || {};
+  const sliderPressureScalar = finiteNumber(sliderPressure.scalar);
+  const unified = analysis.unified_measurements || {};
+  const unifiedAttached = unified.status === 'ATTACHED';
+  const candidateUnifiedCount = unifiedAttached
+    ? PLAYER_SKILL_AXIS_ORDER.filter((axis) => {
+        const item = analysis.axes?.[axis] || {};
+        return String(item.unified_star_status || '').toUpperCase() === 'CANDIDATE'
+          && finiteNumber(item.unified_star_equivalent) !== null;
+      }).length
+    : 0;
   const lines = [
-    'Skill Profiler 本地确定性谱面需求分析（V0.95；各维不是 osu! 官方总星数，也不是玩家能力评价）',
+    'Skill Profiler 本地确定性谱面需求分析（正式 v0.40；各维是谱面需求，不是 osu! 官方总星数，也不是玩家能力评价）',
     `谱面：${formatBeatmapTitle(beatmap)}`,
     `BID：${beatmap.beatmap_id} · Mods：${mods}${neutralMods.length ? `（${neutralMods.join('/')} 对谱面需求分值无影响）` : ''}`,
+    `发布：${String(identity.algorithm_id || 'UNVERIFIED_ALGORITHM')} · v${String(identity.map_demand_version || 'UNVERIFIED_VERSION')}${identity.formal_release_id || release.release_id ? ` · ${String(identity.formal_release_id || release.release_id)}` : ''}`,
     `环境：AR ${finiteNumber(difficulty.ApproachRate ?? difficulty.AR)?.toFixed(1) ?? '未知'} · OD ${finiteNumber(difficulty.OverallDifficulty ?? difficulty.OD)?.toFixed(1) ?? '未知'} · CS ${finiteNumber(difficulty.CircleSize ?? difficulty.CS)?.toFixed(1) ?? '未知'}${bpm === null ? '' : ` · BPM ${bpm.toFixed(1)}`}${durationMs === null ? '' : ` · 时长 ${(durationMs / 1000).toFixed(0)}s`}${localStars === null ? '' : ` · 本地 NM 总星数 ${localStars.toFixed(2)}★`}`,
     '九维需求：',
   ];
-  for (const axis of Object.keys(AXIS_LABELS)) {
+  if (candidateUnifiedCount > 0) {
+    lines.push(`统一量尺：${candidateUnifiedCount} 个维度为 CANDIDATE，尚未进入正式输出；以下使用 v0.40 原轴值。`);
+  }
+  if (sliderPressureScalar === null) {
+    lines.push(`SliderPressure：${String(sliderPressure.status || '未通过发布门')}（单位 normalized px/ms；不折算为加权星数）`);
+  } else {
+    lines.push(`SliderPressure：${sliderPressureScalar.toFixed(3)} normalized px/ms（支撑门通过；不折算为加权星数）`);
+  }
+  for (const axis of PLAYER_SKILL_AXIS_ORDER) {
     const item = analysis.axes[axis] || {};
-    const value = finiteNumber(item.stars);
-    const unit = item.unit === 'bounded_0_10' ? '/10' : '★';
-    lines.push(`- ${AXIS_LABELS[axis]}：${value === null ? '不可用' : `${value.toFixed(1)}${unit}`}（置信度 ${String(item.confidence || 'UNKNOWN')}）`);
+    const measurement = skillProfilerAxisValue(analysis, axis);
+    const legacy = finiteNumber(item.stars);
+    const unit = measurement.scale === 'unified' ? '★（统一量尺）' : item.unit === 'bounded_0_10' ? '/10' : '★';
+    const legacyNote = measurement.scale === 'unified' && legacy !== null ? `；v0.40 原轴 ${legacy.toFixed(1)}${item.unit === 'bounded_0_10' ? '/10' : '★'}` : '';
+    lines.push(`- ${AXIS_LABELS[axis]}：${measurement.value === null ? '暂未输出' : `${measurement.value.toFixed(2)}${unit}`}${legacyNote}（置信度 ${String(item.confidence || 'UNVERIFIED')}）`);
   }
   const archetype = analysis.archetype || {};
   if (archetype.status === 'CLASSIFIED') {
     lines.push(
-      `类型判断：${String(archetype.primary_type || 'UNKNOWN')}` +
+      `类型判断：${String(archetype.primary_type || 'UNVERIFIED')}` +
       `${Array.isArray(archetype.dominant_axes) && archetype.dominant_axes.length ? `；主导维度 ${archetype.dominant_axes.map((axis: string) => AXIS_LABELS[axis] || axis).join('、')}` : ''}` +
-      `（置信度 ${String(archetype.confidence || 'UNKNOWN')}）`,
+      `（置信度 ${String(archetype.confidence || 'UNVERIFIED')}）`,
     );
   }
   const experimentalType = analysis.experimental_type || {};
   const typeSummary = experimentalType.summary || {};
   if (experimentalType.stage === 'EXPERIMENTAL' && typeSummary.status === 'PROPOSED') {
-    const primary = String(typeSummary.primary_type || 'UNKNOWN').replaceAll('_', ' ');
+    const primary = String(typeSummary.primary_type || 'UNVERIFIED').replaceAll('_', ' ');
     const secondary = Array.isArray(typeSummary.secondary_types)
       ? typeSummary.secondary_types.map((item: unknown) => String(item).replaceAll('_', ' ')).join('、')
       : '';
@@ -284,7 +514,7 @@ export function formatSkillProfilerAnalysis(analysis: any): string {
   }
   const warnings = Array.isArray(analysis.warnings) ? analysis.warnings.filter(Boolean).slice(0, 5) : [];
   if (warnings.length) lines.push(`警告：${warnings.map((warning: unknown) => String(warning)).join('；')}`);
-  lines.push('解释时优先描述“哪些维度相对突出/这张图难在哪里”；LOW 置信度和实验性分值必须保留不确定性，不要包装成官方定论。');
+  lines.push('解释时优先描述“哪些维度相对突出/这张图难在哪里”；证据不足的维度和实验性类型必须保留边界，不要包装成官方定论。');
   return lines.join('\n');
 }
 
@@ -292,10 +522,10 @@ export async function requestSkillProfilerAnalysis(
   beatmapId: number,
   mods: string[] = [],
 ): Promise<any> {
-  return postProfiler('/api/analyze', {
+  return withAnalysisSlot(() => postProfiler('/api/analyze', {
     beatmap_id: beatmapId,
     mods,
-  });
+  }));
 }
 
 export async function requestSkillProfilerAnalysisWithFetch(
@@ -307,8 +537,7 @@ export async function requestSkillProfilerAnalysisWithFetch(
   } catch (error: any) {
     const message = String(error?.message || error);
     if (!/^(?:BID_NOT_FOUND|OSU_FILE_MISSING):/.test(message)) throw error;
-    const content = await downloadOsuFile(beatmapId);
-    await postProfiler('/api/import', { beatmap_id: beatmapId, content });
+    await ensureSkillProfilerBeatmap(beatmapId);
     return requestSkillProfilerAnalysis(beatmapId, mods);
   }
 }
@@ -318,7 +547,7 @@ export function buildSkillProfilerToolSchema(): LlmTool {
     type: 'function',
     function: {
       name: SKILL_PROFILER_TOOL_NAME,
-      description: '分析一张本地已有的 osu!standard 谱面在 Aim Control、Stamina、Endurance、Raw Speed、Jump Aim、Micro Precision（小目标容错、落点稳定与微修正）、Flow Aim、Finger Control、Reading 九个维度上的需求，并判断谱面类型。用户问“这图难在哪/是什么类型/某维度多难”时调用；这是实验性谱面分析，不是玩家能力分析，也不是官方星数。',
+      description: `使用正式 v0.40 分析一张本地已有的 osu!standard 谱面在 ${AXIS_DESCRIPTION} 九个维度上的谱面需求，并返回 SliderPressure 与实验性谱面类型。用户问“这图难在哪/是什么类型/某维度多难”时调用；结果不是玩家能力分析，也不是官方星数。`,
       parameters: {
         type: 'object',
         properties: {
@@ -352,7 +581,7 @@ export async function executeSkillProfilerAnalysis(
       content: formatSkillProfilerAnalysis(analysis),
       metadata: {
         requestedCapability: 'beatmap_skill_profile',
-        actualExecutor: 'osu_skill_profiler_v095',
+        actualExecutor: 'osu_skill_profiler_v040',
         dataSource: 'local_osu_manifest',
         renderer: 'none',
         command: SKILL_PROFILER_TOOL_NAME,
@@ -368,7 +597,7 @@ export async function executeSkillProfilerAnalysis(
       error: message,
       metadata: {
         requestedCapability: 'beatmap_skill_profile',
-        actualExecutor: 'osu_skill_profiler_v095',
+        actualExecutor: 'osu_skill_profiler_v040',
         dataSource: 'local_osu_manifest',
         renderer: 'none',
         command: SKILL_PROFILER_TOOL_NAME,

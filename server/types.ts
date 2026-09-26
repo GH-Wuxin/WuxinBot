@@ -2,6 +2,7 @@
 // These describe the shapes that flow through processIncoming(),
 // the database, and the LLM layer. Not exhaustive — only covers
 // the high-traffic structures that have caused bugs when mis-assumed.
+import type { KnowledgeBaseSettings } from './bot/knowledgeTypes.js';
 
 // ── Incoming event (produced by oneBotToInternal) ──
 
@@ -16,6 +17,13 @@ export interface BotEvent {
   atTargets: string[];
   images?: { type: 'image'; url?: string; file?: string }[];
   replyMessageId?: string;
+  quotedMessage?: {
+    messageId: string;
+    text: string;
+    images: { type: 'image'; url?: string; file?: string }[];
+    userId?: string;
+    nickname?: string;
+  };
   senderRole?: 'owner' | 'admin' | 'member';
   raw?: Record<string, unknown>;
 }
@@ -40,6 +48,13 @@ export interface DbSettings {
   deepseekApiBaseUrl?: string;
   mimoApiKey?: string;
   mimoApiBaseUrl?: string;
+  codexExecutable?: string;
+  codexModel?: string;
+  codexReasoningEffort?: 'low' | 'medium' | 'high' | 'xhigh' | 'max';
+  codexTimeoutMs?: number;
+  codexFallbackEnabled?: boolean;
+  codexFallbackProvider?: 'deepseek' | 'openai-compatible';
+  codexFallbackModel?: string;
   model: string;
   visionMode?: 'auto' | 'on' | 'off';
   visionImageTransport?: 'auto' | 'url' | 'data';
@@ -52,6 +67,10 @@ export interface DbSettings {
   maxTokens: number;
   contextLimit: number;
   ownerPrivateContextCharBudget: number;
+  groupContextSearchEnabled?: boolean;
+  groupContextSearchPoolSize?: number;
+  groupContextSearchMaxExtra?: number;
+  groupContextSearchCharBudget?: number;
   botNames: string;
   personalityPrompt: string;
   baselinePersonalityPrompt?: string;
@@ -65,6 +84,10 @@ export interface DbSettings {
   enableWebSearch: boolean;
   webSearchMode: 'fast' | 'balanced' | 'deep';
   enableAutoModel: boolean;
+  /** Agent Runtime V2 is default; set legacy or env PIPPI_AGENT_RUNTIME_MODE=legacy for rollback. */
+  agentRuntimeMode?: 'legacy' | 'model_first';
+  /** Phase 2 v1 master switch; env REASONING_ENABLED=false|0 is a hard veto. */
+  reasoningEnabled: boolean;
   llmReplyGateMaxPerHour?: number;
   llmReplyGateNaturalThreshold?: number;
   llmReplyGateLightThreshold?: number;
@@ -76,6 +99,7 @@ export interface DbSettings {
   memorySampleRetain?: number;
   commandRoles: CommandRole[];
   commandPermissions: Record<string, string>;
+  kb?: KnowledgeBaseSettings;
   [key: string]: unknown;   // permits customModel and future fields
 }
 
@@ -90,7 +114,7 @@ export interface Group {
   groupId: string;
   name: string;
   enabled: boolean;
-  mode: 'silent' | 'mention' | 'light' | 'natural';
+  mode: 'silent' | 'mention' | 'light' | 'natural' | 'osu';
   maxPerHour: number;
   cooldownSec: number;
   createdAt?: string;
@@ -137,6 +161,8 @@ export interface MemoryEntry {
   lastProfileStatus?: 'updated' | 'checked' | 'recent-only' | 'empty' | 'error';
   lastProfileError?: string;
   lastProfiledAt?: string;
+  profileFailureCount?: number;
+  profileRetryAfter?: string;
   createdAt: string;
   updatedAt: string;
 }
@@ -170,6 +196,11 @@ export interface MemorySample {
 
 export interface MessageRecord {
   id: string;
+  requestId?: string;
+  sourceMessageId?: string;
+  replyToMessageId?: string;
+  replyToUserId?: string;
+  replyToNickname?: string;
   role: 'user' | 'assistant';
   type: 'group' | 'private';
   groupId: string;
@@ -183,6 +214,7 @@ export interface MessageRecord {
 
 export interface DecisionRecord {
   id: string;
+  requestId?: string;
   messageId: string;
   groupId: string;
   userId: string;
@@ -213,15 +245,56 @@ export interface CommandLogEntry {
   createdAt: string;
 }
 
+export interface ToolCallLogEntry {
+  id: string;
+  createdAt: string;
+  groupId: string;
+  userId: string;
+  nickname: string;
+  messageId: string;
+  toolCallId: string;
+  capability: string;
+  args: Record<string, unknown>;
+  ok: boolean;
+  error: string;
+  contentLength: number;
+  latencyMs: number;
+}
+
+export interface SkillProfilerRunEntry {
+  id: string;
+  beatmapId: number;
+  groupId: string;
+  userId: string;
+  sourceMessageId: string;
+  sourceLabel: string;
+  analysis: Record<string, unknown>;
+  createdAt: string;
+}
+
 export interface UsageEvent {
   id: string;
   groupId: string;
   userId: string;
   model: string;
+  provider?: string;
   kind?: string;           // 'memory' for memory-update calls
   totalTokens: number;
   promptTokens: number;
+  cachedTokens: number;
+  cacheWriteTokens: number;
+  cacheMetricsAvailable?: boolean;
+  cacheMeasuredPromptTokens?: number;
+  accountingExcluded?: boolean;
+  observedUsage?: unknown;
+  usageKnown?: boolean;
+  requestId?: string;
+  purpose?: string;
+  status?: string;
+  fallbackFrom?: string;
+  durationMs?: number;
   completionTokens: number;
+  reasoningTokens: number;
   createdAt: string;
 }
 
@@ -256,12 +329,19 @@ export interface Db {
   messages: MessageRecord[];
   decisions: DecisionRecord[];
   commandLogs: CommandLogEntry[];
+  toolCallLogs: ToolCallLogEntry[];
   adminActions: Record<string, unknown>[];
   usageEvents: UsageEvent[];
   usage: {
     totalTokens: number;
     promptTokens: number;
+    cachedTokens: number;
+    cacheWriteTokens: number;
     completionTokens: number;
+    reasoningTokens: number;
+    cacheMeasuredPromptTokens: number;
+    cacheMeasuredRequests: number;
+    cacheMetricsStartedAt: string;
     requests: number;
     replies: number;
     errors: number;
@@ -271,7 +351,7 @@ export interface Db {
 
 // ── LLM layer ──
 
-export type LlmProvider = 'deepseek' | 'openai-compatible';
+export type LlmProvider = 'deepseek' | 'openai-compatible' | 'codex-app-server';
 
 export interface LlmCompletionOptions {
   overrideModel?: string | null;

@@ -1,0 +1,16 @@
+import assert from 'node:assert/strict';
+import {getSkillProfilerIdentity,requestSkillProfilerAnalysisCachedWithFetch,assertSkillProfilerIdentity} from '../server/bots/skillProfiler.ts';
+import {buildSkillProfilerCardPayload} from '../server/bots/skillProfilerCard.ts';
+import {compactSkillProfilerSnapshot} from '../server/bots/skillProfilerFeedback.ts';
+const identity=await getSkillProfilerIdentity(true);
+assert.equal(identity.mapDemandVersion,'0.10.0-beta.1');
+const first=await requestSkillProfilerAnalysisCachedWithFetch(1475722,['HD','DT']);
+const second=await requestSkillProfilerAnalysisCachedWithFetch(1475722,['HD','DT']);
+assertSkillProfilerIdentity(first,identity);
+assertSkillProfilerIdentity(second,identity);
+assert.deepEqual(first.axes,second.axes);
+assert.equal(buildSkillProfilerCardPayload(second).analysis.releaseLabel,'0.10.0-beta.1 · 试用');
+assert.equal(compactSkillProfilerSnapshot(second).mapDemandVersion,identity.mapDemandVersion);
+assert.ok(Math.abs(second.axes.jump_aim.stars-11.750612780087177)<1e-10);
+console.log('Production Bot client -> profiler -> versioned disk cache -> card payload/feedback PASS',identity);
+process.exit(0);

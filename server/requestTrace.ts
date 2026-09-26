@@ -86,13 +86,23 @@ export function requestTraceIdFor(event: any) {
 function publishTrace(trace: RequestTrace) {
   try {
     if (subscribers.size === 0) return;
-    const snapshot = redactTraceValue(trace);
+    const snapshot = traceSnapshot(trace);
     for (const subscriber of subscribers) {
       try { subscriber(snapshot); } catch { /* A broken console client is isolated. */ }
     }
   } catch {
     // Publishing diagnostics must never affect the QQ path.
   }
+}
+
+function traceSnapshot(trace: RequestTrace) {
+  const { events, ...metadata } = trace;
+  return {
+    ...redactTraceValue(metadata) as Record<string, unknown>,
+    // The event ring has its own bound. Generic payload arrays keep their
+    // smaller limit without hiding BP50's final progress, errors and result.
+    events: events.slice(-MAX_EVENTS_PER_REQUEST).map((event) => redactTraceValue(event, 2)),
+  };
 }
 
 export function subscribeRequestTraces(listener: (trace: unknown) => void) {
@@ -234,7 +244,7 @@ export function listRequestTraces(limit = 80) {
     return order.slice(-Math.max(1, Math.min(Number(limit) || 80, MAX_REQUESTS))).reverse()
       .map((id) => traces.get(id))
       .filter(Boolean)
-      .map((trace) => redactTraceValue(trace));
+      .map((trace) => traceSnapshot(trace!));
   } catch {
     return [];
   }

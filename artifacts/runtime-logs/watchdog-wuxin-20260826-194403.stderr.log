@@ -1,0 +1,28 @@
+[onebot] 无法读取引用消息，保留本地回退内容: OneBot HTTP 请求超时 12 秒
+[onebot] 无法读取引用消息，保留本地回退内容: OneBot HTTP 请求超时 12 秒
+[onebot] 无法读取引用消息，保留本地回退内容: OneBot HTTP 请求超时 12 秒
+[onebot] 无法读取引用消息，保留本地回退内容: OneBot HTTP 请求超时 12 秒
+[onebot] 无法读取引用消息，保留本地回退内容: OneBot HTTP 请求超时 12 秒
+[onebot] 无法读取引用消息，保留本地回退内容: OneBot HTTP 请求超时 12 秒
+[onebot] 无法读取引用消息，保留本地回退内容: OneBot HTTP 请求超时 12 秒
+
+<--- Last few GCs --->
+
+[30940:000001965D8C1000]  2827104 ms: Scavenge (interleaved) 4014.5 (4107.5) -> 4014.5 (4115.3) MB, pooled: 7 MB, 46.88 / 0.00 ms  (average mu = 0.345, current mu = 0.323) allocation failure; 
+[30940:000001965D8C1000]  2828539 ms: Mark-Compact 4103.8 (4188.8) -> 4030.1 (4115.3) MB, pooled: 7 MB, 1079.82 / 0.00 ms  (average mu = 0.334, current mu = 0.323) allocation failure; scavenge might not succeed
+
+
+<--- JS stacktrace --->
+
+FATAL ERROR: Ineffective mark-compacts near heap limit Allocation failed - JavaScript heap out of memory
+----- Native stack trace -----
+
+ 1: 00007FF7017020AD node::SetCppgcReference+17245
+ 2: 00007FF70166A4D8 v8::base::CPU::num_virtual_address_bits+92376
+ 3: 00007FF7021EA1B1 v8::Isolate::ReportExternalAllocationLimitReached+65
+ 4: 00007FF7021D7096 v8::Function::Experimental_IsNopFunction+2790
+ 5: 00007FF702026920 v8::internal::StrongRootAllocatorBase::StrongRootAllocatorBase+31392
+ 6: 00007FF702020644 v8::internal::StrongRootAllocatorBase::StrongRootAllocatorBase+6084
+ 7: 00007FF70201BCF5 v8::CpuProfileNode::GetScriptResourceNameStr+188069
+ 8: 00007FF7019A13BD BIO_ssl_shutdown+189
+ 9: 7FF8000000000000 

@@ -1,0 +1,105 @@
+{
+  "generated_at": "2026-09-26T11:09:27.096Z",
+  "comparison_basis": "P1A (always full guidance when tools exposed) vs P1B (scoped guidance on deterministic required-tool path, full otherwise, empty when no tools). Guidance is injected once into messages[0]; runToolLoop can call the LLM multiple times with the same messages, so request-visible chars = logical unique chars x LLM calls.",
+  "chars_guidance_only": "Guidance string chars only; system prompt, history and tool schema are identical across P1A/P1B for the same runtime path.",
+  "runtime_reachable_scoped_capabilities": [
+    "bp",
+    "bp_type",
+    "recent",
+    "recommend",
+    "info"
+  ],
+  "scenarios": {
+    "no_tools": {
+      "p1a_chars": 0,
+      "p1b_chars": 0,
+      "delta_per_llm_call": 0,
+      "logical_unique_chars": 0,
+      "runtime_reachable": true
+    },
+    "tools_full": {
+      "p1a_chars": 1098,
+      "p1b_chars": 1098,
+      "delta_per_llm_call": 0,
+      "logical_unique_chars": 1098,
+      "runtime_reachable": true
+    },
+    "required_tool_bp": {
+      "p1a_chars": 1098,
+      "p1b_chars": 486,
+      "delta_per_llm_call": 612,
+      "logical_unique_chars": 486,
+      "runtime_reachable": true
+    },
+    "required_tool_bp_type": {
+      "p1a_chars": 1098,
+      "p1b_chars": 582,
+      "delta_per_llm_call": 516,
+      "logical_unique_chars": 582,
+      "runtime_reachable": true
+    },
+    "required_tool_recent": {
+      "p1a_chars": 1098,
+      "p1b_chars": 702,
+      "delta_per_llm_call": 396,
+      "logical_unique_chars": 702,
+      "runtime_reachable": true
+    },
+    "required_tool_info": {
+      "p1a_chars": 1098,
+      "p1b_chars": 488,
+      "delta_per_llm_call": 610,
+      "logical_unique_chars": 488,
+      "runtime_reachable": true
+    },
+    "required_tool_profile": {
+      "p1a_chars": 1098,
+      "p1b_chars": 491,
+      "delta_per_llm_call": 607,
+      "logical_unique_chars": 491,
+      "runtime_reachable": false
+    },
+    "required_tool_ppplus": {
+      "p1a_chars": 1098,
+      "p1b_chars": 490,
+      "delta_per_llm_call": 608,
+      "logical_unique_chars": 490,
+      "runtime_reachable": false
+    },
+    "required_tool_skill": {
+      "p1a_chars": 1098,
+      "p1b_chars": 489,
+      "delta_per_llm_call": 609,
+      "logical_unique_chars": 489,
+      "runtime_reachable": false
+    },
+    "required_tool_recommend": {
+      "p1a_chars": 1098,
+      "p1b_chars": 634,
+      "delta_per_llm_call": 464,
+      "logical_unique_chars": 634,
+      "runtime_reachable": true
+    },
+    "required_tool_beatmap_lookup": {
+      "p1a_chars": 1098,
+      "p1b_chars": 498,
+      "delta_per_llm_call": 600,
+      "logical_unique_chars": 498,
+      "runtime_reachable": false
+    },
+    "required_tool_pp_calc": {
+      "p1a_chars": 1098,
+      "p1b_chars": 573,
+      "delta_per_llm_call": 525,
+      "logical_unique_chars": 573,
+      "runtime_reachable": false
+    },
+    "required_tool_leaderboard": {
+      "p1a_chars": 1098,
+      "p1b_chars": 495,
+      "delta_per_llm_call": 603,
+      "logical_unique_chars": 495,
+      "runtime_reachable": false
+    }
+  }
+}

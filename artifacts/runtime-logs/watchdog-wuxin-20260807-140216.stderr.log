@@ -1,0 +1,18 @@
+[PP+] player/info oliwakami failed (HTTP 500, code 400): lol server goes boooom
+[osu analyze] 区块短评第 1 次未通过： [ 'classification 短评语义终审：aim 只占 35%，尚未过半，不能写成压倒性或绝对主导' ]
+[osu analyze] 独立审查记录意见（不重写、不降级）： profile[hard]=评级分布中 A 多于 S 被解释为“愿意死磕高难度、不在乎差一点点不拿 S”的玩法风格，属于把累计分布直接翻译成未提供的动机与行为模式。；conclusion[hard]=结论把 PP+ 的 Accuracy 9.72 与 Speed 2.76 直接翻译成“精准度和耐力型读图明显是强项，而爆发速度相对是短板”，将显示条相对高低写成具体操作能力。
+G:\QQ-AI-ChatBot\server\onebot.ts:67
+    throw new Error(`${label}：retcode ${retcode} ${String(detail || '').slice(0, 500)}`);
+          ^
+
+
+Error: 发送 QQ 消息失败：retcode 200 Timeout: NTEvent serviceAndMethod:NodeIKernelMsgService/sendMsg ListenerName:NodeIKernelMsgListener/onMsgInfoListUpdate EventRet:
+{}
+
+    at assertOneBotSuccess (G:\QQ-AI-ChatBot\server\onebot.ts:67:11)
+    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)
+    at async sendOneBotMessage (G:\QQ-AI-ChatBot\server\onebot.ts:108:3)
+    at async sendAsReply (G:\QQ-AI-ChatBot\server\osu\commands.ts:378:5)
+    at async drainQueue (G:\QQ-AI-ChatBot\server\osu\commands.ts:1114:37)
+
+Node.js v22.14.0

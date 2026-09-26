@@ -1,0 +1,151 @@
+{
+  "generated_at": "2026-09-26T11:09:27.096Z",
+  "baseline": "P1A behavior: when useTools is true, buildToolGuidance() (full 1098 chars) is appended to messages[0] before every runToolLoop; when useTools is false nothing is appended.",
+  "after": "P1B behavior: requiredTool.args.capability (deterministic query_osu route only) scopes guidance to one capability; all other tool calls keep full guidance; no-tools path remains zero.",
+  "multi_llm_call_note": "The guidance string is appended once per turn to messages[0]. runToolLoop reuses the same messages for up to 4 iterations, so every LLM request in that turn repeats the string: request-visible delta = delta_per_llm_call x (number of LLM requests in the turn).",
+  "rows": [
+    {
+      "row": "no_tools",
+      "trigger": "useTools=false",
+      "injected_before": false,
+      "injected_after": false,
+      "p1a_guidance_chars": 0,
+      "p1b_guidance_chars": 0,
+      "delta_per_llm_call": 0,
+      "notes": "osuDataIntent fails explicitly before the LLM call; no tool guidance is ever appended.",
+      "runtime_reachable": true
+    },
+    {
+      "row": "tools_required_tool_missing_or_unknown",
+      "trigger": "useTools=true and requiredTool undefined (no deterministic osu data intent)",
+      "injected_before": true,
+      "injected_after": true,
+      "p1a_guidance_chars": 1098,
+      "p1b_guidance_chars": 1098,
+      "delta_per_llm_call": 0,
+      "notes": "Unified query_osu exposes the full callable catalog, so guidance stays full (and fails closed to full for unknown capability ids).",
+      "runtime_reachable": true
+    },
+    {
+      "row": "tools_required_tool_bp",
+      "trigger": "useTools=true, requiredTool={toolName:'query_osu', args:{capability:'bp'}}",
+      "injected_before": true,
+      "injected_after": true,
+      "p1a_guidance_chars": 1098,
+      "p1b_guidance_chars": 486,
+      "delta_per_llm_call": 612,
+      "notes": "Deterministic required-tool route exists today; guidance is scoped to this single capability.",
+      "runtime_reachable": true
+    },
+    {
+      "row": "tools_required_tool_bp_type",
+      "trigger": "useTools=true, requiredTool={toolName:'query_osu', args:{capability:'bp_type'}}",
+      "injected_before": true,
+      "injected_after": true,
+      "p1a_guidance_chars": 1098,
+      "p1b_guidance_chars": 582,
+      "delta_per_llm_call": 516,
+      "notes": "Deterministic required-tool route exists today; guidance is scoped to this single capability.",
+      "runtime_reachable": true
+    },
+    {
+      "row": "tools_required_tool_recent",
+      "trigger": "useTools=true, requiredTool={toolName:'query_osu', args:{capability:'recent'}}",
+      "injected_before": true,
+      "injected_after": true,
+      "p1a_guidance_chars": 1098,
+      "p1b_guidance_chars": 702,
+      "delta_per_llm_call": 396,
+      "notes": "Deterministic required-tool route exists today; guidance is scoped to this single capability.",
+      "runtime_reachable": true
+    },
+    {
+      "row": "tools_required_tool_info",
+      "trigger": "useTools=true, requiredTool={toolName:'query_osu', args:{capability:'info'}}",
+      "injected_before": true,
+      "injected_after": true,
+      "p1a_guidance_chars": 1098,
+      "p1b_guidance_chars": 488,
+      "delta_per_llm_call": 610,
+      "notes": "Deterministic required-tool route exists today; guidance is scoped to this single capability.",
+      "runtime_reachable": true
+    },
+    {
+      "row": "tools_required_tool_profile",
+      "trigger": "useTools=true, requiredTool={toolName:'query_osu', args:{capability:'profile'}}",
+      "injected_before": true,
+      "injected_after": true,
+      "p1a_guidance_chars": 1098,
+      "p1b_guidance_chars": 491,
+      "delta_per_llm_call": 607,
+      "notes": "Builder supports this subset, but no deterministic required-tool route currently emits it; it is capability for future deterministic routing, not claimed P1B runtime saving.",
+      "runtime_reachable": false
+    },
+    {
+      "row": "tools_required_tool_ppplus",
+      "trigger": "useTools=true, requiredTool={toolName:'query_osu', args:{capability:'ppplus'}}",
+      "injected_before": true,
+      "injected_after": true,
+      "p1a_guidance_chars": 1098,
+      "p1b_guidance_chars": 490,
+      "delta_per_llm_call": 608,
+      "notes": "Builder supports this subset, but no deterministic required-tool route currently emits it; it is capability for future deterministic routing, not claimed P1B runtime saving.",
+      "runtime_reachable": false
+    },
+    {
+      "row": "tools_required_tool_skill",
+      "trigger": "useTools=true, requiredTool={toolName:'query_osu', args:{capability:'skill'}}",
+      "injected_before": true,
+      "injected_after": true,
+      "p1a_guidance_chars": 1098,
+      "p1b_guidance_chars": 489,
+      "delta_per_llm_call": 609,
+      "notes": "Builder supports this subset, but no deterministic required-tool route currently emits it; it is capability for future deterministic routing, not claimed P1B runtime saving.",
+      "runtime_reachable": false
+    },
+    {
+      "row": "tools_required_tool_recommend",
+      "trigger": "useTools=true, requiredTool={toolName:'query_osu', args:{capability:'recommend'}}",
+      "injected_before": true,
+      "injected_after": true,
+      "p1a_guidance_chars": 1098,
+      "p1b_guidance_chars": 634,
+      "delta_per_llm_call": 464,
+      "notes": "Deterministic required-tool route exists today; guidance is scoped to this single capability.",
+      "runtime_reachable": true
+    },
+    {
+      "row": "tools_required_tool_beatmap_lookup",
+      "trigger": "useTools=true, requiredTool={toolName:'query_osu', args:{capability:'beatmap_lookup'}}",
+      "injected_before": true,
+      "injected_after": true,
+      "p1a_guidance_chars": 1098,
+      "p1b_guidance_chars": 498,
+      "delta_per_llm_call": 600,
+      "notes": "Builder supports this subset, but no deterministic required-tool route currently emits it; it is capability for future deterministic routing, not claimed P1B runtime saving.",
+      "runtime_reachable": false
+    },
+    {
+      "row": "tools_required_tool_pp_calc",
+      "trigger": "useTools=true, requiredTool={toolName:'query_osu', args:{capability:'pp_calc'}}",
+      "injected_before": true,
+      "injected_after": true,
+      "p1a_guidance_chars": 1098,
+      "p1b_guidance_chars": 573,
+      "delta_per_llm_call": 525,
+      "notes": "Builder supports this subset, but no deterministic required-tool route currently emits it; it is capability for future deterministic routing, not claimed P1B runtime saving.",
+      "runtime_reachable": false
+    },
+    {
+      "row": "tools_required_tool_leaderboard",
+      "trigger": "useTools=true, requiredTool={toolName:'query_osu', args:{capability:'leaderboard'}}",
+      "injected_before": true,
+      "injected_after": true,
+      "p1a_guidance_chars": 1098,
+      "p1b_guidance_chars": 495,
+      "delta_per_llm_call": 603,
+      "notes": "Builder supports this subset, but no deterministic required-tool route currently emits it; it is capability for future deterministic routing, not claimed P1B runtime saving.",
+      "runtime_reachable": false
+    }
+  ]
+}

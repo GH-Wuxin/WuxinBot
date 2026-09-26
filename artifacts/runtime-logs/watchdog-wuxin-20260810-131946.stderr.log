@@ -1,0 +1,85 @@
+[PP+] player/info oliwakami failed (HTTP 500, code 400): lol server goes boooom
+[osu analyze] 区块短评第 1 次未通过： [
+  'profile 误解了 SSH/SH 评级含义',
+  'profile 短评语义终审：分析对象 [SHK]Wuxin 的性别未知，不能擅自使用“他/她”',
+  'profile 擅自猜测了目标玩家性别',
+  'top 短评语义终审：分析对象 [SHK]Wuxin 的性别未知，不能擅自使用“他/她”',
+  'top 擅自猜测了目标玩家性别',
+  'mods 短评语义终审：分析对象 [SHK]Wuxin 的性别未知，不能擅自使用“他/她”',
+  'mods 短评语义终审：精确组合 HD 只有 55/100 张，不能声称它覆盖全部 BP',
+  'mods 擅自猜测了目标玩家性别',
+  'recent 短评语义终审：分析对象 [SHK]Wuxin 的性别未知，不能擅自使用“他/她”',
+  'recent 擅自猜测了目标玩家性别',
+  'classification 短评语义终审：分析对象 [SHK]Wuxin 的性别未知，不能擅自使用“他/她”',
+  'classification 擅自猜测了目标玩家性别'
+]
+[osu analyze] 硬错误修复后仍未通过： [
+  'profile 误解了 SSH/SH 评级含义',
+  'mods 短评语义终审：精确组合 HD 只有 55/100 张，不能声称它覆盖全部 BP'
+]
+[osu analyze] 区块短评第 2 次未通过： [
+  'top 短评语义终审：声称 BP 中没有 98% 以上成绩，但核准数据实际有 82 张',
+  'mods 短评语义终审：精确组合 HD 只有 55/100 张，不能声称它覆盖全部 BP'
+]
+[osu analyze] 区块短评第 3 次未通过： [ 'mods 生硬翻译或错误命名了 HD', 'mods 短评语义终审：生硬翻译或错误命名了 HD' ]
+[osu analyze] 结论第 1 次未通过： [ '生硬翻译或错误命名了 HD' ]
+[osu analyze] 结论硬错误修复后仍未通过： [ '生硬翻译或错误命名了 HD' ]
+[osu analyze] 结论第 2 次未通过： [ '生硬翻译或错误命名了 HD' ]
+[osu analyze] 结论硬错误修复后仍未通过： [ '生硬翻译或错误命名了 HD' ]
+[osu analyze] 结论第 3 次未通过： [ '生硬翻译或错误命名了 HD', '综合结论没有使用核准的全球 rank 或账号总 pp 判断分量' ]
+[osu analyze] 结论硬错误修复后仍未通过： [ '综合结论没有使用核准的全球 rank 或账号总 pp 判断分量' ]
+[osu analyze] 综合结论使用确定性安全版本。
+[PP+] player/info oliwakami failed (HTTP 500, code 400): lol server goes boooom
+[osu analyze] 区块短评第 1 次未通过： [
+  'profile 短评语义终审：账号年龄核准为约 5.8 年，与“2年半”不符',
+  'profile 短评语义终审：把核准数量改写成了无法核验的“一半”比例',
+  'top 短评语义终审：声称 BP 中没有 98% 以上成绩，但核准数据实际有 82 张'
+]
+[osu analyze] 硬错误修复后仍未通过： [
+  'profile 短评语义终审：账号年龄核准为约 5.8 年，与“8 年”不符',
+  'profile 短评语义终审：把核准数量改写成了无法核验的“一半”比例',
+  'top 短评语义终审：声称 BP 中没有 98% 以上成绩，但核准数据实际有 82 张'
+]
+[osu analyze] 区块短评第 2 次未通过： [ 'profile 短评语义终审：账号年龄核准为约 5.8 年，与“8 年”不符' ]
+[osu analyze] 区块短评第 3 次未通过： [ 'profile 短评语义终审：账号年龄核准为约 5.8 年，与“20 年”不符' ]
+[osu analyze] 硬错误修复后仍未通过： [ 'profile 短评语义终审：账号年龄核准为约 5.8 年，与“8 年”不符' ]
+[osu analyze] 结论第 1 次未通过： [ '生硬翻译或错误命名了 HD' ]
+[osu analyze] 结论硬错误修复后仍未通过： [ '生硬翻译或错误命名了 HD' ]
+[osu analyze] 结论第 2 次未通过： [ '生硬翻译或错误命名了 HD' ]
+[osu analyze] 结论硬错误修复后仍未通过： [ '生硬翻译或错误命名了 HD' ]
+[osu analyze] 结论第 3 次未通过： [ '生硬翻译或错误命名了 HD', '声称 BP 中没有 98% 以上成绩，但核准数据实际有 82 张' ]
+[osu analyze] 结论硬错误修复后仍未通过： [ '生硬翻译或错误命名了 HD', '声称 BP 中没有 98% 以上成绩，但核准数据实际有 82 张' ]
+[osu analyze] 综合结论使用确定性安全版本。
+[PP+] player/info oliwakami failed (HTTP 500, code 400): lol server goes boooom
+[osu analyze] 区块短评第 1 次未通过： [
+  'profile 短评语义终审：账号年龄核准为约 3.5 年，与“2年半”不符',
+  'pplus 短评语义终审：把核准数量改写成了无法核验的“一半”比例'
+]
+WARNING: option --ssl-verify-server-cert is disabled, because of an insecure passwordless login.
+WARNING: option --ssl-verify-server-cert is disabled, because of an insecure passwordless login.
+WARNING: option --ssl-verify-server-cert is disabled, because of an insecure passwordless login.
+WARNING: option --ssl-verify-server-cert is disabled, because of an insecure passwordless login.
+WARNING: option --ssl-verify-server-cert is disabled, because of an insecure passwordless login.
+WARNING: option --ssl-verify-server-cert is disabled, because of an insecure passwordless login.
+WARNING: option --ssl-verify-server-cert is disabled, because of an insecure passwordless login.
+WARNING: option --ssl-verify-server-cert is disabled, because of an insecure passwordless login.
+WARNING: option --ssl-verify-server-cert is disabled, because of an insecure passwordless login.
+WARNING: option --ssl-verify-server-cert is disabled, because of an insecure passwordless login.
+[quick] bridge yumu 失败，回退内部引擎: yumu 调用超时（60s）
+[quick] bridge yumu 发送失败（面板可能已发出）: OneBot HTTP 请求超时 12 秒
+WARNING: option --ssl-verify-server-cert is disabled, because of an insecure passwordless login.
+WARNING: option --ssl-verify-server-cert is disabled, because of an insecure passwordless login.
+[PP+] player/info oliwakami failed (HTTP 500, code 400): lol server goes boooom
+[osu analyze] 结论第 1 次未通过： [ '生硬翻译或错误命名了 HD', '没有核准的精确 Mod 组合同时包含 NF 与 SO，不能把它们写成同一张成绩' ]
+[osu analyze] 结论硬错误修复后仍未通过： [ '生硬翻译或错误命名了 HD', '没有核准的精确 Mod 组合同时包含 NF 与 SO，不能把它们写成同一张成绩' ]
+[osu analyze] 结论第 2 次未通过： [ '生硬翻译或错误命名了 HD' ]
+[osu analyze] 结论硬错误修复后仍未通过： [ '生硬翻译或错误命名了 HD' ]
+[osu analyze] 结论第 3 次未通过： [ '生硬翻译或错误命名了 HD' ]
+[osu analyze] 结论硬错误修复后仍未通过： [ '生硬翻译或错误命名了 HD' ]
+[osu analyze] 综合结论使用确定性安全版本。
+[osu analyze] YRScarlet (24232404) 的非致命错误： [ 'Mod 后星数获取失败: 8 组谱面/Mod 组合；这些成绩不参与星数统计' ]
+[quick] bridge yumu 发送失败（面板可能已发出）: OneBot HTTP 请求超时 12 秒
+[quick] 绑定提示发送失败: OneBot HTTP 请求超时 12 秒
+[quick] 未绑定提示发送失败: OneBot HTTP 请求超时 12 秒
+[quick] bridge kanon 失败，回退内部引擎: kanon 调用超时（60s）
+[quickMemory] 影子查询失败 (recent/[SHK]Wuxin): This operation was aborted

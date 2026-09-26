@@ -1,0 +1,285 @@
+{
+  "phase": "QUICK_BRIDGE_QB06_YUMU_WAITER_AUDIT_V01",
+  "generatedAt": "2026-08-16T17:00:00+08:00",
+  "classification": "CONFIRMED_TARGET_BEHAVIOR",
+  "productionOccurrence": "UNCONFIRMED (no full-stack live reproduction; mechanism confirmed in source and against the actual deployed Yumu bytecode)",
+  "productionBehaviorChanged": false,
+  "committed": false,
+  "pushed": false,
+  "phaseACommit": {
+    "sha": "713ea7e2115d97a7beddbfd49270a86a1436b5e4",
+    "message": "fix: harden quick bridge reliability and yumu dedup handling",
+    "push": "SUCCESS -> origin/fix/onebot-connection-lifecycle (1658292..713ea7e)"
+  },
+  "dispatchChain": {
+    "layers": [
+      "Wuxin callLocalBot opens per-call WS with X-Self-ID and posts synthetic group event",
+      "Shiro WebSocketServerHandler.handleTextMessage parses JSON and resolves the session Bot by X-Self-ID",
+      "ShiroAsyncTask.execHandlerMsg -> EventHandler.handler -> handler.event.MessageEvent.process (group branch)",
+      "Shiro group-event-filter dedup (QB-05) may drop silently",
+      "Shiro group-self-bot-event-filter (sender.user_id in robots.keys) may drop silently",
+      "EventUtils.setInterceptor passes (Yumu has no custom interceptor)",
+      "InjectionHandler.invokeGroupMessage invokes the single @GroupMessageHandler: OneBotListener.handle",
+      "OneBotListener: stale-gate -> YumuGroupConfig.isGroupDisabled -> messageID build -> idempotentService.executeIdempotent(messageID, 30s, 2s concurrent wait) -> QQMessageCacheProvider.putMessage -> PermissionImplement.onMessage",
+      "PermissionImplement.onMessage line 80: AsyncMessageUtil.put(event) runs BEFORE any command filtering",
+      "filterMessage -> serviceMap loop -> isBlock permission checks -> service.handleMessage"
+    ],
+    "waiterCheckLayer": "PermissionImplement.onMessage first statement (AsyncMessageUtil.put)",
+    "waiterCheckOrder": "waiter notification precedes command filtering, permission checks and command dispatch",
+    "waiterConsumer": "com.now.nowbot.util.AsyncMessageUtil (object singleton inside the Yumu JVM)"
+  },
+  "waiterPredicate": {
+    "keyGeneration": {
+      "groupEvent": "group:<subject.contactID>:<sender.contactID>",
+      "privateEvent": "sender:<sender.contactID>",
+      "anyoneCanResponseGroup": "group:<group.contactID>:*"
+    },
+    "matchingFields": ["group_id (via event.subject.contactID)", "sender_id (via event.sender.contactID)"],
+    "nonMatchingFields": ["message content / raw_message", "message_id", "self_id", "event.time", "sub_type", "nickname", "images"],
+    "scope": "process-global: one LockManager singleton holds locks/futures/checks/timeouts maps for the whole Yumu JVM, keyed only by group/sender strings",
+    "consumption": "peek-style: put() completes matching futures but never stops the event from continuing into the normal command dispatcher",
+    "consumeSemantics": "consume-once per key (completeFuture guards !future.isDone); broadcast to every DISTINCT matching key",
+    "sameKeyRegistration": "registerFuture replaces any previous future for the same key; the older AsyncLock is orphaned and never receives the event",
+    "getOrCreateFuture": "returns an existing future for the key (completed or not) instead of creating a new one",
+    "expiration": "AsyncLock.await(timeout) / doubleCheck future.get(timeout) -> null -> onOverTime; doubleCheck cleans its key in finally; getLock only cleans on unlock() via cleanupIfExpired",
+    "cancellationReplacement": "no explicit cancellation API; keys are removed by cleanup (doubleCheck finally) or cleanupIfExpired (unlock of expired lock)",
+    "multipleMatchingWaiters": "every distinct matching key receives the same event (broadcast); same-key waiters share one future and cannot both be completed",
+    "callbackThrow": "doubleCheck onSuccess/onWrong exceptions propagate to the waiting thread (verified against bytecode) and are NOT caught by doubleCheck"
+  },
+  "stateMachine": [
+    {
+      "state": "no waiter",
+      "waiterEffect": "put() iterates zero keys",
+      "commandDispatch": "normal",
+      "wuxinFrames": "normal",
+      "openButSilent60s": "no",
+      "wrongRequestReply": "no",
+      "statePollution": "no",
+      "classification": "RUNTIME_CONFIRMED via bytecode probe (put no-op)"
+    },
+    {
+      "state": "waiter exists but does not match",
+      "waiterEffect": "matchKey false, future remains pending",
+      "commandDispatch": "normal",
+      "wuxinFrames": "normal",
+      "openButSilent60s": "no",
+      "wrongRequestReply": "no",
+      "statePollution": "no",
+      "classification": "RUNTIME_CONFIRMED via bytecode probe (different group/sender/non-group)"
+    },
+    {
+      "state": "waiter matches synthetic bridge event",
+      "waiterEffect": "future completes with the synthetic event",
+      "commandDispatch": "normal (peek-style)",
+      "wuxinFrames": "normal for the bridged command",
+      "openButSilent60s": "no",
+      "wrongRequestReply": "possible: the waiting flow sees synthetic command text as the user's answer",
+      "statePollution": "possible: real user's pending prompt is consumed/cancelled",
+      "classification": "RUNTIME_CONFIRMED via bytecode probe (matching consumption + dispatch continues)"
+    },
+    {
+      "state": "waiter consumes event (get returns)",
+      "waiterEffect": "waiting thread resumes with the synthetic event",
+      "commandDispatch": "already proceeding independently",
+      "wuxinFrames": "normal",
+      "openButSilent60s": "no",
+      "wrongRequestReply": "yes for flows that treat rawMessage as answer (bind name, page number, image upload, OK confirm)",
+      "statePollution": "yes: e.g. BindService interactiveBind would query osu API with '!r <user>'",
+      "classification": "SOURCE_CONFIRMED (BindService/CustomService/BestHistoryRecoverService code paths)"
+    },
+    {
+      "state": "waiter callback succeeds",
+      "waiterEffect": "waiter flow applies the synthetic content",
+      "commandDispatch": "normal",
+      "wuxinFrames": "normal",
+      "openButSilent60s": "no",
+      "wrongRequestReply": "yes",
+      "statePollution": "yes (binding/delete/switch may execute with wrong input)",
+      "classification": "SOURCE_POSSIBLE"
+    },
+    {
+      "state": "waiter callback throws",
+      "waiterEffect": "exception propagates through doubleCheck to the waiting thread's service call",
+      "commandDispatch": "synthetic dispatch unaffected",
+      "wuxinFrames": "normal",
+      "openButSilent60s": "no",
+      "wrongRequestReply": "real user sees an error reply on the ORIGINAL event path",
+      "statePollution": "real waiter cleaned in finally",
+      "classification": "RUNTIME_CONFIRMED via bytecode probe (propagation + cleanup)"
+    },
+    {
+      "state": "waiter expires concurrently",
+      "waiterEffect": "future.get timeout -> null -> onOverTime",
+      "commandDispatch": "normal",
+      "wuxinFrames": "normal",
+      "openButSilent60s": "no",
+      "wrongRequestReply": "no",
+      "statePollution": "doubleCheck cleans key; getLock keys cleaned only on unlock",
+      "classification": "RUNTIME_CONFIRMED via bytecode probe (expiration + cleanup)"
+    },
+    {
+      "state": "multiple matching waiters",
+      "waiterEffect": "broadcast to distinct keys; same-key latest registration wins",
+      "commandDispatch": "normal",
+      "wuxinFrames": "normal",
+      "openButSilent60s": "no",
+      "wrongRequestReply": "every distinct waiter sees the same synthetic event",
+      "statePollution": "multiple flows can react",
+      "classification": "RUNTIME_CONFIRMED via bytecode probe"
+    },
+    {
+      "state": "real NapCat event races synthetic Wuxin event",
+      "waiterEffect": "first arriving event completes the key; second cannot re-complete",
+      "commandDispatch": "both events dispatch normally",
+      "wuxinFrames": "normal",
+      "openButSilent60s": "no",
+      "wrongRequestReply": "waiter sees whichever event arrived first",
+      "statePollution": "unbounded race outcome",
+      "classification": "RUNTIME_CONFIRMED via bytecode probe (consume-once + second dispatch)"
+    },
+    {
+      "state": "two Wuxin bridge calls race each other",
+      "waiterEffect": "first consumes the waiter; second is ignored by the waiter but still dispatches",
+      "commandDispatch": "both commands dispatch",
+      "wuxinFrames": "both calls receive their own frames",
+      "openButSilent60s": "no",
+      "wrongRequestReply": "waiter sees first call's command text",
+      "statePollution": "same as single-match case",
+      "classification": "SOURCE_CONFIRMED + bytecode-probe consume-once"
+    }
+  ],
+  "identityOverlap": {
+    "forward": "A real user's pending Yumu waiter keyed group:<realGid>:<realUid> IS completed by a Wuxin synthetic event carrying the same group_id + sender.user_id. QuickRouter bridges use virtual group 770099, so overlap needs waiter traffic there; executor/lazybot->yumu recent fallback bridges with context.groupId (real group), where real prompts live.",
+    "reverse": "Wuxin bridge calls never register Yumu waiters for the six currently bridged commands (recent/bp/bs/pm/etx/rating service files contain zero AsyncMessageUtil calls; verifier asserts this). Reverse consumption is IMPOSSIBLE today and SOURCE_POSSIBLE only if interactive Yumu commands are bridged later.",
+    "selfId": "the Yumu event wrapper never exposes raw self_id to waiters, and waiter keys ignore it; self_id cannot isolate waiter semantics",
+    "eventTime": "ignored by waiter keys; cannot isolate",
+    "messageContent": "ignored by waiter keys; command-like, plain and empty text all consume (bytecode-probe confirmed)",
+    "messageId": "used by OneBotListener idempotency (separate 30s key [group|sender]subType(messageId)), not by waiters",
+    "nonMessageEvents": "reply/notice events have no @GroupMessageHandler and never reach PermissionImplement.onMessage, so they cannot hit group waiters through this dispatch path"
+  },
+  "collisionMatrix": [
+    { "dimension": "same group / same user", "commandLikeText": "SOURCE_CONFIRMED consume", "plainText": "SOURCE_CONFIRMED consume", "replyNoticeNonMessage": "IMPOSSIBLE via dispatch path", "condition": "a waiter with key group:<gid>:<uid> (or sender:<uid>) exists" },
+    { "dimension": "same group / different user", "commandLikeText": "SOURCE_CONFIRMED no match (group:sender key)", "plainText": "SOURCE_CONFIRMED no match", "replyNoticeNonMessage": "IMPOSSIBLE", "condition": "sender-scoped lock (sender:<uid>) would still match across groups" },
+    { "dimension": "different group / same user", "commandLikeText": "SOURCE_CONFIRMED no match for group:<gid>:<uid>; SOURCE_CONFIRMED match for sender:<uid> locks", "plainText": "same split", "replyNoticeNonMessage": "IMPOSSIBLE", "condition": "depends on waiter key type" },
+    { "dimension": "same identities / different self_id", "commandLikeText": "SOURCE_CONFIRMED cannot isolate", "plainText": "SOURCE_CONFIRMED cannot isolate", "replyNoticeNonMessage": "IMPOSSIBLE", "condition": "self_id never enters waiter key" },
+    { "dimension": "same identities / different event.time", "commandLikeText": "SOURCE_CONFIRMED cannot isolate", "plainText": "SOURCE_CONFIRMED cannot isolate", "replyNoticeNonMessage": "IMPOSSIBLE", "condition": "time never enters waiter key" },
+    { "dimension": "same identities / different message_id", "commandLikeText": "SOURCE_CONFIRMED cannot isolate", "plainText": "SOURCE_CONFIRMED cannot isolate", "replyNoticeNonMessage": "IMPOSSIBLE", "condition": "message_id only affects OneBotListener idempotency" }
+  ],
+  "doesItExplain60sSilentTimeout": {
+    "currentBridgedCommands": "NO. put() is peek-style and never suppresses dispatch, so waiter consumption alone cannot make a current bridge call silent. The six bridged commands do not register waiters.",
+    "hypotheticalFutureBridgedCommands": "YES mechanism exists: a service such as BestHistoryRecoverService calls getLock(event,30s).await() inside handleMessage; if such a command were ever bridged, the synthetic event would send a prompt frame then block waiting for a follow-up, and Wuxin would see open-but-silent until its own 60s timeout.",
+    "known60sCauses": "dedup filter (QB-05, fixed), group config, pending prompt/lock swallow, upstream slowness, ACK failures"
+  },
+  "candidateDesigns": [
+    {
+      "id": "A",
+      "name": "synthetic event target-aware bypass/exemption",
+      "breaksRealPrompt": "NO if exemption is keyed to synthetic identity range / client role",
+      "breaksPermissionsBindingHistoryStatistics": "NO (exemption skips waiter notification only)",
+      "requiresYumuChange": "YES",
+      "wuxinOnly": false,
+      "strictIsolation": "YES (source-tagged bypass before put)",
+      "onebotSemantics": "real traffic unchanged",
+      "backwardCompatibility": "HIGH for real traffic",
+      "implementationScope": "SMALL-MEDIUM in Yumu PermissionImplement / AsyncMessageUtil (one allowlist check)",
+      "recommendation": "preferred IF a fix is authorized"
+    },
+    {
+      "id": "B",
+      "name": "waiter namespace / source tagging",
+      "breaksRealPrompt": "NO",
+      "breaksPermissionsBindingHistoryStatistics": "NO",
+      "requiresYumuChange": "YES",
+      "wuxinOnly": false,
+      "strictIsolation": "YES but changes every waiter key scheme",
+      "onebotSemantics": "real traffic unchanged",
+      "backwardCompatibility": "MEDIUM (existing pending waiters at upgrade time)",
+      "implementationScope": "MEDIUM-LARGE",
+      "recommendation": "overkill for the current surface"
+    },
+    {
+      "id": "C",
+      "name": "request-scoped synthetic identity",
+      "breaksRealPrompt": "YES for sender mutation (real prompts keyed to logical sender stop matching, but binding/permissions/history/statistics all break)",
+      "breaksPermissionsBindingHistoryStatistics": "YES",
+      "requiresYumuChange": false,
+      "wuxinOnly": true,
+      "strictIsolation": "YES",
+      "onebotSemantics": "violates user_id==sender.user_id invariant (same analysis as QB-05 candidate B)",
+      "backwardCompatibility": "POOR",
+      "implementationScope": "SMALL locally",
+      "recommendation": "REJECTED"
+    },
+    {
+      "id": "D",
+      "name": "dispatcher order adjustment",
+      "breaksRealPrompt": "RISK: deferring or filtering waiter notification for command-prefixed text would break real prompts whose answers look like commands",
+      "breaksPermissionsBindingHistoryStatistics": "NO",
+      "requiresYumuChange": "YES",
+      "wuxinOnly": false,
+      "strictIsolation": "NO (heuristic text filter, probabilistic)",
+      "onebotSemantics": "changed for real traffic",
+      "backwardCompatibility": "MEDIUM",
+      "implementationScope": "SMALL",
+      "recommendation": "REJECTED as primary design"
+    },
+    {
+      "id": "E",
+      "name": "bridge uses an independent ingress path",
+      "breaksRealPrompt": "NO",
+      "breaksPermissionsBindingHistoryStatistics": "NO",
+      "requiresYumuChange": "YES",
+      "wuxinOnly": false,
+      "strictIsolation": "YES",
+      "onebotSemantics": "real traffic unchanged",
+      "backwardCompatibility": "HIGH",
+      "implementationScope": "LARGE (second WS endpoint / listener path)",
+      "recommendation": "only for a long-term architecture change"
+    },
+    {
+      "id": "F",
+      "name": "keep unchanged",
+      "breaksRealPrompt": "N/A",
+      "breaksPermissionsBindingHistoryStatistics": "N/A",
+      "requiresYumuChange": false,
+      "wuxinOnly": true,
+      "strictIsolation": "NO (documented residual)",
+      "onebotSemantics": "unchanged",
+      "backwardCompatibility": "N/A",
+      "implementationScope": "NONE",
+      "recommendation": "RECOMMENDED NOW: no current bridge command registers waiters, waiter consumption is peek-style and cannot explain a 60s silence for today's bridge surface, and the overlap requires a real pending prompt in exactly the bridged group/sender. Revisit A if interactive commands are ever bridged or real-group bridging expands."
+    }
+  ],
+  "evidence": {
+    "source": [
+      "AsyncMessageUtil.kt (keys, put/notify/completeFuture, LockManager lifecycle)",
+      "PermissionImplement.kt line 80 put-before-filter",
+      "OneBotListener.kt listener gate + idempotency",
+      "Shiro 2.5.3 MessageEvent.process + WebSocketServerHandler + InjectionHandler bytecode",
+      "BindService/CustomService/BestHistoryRecover/MatchListener/etc waiter call sites"
+    ],
+    "runtime": [
+      "JVM probe WaiterProbe (19/19) executed against the actual deployed Yumu jar bytecode: matching consumption, peek-style dispatch continuation, non-matching isolation, content non-isolation, same-key replacement, consume-once, expiration/cleanup, callback-throw propagation/cleanup"
+    ],
+    "notPerformed": [
+      "no full-stack live Yumu waiter reproduction (would require driving a real service flow into a pending prompt)",
+      "no Tencent traffic",
+      "no production occurrence claim"
+    ]
+  },
+  "recommendation": {
+    "worthFixingNow": "NO",
+    "conditionalTrigger": "bridging interactive waiter-using commands, or expanding real-group bridge usage beyond the lazybot->yumu fallback",
+    "preferredFutureDesign": "A (Yumu-side synthetic bypass before AsyncMessageUtil.put, keyed to the Wuxin bridge self-id range or Universal client role)"
+  },
+  "files": [
+    "docs/QUICK_BRIDGE_QB06_YUMU_WAITER_AUDIT_V01.md",
+    "docs/QUICK_BRIDGE_QB06_YUMU_WAITER_MATRIX_V01.json",
+    "tools/quick-bridge-qb06-waiter-verify.mjs"
+  ],
+  "verifier": {
+    "wrapperChecks": "7/7",
+    "bytecodeProbe": "WaiterProbe 19/19 against real Yumu AsyncMessageUtil bytecode",
+    "prerequisites": "QB06_YUMU_JAR / QB06_JAVA_HOME / QB06_CLASSES_DIR / QB06_LIBS_DIR / QB06_YUMU_SRC"
+  }
+}

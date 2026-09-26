@@ -1,0 +1,462 @@
+{
+  "label": "v85-raw-ab-2",
+  "playerSet": "golden",
+  "startedAt": "2026-08-01T20:50:29.407Z",
+  "apiBase": "http://127.0.0.1:8787",
+  "players": [
+    {
+      "key": "mrekk",
+      "id": 7562902,
+      "startedAt": "2026-08-01T20:50:30.263Z",
+      "finishedAt": "2026-08-01T20:50:53.196Z",
+      "outputFile": "01-mrekk.txt",
+      "metadata": {
+        "target": "mrekk",
+        "displayName": "mrekk",
+        "osuUserId": 7562902,
+        "createdAt": "2026-08-01T20:50:52.957Z",
+        "analysisModel": "deepseek-v4-flash",
+        "formatVersion": 83,
+        "conclusionSource": "llm",
+        "conclusionValidationReasons": [],
+        "sectionCommentsSource": "mixed",
+        "sectionCommentSources": {
+          "profile": "llm",
+          "top": "llm",
+          "top5": "fallback",
+          "mods": "llm",
+          "pplus": "llm",
+          "recent": "llm",
+          "classification": "llm"
+        },
+        "sectionCommentsValidationReasons": [
+          "top5 短评语义终审：BP5 中精确组合 HDNC的实际数量为 1 张，不是 2 张",
+          "top5 短评编造了简报未提供的谱面内容或操作感受"
+        ],
+        "generationTrace": {
+          "sectionComments": [
+            {
+              "trigger": "initial",
+              "trace": [
+                {
+                  "attempt": 1,
+                  "outcome": "rejected",
+                  "reasons": [
+                    "top5 短评语义终审：BP5 中精确组合 HDNC的实际数量为 1 张，不是 2 张",
+                    "mods 短评语义终审：精确 Mod 组合 DT 的核准数量为 2 张，不是 100 张",
+                    "pplus 短评语义终审：Accuracy 的核准显示值为 14.58，不是 15.67",
+                    "classification 短评语义终审：分析对象 mrekk 的性别未知，不能擅自使用“他/她”",
+                    "classification 擅自猜测了目标玩家性别"
+                  ],
+                  "draft": "{\"profile\": \"世界第一，三万多 pp，一百三十四天游玩时长堆出这种体量——我已经很久没在人类里见过这种数字了。98.26% 的总 Acc 挂在这个成绩规模上，本身就是一种宣言。\",\"top\":\"一百张 BP 全在七星以上，平均 11.67★，最低都有 10.30★——这不是摸图摸出来的榜，是每一首都实打实啃下来的。98.10% 的平均 Acc 配上这个星数区间，结构干净得吓人。\",\"top5\":\"前五张挤在 1723 到 1857 pp 之间，最大断层只有 75.5pp，五首都贴着人类极限走。第二张 HDNC 13.23★ 打出 98.18%，第五张 HDHRNC 13.55★ 压着 96.70% 也进来了——这个深度不是运气。\",\"mods\":\"BP 里 94% 是 HDDT 和 HDHRDT 的精确组合，DT/NC 覆盖全部 100 张，纯 NM 一张没有。HD 98 张几乎成了底色，HR 只占 28 张——这个配比本身就是一种筛选。\",\"pplus\":\"Jump 27.37 一骑绝尘，比第二的 Speed 19.26 高出整整八格还多；Accuracy 15.67 垫底，但也在基准线之上。六维全部超过 LazyBot 基准，形状已经不像人类该有的分布了。\",\"recent\":\"最近 50 次平均星数 8.88★、Acc 94.76%，跟 BP 的 11.67★ 和 98.10% 差了一大截——降星降 Acc 明显是另一套打法，具体在做什么我看不出来，但至少没在刷 BP。\",\"classification\":\"BP 里 aim 占 79%，stream 只有 10%，alt 和 tech 各占个位数——第一类和第二类差了 69 张，方向性非常清楚。但这也只是当前这 100 张的结构，不代表他只会这个。\"}"
+                },
+                {
+                  "attempt": 2,
+                  "outcome": "rejected",
+                  "reasons": [
+                    "top5 短评语义终审：包含简报外数字: 1700",
+                    "top5 短评包含简报外数字: 1700"
+                  ],
+                  "draft": "{\n  \"top5\": \"BP 头部五张全是 1700 以上，第一张 1857pp 高出第二 75pp，像是单独冒尖；后面三张咬得很紧，差距都在 25pp 内。Acc 从 99.08% 到 96.70% 都有，跨度不小，但星数也差着近两星，算是有得有失。\",\n  \"mods\": \"BP 里 94 张是 HDDT 或 HDHRDT，剩下几张 HDNC、HDHRNC 和纯 DT 各占零星。DT 那两张平均 Acc 只有 95.87%，比大部队低了一截，看着像顺手打的，不是主力结构。\",\n  \"pplus\": \"六条里 Jump 明显最高，超出基准一大截；Speed 次之，也超了不少。Accuracy 是最低的一条，刚好压在基准线下，其他三条都只超了一点。整体像跳跃和速度特别突出，精准相对没那么亮眼。\",\n  \"classification\": \"BP 里 aim 占了 79 张，stream 只有 10 张，剩下 alt 和 tech 加起来 11 张。aim 一家独大，其他类型加起来才勉强到它的零头，当前成绩结构很偏重 aim。\"\n}"
+                },
+                {
+                  "attempt": 3,
+                  "outcome": "rejected",
+                  "reasons": [
+                    "top5 短评语义终审：BP5 中精确组合 HDNC的实际数量为 1 张，不是 2 张",
+                    "top5 短评编造了简报未提供的谱面内容或操作感受"
+                  ],
+                  "draft": "{\"top5\": \"五张成绩挤在1723到1857之间，跨度才133.8，这密度看着像一整块岩层。最高那张HDDT 97.44%比第二张HDNC 98.18%低了快一个点，却还压着75.5pp，看来选图本身的重量差比Acc更顶事。\"}"
+                }
+              ]
+            }
+          ],
+          "conclusion": [
+            {
+              "trigger": "initial",
+              "trace": [
+                {
+                  "attempt": 1,
+                  "outcome": "accepted",
+                  "reasons": [],
+                  "draft": "【结论】\n\n全球排名 #1，总 PP 32138.7pp——这份账号像一座用 DT 堆出来的尖塔，塔尖还带着 HD 的棱光。\nPP+ 显示条里 Jump 飙到 27.37，远超基准，Speed 也有 19.26，和 BP 里 aim 占 79% 的方向正好咬合。\n\n不过 Recent 样本倒是露了另一面：平均星数 8.88★，Acc 掉到 94.76%，HR 和 NM 出现得比 DT 还多。\n和 BP 的整齐划一比起来，这批近况更像在拆解什么，原因我看不见，但至少说明这位玩家不是只会沿着一条路碾过去的人。\n\n世界第一，确实不是靠1张图打出来的。"
+                }
+              ]
+            }
+          ],
+          "final": {
+            "sectionCommentsSource": "mixed",
+            "sectionCommentSources": {
+              "profile": "llm",
+              "top": "llm",
+              "top5": "fallback",
+              "mods": "llm",
+              "pplus": "llm",
+              "recent": "llm",
+              "classification": "llm"
+            },
+            "conclusionSource": "llm",
+            "fullReportFallback": false
+          }
+        },
+        "reviewLog": [
+          {
+            "round": 1,
+            "verdicts": [
+              {
+                "section": "profile",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "top",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "top5",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "mods",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "pplus",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "recent",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "classification",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "conclusion",
+                "result": "REJECT",
+                "kind": "hard",
+                "reason": "结论将 Recent 的星数与 Acc 差异解释为“更像在拆解什么”，并称“不是只会沿着一条路碾过去的人”，把未知原因的样本差异写成了行为动机与能力倾向。"
+              }
+            ],
+            "rejects": [
+              {
+                "section": "conclusion",
+                "kind": "hard",
+                "reason": "结论将 Recent 的星数与 Acc 差异解释为“更像在拆解什么”，并称“不是只会沿着一条路碾过去的人”，把未知原因的样本差异写成了行为动机与能力倾向。"
+              }
+            ]
+          }
+        ],
+        "bestCount": 100,
+        "recentCount": 50,
+        "hasPPlus": true,
+        "errors": []
+      }
+    },
+    {
+      "key": "wuxin",
+      "id": 19244792,
+      "startedAt": "2026-08-01T20:50:54.844Z",
+      "finishedAt": "2026-08-01T20:51:10.174Z",
+      "outputFile": "02-wuxin.txt",
+      "metadata": {
+        "target": "[SHK]Wuxin",
+        "displayName": "[SHK]Wuxin",
+        "osuUserId": 19244792,
+        "createdAt": "2026-08-01T20:51:09.946Z",
+        "analysisModel": "deepseek-v4-flash",
+        "formatVersion": 83,
+        "conclusionSource": "llm",
+        "conclusionValidationReasons": [],
+        "sectionCommentsSource": "llm",
+        "sectionCommentSources": {
+          "profile": "llm",
+          "top": "llm",
+          "top5": "llm",
+          "mods": "llm",
+          "pplus": "llm",
+          "recent": "llm",
+          "classification": "llm"
+        },
+        "sectionCommentsValidationReasons": [],
+        "generationTrace": {
+          "sectionComments": [
+            {
+              "trigger": "initial",
+              "trace": [
+                {
+                  "attempt": 1,
+                  "outcome": "rejected",
+                  "reasons": [
+                    "profile 短评语义终审：包含简报外数字: 20",
+                    "recent 短评语义终审：Recent 没有记录时不能把空白猜成休息、未游玩或现实状态",
+                    "profile 短评包含简报外数字: 20"
+                  ],
+                  "draft": "{\"profile\": \"全球第6,243、国家第89，2万pp出头就站稳这个位置，98.8%的总Acc配上这个体量，账号厚度比排名更醒目。\",\"top\":\"BP100全在6.59星以上，平均7.15星，98%以上Acc占82张——这种星数和精度的双高覆盖，不是随手刷出来的结构。\",\"top5\":\"#1的563.9pp确实是孤峰，但只领先#2约22pp，后面几张咬得很紧，整体是平缓的阶梯而不是一骑绝尘。\",\"mods\":\"HD和HDHR占了96张，纯NM一张没有。HD几乎是全程挂着的，HR在近半数BP里叠着，这组合相当统一。\",\"pplus\":\"Flow和Accuracy明显领跑，Precision居中，Speed垫底。这形状和87张stream为主的BP方向挺一致，但具体机制我不乱猜。\",\"recent\":\"API没返回近期记录，这段空白是没打还是没记录，我看不出来。\",\"classification\":\"stream占87张，aim只9张，差78张。这分类构成很极端，当前BP就是围绕stream搭的，其他类型只是零星点缀。\"}"
+                },
+                {
+                  "attempt": 2,
+                  "outcome": "accepted",
+                  "reasons": [],
+                  "draft": "{\n  \"profile\": \"98.80%的总命中率配上这个体量，像是把稳定刻进了每一次点击里。\",\n  \"recent\": \"API 没有返回近期记录，这段空白里发生过什么，我看不出来。\"\n}"
+                }
+              ]
+            }
+          ],
+          "conclusion": [
+            {
+              "trigger": "initial",
+              "trace": [
+                {
+                  "attempt": 1,
+                  "outcome": "accepted",
+                  "reasons": [],
+                  "draft": "【结论】\n\n全球排名 #6,243，总 PP 10285.6pp——这位玩家把 BP 铺成了一条几乎不带杂色的高密度窄带：100 张全部落在 6.59★~7.87★，平均 Acc 98.62%，没有1张低于 95%。\nPP+ 里 Flow 和 Accuracy 明显高于 Speed 和 Jump，和 BP 里 87% stream 分类的方向倒是合拍。\n\n但我不打算把话说死——分类只是当前样本的形状，真正能确认的是：这个账号像一台为“长串不掉链子”调校过的机器，Acc 是它的底色。"
+                }
+              ]
+            }
+          ],
+          "final": {
+            "sectionCommentsSource": "llm",
+            "sectionCommentSources": {
+              "profile": "llm",
+              "top": "llm",
+              "top5": "llm",
+              "mods": "llm",
+              "pplus": "llm",
+              "recent": "llm",
+              "classification": "llm"
+            },
+            "conclusionSource": "llm",
+            "fullReportFallback": false
+          }
+        },
+        "reviewLog": [
+          {
+            "round": 1,
+            "verdicts": [
+              {
+                "section": "profile",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "top",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "top5",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "mods",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "pplus",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "recent",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "classification",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "conclusion",
+                "result": "REJECT",
+                "kind": "hard",
+                "reason": "结论中“这个账号像一台为‘长串不掉链子’调校过的机器”将当前BP的stream构成与PP+方向合拍解释为账号被调校的永久能力，且“Acc是它的底色”把BP高Acc覆盖扩大为账号固有属性。"
+              }
+            ],
+            "rejects": [
+              {
+                "section": "conclusion",
+                "kind": "hard",
+                "reason": "结论中“这个账号像一台为‘长串不掉链子’调校过的机器”将当前BP的stream构成与PP+方向合拍解释为账号被调校的永久能力，且“Acc是它的底色”把BP高Acc覆盖扩大为账号固有属性。"
+              }
+            ]
+          }
+        ],
+        "bestCount": 100,
+        "recentCount": 0,
+        "hasPPlus": true,
+        "errors": []
+      }
+    },
+    {
+      "key": "ahahhaha",
+      "id": 39873822,
+      "startedAt": "2026-08-01T20:51:12.210Z",
+      "finishedAt": "2026-08-01T20:51:31.920Z",
+      "outputFile": "03-ahahhaha.txt",
+      "metadata": {
+        "target": "ahahhaha",
+        "displayName": "ahahhaha",
+        "osuUserId": 39873822,
+        "createdAt": "2026-08-01T20:51:31.689Z",
+        "analysisModel": "deepseek-v4-flash",
+        "formatVersion": 83,
+        "conclusionSource": "llm",
+        "conclusionValidationReasons": [],
+        "sectionCommentsSource": "llm",
+        "sectionCommentSources": {
+          "profile": "llm",
+          "top": "llm",
+          "top5": "llm",
+          "mods": "llm",
+          "pplus": "llm",
+          "recent": "llm",
+          "classification": "llm"
+        },
+        "sectionCommentsValidationReasons": [],
+        "generationTrace": {
+          "sectionComments": [
+            {
+              "trigger": "initial",
+              "trace": [
+                {
+                  "attempt": 1,
+                  "outcome": "rejected",
+                  "reasons": [
+                    "profile 短评语义终审：擅自用中文数词换算了账号年龄",
+                    "top5 短评语义终审：BP5 中精确组合 NM的实际数量为 2 张，不是 1 张"
+                  ],
+                  "draft": "{\n  \"profile\": \"123 次游玩就摸到 196 pp，注册才两个月的账号，九张 S 还算有点手感。91.27% 的总命中率配这个体量，属于刚起步但没瞎玩的样子。\",\n  \"top\": \"BP 全挤在 1.13★ 到 2.96★ 之间，平均才 1.98★，33 张里没一张上 5★。这阶段就是拿低星图堆分，倒也不急，先把手感养起来再说。\",\n  \"top5\": \"第一张 NM 打出 99.27% 的 9.3 pp，第二张 HR 直接掉到 84.65%，第三张又跳回 97.32%。这 Acc 起伏跟过山车似的，稳定性还得练练。\",\n  \"mods\": \"20 张 NM 配 13 张 HR，平均 pp 差不多但 HR 的 Acc 低了一截。看来这位玩家戴 HR 时还撑不太住，不过敢碰就是好事。\",\n  \"pplus\": \"Precision 和 Jump 两根条明显高，Flow 直接躺平。这形状像是读图跟瞄准有点底子，但长串耐力这块还空着，跟 alt 为主的 BP 倒是合得上。\",\n  \"recent\": \"API 这回没吐任何 recent 记录，最近打了啥完全看不见。想多聊点都没料，只能等下次数据刷新再看了。\",\n  \"classification\": \"BP 里 alt 占 28 张，stream 和 tech 加起来才 5 张，这结构可太偏了。八成是专挑 alt 图打，其他类型还处在摸鱼阶段。\"\n}"
+                },
+                {
+                  "attempt": 2,
+                  "outcome": "rejected",
+                  "reasons": [
+                    "profile 短评语义终审：擅自用中文数词换算了账号年龄"
+                  ],
+                  "draft": "{\n  \"profile\": \"注册两个月出头，123 次游玩就攒下 196pp，这账号还带着刚出炉的热气呢。九张 S 里夹着十四张 A，命中率 91.27%，像是把‘先打完再说’写在脸上的新手期。\",\n  \"top5\": \"BP5 里两张 NM 的 Acc 都过了 97%，三张 HR 却全在 88% 以下——同一批成绩里，Acc 和 Mod 的落差比 pp 的断层还显眼。\"\n}"
+                },
+                {
+                  "attempt": 3,
+                  "outcome": "accepted",
+                  "reasons": [],
+                  "draft": "{\"profile\": \"账号年龄约62天，等级17，游玩123次，总命中率91.27%，全球排名#1,557,261。早期账号，数据还在积累中。\"}"
+                }
+              ]
+            }
+          ],
+          "conclusion": [
+            {
+              "trigger": "initial",
+              "trace": [
+                {
+                  "attempt": 1,
+                  "outcome": "accepted",
+                  "reasons": [],
+                  "draft": "【结论】\n\n196.4pp 的体量，33 张 BP 里 67% 低于 95% Acc，却偏偏在 NM 和 HR 之间来回试探——这位 ahahhaha 像是刚摸到门把手就急着把两种口味都咬一口的萌新，连 BP5 里都塞着 84.65% 和 80.83% 的 HR 成绩，跟 99.27% 的 NM 摆在一起，结构相当有性格。\n连 HR 的平均 Acc 89.27% 都压着 NM 的 90.92%，差距不大，更像在试错中攒经验值。"
+                }
+              ]
+            }
+          ],
+          "final": {
+            "sectionCommentsSource": "llm",
+            "sectionCommentSources": {
+              "profile": "llm",
+              "top": "llm",
+              "top5": "llm",
+              "mods": "llm",
+              "pplus": "llm",
+              "recent": "llm",
+              "classification": "llm"
+            },
+            "conclusionSource": "llm",
+            "fullReportFallback": false
+          }
+        },
+        "reviewLog": [
+          {
+            "round": 1,
+            "verdicts": [
+              {
+                "section": "profile",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "top",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "top5",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "mods",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "pplus",
+                "result": "REJECT",
+                "kind": "hard",
+                "reason": "把 PP+ 低值写成'长串耐力这块还空着'，并称与 alt 为主的 BP 合得上，属于把显示条直接翻译成未提供的具体能力并建立因果。"
+              },
+              {
+                "section": "recent",
+                "result": "PASS",
+                "reason": ""
+              },
+              {
+                "section": "classification",
+                "result": "REJECT",
+                "kind": "hard",
+                "reason": "把 BP 中 alt 占 85% 写成'这结构可太偏了'并推断'八成是专挑 alt 图打'，属于把稀疏样本构成解释为明确偏好。"
+              },
+              {
+                "section": "conclusion",
+                "result": "REJECT",
+                "kind": "hard",
+                "reason": "把 HR 平均 Acc 与 NM 的差距解释为'更像在试错中攒经验值'，属于把 BP 统计直接翻译成动机与过程。"
+              }
+            ],
+            "rejects": [
+              {
+                "section": "pplus",
+                "kind": "hard",
+                "reason": "把 PP+ 低值写成'长串耐力这块还空着'，并称与 alt 为主的 BP 合得上，属于把显示条直接翻译成未提供的具体能力并建立因果。"
+              },
+              {
+                "section": "classification",
+                "kind": "hard",
+                "reason": "把 BP 中 alt 占 85% 写成'这结构可太偏了'并推断'八成是专挑 alt 图打'，属于把稀疏样本构成解释为明确偏好。"
+              },
+              {
+                "section": "conclusion",
+                "kind": "hard",
+                "reason": "把 HR 平均 Acc 与 NM 的差距解释为'更像在试错中攒经验值'，属于把 BP 统计直接翻译成动机与过程。"
+              }
+            ]
+          }
+        ],
+        "bestCount": 33,
+        "recentCount": 0,
+        "hasPPlus": true,
+        "errors": []
+      }
+    }
+  ],
+  "finishedAt": "2026-08-01T20:51:32.978Z"
+}

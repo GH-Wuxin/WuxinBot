@@ -33,42 +33,83 @@ export type SkillCommandRequest =
   | { ok: false; message: string };
 
 export type PlayerSkillProfileRequest = { matched: true; player: string } | { matched: false };
+export type PlayerInfoRequest = { matched: true; player: string };
 export type PlayerRecentSkillRequest = { matched: true; player: string } | { matched: false };
 export type PlayerSkillComparisonRequest =
   | { matched: true; left: string; right: string; error?: undefined }
   | { matched: true; left: ''; right: ''; error: string }
   | { matched: false };
 
+type ExplicitPlayerReference = { player: string; end: number };
+
+function readExplicitPlayerReference(value: string, start = 0): ExplicitPlayerReference | null {
+  const raw = String(value || '');
+  if (raw.slice(start, start + 3).toLowerCase() !== 'p:[') return null;
+  let depth = 1;
+  for (let index = start + 3; index < raw.length; index++) {
+    if (raw[index] === '[') depth++;
+    else if (raw[index] === ']') {
+      depth--;
+      if (depth === 0) {
+        const player = raw.slice(start + 3, index).trim();
+        if (!player || (index + 1 < raw.length && !/\s/.test(raw[index + 1]))) return null;
+        return { player, end: index + 1 };
+      }
+    }
+  }
+  return null;
+}
+
 function unwrapExplicitPlayer(value: string): string {
   const raw = String(value || '').trim();
-  return String(/^p:\[(\d+)\]$/i.exec(raw)?.[1] || raw).trim();
+  const explicit = readExplicitPlayerReference(raw);
+  return explicit?.end === raw.length ? explicit.player : raw;
+}
+
+function comparisonPlayers(body: string): string[] | null {
+  const players: string[] = [];
+  let index = 0;
+  while (index < body.length) {
+    while (index < body.length && /\s/.test(body[index])) index++;
+    if (index >= body.length) break;
+    const explicit = readExplicitPlayerReference(body, index);
+    if (body.slice(index, index + 3).toLowerCase() === 'p:[') {
+      if (!explicit) return null;
+      players.push(explicit.player);
+      index = explicit.end;
+    } else {
+      const start = index;
+      while (index < body.length && !/\s/.test(body[index])) index++;
+      players.push(body.slice(start, index));
+    }
+    if (players.length > 2) return null;
+  }
+  return players.length === 2 ? players : null;
 }
 
 export function parsePlayerSkillProfileRequest(value: string): PlayerSkillProfileRequest {
   const match = /^profile(?:\s+([\s\S]+))?$/i.exec(String(value || '').trim());
   if (!match) return { matched: false };
   const raw = String(match[1] || '').trim();
-  const explicit = /^p:\[(\d+)\]$/i.exec(raw);
-  return { matched: true, player: String(explicit?.[1] || raw).trim() };
+  return { matched: true, player: unwrapExplicitPlayer(raw) };
 }
 
 export function parsePlayerRecentSkillRequest(value: string): PlayerRecentSkillRequest {
   const match = /^recent(?:\s+([\s\S]+))?$/i.exec(String(value || '').trim());
   if (!match) return { matched: false };
   const raw = String(match[1] || '').trim();
-  const explicit = /^p:\[(\d+)\]$/i.exec(raw);
-  return { matched: true, player: String(explicit?.[1] || raw).trim() };
+  return { matched: true, player: unwrapExplicitPlayer(raw) };
 }
 
 export function parsePlayerSkillComparisonRequest(value: string): PlayerSkillComparisonRequest {
   const raw = String(value || '').trim();
   if (!/^compare(?:\s|$)/i.test(raw)) return { matched: false };
   const body = raw.replace(/^compare\s*/i, '');
-  const players = /^((?:p:\[\d+\])|(?:\S+))\s+((?:p:\[\d+\])|(?:\S+))$/i.exec(body);
-  const left = unwrapExplicitPlayer(String(players?.[1] || ''));
-  const right = unwrapExplicitPlayer(String(players?.[2] || ''));
+  const players = comparisonPlayers(body);
+  const left = String(players?.[0] || '');
+  const right = String(players?.[1] || '');
   if (!left || !right) {
-    return { matched: true, left: '', right: '', error: '用法：/w skill compare <玩家A> <玩家B>；玩家名含空格时请改用 p:[玩家ID]，例如 /w skill compare mrekk p:[970]。' };
+    return { matched: true, left: '', right: '', error: '用法：/w skill compare <玩家A> <玩家B>；名字含空格或方括号时可用 p:[完整玩家名或ID]，例如 /w skill compare [SHK]Hina p:[Tong Tong]。' };
   }
   return { matched: true, left, right };
 }
@@ -107,12 +148,15 @@ export function parseSkillCommandRequest(value: string): SkillCommandRequest {
   let target: SkillCommandTarget | null = numericTarget;
   let mods: string[] | null = numericMatch?.[2] === undefined ? [] : parseExplicitMods(numericMatch[2]);
   if (!numericMatch) {
-    const explicitPlayerMatch = /^p:\[([^\]]+)\](?:\s+(\d+))?$/i.exec(raw);
-    const namedBpMatch = explicitPlayerMatch ? null : /^(.+?)\s+(\d+)$/.exec(raw);
-    const username = String(explicitPlayerMatch?.[1] || namedBpMatch?.[1] || '').trim();
-    const rank = explicitPlayerMatch && explicitPlayerMatch[2] === undefined
-      ? 1
-      : Number(explicitPlayerMatch?.[2] || namedBpMatch?.[2] || 0);
+    const explicitPlayer = readExplicitPlayerReference(raw);
+    const explicitSuffix = explicitPlayer ? raw.slice(explicitPlayer.end).trim() : '';
+    const validExplicitPlayer = explicitPlayer && (!explicitSuffix || /^\d+$/.test(explicitSuffix)) ? explicitPlayer : null;
+    const malformedExplicit = /^p:\[/i.test(raw) && !validExplicitPlayer;
+    const namedBpMatch = validExplicitPlayer || malformedExplicit ? null : /^(.+?)\s+(\d+)$/.exec(raw);
+    const username = String(validExplicitPlayer?.player || namedBpMatch?.[1] || '').trim();
+    const rank = validExplicitPlayer
+      ? Number(explicitSuffix || 1)
+      : Number(namedBpMatch?.[2] || 0);
     if (username && Number.isSafeInteger(rank) && rank >= 1 && rank <= MAX_BP_RANK) {
       target = { kind: 'named_bp', username, rank };
       mods = [];
@@ -240,6 +284,25 @@ function modLabel(mods: string[]): string {
   return mods.length ? `+${mods.join('')}` : 'NM';
 }
 
+/**
+ * `/w info` owns the player Skill Profiler image route. The owner dispatcher
+ * passes only the text after `info`, but accepting a leading `info` keeps this
+ * parser useful for direct tests and migration tooling as well.
+ */
+export function parsePlayerInfoRequest(value: string): PlayerInfoRequest {
+  const raw = String(value || '').trim();
+  const match = /^info(?:\s+([\s\S]+))?$/i.exec(raw);
+  const body = match ? String(match[1] || '').trim() : raw;
+  return { matched: true, player: unwrapExplicitPlayer(body) };
+}
+
+function mentionSkillRequester(ctx: OwnerHandlerContext, content: string): string {
+  const userId = String(ctx.event?.userId || '').trim();
+  if (ctx.event?.type !== 'group' || !/^\d+$/.test(userId)) return content;
+  const mention = `[CQ:at,qq=${userId}]`;
+  return String(content).includes(mention) ? String(content) : `${mention} ${content}`;
+}
+
 function feedbackGuidance(beatmapId: number, mods: string[]): string {
   const command = `/w cd ${beatmapId}${modSuffix(mods)}`;
   return [
@@ -272,13 +335,39 @@ async function resolveProfileUser(ctx: OwnerHandlerContext, explicitPlayer: stri
     if (username) return getUser(username, 'osu');
   }
   const binding = resolveOsuBindingValue(rawBinding);
-  if (!binding) throw new Error('请先绑定 osu! 账号：/w osu bind <用户名>，或使用 /w skill profile <玩家名>。');
+  if (!binding) throw new Error('请先绑定 osu! 账号：/w osu bind <用户名>，或使用 /w info <玩家名>。');
   return typeof binding === 'number'
     ? getUserById(binding, 'osu')
     : getUser(String(binding), 'osu');
 }
 
+async function renderPlayerSkillProfileForContext(
+  ctx: OwnerHandlerContext,
+  explicitPlayer: string,
+): Promise<OwnerCommandResult> {
+  const user = await resolveProfileUser(ctx, explicitPlayer);
+  if (ctx.sendMessage) {
+    await ctx.sendMessage(ctx.event, `正在按成绩质量与 BP 衰减分析 ${user.username} 的真实 BP50，首次计算可能需要一段时间，请耐心等待；请求追踪中可查看进度……`);
+  }
+  const rendered = await renderPlayerSkillProfile(user.id, 50);
+  if (!rendered) throw new Error('玩家 Skill 画像渲染器当前未连接，请稍后再试。');
+  if (ctx.sendMessage) await ctx.sendMessage(ctx.event, mentionSkillRequester(ctx, rendered.cqCode));
+  return { replied: Boolean(ctx.sendMessage), reason: `已生成 ${user.username} 的 BP50 Skill 画像` };
+}
+
+export async function ownerInfoHandler(ctx: OwnerHandlerContext): Promise<OwnerCommandResult> {
+  const request = parsePlayerInfoRequest(ctx.commandArgs);
+  return renderPlayerSkillProfileForContext(ctx, request.player);
+}
+
 export async function ownerSkillHandler(ctx: OwnerHandlerContext): Promise<OwnerCommandResult> {
+  const legacyProfileRequest = parsePlayerSkillProfileRequest(ctx.commandArgs);
+  if (legacyProfileRequest.matched) {
+    const reason = '这条指令已移除，请改用 /w info [玩家名或 p:[完整玩家名或ID]]。';
+    if (ctx.sendMessage) await ctx.sendMessage(ctx.event, reason);
+    return { replied: Boolean(ctx.sendMessage), reason };
+  }
+
   const comparisonRequest = parsePlayerSkillComparisonRequest(ctx.commandArgs);
   if (comparisonRequest.matched) {
     if (comparisonRequest.error) {
@@ -291,11 +380,11 @@ export async function ownerSkillHandler(ctx: OwnerHandlerContext): Promise<Owner
     ]);
     if (left.id === right.id) throw new Error('请选择两个不同的玩家进行 Skill 对比。');
     if (ctx.sendMessage) {
-      await ctx.sendMessage(ctx.event, `正在用成绩质量与 BP 衰减对比 ${left.username} 和 ${right.username} 的 BP50，首次生成可能需要一两分钟……`);
+      await ctx.sendMessage(ctx.event, `正在用成绩质量与 BP 衰减对比 ${left.username} 和 ${right.username} 的 BP50，首次计算可能需要一段时间，请耐心等待；期间会持续更新进度……`);
     }
     const rendered = await renderPlayerSkillComparison(left.id, right.id, 50);
     if (!rendered) throw new Error('玩家 Skill 对比渲染器当前未连接，请稍后再试。');
-    if (ctx.sendMessage) await ctx.sendMessage(ctx.event, rendered.cqCode);
+    if (ctx.sendMessage) await ctx.sendMessage(ctx.event, mentionSkillRequester(ctx, rendered.cqCode));
     return { replied: Boolean(ctx.sendMessage), reason: `已生成 ${left.username} 与 ${right.username} 的 BP50 Skill 对比` };
   }
 
@@ -303,7 +392,7 @@ export async function ownerSkillHandler(ctx: OwnerHandlerContext): Promise<Owner
   if (recentRequest.matched) {
     const user = await resolveProfileUser(ctx, recentRequest.player);
     if (ctx.sendMessage) {
-      await ctx.sendMessage(ctx.event, `正在生成 ${user.username} 的 Recent Skill：优先读取最近 50 条，完成谱面不足时最多回溯 5 天……`);
+      await ctx.sendMessage(ctx.event, `正在生成 ${user.username} 的 Recent Skill，首次计算可能需要一段时间，请耐心等待；优先读取最近 50 条，最多回溯 5 天……`);
     }
     let timer: NodeJS.Timeout | undefined;
     try {
@@ -312,29 +401,17 @@ export async function ownerSkillHandler(ctx: OwnerHandlerContext): Promise<Owner
         timer.unref?.();
       });
       const rendered = await Promise.race([renderPlayerRecentSkillProfile(user.id), timeout]);
-      if (ctx.sendMessage) await ctx.sendMessage(ctx.event, rendered.cqCode);
+      if (ctx.sendMessage) await ctx.sendMessage(ctx.event, mentionSkillRequester(ctx, rendered.cqCode));
       return { replied: Boolean(ctx.sendMessage), reason: `已生成 ${user.username} 的 Recent Skill 画像` };
     } catch (error: any) {
       const message = String(error?.message || error);
       if (message === 'RECENT_SKILL_TIMEOUT') throw new Error('Recent Skill 生成超时；已保留成功的谱面分析缓存，请稍后重试。');
       const insufficient = /^RECENT_SKILL_INSUFFICIENT(?:_AFTER_FILTER)?:([0-9]+)$/.exec(message);
-      if (insufficient) throw new Error(`近期证据不足：回溯 5 天后只有 ${insufficient[1]} 张有效完成谱面，至少需要 5 张。`);
+      if (insufficient) throw new Error('近期证据暂不足，请稍后积累更多近期成绩后重试。');
       throw error;
     } finally {
       if (timer) clearTimeout(timer);
     }
-  }
-
-  const profileRequest = parsePlayerSkillProfileRequest(ctx.commandArgs);
-  if (profileRequest.matched) {
-    const user = await resolveProfileUser(ctx, profileRequest.player);
-    if (ctx.sendMessage) {
-      await ctx.sendMessage(ctx.event, `正在按成绩质量与 BP 衰减分析 ${user.username} 的真实 BP50，首次生成可能需要一两分钟……`);
-    }
-    const rendered = await renderPlayerSkillProfile(user.id, 50);
-    if (!rendered) throw new Error('玩家 Skill 画像渲染器当前未连接，请稍后再试。');
-    if (ctx.sendMessage) await ctx.sendMessage(ctx.event, rendered.cqCode);
-    return { replied: Boolean(ctx.sendMessage), reason: `已生成 ${user.username} 的 BP50 Skill 画像` };
   }
 
   const request = parseSkillCommandRequest(ctx.commandArgs);
@@ -363,7 +440,7 @@ export async function ownerSkillHandler(ctx: OwnerHandlerContext): Promise<Owner
   ].filter(Boolean).join('\n');
   rememberProfilerRun(ctx, analysis, resolved.sourceLabel);
   const rendered = await renderSkillProfilerCard(analysis);
-  if (ctx.sendMessage) await ctx.sendMessage(ctx.event, rendered?.cqCode || fallbackText);
+  if (ctx.sendMessage) await ctx.sendMessage(ctx.event, mentionSkillRequester(ctx, rendered?.cqCode || fallbackText));
   return { replied: Boolean(ctx.sendMessage), reason: `Skill Profiler 已分析 BID ${resolved.beatmapId}` };
 }
 

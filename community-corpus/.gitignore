@@ -1,0 +1,7 @@
+.salt
+raw/
+normalized/
+windows/
+reports/
+__pycache__/
+*.pyc

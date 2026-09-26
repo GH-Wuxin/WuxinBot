@@ -1,0 +1,68 @@
+{
+  "items": [
+    {
+      "id": "C01",
+      "rule_a": "R001 persona: 不自称 AI/语言模型",
+      "rule_b": "R012 runtime facts: 被问模型时必须用模型/供应商信息回答",
+      "runtime_precedence": "system factualCtx 后注入且 taskRules 显式要求；实测通常按模型信息回答",
+      "observed_failure": "无记录；可能表现为人格标签与事实声明冲突",
+      "severity": "P1_INSTABILITY_RISK"
+    },
+    {
+      "id": "C02",
+      "rule_a": "R006 casual scene: 自然简短，不展开成长篇",
+      "rule_b": "R024 tool note: 涉及 osu 数据必须调用工具并逐字引用数字",
+      "runtime_precedence": "tool note 后追加在 system 尾部，tool routing 优先",
+      "observed_failure": "无记录",
+      "severity": "P2_REDUNDANCY"
+    },
+    {
+      "id": "C03",
+      "rule_a": "R052 detectScene 会把 /w 判为 command 并构造 command system",
+      "rule_b": "bot.ts 在 buildPrompt 之前路由 /w 到 handleOwnerCommand",
+      "runtime_precedence": "bot.ts 先行；command system prompt 对 /w 实际不可达",
+      "observed_failure": "无；属于死路径/历史遗留",
+      "severity": "P3_STYLE_ONLY"
+    },
+    {
+      "id": "C04",
+      "rule_a": "R008 visualCapabilityNotice 注入 user facts",
+      "rule_b": "R009 同一函数又注入 system factualCtx",
+      "runtime_precedence": "同一事件同文本双份注入",
+      "observed_failure": "无；token 冗余",
+      "severity": "P2_REDUNDANCY"
+    },
+    {
+      "id": "C05",
+      "rule_a": "R015 system relBlocks 含 memory/group/relationship/skill",
+      "rule_b": "R016 user facts 再含 memory/group/relationship",
+      "runtime_precedence": "两部分都发送",
+      "observed_failure": "无；token 冗余",
+      "severity": "P2_REDUNDANCY"
+    },
+    {
+      "id": "C06",
+      "rule_a": "R053 ignoreSystemFacts=true 省略 user facts",
+      "rule_b": "R011 system factualCtx 仍注入群名/owner/发言者/视觉/搜索/长文",
+      "runtime_precedence": "system factualCtx 保留，facts 关闭不完整",
+      "observed_failure": "无",
+      "severity": "P2_REDUNDANCY"
+    },
+    {
+      "id": "C07",
+      "rule_a": "R034 isWeirdReply 把 >180 字普通回复当 weird",
+      "rule_b": "R006 casual scene 与正常长回复允许存在",
+      "runtime_precedence": "longForm=false 时 180 字以上即可能 rewrite",
+      "observed_failure": "未记录；false-positive rewrite 风险",
+      "severity": "P1_INSTABILITY_RISK"
+    },
+    {
+      "id": "C08",
+      "rule_a": "R048 reviewer 只允许 kind=hard",
+      "rule_b": "R055 parser/fallback 支持 quality 分类",
+      "runtime_precedence": "quality REJECT 无实际生产路径",
+      "observed_failure": "63 份分析中 quality_only=0",
+      "severity": "P3_STYLE_ONLY"
+    }
+  ]
+}

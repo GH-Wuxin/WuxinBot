@@ -117,6 +117,22 @@ const secondSseChunk = parseSseBuffer(firstSseChunk.remainder + 'sert","trace":{
 assert.deepEqual(secondSseChunk.messages, [{ type: 'upsert', trace: { id: 'r1' } }]);
 assert.equal(secondSseChunk.remainder, '');
 
+const bpUpdates = [];
+const stopBpUpdates = subscribeRequestTraces((trace) => bpUpdates.push(trace));
+const bpId = startRequestTrace({ ...input, messageId: 'bp50-tail' });
+withRequestTrace(bpId, () => {
+  for (let i = 1; i <= 50; i += 1) traceEvent('TOOL', 'map_progress', { completed: i });
+  traceEvent('TOOL', 'render_result', { password: 'tail-secret', samples: Array.from({ length: 70 }, (_, i) => i) });
+  finishRequestTrace('completed');
+});
+const bpListed = listRequestTraces(1)[0];
+assert.equal(bpListed.events.length, 52, 'BP50 must retain events beyond the generic 40-item payload limit');
+assert.equal(bpListed.events.at(-1).name, 'request_completed');
+assert.equal(bpListed.events.at(-2).data.samples.length, 40, 'ordinary payload arrays remain bounded');
+assert.deepEqual(bpUpdates.at(-1), bpListed, 'SSE and HTTP snapshots retain the same complete event tail');
+assert.equal(JSON.stringify(bpUpdates).includes('tail-secret'), false, 'late events remain redacted');
+stopBpUpdates();
+
 const providerBodies = [];
 const fakeProvider = http.createServer((request, response) => {
   let body = '';
@@ -197,5 +213,7 @@ for (let i = 0; i < 175; i += 1) {
 const bounded = listRequestTraces(999);
 assert.equal(bounded.length, 160, 'request store retention must be bounded');
 assert.equal(bounded.every((trace) => trace.events.length <= 120), true, 'per-request events must be bounded');
+assert.equal(bounded.every((trace) => trace.events.length === 120 && trace.events[0].seq === 22
+  && trace.events.at(-1).name === 'request_completed'), true, 'bounded traces retain the latest 120 events including completion');
 
 console.log('REQUEST_TRACE_VERIFY_PASS');

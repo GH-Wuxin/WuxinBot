@@ -129,6 +129,7 @@ export function resolveOwnerRoute(ctx: OwnerHandlerContext): OwnerRouteResolutio
 
   if (command === '/refresh') return directRoute('refresh', 'memberPolicy');
   if (command === '/recalc') return { kind: 'handler', handlerKey: 'recalc' };
+  if (command === '/info') return directRoute('info', 'info');
   if (command === '/skill') return directRoute('skill', 'skill');
   if (command === '/cd') return directRoute('skillFeedback', 'skillFeedback');
   if (command === '/ping') return directRoute('ping', 'ping');

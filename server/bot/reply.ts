@@ -1,8 +1,27 @@
 // @ts-nocheck -- legacy runtime module; new typed modules remain checked by tsc.
 // Reply output: sanitization, segmentation, merged-forward, rewrite guard.
 // Extracted from bot.ts.
-import { completeChat } from './llm.js';
+import { completeChat, thinkingParamsForLevel } from './llm.js';
+import { buildRewriteEntry, classifyTimeout, recordRewriteTelemetry, textChanged } from './rewriteTelemetry.js';
+import { updateDb } from '../store.js';
 import { modelSupportsVision } from './prompt.js';
+import { emptyTurnState, reasoningEnabledFor, reasoningInput } from './reasoningRouter.js';
+import { looksLikeToolCallMarkup, stripToolCallMarkup } from '../bots/guard.js';
+import { traceEvent } from '../requestTrace.js';
+import { activeModelName } from '../modelConfig.js';
+
+export function normalReplyRewriteSkipReason(options: {
+  rewriteEligible: boolean;
+  toolEvidenceProtected: boolean;
+  hasDirectToolDelivery: boolean;
+  longForm: boolean;
+}): string | null {
+  if (!options.rewriteEligible) return null;
+  if (options.toolEvidenceProtected) return 'tool_evidence_invariant';
+  if (options.hasDirectToolDelivery) return 'direct_tool_delivery';
+  if (options.longForm) return 'long_form';
+  return null;
+}
 
 export function sanitizeReply(text, settings) {
   let cleaned = String(text || '').trim();
@@ -25,6 +44,10 @@ export function sanitizeReply(text, settings) {
     }
     cleaned = cleaned.replace(/^\s*(助手|群友|AI群友)\s*[:：,，]\s*/i, '');
     if (cleaned === before) break;
+  }
+
+  if (looksLikeToolCallMarkup(cleaned)) {
+    cleaned = stripToolCallMarkup(cleaned);
   }
 
   return cleaned.trim();
@@ -75,11 +98,24 @@ function wait(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+export function replyToCurrentMessageOptions(event, extra = {}) {
+  if (event?.source !== 'onebot' || event?.type !== 'group' || !event?.messageId) return extra;
+  return {
+    ...extra,
+    replyToMessageId: String(event.messageId),
+    mentionSender: true,
+  };
+}
+
 export async function sendReplySegments(sendMessage, event, replyText) {
   const segments = splitReplySegments(replyText).slice(0, 3);
   if (!sendMessage) return segments;
   for (let index = 0; index < segments.length; index += 1) {
-    await sendMessage(event, segments[index]);
+    await sendMessage(
+      event,
+      segments[index],
+      index === 0 ? replyToCurrentMessageOptions(event) : undefined,
+    );
     if (index < segments.length - 1) await wait(700 + Math.floor(Math.random() * 600));
   }
   return segments;
@@ -130,13 +166,29 @@ export function neutralIdentityReply(event, settings = {}) {
   return qq ? `你是 ${name}（QQ:${qq}），我这边按这个昵称识别。` : `你是 ${name}，我这边按这个昵称识别。`;
 }
 
-export async function rewriteNormalReply(db, originalText, event) {
-  const response = await completeChat(db, {
-    model: db.settings.model || 'deepseek-v4-flash',
-    messages: [
-      {
-        role: 'system',
-        content: `把下面这句 QQ 群聊回复改写成正常、克制、自然的群友语气。
+export async function rewriteNormalReply(db, originalText, event, options = {}) {
+  const { reasoningRouter, turnId, completeChatFn = completeChat, telemetryWriteFn } = options;
+  const rewriteInput = reasoningInput('rewrite', { previousFastFailure: true });
+  let rewriteTurn = emptyTurnState();
+  const rewriteDecision = reasoningRouter
+    ? reasoningRouter.resolve(rewriteInput, rewriteTurn)
+    : { level: 'off', source: 'rule', reasonCode: 'fast_default' };
+  if (reasoningRouter) rewriteTurn = reasoningRouter.mergeTurn(rewriteTurn, rewriteDecision);
+  const rewriteWire = thinkingParamsForLevel(rewriteDecision.level, reasoningEnabledFor(db));
+  const startedAt = Date.now();
+  traceEvent('REWRITE', 'reply_rewrite_started', {
+    status: 'running',
+    originalLength: String(originalText || '').length,
+  });
+  let response;
+  let telemetryResult = 'ERROR_FALLBACK';
+  try {
+    response = await completeChatFn(db, {
+      model: activeModelName(db.settings),
+      messages: [
+        {
+          role: 'system',
+          content: `把下面这句 QQ 群聊回复改写成正常、克制、自然的群友语气。
 要求：
 - 只输出改写后的回复
 - 1 到 2 句
@@ -148,20 +200,70 @@ export async function rewriteNormalReply(db, originalText, event) {
 - 如果是在回答"我是谁"，只平静说明昵称和 QQ，不要反问或调侃
 - 如果对方是 owner，也只是更稳重一点，不要谄媚
 - 保留大意即可`
-      },
-      {
-        role: 'user',
-        content: `当前发言者：${event.nickname || event.userId}（QQ:${event.userId}）
+        },
+        {
+          role: 'user',
+          content: `当前发言者：${event.nickname || event.userId}（QQ:${event.userId}）
 原回复：${originalText}`
-      }
-    ],
-    temperature: 0.25,
-    maxTokens: 180,
-    label: '回复改写'
+        }
+      ],
+      temperature: 0.25,
+      maxTokens: 180,
+      ...rewriteWire,
+      label: '回复改写',
+      traceRole: 'rewrite',
+      tracePurpose: 'reply_rewrite',
+    });
+    const rewrittenText = String(response.text || originalText);
+    const changed = textChanged(originalText, rewrittenText);
+    telemetryResult = response.text
+      ? (changed ? 'CHANGED' : 'UNCHANGED')
+      : 'EMPTY_FALLBACK';
+    response = { ...response, text: response.text || originalText };
+  } catch (error) {
+    telemetryResult = classifyTimeout(error) ? 'TIMEOUT_FALLBACK' : 'ERROR_FALLBACK';
+    response = { text: originalText, usage: {} };
+  }
+  if (reasoningRouter && turnId) {
+    reasoningRouter.record({
+      turnId,
+      ts: Date.now(),
+      callRole: 'rewrite',
+      decision: rewriteDecision,
+      input: rewriteInput,
+      actual: response?.meta || null,
+    });
+  }
+  const usage = response?.usage || {};
+  const usageAvailable = Boolean(
+    Number.isFinite(usage.prompt_tokens ?? usage.input_tokens)
+    || Number.isFinite(usage.completion_tokens ?? usage.output_tokens),
+  );
+  const telemetry = buildRewriteEntry({
+    event,
+    turnId,
+    eligible: true,
+    invoked: true,
+    provider: response?.provider,
+    model: response?.model,
+    usage,
+    usageAvailable,
+    latencyMs: Date.now() - startedAt,
+    result: telemetryResult,
+    originalText,
+    rewrittenText: response?.text || originalText,
+  });
+  await recordRewriteTelemetry(db, telemetry, telemetryWriteFn || updateDb);
+  traceEvent('REWRITE', 'reply_rewrite_completed', {
+    status: telemetryResult,
+    durationMs: Date.now() - startedAt,
+    changed: textChanged(originalText, response?.text || originalText),
+    outputLength: String(response?.text || originalText).length,
   });
   return {
-    text: response.text || originalText,
-    usage: response.usage || {}
+    text: response?.text || originalText,
+    usage,
+    telemetry,
   };
 }
 
@@ -208,7 +310,7 @@ export async function sendForwardText(sendMessage, event, title, text) {
     type: 'node',
     data: {
       name: index === 0 ? title : `${title} ${index + 1}`,
-      uin: (event.raw?.self_id || '3861208813'),
+      uin: (event.raw?.self_id || 'REDACTED_QQ_005'),
       content
     }
   }));
@@ -247,7 +349,7 @@ export async function sendForwardBlocks(sendMessage, event, title, text) {
     type: 'node',
     data: {
       name: index === 0 ? title : `${title} ${index + 1}`,
-      uin: (event.raw?.self_id || '3861208813'),
+      uin: (event.raw?.self_id || 'REDACTED_QQ_005'),
       content
     }
   }));

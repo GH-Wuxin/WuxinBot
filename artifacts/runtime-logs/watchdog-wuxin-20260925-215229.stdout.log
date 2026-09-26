@@ -1,0 +1,8 @@
+QQ AI ChatBot server running at http://127.0.0.1:8787
+[yumu-image] Render server listening on ws://127.0.0.1:8389
+[yumu-image] Client authenticated, pid=34780
+[kb] {"route":"community_style","reason":"casual_chat","decisionSource":"db","groupHash":"f1f460c8c5f23100","collections":["community_style:0"],"documentIds":[],"scores":[],"dropped":["no_lexical_overlap","no_lexical_overlap","no_lexical_overlap","no_lexical_overlap","no_lexical_overlap","no_lexical_overlap","no_lexical_overlap","no_lexical_overlap","no_lexical_overlap","no_lexical_overlap","no_lexical_overlap","no_lexical_overlap"],"injectedChars":0,"elapsedMs":28}
+[yumu-image] Render client disconnected
+[yumu-image] Client authenticated, pid=34780
+[yumu-image] Render client disconnected
+[yumu-image] Client authenticated, pid=34780

@@ -22,7 +22,7 @@
  * 用法：
  *   node tools/corpus-build.mjs
  *   node tools/corpus-build.mjs --groups <groupId>,<groupId>
- *   node tools/corpus-build.mjs --exports <LOCAL_PATH>,<LOCAL_PATH>
+ *   node tools/corpus-build.mjs --exports C:\path\to\export1,C:\path\to\export2
  */
 
 import fs from 'node:fs';

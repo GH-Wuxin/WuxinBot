@@ -1,0 +1,49 @@
+{
+  "schema_version": "prompt_review_slim_p1a_removed_shadow_copies_v1",
+  "old_tool_note": {
+    "location": "server/bot.ts processIncomingInner (handwritten 1400-char literal)",
+    "chars": 1400,
+    "bytes": 3162,
+    "extracted_for_audit": "tmp/prompt_review_slim_v01_p1a/old_tool_note.txt"
+  },
+  "removed": [
+    {
+      "fact": "handwritten capability availability sentence",
+      "old_location": "server/bot.ts tool note",
+      "canonical_source": "capabilityCatalog / AGENT_CAPABILITY_META",
+      "generated_replacement": "capability names list in buildToolGuidance",
+      "proof_of_equivalence": "P1A verifier: every callable capability appears in generated guidance; tool schema unchanged"
+    },
+    {
+      "fact": "handwritten bot names and selector facts",
+      "old_location": "server/bot.ts tool note",
+      "canonical_source": "DEFAULT_BOTS + RECENT_BOT_SELECTOR_IDS",
+      "generated_replacement": "generated bot-name and selector lines in buildToolGuidance",
+      "proof_of_equivalence": "P1A drift tests: synthetic name/selector mutations propagate automatically"
+    },
+    {
+      "fact": "full literal prompt guidance string",
+      "old_location": "server/bot.ts",
+      "canonical_source": "server/bots/toolGuidance.ts (single generator + policy)",
+      "generated_replacement": "messages[0].content += '\\n\\n' + buildToolGuidance()",
+      "proof_of_equivalence": "P1A verifier asserts old literal absent and generated guidance present in assembled path"
+    }
+  ],
+  "kept_as_handwritten_policy": [
+    "anti-fabrication and tool-failure honesty",
+    "bp_type no-guess route rule",
+    "recommend BID/no-fabrication rule",
+    "pp_calc estimate and re-call rule",
+    "recent realtime vs snapshot rule",
+    "player attribution rule",
+    "osu!std-only rule",
+    "no XML/DSML output rule"
+  ],
+  "not_touched": [
+    "server/bot/persona.ts tool paragraphs (persona boundary)",
+    "server/bots/agentCapabilities.ts tool schema description (refactored to injectable meta only; output unchanged)",
+    "server/bots/capabilityCatalog.ts production metadata",
+    "server/bot/commands/*.meta.ts production metadata",
+    "tool injection timing and tool schema"
+  ]
+}

@@ -1,0 +1,220 @@
+[PP+] player/info oliwakami failed (HTTP 500, code 400): lol server goes boooom
+[osu analyze] 区块短评第 1 次未通过： [
+  'profile 短评语义终审：分析对象 wumalu 的性别未知，不能擅自使用“他/她”',
+  'profile 短评语义终审：包含未经输入提供的设备、身体或 replay 机制：肌肉记忆',
+  'profile 短评语义终审：包含简报外数字: 37000, 2000',
+  'profile 擅自猜测了目标玩家性别',
+  'top5 的 Mod 语义错误：把成绩上的 Mod 写成了谱面类型：DT 图',
+  'top5 短评语义终审：Mod 语义错误：把成绩上的 Mod 写成了谱面类型：DT 图',
+  'mods 生硬翻译或错误命名了 HD',
+  'mods 短评语义终审：生硬翻译或错误命名了 HD',
+  'mods 短评语义终审：没有核准的精确 Mod 组合同时包含 EZ 与 FL，不能把它们写成同一张成绩',
+  'profile 短评包含简报外数字: 37000, 2000'
+]
+[osu analyze] 硬错误修复后仍未通过： [
+  'profile 短评语义终审：包含简报外数字: 2000',
+  'mods 短评语义终审：生硬翻译或错误命名了 HD',
+  'mods 短评语义终审：没有核准的精确 Mod 组合同时包含 EZ 与 FL，不能把它们写成同一张成绩',
+  'profile 短评包含简报外数字: 2000'
+]
+[osu analyze] 区块短评第 2 次未通过： [
+  'profile 短评语义终审：把核准游玩次数压缩成了“万/千次”约数',
+  'mods 生硬翻译或错误命名了 HD',
+  'mods 短评语义终审：生硬翻译或错误命名了 HD',
+  'profile 短评：账号档案应比其他栏目更长，重新展开这一栏'
+]
+[osu analyze] 硬错误修复后仍未通过： [ 'mods 生硬翻译或错误命名了 HD', 'mods 短评语义终审：生硬翻译或错误命名了 HD' ]
+[PP+] player/info oliwakami failed (HTTP 500, code 400): lol server goes boooom
+[osu analyze] 区块短评第 1 次未通过： [
+  'profile 短评语义终审：账号年龄核准为约 10.0 年，与“16 年”不符',
+  'mods 生硬翻译或错误命名了 HD',
+  'mods 短评语义终审：生硬翻译或错误命名了 HD',
+  'recent 短评语义终审：分析对象 [SHK]l2883119 的性别未知，不能擅自使用“他/她”',
+  'recent 擅自猜测了目标玩家性别',
+  'recent 短评挪用了账号档案字段'
+]
+[osu analyze] 硬错误修复后仍未通过： [
+  'profile 短评语义终审：账号年龄核准为约 10.0 年，与“16 年”不符',
+  'mods 生硬翻译或错误命名了 HD',
+  'mods 短评语义终审：生硬翻译或错误命名了 HD',
+  'recent 短评挪用了账号档案字段'
+]
+[osu analyze] 区块短评第 3 次未通过： [ 'profile 短评语义终审：账号年龄核准为约 10.0 年，与“16 年”不符' ]
+[osu analyze] 结论第 1 次未通过： [ '生硬翻译或错误命名了 HD' ]
+[osu analyze] 结论硬错误修复后仍未通过： [ '生硬翻译或错误命名了 HD' ]
+WARNING: option --ssl-verify-server-cert is disabled, because of an insecure passwordless login.
+WARNING: option --ssl-verify-server-cert is disabled, because of an insecure passwordless login.
+WARNING: option --ssl-verify-server-cert is disabled, because of an insecure passwordless login.
+WARNING: option --ssl-verify-server-cert is disabled, because of an insecure passwordless login.
+[PP+] player/info oliwakami failed (HTTP 500, code 400): lol server goes boooom
+[osu analyze] 区块短评第 1 次未通过： [
+  'profile 短评语义终审：分析对象 [SHK] Pain boy 的性别未知，不能擅自使用“他/她”',
+  'profile 擅自猜测了目标玩家性别',
+  'top5 短评语义终审：BP5 中含 DT/NC的核准数量为 4 或 4 张，不是 3 张',
+  'mods 短评语义终审：分析对象 [SHK] Pain boy 的性别未知，不能擅自使用“他/她”',
+  'mods 擅自猜测了目标玩家性别'
+]
+[PP+] player/info oliwakami failed (HTTP 500, code 400): lol server goes boooom
+[osu analyze] 区块短评第 1 次未通过： [ 'profile 短评语义终审：包含简报外数字: 100000', 'profile 短评包含简报外数字: 100000' ]
+[osu analyze] 独立审查记录意见（不重写、不降级）： conclusion[hard]=结论中“这位玩家更擅长读图、控准度、打跳跃，而不是拼耐力硬刚长串”将 PP+ 的 Accuracy、Jump 与 Speed 直接翻译成具体操作能力，且“更擅长”构成因果推断，违反事实核查规则第3条。
+[PP+] player/info oliwakami failed (HTTP 500, code 400): lol server goes boooom
+[PP+] player/info oliwakami failed (HTTP 500, code 400): lol server goes boooom
+[osu analyze] 结论第 1 次未通过： [ '综合结论没有使用核准的全球 rank 或账号总 pp 判断分量' ]
+[PP+] player/info oliwakami failed (HTTP 500, code 400): lol server goes boooom
+[osu analyze] 区块短评第 1 次未通过： [
+  'mods 短评语义终审：精确 Mod 组合 HD 的核准数量为 82 张，不是 90 张',
+  'classification 短评语义终审：把核准数量改写成了无法核验的“一半”比例'
+]
+[osu analyze] 硬错误修复后仍未通过： [ 'mods 短评语义终审：精确 Mod 组合 HD 的核准数量为 82 张，不是 90 张' ]
+[osu analyze] 区块短评第 2 次未通过： [ 'classification 短评语义终审：把核准数量改写成了无法核验的“一半”比例' ]
+[osu analyze] 结论第 1 次未通过： [ '生硬翻译或错误命名了 HD' ]
+[osu analyze] 结论硬错误修复后仍未通过： [ '生硬翻译或错误命名了 HD' ]
+[osu analyze] 结论第 2 次未通过： [ '生硬翻译或错误命名了 HD' ]
+[osu analyze] 结论硬错误修复后仍未通过： [ '生硬翻译或错误命名了 HD' ]
+[osu analyze] 结论第 3 次未通过： [ '包含未经输入提供的设备、身体或 replay 机制：肌肉记忆' ]
+[PP+] player/info oliwakami failed (HTTP 500, code 400): lol server goes boooom
+[osu analyze] 区块短评第 1 次未通过： [
+  'profile 短评语义终审：账号年龄核准为约 3.7 年，与“快3年”不符',
+  'top5 短评语义终审：把 76/100 张带 DT 的成绩夸写成了全部或几乎每张'
+]
+[osu analyze] 硬错误修复后仍未通过： [
+  'profile 短评语义终审：账号年龄核准为约 3.7 年，与“7 年”不符',
+  'top5 短评语义终审：把 76/100 张带 DT 的成绩夸写成了全部或几乎每张'
+]
+[osu analyze] 区块短评第 2 次未通过： [
+  'profile 短评语义终审：分析对象 [SHK]Wybel 的性别未知，不能擅自使用“他/她”',
+  'profile 擅自猜测了目标玩家性别',
+  'top5 短评语义终审：BP5 中含 DT/NC的核准数量为 0 张，不是 76 张',
+  'top5 短评语义终审：把 76/100 张带 DT 的成绩夸写成了全部或几乎每张'
+]
+[osu analyze] 硬错误修复后仍未通过： [
+  'top5 短评语义终审：BP5 中含 DT/NC的核准数量为 0 张，不是 76 张',
+  'top5 短评语义终审：把 76/100 张带 DT 的成绩夸写成了全部或几乎每张'
+]
+[osu analyze] 独立审查记录意见（不重写、不降级）： top5[hard]=BP5 中五张成绩均含 DT/NC，但报告称“核准的 DT/NC 数量是 0 张”，与 verified_facts 中 BP5 共同 Mod 为五张全部含 DT/NC 直接矛盾。
+[PP+] player/info oliwakami failed (HTTP 500, code 400): lol server goes boooom
+[osu analyze] 区块短评第 1 次未通过： [ 'profile 短评语义终审：包含简报外数字: 15.9', 'profile 短评包含简报外数字: 15.9' ]
+[osu analyze] 区块短评第 2 次未通过： [
+  'profile 短评过长',
+  'profile 生硬翻译或错误命名了 HD',
+  'profile 短评语义终审：生硬翻译或错误命名了 HD',
+  'profile 短评语义终审：包含简报外数字: 15.9',
+  'profile 短评包含简报外数字: 15.9'
+]
+[osu analyze] 硬错误修复后仍未通过： [
+  'profile 短评过长',
+  'profile 生硬翻译或错误命名了 HD',
+  'profile 短评语义终审：生硬翻译或错误命名了 HD'
+]
+[osu analyze] 区块短评第 3 次未通过： [ 'profile 短评过长' ]
+[osu analyze] 硬错误修复后仍未通过： [ 'profile 短评过长' ]
+[osu analyze] 结论第 1 次未通过： [ '生硬翻译或错误命名了 HD' ]
+[osu analyze] 结论硬错误修复后仍未通过： [ '生硬翻译或错误命名了 HD' ]
+[osu analyze] 独立审查记录意见（不重写、不降级）： conclusion[hard]=结论中“2,858 天的账号年龄配 18 天 6 小时的游玩时长”将账号年龄与游玩时长直接对比并暗示“裂缝”，但账号年龄是程序按当前日期计算的经过时间，与游玩时长无既定因果或矛盾关系，构成简报外事实拼接。
+WARNING: option --ssl-verify-server-cert is disabled, because of an insecure passwordless login.
+WARNING: option --ssl-verify-server-cert is disabled, because of an insecure passwordless login.
+WARNING: option --ssl-verify-server-cert is disabled, because of an insecure passwordless login.
+WARNING: option --ssl-verify-server-cert is disabled, because of an insecure passwordless login.
+WARNING: option --ssl-verify-server-cert is disabled, because of an insecure passwordless login.
+WARNING: option --ssl-verify-server-cert is disabled, because of an insecure passwordless login.
+[quick] bridge yumu 发送失败（面板可能已发出）: OneBot HTTP 请求超时 12 秒
+[PP+] player/info oliwakami failed (HTTP 500, code 400): lol server goes boooom
+[osu analyze] 结论第 1 次未通过： [ '生硬翻译或错误命名了 HD' ]
+[PP+] player/info oliwakami failed (HTTP 500, code 400): lol server goes boooom
+[osu analyze] 区块短评第 1 次未通过： [
+  'profile 短评语义终审：账号年龄核准为约 11.0 年，与“6年”不符',
+  'profile 短评语义终审：包含简报外数字: 4000',
+  'mods 短评语义终审：把核准数量改写成了无法核验的“一半”比例',
+  'recent 短评语义终审：包含简报外数字: 4000',
+  'profile 短评包含简报外数字: 4000',
+  'recent 短评包含简报外数字: 4000'
+]
+[osu analyze] 硬错误修复后仍未通过： [ 'profile 短评语义终审：账号年龄核准为约 11.0 年，与“6年”不符' ]
+[osu analyze] 区块短评第 2 次未通过： [ 'profile 短评语义终审：账号年龄核准为约 11.0 年，与“15 年”不符' ]
+[osu analyze] 区块短评第 3 次未通过： [ 'profile 短评语义终审：账号年龄核准为约 11.0 年，与“15 年”不符' ]
+[osu analyze] 独立审查记录意见（不重写、不降级）： conclusion[hard]=结论中“4,036 天的账号还能保持这种 BP 厚度”将账号年龄写成 4,036 天，但 verified_facts 明确说明 4,036 天是程序按当前日期计算的经过时间，可换算成年/月，写出的数字必须与这个天数一致，此处直接使用天数作
+[PP+] player/info oliwakami failed (HTTP 500, code 400): lol server goes boooom
+[osu analyze] 区块短评第 1 次未通过： [
+  'profile 短评语义终审：账号年龄核准为约 11.3 年，与“15 年”不符',
+  'profile 短评语义终审：包含未经输入提供的设备、身体或 replay 机制：手稳',
+  'profile 短评语义终审：包含简报外数字: 50000',
+  'top5 短评语义终审：把 65/100 张带 DT 的成绩夸写成了全部或几乎每张',
+  'profile 短评包含简报外数字: 50000'
+]
+[osu analyze] 硬错误修复后仍未通过： [
+  'profile 短评语义终审：账号年龄核准为约 11.3 年，与“15 年”不符',
+  'profile 短评语义终审：账号年龄核准为约 11.3 年，与“3 年”不符',
+  'top5 短评语义终审：把 65/100 张带 DT 的成绩夸写成了全部或几乎每张'
+]
+[osu analyze] 区块短评第 2 次未通过： [
+  'profile 短评语义终审：包含简报外数字: 60000, 50000',
+  'top5 短评语义终审：把 65/100 张带 DT 的成绩夸写成了全部或几乎每张',
+  'profile 短评包含简报外数字: 60000, 50000'
+]
+[osu analyze] 硬错误修复后仍未通过： [ 'top5 短评语义终审：把 65/100 张带 DT 的成绩夸写成了全部或几乎每张' ]
+[osu analyze] 区块短评第 3 次未通过： [ 'top5 短评语义终审：把 65/100 张带 DT 的成绩夸写成了全部或几乎每张' ]
+[osu analyze] 硬错误修复后仍未通过： [ 'top5 短评语义终审：把 65/100 张带 DT 的成绩夸写成了全部或几乎每张' ]
+[osu analyze] 结论第 1 次未通过： [ '分析对象 SnowMagicK 未确认是发起者本人，不能使用第二人称' ]
+[PP+] player/info oliwakami failed (HTTP 500, code 400): lol server goes boooom
+[PP+] player/info oliwakami failed (HTTP 500, code 400): lol server goes boooom
+[osu analyze] 区块短评第 1 次未通过： [
+  'top5 短评语义终审：BP5 中精确组合 NM的核准数量为 3 或 3 张，不是 4 张',
+  'mods 短评语义终审：没有核准的精确 Mod 组合同时包含 EZ 与 FL，不能把它们写成同一张成绩'
+]
+[osu analyze] 硬错误修复后仍未通过： [ 'mods 短评语义终审：没有核准的精确 Mod 组合同时包含 EZ 与 FL，不能把它们写成同一张成绩' ]
+[osu analyze] 结论第 1 次未通过： [ '账号年龄核准为约 12.4 年，与“10年”不符' ]
+[osu analyze] 结论硬错误修复后仍未通过： [ '账号年龄核准为约 12.4 年，与“4年”不符', '包含简报外数字: 12.4' ]
+[osu analyze] 结论第 2 次未通过： [ '账号年龄核准为约 12.4 年，与“10年多”不符' ]
+[osu analyze] 结论硬错误修复后仍未通过： [ '账号年龄核准为约 12.4 年，与“4 年”不符', '包含简报外数字: 12.4' ]
+[PP+] player/info oliwakami failed (HTTP 500, code 400): lol server goes boooom
+[osu analyze] 区块短评第 1 次未通过： [ 'profile 短评语义终审：账号年龄核准为约 10.9 年，与“15 年”不符' ]
+WARNING: option --ssl-verify-server-cert is disabled, because of an insecure passwordless login.
+WARNING: option --ssl-verify-server-cert is disabled, because of an insecure passwordless login.
+WARNING: option --ssl-verify-server-cert is disabled, because of an insecure passwordless login.
+WARNING: option --ssl-verify-server-cert is disabled, because of an insecure passwordless login.
+WARNING: option --ssl-verify-server-cert is disabled, because of an insecure passwordless login.
+WARNING: option --ssl-verify-server-cert is disabled, because of an insecure passwordless login.
+WARNING: option --ssl-verify-server-cert is disabled, because of an insecure passwordless login.
+WARNING: option --ssl-verify-server-cert is disabled, because of an insecure passwordless login.
+WARNING: option --ssl-verify-server-cert is disabled, because of an insecure passwordless login.
+[PP+] player/info oliwakami failed (HTTP 500, code 400): lol server goes boooom
+[osu analyze] 区块短评第 1 次未通过： [ 'mods 短评语义终审：把核准数量改写成了无法核验的“一半”比例', 'mods 短评语义终审：生硬翻译或错误命名了 HD' ]
+[osu analyze] 结论第 1 次未通过： [ '把核准数量改写成了无法核验的“一半”比例', '综合结论没有使用核准的全球 rank 或账号总 pp 判断分量' ]
+[PP+] player/info oliwakami failed (HTTP 500, code 400): lol server goes boooom
+[osu analyze] 区块短评第 1 次未通过： [ 'recent 短评语义终审：包含未经输入提供的设备、身体或 replay 机制：设备' ]
+[PP+] player/info oliwakami failed (HTTP 500, code 400): lol server goes boooom
+[osu analyze] 区块短评第 1 次未通过： [
+  'classification 短评语义终审：分析对象 [SHK]Dragon-Fox 的性别未知，不能擅自使用“他/她”',
+  'classification 擅自猜测了目标玩家性别'
+]
+[osu analyze] 结论第 1 次未通过： [ '生硬翻译或错误命名了 HD' ]
+[PP+] player/info oliwakami failed (HTTP 500, code 400): lol server goes boooom
+[osu analyze] 区块短评第 1 次未通过： [
+  'profile 短评语义终审：账号年龄核准为约 7.5 年，与“5 年多”不符',
+  'mods 生硬翻译或错误命名了 HD',
+  'mods 短评语义终审：生硬翻译或错误命名了 HD'
+]
+[osu analyze] 区块短评第 2 次未通过： [
+  'profile 短评过长',
+  'profile 短评语义终审：分析对象 [SHK] Arcadia 的性别未知，不能擅自使用“他/她”',
+  'profile 短评语义终审：账号年龄核准为约 7.5 年，与“5 年”不符',
+  'profile 擅自猜测了目标玩家性别',
+  'mods 生硬翻译或错误命名了 HD',
+  'mods 短评语义终审：分析对象 [SHK] Arcadia 的性别未知，不能擅自使用“他/她”',
+  'mods 短评语义终审：生硬翻译或错误命名了 HD',
+  'mods 擅自猜测了目标玩家性别'
+]
+[osu analyze] 硬错误修复后仍未通过： [
+  'profile 短评过长',
+  'profile 短评语义终审：账号年龄核准为约 7.5 年，与“5 年”不符',
+  'mods 生硬翻译或错误命名了 HD',
+  'mods 短评语义终审：生硬翻译或错误命名了 HD'
+]
+[osu analyze] 区块短评第 3 次未通过： [
+  'profile 短评语义终审：账号年龄核准为约 7.5 年，与“5 年”不符',
+  'mods 短评语义终审：没有核准的精确 Mod 组合同时包含 EZ 与 FL，不能把它们写成同一张成绩'
+]
+[osu analyze] 结论第 1 次未通过： [ '生硬翻译或错误命名了 HD' ]
+[osu analyze] 结论硬错误修复后仍未通过： [ '生硬翻译或错误命名了 HD' ]
+WARNING: option --ssl-verify-server-cert is disabled, because of an insecure passwordless login.
+WARNING: option --ssl-verify-server-cert is disabled, because of an insecure passwordless login.

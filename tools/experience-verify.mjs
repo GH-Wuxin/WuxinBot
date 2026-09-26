@@ -17,7 +17,6 @@ import path from 'node:path';
 
 const testDataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'wuxin-experience-'));
 process.env.DATA_DIR = testDataDir;
-const dbPath = path.join(testDataDir, 'db.json');
 let readDb;
 let writeDb;
 let updateDb;
@@ -77,8 +76,7 @@ async function main() {
   ({ decideReply, processIncoming } = bot);
   store.ensureStore();
 
-  const originalRaw = fs.readFileSync(dbPath, 'utf8').replace(/^﻿/, '');
-  const original = JSON.parse(originalRaw);
+  const original = structuredClone(readDb());
 
   try {
     // ============================================================
@@ -112,10 +110,10 @@ async function main() {
     console.log('Test 2: Level upgrade');
     setupDb(original);
 
-    // Manually set XP to just below level 1 threshold
+    // Manually set XP to just below level 1 threshold (level N = N*100 XP)
     updateDb((draft) => {
       draft.experience[TEST_USER] = {
-        xp: 49, level: 0, dailyXp: 0, dailyDate: new Date().toISOString().slice(0, 10),
+        xp: 99, level: 0, dailyXp: 0, dailyDate: new Date().toISOString().slice(0, 10),
         activeDays: 5, streakDays: 1, lastMsgDate: '', lastLevelUpAt: '', lastDecayCheck: '',
       };
     });
@@ -188,8 +186,8 @@ async function main() {
     // ============================================================
     console.log('Test 6: formatXpBar');
     const bar6 = formatXpBar({ xp: 100, level: 1, dailyXp: 5, streakDays: 3 });
-    assert(bar6.includes('群友'), 'should contain level title');
-    assert(bar6.includes('Lv.1'), 'should contain level number');
+    assert(bar6.includes('100pp'), 'should show level as 100pp');
+    assert(bar6.includes('200pp'), 'should show next level as 200pp');
     assert(bar6.includes('×1.2'), 'should contain streak multiplier');
 
     console.log('PASS: Test 6 — formatXpBar');
@@ -251,19 +249,19 @@ async function main() {
     }), send9);
     const exp9add = getExperience(readDb(), TEST_USER);
     assert(exp9add.xp === 1200, `add should set XP to 1200, got ${exp9add.xp}`);
-    assert(exp9add.level === 4, `1200 XP should be level 4, got ${exp9add.level}`);
+    assert(exp9add.level === 12, `1200 XP should be level 12 (1200/100), got ${exp9add.level}`);
     assert(sent9.some((s) => s.includes('增加 1200 XP')), 'add reply should confirm increase');
 
     await processIncoming(event({
       userId: TEST_OWNER,
       nickname: 'Owner',
-      text: `/w exp ${TEST_USER} set 60`,
+      text: `/w exp ${TEST_USER} set 160`,
       atTargets: [],
       messageId: 't9-set',
     }), send9);
     const exp9set = getExperience(readDb(), TEST_USER);
-    assert(exp9set.xp === 60, `set should set XP to 60, got ${exp9set.xp}`);
-    assert(exp9set.level === 1, `60 XP should be level 1, got ${exp9set.level}`);
+    assert(exp9set.xp === 160, `set should set XP to 160, got ${exp9set.xp}`);
+    assert(exp9set.level === 1, `160 XP should be level 1, got ${exp9set.level}`);
 
     await processIncoming(event({
       userId: TEST_OWNER,
@@ -276,6 +274,37 @@ async function main() {
     assert(exp9reset.xp === 0 && exp9reset.level === 0, `reset should clear XP, got ${JSON.stringify(exp9reset)}`);
 
     console.log('PASS: Test 9 — /w exp add/set/reset parses full command tail');
+
+    // ============================================================
+    // Test 10: command display rounds XP and resolves current-group nickname
+    // ============================================================
+    console.log('Test 10: rounded XP + group nickname display');
+    setupDb(original);
+    updateDb((draft) => {
+      draft.experience[TEST_USER] = {
+        xp: 123.6, level: 1, dailyXp: 3.6, dailyDate: '', activeDays: 2,
+        streakDays: 0, lastMsgDate: '', lastLevelUpAt: '', lastDecayCheck: '',
+      };
+      draft.messages.push({
+        id: 'nickname-source', role: 'user', type: 'group', groupId: TEST_GROUP,
+        userId: TEST_USER, nickname: '群昵称玩家', content: '测试昵称', inContext: true,
+        createdAt: new Date().toISOString(),
+      });
+    });
+    const sent10 = [];
+    await processIncoming(event({
+      userId: TEST_OWNER,
+      nickname: 'Owner',
+      text: `/w lv [CQ:at,qq=${TEST_USER}]`,
+      atTargets: [TEST_USER],
+      messageId: 't10-lv',
+    }), async (_evt, text) => { sent10.push(String(text || '')); });
+    const levelReply = sent10.join('\n');
+    assert(levelReply.includes('群昵称玩家 的等级'), `should display current-group nickname, got ${levelReply}`);
+    assert(levelReply.includes('XP: 124/200'), `should round displayed XP, got ${levelReply}`);
+    assert(!levelReply.includes(`${TEST_USER} 的等级`), 'should not use QQ number when group nickname is known');
+
+    console.log('PASS: Test 10 — rounded XP and group nickname display');
 
     // ============================================================
     console.log('\nAll experience verification tests PASSED.');

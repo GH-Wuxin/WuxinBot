@@ -1,0 +1,892 @@
+{
+  "schema_version": "prompt_review_rule_inventory_v1",
+  "generated_by": "WUXINBOT_PROMPT_REVIEW_AUDIT_V01 (read-only)",
+  "rule_count": 55,
+  "rules": [
+    {
+      "rule_id": "R001",
+      "source_file": "server/bot/persona.ts",
+      "source_section": "PIPPI_CORE",
+      "runtime_layer": "system",
+      "short_semantics": "pippi 身份与世界观，不称 AI/模型/助手",
+      "owner": "WuxinBot runtime",
+      "status": [
+        "PERSONA",
+        "MUST_KEEP"
+      ],
+      "duplicates": [],
+      "conflicts": [],
+      "observed_dependency": ""
+    },
+    {
+      "rule_id": "R002",
+      "source_file": "server/bot/persona.ts",
+      "source_section": "PIPPI_CORE",
+      "runtime_layer": "system",
+      "short_semantics": "Auto 世界观，只自然出现",
+      "owner": "WuxinBot runtime",
+      "status": [
+        "PERSONA"
+      ],
+      "duplicates": [],
+      "conflicts": [],
+      "observed_dependency": ""
+    },
+    {
+      "rule_id": "R003",
+      "source_file": "server/bot/persona.ts",
+      "source_section": "PIPPI_CORE",
+      "runtime_layer": "system",
+      "short_semantics": "语气、关系、边界、语言风格约束",
+      "owner": "WuxinBot runtime",
+      "status": [
+        "PERSONA",
+        "MUST_KEEP"
+      ],
+      "duplicates": [],
+      "conflicts": [],
+      "observed_dependency": ""
+    },
+    {
+      "rule_id": "R004",
+      "source_file": "server/bot/persona.ts",
+      "source_section": "PIPPI_FACT_BOUNDARIES",
+      "runtime_layer": "system",
+      "short_semantics": "不编数字/经历/关系；观察与推断分开",
+      "owner": "WuxinBot runtime",
+      "status": [
+        "SAFETY",
+        "MUST_KEEP"
+      ],
+      "duplicates": [],
+      "conflicts": [],
+      "observed_dependency": "analyzer validator/reviewer"
+    },
+    {
+      "rule_id": "R005",
+      "source_file": "server/bot/persona.ts",
+      "source_section": "PIPPI_FACT_BOUNDARIES",
+      "runtime_layer": "system",
+      "short_semantics": "Recent/PP+/Mod/缺失数据解释边界",
+      "owner": "WuxinBot runtime",
+      "status": [
+        "SAFETY",
+        "MUST_KEEP"
+      ],
+      "duplicates": [],
+      "conflicts": [],
+      "observed_dependency": "analyzer reviewer"
+    },
+    {
+      "rule_id": "R006",
+      "source_file": "server/bot/persona.ts",
+      "source_section": "SCENE_*",
+      "runtime_layer": "system",
+      "short_semantics": "casual/analysis/command/serious 场景规则",
+      "owner": "WuxinBot runtime",
+      "status": [
+        "PRODUCT_BEHAVIOR"
+      ],
+      "duplicates": [],
+      "conflicts": [],
+      "observed_dependency": ""
+    },
+    {
+      "rule_id": "R007",
+      "source_file": "server/bot/persona.ts",
+      "source_section": "PIPPI_CORE 推图/工具段",
+      "runtime_layer": "system",
+      "short_semantics": "recommend/pp_calc/beatmap/leaderboard 必须调用工具且禁止编数字",
+      "owner": "WuxinBot runtime",
+      "status": [
+        "TOOL_ROUTING",
+        "MUST_KEEP"
+      ],
+      "duplicates": [
+        "R040",
+        "R041",
+        "R042",
+        "R043",
+        "R044",
+        "R045",
+        "R046"
+      ],
+      "conflicts": [],
+      "observed_dependency": ""
+    },
+    {
+      "rule_id": "R008",
+      "source_file": "server/bot/prompt.ts",
+      "source_section": "visualCapabilityNotice",
+      "runtime_layer": "system+user",
+      "short_semantics": "视觉能力诚实声明；无图不提视觉",
+      "owner": "WuxinBot runtime",
+      "status": [
+        "SAFETY",
+        "PRODUCT_BEHAVIOR"
+      ],
+      "duplicates": [
+        "R009"
+      ],
+      "conflicts": [],
+      "observed_dependency": ""
+    },
+    {
+      "rule_id": "R009",
+      "source_file": "server/bot/prompt.ts",
+      "source_section": "facts 与 factualCtx",
+      "runtime_layer": "system+user",
+      "short_semantics": "同一视觉说明被注入 system 与 user 两个位置",
+      "owner": "WuxinBot runtime",
+      "status": [
+        "DUPLICATE",
+        "PARTIAL_DUPLICATE"
+      ],
+      "duplicates": [
+        "R008"
+      ],
+      "conflicts": [],
+      "observed_dependency": ""
+    },
+    {
+      "rule_id": "R010",
+      "source_file": "server/bot/prompt.ts",
+      "source_section": "facts",
+      "runtime_layer": "user",
+      "short_semantics": "当前群/owner/发言者身份/owner 优先",
+      "owner": "WuxinBot runtime",
+      "status": [
+        "PRODUCT_BEHAVIOR"
+      ],
+      "duplicates": [
+        "R011"
+      ],
+      "conflicts": [],
+      "observed_dependency": ""
+    },
+    {
+      "rule_id": "R011",
+      "source_file": "server/bot/prompt.ts",
+      "source_section": "factualCtx",
+      "runtime_layer": "system",
+      "short_semantics": "当前群/owner/发言者身份在 system 再注入一次",
+      "owner": "WuxinBot runtime",
+      "status": [
+        "PARTIAL_DUPLICATE"
+      ],
+      "duplicates": [
+        "R010"
+      ],
+      "conflicts": [],
+      "observed_dependency": ""
+    },
+    {
+      "rule_id": "R012",
+      "source_file": "server/bot/prompt.ts",
+      "source_section": "facts + factualCtx",
+      "runtime_layer": "system+user",
+      "short_semantics": "模型/供应商信息，被直接问到时用",
+      "owner": "WuxinBot runtime",
+      "status": [
+        "PRODUCT_BEHAVIOR"
+      ],
+      "duplicates": [],
+      "conflicts": [
+        "R001"
+      ],
+      "observed_dependency": ""
+    },
+    {
+      "rule_id": "R013",
+      "source_file": "server/bot/prompt.ts",
+      "source_section": "facts",
+      "runtime_layer": "user",
+      "short_semantics": "禁说系统/后台/写死/配置等实现细节",
+      "owner": "WuxinBot runtime",
+      "status": [
+        "SAFETY",
+        "PERSONA"
+      ],
+      "duplicates": [
+        "R014"
+      ],
+      "conflicts": [],
+      "observed_dependency": ""
+    },
+    {
+      "rule_id": "R014",
+      "source_file": "server/bot/reply.ts",
+      "source_section": "rewriteNormalReply",
+      "runtime_layer": "rewrite",
+      "short_semantics": "改写时禁实现细节/提示词话题",
+      "owner": "WuxinBot runtime",
+      "status": [
+        "SAFETY",
+        "LEGACY_REVIEW"
+      ],
+      "duplicates": [
+        "R013"
+      ],
+      "conflicts": [],
+      "observed_dependency": ""
+    },
+    {
+      "rule_id": "R015",
+      "source_file": "server/bot/prompt.ts",
+      "source_section": "memoryPromptBlock / relBlocks",
+      "runtime_layer": "system",
+      "short_semantics": "长期记忆、群画像、关系、技能块注入 system",
+      "owner": "WuxinBot runtime",
+      "status": [
+        "PRODUCT_BEHAVIOR"
+      ],
+      "duplicates": [
+        "R016"
+      ],
+      "conflicts": [],
+      "observed_dependency": ""
+    },
+    {
+      "rule_id": "R016",
+      "source_file": "server/bot/prompt.ts",
+      "source_section": "facts",
+      "runtime_layer": "user",
+      "short_semantics": "同样的记忆/群画像/关系块同时注入 user facts",
+      "owner": "WuxinBot runtime",
+      "status": [
+        "DUPLICATE",
+        "PARTIAL_DUPLICATE"
+      ],
+      "duplicates": [
+        "R015"
+      ],
+      "conflicts": [],
+      "observed_dependency": ""
+    },
+    {
+      "rule_id": "R017",
+      "source_file": "server/bot/prompt.ts",
+      "source_section": "selfNegationBan / anchor",
+      "runtime_layer": "user",
+      "short_semantics": "进入回复阶段禁自我否定；@ 锚点",
+      "owner": "WuxinBot runtime",
+      "status": [
+        "SAFETY",
+        "PRODUCT_BEHAVIOR"
+      ],
+      "duplicates": [],
+      "conflicts": [],
+      "observed_dependency": ""
+    },
+    {
+      "rule_id": "R018",
+      "source_file": "server/bot/prompt.ts",
+      "source_section": "facts",
+      "runtime_layer": "user",
+      "short_semantics": "发言者绑定 osu 身份必须写死",
+      "owner": "WuxinBot runtime",
+      "status": [
+        "TOOL_ROUTING",
+        "MUST_KEEP"
+      ],
+      "duplicates": [],
+      "conflicts": [],
+      "observed_dependency": "resolveInternalPlayerTarget"
+    },
+    {
+      "rule_id": "R019",
+      "source_file": "server/bot/prompt.ts",
+      "source_section": "formatHistoryForModel",
+      "runtime_layer": "history",
+      "short_semantics": "历史带 [HH:MM] 时间戳与 QQ/昵称",
+      "owner": "WuxinBot runtime",
+      "status": [
+        "PRODUCT_BEHAVIOR"
+      ],
+      "duplicates": [],
+      "conflicts": [],
+      "observed_dependency": ""
+    },
+    {
+      "rule_id": "R020",
+      "source_file": "server/bot/prompt.ts",
+      "source_section": "taskComplexityScore/responseOptionsFor",
+      "runtime_layer": "code",
+      "short_semantics": "复杂分/模型自动选择；owner 强制 pro",
+      "owner": "WuxinBot runtime",
+      "status": [
+        "TOOL_ROUTING",
+        "PRODUCT_BEHAVIOR"
+      ],
+      "duplicates": [],
+      "conflicts": [],
+      "observed_dependency": ""
+    },
+    {
+      "rule_id": "R021",
+      "source_file": "server/bot/gate.ts",
+      "source_section": "decideReply",
+      "runtime_layer": "code",
+      "short_semantics": "确定性回复门：暂停/黑名单/静默/冷却/频率/提及/连续对话",
+      "owner": "WuxinBot runtime",
+      "status": [
+        "PRODUCT_BEHAVIOR",
+        "MUST_KEEP"
+      ],
+      "duplicates": [],
+      "conflicts": [],
+      "observed_dependency": ""
+    },
+    {
+      "rule_id": "R022",
+      "source_file": "server/bot/gate.ts",
+      "source_section": "llmReplyGate",
+      "runtime_layer": "gate LLM",
+      "short_semantics": "natural/light 模式用 LLM 给接话价值打分（346 tokens 均值）",
+      "owner": "WuxinBot runtime",
+      "status": [
+        "PRODUCT_BEHAVIOR",
+        "LEGACY_REVIEW"
+      ],
+      "duplicates": [
+        "R021"
+      ],
+      "conflicts": [],
+      "observed_dependency": ""
+    },
+    {
+      "rule_id": "R023",
+      "source_file": "server/bot/gate.ts",
+      "source_section": "llmContentFilter",
+      "runtime_layer": "gate LLM",
+      "short_semantics": "用户设置内容过滤（仅昵称/风格，聊天正文不走）",
+      "owner": "WuxinBot runtime",
+      "status": [
+        "SAFETY",
+        "MUST_KEEP"
+      ],
+      "duplicates": [],
+      "conflicts": [],
+      "observed_dependency": ""
+    },
+    {
+      "rule_id": "R024",
+      "source_file": "server/bot.ts",
+      "source_section": "tool availability note",
+      "runtime_layer": "system",
+      "short_semantics": "一次追加约 1401 字工具调用规则",
+      "owner": "WuxinBot runtime",
+      "status": [
+        "TOOL_ROUTING",
+        "MUST_KEEP"
+      ],
+      "duplicates": [
+        "R007",
+        "R025",
+        "R026"
+      ],
+      "conflicts": [],
+      "observed_dependency": ""
+    },
+    {
+      "rule_id": "R025",
+      "source_file": "server/bots/agentCapabilities.ts",
+      "source_section": "buildQueryOsuDescription",
+      "runtime_layer": "tool schema",
+      "short_semantics": "query_osu 描述 1259 字（由 capabilityCatalog 派生）",
+      "owner": "WuxinBot runtime",
+      "status": [
+        "TOOL_ROUTING",
+        "SINGLE_SOURCE_DERIVED"
+      ],
+      "duplicates": [
+        "R007",
+        "R024"
+      ],
+      "conflicts": [],
+      "observed_dependency": ""
+    },
+    {
+      "rule_id": "R026",
+      "source_file": "server/bots/capabilityCatalog.ts",
+      "source_section": "CAPABILITY_CATALOG",
+      "runtime_layer": "code",
+      "short_semantics": "能力枚举/描述/参数适用性单源",
+      "owner": "WuxinBot runtime",
+      "status": [
+        "TOOL_ROUTING",
+        "SINGLE_SOURCE",
+        "MUST_KEEP"
+      ],
+      "duplicates": [],
+      "conflicts": [],
+      "observed_dependency": ""
+    },
+    {
+      "rule_id": "R027",
+      "source_file": "server/bot.ts",
+      "source_section": "required-tool deterministic route",
+      "runtime_layer": "code",
+      "short_semantics": "显式 osu 查询先执行工具再让 LLM 写 lead",
+      "owner": "WuxinBot runtime",
+      "status": [
+        "TOOL_ROUTING",
+        "MUST_KEEP"
+      ],
+      "duplicates": [],
+      "conflicts": [],
+      "observed_dependency": ""
+    },
+    {
+      "rule_id": "R028",
+      "source_file": "server/bot.ts",
+      "source_section": "bp_type deterministic route",
+      "runtime_layer": "code",
+      "short_semantics": "BP 类型/占比强制 bp_type，禁 LLM 猜测",
+      "owner": "WuxinBot runtime",
+      "status": [
+        "TOOL_ROUTING",
+        "MUST_KEEP"
+      ],
+      "duplicates": [
+        "R024",
+        "R025"
+      ],
+      "conflicts": [],
+      "observed_dependency": ""
+    },
+    {
+      "rule_id": "R029",
+      "source_file": "server/bot.ts",
+      "source_section": "recommend hard guard",
+      "runtime_layer": "code",
+      "short_semantics": "recommend 请求未调工具且回复像推荐时强制重跑",
+      "owner": "WuxinBot runtime",
+      "status": [
+        "TOOL_ROUTING",
+        "MUST_KEEP"
+      ],
+      "duplicates": [
+        "R007",
+        "R024"
+      ],
+      "conflicts": [],
+      "observed_dependency": ""
+    },
+    {
+      "rule_id": "R030",
+      "source_file": "server/bot.ts",
+      "source_section": "named bot degrade",
+      "runtime_layer": "code",
+      "short_semantics": "点名 bot 不支持时明确降级提示",
+      "owner": "WuxinBot runtime",
+      "status": [
+        "TOOL_ROUTING"
+      ],
+      "duplicates": [],
+      "conflicts": [],
+      "observed_dependency": ""
+    },
+    {
+      "rule_id": "R031",
+      "source_file": "server/bot.ts",
+      "source_section": "search interception",
+      "runtime_layer": "code",
+      "short_semantics": "显式联网搜索先调真实搜索；无源如实拒绝",
+      "owner": "WuxinBot runtime",
+      "status": [
+        "TOOL_ROUTING",
+        "SAFETY"
+      ],
+      "duplicates": [],
+      "conflicts": [],
+      "observed_dependency": ""
+    },
+    {
+      "rule_id": "R032",
+      "source_file": "server/bots/executor.ts",
+      "source_section": "runToolLoop",
+      "runtime_layer": "tool loop",
+      "short_semantics": "max 4 iterations / 8 calls per turn；结果防注入与直接交付",
+      "owner": "WuxinBot runtime",
+      "status": [
+        "SAFETY",
+        "TOOL_ROUTING",
+        "MUST_KEEP"
+      ],
+      "duplicates": [],
+      "conflicts": [],
+      "observed_dependency": ""
+    },
+    {
+      "rule_id": "R033",
+      "source_file": "server/bot/reply.ts",
+      "source_section": "sanitizeReply/isWeirdReply",
+      "runtime_layer": "postprocess",
+      "short_semantics": "去前缀、去工具标记；触发 rewriteNormalReply",
+      "owner": "WuxinBot runtime",
+      "status": [
+        "SAFETY",
+        "LEGACY_REVIEW"
+      ],
+      "duplicates": [],
+      "conflicts": [
+        "R034"
+      ],
+      "observed_dependency": ""
+    },
+    {
+      "rule_id": "R034",
+      "source_file": "server/bot/reply.ts",
+      "source_section": "isWeirdReply >180 chars",
+      "runtime_layer": "postprocess",
+      "short_semantics": "普通回复超过 180 字会被判 weird 并重写",
+      "owner": "WuxinBot runtime",
+      "status": [
+        "LEGACY_REVIEW",
+        "LOW_VALUE"
+      ],
+      "duplicates": [],
+      "conflicts": [
+        "R033"
+      ],
+      "observed_dependency": ""
+    },
+    {
+      "rule_id": "R035",
+      "source_file": "server/bot/reply.ts",
+      "source_section": "rewriteNormalReply",
+      "runtime_layer": "rewrite LLM",
+      "short_semantics": "第二 LLM 改写（370 字 system，180 max tokens）",
+      "owner": "WuxinBot runtime",
+      "status": [
+        "LEGACY_REVIEW",
+        "QUALITY_REVIEW"
+      ],
+      "duplicates": [],
+      "conflicts": [],
+      "observed_dependency": ""
+    },
+    {
+      "rule_id": "R036",
+      "source_file": "server/bot/commands/index.ts",
+      "source_section": "getAllCommandHelpEntries",
+      "runtime_layer": "code",
+      "short_semantics": "命令 descriptor 单源入口（86 条）",
+      "owner": "WuxinBot runtime",
+      "status": [
+        "TOOL_ROUTING",
+        "SINGLE_SOURCE",
+        "MUST_KEEP"
+      ],
+      "duplicates": [],
+      "conflicts": [],
+      "observed_dependency": ""
+    },
+    {
+      "rule_id": "R037",
+      "source_file": "server/bot/commands/index.ts",
+      "source_section": "buildCapabilitySummaryDocs",
+      "runtime_layer": "KB",
+      "short_semantics": "按观众生成能力摘要文档（3 audience × 5 family）",
+      "owner": "WuxinBot runtime",
+      "status": [
+        "TOOL_ROUTING",
+        "SINGLE_SOURCE"
+      ],
+      "duplicates": [],
+      "conflicts": [],
+      "observed_dependency": ""
+    },
+    {
+      "rule_id": "R038",
+      "source_file": "server/bot/kbRoute.ts/kbPrompt.ts",
+      "source_section": "KB route/quota",
+      "runtime_layer": "KB",
+      "short_semantics": "KB 检索配额 1500 字，三类 fence，能力/领域/社区分路由",
+      "owner": "WuxinBot runtime",
+      "status": [
+        "TOOL_ROUTING",
+        "MUST_KEEP"
+      ],
+      "duplicates": [],
+      "conflicts": [],
+      "observed_dependency": ""
+    },
+    {
+      "rule_id": "R039",
+      "source_file": "server/bot/kbQuoteGuard.ts",
+      "source_section": "KB quote guard",
+      "runtime_layer": "KB",
+      "short_semantics": "长复述社区窗口告警（review aid）",
+      "owner": "WuxinBot runtime",
+      "status": [
+        "SAFETY",
+        "LEGACY_REVIEW"
+      ],
+      "duplicates": [],
+      "conflicts": [],
+      "observed_dependency": ""
+    },
+    {
+      "rule_id": "R040",
+      "source_file": "server/bot/persona.ts",
+      "source_section": "推荐段",
+      "runtime_layer": "system",
+      "short_semantics": "recommend 规则影子副本",
+      "owner": "WuxinBot runtime",
+      "status": [
+        "TOOL_ROUTING",
+        "SHADOW_COPY"
+      ],
+      "duplicates": [
+        "R007"
+      ],
+      "conflicts": [],
+      "observed_dependency": ""
+    },
+    {
+      "rule_id": "R041",
+      "source_file": "server/bot.ts",
+      "source_section": "tool note",
+      "runtime_layer": "system",
+      "short_semantics": "recommend 规则影子副本",
+      "owner": "WuxinBot runtime",
+      "status": [
+        "TOOL_ROUTING",
+        "SHADOW_COPY"
+      ],
+      "duplicates": [
+        "R040"
+      ],
+      "conflicts": [],
+      "observed_dependency": ""
+    },
+    {
+      "rule_id": "R042",
+      "source_file": "server/bots/capabilityCatalog.ts",
+      "source_section": "recommend descriptor",
+      "runtime_layer": "tool schema",
+      "short_semantics": "recommend 能力描述",
+      "owner": "WuxinBot runtime",
+      "status": [
+        "TOOL_ROUTING",
+        "SINGLE_SOURCE"
+      ],
+      "duplicates": [
+        "R040",
+        "R041"
+      ],
+      "conflicts": [],
+      "observed_dependency": ""
+    },
+    {
+      "rule_id": "R043",
+      "source_file": "server/bots/agentCapabilities.ts",
+      "source_section": "query_osu description",
+      "runtime_layer": "tool schema",
+      "short_semantics": "recommend 在工具描述再次展开",
+      "owner": "WuxinBot runtime",
+      "status": [
+        "TOOL_ROUTING",
+        "SHADOW_COPY"
+      ],
+      "duplicates": [
+        "R042"
+      ],
+      "conflicts": [],
+      "observed_dependency": ""
+    },
+    {
+      "rule_id": "R044",
+      "source_file": "server/bot/persona.ts",
+      "source_section": "PP计算段",
+      "runtime_layer": "system",
+      "short_semantics": "pp_calc/假设成绩工具规则影子副本",
+      "owner": "WuxinBot runtime",
+      "status": [
+        "TOOL_ROUTING",
+        "SHADOW_COPY"
+      ],
+      "duplicates": [
+        "R045",
+        "R046"
+      ],
+      "conflicts": [],
+      "observed_dependency": ""
+    },
+    {
+      "rule_id": "R045",
+      "source_file": "server/bot.ts",
+      "source_section": "tool note",
+      "runtime_layer": "system",
+      "short_semantics": "pp_calc 工具规则影子副本",
+      "owner": "WuxinBot runtime",
+      "status": [
+        "TOOL_ROUTING",
+        "SHADOW_COPY"
+      ],
+      "duplicates": [
+        "R044"
+      ],
+      "conflicts": [],
+      "observed_dependency": ""
+    },
+    {
+      "rule_id": "R046",
+      "source_file": "server/bots/capabilityCatalog.ts",
+      "source_section": "pp_calc descriptor",
+      "runtime_layer": "tool schema",
+      "short_semantics": "pp_calc 描述",
+      "owner": "WuxinBot runtime",
+      "status": [
+        "TOOL_ROUTING",
+        "SINGLE_SOURCE"
+      ],
+      "duplicates": [
+        "R044",
+        "R045"
+      ],
+      "conflicts": [],
+      "observed_dependency": ""
+    },
+    {
+      "rule_id": "R047",
+      "source_file": "server/osu/commands.ts",
+      "source_section": "ENABLE_RUNTIME_LLM_FACT_REVIEW",
+      "runtime_layer": "code",
+      "short_semantics": "analyze 报告总启 LLM 独立事实审查（每份报告 1 次，可重试 2）",
+      "owner": "WuxinBot runtime",
+      "status": [
+        "SAFETY",
+        "MANDATORY_SAFETY_CONTROL"
+      ],
+      "duplicates": [],
+      "conflicts": [],
+      "observed_dependency": ""
+    },
+    {
+      "rule_id": "R048",
+      "source_file": "server/osu/analyzer.ts",
+      "source_section": "buildAnalysisReviewerPrompt",
+      "runtime_layer": "review LLM",
+      "short_semantics": "reviewer 无 persona，只查可证明基本事实，八段各一判决",
+      "owner": "WuxinBot runtime",
+      "status": [
+        "SAFETY",
+        "MANDATORY_SAFETY_CONTROL"
+      ],
+      "duplicates": [],
+      "conflicts": [],
+      "observed_dependency": ""
+    },
+    {
+      "rule_id": "R049",
+      "source_file": "server/osu/commands.ts",
+      "source_section": "hard reject fallback",
+      "runtime_layer": "postprocess",
+      "short_semantics": "reviewer hard REJECT -> 确定性事实降级，不做 LLM 重写",
+      "owner": "WuxinBot runtime",
+      "status": [
+        "SAFETY",
+        "MUST_KEEP"
+      ],
+      "duplicates": [],
+      "conflicts": [],
+      "observed_dependency": ""
+    },
+    {
+      "rule_id": "R050",
+      "source_file": "server/osu/commands.ts",
+      "source_section": "section/conclusion generation",
+      "runtime_layer": "generation LLM",
+      "short_semantics": "区块/结论最多 3 次 + repair + 机械验证 + fallback",
+      "owner": "WuxinBot runtime",
+      "status": [
+        "PRODUCT_BEHAVIOR",
+        "MUST_KEEP"
+      ],
+      "duplicates": [],
+      "conflicts": [],
+      "observed_dependency": ""
+    },
+    {
+      "rule_id": "R051",
+      "source_file": "server/osu/analyzer.ts",
+      "source_section": "validateAnalysis*",
+      "runtime_layer": "code",
+      "short_semantics": "机械硬门（数字/Mod/术语/身份/结构）",
+      "owner": "WuxinBot runtime",
+      "status": [
+        "SAFETY",
+        "MUST_KEEP"
+      ],
+      "duplicates": [],
+      "conflicts": [],
+      "observed_dependency": ""
+    },
+    {
+      "rule_id": "R052",
+      "source_file": "server/bot/persona.ts",
+      "source_section": "detectScene command",
+      "runtime_layer": "code",
+      "short_semantics": "/w 判定为 command scene；实际 /w 在 bot.ts 提前路由，普通 buildPrompt 不再看到 /w",
+      "owner": "WuxinBot runtime",
+      "status": [
+        "LEGACY_COMPAT",
+        "DEAD_OR_UNREACHABLE"
+      ],
+      "duplicates": [],
+      "conflicts": [],
+      "observed_dependency": "processIncoming"
+    },
+    {
+      "rule_id": "R053",
+      "source_file": "server/bot/prompt.ts",
+      "source_section": "ignoreSystemFacts",
+      "runtime_layer": "system+user",
+      "short_semantics": "关闭 system facts 时 user facts 被省略，但 system factualCtx 仍注入部分事实",
+      "owner": "WuxinBot runtime",
+      "status": [
+        "LEGACY_COMPAT",
+        "PARTIAL_DUPLICATE"
+      ],
+      "duplicates": [],
+      "conflicts": [
+        "R010",
+        "R011"
+      ],
+      "observed_dependency": ""
+    },
+    {
+      "rule_id": "R054",
+      "source_file": "server/bot/kbPrompt.ts",
+      "source_section": "community style fence",
+      "runtime_layer": "KB",
+      "short_semantics": "社区表达参考不得逐句引用/声称真实成员",
+      "owner": "WuxinBot runtime",
+      "status": [
+        "SAFETY",
+        "MUST_KEEP"
+      ],
+      "duplicates": [],
+      "conflicts": [],
+      "observed_dependency": ""
+    },
+    {
+      "rule_id": "R055",
+      "source_file": "server/osu/analyzer.ts",
+      "source_section": "reviewer system quality rules",
+      "runtime_layer": "review LLM",
+      "short_semantics": "reviewer 明文禁止 quality 类 REJECT；解析器默认未写 kind 为 hard，quality 分支当前无实际产出",
+      "owner": "WuxinBot runtime",
+      "status": [
+        "LEGACY_REVIEW",
+        "DEAD_OR_UNREACHABLE"
+      ],
+      "duplicates": [],
+      "conflicts": [],
+      "observed_dependency": ""
+    }
+  ]
+}

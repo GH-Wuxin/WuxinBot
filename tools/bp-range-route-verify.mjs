@@ -8,13 +8,22 @@
 
 import http from 'node:http';
 import { createTestDataDir, assertNotProduction, productionDbSnapshot, verifyProductionDbUnchanged, cleanupTestDir } from './test-isolation.mjs';
+import { startOsuApiMock } from './osu-api-mock.mjs';
 
 const testDataDir = createTestDataDir('wuxin-bprange');
 process.env.DATA_DIR = testDataDir;
+process.env.PIPPI_AGENT_RUNTIME_MODE = 'legacy';
 assertNotProduction(testDataDir);
 
 const prodBefore = productionDbSnapshot();
 console.log('[isolation] production db snapshot: ' + (prodBefore ? prodBefore.sha256.slice(0, 12) + '...' : 'N/A'));
+
+// Offline osu! API mock: the internal tool must succeed deterministically so
+// the E2E can observe query_osu tool_calls in the lead request.
+const osuMock = await startOsuApiMock();
+process.env.OSU_API_BASE_URL = osuMock.apiBase;
+process.env.OSU_TOKEN_URL = osuMock.tokenUrl;
+console.log(`[mock] osu! API served on 127.0.0.1:${osuMock.port}`);
 
 const { ensureStore, readDb, updateDb } = await import('../server/store.ts');
 const { processIncoming } = await import('../server/bot.ts');
@@ -82,8 +91,8 @@ const llmPort = llmServer.address().port;
 
 function setupFixture() {
   updateDb(db => {
-    db.settings.ownerQq = '570341031';
-    db.settings.selfQq = '3861208813';
+    db.settings.ownerQq = 'REDACTED_QQ_001';
+    db.settings.selfQq = 'REDACTED_QQ_002';
     db.settings.llmProvider = 'deepseek';
     db.settings.apiKey = 'fixture-key';
     db.settings.deepseekApiKey = 'fixture-key';
@@ -92,6 +101,10 @@ function setupFixture() {
     db.settings.enableAutoModel = false;
     db.settings.thinkingNoticeMode = 'off';
     db.settings.memoryEnabled = false;
+    db.settings.osuClientId = 'fixture-client';
+    db.settings.osuClientSecret = 'fixture-secret';
+    // M1: literal quick commands (`!bs 1-100`) route deterministically; the
+    // Chinese natural-language cases below still go through the LLM tool path.
     db.settings.botRegistry = {
       updatedAt: new Date().toISOString(),
       bots: [{
@@ -105,13 +118,13 @@ function setupFixture() {
       }]
     };
     db.osuBindings = db.osuBindings || {};
-    db.osuBindings['570341031'] = 1234567;
+    db.osuBindings['REDACTED_QQ_001'] = 1234567;
     db.groupBotConfig = db.groupBotConfig || {};
-    db.groupBotConfig['682910196'] = { yumu: true };
+    db.groupBotConfig['REDACTED_GROUP_001'] = { yumu: true };
   });
 }
 
-async function runRangeE2E(label, userText, expectedArgs) {
+async function runRangeE2E(label, userText, expectedArgs, expectQuick = false) {
   setupFixture();
   llmCalls = 0;
   llmReceivedTools = null;
@@ -120,10 +133,26 @@ async function runRangeE2E(label, userText, expectedArgs) {
   const result = await processIncoming({
     source: 'gui', type: 'private',
     messageId: 'bpr-' + Date.now() + '-' + Math.random().toString(36).slice(2, 6),
-    groupId: 'private', userId: '570341031', nickname: 'Owner',
+    groupId: 'private', userId: 'REDACTED_QQ_001', nickname: 'Owner',
     text: userText,
     atTargets: [], images: [], raw: {}
   }, async () => {});
+
+  // M1 quick-command router: literal `!bs 1-100` is now handled deterministically
+  // without any LLM call (the Chinese natural-language cases below still go
+  // through the requiredTool path).
+  if (expectQuick) {
+    if (llmCalls !== 0) {
+      fail(label, `quick route must not call the LLM, got ${llmCalls} calls`);
+      return;
+    }
+    if (!result?.replied) {
+      fail(label, `quick route must reply, got ${JSON.stringify(result)}`);
+      return;
+    }
+    pass(label + ` → quick route (${result.reason})`);
+    return;
+  }
 
   // 1. No security-policy rejection
   if (result.reason && result.reason.includes('操作被安全策略拒绝')) {
@@ -224,13 +253,14 @@ console.log('\n=== E2E: "查一下我的bp1到bp10" through processIncoming ==='
 
 await runRangeE2E('bp-range', '查一下我的bp1到bp10', { capability: 'bp', bp_start: 1, bp_end: 10 });
 await runRangeE2E('bp-range-short', '查一下bp1到bp10', { capability: 'bp', bp_start: 1, bp_end: 10 });
-await runRangeE2E('bp-range-100', '!bs 1-100', { capability: 'bp', bp_start: 1, bp_end: 100, compact: true });
+await runRangeE2E('bp-range-100', '!bs 1-100', { capability: 'bp', bp_start: 1, bp_end: 100, compact: true }, true);
 await runRangeE2E('bp-rank1', '查一下我的bp1', { capability: 'bp', bp_rank: 1 });
 await runRangeE2E('bp-no-range', '查一下我的bp', { capability: 'bp' });
 
 console.log(`\n${'='.repeat(40)}`);
 console.log(`Passed: ${passed}, Failed: ${failed}`);
 llmServer.close();
+await osuMock.close();
 
 const prodOk = verifyProductionDbUnchanged(prodBefore);
 if (!prodOk) {

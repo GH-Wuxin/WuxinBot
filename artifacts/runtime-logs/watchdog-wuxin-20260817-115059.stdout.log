@@ -1,0 +1,4 @@
+QQ AI ChatBot server running at http://127.0.0.1:8787
+[yumu-image] Render server listening on ws://127.0.0.1:8389
+[yumu-image] Client authenticated, pid=13448
+[reasoning-shadow] {"ts":1786946530913,"turnId":"258779289","callRole":"tool_planner","level":"max","source":"rule","reasonCode":"tool_selection","actualModel":"deepseek-v4-pro","finishReason":"stop","reasoningTokens":0,"completionTokens":18,"totalTokens":7505,"latencyMs":2783,"toolCalls":0,"textEmpty":false}

@@ -1,0 +1,107 @@
+{
+  "entry": "server/bot.ts processIncomingInner",
+  "paths": {
+    "normal_group_natural_light": {
+      "calls": [
+        {
+          "step": 0,
+          "caller": "gate.ts decideReply",
+          "llm": "optional",
+          "model": "db.settings.model",
+          "role": "user-only scoring prompt ~346 prompt tokens mean",
+          "trigger": "group.mode natural/light after deterministic checks"
+        },
+        {
+          "step": 1,
+          "caller": "bot.ts callLLM or runToolLoop",
+          "llm": "required",
+          "model": "overrideModel or db.settings.model",
+          "messages": "buildPrompt system + history + user (+tool note)",
+          "tools": "query_osu + get_player_skill when internal bots enabled",
+          "loop": "runToolLoop max 4 iterations"
+        },
+        {
+          "step": 2,
+          "caller": "bot.ts isWeirdReply -> rewriteNormalReply",
+          "llm": "conditional",
+          "model": "db.settings.model",
+          "messages": "rewrite system 370 chars + original reply",
+          "trigger": "!longForm && isWeirdReply"
+        },
+        {
+          "step": 3,
+          "caller": "bot.ts level-up async",
+          "llm": "conditional rare",
+          "model": "db.settings.model",
+          "messages": "level-up prompt"
+        }
+      ],
+      "call_count_range": "1 (gate, if mode) + 1-4 (main/tool loop) + 0-1 (rewrite) + 0-1 (level-up)"
+    },
+    "slash_wuxin_command": {
+      "calls": [
+        {
+          "step": 0,
+          "caller": "bot.ts handleOwnerCommand",
+          "llm": "no LLM for routing itself",
+          "note": "/w osu analyze -> analyzer pipeline; other /w deterministic or owner handlers"
+        }
+      ],
+      "call_count_range": "0 LLM (except analyze pipeline)"
+    },
+    "osu_analyze": {
+      "calls": [
+        {
+          "caller": "commands.ts generateAnalysisSectionComments",
+          "llm": "1-3 generation + up to N repair calls",
+          "model": "OSU_ANALYSIS_MODEL deepseek-v4-flash"
+        },
+        {
+          "caller": "commands.ts generateConclusion",
+          "llm": "1-3 generation + up to repair",
+          "model": "OSU_ANALYSIS_MODEL"
+        },
+        {
+          "caller": "commands.ts reviewFullReport",
+          "llm": "1-2 review calls per report",
+          "model": "OSU_REVIEW_MODEL deepseek-v4-flash"
+        },
+        {
+          "caller": "commands.ts applyReviewerHardFallbacks",
+          "llm": "none (deterministic fallback)"
+        }
+      ],
+      "call_count_range": "4-11 LLM calls typical"
+    },
+    "memory_group_profile_relationship": {
+      "calls": [
+        {
+          "caller": "memory.ts maybeUpdateMemoryProfile",
+          "llm": "conditional background"
+        },
+        {
+          "caller": "groupProfile.ts",
+          "llm": "conditional background"
+        },
+        {
+          "caller": "relationshipProfile.ts",
+          "llm": "conditional background"
+        }
+      ],
+      "call_count_range": "0-3 background LLM calls per triggering turn"
+    }
+  },
+  "all_llm_call_sites": [
+    "server/bot/gate.ts llmReplyGate",
+    "server/bot/gate.ts llmContentFilter",
+    "server/bot.ts main callLLM",
+    "server/bots/executor.ts runToolLoop planner/lead/retry",
+    "server/bot/reply.ts rewriteNormalReply",
+    "server/bot.ts level-up completeChat",
+    "server/osu/commands.ts section/conclusion/repair/review",
+    "server/bot/memory.ts profile LLM",
+    "server/bot/groupProfile.ts profile LLM",
+    "server/bot/relationshipProfile.ts profile LLM",
+    "server/bot/owner/system.ts summary LLM"
+  ]
+}

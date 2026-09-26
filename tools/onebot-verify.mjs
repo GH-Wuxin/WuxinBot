@@ -6,6 +6,7 @@ import { createTestDataDir, assertNotProduction, productionDbSnapshot, verifyPro
 
 const testDataDir = createTestDataDir('wuxin-onebot');
 process.env.DATA_DIR = testDataDir;
+process.env.PIPPI_AGENT_RUNTIME_MODE = 'legacy';
 assertNotProduction(testDataDir);
 
 const prodBefore = productionDbSnapshot();
@@ -17,9 +18,11 @@ function assert(condition, message) {
   if (!condition) throw new Error(message);
 }
 
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
 async function main() {
   const { ensureStore, readDb, updateDb } = await import('../server/store.ts');
-  const { handleOneBotEvent, sendOneBotMessage } = await import('../server/onebot.ts');
+  const { handleOneBotEvent, hydrateQuotedMessage, sendOneBotMessage } = await import('../server/onebot.ts');
   const { compactDirectToolLead, processIncoming } = await import('../server/bot.ts');
   const {
     registerPendingBotCall,
@@ -30,13 +33,30 @@ async function main() {
   updateDb((db) => {
     db.settings.oneBotHttpUrl = `http://127.0.0.1:${port}`;
     db.settings.oneBotAccessToken = '';
-    db.settings.ownerQq = '570341031';
-    db.settings.selfQq = '3861208813';
+    db.settings.ownerQq = 'REDACTED_QQ_001';
+    db.settings.selfQq = 'REDACTED_QQ_002';
+    // Keep route drain windows short so repeated fixture calls on the same
+    // bot route can be exercised without waiting for production defaults.
+    db.settings.botResponseImageDrainMs = 30;
+    db.settings.botResponseTextDrainMs = 40;
+    db.settings.botResponseTimeoutDrainMs = 40;
   });
 
   let mode = 'failed';
-  const server = http.createServer((_req, res) => {
+  let getMsgFixture = null;
+  const oneBotRequests = [];
+  const server = http.createServer(async (req, res) => {
+    let raw = '';
+    for await (const chunk of req) raw += chunk;
+    const body = raw ? JSON.parse(raw) : {};
+    oneBotRequests.push({ url: req.url, body });
     res.writeHead(200, { 'Content-Type': 'application/json' });
+    if (req.url === '/get_msg') {
+      res.end(JSON.stringify(getMsgFixture
+        ? { status: 'ok', retcode: 0, data: getMsgFixture }
+        : { status: 'failed', retcode: 404, message: 'fixture message missing' }));
+      return;
+    }
     res.end(JSON.stringify(mode === 'failed'
       ? { status: 'failed', retcode: 100, message: 'mock failure' }
       : { status: 'ok', retcode: 0, data: { message_id: 1 } }));
@@ -67,7 +87,7 @@ async function main() {
               arguments: JSON.stringify({
                 bot: 'fixture-private-bot',
                 command: llmFixtureMode === 'bp-list' ? 'bp' : 'recent',
-                username: '[SHK]Wuxin'
+                username: '[TST]Alpha'
               })
             }
           }]
@@ -100,7 +120,32 @@ async function main() {
 
     mode = 'ok';
     await sendOneBotMessage({ type: 'group', groupId: '1', userId: '2' }, 'test');
+    await sendOneBotMessage(
+      { source: 'onebot', type: 'group', groupId: '1', userId: '2', messageId: '7788' },
+      '引用回复',
+      { replyToMessageId: '7788', mentionSender: true },
+    );
+    const quotedSend = oneBotRequests.at(-1)?.body?.message || '';
+    assert(quotedSend.startsWith('[CQ:reply,id=7788][CQ:at,qq=2] '), 'group reply must quote the source message and mention its sender');
+
+    getMsgFixture = {
+      message_id: 9911,
+      user_id: 42,
+      sender: { user_id: 42, nickname: 'quoted-user' },
+      message: [
+        { type: 'text', data: { text: '被引用的原图' } },
+        { type: 'image', data: { file: 'quoted.jpg', url: 'https://example.invalid/quoted.jpg' } },
+      ],
+      raw_message: '被引用的原图[CQ:image,file=quoted.jpg,url=https://example.invalid/quoted.jpg]',
+    };
+    const hydrated = await hydrateQuotedMessage({
+      source: 'onebot', type: 'group', groupId: '1', userId: '2', messageId: '9922',
+      replyMessageId: '9911', text: '@Pippi 这个图是什么', images: [],
+    });
+    assert(hydrated.quotedMessage?.text.includes('被引用的原图'), 'quoted text must be loaded through OneBot get_msg');
+    assert(hydrated.quotedMessage?.images?.[0]?.url === 'https://example.invalid/quoted.jpg', 'quoted image URL must be loaded through OneBot get_msg');
     console.log('PASS: OneBot HTTP business status verification');
+    console.log('PASS: QQ reply segment output and quoted-message hydration');
 
     const sent = [];
     const duplicateEvent = {
@@ -108,7 +153,7 @@ async function main() {
       type: 'group',
       messageId: 'onebot-dedupe-test-1',
       groupId: '10001',
-      userId: '570341031',
+      userId: 'REDACTED_QQ_001',
       nickname: 'Owner',
       text: '/w ping',
       atTargets: [],
@@ -135,7 +180,7 @@ async function main() {
       type: 'private',
       messageId: 'private-owner-command-reply',
       groupId: 'private',
-      userId: '570341031',
+      userId: 'REDACTED_QQ_001',
       nickname: 'Owner',
       text: '/w ping',
       atTargets: [],
@@ -235,6 +280,7 @@ async function main() {
     assert(privateResponse.text === '文字结果', 'private bot reply must preserve text');
     assert(interceptedFallbackSends === 0, 'intercepted private bot reply must not enter normal chat processing');
     console.log('PASS: private/group bot response interception with image preservation');
+    await sleep(60);
 
     updateDb((db) => {
       const fixtureBaseUrl = `http://127.0.0.1:${llmPort}/v1`;
@@ -274,7 +320,7 @@ async function main() {
       };
       // QQ → osu! binding for deterministic routing
       db.osuBindings = db.osuBindings || {};
-      db.osuBindings['570341031'] = 1234567;
+      db.osuBindings['REDACTED_QQ_001'] = 1234567;
     });
 
     const finalSends = [];
@@ -285,7 +331,7 @@ async function main() {
       type: 'private',
       messageId: 'tool-det-route-output',
       groupId: 'private',
-      userId: '570341031',
+      userId: 'REDACTED_QQ_001',
       nickname: 'Owner',
       text: '查一下我的bp1',
       atTargets: [],
@@ -333,7 +379,7 @@ async function main() {
       type: 'private',
       messageId: 'tool-loop-llm-output',
       groupId: 'private',
-      userId: '570341031',
+      userId: 'REDACTED_QQ_001',
       nickname: 'Owner',
       text: '帮我调一下osu机器人',
       atTargets: [],
@@ -341,7 +387,7 @@ async function main() {
     }, async (targetEvent, text, options) => {
       if (String(targetEvent.userId || '') === '900000002') {
         llBotCommandsSent += 1;
-        assert(String(text).includes('/r [SHK]Wuxin'), 'tool loop must send the selected bot command');
+        assert(String(text).includes('/r [TST]Alpha'), 'tool loop must send the selected bot command');
         const resolved = tryResolveBotResponse(
           readDb(),
           {
@@ -385,10 +431,11 @@ async function main() {
       'punctuation-only cosmetic leads must use the deterministic fallback'
     );
     console.log('PASS: full LLM tool loop sends one deterministic QQ text+image message');
+    await sleep(60);
 
     llmFixtureMode = 'bp-list';
     const completeBpList = [
-      '[SHK]Wuxin 的前 10 个最佳成绩：',
+      '[TST]Alpha 的前 10 个最佳成绩：',
       ...Array.from({ length: 10 }, (_, index) =>
         `  #${index + 1} ${index === 1 ? 'Sidetracked Day' : `Fixture Song ${index + 1}`} | 7.${String(index).padStart(2, '0')}★ | HD | 99.00% | ${560 - index}.0pp`
       ),
@@ -423,7 +470,7 @@ async function main() {
       type: 'private',
       messageId: 'tool-direct-list-final-output',
       groupId: 'private',
-      userId: '570341031',
+      userId: 'REDACTED_QQ_001',
       nickname: 'Owner',
       text: '帮我调一下bp机器人',
       atTargets: [],
@@ -431,7 +478,7 @@ async function main() {
     }, async (targetEvent, text, options) => {
       if (String(targetEvent.userId || '') === '900000002') {
         bpCommandsSent += 1;
-        assert(String(text).includes('/bp [SHK]Wuxin'), 'direct-list query must send the selected BP command');
+        assert(String(text).includes('/bp [TST]Alpha'), 'direct-list query must send the selected BP command');
         const resolved = tryResolveBotResponse(
           readDb(),
           {
@@ -452,7 +499,7 @@ async function main() {
     assert(llmCalls - llmCallsBeforeDirectList === 2, 'direct-list flow must make one tool turn and one short-lead turn');
     assert(directListSends.length === 1, `direct BP result must be sent exactly once, got ${directListSends.length}`);
     assert(
-      directListSends[0].text.startsWith('查好了，完整结果放在下面。\n\n[SHK]Wuxin 的前 10 个最佳成绩：'),
+      directListSends[0].text.startsWith('查好了，完整结果放在下面。\n\n[TST]Alpha 的前 10 个最佳成绩：'),
       `data-like LLM fragments must be replaced with a deterministic lead: ${directListSends[0].text}`
     );
     assert(directListSends[0].text.includes('#10 Fixture Song 10'), 'QQ delivery must retain the final BP row');
@@ -473,9 +520,9 @@ async function main() {
       {
         type: 'group',
         groupId: '10001',
-        userId: '570341031',
+        userId: 'REDACTED_QQ_001',
         nickname: 'Owner',
-        raw: { self_id: 3861208813 }
+        raw: { self_id: 'REDACTED_QQ_002' }
       },
       async (event, text, options) => {
         reportCalls.push({ event, text, options });

@@ -19,7 +19,6 @@ import path from 'node:path';
 
 const testDataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'wuxin-queue-'));
 process.env.DATA_DIR = testDataDir;
-const dbPath = path.join(testDataDir, 'db.json');
 let readDb;
 let writeDb;
 let processIncoming;
@@ -129,12 +128,13 @@ function setupDb(original) {
 async function main() {
   const store = await import('../server/store.ts');
   const bot = await import('../server/bot.ts');
+  const queue = await import('../server/bot/queue.ts');
   ({ readDb, writeDb } = store);
-  ({ processIncoming, getReplyQueueStats } = bot);
+  ({ processIncoming } = bot);
+  ({ getReplyQueueStats } = queue);
   store.ensureStore();
 
-  const originalRaw = fs.readFileSync(dbPath, 'utf8').replace(/^﻿/, '');
-  const original = JSON.parse(originalRaw);
+  const original = structuredClone(readDb());
   let server;
 
   try {

@@ -1,0 +1,53 @@
+{
+  "commands": {
+    "current_source_of_truth": "server/bot/commands/*.meta.ts + index.ts CommandDescriptor",
+    "shadow_copies": [
+      "server/bot/persona.ts 推图/工具段手写命令语义",
+      "server/bot.ts tool availability note 手写命令与 selector 语义",
+      "KB build 自动命令文档",
+      "server/bot/commands/index.ts capability summaries"
+    ],
+    "drift_risk": "MEDIUM（tool note 与 persona 手写语义未从 descriptor 生成）",
+    "recommended_source_of_truth": "CommandDescriptor -> generated prompt/KB/summary（本轮不修改）"
+  },
+  "capabilities": {
+    "current_source_of_truth": "server/bots/capabilityCatalog.ts",
+    "shadow_copies": [
+      "server/bot.ts tool note",
+      "server/bot/persona.ts 推图/pp_calc 段",
+      "server/bots/agentCapabilities.ts 长描述（派生，但生成后仍与 tool note 并置）"
+    ],
+    "drift_risk": "MEDIUM",
+    "recommended_source_of_truth": "capabilityCatalog -> tool schema + conditional taskRules"
+  },
+  "tool_routing": {
+    "current_source_of_truth": "server/bot.ts deterministic routes + server/bots/executor.ts runToolLoop",
+    "shadow_copies": [
+      "tool note 的 routing 指令",
+      "query_osu 描述"
+    ],
+    "drift_risk": "HIGH（代码已多次修正路由，而 prompt 文案需手动同步）",
+    "recommended_source_of_truth": "code routing + generated short schema-only tool guidance"
+  },
+  "persona": {
+    "current_source_of_truth": "server/bot/persona.ts buildPippiPrompt",
+    "shadow_copies": [
+      "server/osu/analyzer.ts compact analysis persona（有意分离）",
+      "server/bot/reply.ts rewrite mini-persona（有意分离）",
+      "legacy fixture tools/fixtures/kb-legacy-prompts.json"
+    ],
+    "drift_risk": "LOW（分析/rewrite persona 是显式独立角色）",
+    "recommended_source_of_truth": "保留分层 persona，不做本轮合并"
+  },
+  "safety_review": {
+    "current_source_of_truth": "deterministic gates + analyzer mechanical validator + independent LLM fact reviewer",
+    "shadow_copies": [
+      "persona fact boundaries",
+      "tool note 防编造规则",
+      "rewrite guard 安全文案",
+      "reviewer prompt"
+    ],
+    "drift_risk": "LOW for hard facts; MEDIUM for prose repetition",
+    "recommended_source_of_truth": "code gates stay authoritative; prompt keeps short model-guidance only"
+  }
+}

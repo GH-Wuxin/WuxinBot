@@ -1,0 +1,126 @@
+{
+  "schema_version": "prompt_review_slim_phase0_dedup_inventory_v1",
+  "scope": "EXACT_DUPLICATE only; no tool note / persona / reviewer / KB semantics changes",
+  "groups": [
+    {
+      "group_id": "D1",
+      "semantic": "current group name",
+      "classification": "EXACT_DUPLICATE",
+      "rule_id": "R010/R011",
+      "old_locations": [
+        "server/bot/prompt.ts facts block (user message): `当前群：...`",
+        "server/bot/prompt.ts factualCtx (system message): `当前群：...`"
+      ],
+      "canonical_location": "system factualCtx",
+      "why_unnecessary": "same literal, same request, same model-visible information; no parser dependency; system runtime context is the canonical model guidance",
+      "behavioral_invariant": "user still receives speaker identity/facts; system still contains group name",
+      "before_chars": 15,
+      "after_chars": 0,
+      "notes": "newline separator removed together with element (-16 chars in minimal fixture)",
+      "tests": ["phase0 verify fixture normal", "dedup assembled prompt invariant"]
+    },
+    {
+      "group_id": "D2",
+      "semantic": "visual capability notice",
+      "classification": "EXACT_DUPLICATE (when emitted)",
+      "rule_id": "R008/R009",
+      "old_locations": [
+        "facts block (user message): visualCapabilityNotice(db, event)",
+        "factualCtx (system message): visualCapabilityNotice(db, event)"
+      ],
+      "canonical_location": "system factualCtx",
+      "why_unnecessary": "identical function call with identical event/db in same request; no role-specific purpose; text-only model notice is model guidance",
+      "behavioral_invariant": "image placeholder still gets honest visual-limitation guidance exactly once",
+      "before_chars": 49,
+      "after_chars": 0,
+      "notes": "emitted only when media placeholder/actual image exists for text-only model",
+      "tests": ["phase0 verify fixture normal visual non-duplication"]
+    },
+    {
+      "group_id": "D3",
+      "semantic": "strict search notice",
+      "classification": "EXACT_DUPLICATE (when emitted)",
+      "rule_id": "R013",
+      "old_locations": ["facts block (user)", "factualCtx (system)"],
+      "canonical_location": "system factualCtx",
+      "why_unnecessary": "same conditional literal; search behavior is deterministic before LLM",
+      "behavioral_invariant": "explicit-search turns still receive the no-fabrication instruction once",
+      "before_chars": 25,
+      "after_chars": 0,
+      "tests": ["phase0 verify tool/search semantics unchanged via deterministic router code"]
+    },
+    {
+      "group_id": "D4",
+      "semantic": "long-form notice",
+      "classification": "EXACT_DUPLICATE (when emitted)",
+      "rule_id": "R020 adjacent",
+      "old_locations": ["facts block (user)", "factualCtx (system)"],
+      "canonical_location": "system factualCtx",
+      "why_unnecessary": "same conditional literal; long-form delivery remains deterministic",
+      "behavioral_invariant": "long-form requests still get complete-output instruction once",
+      "before_chars": 25,
+      "after_chars": 0,
+      "tests": ["phase0 verify normal/tool path structural checks"]
+    },
+    {
+      "group_id": "D5",
+      "semantic": "owner private context truncation notice",
+      "classification": "EXACT_DUPLICATE (when emitted)",
+      "rule_id": "R011",
+      "old_locations": ["facts block (user)", "factualCtx (system)"],
+      "canonical_location": "system factualCtx",
+      "why_unnecessary": "same computed `ownerContextNotice` string injected twice; no parser dependency",
+      "behavioral_invariant": "owner private context truncation disclosure remains present once",
+      "before_chars": "runtime-dependent (only when owner private context truncated)",
+      "after_chars": 0,
+      "tests": ["phase0 verify prompt structural fixture"]
+    },
+    {
+      "group_id": "D6",
+      "semantic": "group profile block",
+      "classification": "EXACT_DUPLICATE",
+      "rule_id": "R015/R016",
+      "old_locations": ["facts block (user)", "relBlocks (system)"],
+      "canonical_location": "system relationshipContext/relBlocks",
+      "why_unnecessary": "groupProfilePromptBlock(db, groupId) returns the identical string in both places; system relBlocks is the designed relationship-context layer",
+      "behavioral_invariant": "group atmosphere guidance remains present once in system; no duplicate in user",
+      "before_chars": 116,
+      "after_chars": 0,
+      "notes": "measured with synthetic non-empty group profile",
+      "tests": ["phase0 verify dedup group profile exactly once"]
+    },
+    {
+      "group_id": "D7",
+      "semantic": "relationship profile block",
+      "classification": "EXACT_DUPLICATE",
+      "rule_id": "R015/R016",
+      "old_locations": ["facts block (user)", "relBlocks (system)"],
+      "canonical_location": "system relationshipContext/relBlocks",
+      "why_unnecessary": "relationshipPromptBlock(db, event) returns the identical string in both places; system relBlocks is the designed relationship-context layer",
+      "behavioral_invariant": "relevant-pair interaction guidance remains present once in system; no duplicate in user",
+      "before_chars": 75,
+      "after_chars": 0,
+      "notes": "measured with synthetic substantive relationship profile",
+      "tests": ["phase0 verify dedup relationship exactly once"]
+    },
+    {
+      "group_id": "D8",
+      "semantic": "memory block (user copy with precedence clause)",
+      "classification": "PARTIAL_DUPLICATE_NOT_REMOVED",
+      "rule_id": "R015/R016",
+      "old_locations": ["facts block (user)", "relBlocks (system)"],
+      "canonical_location": "system relBlocks",
+      "why_not_removed": "user copy carries the `与当前消息冲突时以当前消息为准` precedence clause, which may have role-specific semantic purpose. Deferred to P1.",
+      "before_chars": "memoryMaxChars up to 1000 + wrapper",
+      "after_chars": "unchanged in Phase 0",
+      "tests": ["phase0 verify records intentional keep"]
+    }
+  ],
+  "explicitly_not_touched": [
+    "1401-char tool availability note (P1_SINGLE_SOURCE)",
+    "query_osu / get_player_skill schemas",
+    "pippi persona and analysis compact persona",
+    "analyze reviewer strategy / hard-reject fallback",
+    "quality dead branch (only reachability evidence collected)"
+  ]
+}

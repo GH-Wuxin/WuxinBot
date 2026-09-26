@@ -1,0 +1,95 @@
+{
+  "schema_version": "prompt_review_slim_phase0_before_after_v1",
+  "method": "same synthetic redacted fixture rebuilt with pre-P0 code (audit reconstruction) and post-P0 code; chars exact; tokens intentionally NOT derived from chars",
+  "paths": [
+    {
+      "path": "A normal chat",
+      "before_system_chars": 6072,
+      "after_system_chars": 6072,
+      "before_user_chars": 396,
+      "after_user_chars": 380,
+      "delta_user_chars": -16,
+      "structural_diff": "facts user block lost one `当前群：` line (15 chars) + one newline separator",
+      "semantic_invariant_status": "PASS (system factualCtx still carries group name; persona and runtime facts present)"
+    },
+    {
+      "path": "B osu question no tool",
+      "before_system_chars": 6207,
+      "after_system_chars": 6207,
+      "before_user_chars": 396,
+      "after_user_chars": 380,
+      "delta_user_chars": -16,
+      "semantic_invariant_status": "PASS"
+    },
+    {
+      "path": "C natural-language tool trigger",
+      "before_system_chars": 6207,
+      "after_system_chars": 6207,
+      "before_user_chars": 398,
+      "after_user_chars": 382,
+      "delta_user_chars": -16,
+      "tool_note_and_schema": "UNCHANGED (1401-char tool note + 3295-char schema untouched by Phase0 policy)",
+      "semantic_invariant_status": "PASS"
+    },
+    {
+      "path": "D slash command static fixture",
+      "before_system_chars": 5675,
+      "after_system_chars": 5675,
+      "before_user_chars": 409,
+      "after_user_chars": 393,
+      "delta_user_chars": -16,
+      "note": "runtime /w command bypasses this path; recorded for legacy compatibility only",
+      "semantic_invariant_status": "PASS (legacy command scene unchanged)"
+    },
+    {
+      "path": "E KB hit",
+      "before_system_chars": 6666,
+      "after_system_chars": 6666,
+      "before_user_chars": 400,
+      "after_user_chars": 384,
+      "delta_user_chars": -16,
+      "kb_injection": "unchanged exactly-once in system",
+      "semantic_invariant_status": "PASS"
+    },
+    {
+      "path": "F serious",
+      "before_system_chars": 5064,
+      "after_system_chars": 5064,
+      "before_user_chars": 400,
+      "after_user_chars": 384,
+      "delta_user_chars": -16,
+      "semantic_invariant_status": "PASS"
+    },
+    {
+      "path": "G owner",
+      "before_system_chars": 6073,
+      "after_system_chars": 6073,
+      "before_user_chars": 429,
+      "after_user_chars": 413,
+      "delta_user_chars": -16,
+      "semantic_invariant_status": "PASS (owner priority/identity line remains in user facts; permissions deterministic)"
+    },
+    {
+      "path": "profile-heavy path (synthetic non-empty group profile + relationship profile)",
+      "before_system_chars": 6272,
+      "after_system_chars": 6272,
+      "before_user_chars_estimated": 566,
+      "after_user_chars": 375,
+      "delta_user_chars": -191,
+      "delta_components": "group profile block 116 + relationship block 75",
+      "semantic_invariant_status": "PASS (blocks appear exactly once in system, zero in user)"
+    },
+    {
+      "path": "analyze reviewer path",
+      "delta": 0,
+      "semantic_invariant_status": "PASS (reviewer strategy, model pins, hard-reject fallback unchanged)"
+    }
+  ],
+  "conditional_removed_when_triggered": [
+    {"line": "visualCapabilityNotice", "chars": 49, "trigger": "media placeholder/actual image for text-only model"},
+    {"line": "strictSearch notice", "chars": 25, "trigger": "explicit search request"},
+    {"line": "longForm notice", "chars": 25, "trigger": "long-form request"},
+    {"line": "ownerContextNotice", "chars": "runtime-dependent", "trigger": "owner private context truncation"}
+  ],
+  "token_savings_claim": "NONE. Char deltas are reported exactly; no provider tokenizer was available, so chars are not converted into exact token savings."
+}

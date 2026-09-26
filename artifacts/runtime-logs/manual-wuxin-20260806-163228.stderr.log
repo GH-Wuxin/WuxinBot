@@ -1,0 +1,59 @@
+[PP+] player/info oliwakami failed (HTTP 500, code 400): lol server goes boooom
+[osu analyze] 区块短评第 1 次未通过： [
+  'profile 短评语义终审：包含简报外数字: 100000',
+  'pplus 短评语义终审：包含简报外数字: 9.5',
+  'profile 短评包含简报外数字: 100000',
+  'pplus 短评包含简报外数字: 9.5'
+]
+[osu analyze] 硬错误修复后仍未通过： [ 'profile 短评语义终审：把核准游玩次数压缩成了“万/千次”约数' ]
+[osu analyze] 区块短评第 2 次未通过： [ 'profile 短评：账号档案应比其他栏目更长，重新展开这一栏' ]
+[osu analyze] 区块短评第 3 次未通过： [ 'profile 短评语义终审：账号年龄核准为约 6.9 年，与“19 年”不符' ]
+[osu analyze] 硬错误修复后仍未通过： [
+  'profile 短评语义终审：账号年龄核准为约 6.9 年，与“19 年”不符',
+  'profile 短评语义终审：账号年龄核准为约 6.9 年，与“9 年”不符'
+]
+[PP+] player/info oliwakami failed (HTTP 500, code 400): lol server goes boooom
+[osu analyze] 区块短评第 1 次未通过： [
+  'recent 短评语义终审：把两批样本平均星数接近误写成了同一难度的谱面或单图关系',
+  'classification 短评语义终审：把核准数量改写成了无法核验的“一半”比例'
+]
+[osu analyze] 结论第 1 次未通过： [ 'BP 最低 5.83★，不能写成整片 8★ 以上' ]
+[osu analyze] 结论硬错误修复后仍未通过： [ 'BP 最低 5.83★，不能写成整片 8★ 以上' ]
+[osu analyze] 结论第 2 次未通过： [ '把两批样本平均星数接近误写成了同一难度的谱面或单图关系' ]
+WARNING: option --ssl-verify-server-cert is disabled, because of an insecure passwordless login.
+WARNING: option --ssl-verify-server-cert is disabled, because of an insecure passwordless login.
+[PP+] player/info oliwakami failed (HTTP 500, code 400): lol server goes boooom
+[PP+] player/info oliwakami failed (HTTP 500, code 400): lol server goes boooom
+[osu analyze] 区块短评第 1 次未通过： [
+  'profile 短评语义终审：账号年龄核准为约 6.0 年，与“20 年”不符',
+  'top 短评语义终审：声称 BP 中没有 98% 以上成绩，但核准数据实际有 80 张'
+]
+[osu analyze] 硬错误修复后仍未通过： [
+  'profile 短评语义终审：账号年龄核准为约 6.0 年，与“20 年”不符',
+  'top 短评语义终审：声称 BP 中没有 98% 以上成绩，但核准数据实际有 80 张'
+]
+[osu analyze] 区块短评第 2 次未通过： [ 'profile 短评语义终审：账号年龄核准为约 6.0 年，与“20 年”不符' ]
+[osu analyze] 硬错误修复后仍未通过： [ 'profile 短评语义终审：账号年龄核准为约 6.0 年，与“20 年”不符' ]
+[osu analyze] 结论第 1 次未通过： [ '声称 BP 中没有 98% 以上成绩，但核准数据实际有 80 张' ]
+[osu analyze] 结论硬错误修复后仍未通过： [ '声称 BP 中没有 98% 以上成绩，但核准数据实际有 80 张' ]
+[osu analyze] 独立审查记录意见（不重写、不降级）： profile[hard]=注册至今约 2,174 天，报告写成约 6.0 年，与 verified_facts 的天数不符。
+[PP+] player/info oliwakami failed (HTTP 500, code 400): lol server goes boooom
+[osu analyze] 区块短评第 1 次未通过： [
+  'profile 短评语义终审：包含简报外数字: 36000',
+  'top5 短评语义终审：BP5 中含 DT/NC的核准数量为 0 张，不是 4 张',
+  'classification 短评语义终审：把 osu!oracle 的 alt 分类误写成了跳图',
+  'classification 短评语义终审：alt 的核准数量为 17 张，不是 42 张',
+  'profile 短评包含简报外数字: 36000'
+]
+[osu analyze] 硬错误修复后仍未通过： [ 'classification 短评语义终审：alt 的核准数量为 17 张，不是 42 张' ]
+[osu analyze] 区块短评第 2 次未通过： [ 'profile 短评过长', 'top5 短评过长' ]
+[osu analyze] 硬错误修复后仍未通过： [ 'top5 短评过长' ]
+[osu analyze] 结论第 1 次未通过： [ '把核准数量改写成了无法核验的“一半”比例' ]
+WARNING: option --ssl-verify-server-cert is disabled, because of an insecure passwordless login.
+WARNING: option --ssl-verify-server-cert is disabled, because of an insecure passwordless login.
+WARNING: option --ssl-verify-server-cert is disabled, because of an insecure passwordless login.
+WARNING: option --ssl-verify-server-cert is disabled, because of an insecure passwordless login.
+[PP+] player/info oliwakami failed (HTTP 500, code 400): lol server goes boooom
+[osu analyze] 区块短评第 1 次未通过： [ 'mods 短评语义终审：把核准数量改写成了无法核验的“一半”比例' ]
+[osu analyze] 结论第 1 次未通过： [ '综合结论没有使用核准的全球 rank 或账号总 pp 判断分量' ]
+[PP+] player/info oliwakami failed (HTTP 500, code 400): lol server goes boooom

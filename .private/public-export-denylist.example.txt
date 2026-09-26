@@ -1,0 +1,8 @@
+﻿# Private denylist for public export tool.
+# Each non-empty, non-# line is a literal string that must NOT appear in the export.
+# This file is gitignored and never committed.
+#
+# Example entries (DO NOT use real values):
+# C:\Users\example
+# 1234567890
+# DO_NOT_USE_REAL_VALUES

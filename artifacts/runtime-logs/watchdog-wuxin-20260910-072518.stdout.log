@@ -1,0 +1,9 @@
+QQ AI ChatBot server running at http://127.0.0.1:8787
+[yumu-image] Render server listening on ws://127.0.0.1:8389
+[yumu-image] Client authenticated, pid=31832
+[kb] {"route":"community_style","reason":"casual_chat","decisionSource":"db","groupHash":"1cb0da1fc5072302","collections":["community_style:1"],"documentIds":["community_style:W00205261"],"scores":[3.1298],"dropped":["no_lexical_overlap","no_lexical_overlap","no_lexical_overlap","no_lexical_overlap","no_lexical_overlap","no_lexical_overlap","below_min_score","no_lexical_overlap","no_lexical_overlap","no_lexical_overlap","no_lexical_overlap","no_lexical_overlap"],"injectedChars":30,"elapsedMs":16}
+[reasoning-shadow] {"ts":1789005005348,"turnId":"507334113","callRole":"tool_planner","level":"max","source":"rule","reasonCode":"tool_selection","actualModel":"deepseek-v4-flash-vision-exp","finishReason":"tool_calls","reasoningTokens":565,"completionTokens":627,"totalTokens":10516,"latencyMs":5316,"toolCalls":1,"textEmpty":true}
+[reasoning-shadow] {"ts":1789005014059,"turnId":"507334113","callRole":"tool_planner","level":"off","source":"rule","reasonCode":"direct_delivery","actualModel":"deepseek-v4-flash-vision-exp","finishReason":"tool_calls","reasoningTokens":0,"completionTokens":78,"totalTokens":10298,"latencyMs":1102,"toolCalls":1,"textEmpty":true}
+[reasoning-shadow] {"ts":1789005017056,"turnId":"507334113","callRole":"tool_planner","level":"off","source":"rule","reasonCode":"direct_delivery","actualModel":"deepseek-v4-flash-vision-exp","finishReason":"stop","reasoningTokens":0,"completionTokens":146,"totalTokens":10822,"latencyMs":1716,"toolCalls":0,"textEmpty":false}
+[yumu-image] Render client disconnected
+[yumu-image] Client authenticated, pid=31832

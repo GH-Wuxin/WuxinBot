@@ -1,8 +1,16 @@
+import {closeSkillCardBrowser} from '../server/bots/skillCard/browser.ts';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { renderPlayerSkillComparisonCard, renderPlayerSkillProfileCard } from '../server/bots/playerSkillComparisonCard.ts';
+import sharp from 'sharp';
+import {
+  buildPlayerSkillComparisonSvg,
+  playerProfileTitlePresentation,
+  renderPlayerSkillComparisonCard,
+  renderPlayerSkillProfileCard,
+} from '../server/bots/playerSkillComparisonCard.ts';
+import {buildPlayerSkillCardHtml} from '../server/bots/skillCard/cards.ts';
 import { PLAYER_SKILL_AXES, PLAYER_SKILL_AXIS_LABELS } from '../server/bots/playerSkillProfile.ts';
 
 const testDataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'wuxin-player-skill-card-'));
@@ -23,6 +31,7 @@ const side = (username, colorOffset) => ({
   profile: {
     primaryAxes: ['Jump Aim', 'Aim Control'],
     profileType: 'Jump Aim Dominant',
+    profileTitle: colorOffset < 100 ? 'Ballistic Virtuoso' : 'Tapping Overdrive',
     axes: PLAYER_SKILL_AXES.map((key, index) => ({
       key,
       label: PLAYER_SKILL_AXIS_LABELS[key],
@@ -30,16 +39,94 @@ const side = (username, colorOffset) => ({
       median: 4 + index * 0.4,
     })),
   },
+  ppPlus: {
+    jump: 12.4 + colorOffset / 100,
+    flow: 11.8 + colorOffset / 120,
+    speed: 10.6 + colorOffset / 140,
+    stamina: 9.7 + colorOffset / 160,
+    precision: 13.1 + colorOffset / 180,
+    accuracy: 12.2 + colorOffset / 200,
+  },
 });
 
-const png = await renderPlayerSkillComparisonCard({ left: side('LeftPlayer', 0), right: side('RightPlayer', 20), limit: 50 });
+const comparisonPayload = { left: side('LeftPlayer', 0), right: side('RightPlayer', 200), limit: 50 };
+const svg = buildPlayerSkillComparisonSvg(comparisonPayload);
+assert.match(svg,/data-design="tier-radar-v2"/);
+assert.match(svg,/class="comparison-radar"/);
+assert.match(svg,/class="comparison-ppplus-radar"/,'comparison includes the PP+ radar');
+assert.equal((svg.match(/class="ppplus-axis-value"/g)||[]).length,6,'comparison PP+ radar shows all six dimensions');
+assert.equal((svg.match(/class="ppplus-dot (?:left|right)"/g)||[]).length,12,'comparison PP+ radar shows both players');
+assert.match(svg,/PP\+ PROFILE/);
+assert.match(svg,/PP\+ SOURCE · github\.com\/Apeuriox\/lazybot-pp-plus/,'comparison credits the PP+ source');
+assert.equal((svg.match(/data-tier-emblem="/g)||[]).length,2,'comparison carries both player Tier emblems');
+assert.equal((svg.match(/class="axis-value"/g)||[]).length,9,'comparison radar shows all nine fixed dimensions');
+assert.match(svg,/data-axis-label="spatial_precision"/,'comparison preserves the Spatial Precision label');
+assert.deepEqual(
+  [...svg.matchAll(/data-axis-label="([^"]+)"/g)].map((match) => match[1]),
+  [...PLAYER_SKILL_AXES],
+  'comparison radar angles match the profile axis order',
+);
+assert.match(svg,/data-unit="independent"/,'Stamina and Endurance retain independent /10 units');
+assert.match(svg,/RightPlayer leads by Skill Rating/,'the summary names the leader by Skill Rating');
+assert.match(svg,/SKILL RATING/,'comparison exposes the weighted Skill Rating');
+assert.match(svg,/data-left-rating="\d+"/);
+assert.match(svg,/data-right-rating="\d+"/);
+assert.match(svg,/Ballistic Virtuoso/,'comparison renders the left player profile title');
+assert.match(svg,/Tapping Overdrive/,'comparison renders the right player profile title');
+const leftRadarColor = svg.match(/data-left-color="([^"]+)"/)?.[1];
+const rightRadarColor = svg.match(/data-right-color="([^"]+)"/)?.[1];
+assert.match(svg,new RegExp(`<text[^>]*fill="${rightRadarColor}"[^>]*>\\+2\\.0</text>`),'positive deltas use the right-player tier color');
+assert.match(svg,/r="39"[^>]*stroke-width="1\.7"/,'comparison avatars use the enlarged profile-card size');
+assert.doesNotMatch(svg,/TIER [IVX]+ · [A-Z]+<\/text><text[^>]*>[^<]+<\/text>/,'tier label is not packed beside the player name');
+assert.doesNotMatch(svg,/维度领先|势均力敌|Largest meaningful gap|dimensions are close|comparisonRows|comparisonBars/i);
+assert.doesNotMatch(svg,/<linearGradient id="compare-bg"/,'comparison uses the restrained graphite surface');
+assert.notEqual(leftRadarColor,rightRadarColor,'player radar accents come from their different Tiers');
+const closePayload = { left: side('LeftPlayer', 0), right: side('RightPlayer', 0), limit: 50 };
+const closeSvg = buildPlayerSkillComparisonSvg(closePayload);
+assert.match(closeSvg,/Skill Rating tied/);
+assert.equal((closeSvg.match(/Skill Rating tied/g)||[]).length,1,'tied Skill Rating summary is not duplicated');
+assert.equal(closeSvg.match(/data-left-tier-color="([^"]+)"/)?.[1],closeSvg.match(/data-right-tier-color="([^"]+)"/)?.[1],'same-tier players retain one shared Tier identity color');
+assert.notEqual(closeSvg.match(/data-left-color="([^"]+)"/)?.[1],closeSvg.match(/data-right-color="([^"]+)"/)?.[1],'same-tier comparison series still have distinct player colors');
+assert.match(closeSvg,/data-marker="circle"/,'left radar series uses circle markers');
+assert.match(closeSvg,/data-marker="diamond"/,'right radar series uses diamond markers');
+assert.match(closeSvg,/class="profile-series right"[^>]*stroke-dasharray="5 3"/,'right radar outline is dashed to remain distinguishable');
+const png = await renderPlayerSkillComparisonCard(comparisonPayload);
 assert.ok(png.length > 10_000, `comparison PNG should be non-trivial, got ${png.length} bytes`);
 assert.deepEqual([...png.subarray(0, 8)], [137, 80, 78, 71, 13, 10, 26, 10]);
+assert.deepEqual(
+  await sharp(png).metadata().then(({ width, height }) => ({ width, height })),
+  { width: 2560, height: 1440 },
+);
 const profile = side('ProfilePlayer', 0);
 profile.sample.averageScoreQuality = 0.86;
+profile.profile.profileTitle = 'GOD OF AIM';
+profile.profile.profileTier = 'WORLD_CLASS';
+assert.deepEqual(playerProfileTitlePresentation(profile.profile), {
+  title: 'GOD OF AIM',
+  color: '#ffcf62',
+  fontSize: 24,
+});
+assert.equal(playerProfileTitlePresentation({ profileType: 'Legacy Hybrid' }).title, 'LEGACY HYBRID');
+const longTitle = playerProfileTitlePresentation({
+  profileTitle: 'THE EXTRAORDINARILY COMPLETE PACKAGE',
+  profileType: 'Must Not Win',
+  profileTier: 'EXPERT',
+});
+assert.equal(longTitle.title, 'THE EXTRAORDINARILY COMPLETE PACKAGE');
+assert.equal(longTitle.fontSize, 18);
+assert.equal(longTitle.color, '#e9b65b');
+assert.doesNotMatch(longTitle.title, /…/);
 const profilePng = await renderPlayerSkillProfileCard(profile);
 assert.ok(profilePng.length > 10_000, `profile PNG should be non-trivial, got ${profilePng.length} bytes`);
 assert.deepEqual([...profilePng.subarray(0, 8)], [137, 80, 78, 71, 13, 10, 26, 10]);
+const profileSize=await sharp(profilePng).metadata();
+assert.deepEqual({width:profileSize.width,height:profileSize.height},{width:1280,height:720});
+const profileHtml = buildPlayerSkillCardHtml(profile);
+assert.deepEqual(
+  [...profileHtml.matchAll(/data-axis-label="([^"]+)"/g)].map((match) => match[1]),
+  [...PLAYER_SKILL_AXES],
+  'profile radar angles use the same shared axis order',
+);
 const originalFetch = globalThis.fetch;
 let avatarAttempts = 0;
 const avatarUrl = `https://a.ppy.sh/999999?retry-fixture-${Date.now()}`;
@@ -65,7 +152,9 @@ try {
   assert.ok(retryPng.length > 10_000);
   assert.equal(avatarAttempts, 2, 'avatar download should retry once after a transient HTTP failure');
   const cacheFiles = fs.readdirSync(path.join(testDataDir, 'player-skill-image-cache'));
-  const cached = JSON.parse(fs.readFileSync(path.join(testDataDir, 'player-skill-image-cache', cacheFiles[0]), 'utf8'));
+  const cacheEntries = cacheFiles.map((file) => JSON.parse(fs.readFileSync(path.join(testDataDir, 'player-skill-image-cache', file), 'utf8')));
+  const cached = cacheEntries.find((entry) => entry.url === avatarUrl);
+  assert.ok(cached, 'successful avatar retry should be cached under the requested URL');
   assert.match(cached.dataUrl, /^data:image\/png;base64,/, 'PNG signature must override a misleading image/jpeg response header');
 } finally {
   globalThis.fetch = originalFetch;
@@ -75,5 +164,6 @@ if (process.env.RENDER_OUTPUT_DIR) {
   fs.writeFileSync(path.join(process.env.RENDER_OUTPUT_DIR, 'player-skill-profile-preview.png'), profilePng);
   fs.writeFileSync(path.join(process.env.RENDER_OUTPUT_DIR, 'player-skill-compare-preview.png'), png);
 }
+await closeSkillCardBrowser();
 fs.rmSync(testDataDir, { recursive: true, force: true });
 console.log('player-skill-compare-card-verify: ok');

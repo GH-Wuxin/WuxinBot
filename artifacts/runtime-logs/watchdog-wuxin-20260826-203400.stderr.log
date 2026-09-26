@@ -1,0 +1,23 @@
+[onebot] 无法读取引用消息，保留本地回退内容: OneBot HTTP 请求超时 12 秒
+[bridge] kanon BRIDGE_SELF_ID="3861208888" conflicts with the logical sender id or an active bridge call; using a per-call safe identity for this call instead of the override
+[onebot] 无法读取引用消息，保留本地回退内容: fetch failed
+[onebot] 无法读取引用消息，保留本地回退内容: OneBot HTTP 请求超时 12 秒
+[onebot] 无法读取引用消息，保留本地回退内容: OneBot HTTP 请求超时 12 秒
+[onebot] 无法读取引用消息，保留本地回退内容: OneBot HTTP 请求超时 12 秒
+WARNING: option --ssl-verify-server-cert is disabled, because of an insecure passwordless login.
+WARNING: option --ssl-verify-server-cert is disabled, because of an insecure passwordless login.
+[onebot] 无法读取引用消息，保留本地回退内容: OneBot HTTP 请求超时 12 秒
+[onebot] 无法读取引用消息，保留本地回退内容: OneBot HTTP 请求超时 12 秒
+WARNING: option --ssl-verify-server-cert is disabled, because of an insecure passwordless login.
+WARNING: option --ssl-verify-server-cert is disabled, because of an insecure passwordless login.
+[onebot] 无法读取引用消息，保留本地回退内容: OneBot HTTP 请求超时 12 秒
+[onebot] 无法读取引用消息，保留本地回退内容: OneBot HTTP 请求超时 12 秒
+[onebot] 无法读取引用消息，保留本地回退内容: OneBot HTTP 请求超时 12 秒
+[quick] 未绑定提示发送失败: OneBot HTTP 请求超时 12 秒
+[quick] 未绑定提示发送失败: OneBot HTTP 请求超时 12 秒
+[onebot] 无法读取引用消息，保留本地回退内容: fetch failed
+[bridge] kanon BRIDGE_SELF_ID="3861208888" conflicts with the logical sender id or an active bridge call; using a per-call safe identity for this call instead of the override
+[bridge] kanon BRIDGE_SELF_ID="3861208888" conflicts with the logical sender id or an active bridge call; using a per-call safe identity for this call instead of the override
+[quick] bridge kanon 发送失败（面板可能已发出）: OneBot HTTP 请求超时 12 秒
+[onebot] 无法读取引用消息，保留本地回退内容: OneBot HTTP 请求超时 12 秒
+[onebot] 无法读取引用消息，保留本地回退内容: OneBot HTTP 请求超时 12 秒

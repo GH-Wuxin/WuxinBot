@@ -1,0 +1,50 @@
+WARNING: option --ssl-verify-server-cert is disabled, because of an insecure passwordless login.
+WARNING: option --ssl-verify-server-cert is disabled, because of an insecure passwordless login.
+[quickMemory] 影子查询失败 (recent/[SHK]Wuxin): fetch failed
+[quickMemory] 影子查询失败 (recent/[SHK]Wuxin): fetch failed
+[quickMemory] 影子查询失败 (recent/[SHK]Wuxin): fetch failed
+[quickMemory] 影子查询失败 (recent/[SHK]Wuxin): fetch failed
+[quickMemory] 影子查询失败 (recent/YRScarlet): fetch failed
+[quickMemory] 影子查询失败 (recent/YRScarlet): fetch failed
+[quickMemory] 影子查询失败 (recent/YRScarlet): This operation was aborted
+[quickMemory] 影子查询失败 (recent/YRScarlet): fetch failed
+[quickMemory] 影子查询失败 (recent/YRScarlet): This operation was aborted
+[quickMemory] 影子查询失败 (recent/cup of chino): fetch failed
+[quickMemory] 影子查询失败 (recent/cup of chino): fetch failed
+[quickMemory] 影子查询失败 (recent/cup of chino): fetch failed
+[quickMemory] 影子查询失败 (recent/YRScarlet): fetch failed
+[quickMemory] 影子查询失败 (recent/cup of chino): fetch failed
+[PP+] player/info oliwakami failed (HTTP 500, code 400): lol server goes boooom
+[osu analyze] 区块短评第 1 次未通过： [ 'profile 短评语义终审：账号年龄核准为约 7.5 年，与“19 年”不符' ]
+[PP+] player/info oliwakami failed (HTTP 500, code 400): lol server goes boooom
+[osu analyze] 结论第 1 次未通过： [ '分析对象 [SHK]SendanLove 未确认是发起者本人，不能使用第二人称' ]
+[PP+] player/info oliwakami failed (HTTP 500, code 400): lol server goes boooom
+[osu analyze] 区块短评第 1 次未通过： [
+  'profile 短评语义终审：把核准游玩次数压缩成了“万/千次”约数',
+  'top5 的 Mod 语义错误：把成绩上的 Mod 写成了谱面类型：DT 图',
+  'top5 短评语义终审：Mod 语义错误：把成绩上的 Mod 写成了谱面类型：DT 图'
+]
+[osu analyze] 结论第 1 次未通过： [ '把 96/100 张带 DT 的成绩夸写成了全部或几乎每张' ]
+[osu analyze] 结论硬错误修复后仍未通过： [ '把 96/100 张带 DT 的成绩夸写成了全部或几乎每张' ]
+[osu analyze] 结论第 2 次未通过： [ '把 96/100 张带 DT 的成绩夸写成了全部或几乎每张' ]
+[osu analyze] 结论硬错误修复后仍未通过： [ '把 96/100 张带 DT 的成绩夸写成了全部或几乎每张' ]
+[osu analyze] 结论第 3 次未通过： [ 'Mod 语义错误：把成绩上的 Mod 写成了谱面类型：DT 图', '把 96/100 张带 DT 的成绩夸写成了全部或几乎每张' ]
+[osu analyze] 结论硬错误修复后仍未通过： [ 'Mod 语义错误：把成绩上的 Mod 写成了谱面类型：DT 图', '把 96/100 张带 DT 的成绩夸写成了全部或几乎每张' ]
+[osu analyze] 综合结论使用确定性安全版本。
+[PP+] player/info oliwakami failed (HTTP 500, code 400): lol server goes boooom
+[osu analyze] 区块短评第 1 次未通过： [
+  'profile 短评语义终审：账号年龄核准为约 5.1 年，与“21 年”不符',
+  'classification 短评语义终审：把 osu!oracle 的 alt 分类误写成了跳图'
+]
+[osu analyze] 硬错误修复后仍未通过： [ 'profile 短评语义终审：账号年龄核准为约 5.1 年，与“1 年”不符' ]
+[osu analyze] 区块短评第 2 次未通过： [ 'profile 短评语义终审：把核准数量改写成了无法核验的“一半”比例' ]
+WARNING: option --ssl-verify-server-cert is disabled, because of an insecure passwordless login.
+WARNING: option --ssl-verify-server-cert is disabled, because of an insecure passwordless login.
+WARNING: option --ssl-verify-server-cert is disabled, because of an insecure passwordless login.
+WARNING: option --ssl-verify-server-cert is disabled, because of an insecure passwordless login.
+WARNING: option --ssl-verify-server-cert is disabled, because of an insecure passwordless login.
+WARNING: option --ssl-verify-server-cert is disabled, because of an insecure passwordless login.
+WARNING: option --ssl-verify-server-cert is disabled, because of an insecure passwordless login.
+WARNING: option --ssl-verify-server-cert is disabled, because of an insecure passwordless login.
+WARNING: option --ssl-verify-server-cert is disabled, because of an insecure passwordless login.
+WARNING: option --ssl-verify-server-cert is disabled, because of an insecure passwordless login.

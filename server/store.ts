@@ -1,14 +1,192 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { activateModelProfile, DEEPSEEK_BASE_URL, looksLikeMimoEndpoint, MIMO_BASE_URL, recoverProviderProfiles } from './modelConfig.js';
+import { activeModelName, activateModelProfile, DEEPSEEK_BASE_URL, looksLikeMimoEndpoint, MIMO_BASE_URL, recoverProviderProfiles } from './modelConfig.js';
 import { DEFAULT_BOTS } from './bots/registry.js';
+import { DEFAULT_KB_SETTINGS } from './bot/knowledgeTypes.js';
+import { cacheUsageSummary, usageEventHasCacheDetails, eventMeasuredPromptTokens } from './usage.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const rootDir = path.resolve(__dirname, '..');
-const dataDir = process.env.DATA_DIR || path.join(process.env.APPDATA || path.join(process.env.USERPROFILE || 'C:', 'AppData', 'Roaming'), 'Wuxin');
-const dbPath = path.join(dataDir, 'db.json');
-const dbLockPath = path.join(dataDir, 'db.lock');
+
+function defaultDataDir() {
+  return path.join(process.env.APPDATA || path.join(process.env.USERPROFILE || 'C:', 'AppData', 'Roaming'), 'Wuxin');
+}
+
+/** The production data directory, computed from environment at call time. */
+export function productionDataDir(): string {
+  return path.resolve(defaultDataDir());
+}
+
+/** Resolve the active data directory. Reads DATA_DIR on every call so a
+ *  forgotten/empty env var cannot silently keep pointing at production. */
+export function getDataDir(): string {
+  return path.resolve(process.env.DATA_DIR || defaultDataDir());
+}
+
+function getDbPath() {
+  return path.join(getDataDir(), 'db.json');
+}
+
+function getDbLockPath() {
+  return path.join(getDataDir(), 'db.lock');
+}
+
+export function isProductionDb(): boolean {
+  const current = getDataDir();
+  const production = productionDataDir();
+  if (process.platform === 'win32') return current.toLowerCase() === production.toLowerCase();
+  return current === production;
+}
+
+function isTrustedServerEntry(): boolean {
+  const entry = process.argv[1];
+  if (!entry) return false;
+  const resolved = path.resolve(entry);
+  const serverIndex = path.join(rootDir, 'server', 'index.ts');
+  if (process.platform === 'win32') return resolved.toLowerCase() === serverIndex.toLowerCase();
+  return resolved === serverIndex;
+}
+
+function assertWriteTargetSafe() {
+  if (!isProductionDb()) return;
+  if (process.env.NODE_ENV === 'test') {
+    throw new Error(
+      '安全防护：检测到 NODE_ENV=test 试图写入生产数据库（%APPDATA%\\Wuxin\\db.json）。' +
+      '请显式设置 DATA_DIR 指向测试目录。'
+    );
+  }
+  if (process.env.ALLOW_PRODUCTION_WRITE === '1') return;
+  if (!isTrustedServerEntry()) {
+    throw new Error(
+      '安全防护：拒绝向生产数据库（%APPDATA%\\Wuxin\\db.json）写入——当前入口不是 server/index.ts' +
+      `（${process.argv[1] || 'unknown'}）。如确为有意操作，请显式设置 ALLOW_PRODUCTION_WRITE=1；` +
+      '测试/脚本请设置 DATA_DIR 指向临时目录。'
+    );
+  }
+}
+
+// Auto backup: snapshot db.json every few minutes so a corrupted write or
+// external damage never costs more than the snapshot interval. Kept under the
+// dedicated backups/ directory, pruned to the newest N snapshots.
+const AUTO_BACKUP_INTERVAL_MS = 5 * 60_000;
+const AUTO_BACKUP_KEEP = 24;
+const MAX_MESSAGES = 12_000;
+const MAX_DECISIONS = 30_000;
+const MAX_COMMAND_LOGS = 2_000;
+export const MAX_TOOL_LOGS = 5_000;
+export const MAX_UNMET_LOGS = 2_000;
+const MAX_ADMIN_ACTIONS = 1_000;
+let lastAutoBackupAt = 0;
+let lastDbReadFailureAt = 0;
+
+const SHARDED_STORAGE_FORMAT = 'wuxin-sharded-v1';
+const SHARD_SPECS = [
+  {
+    name: 'profiles',
+    file: 'db-profiles.json',
+    keys: new Set(['memories', 'groupProfiles', 'relationshipProfiles', 'pendingPairCounts', 'profileLogs', 'profileV3'])
+  },
+  { name: 'messages', file: 'db-messages.json', keys: new Set(['messages']) },
+  { name: 'decisions', file: 'db-decisions.json', keys: new Set(['decisions']) },
+  {
+    name: 'telemetry',
+    file: 'db-telemetry.json',
+    keys: new Set(['commandLogs', 'toolCallLogs', 'unmetCapabilities', 'adminActions', 'usageEvents', 'configSnapshots', 'searchLogs'])
+  },
+  { name: 'osu', file: 'db-osu.json', keys: new Set(['skillProfilerRuns']) }
+];
+let cachedStore: { dataDir: string; db: any; coreSignature: string } | null = null;
+let cachedPublicDb: { db: any; minute: number; includeMemorySamples: boolean; value: any } | null = null;
+let storageRevision = '';
+let revisionSequence = 0;
+
+function shardNameForKey(key: string) {
+  for (const spec of SHARD_SPECS) if (spec.keys.has(key)) return spec.name;
+  if (key.startsWith('osu')) return 'osu';
+  return 'core';
+}
+
+function shardPath(name: string) {
+  if (name === 'core') return getDbPath();
+  const spec = SHARD_SPECS.find((candidate) => candidate.name === name);
+  if (!spec) throw new Error(`未知数据库分片: ${name}`);
+  return path.join(getDataDir(), spec.file);
+}
+
+function storageMarker() {
+  return {
+    format: SHARDED_STORAGE_FORMAT,
+    version: 1,
+    revision: storageRevision,
+    shards: Object.fromEntries(SHARD_SPECS.map((spec) => [spec.name, spec.file]))
+  };
+}
+
+function isShardedCore(value) {
+  return value?._storage?.format === SHARDED_STORAGE_FORMAT;
+}
+
+function invalidateStoreCaches() {
+  cachedPublicDb = null;
+}
+
+function nextStorageRevision() {
+  revisionSequence = (revisionSequence + 1) % 1000;
+  storageRevision = `${Date.now()}-${process.pid}-${revisionSequence}`;
+  return storageRevision;
+}
+
+function coreFileSignature() {
+  try {
+    const stat = fs.statSync(getDbPath());
+    return `${stat.size}:${stat.mtimeMs}`;
+  } catch {
+    return '';
+  }
+}
+
+/**
+ * Bound unbounded history arrays so db.json rewrites stay predictable.
+ * Keeps the newest entries (arrays are append-ordered). Existing bounded
+ * collections (usageEvents, profileLogs, configSnapshots) have their own caps.
+ */
+export function applyRetention(db) {
+  if ((db.messages || []).length > MAX_MESSAGES) db.messages = db.messages.slice(-MAX_MESSAGES);
+  if ((db.decisions || []).length > MAX_DECISIONS) db.decisions = db.decisions.slice(-MAX_DECISIONS);
+  if ((db.commandLogs || []).length > MAX_COMMAND_LOGS) db.commandLogs = db.commandLogs.slice(-MAX_COMMAND_LOGS);
+  if ((db.toolCallLogs || []).length > MAX_TOOL_LOGS) db.toolCallLogs = db.toolCallLogs.slice(-MAX_TOOL_LOGS);
+  if ((db.unmetCapabilities || []).length > MAX_UNMET_LOGS) db.unmetCapabilities = db.unmetCapabilities.slice(-MAX_UNMET_LOGS);
+  if ((db.adminActions || []).length > MAX_ADMIN_ACTIONS) db.adminActions = db.adminActions.slice(-MAX_ADMIN_ACTIONS);
+  return db;
+}
+
+/** Milliseconds since epoch of the most recent corrupt-db recovery (0 = none). */
+export function lastDbReadFailureAtMs(): number {
+  return lastDbReadFailureAt;
+}
+
+function autoBackupIfDue(db) {
+  const now = Date.now();
+  if (now - lastAutoBackupAt < AUTO_BACKUP_INTERVAL_MS) return;
+  try {
+    const backupDir = path.join(getDataDir(), 'backups');
+    fs.mkdirSync(backupDir, { recursive: true });
+    const stamp = new Date(now).toISOString().replace(/[:.]/g, '-');
+    const dest = path.join(backupDir, `auto-${stamp}.json`);
+    if (!fs.existsSync(dest)) writeJsonAtomic(dest, db, false);
+    const files = fs.readdirSync(backupDir)
+      .filter((f) => /^auto-.*\.json$/.test(f))
+      .sort();
+    while (files.length > AUTO_BACKUP_KEEP) {
+      const oldest = files.shift();
+      try { fs.unlinkSync(path.join(backupDir, oldest)); } catch { /* ignore */ }
+    }
+    lastAutoBackupAt = now;
+  } catch (error) {
+    console.error('[store] auto backup failed:', String(error?.message || error));
+  }
+}
 
 function sleepSync(ms) {
   Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
@@ -16,7 +194,7 @@ function sleepSync(ms) {
 
 function lockOwnerIsAlive() {
   try {
-    const pid = Number(fs.readFileSync(dbLockPath, 'utf8').trim());
+    const pid = Number(fs.readFileSync(getDbLockPath(), 'utf8').trim());
     if (!Number.isInteger(pid) || pid <= 0) return false;
     process.kill(pid, 0);
     return true;
@@ -26,15 +204,15 @@ function lockOwnerIsAlive() {
 }
 
 function withDbLock(callback) {
-  fs.mkdirSync(dataDir, { recursive: true });
+  fs.mkdirSync(getDataDir(), { recursive: true });
   let handle;
   for (let attempt = 0; attempt < 200; attempt += 1) {
     try {
-      handle = fs.openSync(dbLockPath, 'wx');
+      handle = fs.openSync(getDbLockPath(), 'wx');
       fs.writeFileSync(handle, String(process.pid), 'utf8');
       break;
     } catch (error) {
-      const lockExists = fs.existsSync(dbLockPath);
+      const lockExists = fs.existsSync(getDbLockPath());
       if (!['EEXIST', 'EPERM', 'EACCES'].includes(error?.code)) throw error;
       if (!lockExists) {
         sleepSync(10);
@@ -42,13 +220,13 @@ function withDbLock(callback) {
       }
       let stale = false;
       try {
-        const ageMs = Date.now() - fs.statSync(dbLockPath).mtimeMs;
+        const ageMs = Date.now() - fs.statSync(getDbLockPath()).mtimeMs;
         stale = ageMs > 30_000 || (ageMs > 2_000 && !lockOwnerIsAlive());
       } catch {
         stale = false;
       }
       if (stale) {
-        try { fs.unlinkSync(dbLockPath); } catch { /* another process may own cleanup */ }
+        try { fs.unlinkSync(getDbLockPath()); } catch { /* another process may own cleanup */ }
       } else {
         sleepSync(25);
       }
@@ -59,13 +237,13 @@ function withDbLock(callback) {
     return callback();
   } finally {
     try { fs.closeSync(handle); } catch { /* ignore close failure */ }
-    try { fs.unlinkSync(dbLockPath); } catch { /* ignore cleanup race */ }
+    try { fs.unlinkSync(getDbLockPath()); } catch { /* ignore cleanup race */ }
   }
 }
 
-function writeJsonAtomic(filePath, value) {
+function writeJsonAtomic(filePath, value, pretty = true) {
   const tempPath = `${filePath}.${process.pid}.${Date.now()}.tmp`;
-  const payload = JSON.stringify(value, null, 2);
+  const payload = pretty ? JSON.stringify(value, null, 2) : JSON.stringify(value);
   try {
     fs.writeFileSync(tempPath, payload, 'utf8');
     for (let attempt = 0; ; attempt += 1) {
@@ -138,9 +316,14 @@ export const defaultCommandPermissions = {
   exp: 'owner',
   osuBind: 'guest',
   osuAnalyze: 'guest',
-  osuRecent: 'guest',
-  osuClearCache: 'admin',
-  osuHelp: 'guest'
+  osuClearBind: 'guest',
+  osuClearHistory: 'guest',
+  osuClearCache: 'owner',
+  osuClearCooldown: 'owner',
+  osuClearRecommend: 'owner',
+  osuHelp: 'guest',
+  skill: 'guest',
+  skillFeedback: 'guest'
 };
 
 const initialDb = {
@@ -154,6 +337,13 @@ const initialDb = {
     deepseekApiBaseUrl: DEEPSEEK_BASE_URL,
     mimoApiKey: process.env.MIMO_API_KEY || '',
     mimoApiBaseUrl: process.env.MIMO_API_BASE_URL || MIMO_BASE_URL,
+    codexExecutable: process.env.CODEX_EXECUTABLE || 'codex',
+    codexModel: process.env.CODEX_MODEL || 'gpt-5.6-luna',
+    codexReasoningEffort: process.env.CODEX_REASONING_EFFORT || 'low',
+    codexTimeoutMs: Number(process.env.CODEX_TIMEOUT_MS || 90000),
+    codexFallbackEnabled: true,
+    codexFallbackProvider: 'deepseek',
+    codexFallbackModel: 'deepseek-v4-flash',
     model: process.env.LLM_MODEL || (
       looksLikeMimoEndpoint(process.env.LLM_API_BASE_URL) || process.env.LLM_PROVIDER === 'openai-compatible'
         ? 'mimo-v2.5'
@@ -170,6 +360,10 @@ const initialDb = {
     maxTokens: 300,
     contextLimit: 30,
     ownerPrivateContextCharBudget: 24000,
+    groupContextSearchEnabled: true,
+    groupContextSearchPoolSize: 400,
+    groupContextSearchMaxExtra: 24,
+    groupContextSearchCharBudget: 12000,
         botNames: '小深,机器人,bot,pippi',
     personalityPrompt: defaultPrompt,
     oneBotHttpUrl: 'http://127.0.0.1:3000',
@@ -186,6 +380,8 @@ const initialDb = {
     searchMaxResults: 5,
     searchTimeoutMs: 8000,
     enableAutoModel: true,
+    agentRuntimeMode: 'model_first',
+    reasoningEnabled: false,
     llmReplyGateMaxPerHour: 0,
     llmReplyGateNaturalThreshold: 45,
     llmReplyGateLightThreshold: 70,
@@ -209,7 +405,12 @@ const initialDb = {
     pplusReferences: [] as (string | number)[],
     commandRoles: defaultCommandRoles,
     commandPermissions: defaultCommandPermissions,
-    botRegistry: undefined // populated by normalizeDb from defaults
+    botRegistry: undefined, // populated by normalizeDb from defaults
+    kb: {
+      ...DEFAULT_KB_SETTINGS,
+      collections: { ...DEFAULT_KB_SETTINGS.collections },
+      rollout: { ...DEFAULT_KB_SETTINGS.rollout, groupIds: [] }
+    }
   },
   botRegistry: undefined,
   skillStore: { records: [], updatedAt: '' },
@@ -228,20 +429,32 @@ const initialDb = {
   messages: [],
   decisions: [],
   commandLogs: [],
+  toolCallLogs: [],
+  skillProfilerRuns: [],
+  unmetCapabilities: [],
   adminActions: [],
   usageEvents: [],
   usage: {
     totalTokens: 0,
     promptTokens: 0,
+    cachedTokens: 0,
+    cacheWriteTokens: 0,
     completionTokens: 0,
+    reasoningTokens: 0,
+    cacheMeasuredPromptTokens: 0,
+    cacheMeasuredRequests: 0,
+    cacheMetricsStartedAt: '',
     requests: 0,
     replies: 0,
     errors: 0
   }
 };
 
-function normalizeDb(db) {
+export function normalizeDb(db) {
   const settings = db.settings || {};
+  // Shortcut commands are always available subject to the normal group/bot
+  // controls; discard the retired extra activation switches.
+  delete settings.quickRouterEnabled;
   const roleMap = new Map();
   for (const role of defaultCommandRoles) roleMap.set(role.id, { ...role });
   for (const role of settings.commandRoles || []) {
@@ -255,14 +468,21 @@ function normalizeDb(db) {
     });
   }
 
+  // Global cache wipe (osu clear cache) is enforced owner-only inside
+  // handleClearCache; the gate must never be configured lower than owner,
+  // otherwise admins pass the gate here and get rejected later with a
+  // misleading message.
+  const mergedCommandPermissions = {
+    ...defaultCommandPermissions,
+    ...(settings.commandPermissions || {}),
+    osuClearCache: 'owner'
+  };
+
   db.settings = activateModelProfile({
     ...initialDb.settings,
     ...settings,
     commandRoles: [...roleMap.values()].sort((a, b) => a.level - b.level),
-    commandPermissions: {
-      ...defaultCommandPermissions,
-      ...(settings.commandPermissions || {})
-    }
+    commandPermissions: mergedCommandPermissions
   }, settings.model || initialDb.settings.model);
   db.settings = recoverProviderProfiles(db.settings, db.configSnapshots || []);
 
@@ -286,6 +506,9 @@ function normalizeDb(db) {
   db.botRegistry = db.settings.botRegistry;
   db.skillStore ||= { records: [], updatedAt: '' };
   db.groupBotConfig ||= {};
+  for (const config of Object.values(db.groupBotConfig)) {
+    if (config && typeof config === 'object') delete (config as Record<string, unknown>).quick;
+  }
   // Ensure all known groups have a default bot config entry
   for (const group of db.groups || []) {
     if (!db.groupBotConfig[group.groupId]) {
@@ -304,31 +527,222 @@ function normalizeDb(db) {
   db.messages ||= [];
   db.decisions ||= [];
   db.commandLogs ||= [];
+  db.toolCallLogs ||= [];
+  db.skillProfilerRuns ||= [];
+  if (db.skillProfilerRuns.length > 500) db.skillProfilerRuns = db.skillProfilerRuns.slice(-500);
+  db.unmetCapabilities ||= [];
   db.adminActions ||= [];
   db.usageEvents ||= [];
+  const storedUsage = db.usage || {};
+  const needsCacheMetricsBackfill = !Object.prototype.hasOwnProperty.call(storedUsage, 'cacheMeasuredPromptTokens');
   db.usage = {
     ...initialDb.usage,
-    ...(db.usage || {})
+    ...storedUsage
   };
+  if (needsCacheMetricsBackfill) {
+    const measured = cacheUsageSummary(db.usageEvents || []);
+    db.usage.cacheMeasuredPromptTokens = measured.promptTokens;
+    db.usage.cacheMeasuredRequests = measured.requests;
+    db.usage.cacheMetricsStartedAt = measured.startedAt;
+    if (!Object.prototype.hasOwnProperty.call(storedUsage, 'cachedTokens')) {
+      db.usage.cachedTokens = measured.cachedTokens;
+    }
+    if (!Object.prototype.hasOwnProperty.call(storedUsage, 'cacheWriteTokens')) {
+      db.usage.cacheWriteTokens = measured.cacheWriteTokens;
+    }
+  }
 
-  return db;
+  return applyRetention(db);
 }
 
-// The app uses a small JSON store instead of SQLite so the user can back up,
-// inspect, and hand-edit state easily. Keep writes atomic at the object level:
-// readDb -> mutate -> writeDb.
+function splitDb(db) {
+  const buckets = new Map<string, Record<string, any>>([
+    ['core', {}],
+    ...SHARD_SPECS.map((spec) => [spec.name, {}] as [string, Record<string, any>])
+  ]);
+  for (const [key, value] of Object.entries(db || {})) {
+    if (key === '_storage') continue;
+    const name = shardNameForKey(key);
+    (buckets.get(name) || buckets.get('core'))![key] = value;
+  }
+  buckets.get('core')!._storage = storageMarker();
+  return buckets;
+}
+
+function writeShard(db, name: string) {
+  const buckets = splitDb(db);
+  const value = buckets.get(name) || {};
+  // Core stays formatted because it contains the small, hand-editable settings.
+  // Large append-heavy shards are compact to avoid wasting ~18 MB on whitespace.
+  writeJsonAtomic(shardPath(name), value, name === 'core');
+}
+
+function writeAllShards(db) {
+  const normalized = applyRetention(db);
+  nextStorageRevision();
+  for (const spec of SHARD_SPECS) writeShard(normalized, spec.name);
+  // Commit the marker last. A legacy db.json therefore remains authoritative if
+  // migration is interrupted before every shard has been written.
+  writeShard(normalized, 'core');
+  cachedStore = { dataDir: getDataDir(), db: normalized, coreSignature: coreFileSignature() };
+  invalidateStoreCaches();
+  return normalized;
+}
+
+function writeDirtyShards(db, dirtyKeys: Set<string>) {
+  const dirtyShards = new Set<string>();
+  for (const key of dirtyKeys) dirtyShards.add(shardNameForKey(key));
+  nextStorageRevision();
+  // Data shards are committed before the small core/revision file. Other
+  // processes use the core signature as their cache invalidation signal.
+  for (const name of dirtyShards) if (name !== 'core') writeShard(db, name);
+  writeShard(db, 'core');
+  cachedStore = { dataDir: getDataDir(), db, coreSignature: coreFileSignature() };
+  invalidateStoreCaches();
+}
+
+function parseJsonFile(filePath: string) {
+  return JSON.parse(fs.readFileSync(filePath, 'utf8').replace(/^\uFEFF/, ''));
+}
+
+function readLogicalDbFromDisk() {
+  const core = parseJsonFile(getDbPath());
+  if (!isShardedCore(core)) return normalizeDb(core);
+  storageRevision = String(core._storage?.revision || '');
+  const merged = { ...core };
+  delete merged._storage;
+  for (const spec of SHARD_SPECS) {
+    const filePath = shardPath(spec.name);
+    if (!fs.existsSync(filePath)) throw new Error(`数据库分片缺失: ${spec.file}`);
+    Object.assign(merged, parseJsonFile(filePath));
+  }
+  return normalizeDb(merged);
+}
+
+function preserveLegacyDb() {
+  const backupDir = path.join(getDataDir(), 'backups');
+  fs.mkdirSync(backupDir, { recursive: true });
+  const stamp = new Date().toISOString().replace(/[:.]/g, '-');
+  const destination = path.join(backupDir, `pre-shard-${stamp}.json`);
+  fs.copyFileSync(getDbPath(), destination);
+  return destination;
+}
+
+// db.json is now the small core shard. Large independent collections live in
+// sibling files and are assembled once into the process-local authoritative
+// object. Existing single-file databases migrate automatically and are fully
+// preserved under backups/pre-shard-*.json before the marker is committed.
 export function ensureStore() {
-  fs.mkdirSync(dataDir, { recursive: true });
-  if (!fs.existsSync(dbPath)) {
+  fs.mkdirSync(getDataDir(), { recursive: true });
+  if (!fs.existsSync(getDbPath())) {
     withDbLock(() => {
-      if (!fs.existsSync(dbPath)) writeJsonAtomic(dbPath, initialDb);
+      if (!fs.existsSync(getDbPath())) {
+        assertWriteTargetSafe();
+        writeAllShards(normalizeDb(JSON.parse(JSON.stringify(initialDb))));
+      }
     });
+    return;
+  }
+
+  try {
+    const current = parseJsonFile(getDbPath());
+    if (isShardedCore(current)) return;
+    assertWriteTargetSafe();
+    withDbLock(() => {
+      const lockedCurrent = parseJsonFile(getDbPath());
+      if (isShardedCore(lockedCurrent)) return;
+      const legacy = normalizeDb(lockedCurrent);
+      const backup = preserveLegacyDb();
+      writeAllShards(legacy);
+      console.log(`[store] migrated legacy db.json to sharded storage; backup=${path.basename(backup)}`);
+    });
+  } catch (error) {
+    // Read-only tools are allowed to inspect a legacy production DB. The trusted
+    // server entry will perform migration on its next start.
+    if (String((error as Error)?.message || error).includes('安全防护')) return;
+    throw error;
   }
 }
 
+function recoverCorruptDb(error) {
+  lastDbReadFailureAt = Date.now();
+  let canWrite = true;
+  try {
+    assertWriteTargetSafe();
+  } catch (assertError) {
+    canWrite = false;
+    console.error('[store] db rewrite skipped (untrusted entry):', String((assertError as Error)?.message || assertError));
+  }
+  const stamp = new Date().toISOString().replace(/[:.]/g, '-');
+  const dbPath = getDbPath();
+  const backupDir = path.join(getDataDir(), 'backups');
+  let evidenceName = '';
+  try {
+    if (canWrite && fs.existsSync(dbPath)) {
+      evidenceName = `db.json.corrupt-${stamp}`;
+      fs.copyFileSync(dbPath, path.join(getDataDir(), evidenceName));
+    }
+  } catch (copyError) {
+    console.error('[store] failed to preserve corrupt db:', String((copyError as Error)?.message || copyError));
+  }
+
+  const candidates = [];
+  try {
+    if (fs.existsSync(backupDir)) {
+      candidates.push(...fs.readdirSync(backupDir)
+        .filter((name) => /^auto-.*\.json$/.test(name))
+        .map((name) => path.join(backupDir, name))
+        .sort()
+        .reverse());
+    }
+  } catch (listError) {
+    console.error('[store] failed to list db backups:', String((listError as Error)?.message || listError));
+  }
+
+  for (const candidate of candidates) {
+    try {
+      const recovered = normalizeDb(JSON.parse(fs.readFileSync(candidate, 'utf8').replace(/^\uFEFF/, '')));
+      if (canWrite) {
+        try {
+          writeAllShards(recovered);
+        } catch (writeError) {
+          console.error('[store] recovered db could not be written back, continuing in memory:', String((writeError as Error)?.message || writeError));
+        }
+      }
+      console.error(`[store] db.json corrupt (${String((error as Error)?.message || error)}); recovered from ${path.basename(candidate)}${evidenceName ? `, corrupt copy kept as ${evidenceName}` : ''}`);
+      return recovered;
+    } catch {
+      // this backup is also unusable; try older snapshots
+    }
+  }
+
+  console.error(`[store] db.json corrupt (${String((error as Error)?.message || error)}) and no valid backup; starting with an empty database${evidenceName ? `, corrupt copy kept as ${evidenceName}` : ''}`);
+  const fresh = normalizeDb(JSON.parse(JSON.stringify(initialDb)));
+  if (canWrite) {
+    try {
+      writeAllShards(fresh);
+    } catch (writeError) {
+      console.error('[store] fresh db could not be written back, continuing in memory:', String((writeError as Error)?.message || writeError));
+    }
+  }
+  return fresh;
+}
+
 function readDbUnlocked() {
-  const raw = fs.readFileSync(dbPath, 'utf8').replace(/^﻿/, '');
-  return normalizeDb(JSON.parse(raw));
+  const dataDir = getDataDir();
+  const signature = coreFileSignature();
+  if (cachedStore?.dataDir === dataDir && cachedStore.coreSignature === signature) return cachedStore.db;
+  try {
+    const db = readLogicalDbFromDisk();
+    cachedStore = { dataDir, db, coreSignature: signature };
+    invalidateStoreCaches();
+    return db;
+  } catch (error) {
+    const db = recoverCorruptDb(error);
+    cachedStore = { dataDir, db, coreSignature: coreFileSignature() };
+    invalidateStoreCaches();
+    return db;
+  }
 }
 
 export function readDb() {
@@ -336,22 +750,121 @@ export function readDb() {
   return readDbUnlocked();
 }
 
+export function currentStorageRevision() {
+  readDb();
+  return storageRevision;
+}
+
 export function writeDb(db) {
+  assertWriteTargetSafe();
   ensureStore();
-  return withDbLock(() => writeJsonAtomic(dbPath, db));
+  return withDbLock(() => {
+    const result = writeAllShards(normalizeDb(db));
+    autoBackupIfDue(result);
+    return result;
+  });
+}
+
+function unwrapTrackedValue(value, rawTargets: WeakMap<object, object>, seen = new WeakMap()) {
+  if (!value || typeof value !== 'object') return value;
+  const raw = rawTargets.get(value) || value;
+  if (seen.has(raw)) return seen.get(raw);
+  if (Array.isArray(raw)) {
+    const result: any[] = [];
+    seen.set(raw, result);
+    for (const item of raw) result.push(unwrapTrackedValue(item, rawTargets, seen));
+    return result;
+  }
+  const result = {};
+  seen.set(raw, result);
+  for (const [key, item] of Object.entries(raw)) result[key] = unwrapTrackedValue(item, rawTargets, seen);
+  return result;
+}
+
+function trackedMutationProxy(
+  target,
+  dirtyKeys: Set<string>,
+  rootKey = '',
+  proxies = new WeakMap(),
+  rawTargets = new WeakMap<object, object>()
+) {
+  if (!target || typeof target !== 'object') return target;
+  if (proxies.has(target)) return proxies.get(target);
+  const proxy = new Proxy(target, {
+    get(object, property, receiver) {
+      const value = Reflect.get(object, property, receiver);
+      const nextRoot = rootKey || (typeof property === 'string' ? property : '');
+      return trackedMutationProxy(value, dirtyKeys, nextRoot, proxies, rawTargets);
+    },
+    set(object, property, value, receiver) {
+      const key = rootKey || (typeof property === 'string' ? property : '');
+      if (key) dirtyKeys.add(key);
+      return Reflect.set(object, property, unwrapTrackedValue(value, rawTargets), receiver);
+    },
+    deleteProperty(object, property) {
+      const key = rootKey || (typeof property === 'string' ? property : '');
+      if (key) dirtyKeys.add(key);
+      return Reflect.deleteProperty(object, property);
+    }
+  });
+  proxies.set(target, proxy);
+  rawTargets.set(proxy, target);
+  return proxy;
 }
 
 export function updateDb(mutator) {
+  assertWriteTargetSafe();
   ensureStore();
   return withDbLock(() => {
     const db = readDbUnlocked();
-    const result = mutator(db);
-    writeJsonAtomic(dbPath, db);
+    const dirtyKeys = new Set<string>();
+    const trackedDb = trackedMutationProxy(db, dirtyKeys);
+    let result;
+    try {
+      result = mutator(trackedDb);
+      applyRetention(trackedDb);
+      if (dirtyKeys.size > 0) {
+        writeDirtyShards(db, dirtyKeys);
+        autoBackupIfDue(db);
+      }
+    } catch (error) {
+      // A failed mutator may have partially changed the cached object. Discard
+      // it so the next read reconstructs the last committed disk state.
+      cachedStore = null;
+      invalidateStoreCaches();
+      throw error;
+    }
     return result ?? db;
   });
 }
 
-export function publicDb(db = readDb()) {
+export function publicMemory(memory: any, includeSamples = true) {
+  const value = { ...memory };
+  if (!includeSamples) {
+    delete value.samples;
+    delete value.recentDynamics;
+    delete value.profileMeta;
+    return value;
+  }
+  return {
+    ...value,
+    samples: (memory.samples || []).slice(-10).map((sample) => ({
+      ...sample,
+      context: sample.context
+        ? { ...sample.context, nearby: (sample.context.nearby || []).slice(-2) }
+        : sample.context
+    }))
+  };
+}
+
+export function publicDb(db = readDb(), options: { includeMemorySamples?: boolean } = {}) {
+  const includeMemorySamples = options.includeMemorySamples !== false;
+  const minute = Math.floor(Date.now() / 60_000);
+  if (
+    cachedPublicDb?.db === db
+    && cachedPublicDb.minute === minute
+    && cachedPublicDb.includeMemorySamples === includeMemorySamples
+  ) return cachedPublicDb.value;
   const now = new Date();
   const localDayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
   const currentHourStart = new Date(now.getFullYear(), now.getMonth(), now.getDate(), now.getHours()).getTime();
@@ -363,7 +876,12 @@ export function publicDb(db = readDb()) {
       label: `${String(date.getHours()).padStart(2, '0')}:00`,
       totalTokens: 0,
       promptTokens: 0,
+      cachedTokens: 0,
+      cacheWriteTokens: 0,
       completionTokens: 0,
+      reasoningTokens: 0,
+      cacheMeasuredPromptTokens: 0,
+      cacheMeasuredRequests: 0,
       requests: 0
     };
   });
@@ -374,27 +892,44 @@ export function publicDb(db = readDb()) {
       label: `${date.getMonth() + 1}/${date.getDate()}`,
       totalTokens: 0,
       promptTokens: 0,
+      cachedTokens: 0,
+      cacheWriteTokens: 0,
       completionTokens: 0,
+      reasoningTokens: 0,
+      cacheMeasuredPromptTokens: 0,
+      cacheMeasuredRequests: 0,
       requests: 0
     };
   });
   const hourlyByStart = new Map(hourlyUsage.map((bucket) => [bucket.start, bucket]));
   const dailyByStart = new Map(dailyUsage.map((bucket) => [bucket.start, bucket]));
-  const todayUsage = { totalTokens: 0, promptTokens: 0, completionTokens: 0, requests: 0 };
+  const todayUsage = { totalTokens: 0, promptTokens: 0, cachedTokens: 0, cacheWriteTokens: 0, completionTokens: 0, reasoningTokens: 0, cacheMeasuredPromptTokens: 0, cacheMeasuredRequests: 0, requests: 0 };
   for (const event of db.usageEvents || []) {
+    if (!event || event.accountingExcluded || event.kind === 'rewrite-reply') continue;
     const time = new Date(event.createdAt || 0);
     const timestamp = time.getTime();
     if (!Number.isFinite(timestamp)) continue;
     const values = {
       totalTokens: Number(event.totalTokens || 0),
       promptTokens: Number(event.promptTokens || 0),
-      completionTokens: Number(event.completionTokens || 0)
+      cachedTokens: Number(event.cachedTokens || 0),
+      cacheWriteTokens: Number(event.cacheWriteTokens || 0),
+      completionTokens: Number(event.completionTokens || 0),
+      reasoningTokens: Number(event.reasoningTokens || 0),
+      cacheMetricsAvailable: usageEventHasCacheDetails(event)
     };
     const add = (bucket) => {
       if (!bucket) return;
       bucket.totalTokens += values.totalTokens;
       bucket.promptTokens += values.promptTokens;
+      bucket.cachedTokens += values.cachedTokens;
+      bucket.cacheWriteTokens += values.cacheWriteTokens;
       bucket.completionTokens += values.completionTokens;
+      bucket.reasoningTokens += values.reasoningTokens;
+      if (values.cacheMetricsAvailable) {
+        bucket.cacheMeasuredPromptTokens += eventMeasuredPromptTokens(event);
+        bucket.cacheMeasuredRequests += 1;
+      }
       bucket.requests += 1;
     };
     if (timestamp >= localDayStart) add(todayUsage);
@@ -406,19 +941,14 @@ export function publicDb(db = readDb()) {
   const messages = (db.messages || []).slice(-500);
   const decisions = (db.decisions || []).slice(-300);
   const commandLogs = (db.commandLogs || []).slice(-300);
-  const memories = (db.memories || []).map((memory) => ({
-    ...memory,
-    samples: (memory.samples || []).slice(-10).map((sample) => ({
-      ...sample,
-      context: sample.context
-        ? { ...sample.context, nearby: (sample.context.nearby || []).slice(-2) }
-        : sample.context
-    }))
-  }));
+  const memories = (db.memories || []).map((memory) => publicMemory(memory, includeMemorySamples));
 
-  return {
+  const value = {
     settings: {
       ...db.settings,
+      // Derived display-only identity. It is rejected by /api/settings because
+      // it is not a persisted settings key.
+      effectiveModel: activeModelName(db.settings),
       // Never send secrets back to the browser in plaintext. The GUI uses these
       // placeholders to show that a secret is present without exposing it.
       apiKey: db.settings.apiKey ? '已填写' : '',
@@ -448,7 +978,14 @@ export function publicDb(db = readDb()) {
     usageStats: {
       today: todayUsage,
       hourly24: hourlyUsage,
-      daily7: dailyUsage
+      daily7: dailyUsage,
+      cacheMeasuredAll: {
+        promptTokens: Number(db.usage?.cacheMeasuredPromptTokens || 0),
+        cachedTokens: Number(db.usage?.cachedTokens || 0),
+        cacheWriteTokens: Number(db.usage?.cacheWriteTokens || 0),
+        requests: Number(db.usage?.cacheMeasuredRequests || 0),
+        startedAt: String(db.usage?.cacheMetricsStartedAt || '')
+      }
     },
     stateStats: {
       totalMessages: (db.messages || []).length,
@@ -461,6 +998,8 @@ export function publicDb(db = readDb()) {
       returnedCommandLogs: commandLogs.length
     }
   };
+  cachedPublicDb = { db, minute, includeMemorySamples, value };
+  return value;
 }
 
 export function upsertBy(list, key, item) {

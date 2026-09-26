@@ -24,8 +24,8 @@ async function main() {
   ensureStore();
 
   const base = {
-    userId: '570341031',
-    osuUsername: '[SHK]Wuxin',
+    userId: 'REDACTED_QQ_001',
+    osuUsername: '[TST]Alpha',
     osuUserId: 1234567,
     pp: 10285.6,
     rank: 6217,
@@ -58,11 +58,11 @@ async function main() {
 
   let records = readDb().skillStore.records;
   assert(records.length === 2, 'one QQ must retain separate std and mania records');
-  assert(lookupSkills('570341031').length === 2, 'QQ lookup must return every stored mode');
-  assert(lookupSkill('570341031')?.mode === 'osu', 'QQ lookup should prefer std when mode is omitted');
-  assert(lookupSkill('570341031', 'mania')?.pp === 4321, 'QQ + mode lookup must select mania');
-  assert(lookupSkill('[shk]wuxin')?.osuUserId === 1234567, 'username lookup must be case-insensitive');
-  assert(lookupSkill('1234567')?.osuUsername === '[SHK]Wuxin', 'osu user ID lookup must work');
+  assert(lookupSkills('REDACTED_QQ_001').length === 2, 'QQ lookup must return every stored mode');
+  assert(lookupSkill('REDACTED_QQ_001')?.mode === 'osu', 'QQ lookup should prefer std when mode is omitted');
+  assert(lookupSkill('REDACTED_QQ_001', 'mania')?.pp === 4321, 'QQ + mode lookup must select mania');
+  assert(lookupSkill('[tst]alpha')?.osuUserId === 1234567, 'username lookup must be case-insensitive');
+  assert(lookupSkill('1234567')?.osuUsername === '[TST]Alpha', 'osu user ID lookup must work');
   assert(lookupSkill('definitely-missing') === undefined, 'unknown player must not fall back to another record');
 
   const originalStdSummary = lookupSkill('1234567', 'osu').summary;
@@ -70,7 +70,7 @@ async function main() {
     updateRecentSkillRecordInDb(db, {
       osuUserId: 1234567,
       mode: 'osu',
-      userId: '570341031',
+      userId: 'REDACTED_QQ_001',
     }, 'Recent 50 次：平均 7.20★、Acc 96.50%。');
   });
   const withRecent = lookupSkill('1234567', 'osu');
@@ -88,7 +88,7 @@ async function main() {
   updateDb(db => {
     updateRecentSkillRecordInDb(db, {
       osuUserId: 1234567,
-      userId: '570341031',
+      userId: 'REDACTED_QQ_001',
       mode: 'osu',
     }, '只应更新指定 osu ID');
   });
@@ -152,7 +152,7 @@ async function main() {
     },
     requesterQq: '111111111',
     osuUserId: 1234567,
-    osuUsername: '[SHK]Wuxin',
+    osuUsername: '[TST]Alpha',
   });
   assert(resolvedQq === '222222222', 'analyzing another player must use target binding, not requester QQ');
   assert(resolveSkillQq({
@@ -190,14 +190,29 @@ async function main() {
     summary: '对比对象',
   }));
   const bounded = relevantPlayersSkillBlock({
-    userId: '570341031',
-    text: '比较一下我和 RivalPlayer',
+    userId: 'REDACTED_QQ_001',
+    text: '比较一下我和 RivalPlayer 的bp',
     maxRecords: 2,
   });
-  assert(bounded.includes('[SHK]Wuxin'), 'bounded context must include current speaker');
+  assert(bounded.includes('[TST]Alpha'), 'bounded context must include current speaker');
   assert(bounded.includes('RivalPlayer'), 'bounded context must include explicitly named player');
   assert(!bounded.includes('Unrelated0'), 'bounded context must exclude unrelated full store');
   assert((bounded.match(/^- /gm) || []).length <= 2, 'bounded context must honor maxRecords');
+
+  const offTopic = relevantPlayersSkillBlock({
+    userId: 'REDACTED_QQ_001',
+    text: '晚上吃什么好',
+    maxRecords: 2,
+  });
+  assert(!offTopic.includes('[TST]Alpha'), 'off-topic chat must not inject speaker skill memory');
+  assert(!offTopic.includes('RivalPlayer'), 'off-topic chat must not inject mention/name skill memory');
+
+  const osuTopic = relevantPlayersSkillBlock({
+    userId: 'REDACTED_QQ_001',
+    text: '手感回来了，最近准度好多了',
+    maxRecords: 2,
+  });
+  assert(osuTopic.includes('[TST]Alpha'), 'osu-related chat must still inject speaker skill memory');
 
   console.log('All skill-memory regression tests PASSED.');
 }

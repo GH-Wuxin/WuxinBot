@@ -1,6 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { writeDb } from './store.js';
+import { readDb, writeDb } from './store.js';
 
 const dataDir = process.env.DATA_DIR || path.join(process.env.APPDATA || path.join(process.env.USERPROFILE || 'C:', 'AppData', 'Roaming'), 'Wuxin');
 const dbPath = path.join(dataDir, 'db.json');
@@ -34,7 +34,10 @@ export function createBackup(type = 'manual') {
   if (!dest.startsWith(path.resolve(backupDir) + path.sep)) {
     throw new Error('备份路径越界');
   }
-  fs.copyFileSync(dbPath, dest);
+  // db.json is only the small core shard in storage v1. Backups deliberately
+  // remain one complete logical JSON document so they are portable and can be
+  // restored without knowing the on-disk shard layout.
+  fs.writeFileSync(dest, JSON.stringify(readDb()), 'utf8');
   // Write a tiny meta file
   const meta = { type: safeType, name, createdAt: new Date().toISOString(), size: fs.statSync(dest).size };
   fs.writeFileSync(dest + '.meta.json', JSON.stringify(meta, null, 2), 'utf8');

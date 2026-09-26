@@ -1,0 +1,21 @@
+
+<--- Last few GCs --->
+
+[42936:000001BAB4A51000]  1302901 ms: Mark-Compact 4053.1 (4138.4) -> 4053.1 (4138.4) MB, pooled: 8 MB, 2036.38 / 0.00 ms  (average mu = 0.110, current mu = 0.082) allocation failure; scavenge might not succeed
+[42936:000001BAB4A51000]  1307656 ms: Mark-Compact 4139.9 (4209.4) -> 4068.8 (4170.4) MB, pooled: 0 MB, 4169.91 / 0.00 ms  (average mu = 0.119, current mu = 0.123) allocation failure; scavenge might not succeed
+
+
+<--- JS stacktrace --->
+
+FATAL ERROR: Ineffective mark-compacts near heap limit Allocation failed - JavaScript heap out of memory
+----- Native stack trace -----
+
+ 1: 00007FF7F19920AD node::SetCppgcReference+17245
+ 2: 00007FF7F18FA4D8 v8::base::CPU::num_virtual_address_bits+92376
+ 3: 00007FF7F247A1B1 v8::Isolate::ReportExternalAllocationLimitReached+65
+ 4: 00007FF7F2467096 v8::Function::Experimental_IsNopFunction+2790
+ 5: 00007FF7F22B6920 v8::internal::StrongRootAllocatorBase::StrongRootAllocatorBase+31392
+ 6: 00007FF7F22B0644 v8::internal::StrongRootAllocatorBase::StrongRootAllocatorBase+6084
+ 7: 00007FF7F22ABCF5 v8::CpuProfileNode::GetScriptResourceNameStr+188069
+ 8: 00007FF7F1C313BD BIO_ssl_shutdown+189
+ 9: 7FF8000000000000 

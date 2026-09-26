@@ -1,0 +1,55 @@
+{
+  "schema_version": "prompt_review_slim_p1a_source_mapping_v1",
+  "tool_guidance_version": "p1a-v1",
+  "generated_by": "server/bots/toolGuidance.ts buildToolGuidance()",
+  "facts": [
+    {
+      "fact": "callable capability names exposed to the LLM",
+      "old_source": "handwritten 1400-char tool note in server/bot.ts (shadow copy)",
+      "canonical_source": "server/bots/capabilityCatalog.ts CAPABILITY_CATALOG via AGENT_CAPABILITY_META",
+      "generated": true,
+      "handwritten_policy_still_needed": false,
+      "generated_location": "buildToolGuidanceFromMetadata capabilities list"
+    },
+    {
+      "fact": "capability descriptions / parameter constraints",
+      "old_source": "tool schema buildQueryOsuDescription (derived) + handwritten note prose",
+      "canonical_source": "server/bots/capabilityCatalog.ts",
+      "generated": true,
+      "handwritten_policy_still_needed": false,
+      "generated_location": "buildBotToolSchemas -> buildQueryOsuDescriptionFromMeta"
+    },
+    {
+      "fact": "internal bot display names (雨沐/猫猫/消防栓/LazyBot are independent bots)",
+      "old_source": "handwritten tool note",
+      "canonical_source": "server/bots/registry.ts DEFAULT_BOTS",
+      "generated": true,
+      "handwritten_policy_still_needed": true,
+      "note": "names are generated; the rule that they are not tools is policy prose"
+    },
+    {
+      "fact": "recent selector ids (yumu/kanon only)",
+      "old_source": "handwritten tool note",
+      "canonical_source": "server/bots/capabilityCatalog.ts RECENT_BOT_SELECTOR_IDS",
+      "generated": true,
+      "handwritten_policy_still_needed": true,
+      "note": "ids are generated; the when-to-fill-bot rule is policy prose"
+    },
+    {
+      "fact": "mandatory anti-fabrication / tool failure / attribution / BID / no-markup rules",
+      "old_source": "handwritten tool note",
+      "canonical_source": "none in metadata (deterministic code enforces routing; model guidance remains necessary)",
+      "generated": false,
+      "handwritten_policy_still_needed": true,
+      "generated_location": "server/bots/toolGuidance.ts HANDWRITTEN_POLICY (single location)"
+    },
+    {
+      "fact": "command names / usage / permission / visibility",
+      "old_source": "not present in old tool note",
+      "canonical_source": "server/bot/commands/*.meta.ts CommandDescriptor",
+      "generated": "not applicable to tool guidance",
+      "handwritten_policy_still_needed": false,
+      "note": "P1A does not inject command facts into tool guidance; command help/KB remain descriptor-driven"
+    }
+  ]
+}

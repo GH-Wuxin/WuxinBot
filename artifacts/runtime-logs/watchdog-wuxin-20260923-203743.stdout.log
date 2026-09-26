@@ -1,0 +1,31 @@
+QQ AI ChatBot server running at http://127.0.0.1:8787
+[yumu-image] Render server listening on ws://127.0.0.1:8389
+[yumu-image] Client authenticated, pid=34732
+[yumu-image] Render client disconnected
+[yumu-image] Client authenticated, pid=34732
+[yumu-image] Render client disconnected
+[yumu-image] Client authenticated, pid=34732
+[kb] {"route":"community_style","reason":"casual_chat","decisionSource":"db","groupHash":"1cb0da1fc5072302","collections":["community_style:1"],"documentIds":["community_style:W00386796"],"scores":[3.6072],"dropped":["no_lexical_overlap","no_lexical_overlap","no_lexical_overlap","no_lexical_overlap","no_lexical_overlap","no_lexical_overlap","no_lexical_overlap","no_lexical_overlap","no_lexical_overlap","no_lexical_overlap","no_lexical_overlap","no_lexical_overlap"],"injectedChars":87,"elapsedMs":22}
+[reasoning-shadow] {"ts":1790180577022,"turnId":"1720944751","callRole":"tool_planner","level":"max","source":"rule","reasonCode":"tool_selection","actualModel":"gpt-6-luna","finishReason":"tool_calls","reasoningTokens":342,"completionTokens":418,"totalTokens":18752,"latencyMs":17599,"toolCalls":1,"textEmpty":false}
+[reasoning-shadow] {"ts":1790180716066,"turnId":"1720944751","callRole":"tool_planner","level":"off","source":"rule","reasonCode":"direct_delivery","actualModel":"gpt-6-luna","finishReason":"stop","reasoningTokens":36,"completionTokens":650,"totalTokens":21397,"latencyMs":59719,"toolCalls":0,"textEmpty":false}
+[kb] {"route":"community_style","reason":"casual_chat","decisionSource":"db","groupHash":"715dc8493c36579a","collections":["community_style:0"],"documentIds":[],"scores":[],"dropped":["no_lexical_overlap","no_lexical_overlap","no_lexical_overlap","no_lexical_overlap","no_lexical_overlap","no_lexical_overlap","no_lexical_overlap","no_lexical_overlap","no_lexical_overlap","no_lexical_overlap","no_lexical_overlap","no_lexical_overlap"],"injectedChars":0,"elapsedMs":5}
+[group-bot-config] Written shared config: G:\My pack\Agent Work\codex_work\napcat-local-bots\configs\group-bot-config.json
+[group-bot-config] Written shared config: G:\My pack\Agent Work\codex_work\napcat-local-bots\configs\group-bot-config.json
+[group-bot-config] Written shared config: G:\My pack\Agent Work\codex_work\napcat-local-bots\configs\group-bot-config.json
+[group-bot-config] Written shared config: G:\My pack\Agent Work\codex_work\napcat-local-bots\configs\group-bot-config.json
+[kb] {"route":"community_style","reason":"casual_chat","decisionSource":"db","groupHash":"f1f460c8c5f23100","collections":["community_style:1"],"documentIds":["community_style:W00499881"],"scores":[3.8942],"dropped":["no_lexical_overlap","no_lexical_overlap","no_lexical_overlap","no_lexical_overlap","no_lexical_overlap","no_lexical_overlap","no_lexical_overlap","no_lexical_overlap","no_lexical_overlap","no_lexical_overlap","no_lexical_overlap","no_lexical_overlap"],"injectedChars":103,"elapsedMs":1}
+[kb] {"route":"community_style","reason":"casual_chat","decisionSource":"db","groupHash":"f1f460c8c5f23100","collections":["community_style:1"],"documentIds":["community_style:W00499881"],"scores":[3.8942],"dropped":["no_lexical_overlap","no_lexical_overlap","no_lexical_overlap","no_lexical_overlap","no_lexical_overlap","no_lexical_overlap","no_lexical_overlap","no_lexical_overlap","no_lexical_overlap","no_lexical_overlap","no_lexical_overlap","no_lexical_overlap"],"injectedChars":103,"elapsedMs":1}
+[kb] {"route":"community_style","reason":"casual_chat","decisionSource":"db","groupHash":"f1f460c8c5f23100","collections":["community_style:1"],"documentIds":["community_style:W00264297"],"scores":[2.4305],"dropped":["no_lexical_overlap","no_lexical_overlap","no_lexical_overlap","no_lexical_overlap","no_lexical_overlap","no_lexical_overlap","no_lexical_overlap","no_lexical_overlap","no_lexical_overlap","no_lexical_overlap","no_lexical_overlap","no_lexical_overlap"],"injectedChars":35,"elapsedMs":1}
+[kb] {"route":"community_style","reason":"casual_chat","decisionSource":"db","groupHash":"f1f460c8c5f23100","collections":["community_style:1"],"documentIds":["community_style:W00137514"],"scores":[2.8559],"dropped":["no_lexical_overlap","no_lexical_overlap","no_lexical_overlap","no_lexical_overlap","no_lexical_overlap","no_lexical_overlap","no_lexical_overlap","no_lexical_overlap","no_lexical_overlap","no_lexical_overlap","no_lexical_overlap","no_lexical_overlap"],"injectedChars":36,"elapsedMs":0}
+[yumu-image] Render client disconnected
+[yumu-image] Client authenticated, pid=34732
+[yumu-image] Render client disconnected
+[yumu-image] Client authenticated, pid=34732
+[yumu-image] Render client disconnected
+[yumu-image] Client authenticated, pid=34732
+[yumu-image] Render client disconnected
+[yumu-image] Client authenticated, pid=34732
+[yumu-image] Render client disconnected
+[yumu-image] Client authenticated, pid=34732
+[yumu-image] Render client disconnected
+[yumu-image] Client authenticated, pid=34732
