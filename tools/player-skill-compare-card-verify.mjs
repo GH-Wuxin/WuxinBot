@@ -31,6 +31,7 @@ const side = (username, colorOffset) => ({
   profile: {
     primaryAxes: ['Jump Aim', 'Aim Control'],
     profileType: 'Jump Aim Dominant',
+    profileTitle: colorOffset < 100 ? 'Ballistic Virtuoso' : 'Tapping Overdrive',
     axes: PLAYER_SKILL_AXES.map((key, index) => ({
       key,
       label: PLAYER_SKILL_AXIS_LABELS[key],
@@ -70,6 +71,8 @@ assert.match(svg,/RightPlayer leads by Skill Rating/,'the summary names the lead
 assert.match(svg,/SKILL RATING/,'comparison exposes the weighted Skill Rating');
 assert.match(svg,/data-left-rating="\d+"/);
 assert.match(svg,/data-right-rating="\d+"/);
+assert.match(svg,/Ballistic Virtuoso/,'comparison renders the left player profile title');
+assert.match(svg,/Tapping Overdrive/,'comparison renders the right player profile title');
 const leftRadarColor = svg.match(/data-left-color="([^"]+)"/)?.[1];
 const rightRadarColor = svg.match(/data-right-color="([^"]+)"/)?.[1];
 assert.match(svg,new RegExp(`<text[^>]*fill="${rightRadarColor}"[^>]*>\\+2\\.0</text>`),'positive deltas use the right-player tier color');
