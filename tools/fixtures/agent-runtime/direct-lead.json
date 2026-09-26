@@ -1,0 +1,74 @@
+{
+  "schemaVersion": 1,
+  "traceVersion": 1,
+  "generatorVersion": 1,
+  "id": "REPLAY_DIRECT_LEAD",
+  "seed": 99173,
+  "initialState": {
+    "context": { "userId": "actor-qq-2", "groupId": "group-2" },
+    "db": { "settings": {} },
+    "messages": [{ "role": "user", "content": "offline direct replay" }],
+    "toolSchemas": [{ "name": "replay_panel", "description": "offline direct fixture" }],
+    "maxIterations": 3,
+    "deliverDirectContent": true
+  },
+  "llmSteps": [
+    {
+      "outcome": "return",
+      "expect": { "exposedTools": ["replay_panel"] },
+      "text": "",
+      "toolCalls": [{ "name": "replay_panel", "args": { "target": "player-2" } }]
+    },
+    {
+      "outcome": "return",
+      "expect": { "exposedTools": [] },
+      "text": "panel ready",
+      "toolCalls": [
+        {
+          "name": "replay_panel",
+          "args": { "target": "must-not-execute" }
+        }
+      ]
+    }
+  ],
+  "toolSteps": [
+    {
+      "outcome": "return",
+      "expect": { "name": "replay_panel", "args": { "target": "player-2" } },
+      "effects": [{ "kind": "panel_render", "class": "business", "data": { "idempotencyKey": "panel-player-2" } }],
+      "result": {
+        "ok": true,
+        "content": "panel payload",
+        "directContent": "panel payload"
+      }
+    }
+  ],
+  "oracleSidecar": {
+    "actor": { "userId": "actor-qq-2", "groupId": "group-2" },
+    "target": { "toolName": "replay_panel", "args": { "target": "player-2" } },
+    "constraints": [{ "path": "args.target", "equals": "player-2" }],
+    "facts": [{ "path": "terminal.result.directContent", "equals": "panel payload" }]
+  },
+  "expected": {
+    "enforced": [
+      { "kind": "invariant", "id": "RT_DIRECT_EMIT_ONCE", "config": { "equals": "panel payload" } },
+      { "kind": "invariant", "id": "RT_DIRECT_LEAD_LIMIT" },
+      { "kind": "invariant", "id": "RT_BOUNDED_LOOP" },
+      { "kind": "invariant", "id": "RR_MONOTONIC_LOOP" },
+      { "kind": "invariant", "id": "HARNESS_ISOLATED" },
+      { "kind": "invariant", "id": "TRACE_DETERMINISTIC" },
+      { "kind": "invariant", "id": "RT_TOOL_COUNT_EXACT" },
+      { "kind": "assertion", "id": "ASSERT_TERMINAL_KIND", "value": "result" },
+      { "kind": "assertion", "id": "ASSERT_LLM_CALL_COUNT", "value": 2 },
+      { "kind": "assertion", "id": "ASSERT_TOOL_CALL_COUNT", "value": 1 },
+      { "kind": "assertion", "id": "ASSERT_TEXT", "value": "panel ready" },
+      { "kind": "assertion", "id": "ASSERT_DIRECT_CONTENT", "value": "panel payload" },
+      { "kind": "assertion", "id": "ASSERT_SCRIPT_CONSUMPTION", "value": { "llmConsumed": 2, "llmTotal": 2, "toolConsumed": 1, "toolTotal": 1 } }
+    ],
+    "candidate": [
+      { "kind": "invariant", "id": "RT_TARGET_LOCK" },
+      { "kind": "invariant", "id": "RT_EFFECT_IDEMPOTENCY" }
+    ]
+  },
+  "minimalReproduction": "tools/fixtures/agent-runtime/direct-lead.json"
+}
