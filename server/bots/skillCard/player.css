@@ -31,6 +31,7 @@ i{font-style:normal}
 .identity-stat small{margin-top:5px;font-size:11px;color:#b1b7b1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .rating-stat{position:relative;overflow:visible}
 .rating-stat>span,.rating-stat>b,.rating-stat>small{position:relative;z-index:1}
+.identity-profile-title{display:block;margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--rank-color);font-size:11px;font-style:normal;font-weight:650;letter-spacing:.2px}
 .tier-emblem{position:absolute;z-index:0;right:-2px;top:2px;width:66px;height:66px;object-fit:contain;opacity:.42;pointer-events:none;filter:saturate(.92) brightness(.94)}
 .rank-stat b{font-size:19px;color:#e7e4dc}
 .page-grid{height:405px;margin-top:14px;display:grid;grid-template-columns:550px minmax(0,1fr);gap:30px}

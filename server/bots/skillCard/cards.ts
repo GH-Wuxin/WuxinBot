@@ -327,7 +327,7 @@ function playerPage(payload:any,avatar:string){
   const topDef=defs[top.key]||defs.jump_aim;
   const axesByKey=Object.fromEntries(p.axes.map((axis:any)=>[axis.key,axis]));
   const tierLabel=view.rated&&view.tier?`TIER ${roman} · ${view.tier.en}`:'UNRATED';
-  const title=view.rated?(mark?.label||view.title||profile.profileType||'PROFILE'):'UNRATED';
+  const title=view.rated?(mark?.label||view.title||profile.profileTitle||profile.profileType||'PROFILE'):'UNRATED';
   const primary=Array.isArray(profile.primaryAxes)?profile.primaryAxes.slice(0,2).map((label:string)=>label==='Micro Precision'||label==='Precision Aim'?'Spatial Precision':label).join(' · '):topDef.label;
   const pp=fmt(numeric(user.pp)===null?null:Math.round(user.pp));
   const sample=payload.sample||{};
@@ -365,7 +365,7 @@ function playerPage(payload:any,avatar:string){
       ${brand('PLAYER PROFILE')}
       <div class="identity-row">
         ${avatar?`<img class="avatar" src="${esc(avatar)}" alt="${esc(user.username)} avatar">`:`<div class="avatar avatar-placeholder">${esc(String(user.username||'SP').slice(0,2).toUpperCase())}</div>`}
-        <div class="identity-copy"><div class="eyebrow">OSU! STANDARD · ${esc(String(user.countryCode||'—').toUpperCase())}</div><h1>${esc(user.username||'Unknown')}</h1><div class="identity-meta">${identityMeta}</div>${activityNote}</div>
+        <div class="identity-copy"><div class="eyebrow">OSU! STANDARD · ${esc(String(user.countryCode||'—').toUpperCase())}</div><h1>${esc(user.username||'Unknown')}</h1><div class="identity-meta">${identityMeta}</div>${view.rated&&title&&title!=='PROFILE'?`<div class="profile-title identity-profile-title">${esc(title)}</div>`:''}${activityNote}</div>
         <div class="identity-stat rating-stat"><span>SKILL RATING</span><b>${view.rated?fmt(view.value):'—'}</b><small>${esc(view.rated?tierLabel:'INSUFFICIENT EVIDENCE')}</small>${tierEmblem}</div>
         <div class="identity-stat rank-stat"><span>PROFILE SAMPLE</span><b>${esc(sampleLabel)}</b><small>${esc(view.honor?.label||'BP50')}</small></div>
       </div>

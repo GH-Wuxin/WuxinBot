@@ -144,6 +144,7 @@ function boostedTierColor(hex: string, _level: number): string {
 
 function profileSide(side: any): any {
   const ratingView = profileRatingPresentation(side);
+  const profile = side.profile || {};
   const tier = ratingView.rated && ratingView.tier ? ratingView.tier : null;
   const color = String(tier?.color || '#aeb5ad');
   return {
@@ -151,6 +152,9 @@ function profileSide(side: any): any {
     sample: side.sample || {},
     tier,
     rating: ratingView.rated ? valueOrNull(ratingView.value) : null,
+    title: ratingView.rated
+      ? String(ratingView.specialty?.label || ratingView.title || profile.profileTitle || profile.profileType || '').trim()
+      : '',
     color,
     radarColor: boostedTierColor(color, Number(tier?.level || 1)),
   };
@@ -202,7 +206,7 @@ function comparisonAvatar(dataUrl: string, cx: number, cy: number, clipId: strin
 }
 
 function comparisonPlayerHeader(side: any, placement: 'left' | 'right', avatar: string, playerColor: string): string {
-  const {player, sample, tier, color} = side;
+  const {player, sample, tier, color, title} = side;
   const left = placement === 'left';
   const avatarX = left ? 61 : 786;
   const nameX = left ? 108 : 832;
@@ -218,9 +222,11 @@ function comparisonPlayerHeader(side: any, placement: 'left' | 'right', avatar: 
     : '';
   const name = text(username, nameX, y, 18, {fill: playerColor, weight: 700});
   const metadata = text(`${String(player.countryCode || '—').toUpperCase()} · GLOBAL ${rank(player.globalRank)} · ${pp(player.pp)}pp · ${number(player.accuracy, 2)}%`, nameX, 156, 9.5, {fill: playerColor, weight: 600});
+  const titleText = compact(title, 28);
+  const titleLine = titleText ? text(titleText, nameX, 170, 8.7, {fill: playerColor, weight: 650, spacing: .15}) : '';
   const tierText = tier ? `<tspan fill="#7e8984">TIER ${tierRoman(tier.level)} · </tspan><tspan fill="${color}">${esc(tierName)}</tspan>` : `<tspan fill="${color}">INSUFFICIENT EVIDENCE</tspan>`;
-  const sampleLine = `<text x="${nameX}" y="172" fill="#7e8984" font-size="8" font-weight="500" letter-spacing=".35">${tierText}<tspan fill="#7e8984"> · BP50 ${finite(sample.valid)}/${finite(sample.requested, 50)} VALID</tspan></text>`;
-  return `${avatarMarkup}${emblemMarkup}${name}${metadata}${sampleLine}`;
+  const sampleLine = `<text x="${nameX}" y="${titleText ? 182 : 172}" fill="#7e8984" font-size="${titleText ? 7.2 : 8}" font-weight="500" letter-spacing=".35">${tierText}<tspan fill="#7e8984"> · BP50 ${finite(sample.valid)}/${finite(sample.requested, 50)} VALID</tspan></text>`;
+  return `${avatarMarkup}${emblemMarkup}${name}${metadata}${titleLine}${sampleLine}`;
 }
 
 function radarPoint(value: number, max: number, index: number, cx: number, cy: number, radius: number, axisCount = COMPARISON_AXES.length): {x: number; y: number} {
