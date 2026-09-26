@@ -1,7 +1,8 @@
 import {imageDataUrl} from './skillCard/images.js';
 import {ratingPresentation} from './skillCard/presentation.js';
 import sharp from 'sharp';
-import type {PlayerSkillAxis} from './playerSkillProfile.js';
+import {PLAYER_SKILL_AXIS_DEFINITIONS} from './playerSkillAxes.js';
+import type {PlayerSkillAxis} from './playerSkillAxes.js';
 
 const WIDTH = 1280;
 const HEIGHT = 720;
@@ -9,17 +10,8 @@ const RECENT_MAIN = '#64e5c0';
 const RECENT_DOWN = '#ef9098';
 const RECENT_WARN = '#e8c26d';
 const AXIS_COLORS = ['#70dfc3', '#77b7f3', '#e6b987', '#c3a8ef', '#f0d477', '#e5a9be', '#a7cbd2', '#b0b6dd', '#9ccdb8'];
-const COMPARISON_AXES: ReadonlyArray<{key: PlayerSkillAxis; label: string; unit: 'star' | 'independent'}> = [
-  {key: 'aim_control', label: 'Aim Control', unit: 'star'},
-  {key: 'jump_aim', label: 'Jump Aim', unit: 'star'},
-  {key: 'flow_aim', label: 'Flow Aim', unit: 'star'},
-  {key: 'raw_speed', label: 'Raw Speed', unit: 'star'},
-  {key: 'finger_control', label: 'Finger Control', unit: 'star'},
-  {key: 'stamina', label: 'Stamina', unit: 'independent'},
-  {key: 'endurance', label: 'Endurance', unit: 'independent'},
-  {key: 'reading', label: 'Reading', unit: 'star'},
-  {key: 'spatial_precision', label: 'Spatial Precision', unit: 'star'},
-];
+const COMPARISON_AXES: ReadonlyArray<{key: PlayerSkillAxis; label: string; unit: 'star' | 'independent'}> =
+  PLAYER_SKILL_AXIS_DEFINITIONS.map(({key, label, unit}) => ({key, label, unit}));
 
 function esc(value: unknown): string {
   return String(value ?? '')
@@ -128,19 +120,10 @@ function tierPresentation(side: any): any {
   return view.rated && view.tier ? view.tier : null;
 }
 
-function boostedTierColor(hex: string, level: number): string {
-  const [r, g, b] = [1, 3, 5].map((offset) => parseInt(hex.slice(offset, offset + 2), 16) / 255);
-  const max = Math.max(r, g, b), min = Math.min(r, g, b), delta = max - min, light = (max + min) / 2;
-  const hue = delta === 0 ? 0 : max === r ? ((g - b) / delta + 6) % 6 : max === g ? (b - r) / delta + 2 : (r - g) / delta + 4;
-  const saturation = delta === 0 ? 0 : delta / (1 - Math.abs(2 * light - 1));
-  const strength = Math.max(0, Math.min(1, (level - 1) / 11));
-  const s = Math.min(.98, saturation + .08 + strength * .16);
-  const l = Math.max(.48, Math.min(.78, light - .03 - strength * .06));
-  const channel = (offset: number) => {
-    const k = (offset + hue * 2) % 12;
-    return Math.round(255 * (l - s * Math.min(l, 1 - l) * Math.max(-1, Math.min(k - 3, 9 - k, 1)))).toString(16).padStart(2, '0');
-  };
-  return `#${[0, 8, 4].map(channel).join('')}`;
+function boostedTierColor(hex: string, _level: number): string {
+  // presentation.ts owns the perceptually tuned Tier accent. Re-saturating it
+  // here makes the comparison card disagree with the player card.
+  return hex;
 }
 
 function profileSide(side: any): any {
@@ -348,16 +331,20 @@ ${comparisonRadar(axes, colors.left, colors.right)}${comparisonReadout(axes, col
 }
 
 function recentAxes(profile: any): any[] {
-  const axes = (Array.isArray(profile.axes) ? profile.axes : []).slice(0, 9).map((axis: any, index: number) => ({
-    key: axis.key as PlayerSkillAxis,
-    label: axis.label || axis.key,
-    value: axis.value === null || axis.value === undefined ? null : finite(axis.value),
-    reference: finite(axis.reference),
-    delta: axis.delta === null || axis.delta === undefined ? null : finite(axis.delta),
-    evidence: String(axis.evidence || 'INSUFFICIENT'),
-    samples: finite(axis.samples),
-    color: AXIS_COLORS[index % AXIS_COLORS.length],
-  }));
+  const byKey = new Map<string, any>((Array.isArray(profile.axes) ? profile.axes : []).map((axis: any) => [String(axis.key), axis]));
+  const axes = PLAYER_SKILL_AXIS_DEFINITIONS.map((definition, index) => {
+    const axis: any = byKey.get(definition.key) || {};
+    return {
+      key: definition.key as PlayerSkillAxis,
+      label: definition.label,
+      value: axis.value === null || axis.value === undefined ? null : finite(axis.value),
+      reference: finite(axis.reference),
+      delta: axis.delta === null || axis.delta === undefined ? null : finite(axis.delta),
+      evidence: String(axis.evidence || 'INSUFFICIENT'),
+      samples: finite(axis.samples),
+      color: AXIS_COLORS[index % AXIS_COLORS.length],
+    };
+  });
   if (axes.length !== 9) throw new Error('PLAYER_RECENT_SKILL_AXES_INVALID');
   return axes;
 }

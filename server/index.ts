@@ -4,7 +4,7 @@ import net from 'node:net';
 import fs from 'node:fs';
 import path from 'node:path';
 import express from 'express';
-import { ensureStore, publicDb, readDb, updateDb, upsertBy, nowIso, saveConfigSnapshot, listConfigSnapshots, restoreConfigSnapshot } from './store.js';
+import { ensureStore, currentStorageRevision, publicDb, publicMemory, readDb, updateDb, upsertBy, nowIso, saveConfigSnapshot, listConfigSnapshots, restoreConfigSnapshot } from './store.js';
 import { createBackup, listBackups, restoreBackup, deleteBackup, pruneAutoBackups } from './backup.js';
 import { connectOneBot, getOneBotStatus, handleOneBotEvent, sendOneBotMessage, shutdownOneBot } from './onebot.js';
 import { processIncoming, decideReply } from './bot.js';
@@ -180,8 +180,28 @@ function ok(data = {}) {
   return { ok: true, ...data };
 }
 
+// Mutations should not echo the entire database back to the browser. The
+// console can refresh through /api/state, while memory samples are loaded only
+// by the memory detail endpoint. Keeping this response contract compact also
+// prevents a settings save or context cleanup from blocking the UI on a
+// multi-megabyte JSON parse.
+function compactDbResponse(db = readDb()) {
+  return {
+    revision: currentStorageRevision(),
+    db: publicDb(db, { includeMemorySamples: false }),
+  };
+}
+
 app.get('/api/state', (_req, res) => {
-  res.json(ok({ db: publicDb(), oneBot: getOneBotStatus() }));
+  // Samples are only needed after opening a specific memory in the console.
+  // Keeping them out of the global heartbeat avoids sending megabytes every
+  // ten seconds to every open console tab.
+  const revision = currentStorageRevision();
+  res.json(ok({ revision, db: publicDb(readDb(), { includeMemorySamples: false }), oneBot: getOneBotStatus() }));
+});
+
+app.get('/api/state/revision', (_req, res) => {
+  res.json(ok({ revision: currentStorageRevision() }));
 });
 
 app.get('/api/codex/status', async (_req, res) => {
@@ -241,8 +261,30 @@ app.get('/api/request-traces/stream', (req, res) => {
       // Connection cleanup below handles disconnected console clients.
     }
   };
+  const sendBatch = (payloads) => {
+    if (!payloads.length || res.writableEnded) return;
+    try {
+      res.write(payloads.map((payload) => `data: ${JSON.stringify(payload)}\n\n`).join(''));
+    } catch {
+      // Connection cleanup below handles disconnected console clients.
+    }
+  };
   send({ type: 'snapshot', traces: listRequestTraces(Number(req.query.limit || 80)) });
-  const unsubscribe = subscribeRequestTraces((trace) => send({ type: 'upsert', trace }));
+  const pendingTraces = new Map();
+  let traceFlushTimer = null;
+  const flushTraces = () => {
+    traceFlushTimer = null;
+    if (!pendingTraces.size) return;
+    const payloads = [...pendingTraces.values()].map((trace) => ({ type: 'upsert', trace }));
+    pendingTraces.clear();
+    sendBatch(payloads);
+  };
+  const unsubscribe = subscribeRequestTraces((trace) => {
+    const traceId = String((trace as any)?.id || '');
+    if (!traceId) return;
+    pendingTraces.set(traceId, trace);
+    if (!traceFlushTimer) traceFlushTimer = setTimeout(flushTraces, 100);
+  });
   if (!unsubscribe) {
     send({ type: 'error', error: 'trace_stream_capacity' });
     res.end();
@@ -257,6 +299,8 @@ app.get('/api/request-traces/stream', (req, res) => {
     if (cleaned) return;
     cleaned = true;
     clearInterval(heartbeat);
+    if (traceFlushTimer) clearTimeout(traceFlushTimer);
+    pendingTraces.clear();
     unsubscribe();
   };
   req.once('close', cleanup);
@@ -667,11 +711,47 @@ app.get('/api/osu/player/:id/analyze', async (req, res) => {
 app.post('/api/osu/player/:id/analyze', async (req, res) => {
   const osuId = osuIdParam(req, res);
   if (osuId === null) return;
-  return res.status(410).json({
-    ok: false,
-    error: '玩家 Analyze 已停用；后续由玩家 Skill 画像替代。',
-    code: 'OSU_ANALYZE_DISABLED',
-  });
+  const { getStoredAnalysis, setStoredAnalysis } = await import('./osu/profileStore.js');
+  const current = getStoredAnalysis(osuId);
+  if (current?.status === 'running') {
+    return res.status(202).json(ok({ analysis: current, started: false }));
+  }
+
+  const startedAt = nowIso();
+  const running = { status: 'running' as const, at: startedAt };
+  setStoredAnalysis(osuId, running);
+  res.status(202).json(ok({ analysis: running, started: true }));
+
+  void (async () => {
+    try {
+      const db = readDb();
+      const { runAnalyzerMvp } = await import('./osu/analyzerMvp.js');
+      const result = await runAnalyzerMvp(db, osuId, 'osu', {
+        playerName: String(osuId),
+        perspective: 'unknown',
+      });
+      setStoredAnalysis(osuId, {
+        status: 'done',
+        at: startedAt,
+        finishedAt: nowIso(),
+        text: result.text,
+        source: result.source,
+        provider: result.provider,
+        model: result.model,
+        formatVersion: 91,
+        validationReasons: result.validationReasons,
+        bestCount: result.collection.bestScores.length,
+        recentCount: result.collection.recentScores.length,
+      });
+    } catch (error) {
+      setStoredAnalysis(osuId, {
+        status: 'error',
+        at: startedAt,
+        finishedAt: nowIso(),
+        error: String(error?.message || error).slice(0, 500),
+      });
+    }
+  })();
 });
 
 app.get('/api/diagnostics', (_req, res) => {
@@ -731,7 +811,7 @@ app.post('/api/settings', (req, res) => {
     }
   });
   refreshCachedAdminPassword(updatedDb);
-  res.json(ok({ db: publicDb(updatedDb) }));
+  res.json(ok(compactDbResponse(updatedDb)));
 });
 
 app.post('/api/search/test-local', async (_req, res) => {
@@ -781,7 +861,7 @@ app.post('/api/groups', (req, res) => {
       cooldownSec
     });
   });
-  res.json(ok({ db: publicDb() }));
+  res.json(ok(compactDbResponse()));
 });
 
 app.delete('/api/groups/:groupId', (req, res) => {
@@ -802,7 +882,7 @@ app.delete('/api/groups/:groupId', (req, res) => {
       if (key.startsWith(groupId + ':')) delete db.groupExperience[key];
     }
   });
-  res.json(ok({ db: publicDb() }));
+  res.json(ok(compactDbResponse()));
 });
 
 app.post('/api/users', (req, res) => {
@@ -842,7 +922,7 @@ app.post('/api/users', (req, res) => {
       createdAt: nowIso()
     });
   });
-  res.json(ok({ db: publicDb() }));
+  res.json(ok(compactDbResponse()));
 });
 
 app.delete('/api/users/:groupId/:userId', (req, res) => {
@@ -851,7 +931,7 @@ app.delete('/api/users/:groupId/:userId', (req, res) => {
       (user) => !(String(user.groupId) === String(req.params.groupId) && String(user.userId) === String(req.params.userId))
     );
   });
-  res.json(ok({ db: publicDb() }));
+  res.json(ok(compactDbResponse()));
 });
 
 app.post('/api/memories/:userId', (req, res) => {
@@ -880,7 +960,7 @@ app.post('/api/memories/:userId', (req, res) => {
     if (existingIndex >= 0) db.memories[existingIndex] = { ...db.memories[existingIndex], ...entry };
     else db.memories.push({ ...entry, id: crypto.randomUUID(), messageCount: 0, pendingCount: 0, groupsSeen: [], samples: [], createdAt: nowIso() });
   });
-  res.json(ok({ db: publicDb() }));
+  res.json(ok(compactDbResponse()));
 });
 
 app.post('/api/memories/:userId/recalculate', async (req, res) => {
@@ -901,8 +981,8 @@ app.post('/api/memories/:userId/recalculate', async (req, res) => {
       force: true,
       kind: 'memory-manual-recalc',
     });
-    if (!outcome.ok) return res.status(400).json({ ok: false, error: outcome.reason || outcome.error || '画像更新失败', db: publicDb() });
-    res.json(ok({ outcome, runId: outcome.runId, usage: outcome.usage || {}, db: publicDb() }));
+    if (!outcome.ok) return res.status(400).json({ ok: false, error: outcome.reason || outcome.error || '画像更新失败', ...compactDbResponse() });
+    res.json(ok({ ...compactDbResponse(), outcome, runId: outcome.runId, usage: outcome.usage || {} }));
   } catch (error) {
     updateDb((draft) => {
       const target = (draft.memories || []).find((entry) => String(entry.userId) === userId);
@@ -915,7 +995,7 @@ app.post('/api/memories/:userId/recalculate', async (req, res) => {
       if (!draft.usage) draft.usage = { totalTokens: 0, promptTokens: 0, completionTokens: 0, requests: 0, replies: 0, errors: 0 };
       draft.usage.errors = Number(draft.usage.errors || 0) + 1;
     });
-    res.status(400).json({ ok: false, error: error.message || String(error), db: publicDb() });
+    res.status(400).json({ ok: false, error: error.message || String(error), ...compactDbResponse() });
   }
 });
 
@@ -923,7 +1003,7 @@ app.delete('/api/memories/:userId', (req, res) => {
   updateDb((db) => {
     db.memories = (db.memories || []).filter((memory) => String(memory.userId) !== String(req.params.userId));
   });
-  res.json(ok({ db: publicDb() }));
+  res.json(ok(compactDbResponse()));
 });
 
 app.post('/api/onebot/connect', (_req, res) => {
@@ -979,7 +1059,7 @@ app.post('/api/simulate', async (req, res) => {
     nickname: req.body.nickname || '测试群友',
     text: req.body.text || ''
   });
-  res.json(ok({ result, db: publicDb() }));
+  res.json(ok({ result, ...compactDbResponse() }));
 });
 
 // Decision sandbox — reads DB, applies overrides, returns decision+context, never writes
@@ -1071,7 +1151,7 @@ app.post('/api/clear-context/:groupId', (req, res) => {
     db.decisions = db.decisions.filter((decision) => String(decision.groupId) !== String(req.params.groupId));
     db.commandLogs = (db.commandLogs || []).filter((log) => String(log.groupId) !== String(req.params.groupId));
   });
-  res.json(ok({ db: publicDb() }));
+  res.json(ok(compactDbResponse()));
 });
 
 app.post('/api/clear-context', (_req, res) => {
@@ -1080,7 +1160,7 @@ app.post('/api/clear-context', (_req, res) => {
     db.decisions = [];
     db.commandLogs = [];
   });
-  res.json(ok({ db: publicDb() }));
+  res.json(ok(compactDbResponse()));
 });
 
 // Health
@@ -1134,26 +1214,55 @@ function relationshipPairKey(userA, userB) {
   return [String(userA), String(userB)].sort().join(':');
 }
 
-function displayNameForUser(db, groupId, userId) {
-  const u = (db.users || []).find((x) => String(x.userId) === String(userId) && String(x.groupId) === String(groupId));
-  if (u?.customName) return u.customName;
-  if (u?.nickname) return u.nickname;
-  const mem = (db.memories || []).find((m) => String(m.userId) === String(userId));
-  if (mem?.nickname) return mem.nickname;
-  const recent = [...(db.messages || [])].reverse().find((m) => String(m.userId) === String(userId) && m.nickname);
-  if (recent?.nickname) return recent.nickname;
-  return String(userId);
+function createDisplayNameResolver(db) {
+  const userNames = new Map();
+  for (const user of db.users || []) {
+    const key = `${String(user.groupId)}:${String(user.userId)}`;
+    const name = user.customName || user.nickname;
+    if (name && !userNames.has(key)) userNames.set(key, String(name));
+  }
+
+  const memoryNames = new Map();
+  for (const memory of db.memories || []) {
+    const userId = String(memory.userId);
+    if (memory.nickname && !memoryNames.has(userId)) memoryNames.set(userId, String(memory.nickname));
+  }
+
+  // The old resolver searched the message history backwards for every name.
+  // Build that same latest-name lookup once per response instead of repeating
+  // an O(profileCount * messageCount) scan.
+  const recentNames = new Map();
+  const messages = db.messages || [];
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    const message = messages[index];
+    const userId = String(message.userId || '');
+    if (message.nickname && userId && !recentNames.has(userId)) {
+      recentNames.set(userId, String(message.nickname));
+    }
+  }
+
+  return (groupId, userId) => {
+    const normalizedGroupId = String(groupId);
+    const normalizedUserId = String(userId);
+    return userNames.get(`${normalizedGroupId}:${normalizedUserId}`)
+      || memoryNames.get(normalizedUserId)
+      || recentNames.get(normalizedUserId)
+      || normalizedUserId;
+  };
 }
 
 app.get('/api/relationship-profiles', (_req, res) => {
   const db = readDb();
-  const profiles = (db.relationshipProfiles || [])
-    .filter(isSubstantiveRelationshipProfile)
+  const displayNameForUser = createDisplayNameResolver(db);
+  const groupNames = new Map((db.groups || []).map((group) => [String(group.groupId), group.name || String(group.groupId)]));
+  const substantiveProfiles = (db.relationshipProfiles || []).filter(isSubstantiveRelationshipProfile);
+  const profileKeys = new Set(substantiveProfiles.map((profile) => `${String(profile.groupId)}:${profile.pairKey}`));
+  const profiles = substantiveProfiles
     .map((p) => ({
       ...p,
-      groupName: db.groups?.find((g) => String(g.groupId) === String(p.groupId))?.name || p.groupId,
-      userAName: displayNameForUser(db, p.groupId, p.userA),
-      userBName: displayNameForUser(db, p.groupId, p.userB),
+      groupName: groupNames.get(String(p.groupId)) || p.groupId,
+      userAName: displayNameForUser(p.groupId, p.userA),
+      userBName: displayNameForUser(p.groupId, p.userB),
     }));
   const pendingPairCounts = db.pendingPairCounts || {};
   const candidates = Object.entries(pendingPairCounts)
@@ -1162,12 +1271,12 @@ app.get('/api/relationship-profiles', (_req, res) => {
       if (parts.length !== 3 || Number(count) <= 0) return null;
       const [groupId, userA, userB] = parts;
       const pairKey = relationshipPairKey(userA, userB);
-      if (profiles.some((p) => String(p.groupId) === groupId && p.pairKey === pairKey)) return null;
+      if (profileKeys.has(`${groupId}:${pairKey}`)) return null;
       return {
         groupId, userA, userB, pairKey, count: Number(count),
-        groupName: db.groups?.find((g) => String(g.groupId) === groupId)?.name || groupId,
-        userAName: displayNameForUser(db, groupId, userA),
-        userBName: displayNameForUser(db, groupId, userB),
+        groupName: groupNames.get(groupId) || groupId,
+        userAName: displayNameForUser(groupId, userA),
+        userBName: displayNameForUser(groupId, userB),
       };
     })
     .filter(Boolean)
@@ -1210,6 +1319,13 @@ app.delete('/api/relationship-profiles/:groupId/:userA/:userB', (req, res) => {
   const { groupId, userA, userB } = req.params;
   const result = clearRelationshipProfile(groupId, userA, userB);
   res.json(ok({ deleted: result.ok }));
+});
+
+app.get('/api/memories/:userId', (req, res) => {
+  const userId = String(req.params.userId || '').trim();
+  const memory = (readDb().memories || []).find((entry) => String(entry.userId) === userId);
+  if (!memory) return res.status(404).json({ ok: false, error: '没有找到这个用户的长期记忆' });
+  res.json(ok({ memory: publicMemory(memory, true) }));
 });
 
 // Profile log routes

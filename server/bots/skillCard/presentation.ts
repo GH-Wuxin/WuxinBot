@@ -28,19 +28,22 @@ export function compositeCandidate(axes: ReadonlyArray<{key:string;ceiling:numbe
 
 
 export const RATING_PRESENTATION_POLICY = 'RATING_TIERS_12_SPECIALTY_V02';
+// Accent palette: hue identifies the Tier, while the OKLCH-derived lightness
+// ladder carries the ordinal strength. Chroma is deliberately capped for dark
+// surfaces so the card stays readable instead of vibrating or becoming hazy.
 export const RATING_TIERS = [
-  [0,'玄铁','IRON','#9cacbf','flat'],
-  [25,'赤铜','BRONZE','#c69272','flat'],
-  [60,'白银','SILVER','#c4d0e1','flat'],
-  [110,'铂钢','PLATINUM','#9bc3d2','flat'],
-  [180,'青玉','JADE','#5ae3c9','flat'],
-  [280,'苍蓝','AZURE','#80b9ff','flat'],
-  [420,'蓝晶','SAPPHIRE','#8ca0ff','metal'],
-  [600,'紫晶','AMETHYST','#c2a0ff','metal'],
-  [850,'璀钻','DIAMOND','#97e8f6','metal'],
-  [1200,'辉金','AUREATE','#e5b765','metal'],
-  [1600,'绯焰','EMBER','#fc827c','metal'],
-  [2000,'极光','PRISM','#c0cbff','prism'],
+  [0,'玄铁','IRON','#6997a7','flat'],
+  [25,'赤铜','BRONZE','#c18474','flat'],
+  [60,'白银','SILVER','#949aa3','flat'],
+  [110,'铂钢','PLATINUM','#71aaad','flat'],
+  [180,'青玉','JADE','#7ab28d','flat'],
+  [280,'苍蓝','AZURE','#46b8d7','flat'],
+  [420,'蓝晶','SAPPHIRE','#7ab0e8','metal'],
+  [600,'紫晶','AMETHYST','#aea6e5','metal'],
+  [850,'璀钻','DIAMOND','#5bc7c1','metal'],
+  [1200,'辉金','AUREATE','#dab060','metal'],
+  [1600,'绯焰','EMBER','#f4a19a','metal'],
+  [2000,'极光','PRISM','#aabdf3','prism'],
 ].map(([min,name,en,color,material],index)=>({level:index+1,min,name,en,color,material}));
 
 const singles = {

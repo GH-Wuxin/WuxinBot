@@ -278,7 +278,7 @@ const recentReport = buildRecentReport(fixture.user, fixture.recentScores, {
   }
 });
 assert(recentReport.includes('【近期 2 次】'), 'recent report should use compact QQ heading');
-assert(recentReport.includes('【完整档案对照】'), 'recent report should include full-analysis baseline');
+assert(recentReport.includes('【BP 基线对照】'), 'recent report should include BP baseline');
 assert(recentReport.includes('【结论】'), 'recent report should include a conclusion');
 assert(!/pippi\s*[：:]|【pippi/i.test(recentReport), 'recent report should not repeat the sender identity');
 assert(!recentReport.includes('【PP+】'), 'recent report should not repeat PP+');

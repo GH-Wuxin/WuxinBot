@@ -38,28 +38,43 @@ export function LogsPage({ db }) {
     if (window.matchMedia('(max-width: 640px)').matches) detailRef.current?.scrollIntoView({ block: 'start' });
   }, [selectedId]);
   useEffect(() => {
-    const timer = window.setInterval(() => setNow(Date.now()), 250);
-    return () => window.clearInterval(timer);
+    let flushTimer = null;
+    const pending = new Map();
+    const flush = () => {
+      flushTimer = null;
+      if (!pending.size) return;
+      const updates = [...pending.values()];
+      pending.clear();
+      setStreamTraces((current) => {
+        const next = [...(current || [])];
+        for (const trace of updates) {
+          const index = next.findIndex((entry) => entry.id === trace.id);
+          if (index >= 0) next[index] = trace;
+          else next.unshift(trace);
+        }
+        return next.slice(0, 80);
+      });
+    };
+    const unsubscribe = subscribeRequestTraceStream({
+      onMessage: (message) => {
+        if (message?.type === 'snapshot' && Array.isArray(message.traces)) {
+          pending.clear();
+          setStreamTraces(message.traces);
+        } else if (message?.type === 'upsert' && message.trace?.id) {
+          pending.set(message.trace.id, message.trace);
+          if (!flushTimer) flushTimer = window.setTimeout(flush, 100);
+        }
+      },
+      onState: (state, error = '') => {
+        setStreamState(state);
+        setStreamError(error);
+      },
+    });
+    return () => {
+      if (flushTimer) window.clearTimeout(flushTimer);
+      unsubscribe?.();
+    };
   }, []);
-  useEffect(() => subscribeRequestTraceStream({
-    onMessage: (message) => {
-      if (message?.type === 'snapshot' && Array.isArray(message.traces)) {
-        setStreamTraces(message.traces);
-      } else if (message?.type === 'upsert' && message.trace?.id) {
-        setStreamTraces((current) => {
-          const next = [...(current || [])];
-          const index = next.findIndex((trace) => trace.id === message.trace.id);
-          if (index >= 0) next[index] = message.trace;
-          else next.unshift(message.trace);
-          return next.slice(0, 80);
-        });
-      }
-    },
-    onState: (state, error = '') => {
-      setStreamState(state);
-      setStreamError(error);
-    },
-  }), []);
   const query = logSearch.trim().toLowerCase();
   const traceResource = usePollingResource(
     async () => (await api('/api/request-traces?limit=80')).traces || [],
@@ -83,12 +98,17 @@ export function LogsPage({ db }) {
   const currentPage = Math.min(listPage, pageCount - 1);
   const pageEntries = filtered.slice(currentPage * pageSize, (currentPage + 1) * pageSize);
   const selected = filtered.find(entry => entry.id === selectedId) || pageEntries[0];
+  useEffect(() => {
+    if (selected?.trace?.status !== 'active') return undefined;
+    const timer = window.setInterval(() => setNow(Date.now()), 1000);
+    return () => window.clearInterval(timer);
+  }, [selected?.trace?.id, selected?.trace?.status]);
   const selectChannel = value => { setChannel(value); setFilter('all'); setListPage(0); setSelectedId(null); };
   const selectFilter = value => { setFilter(value); setListPage(0); setSelectedId(null); };
 
   const clearAllContext = async () => {
     if (!window.confirm('清空所有群的聊天上下文、决策日志和指令日志？这不会删除人设、模型、群配置和成员策略。')) return;
-    await api('/api/clear-context', { method: 'POST' });
+    await api('/api/clear-context', { method: 'POST', timeoutMs: 15000 });
     window.location.reload();
   };
 

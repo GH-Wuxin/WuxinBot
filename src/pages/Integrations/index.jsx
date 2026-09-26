@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Cable, PlugZap, RefreshCw, Save, Server, Wifi } from 'lucide-react';
 import { api } from '../../lib/api.js';
 import { Button, Card, ErrorState, InlineHelp, Input, SectionHeader, SettingGroup, SettingRow, StatusBadge } from '../../components/ui/index.jsx';
@@ -23,14 +23,18 @@ export function IntegrationsPage({ db, oneBot, saveSettings, refreshState }) {
   const [detectResult, setDetectResult] = useState(null);
   const [status, setStatus] = useState(null);
   const [statusError, setStatusError] = useState('');
+  const statusInFlight = useRef(false);
 
   useEffect(() => {
     if (!dirty) setDraft({ ...db.settings, oneBotAccessToken: '' });
   }, [db.settings, dirty]);
 
   const loadStatus = async () => {
-    try { setStatus(await api('/api/osu/status')); setStatusError(''); }
+    if (statusInFlight.current) return;
+    statusInFlight.current = true;
+    try { setStatus(await api('/api/osu/status', { timeoutMs: 10000 })); setStatusError(''); }
     catch (error) { setStatusError(error?.message || String(error)); }
+    finally { statusInFlight.current = false; }
   };
 
   useEffect(() => {
@@ -44,7 +48,7 @@ export function IntegrationsPage({ db, oneBot, saveSettings, refreshState }) {
   const autoDetect = async () => {
     setDetecting(true); setDetectResult(null);
     try {
-      const data = await api('/api/onebot/autodetect');
+      const data = await api('/api/onebot/autodetect', { timeoutMs: 15000 });
       setDetectResult(data);
       if (data.detected) {
         setDirty(true);
@@ -59,7 +63,7 @@ export function IntegrationsPage({ db, oneBot, saveSettings, refreshState }) {
     try {
       await saveSettings(draft);
       setDirty(false);
-      await api('/api/onebot/connect', { method: 'POST' });
+      await api('/api/onebot/connect', { method: 'POST', timeoutMs: 15000 });
       await refreshState();
     } finally { setConnecting(false); }
   };

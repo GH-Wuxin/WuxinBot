@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { ArchiveRestore, DatabaseBackup, Play, RotateCcw, Square, Trash2 } from 'lucide-react';
 import { Button, Card, EmptyState, InlineHelp, SectionHeader } from '../../components/ui/index.jsx';
 import { api } from '../../lib/api.js';
@@ -13,8 +13,15 @@ export function MaintenancePage() {
 
 function RecalcPanel() {
   const [state, setState] = useState({ running: false, done: 0, total: 0, label: '', stopped: false });
+  const pollInFlight = useRef(false);
   useEffect(() => {
-    const poll = async () => { try { setState(await api('/api/recalc-status')); } catch { /* keep last state */ } };
+    const poll = async () => {
+      if (pollInFlight.current) return;
+      pollInFlight.current = true;
+      try { setState(await api('/api/recalc-status', { timeoutMs: 10000 })); }
+      catch { /* keep last state */ }
+      finally { pollInFlight.current = false; }
+    };
     poll();
     const timer = setInterval(poll, 1500);
     return () => clearInterval(timer);

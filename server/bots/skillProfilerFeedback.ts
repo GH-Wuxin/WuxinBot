@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { getDataDir } from '../store.js';
+import { PLAYER_SKILL_AXIS_ORDER } from './playerSkillAxes.js';
 
 export const SKILL_PROFILER_FEEDBACK_FILE = 'skill-profiler-feedback.jsonl';
 export const MAX_SKILL_FEEDBACK_CHARS = 4_000;
@@ -30,13 +31,21 @@ export function skillProfilerFeedbackPath(): string {
 
 export function compactSkillProfilerSnapshot(analysis: any): Record<string, unknown> {
   const axes = Object.fromEntries(
-    Object.entries(analysis?.axes || {}).map(([axis, raw]: [string, any]) => [axis, {
-      stars: Number.isFinite(Number(raw?.stars)) ? Number(raw.stars) : null,
-      unifiedStarEquivalent: Number.isFinite(Number(raw?.unified_star_equivalent)) ? Number(raw.unified_star_equivalent) : null,
-      unifiedStarStatus: String(raw?.unified_star_status || 'UNVERIFIED'),
-      confidence: String(raw?.confidence || 'UNVERIFIED'),
-      unit: String(raw?.unit || ''),
-    }]),
+    PLAYER_SKILL_AXIS_ORDER.map((axis) => {
+      const raw = analysis?.axes?.[axis] || {};
+      const numeric = (value: unknown): number | null => {
+        if (value === null || value === undefined || value === '') return null;
+        const number = Number(value);
+        return Number.isFinite(number) ? number : null;
+      };
+      return [axis, {
+        stars: numeric(raw?.stars),
+        unifiedStarEquivalent: numeric(raw?.unified_star_equivalent),
+        unifiedStarStatus: String(raw?.unified_star_status || 'UNVERIFIED'),
+        confidence: String(raw?.confidence || 'UNVERIFIED'),
+        unit: String(raw?.unit || ''),
+      }];
+    }),
   );
   return {
     beatmapId: Number(analysis?.beatmap?.beatmap_id || 0),

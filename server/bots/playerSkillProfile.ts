@@ -14,20 +14,15 @@ import {
 import { reservePlayerAnalysis } from './playerAnalysisQueue.js';
 import { saveAndGetCqCode } from './render.js';
 import { renderPlayerSkillComparisonCard, renderPlayerSkillProfileCard } from './playerSkillComparisonCard.js';
+import { lookupSkillByOsuId } from './skills.js';
 import { PLAYER_SKILL_TITLE_POLICY_ID, PLAYER_SKILL_TITLES } from './playerSkillTitles.js';
 export { PLAYER_SKILL_TITLE_POLICY_ID, PLAYER_SKILL_TITLES } from './playerSkillTitles.js';
+import {
+  PLAYER_SKILL_AXIS_LABELS as SHARED_PLAYER_SKILL_AXIS_LABELS,
+  PLAYER_SKILL_AXIS_ORDER,
+} from './playerSkillAxes.js';
 
-export const PLAYER_SKILL_AXES = [
-  'aim_control',
-  'jump_aim',
-  'spatial_precision',
-  'flow_aim',
-  'raw_speed',
-  'finger_control',
-  'stamina',
-  'endurance',
-  'reading',
-] as const;
+export const PLAYER_SKILL_AXES = PLAYER_SKILL_AXIS_ORDER;
 
 export type PlayerSkillAxis = typeof PLAYER_SKILL_AXES[number];
 
@@ -70,17 +65,7 @@ export const PLAYER_SKILL_ARCHETYPE_LABELS: Readonly<Record<PlayerSkillArchetype
   TECH: 'Technical',
 };
 
-export const PLAYER_SKILL_AXIS_LABELS: Readonly<Record<PlayerSkillAxis, string>> = {
-  aim_control: 'Aim Control',
-  jump_aim: 'Jump Aim',
-  spatial_precision: 'Micro Precision',
-  flow_aim: 'Flow Aim',
-  raw_speed: 'Raw Speed',
-  finger_control: 'Finger Control',
-  stamina: 'Stamina',
-  endurance: 'Endurance',
-  reading: 'Reading',
-};
+export const PLAYER_SKILL_AXIS_LABELS = SHARED_PLAYER_SKILL_AXIS_LABELS;
 
 const SUPPORTED_PROFILER_MODS = new Set(['NF', 'EZ', 'HD', 'HR', 'SD', 'HT', 'DT', 'PF']);
 const PROFILER_MOD_ORDER = ['NF', 'EZ', 'HD', 'HR', 'SD', 'DT', 'HT', 'PF'];
@@ -708,6 +693,7 @@ export async function buildPreparedPlayerSkillProfile(
 
   const aggregate = aggregatePlayerSkillProfile(analyzed);
   const stats: any = user.statistics || {};
+  const storedSkill = lookupSkillByOsuId(osuId, 'osu');
   const payload = {
     player: {
       osuId: user.id,
@@ -755,6 +741,7 @@ export async function buildPreparedPlayerSkillProfile(
       profilerIdentity,
       axes: aggregate.axes,
     },
+    ppPlus: storedSkill?.ppPlus || null,
     rows: analyzed,
   };
   // Reuse successful per-map results, but retry an incomplete batch next time.

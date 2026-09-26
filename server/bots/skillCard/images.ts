@@ -7,8 +7,12 @@ const IMAGE_FETCH_ATTEMPTS = 3;
 const IMAGE_FETCH_TIMEOUT_MS = 8_000;
 const IMAGE_MEMORY_CACHE_TTL_MS = 24 * 60 * 60_000;
 const IMAGE_DISK_CACHE_TTL_MS = 7 * 24 * 60 * 60_000;
+const IMAGE_DISK_CACHE_MAX_FILES = 512;
+const IMAGE_DISK_CACHE_MAX_BYTES = 128 * 1024 * 1024;
+const IMAGE_DISK_CACHE_GC_INTERVAL_MS = 10 * 60_000;
 const imageMemoryCache = new Map<string, { at: number; dataUrl: string }>();
 const imageRequests = new Map<string, Promise<string>>();
+let nextImageCacheGcAt = 0;
 
 function allowedImageUrl(value: unknown): URL | null {
   try {
@@ -24,6 +28,49 @@ function allowedImageUrl(value: unknown): URL | null {
 function imageCachePath(url: URL): string {
   const key = createHash('sha256').update(url.href).digest('hex');
   return path.join(getDataDir(), 'player-skill-image-cache', `${key}.json`);
+}
+
+function maybeGarbageCollectImageCache(): void {
+  const now = Date.now();
+  if (now < nextImageCacheGcAt) return;
+  nextImageCacheGcAt = now + IMAGE_DISK_CACHE_GC_INTERVAL_MS;
+  const directory = path.join(getDataDir(), 'player-skill-image-cache');
+  if (!fs.existsSync(directory)) return;
+  try {
+    const candidates: Array<{ path: string; at: number; size: number }> = [];
+    for (const entry of fs.readdirSync(directory, { withFileTypes: true })) {
+      if (!entry.isFile() || !entry.name.endsWith('.json')) continue;
+      const filePath = path.join(directory, entry.name);
+      let stat: fs.Stats;
+      try { stat = fs.statSync(filePath); } catch { continue; }
+      let at = stat.mtimeMs;
+      try {
+        const cached = JSON.parse(fs.readFileSync(filePath, 'utf8'));
+        const cachedAt = Number(cached?.at);
+        if (Number.isFinite(cachedAt) && cachedAt > 0) at = cachedAt;
+      } catch {
+        // A truncated cache entry cannot be used and is safe to remove.
+        try { fs.unlinkSync(filePath); } catch { /* best effort */ }
+        continue;
+      }
+      if (now - at > IMAGE_DISK_CACHE_TTL_MS) {
+        try { fs.unlinkSync(filePath); } catch { /* best effort */ }
+        continue;
+      }
+      candidates.push({ path: filePath, at, size: stat.size });
+    }
+    candidates.sort((left, right) => right.at - left.at);
+    let total = 0;
+    candidates.forEach((candidate, index) => {
+      if (index >= IMAGE_DISK_CACHE_MAX_FILES || total + candidate.size > IMAGE_DISK_CACHE_MAX_BYTES) {
+        try { fs.unlinkSync(candidate.path); } catch { /* best effort */ }
+        return;
+      }
+      total += candidate.size;
+    });
+  } catch (error: any) {
+    console.warn('[player-skill-card] image cache cleanup failed:', String(error?.message || error));
+  }
 }
 
 function detectedImageMime(buffer: Buffer): 'image/jpeg' | 'image/png' | 'image/webp' | null {
@@ -83,6 +130,7 @@ function wait(milliseconds: number): Promise<void> {
 }
 
 async function downloadImageDataUrl(url: URL): Promise<string> {
+  maybeGarbageCollectImageCache();
   const cached = readCachedImage(url);
   if (cached) return cached;
   let lastError: unknown = null;

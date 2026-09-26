@@ -97,7 +97,7 @@ const SHARD_SPECS = [
   { name: 'osu', file: 'db-osu.json', keys: new Set(['skillProfilerRuns']) }
 ];
 let cachedStore: { dataDir: string; db: any; coreSignature: string } | null = null;
-let cachedPublicDb: { db: any; minute: number; value: any } | null = null;
+let cachedPublicDb: { db: any; minute: number; includeMemorySamples: boolean; value: any } | null = null;
 let storageRevision = '';
 let revisionSequence = 0;
 
@@ -750,6 +750,11 @@ export function readDb() {
   return readDbUnlocked();
 }
 
+export function currentStorageRevision() {
+  readDb();
+  return storageRevision;
+}
+
 export function writeDb(db) {
   assertWriteTargetSafe();
   ensureStore();
@@ -833,9 +838,33 @@ export function updateDb(mutator) {
   });
 }
 
-export function publicDb(db = readDb()) {
+export function publicMemory(memory: any, includeSamples = true) {
+  const value = { ...memory };
+  if (!includeSamples) {
+    delete value.samples;
+    delete value.recentDynamics;
+    delete value.profileMeta;
+    return value;
+  }
+  return {
+    ...value,
+    samples: (memory.samples || []).slice(-10).map((sample) => ({
+      ...sample,
+      context: sample.context
+        ? { ...sample.context, nearby: (sample.context.nearby || []).slice(-2) }
+        : sample.context
+    }))
+  };
+}
+
+export function publicDb(db = readDb(), options: { includeMemorySamples?: boolean } = {}) {
+  const includeMemorySamples = options.includeMemorySamples !== false;
   const minute = Math.floor(Date.now() / 60_000);
-  if (cachedPublicDb?.db === db && cachedPublicDb.minute === minute) return cachedPublicDb.value;
+  if (
+    cachedPublicDb?.db === db
+    && cachedPublicDb.minute === minute
+    && cachedPublicDb.includeMemorySamples === includeMemorySamples
+  ) return cachedPublicDb.value;
   const now = new Date();
   const localDayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
   const currentHourStart = new Date(now.getFullYear(), now.getMonth(), now.getDate(), now.getHours()).getTime();
@@ -912,15 +941,7 @@ export function publicDb(db = readDb()) {
   const messages = (db.messages || []).slice(-500);
   const decisions = (db.decisions || []).slice(-300);
   const commandLogs = (db.commandLogs || []).slice(-300);
-  const memories = (db.memories || []).map((memory) => ({
-    ...memory,
-    samples: (memory.samples || []).slice(-10).map((sample) => ({
-      ...sample,
-      context: sample.context
-        ? { ...sample.context, nearby: (sample.context.nearby || []).slice(-2) }
-        : sample.context
-    }))
-  }));
+  const memories = (db.memories || []).map((memory) => publicMemory(memory, includeMemorySamples));
 
   const value = {
     settings: {
@@ -977,7 +998,7 @@ export function publicDb(db = readDb()) {
       returnedCommandLogs: commandLogs.length
     }
   };
-  cachedPublicDb = { db, minute, value };
+  cachedPublicDb = { db, minute, includeMemorySamples, value };
   return value;
 }
 

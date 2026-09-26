@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { ChevronDown, ChevronUp, FileClock, RefreshCw } from 'lucide-react';
 import { Button, Card, EmptyState, ErrorState, Input, LoadingState, MetricCard, Pill, SectionHeader, Select } from '../../components/ui/index.jsx';
 import { api } from '../../lib/api.js';
@@ -17,8 +17,14 @@ export function ProfileLogsPage() {
   const [filterRunId, setFilterRunId] = useState('');
   const [expanded, setExpanded] = useState({});
   const [status, setStatus] = useState({ loading: true, error: '' });
+  const requestAbort = useRef(null);
+  const requestSerial = useRef(0);
 
   const loadLogs = async () => {
+    const serial = ++requestSerial.current;
+    requestAbort.current?.abort();
+    const controller = new AbortController();
+    requestAbort.current = controller;
     setStatus({ loading: true, error: '' });
     const params = new URLSearchParams();
     if (filterUser) params.set('userId', filterUser);
@@ -26,16 +32,26 @@ export function ProfileLogsPage() {
     if (filterRunId) params.set('runId', filterRunId);
     params.set('limit', '200');
     try {
-      const data = await api(`/api/profile-logs?${params}`);
+      const data = await api(`/api/profile-logs?${params}`, { signal: controller.signal, timeoutMs: 20000 });
+      if (serial !== requestSerial.current) return;
       setLogs(data.logs || []);
       setStats(data.stats || {});
       setStatus({ loading: false, error: '' });
     } catch (cause) {
+      if (controller.signal.aborted || serial !== requestSerial.current) return;
       setStatus({ loading: false, error: cause.message || String(cause) });
+    } finally {
+      if (requestAbort.current === controller) requestAbort.current = null;
     }
   };
 
-  useEffect(() => { loadLogs(); }, [filterUser, filterEvent, filterRunId]);
+  useEffect(() => {
+    const timer = window.setTimeout(() => { void loadLogs(); }, 250);
+    return () => {
+      window.clearTimeout(timer);
+      requestAbort.current?.abort();
+    };
+  }, [filterUser, filterEvent, filterRunId]);
 
   return <div className="console-page profile-logs-page">
     <SectionHeader title="画像日志" actions={<Button icon={RefreshCw} onClick={loadLogs}>刷新</Button>} />

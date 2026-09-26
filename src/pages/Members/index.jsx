@@ -75,7 +75,7 @@ export function MembersPage({ db, refreshState }) {
   const save = async () => {
     setSaving(true);
     try {
-      await api('/api/users', { method: 'POST', body: form });
+      await api('/api/users', { method: 'POST', body: form, timeoutMs: 15000 });
       setForm({ ...form, userId: '', nickname: '', policy: 'normal', attentionLevel: 3, allowCommands: false, commandRoleId: '', note: '', customPrompt: '' });
       await refreshState();
     } finally {
@@ -85,7 +85,7 @@ export function MembersPage({ db, refreshState }) {
 
   const removePolicy = async (user) => {
     if (!window.confirm(`删除 ${user.nickname || user.userId} 的成员策略？删除后会按普通用户处理。`)) return;
-    await api(`/api/users/${user.groupId}/${user.userId}`, { method: 'DELETE' });
+    await api(`/api/users/${user.groupId}/${user.userId}`, { method: 'DELETE', timeoutMs: 15000 });
     await refreshState();
   };
 

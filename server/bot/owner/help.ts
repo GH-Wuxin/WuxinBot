@@ -64,7 +64,7 @@ export const OWNER_FALLBACK_HELP = `Wuxin 指令 · 都可以简写为 /w
 /w summarize 条数 · 总结群聊
 
 【osu!】
-/w skill profile [玩家名] · 用成绩质量与名次衰减后的真实 BP50 生成玩家 Skill 雷达画像
+/w info [玩家名或 p:[完整玩家名或ID]] · 用成绩质量与名次衰减后的真实 BP50 生成玩家 Skill 雷达画像
 /w skill recent [玩家名或 p:[完整玩家名或ID]] · 最近 50 条起步，最多回溯 5 天，生成近期发挥与 BP50 参考画像
 /w skill compare <玩家A> <玩家B> · 玩家名含空格或方括号时可用 p:[完整玩家名或ID]，如 p:[Tong Tong]
 /w skill <BP名次或BID> [+Mods] · 指定玩家：<玩家名> <BP名次>；名称含空格或方括号时用 p:[完整玩家名或ID]

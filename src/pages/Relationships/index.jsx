@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { ChevronDown, ChevronUp, Edit3, RefreshCw, Save, Sparkles, Trash2, Users } from 'lucide-react';
 import { Button, Card, EmptyState, ErrorState, Input, LoadingState, Pill, SectionHeader, Select, Textarea } from '../../components/ui/index.jsx';
 import { api } from '../../lib/api.js';
@@ -18,27 +18,38 @@ export function RelationshipsPage({ db, refreshState }) {
   const [drafts, setDrafts] = useState({});
   const [loadingKey, setLoadingKey] = useState('');
   const [relationshipData, setRelationshipData] = useState({ profiles: [], candidates: [], loading: true, error: '' });
+  const relationshipRequestRef = useRef(null);
+  const relationshipAbortRef = useRef(null);
 
   const rawProfileStamp = (db.relationshipProfiles || []).map((profile) => `${profile.groupId}:${profile.pairKey}:${profile.updatedAt}:${profile.enabled}`).join('|');
   const pendingStamp = Object.entries(db.pendingPairCounts || {}).map(([key, value]) => `${key}:${value}`).join('|');
-  const loadRelationships = async () => {
-    try {
-      const data = await api('/api/relationship-profiles');
-      setRelationshipData({ profiles: data.profiles || [], candidates: data.candidates || [], loading: false, error: '' });
-    } catch (cause) {
-      setRelationshipData((current) => ({ ...current, loading: false, error: cause.message || String(cause) }));
-    }
-  };
+  const loadRelationships = useCallback(() => {
+    if (relationshipRequestRef.current) return relationshipRequestRef.current;
+    const controller = new AbortController();
+    relationshipAbortRef.current = controller;
+    let request;
+    request = (async () => {
+      try {
+        const data = await api('/api/relationship-profiles', { signal: controller.signal, timeoutMs: 15000 });
+        setRelationshipData({ profiles: data.profiles || [], candidates: data.candidates || [], loading: false, error: '' });
+      } catch (cause) {
+        if (cause?.message !== '请求已取消') {
+          setRelationshipData((current) => ({ ...current, loading: false, error: cause.message || String(cause) }));
+        }
+      } finally {
+        if (relationshipRequestRef.current === request) relationshipRequestRef.current = null;
+        if (relationshipAbortRef.current === controller) relationshipAbortRef.current = null;
+      }
+    })();
+    relationshipRequestRef.current = request;
+    return request;
+  }, []);
 
   useEffect(() => {
-    let cancelled = false;
-    api('/api/relationship-profiles').then((data) => {
-      if (!cancelled) setRelationshipData({ profiles: data.profiles || [], candidates: data.candidates || [], loading: false, error: '' });
-    }).catch((cause) => {
-      if (!cancelled) setRelationshipData((current) => ({ ...current, loading: false, error: cause.message || String(cause) }));
-    });
-    return () => { cancelled = true; };
-  }, [rawProfileStamp, pendingStamp]);
+    void loadRelationships();
+  }, [rawProfileStamp, pendingStamp, loadRelationships]);
+
+  useEffect(() => () => relationshipAbortRef.current?.abort(), []);
 
   const userName = (userId, groupId) => {
     const user = db.users?.find((entry) => String(entry.userId) === String(userId) && String(entry.groupId) === String(groupId));
@@ -63,10 +74,9 @@ export function RelationshipsPage({ db, refreshState }) {
     const key = `${groupId}:${userA}:${userB}`;
     setLoadingKey(key);
     try {
-      const result = await api('/api/relationship-profiles/update', { method: 'POST', body: { groupId, userA, userB } });
+      const result = await api('/api/relationship-profiles/update', { method: 'POST', body: { groupId, userA, userB }, timeoutMs: 75000 });
       if (result.skipped) alert(`未保存关系画像：${result.reason || '互动证据不足'}`);
       await refreshState();
-      await loadRelationships();
     } catch (cause) {
       alert(`更新失败：${cause.message}`);
     } finally {
@@ -75,17 +85,15 @@ export function RelationshipsPage({ db, refreshState }) {
   };
 
   const doPatch = async (profile, patch) => {
-    await api(`/api/relationship-profiles/${profile.groupId}/${profile.userA}/${profile.userB}`, { method: 'PATCH', body: patch });
+    await api(`/api/relationship-profiles/${profile.groupId}/${profile.userA}/${profile.userB}`, { method: 'PATCH', body: patch, timeoutMs: 15000 });
     await refreshState();
-    await loadRelationships();
   };
 
   const doDelete = async (profile) => {
     const label = `${profile.userAName || userName(profile.userA, profile.groupId)} ↔ ${profile.userBName || userName(profile.userB, profile.groupId)}`;
     if (!window.confirm(`删除 ${label} 的关系画像？`)) return;
-    await api(`/api/relationship-profiles/${profile.groupId}/${profile.userA}/${profile.userB}`, { method: 'DELETE' });
+    await api(`/api/relationship-profiles/${profile.groupId}/${profile.userA}/${profile.userB}`, { method: 'DELETE', timeoutMs: 15000 });
     await refreshState();
-    await loadRelationships();
   };
 
   const startEdit = (profile) => {

@@ -33,6 +33,7 @@ export type SkillCommandRequest =
   | { ok: false; message: string };
 
 export type PlayerSkillProfileRequest = { matched: true; player: string } | { matched: false };
+export type PlayerInfoRequest = { matched: true; player: string };
 export type PlayerRecentSkillRequest = { matched: true; player: string } | { matched: false };
 export type PlayerSkillComparisonRequest =
   | { matched: true; left: string; right: string; error?: undefined }
@@ -283,6 +284,18 @@ function modLabel(mods: string[]): string {
   return mods.length ? `+${mods.join('')}` : 'NM';
 }
 
+/**
+ * `/w info` owns the player Skill Profiler image route. The owner dispatcher
+ * passes only the text after `info`, but accepting a leading `info` keeps this
+ * parser useful for direct tests and migration tooling as well.
+ */
+export function parsePlayerInfoRequest(value: string): PlayerInfoRequest {
+  const raw = String(value || '').trim();
+  const match = /^info(?:\s+([\s\S]+))?$/i.exec(raw);
+  const body = match ? String(match[1] || '').trim() : raw;
+  return { matched: true, player: unwrapExplicitPlayer(body) };
+}
+
 function mentionSkillRequester(ctx: OwnerHandlerContext, content: string): string {
   const userId = String(ctx.event?.userId || '').trim();
   if (ctx.event?.type !== 'group' || !/^\d+$/.test(userId)) return content;
@@ -322,13 +335,39 @@ async function resolveProfileUser(ctx: OwnerHandlerContext, explicitPlayer: stri
     if (username) return getUser(username, 'osu');
   }
   const binding = resolveOsuBindingValue(rawBinding);
-  if (!binding) throw new Error('请先绑定 osu! 账号：/w osu bind <用户名>，或使用 /w skill profile <玩家名>。');
+  if (!binding) throw new Error('请先绑定 osu! 账号：/w osu bind <用户名>，或使用 /w info <玩家名>。');
   return typeof binding === 'number'
     ? getUserById(binding, 'osu')
     : getUser(String(binding), 'osu');
 }
 
+async function renderPlayerSkillProfileForContext(
+  ctx: OwnerHandlerContext,
+  explicitPlayer: string,
+): Promise<OwnerCommandResult> {
+  const user = await resolveProfileUser(ctx, explicitPlayer);
+  if (ctx.sendMessage) {
+    await ctx.sendMessage(ctx.event, `正在按成绩质量与 BP 衰减分析 ${user.username} 的真实 BP50，首次计算可能需要一段时间，请耐心等待；请求追踪中可查看进度……`);
+  }
+  const rendered = await renderPlayerSkillProfile(user.id, 50);
+  if (!rendered) throw new Error('玩家 Skill 画像渲染器当前未连接，请稍后再试。');
+  if (ctx.sendMessage) await ctx.sendMessage(ctx.event, mentionSkillRequester(ctx, rendered.cqCode));
+  return { replied: Boolean(ctx.sendMessage), reason: `已生成 ${user.username} 的 BP50 Skill 画像` };
+}
+
+export async function ownerInfoHandler(ctx: OwnerHandlerContext): Promise<OwnerCommandResult> {
+  const request = parsePlayerInfoRequest(ctx.commandArgs);
+  return renderPlayerSkillProfileForContext(ctx, request.player);
+}
+
 export async function ownerSkillHandler(ctx: OwnerHandlerContext): Promise<OwnerCommandResult> {
+  const legacyProfileRequest = parsePlayerSkillProfileRequest(ctx.commandArgs);
+  if (legacyProfileRequest.matched) {
+    const reason = '这条指令已移除，请改用 /w info [玩家名或 p:[完整玩家名或ID]]。';
+    if (ctx.sendMessage) await ctx.sendMessage(ctx.event, reason);
+    return { replied: Boolean(ctx.sendMessage), reason };
+  }
+
   const comparisonRequest = parsePlayerSkillComparisonRequest(ctx.commandArgs);
   if (comparisonRequest.matched) {
     if (comparisonRequest.error) {
@@ -373,18 +412,6 @@ export async function ownerSkillHandler(ctx: OwnerHandlerContext): Promise<Owner
     } finally {
       if (timer) clearTimeout(timer);
     }
-  }
-
-  const profileRequest = parsePlayerSkillProfileRequest(ctx.commandArgs);
-  if (profileRequest.matched) {
-    const user = await resolveProfileUser(ctx, profileRequest.player);
-    if (ctx.sendMessage) {
-      await ctx.sendMessage(ctx.event, `正在按成绩质量与 BP 衰减分析 ${user.username} 的真实 BP50，首次计算可能需要一段时间，请耐心等待；请求追踪中可查看进度……`);
-    }
-    const rendered = await renderPlayerSkillProfile(user.id, 50);
-    if (!rendered) throw new Error('玩家 Skill 画像渲染器当前未连接，请稍后再试。');
-    if (ctx.sendMessage) await ctx.sendMessage(ctx.event, mentionSkillRequester(ctx, rendered.cqCode));
-    return { replied: Boolean(ctx.sendMessage), reason: `已生成 ${user.username} 的 BP50 Skill 画像` };
   }
 
   const request = parseSkillCommandRequest(ctx.commandArgs);

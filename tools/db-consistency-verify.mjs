@@ -216,8 +216,8 @@ async function main() {
       ],
     };
     db.osuAnalyses = [
-      { userId: 'Q', target: '111', displayName: 'PlayerA', osuUserId: 111, mode: 'osu', analysisType: 'full', formatVersion: 89, createdAt: now, fullText: 'A-OLD-REPORT', baseline: { topAverageStars: 6, topAverageAcc: 0.98 } },
-      { userId: 'Q', target: '222', displayName: 'PlayerB', osuUserId: 222, mode: 'osu', analysisType: 'full', formatVersion: 89, createdAt: now, fullText: 'B-FRESH-REPORT', baseline: { topAverageStars: 6, topAverageAcc: 0.98 } },
+      { userId: 'Q', target: '111', displayName: 'PlayerA', osuUserId: 111, mode: 'osu', analysisType: 'full', formatVersion: 91, createdAt: now, fullText: 'A-OLD-REPORT', baseline: { topAverageStars: 6, topAverageAcc: 0.98 } },
+      { userId: 'Q', target: '222', displayName: 'PlayerB', osuUserId: 222, mode: 'osu', analysisType: 'full', formatVersion: 91, createdAt: now, fullText: 'B-FRESH-REPORT', baseline: { topAverageStars: 6, topAverageAcc: 0.98 } },
     ];
     db.osuRecentAnalyses = [
       { userId: 'Q', target: '111', displayName: 'PlayerA', osuUserId: 111, mode: 'osu', formatVersion: 4, createdAt: now, fullText: 'A-OLD-RECENT' },
