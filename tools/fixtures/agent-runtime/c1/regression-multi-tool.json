@@ -1,0 +1,160 @@
+{
+  "schemaVersion": 1,
+  "traceVersion": 1,
+  "generatorVersion": 1,
+  "id": "C1_REGRESSION_MULTI_TOOL_COUNT",
+  "seed": 20260809,
+  "initialState": {
+    "context": {
+      "userId": "c1-actor",
+      "groupId": "c1-group"
+    },
+    "db": {
+      "settings": {}
+    },
+    "messages": [
+      {
+        "role": "user",
+        "content": "C1 multi-tool accounting regression"
+      }
+    ],
+    "toolSchemas": [
+      {
+        "name": "replay_tool_1"
+      },
+      {
+        "name": "replay_tool_2"
+      }
+    ],
+    "maxIterations": 3,
+    "label": "Agent Replay multi-tool accounting"
+  },
+  "llmSteps": [
+    {
+      "outcome": "return",
+      "text": "",
+      "toolCalls": [
+        {
+          "id": "generated_call_1",
+          "name": "replay_tool_1",
+          "args": {
+            "target": "player-1"
+          }
+        },
+        {
+          "id": "generated_call_2",
+          "name": "replay_tool_2",
+          "args": {
+            "target": "player-2"
+          }
+        }
+      ],
+      "expect": {
+        "exposedTools": [
+          "replay_tool_1",
+          "replay_tool_2"
+        ]
+      }
+    },
+    {
+      "outcome": "return",
+      "text": "multi-tool complete",
+      "expect": {
+        "exposedTools": [
+          "replay_tool_1",
+          "replay_tool_2"
+        ]
+      }
+    }
+  ],
+  "toolSteps": [
+    {
+      "outcome": "return",
+      "expect": {
+        "name": "replay_tool_1",
+        "args": {
+          "target": "player-1"
+        }
+      },
+      "effects": [
+        {
+          "kind": "multi_effect_1",
+          "class": "business"
+        }
+      ],
+      "result": {
+        "ok": true,
+        "content": "safe first result"
+      }
+    },
+    {
+      "outcome": "return",
+      "expect": {
+        "name": "replay_tool_2",
+        "args": {
+          "target": "player-2"
+        }
+      },
+      "result": {
+        "ok": false,
+        "content": "deterministic tool failure",
+        "error": "fixture_failure"
+      }
+    }
+  ],
+  "expected": {
+    "enforced": [
+      {
+        "kind": "invariant",
+        "id": "RT_BOUNDED_LOOP"
+      },
+      {
+        "kind": "invariant",
+        "id": "RR_MONOTONIC_LOOP"
+      },
+      {
+        "kind": "invariant",
+        "id": "HARNESS_ISOLATED"
+      },
+      {
+        "kind": "invariant",
+        "id": "TRACE_DETERMINISTIC"
+      },
+      {
+        "kind": "invariant",
+        "id": "RT_TOOL_COUNT_EXACT"
+      },
+      {
+        "kind": "assertion",
+        "id": "ASSERT_TERMINAL_KIND",
+        "value": "result"
+      },
+      {
+        "kind": "assertion",
+        "id": "ASSERT_TOOL_CALL_COUNT",
+        "value": 2
+      },
+      {
+        "kind": "assertion",
+        "id": "ASSERT_TOOL_CALLS_MADE",
+        "value": 2
+      },
+      {
+        "kind": "assertion",
+        "id": "ASSERT_SCRIPT_CONSUMPTION",
+        "value": {
+          "llmConsumed": 2,
+          "llmTotal": 2,
+          "toolConsumed": 2,
+          "toolTotal": 2
+        }
+      }
+    ],
+    "candidate": [
+      {
+        "kind": "invariant",
+        "id": "RT_EFFECT_IDEMPOTENCY"
+      }
+    ]
+  }
+}
