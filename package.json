@@ -3,11 +3,12 @@
   "version": "1.0.3",
   "description": "A friendly QQ group chat AI bot with a Chinese GUI control panel.",
   "type": "module",
-  "main": "server/index.js",
+  "main": "desktop/main.mjs",
   "scripts": {
-    "dev": "concurrently \"npm run server\" \"npm run web\"",
+    "desktop": "electron .",
+    "desktop:dev": "concurrently -k \"vite --host 127.0.0.1 --port 5173 --strictPort\" \"set WUXIN_DEV_SERVER_URL=http://127.0.0.1:5173&& electron .\"",
+    "desktop:build": "npm run build && electron-builder",
     "server": "tsx watch server/index.ts",
-    "web": "vite --host 127.0.0.1 --port 5173 --strictPort",
     "build": "vite build",
     "typecheck": "tsc --noEmit",
     "check": "npm run typecheck && npm run build && npm run sanity && npm run usage:verify && npm run codex:verify && npm run osu-only:verify && npm run osu:api:verify && npm run security && npm run search:verify && npm run search:agent:verify && npm run agent:v2:verify && npm run evidence:verify && npm run osu:roast:verify && npm run osu:analyze:verify && npm run runtime:safety:verify && npm run store:shards:verify && npm run request:trace:verify && npm run console:verify",
@@ -51,6 +52,7 @@
     "react": "^19.2.6",
     "react-dom": "^19.2.6",
     "sharp": "^0.35.3",
+    "tsx": "^4.22.3",
     "typescript": "^6.0.3",
     "vite": "^6.4.3",
     "ws": "^8.21.0"
@@ -62,6 +64,38 @@
     "@types/react-dom": "^19.2.3",
     "@types/ws": "^8.18.1",
     "fast-check": "^4.9.0",
-    "tsx": "^4.22.3"
+    "electron": "^38.2.0",
+    "electron-builder": "^26.0.12"
+  },
+  "build": {
+    "appId": "local.wuxinbot.desktop",
+    "productName": "WuxinBot Desktop",
+    "files": [
+      "desktop/**/*",
+      "dist/**/*",
+      "server/**/*",
+      "src/**/*",
+      "node_modules/**/*",
+      "portable-node/**/*",
+      "package.json",
+      "!.private/**/*",
+      "!artifacts/**/*",
+      "!logs/**/*",
+      "!tmp/**/*"
+    ],
+    "asarUnpack": [
+      "server/**/*",
+      "dist/**/*",
+    "node_modules/**/*",
+      "portable-node/**/*"
+    ],
+    "win": {
+      "target": ["nsis"]
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "perMachine": false
+    }
   }
 }

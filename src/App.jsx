@@ -3,6 +3,7 @@ import './styles/tokens.css';
 import './styles/globals.css';
 import './styles/components.css';
 import './styles/osu-console.css';
+import './styles/runtime.css';
 import { AppShell } from './components/layout/AppShell.jsx';
 import { DashboardPage } from './pages/Dashboard/index.jsx';
 import { GroupsPage } from './pages/Groups/index.jsx';
@@ -18,6 +19,7 @@ import { IntegrationsPage } from './pages/Integrations/index.jsx';
 import { PermissionsPage } from './pages/Permissions/index.jsx';
 import { LogsPage } from './pages/Logs/index.jsx';
 import { MaintenancePage } from './pages/Maintenance/index.jsx';
+import { RuntimePage } from './pages/Runtime/index.jsx';
 import { api, rememberAdminPassword, resetAdminAuthPrompt } from './lib/api.js';
 
 export function App() {
@@ -29,6 +31,7 @@ export function App() {
   const refreshAbort = useRef(null);
   const stateRevision = useRef('');
   const mounted = useRef(false);
+  const desktop = Boolean(typeof window !== 'undefined' && window.desktop?.isDesktop);
 
   const refresh = useCallback(() => {
     if (refreshInFlight.current) return refreshInFlight.current;
@@ -95,6 +98,7 @@ export function App() {
     setTimeout(() => setToast(''), 1800);
   };
 
+  if (!state && desktop) return <RuntimePage standalone onServerReady={refresh} />;
   if (!state) {
     return <div className="boot"><p>{loadError || '正在打开控制台...'}</p>{loadError && <button onClick={() => { resetAdminAuthPrompt(); refresh(); }}>重试</button>}</div>;
   }
@@ -124,5 +128,6 @@ export function App() {
     {tab === 'permissions' && <PermissionsPage db={db} saveSettings={saveSettings} refreshState={refresh} />}
     {tab === 'logs' && <LogsPage db={db} />}
     {tab === 'maintenance' && <MaintenancePage />}
+    {tab === 'runtime' && <RuntimePage onServerReady={refresh} />}
   </AppShell>;
 }

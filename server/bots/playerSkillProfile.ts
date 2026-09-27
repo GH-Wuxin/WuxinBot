@@ -15,6 +15,8 @@ import { reservePlayerAnalysis } from './playerAnalysisQueue.js';
 import { saveAndGetCqCode } from './render.js';
 import { renderPlayerSkillComparisonCard, renderPlayerSkillProfileCard } from './playerSkillComparisonCard.js';
 import { lookupSkillByOsuId } from './skills.js';
+import { getPlayerBars } from '../osu/pplus.js';
+import type { PPlusBars } from '../osu/pplus.js';
 import { PLAYER_SKILL_TITLE_POLICY_ID, PLAYER_SKILL_TITLES } from './playerSkillTitles.js';
 export { PLAYER_SKILL_TITLE_POLICY_ID, PLAYER_SKILL_TITLES } from './playerSkillTitles.js';
 import {
@@ -107,6 +109,8 @@ const BP_RANK_DECAY = 0.95;
 const PROFILE_ANALYSIS_CONCURRENCY = skillProfilerConcurrency();
 const PLAYER_PROFILE_CACHE_TTL_MS = 30 * 60_000;
 const playerProfileCache = new Map<string, { at: number; payload: Record<string, unknown> }>();
+const playerPPlusCache = new Map<number, { at: number; bars: PPlusBars }>();
+const playerPPlusInflight = new Map<number, Promise<PPlusBars | null>>();
 const STAR_EQUIVALENT_PLAYER_AXES = new Set<PlayerSkillAxis>([
   'aim_control',
   'jump_aim',
@@ -116,6 +120,62 @@ const STAR_EQUIVALENT_PLAYER_AXES = new Set<PlayerSkillAxis>([
   'finger_control',
   'reading',
 ]);
+
+/**
+ * PP+ initialization can be much slower than the local map-demand lookup.
+ * Keep it as a separate per-player lane so `/w info` can overlap both jobs,
+ * while concurrent requests for the same player share one aggregate call.
+ */
+function getCachedPlayerPPlus(osuId: number): Promise<PPlusBars | null> {
+  const cached = playerPPlusCache.get(osuId);
+  if (cached && Date.now() - cached.at < PLAYER_PROFILE_CACHE_TTL_MS) {
+    traceEvent('TOOL', 'PP+：读取玩家维度缓存', { status: 'completed', osuId });
+    return Promise.resolve(cached.bars);
+  }
+  const existing = playerPPlusInflight.get(osuId);
+  if (existing) {
+    traceEvent('TOOL', 'PP+：合并同一玩家的进行中计算', { status: 'running', osuId });
+    return existing;
+  }
+  traceEvent('TOOL', 'PP+：开始计算玩家六维', { status: 'running', osuId });
+  const pending = getPlayerBars(osuId)
+    .then((bars) => {
+      if (bars) playerPPlusCache.set(osuId, { at: Date.now(), bars });
+      traceEvent('TOOL', 'PP+：玩家六维计算完成', {
+        status: bars ? 'completed' : 'error',
+        osuId,
+      });
+      return bars;
+    })
+    .catch((error) => {
+      traceEvent('TOOL', 'PP+：玩家六维不可用', {
+        status: 'error',
+        osuId,
+        error: String(error?.message || error).slice(0, 160),
+      });
+      return null;
+    })
+    .finally(() => {
+      if (playerPPlusInflight.get(osuId) === pending) playerPPlusInflight.delete(osuId);
+    });
+  playerPPlusInflight.set(osuId, pending);
+  return pending;
+}
+
+async function attachCurrentPlayerPPlus(
+  payload: Record<string, unknown>,
+  cacheKey: string,
+  pplusPromise: Promise<PPlusBars | null>,
+): Promise<Record<string, unknown>> {
+  const bars = await pplusPromise;
+  if (!bars) return payload;
+  const enriched = { ...payload, ppPlus: bars };
+  const sample = (payload as { sample?: { failed?: unknown } }).sample;
+  if (!sample || Number(sample.failed || 0) === 0) {
+    playerProfileCache.set(cacheKey, { at: Date.now(), payload: enriched });
+  }
+  return enriched;
+}
 
 export type AggregatedPlayerAxis = {
   key: PlayerSkillAxis;
@@ -756,16 +816,20 @@ export async function buildPlayerSkillProfilePayload(osuId: number, limit = PLAY
   traceEvent('TOOL', 'Skill：玩家进入计算队列', {
     status: 'waiting', osuId, queuePosition: ticket.position,
   });
+  // Start the slow external calculation before BP preparation so the two
+  // independent paths overlap instead of adding their durations together.
+  const pplusPromise = getCachedPlayerPPlus(osuId);
   try {
     const prepared = await preparePlayerSkillProfile(osuId, limit);
     if (prepared.cachedPayload) {
       ticket.cancel();
-      return prepared.cachedPayload;
+      return attachCurrentPlayerPPlus(prepared.cachedPayload, prepared.cacheKey, pplusPromise);
     }
     const existing = playerProfileInflight.get(prepared.cacheKey);
     if (existing) {
       ticket.cancel();
-      return existing;
+      const payload = await existing;
+      return attachCurrentPlayerPPlus(payload, prepared.cacheKey, pplusPromise);
     }
     const pending = ticket.run(async () => {
       traceEvent('TOOL', 'Skill：开始计算当前玩家', {
@@ -776,7 +840,8 @@ export async function buildPlayerSkillProfilePayload(osuId: number, limit = PLAY
     });
     playerProfileInflight.set(prepared.cacheKey, pending);
     try {
-      return await pending;
+      const payload = await pending;
+      return attachCurrentPlayerPPlus(payload, prepared.cacheKey, pplusPromise);
     } finally {
       if (playerProfileInflight.get(prepared.cacheKey) === pending) {
         playerProfileInflight.delete(prepared.cacheKey);

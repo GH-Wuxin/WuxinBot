@@ -347,7 +347,7 @@ async function renderPlayerSkillProfileForContext(
 ): Promise<OwnerCommandResult> {
   const user = await resolveProfileUser(ctx, explicitPlayer);
   if (ctx.sendMessage) {
-    await ctx.sendMessage(ctx.event, `正在按成绩质量与 BP 衰减分析 ${user.username} 的真实 BP50，首次计算可能需要一段时间，请耐心等待；请求追踪中可查看进度……`);
+    await ctx.sendMessage(ctx.event, `正在按成绩质量与 BP 衰减分析 ${user.username} 的真实 BP50，并计算 PP+ 六维；PP+ 首次初始化可能比 BP50 更久、需要几分钟，请耐心等待；同一玩家的进行中计算会合并复用……`);
   }
   const rendered = await renderPlayerSkillProfile(user.id, 50);
   if (!rendered) throw new Error('玩家 Skill 画像渲染器当前未连接，请稍后再试。');
