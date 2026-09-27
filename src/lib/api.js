@@ -1,6 +1,12 @@
 const ADMIN_PASSWORD_KEY = 'wuxinAdminPassword';
 const DEFAULT_TIMEOUT_MS = 30_000;
 
+function apiUrl(pathname) {
+  const base = typeof window !== 'undefined' ? String(window.desktop?.apiBaseUrl || '') : '';
+  if (!base || /^https?:\/\//i.test(String(pathname))) return pathname;
+  return `${base.replace(/\/$/, '')}/${String(pathname).replace(/^\//, '')}`;
+}
+
 let authPromptActive = false;
 let authPromptCancelled = false;
 
@@ -26,7 +32,7 @@ export async function api(path, options = {}, allowAuthRetry = true) {
     ...(fetchOptions.headers || {})
   };
   try {
-    const response = await fetch(path, {
+    const response = await fetch(apiUrl(path), {
       ...fetchOptions,
       headers,
       signal: controller.signal,
@@ -85,7 +91,7 @@ export function subscribeRequestTraceStream({ onMessage, onState }) {
       try {
         onState?.('connecting');
         const savedPassword = window.sessionStorage.getItem(ADMIN_PASSWORD_KEY) || '';
-        const response = await fetch('/api/request-traces/stream?limit=80', {
+        const response = await fetch(apiUrl('/api/request-traces/stream?limit=80'), {
           headers: {
             Accept: 'text/event-stream',
             ...(savedPassword ? { 'X-Wuxin-Admin-Password': savedPassword } : {}),

@@ -20,6 +20,8 @@ function GlobalSearch({ db, onNavigate, compact = false }) {
 export function AppShell({ page, onNavigate, db, oneBot, onPauseToggle, onStopAll, children }) {
   const [navigationOpen, setNavigationOpen] = useState(false);
   const meta = pageMeta(page);
+  const isDesktop = typeof window !== 'undefined' && Boolean(window.desktop?.isDesktop);
+  const visibleNavigationGroups = navigationGroups.map((group) => ({ ...group, items: group.items.filter((item) => item.id !== 'runtime' || isDesktop) })).filter((group) => group.items.length > 0);
   const oneBotOnline = oneBot.accountOnline !== false && Boolean(oneBot.connected || oneBot.transportConnected);
   const paused = Boolean(db.settings.globalPaused);
 
@@ -54,7 +56,7 @@ export function AppShell({ page, onNavigate, db, oneBot, onPauseToggle, onStopAl
     <aside className="app-shell__sidebar" aria-label="Console sidebar">
       <div className="app-shell__brand"><span className="app-shell__brand-mark" aria-hidden="true">w!</span><strong>WuxinBot</strong><IconButton className="app-shell__nav-close" label="关闭导航" icon={X} onClick={() => setNavigationOpen(false)} /></div>
       <GlobalSearch db={db} onNavigate={navigate} />
-      <nav id="console-navigation" className="app-shell__nav" aria-label="Console navigation">{navigationGroups.map((group, index) => <section key={group.label} className="app-shell__nav-group"><h2><span>0{index + 1}</span>{group.label}</h2>{group.items.map((item) => { const Icon = item.icon; return <button key={item.id} type="button" className={page === item.id ? 'is-active' : ''} aria-current={page === item.id ? 'page' : undefined} onClick={() => navigate(item.id)}><Icon size={17} /><span>{item.label}</span>{page === item.id && <span className="nav-selected-dot" aria-hidden="true" />}</button>; })}</section>)}</nav>
+      <nav id="console-navigation" className="app-shell__nav" aria-label="Console navigation">{visibleNavigationGroups.map((group, index) => <section key={group.label} className="app-shell__nav-group"><h2><span>0{index + 1}</span>{group.label}</h2>{group.items.map((item) => { const Icon = item.icon; return <button key={item.id} type="button" className={page === item.id ? 'is-active' : ''} aria-current={page === item.id ? 'page' : undefined} onClick={() => navigate(item.id)}><Icon size={17} /><span>{item.label}</span>{page === item.id && <span className="nav-selected-dot" aria-hidden="true" />}</button>; })}</section>)}</nav>
       <div className="app-shell__status"><StatusBadge tone={oneBotOnline ? 'success' : 'danger'}>{oneBotOnline ? 'QQ 已连接' : 'QQ 未连接'}</StatusBadge>{paused && <small>机器人已暂停</small>}</div>
     </aside>
     <div className="app-shell__workspace"><header className="app-shell__topbar"><div className="osu-breadcrumb"><h1>{meta.label}</h1></div><div className="app-shell__topbar-actions"><details className="osu-shell-operations"><summary>更多操作</summary><div><Button icon={Square} onClick={onStopAll}>停止后台操作</Button></div></details><Button variant={paused ? 'primary' : 'secondary'} icon={paused ? Play : Pause} onClick={onPauseToggle}>{paused ? '恢复聊天' : '暂停机器人'}</Button></div></header><main className="app-shell__main">{children}</main></div>

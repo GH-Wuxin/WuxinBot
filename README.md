@@ -6,6 +6,17 @@ WuxinBot 把开放式对话、确定性消息路由和有边界的工具调用�
 
 当前发行版默认使用 **pippi** 作为交互 persona；pippi 是表现层的人格设定，不是 WuxinBot 的项目定义。
 
+## Desktop 客户端
+
+WuxinBot 现在提供原生 Electron Desktop 客户端，沿用现有控制台 UI，并在“运行控制”页面管理 WuxinBot、NapCat、PP+ 和其他本地组件。客户端支持 Windows 登录自启、单项进程启停、批量重启，以及关闭窗口时结束已管理进程。
+
+```powershell
+npm run desktop:dev       # 开发模式
+npm run desktop:build     # 生成 Windows 安装包
+```
+
+详细说明见 [`docs/DESKTOP_CLIENT.md`](docs/DESKTOP_CLIENT.md)。
+
 ## 为什么不只是普通 LLM Bot
 
 - **确定性优先**：快捷命令和明确的 osu! 数据意图先经过代码路由，开放式问题再进入模型规划，避免把可验证操作交给提示词碰运气。
@@ -95,7 +106,7 @@ npm run build
 npm start
 ```
 
-默认管理界面位于 `http://127.0.0.1:8787`。在界面中配置 OneBot WebSocket / HTTP 地址并连接；默认值分别为 `ws://127.0.0.1:3001` 和 `http://127.0.0.1:3000`。
+管理控制台由 WuxinBot Desktop 提供；启动客户端后在控制台中配置 OneBot WebSocket / HTTP 地址并连接。默认值分别为 `ws://127.0.0.1:3001` 和 `http://127.0.0.1:3000`。
 
 Windows 下如需在后台重启服务，可使用正式维护脚本：
 
@@ -122,7 +133,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\tools\enable-napcat-local-
 ## 开发与验证
 
 ```bash
-npm run dev          # 同时启动服务端与 Vite 前端
+npm run desktop:dev  # 启动 Desktop 开发模式
 npm run typecheck    # TypeScript 检查
 npm run check        # 类型、构建、基础与安全验证
 npm run verify-all   # 运行整库 verifier

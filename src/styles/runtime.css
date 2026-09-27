@@ -1,0 +1,257 @@
+.runtime-page {
+  display: grid;
+  gap: 22px;
+  padding-bottom: 32px;
+}
+
+.runtime-page__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
+.runtime-page__summary {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.runtime-summary-card {
+  display: grid;
+  gap: 5px;
+  min-height: 108px;
+}
+
+.runtime-summary-card > span,
+.runtime-summary-card > small {
+  color: var(--v2-text-muted);
+}
+
+.runtime-summary-card > strong {
+  font-size: 25px;
+  color: var(--v2-text);
+}
+
+.runtime-settings-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.runtime-page__error {
+  padding: 12px 14px;
+  color: var(--v2-danger);
+  background: rgba(255, 113, 130, 0.1);
+  border: 1px solid rgba(255, 113, 130, 0.35);
+  border-radius: var(--v2-radius-sm);
+}
+
+.runtime-process-groups {
+  display: grid;
+  gap: 18px;
+}
+
+.runtime-process-group {
+  display: grid;
+  gap: 10px;
+}
+
+.runtime-process-group > header,
+.runtime-log-card > header {
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.runtime-process-group h3,
+.runtime-log-card h3 {
+  margin: 2px 0 0;
+  font-size: 17px;
+}
+
+.runtime-process-group__count {
+  color: var(--v2-text-muted);
+  font-size: 12px;
+}
+
+.runtime-process-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.runtime-process-card {
+  display: grid;
+  gap: 14px;
+  min-width: 0;
+  border-top: 2px solid var(--v2-border-strong);
+}
+
+.runtime-process-card--running { border-top-color: var(--v2-success); }
+.runtime-process-card--missing { border-top-color: var(--v2-danger); }
+
+.runtime-process-card__header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.runtime-process-card__title {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  gap: 10px;
+}
+
+.runtime-process-card__title h4 {
+  margin: 0;
+  overflow: hidden;
+  color: var(--v2-text);
+  font-size: 15px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.runtime-process-card__title small {
+  display: block;
+  max-width: 300px;
+  margin-top: 3px;
+  overflow: hidden;
+  color: var(--v2-text-muted);
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.runtime-process-card__icon {
+  display: grid;
+  flex: 0 0 34px;
+  width: 34px;
+  height: 34px;
+  place-items: center;
+  color: var(--v2-text-muted);
+  background: var(--v2-surface-3);
+  border-radius: 50%;
+}
+
+.runtime-process-card__icon--success { color: var(--v2-success); background: rgba(116, 217, 159, 0.12); }
+.runtime-process-card__icon--danger { color: var(--v2-danger); background: rgba(255, 113, 130, 0.12); }
+.runtime-process-card__icon--warning { color: var(--v2-warning); background: rgba(242, 201, 109, 0.12); }
+
+.runtime-process-card__switches {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  padding: 10px 0;
+  border-top: 1px solid var(--v2-border);
+  border-bottom: 1px solid var(--v2-border);
+}
+
+.runtime-process-card__switches .ui-switch {
+  min-width: 0;
+}
+
+.runtime-process-card__switches .ui-switch__copy strong {
+  font-size: 12px;
+}
+
+.runtime-process-card__switches .ui-switch__copy small {
+  font-size: 10px;
+}
+
+.runtime-process-card__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+}
+
+.runtime-process-card__editor {
+  display: grid;
+  gap: 9px;
+  padding-top: 12px;
+  border-top: 1px solid var(--v2-border);
+}
+
+.runtime-process-card__editor label {
+  display: grid;
+  gap: 5px;
+  color: var(--v2-text-soft);
+  font-size: 12px;
+}
+
+.runtime-process-card__error {
+  margin: 0;
+  color: var(--v2-danger);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
+.runtime-log-card {
+  display: grid;
+  gap: 12px;
+}
+
+.runtime-log-card > p {
+  margin: 0;
+  color: var(--v2-text-muted);
+}
+
+.runtime-log-card ul {
+  display: grid;
+  gap: 7px;
+  padding: 0;
+  margin: 0;
+  color: var(--v2-text-soft);
+  list-style: none;
+}
+
+.runtime-log-card li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+}
+
+.runtime-log-card li svg { color: var(--v2-accent); }
+
+.runtime-standalone {
+  min-height: 100vh;
+  background: var(--v2-bg);
+}
+
+.runtime-standalone__brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  height: 62px;
+  padding: 0 28px;
+  border-bottom: 1px solid var(--v2-border);
+  background: var(--v2-sidebar);
+}
+
+.runtime-standalone__brand small {
+  margin-left: auto;
+  color: var(--v2-text-muted);
+}
+
+.runtime-standalone__main {
+  max-width: 1420px;
+  padding: 28px 34px 48px;
+  margin: 0 auto;
+}
+
+@media (max-width: 1000px) {
+  .runtime-page__summary,
+  .runtime-settings-grid,
+  .runtime-process-grid { grid-template-columns: 1fr; }
+  .runtime-page__actions { justify-content: flex-start; }
+}
+
+@media (max-width: 640px) {
+  .runtime-standalone__main { padding: 22px 16px 36px; }
+  .runtime-standalone__brand { padding: 0 16px; }
+  .runtime-standalone__brand small { display: none; }
+}

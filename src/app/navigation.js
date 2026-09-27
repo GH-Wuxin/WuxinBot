@@ -1,4 +1,4 @@
-import { Activity, BookOpen, Bot, Cable, DatabaseBackup, FileText, GitBranch, KeyRound, MessageCircle, Shield, SlidersHorizontal, Sparkles, UserCog, UsersRound } from 'lucide-react';
+import { Activity, BookOpen, Bot, Cable, DatabaseBackup, FileText, GitBranch, KeyRound, MessageCircle, MonitorCog, Shield, SlidersHorizontal, Sparkles, UserCog, UsersRound } from 'lucide-react';
 
 export const navigationGroups = [
   { label: '总览', items: [
@@ -21,7 +21,8 @@ export const navigationGroups = [
     { id: 'integrations', label: '集成', description: 'OneBot 与外部服务', icon: Cable },
     { id: 'permissions', label: '权限', description: '指令用户组与授权', icon: KeyRound },
     { id: 'logs', label: '日志', description: '消息、决策与诊断', icon: Shield },
-    { id: 'maintenance', label: '维护', description: '备份与画像重算', icon: DatabaseBackup }
+    { id: 'maintenance', label: '维护', description: '备份与画像重算', icon: DatabaseBackup },
+    { id: 'runtime', label: '运行控制', description: 'Desktop 进程与自启动', icon: MonitorCog }
   ] }
 ];
 
