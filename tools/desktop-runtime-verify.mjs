@@ -635,3 +635,18 @@ test('real launcher can exit while its later-ready child remains managed and sto
   await manager.shutdown();
   await waitClosed(port);
 });
+
+test('desktop IPC guard allowlists only the app origins', async () => {
+  const { desktopAllowedOrigins, isAllowedDesktopUrl } = await import('../desktop/ipc-guard.mjs');
+  const dev = desktopAllowedOrigins({ devUrl: 'http://127.0.0.1:5173', apiBase: 'http://127.0.0.1:8787' });
+  assert.equal(isAllowedDesktopUrl('http://127.0.0.1:5173/console', dev), true, 'dev origin allowed');
+  assert.equal(isAllowedDesktopUrl('file:///G:/app/dist/index.html', dev), true, 'file renderer allowed');
+  assert.equal(isAllowedDesktopUrl('http://127.0.0.1:8787/index.html', dev), true, 'loopback api page allowed');
+  assert.equal(isAllowedDesktopUrl('http://127.0.0.1:9999/index.html', dev), false, 'foreign loopback port refused');
+  assert.equal(isAllowedDesktopUrl('https://127.0.0.1:8787', dev), false, 'https is a different origin');
+  assert.equal(isAllowedDesktopUrl('http://evil.example/attack', dev), false, 'remote origin refused');
+  assert.equal(isAllowedDesktopUrl('not a url', dev), false, 'malformed url refused');
+  const packaged = desktopAllowedOrigins({ apiBase: 'http://127.0.0.1:8787' });
+  assert.equal(isAllowedDesktopUrl('http://127.0.0.1:5173', packaged), false, 'dev origin not allowlisted when packaged');
+  assert.equal(isAllowedDesktopUrl('file:///G:/app/dist/index.html', packaged), true, 'packaged file renderer allowed');
+});

@@ -1,8 +1,9 @@
-import { app, BrowserWindow, ipcMain } from 'electron';
+import { app, BrowserWindow, ipcMain, shell } from 'electron';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { ProcessManager } from './process-manager.mjs';
+import { desktopAllowedOrigins, isAllowedDesktopUrl } from './ipc-guard.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const sourceRoot = path.resolve(__dirname, '..');
@@ -11,6 +12,9 @@ const projectRoot = process.env.WUXIN_PROJECT_ROOT || (app.isPackaged ? packaged
 const devUrl = process.env.WUXIN_DEV_SERVER_URL || '';
 const productionApi = 'http://127.0.0.1:8787';
 process.env.WUXIN_DESKTOP_API_BASE = devUrl ? '' : productionApi;
+// IPC senders and top-level navigation must stay inside the app's own
+// origins (S01 layer 1). External content is handed to the system browser.
+const allowedOrigins = desktopAllowedOrigins({ devUrl, apiBase: productionApi });
 
 let mainWindow = null;
 let manager = null;
@@ -114,6 +118,25 @@ function createWindow() {
     if (level >= 2) log(`渲染器控制台：${message} (${sourceId}:${line})`);
   });
   mainWindow.on('unresponsive', () => log('窗口无响应'));
+  // External content never opens inside the app: http(s) targets go to the
+  // system browser (this keeps the Codex OAuth flow working through the
+  // Models page's fallback), everything else is denied (S01).
+  mainWindow.webContents.setWindowOpenHandler(({ url }) => {
+    try {
+      const target = new URL(url);
+      if (target.protocol === 'http:' || target.protocol === 'https:') {
+        void shell.openExternal(url);
+        return { action: 'deny' };
+      }
+    } catch { /* fall through to deny */ }
+    log(`已阻止弹窗打开：${url}`);
+    return { action: 'deny' };
+  });
+  mainWindow.webContents.on('will-navigate', (event, url) => {
+    if (isAllowedDesktopUrl(url, allowedOrigins)) return;
+    event.preventDefault();
+    log(`已阻止导航到未授权页面：${url}`);
+  });
   mainWindow.on('closed', () => { mainWindow = null; });
   void loadConsole();
 }
@@ -131,24 +154,44 @@ async function shutdownManagedProcesses() {
   return shutdownPromise;
 }
 
+function isTrustedIpcSender(event) {
+  if (!mainWindow || mainWindow.isDestroyed()) return false;
+  if (event?.sender !== mainWindow.webContents) return false;
+  const frameUrl = String(event?.senderFrame?.url || '');
+  return isAllowedDesktopUrl(frameUrl, allowedOrigins);
+}
+
+// Every runtime IPC handler goes through this guard: a compromised or foreign
+// renderer (other origins, iframes, foreign windows) must not reach process
+// management (S01 layer 1).
+function guardIpc(handler) {
+  return (event, ...args) => {
+    if (!isTrustedIpcSender(event)) {
+      log(`已拒绝未授权来源的 IPC 调用：${event?.senderFrame?.url || 'unknown'}`);
+      throw new Error('DESKTOP_IPC_UNTRUSTED_SENDER');
+    }
+    return handler(event, ...args);
+  };
+}
+
 function registerIpc() {
-  ipcMain.handle('runtime:state', () => manager.state());
-  ipcMain.handle('runtime:start', (_event, id) => manager.start(String(id)));
-  ipcMain.handle('runtime:stop', (_event, id) => manager.stop(String(id)));
-  ipcMain.handle('runtime:restart', (_event, id) => manager.restart(String(id)));
-  ipcMain.handle('runtime:start-all', () => manager.startAll());
-  ipcMain.handle('runtime:stop-all', () => manager.stopAll());
-  ipcMain.handle('runtime:restart-all', () => manager.restartAll());
-  ipcMain.handle('runtime:update-settings', (_event, patch) => manager.updateSettings(patch));
-  ipcMain.handle('runtime:update-process', (_event, id, patch) => manager.updateProcess(String(id), patch || {}));
-  ipcMain.handle('runtime:get-auto-launch', () => autoLaunchState());
-  ipcMain.handle('runtime:set-auto-launch', async (_event, enabled) => {
+  ipcMain.handle('runtime:state', guardIpc(() => manager.state()));
+  ipcMain.handle('runtime:start', guardIpc((_event, id) => manager.start(String(id))));
+  ipcMain.handle('runtime:stop', guardIpc((_event, id) => manager.stop(String(id))));
+  ipcMain.handle('runtime:restart', guardIpc((_event, id) => manager.restart(String(id))));
+  ipcMain.handle('runtime:start-all', guardIpc(() => manager.startAll()));
+  ipcMain.handle('runtime:stop-all', guardIpc(() => manager.stopAll()));
+  ipcMain.handle('runtime:restart-all', guardIpc(() => manager.restartAll()));
+  ipcMain.handle('runtime:update-settings', guardIpc((_event, patch) => manager.updateSettings(patch)));
+  ipcMain.handle('runtime:update-process', guardIpc((_event, id, patch) => manager.updateProcess(String(id), patch || {})));
+  ipcMain.handle('runtime:get-auto-launch', guardIpc(() => autoLaunchState()));
+  ipcMain.handle('runtime:set-auto-launch', guardIpc(async (_event, enabled) => {
     const value = setAutoLaunch(Boolean(enabled));
     await manager.updateSettings({ autoLaunch: value });
     return value;
-  });
-  ipcMain.handle('window:minimize', () => mainWindow?.minimize());
-  ipcMain.handle('window:close', () => mainWindow?.close());
+  }));
+  ipcMain.handle('window:minimize', guardIpc(() => mainWindow?.minimize()));
+  ipcMain.handle('window:close', guardIpc(() => mainWindow?.close()));
 }
 
 async function boot() {
