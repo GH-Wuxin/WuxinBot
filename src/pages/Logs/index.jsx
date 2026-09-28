@@ -30,6 +30,8 @@ export function LogsPage({ db }) {
   const [filter, setFilter] = useState('all');
   const [selectedId, setSelectedId] = useState(null);
   const [listPage, setListPage] = useState(0);
+  const [exporting, setExporting] = useState(false);
+  const [exportError, setExportError] = useState('');
   const detailRef = useRef(null);
   const listRef = useRef(null);
   useEffect(() => {
@@ -112,11 +114,32 @@ export function LogsPage({ db }) {
     window.location.reload();
   };
 
+  const exportDiagnostics = async () => {
+    setExporting(true);
+    setExportError('');
+    try {
+      const data = await api('/api/diagnostics', { timeoutMs: 15000 });
+      const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json;charset=utf-8' });
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement('a');
+      anchor.href = url;
+      anchor.download = `wuxin-diagnostics-${new Date().toISOString().replace(/[:.]/g, '-')}.json`;
+      document.body.appendChild(anchor);
+      anchor.click();
+      anchor.remove();
+      window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+    } catch (error) {
+      setExportError(error?.message || String(error));
+    } finally {
+      setExporting(false);
+    }
+  };
+
   return <div className="console-page logs-page">
-    <SectionHeader title="运行日志" actions={<><Button icon={Download} onClick={() => { window.location.href = '/api/diagnostics'; }}>导出诊断</Button><details className="osu-shell-operations"><summary>更多操作</summary><div><Button variant="danger-ghost" icon={Trash2} onClick={clearAllContext}>清空全部上下文</Button></div></details></>} />
+    <SectionHeader title="运行日志" actions={<><Button icon={Download} loading={exporting} onClick={exportDiagnostics}>导出诊断</Button><details className="osu-shell-operations"><summary>更多操作</summary><div><Button variant="danger-ghost" icon={Trash2} onClick={clearAllContext}>清空全部上下文</Button></div></details></>} />
     <div className="osu-log-tabs"><SegmentedControl label="日志分类" value={channel} onChange={selectChannel} options={[{ value: 'requests', label: '会话与请求' }, { value: 'commands', label: '指令与错误' }]} /><StatusBadge tone={streamState === 'connected' ? 'success' : 'warning'}>{streamState === 'connected' ? '实时连接' : '连接恢复中'}</StatusBadge></div>
     <div className="osu-log-toolbar"><span className="console-search"><Search size={15} /><input aria-label="搜索日志" placeholder="搜索消息、群号、模型或事件…" value={logSearch} onChange={event => { setLogSearch(event.target.value); setListPage(0); setSelectedId(null); }} /></span><Select aria-label="筛选日志" value={filter} onChange={event => selectFilter(event.target.value)} options={[{ value: 'all', label: '全部记录' }, { value: 'failed', label: '失败 / 拒绝' }, { value: 'slow', label: '慢请求 ≥ 30秒' }, ...(channel === 'requests' ? [{ value: 'active', label: '进行中' }, { value: 'silent', label: '未回复' }, { value: 'costly', label: '已记录用量 ≥ 5万' }] : [])]} /></div>
-    {(streamError || traceResource.error) && <p className="osu-inline-warning">实时追踪暂不可用，使用轮询重试：{streamError || traceResource.error}</p>}
+    {(streamError || traceResource.error || exportError) && <p className="osu-inline-warning">{exportError ? `诊断导出失败：${exportError}` : `实时追踪暂不可用，使用轮询重试：${streamError || traceResource.error}`}</p>}
     <div className={'osu-log-workspace' + (selectedId && selected ? ' has-selection' : '')}>
       <section className="osu-request-list" aria-label="请求列表" ref={listRef} tabIndex={-1}><header><span>最近记录</span><small>{filtered.length} 条匹配 · 每页 {pageSize} 条</small></header>{pageEntries.length ? pageEntries.map(entry => <button type="button" key={entry.id} className={'osu-request-item' + (selected?.id === entry.id ? ' is-selected' : '')} onClick={() => setSelectedId(entry.id)} aria-pressed={selected?.id === entry.id}>
         <span className="osu-request-item__top"><strong>{entry.title}</strong><Pill tone={entry.status === 'active' ? 'warning' : ['failed','error','denied','invalid'].includes(entry.status) ? 'danger' : ['completed','ok'].includes(entry.status) ? 'success' : 'neutral'}>{entryStatusLabels[entry.status] || entry.status}</Pill></span>
