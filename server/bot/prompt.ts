@@ -495,6 +495,7 @@ export function buildPrompt(db, group, event, userPolicy, options = {}) {
   const systemPrompt = buildPippiPrompt({
     scene,
     userPersonality: userPersonality || '',
+    promptSections: db.settings.personaPromptSections || {},
     relationshipContext: relBlocks || undefined,
     topicKnowledge: buildOsuTopicKnowledge(event.text) || undefined,
     factualContext: factualCtx || undefined,

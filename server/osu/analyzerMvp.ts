@@ -183,7 +183,12 @@ export async function runAnalyzerMvp(
     classification: collection.classification,
   });
   const personalityPrompt = String(db?.settings?.personalityPrompt || '');
-  const prompt = buildAnalysisPrompt(analysis, personalityPrompt, narrative);
+  const prompt = buildAnalysisPrompt(
+    analysis,
+    personalityPrompt,
+    narrative,
+    db?.settings?.personaPromptSections || {},
+  );
   const mvpPrompt = {
     system: `${prompt.system}\n\n${MVP_OUTPUT_CONTRACT}\n\n${MVP_WRITING_GUIDE}`,
     user: `${prompt.user}\n\n${MVP_OUTPUT_CONTRACT}\n\n请把它写成一次有重点的玩家复盘：八个标题都保留，但不要逐项念数据，不要重复免责声明。`,

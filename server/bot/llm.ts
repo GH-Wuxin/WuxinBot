@@ -12,6 +12,7 @@ import { mergeLlmUsage } from '../usage.js';
 import { fetchBoundedBody } from '../httpBody.js';
 import { recordLlmInvocation } from '../llmLedger.js';
 import { reserveLlmInvocation, markTurnFallback, hasTurnFallback } from '../llmPolicy.js';
+import { applyModulePersonality, beginPromptCall, finishPromptCall, resolvePromptModule } from '../promptStudio.js';
 import {
   currentRequestTraceId,
   extractProviderResponseTrace,
@@ -450,6 +451,20 @@ export function createLLMClient(db, requestedModel = db.settings.model) {
 }
 
 export async function completeChat(db, options = {}) {
+  if (!options.promptStudioApplied) {
+    const promptModule = resolvePromptModule(options);
+    options = {
+      ...options,
+      messages: applyModulePersonality(
+        options.messages || [],
+        promptModule.id,
+        db?.settings?.personaModulePrompts || {},
+      ),
+      promptStudioModuleId: promptModule.id,
+      promptStudioApplied: true,
+    };
+  }
+  const promptModule = resolvePromptModule({ ...options, promptModule: options.promptStudioModuleId });
   if (rawLlmProvider(db) === 'codex-app-server') {
     const fallbackKey = `${db.settings.codexExecutable || ''}:${db.settings.codexModel || ''}`;
     const runFallback = async (message) => {
@@ -493,7 +508,21 @@ export async function completeChat(db, options = {}) {
         await attachVisionImages(db, options.messages || [], options.visionImages || [], { ...options, timeoutMs: reservation.remainingMs() })
       );
       if (reservation.remainingMs() <= 0) throw new Error('LLM_TURN_BUDGET_EXHAUSTED: 图片准备耗尽调用时限');
+      const promptCallId = beginPromptCall({
+        id: invocationId,
+        options,
+        module: promptModule,
+        provider: 'codex-app-server',
+        model,
+        messages: codexMessages,
+        tools: options.tools || [],
+      });
+      if (promptCallId) traceEvent('PROMPT', 'prompt_snapshot_created', { promptCallId, moduleId: promptModule.id, messageCount: codexMessages.length, toolCount: options.tools?.length || 0 });
       const result = await completeCodexAppServerChat(db, { ...options, messages: codexMessages, timeoutMs: reservation.remainingMs() });
+      finishPromptCall(promptCallId, {
+        status: 'ok', provider: result.provider, model: result.model,
+        response: extractProviderResponseTrace(result.raw), durationMs: Date.now() - started,
+      });
       result.usage = recordLlmInvocation({ invocationId, provider: result.provider, model: result.model,
         purpose: options.tracePurpose || options.label || 'assistant', startedAt: started, usage: result.usage });
       const latencyMs = Date.now() - started;
@@ -520,6 +549,7 @@ export async function completeChat(db, options = {}) {
       };
     } catch (error) {
       const message = String(error?.message || error?.code || error);
+      finishPromptCall(invocationId, { status: 'error', error: message, provider: 'codex-app-server', model, durationMs: Date.now() - started });
       recordLlmInvocation({ invocationId, provider: 'codex-app-server', model,
         purpose: options.tracePurpose || options.label || 'assistant', startedAt: started, error, usage: error?.usage });
       recordLlmError(message);
@@ -603,6 +633,16 @@ export async function completeChat(db, options = {}) {
     const requestMaxRetries = Math.max(0, Number(options.requestMaxRetries ?? 2));
     const outerTimeoutMs = Math.max(1, Math.min(requestTimeoutMs + 1000, reservation.remainingMs()));
     const label = options.label || `${llmProviderName(provider)} 调用`;
+    const promptCallId = beginPromptCall({
+      id: invocationId,
+      options,
+      module: promptModule,
+      provider,
+      model: nextParams.model,
+      messages: nextParams.messages,
+      tools: nextParams.tools || [],
+    });
+    if (promptCallId) traceEvent('PROMPT', 'prompt_snapshot_created', { promptCallId, moduleId: promptModule.id, messageCount: nextParams.messages?.length || 0, toolCount: nextParams.tools?.length || 0 });
     const streaming = provider === 'deepseek'
       && Boolean(currentRequestTraceId())
       && options.traceStreaming !== false;
@@ -708,6 +748,10 @@ export async function completeChat(db, options = {}) {
         streaming,
         response: extractProviderResponseTrace(response),
       });
+      finishPromptCall(promptCallId, {
+        status: 'ok', provider, model: response.model || nextParams.model,
+        response: extractProviderResponseTrace(response), durationMs: Date.now() - invocationStarted,
+      });
       return {
         text: response.choices?.[0]?.message?.content?.trim() || '',
         usage: recordLlmInvocation({ invocationId, provider, model: response.model || nextParams.model,
@@ -716,6 +760,7 @@ export async function completeChat(db, options = {}) {
         raw: response
       };
     } catch (error) {
+      finishPromptCall(promptCallId, { status: 'error', error: error?.message || String(error), provider, model: nextParams.model, durationMs: Date.now() - invocationStarted });
       traceEvent('MODEL', 'model_call_failed', {
         status: 'error',
         durationMs: Date.now() - invocationStarted,

@@ -25,6 +25,8 @@ import { removeLazybotBinding, syncLazybotBinding } from './bots/bindingSync.js'
 import { sharedGroupBotConfigPath } from './bots/externalPaths.js';
 import { acquireInstanceLock } from './instanceLock.js';
 import { listRequestTraces, subscribeRequestTraces } from './requestTrace.js';
+import { getPippiPromptSectionCatalog } from './bot/persona.js';
+import { getPersonaStudioCatalog, listPromptCalls } from './promptStudio.js';
 import {
   getCodexAccountStatus,
   getCodexRateLimits,
@@ -244,6 +246,19 @@ app.post('/api/codex/logout', async (_req, res) => {
 
 app.get('/api/request-traces', (req, res) => {
   res.json(ok({ traces: listRequestTraces(Number(req.query.limit || 80)) }));
+});
+
+app.get('/api/persona/studio', (_req, res) => {
+  const settings = readDb().settings;
+  res.json(ok({
+    modules: getPersonaStudioCatalog(settings),
+    sections: getPippiPromptSectionCatalog(settings.personaPromptSections || {}),
+  }));
+});
+
+app.get('/api/persona/prompt-calls', (req, res) => {
+  res.setHeader('Cache-Control', 'no-store');
+  res.json(ok({ promptCalls: listPromptCalls(Number(req.query.limit || 24)) }));
 });
 
 app.get('/api/request-traces/stream', (req, res) => {
