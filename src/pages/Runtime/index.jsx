@@ -6,6 +6,9 @@ const statusCopy = {
   running: ['运行中', 'success'],
   stopped: ['已停止', 'neutral'],
   missing: ['路径不存在', 'danger'],
+  starting: ['等待就绪', 'warning'],
+  unready: ['尚未就绪', 'warning'],
+  conflict: ['端口占用', 'danger'],
 };
 
 function isDesktop() {
@@ -17,7 +20,11 @@ function statusLabel(status) {
 }
 
 function processSummary(process) {
-  if (process.status === 'running') return process.pids?.length ? `PID ${process.pids.join(', ')}` : '已检测到进程';
+  if (['running', 'starting', 'unready'].includes(process.status)) {
+    const source = process.source === 'external' ? '外部运行' : '本窗口启动';
+    return process.pids?.length ? `${source} · PID ${process.pids.join(', ')}` : source;
+  }
+  if (process.status === 'conflict') return process.lastError || `端口 ${process.port} 已被其他程序占用`;
   if (process.status === 'missing') return process.lastError || '启动条件未满足，可在配置中修改路径';
   return process.port ? `监听端口 ${process.port}` : '等待启动';
 }
@@ -126,8 +133,8 @@ export function RuntimePage({ standalone = false, onServerReady }) {
     <SectionHeader
       eyebrow="WUXINBOT DESKTOP"
       title="运行控制"
-      description="统一管理 WuxinBot、NapCat、PP+、外部 Bot 与可选分析服务。每个进程都可以单独启停。"
-      actions={<div className="runtime-page__actions"><Button icon={Play} variant="primary" loading={busy === 'start-all'} onClick={() => invoke('start-all', () => window.desktop.runtime.startAll())}>启动已启用组件</Button><Button icon={Square} loading={busy === 'stop-all'} onClick={() => invoke('stop-all', () => window.desktop.runtime.stopAll())}>停止组件</Button><Button icon={RefreshCw} loading={busy === 'restart-all'} onClick={() => invoke('restart-all', () => window.desktop.runtime.restartAll())}>重启组件</Button></div>}
+      description="管理 WuxinBot、NapCat、PP+ 与相关服务。外部运行的组件只显示状态，本窗口启动的组件可以停止和重启。"
+      actions={<div className="runtime-page__actions"><Button icon={Play} variant="primary" loading={busy === 'start-all'} onClick={() => invoke('start-all', () => window.desktop.runtime.startAll())}>启动已启用组件</Button><Button icon={Square} loading={busy === 'stop-all'} onClick={() => invoke('stop-all', () => window.desktop.runtime.stopAll())}>停止本窗口组件</Button><Button icon={RefreshCw} loading={busy === 'restart-all'} onClick={() => invoke('restart-all', () => window.desktop.runtime.restartAll())}>重启本窗口组件</Button></div>}
     />
 
     <div className="runtime-page__summary">
@@ -140,7 +147,7 @@ export function RuntimePage({ standalone = false, onServerReady }) {
       <div className="runtime-settings-grid">
         <Switch checked={Boolean(snapshot?.settings?.autoLaunch)} label="Windows 登录时启动客户端" description="使用 Electron 登录项，不创建旧的脚本快捷方式。" onChange={(event) => invoke('auto-launch', async () => { await window.desktop.runtime.setAutoLaunch(event.target.checked); })} />
         <Switch checked={Boolean(snapshot?.settings?.startOnOpen)} label="打开客户端时启动已启用组件" description="关闭后只打开控制台，组件由你手动启动。" onChange={(event) => invoke('start-on-open', () => window.desktop.runtime.updateSettings({ startOnOpen: event.target.checked }))} />
-        <Switch checked={snapshot?.settings?.stopOnClose !== false} label="关闭窗口时停止已管理进程" description="关闭 Desktop 后结束 WuxinBot、NapCat 和已启用的相关进程。" onChange={(event) => invoke('stop-on-close', () => window.desktop.runtime.updateSettings({ stopOnClose: event.target.checked }))} />
+        <Switch checked={snapshot?.settings?.stopOnClose !== false} label="关闭窗口时停止已管理进程" description="只停止本窗口启动的组件及其子进程；外部运行的服务保持运行。" onChange={(event) => invoke('stop-on-close', () => window.desktop.runtime.updateSettings({ stopOnClose: event.target.checked }))} />
       </div>
     </SettingGroup>
 
@@ -153,7 +160,7 @@ export function RuntimePage({ standalone = false, onServerReady }) {
         return <Card key={process.id} className={`runtime-process-card runtime-process-card--${process.status}`}>
           <div className="runtime-process-card__header"><div className="runtime-process-card__title"><span className={`runtime-process-card__icon runtime-process-card__icon--${tone}`}><MonitorCog size={17} /></span><div><h4>{process.label}</h4><small>{processSummary(process)}</small></div></div><Pill tone={tone}>{label}</Pill></div>
           <div className="runtime-process-card__switches"><Switch checked={Boolean(process.enabled)} label="进程启用" description="参与一键启动" disabled={isBusy} onChange={(event) => updateProcess(process, { enabled: event.target.checked }, true)} /><Switch checked={Boolean(process.autoStart)} label="自动启动" description="客户端打开时启动" disabled={isBusy || !process.enabled} onChange={(event) => updateProcess(process, { autoStart: event.target.checked })} /></div>
-          <div className="runtime-process-card__actions"><Button size="sm" icon={Play} variant="primary" disabled={process.status === 'running' || process.status === 'missing' || !process.enabled} loading={busy === process.id} onClick={() => invoke(process.id, () => window.desktop.runtime.start(process.id))}>启动</Button><Button size="sm" icon={Square} disabled={process.status !== 'running'} loading={busy === `stop:${process.id}`} onClick={() => invoke(`stop:${process.id}`, () => window.desktop.runtime.stop(process.id))}>停止</Button><Button size="sm" icon={RefreshCw} disabled={!process.enabled || process.status === 'missing'} loading={busy === `restart:${process.id}`} onClick={() => invoke(`restart:${process.id}`, () => window.desktop.runtime.restart(process.id))}>重启</Button><Button size="sm" icon={Settings2} onClick={() => editing === process.id ? (setEditing(''), setDraft(null)) : beginEdit(process)}>配置</Button></div>
+          <div className="runtime-process-card__actions"><Button size="sm" icon={Play} variant="primary" disabled={process.status !== 'stopped' || !process.enabled} loading={busy === process.id} onClick={() => invoke(process.id, () => window.desktop.runtime.start(process.id))}>启动</Button><Button size="sm" icon={Square} disabled={!process.managed} loading={busy === `stop:${process.id}`} onClick={() => invoke(`stop:${process.id}`, () => window.desktop.runtime.stop(process.id))}>停止</Button><Button size="sm" icon={RefreshCw} disabled={!process.enabled || process.status === 'missing' || process.status === 'conflict' || process.source === 'external'} loading={busy === `restart:${process.id}`} onClick={() => invoke(`restart:${process.id}`, () => window.desktop.runtime.restart(process.id))}>重启</Button><Button size="sm" icon={Settings2} onClick={() => editing === process.id ? (setEditing(''), setDraft(null)) : beginEdit(process)}>配置</Button></div>
           {editing === process.id && draft && <div className="runtime-process-card__editor"><label>启动文件<input className="ui-input" value={draft.command} onChange={(event) => setDraft((current) => ({ ...current, command: event.target.value }))} /></label><label>工作目录<input className="ui-input" value={draft.cwd} onChange={(event) => setDraft((current) => ({ ...current, cwd: event.target.value }))} /></label><label>参数（每行一个）<textarea className="ui-textarea" rows="4" value={draft.args} onChange={(event) => setDraft((current) => ({ ...current, args: event.target.value }))} /></label><Button size="sm" icon={Save} variant="primary" loading={busy === `update:${process.id}`} onClick={() => saveEdit(process)}>保存配置</Button></div>}
           {process.lastError && <p className="runtime-process-card__error">{process.lastError}</p>}
         </Card>;

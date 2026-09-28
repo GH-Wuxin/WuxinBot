@@ -8,6 +8,7 @@
     "desktop": "electron .",
     "desktop:dev": "concurrently -k \"vite --host 127.0.0.1 --port 5173 --strictPort\" \"set WUXIN_DEV_SERVER_URL=http://127.0.0.1:5173&& electron .\"",
     "desktop:build": "npm run build && electron-builder",
+    "desktop:verify": "node --test tools/desktop-runtime-verify.mjs",
     "server": "tsx watch server/index.ts",
     "build": "vite build",
     "typecheck": "tsc --noEmit",

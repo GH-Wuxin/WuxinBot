@@ -124,9 +124,9 @@ async function shutdownManagedProcesses() {
     if (!manager) return;
     const settings = manager.settings;
     if (settings.stopOnClose !== false) {
-      log('窗口关闭，停止已管理进程');
-      await manager.stopAll({ respectStopOnClose: true });
+      log('窗口关闭，停止本窗口启动的进程');
     }
+    await manager.shutdown();
   })();
   return shutdownPromise;
 }
@@ -138,11 +138,7 @@ function registerIpc() {
   ipcMain.handle('runtime:restart', (_event, id) => manager.restart(String(id)));
   ipcMain.handle('runtime:start-all', () => manager.startAll());
   ipcMain.handle('runtime:stop-all', () => manager.stopAll());
-  ipcMain.handle('runtime:restart-all', async () => {
-    await manager.stopAll();
-    await new Promise((resolve) => setTimeout(resolve, 600));
-    return manager.startAll();
-  });
+  ipcMain.handle('runtime:restart-all', () => manager.restartAll());
   ipcMain.handle('runtime:update-settings', (_event, patch) => manager.updateSettings(patch));
   ipcMain.handle('runtime:update-process', (_event, id, patch) => manager.updateProcess(String(id), patch || {}));
   ipcMain.handle('runtime:get-auto-launch', () => autoLaunchState());
@@ -191,7 +187,7 @@ if (!singleInstance) {
     if (quitting) return;
     event.preventDefault();
     quitting = true;
-    void shutdownManagedProcesses().finally(() => app.exit(0));
+    void shutdownManagedProcesses().catch((error) => log(`进程清理失败：${error.message || error}`)).finally(() => app.exit(0));
   });
   app.on('window-all-closed', () => app.quit());
   void boot().catch((error) => {
