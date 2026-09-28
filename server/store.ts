@@ -610,6 +610,12 @@ function parseJsonFile(filePath: string) {
 function readLogicalDbFromDisk() {
   const core = parseJsonFile(getDbPath());
   if (!isShardedCore(core)) return normalizeDb(core);
+  if (Number(core._storage?.version || 0) > 1) {
+    throw new StoreUnreadableError(
+      `数据库存储版本 ${Number(core._storage?.version)} 高于当前支持的版本 1，请升级程序后再使用该数据目录。`,
+      'future-version',
+    );
+  }
   storageRevision = String(core._storage?.revision || '');
   const merged = { ...core };
   delete merged._storage;
@@ -634,26 +640,112 @@ function preserveLegacyDb() {
 // sibling files and are assembled once into the process-local authoritative
 // object. Existing single-file databases migrate automatically and are fully
 // preserved under backups/pre-shard-*.json before the marker is committed.
+//
+// ensureStore is the PLAIN entry: it initializes a genuinely empty data
+// directory, migrates a legacy database, and reports unreadable storage as a
+// classified error. It never deletes data and never performs recovery — that
+// is openStore(), which only the trusted server entry runs at boot (findings
+// F01/F03: a corrupt core used to bypass recovery entirely, and recovery used
+// to fall back to an empty default database).
+
+export class StoreUnreadableError extends Error {
+  reason: 'corrupt' | 'access' | 'anomaly' | 'future-version';
+  constructor(message: string, reason: StoreUnreadableError['reason']) {
+    super(message);
+    this.name = 'StoreUnreadableError';
+    this.reason = reason;
+  }
+}
+
+function errorMessage(error: unknown): string {
+  return String((error as Error)?.message || error);
+}
+
+type CoreRead =
+  | { kind: 'missing' }
+  | { kind: 'parsed'; value: any }
+  | { kind: 'unreadable'; reason: 'corrupt' | 'access'; error: unknown };
+
+function readCoreFile(): CoreRead {
+  let raw: string;
+  try {
+    raw = fs.readFileSync(getDbPath(), 'utf8');
+  } catch (error: any) {
+    if (error?.code === 'ENOENT') return { kind: 'missing' };
+    // Permission problems, locked files, directories in place — none of these
+    // mean the data is damaged, so they must not enter the corruption path.
+    return { kind: 'unreadable', reason: 'access', error };
+  }
+  try {
+    return { kind: 'parsed', value: JSON.parse(raw.replace(/^\uFEFF/, '')) };
+  } catch (error) {
+    return { kind: 'unreadable', reason: 'corrupt', error };
+  }
+}
+
+// A missing core file alongside shards, backups, or earlier corrupt evidence is
+// NOT a first run: creating a fresh database here would silently discard the
+// surviving data (finding F03).
+function hasSideData(): boolean {
+  const dataDir = getDataDir();
+  for (const spec of SHARD_SPECS) {
+    if (fs.existsSync(path.join(dataDir, spec.file))) return true;
+  }
+  const backupDir = path.join(dataDir, 'backups');
+  try {
+    if (fs.existsSync(backupDir)
+      && fs.readdirSync(backupDir).some((name) => name.endsWith('.json') && !name.endsWith('.meta.json'))) {
+      return true;
+    }
+  } catch { /* unreadable dir carries no signal here */ }
+  try {
+    if (fs.readdirSync(dataDir).some((name) => name.includes('.corrupt-'))) return true;
+  } catch { /* ignore */ }
+  return false;
+}
+
 export function ensureStore() {
   fs.mkdirSync(getDataDir(), { recursive: true });
-  if (!fs.existsSync(getDbPath())) {
+  const core = readCoreFile();
+  if (core.kind === 'missing') {
+    if (hasSideData()) {
+      throw new StoreUnreadableError(
+        '核心数据库文件缺失，但数据目录中仍存在分片或备份，不符合首次启动特征。'
+        + '已拒绝创建空数据库；请通过受信服务器入口（server/index.ts）启动以进入恢复流程。',
+        'anomaly',
+      );
+    }
     withDbLock(() => {
-      if (!fs.existsSync(getDbPath())) {
-        assertWriteTargetSafe();
-        writeAllShards(normalizeDb(JSON.parse(JSON.stringify(initialDb))));
-      }
+      if (fs.existsSync(getDbPath())) return;
+      assertWriteTargetSafe();
+      writeAllShards(normalizeDb(JSON.parse(JSON.stringify(initialDb))));
     });
     return;
   }
-
+  if (core.kind === 'unreadable') {
+    throw new StoreUnreadableError(
+      core.reason === 'access'
+        ? `数据库文件不可访问：${errorMessage(core.error)}`
+        : `核心数据库文件损坏，无法解析：${errorMessage(core.error)}`,
+      core.reason,
+    );
+  }
+  if (isShardedCore(core.value)) {
+    if (Number(core.value._storage?.version || 0) > 1) {
+      throw new StoreUnreadableError(
+        `数据库存储版本 ${Number(core.value._storage?.version)} 高于当前支持的版本 1，请升级程序后再使用该数据目录。`,
+        'future-version',
+      );
+    }
+    return;
+  }
   try {
-    const current = parseJsonFile(getDbPath());
-    if (isShardedCore(current)) return;
     assertWriteTargetSafe();
     withDbLock(() => {
-      const lockedCurrent = parseJsonFile(getDbPath());
-      if (isShardedCore(lockedCurrent)) return;
-      const legacy = normalizeDb(lockedCurrent);
+      const locked = readCoreFile();
+      if (locked.kind !== 'parsed') return;
+      if (isShardedCore(locked.value)) return;
+      const legacy = normalizeDb(locked.value);
       const backup = preserveLegacyDb();
       writeAllShards(legacy);
       console.log(`[store] migrated legacy db.json to sharded storage; backup=${path.basename(backup)}`);
@@ -661,90 +753,141 @@ export function ensureStore() {
   } catch (error) {
     // Read-only tools are allowed to inspect a legacy production DB. The trusted
     // server entry will perform migration on its next start.
-    if (String((error as Error)?.message || error).includes('安全防护')) return;
+    if (errorMessage(error).includes('安全防护')) return;
     throw error;
   }
 }
 
-function recoverCorruptDb(error) {
+function listBackupCandidates(): string[] {
+  const backupDir = path.join(getDataDir(), 'backups');
+  try {
+    if (!fs.existsSync(backupDir)) return [];
+    // Newest first by modification time: names mix types (auto/manual/pre-shard),
+    // so lexicographic order would not reflect which snapshot is freshest.
+    return fs.readdirSync(backupDir)
+      .filter((name) => name.endsWith('.json') && !name.endsWith('.meta.json'))
+      .map((name) => {
+        try { return { name, mtime: fs.statSync(path.join(backupDir, name)).mtimeMs }; }
+        catch { return { name, mtime: 0 }; }
+      })
+      .sort((left, right) => right.mtime - left.mtime)
+      .map((item) => path.join(backupDir, item.name));
+  } catch {
+    return [];
+  }
+}
+
+// A restore candidate must prove it is a complete logical database, not merely
+// parseable JSON. createBackup() always dumps the full logical shape, so real
+// backups contain the core collections; `{}`, arrays, or fragments must be
+// skipped instead of being normalized into a plausible-looking empty store.
+const REQUIRED_BACKUP_EVIDENCE_KEYS = ['users', 'groups', 'messages', 'decisions', 'memories', 'commandLogs'];
+
+export function isValidLogicalDbShape(value: unknown): boolean {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
+  if (typeof (value as any).settings !== 'object' || (value as any).settings === null) return false;
+  const present = REQUIRED_BACKUP_EVIDENCE_KEYS.filter((key) => key in (value as any)).length;
+  return present >= 3;
+}
+
+function recoverStorageFromBackups(reasonError: unknown): any {
   lastDbReadFailureAt = Date.now();
+  const reasonText = errorMessage(reasonError).slice(0, 300);
   let canWrite = true;
   try {
     assertWriteTargetSafe();
   } catch (assertError) {
     canWrite = false;
-    console.error('[store] db rewrite skipped (untrusted entry):', String((assertError as Error)?.message || assertError));
+    console.error('[store] recovery skipped (untrusted entry):', errorMessage(assertError));
   }
+
+  // Preserve every authoritative file before touching anything, so a failed
+  // recovery attempt stays retryable and the damage never expands (F03).
   const stamp = new Date().toISOString().replace(/[:.]/g, '-');
-  const dbPath = getDbPath();
-  const backupDir = path.join(getDataDir(), 'backups');
-  let evidenceName = '';
-  try {
-    if (canWrite && fs.existsSync(dbPath)) {
-      evidenceName = `db.json.corrupt-${stamp}`;
-      fs.copyFileSync(dbPath, path.join(getDataDir(), evidenceName));
-    }
-  } catch (copyError) {
-    console.error('[store] failed to preserve corrupt db:', String((copyError as Error)?.message || copyError));
-  }
-
-  const candidates = [];
-  try {
-    if (fs.existsSync(backupDir)) {
-      candidates.push(...fs.readdirSync(backupDir)
-        .filter((name) => /^auto-.*\.json$/.test(name))
-        .map((name) => path.join(backupDir, name))
-        .sort()
-        .reverse());
-    }
-  } catch (listError) {
-    console.error('[store] failed to list db backups:', String((listError as Error)?.message || listError));
-  }
-
-  for (const candidate of candidates) {
-    try {
-      const recovered = normalizeDb(JSON.parse(fs.readFileSync(candidate, 'utf8').replace(/^\uFEFF/, '')));
-      if (canWrite) {
-        try {
-          writeAllShards(recovered);
-        } catch (writeError) {
-          console.error('[store] recovered db could not be written back, continuing in memory:', String((writeError as Error)?.message || writeError));
-        }
-      }
-      console.error(`[store] db.json corrupt (${String((error as Error)?.message || error)}); recovered from ${path.basename(candidate)}${evidenceName ? `, corrupt copy kept as ${evidenceName}` : ''}`);
-      return recovered;
-    } catch {
-      // this backup is also unusable; try older snapshots
-    }
-  }
-
-  console.error(`[store] db.json corrupt (${String((error as Error)?.message || error)}) and no valid backup; starting with an empty database${evidenceName ? `, corrupt copy kept as ${evidenceName}` : ''}`);
-  const fresh = normalizeDb(JSON.parse(JSON.stringify(initialDb)));
+  const preserved: string[] = [];
   if (canWrite) {
-    try {
-      writeAllShards(fresh);
-    } catch (writeError) {
-      console.error('[store] fresh db could not be written back, continuing in memory:', String((writeError as Error)?.message || writeError));
+    for (const file of [getDbPath(), ...SHARD_SPECS.map((spec) => path.join(getDataDir(), spec.file))]) {
+      try {
+        if (fs.existsSync(file)) {
+          const evidenceName = `${path.basename(file)}.corrupt-${stamp}`;
+          fs.copyFileSync(file, path.join(getDataDir(), evidenceName));
+          preserved.push(evidenceName);
+        }
+      } catch (copyError) {
+        console.error('[store] failed to preserve evidence copy:', errorMessage(copyError));
+      }
     }
   }
-  return fresh;
+
+  const candidates = listBackupCandidates();
+  let inspected = 0;
+  for (const candidate of candidates) {
+    inspected += 1;
+    let parsed: any = null;
+    try {
+      parsed = JSON.parse(fs.readFileSync(candidate, 'utf8').replace(/^\uFEFF/, ''));
+    } catch { /* unreadable candidate; try older snapshots */ }
+    if (!isValidLogicalDbShape(parsed)) {
+      console.error(`[store] backup ${path.basename(candidate)} is not a complete logical database, skipping`);
+      continue;
+    }
+    const restoredName = path.basename(candidate);
+    if (!canWrite) {
+      throw new StoreUnreadableError(
+        `存储异常（${reasonText}），已在 ${restoredName} 找到有效备份，但当前入口没有写入权限，无法执行恢复。`,
+        'anomaly',
+      );
+    }
+    try {
+      withDbLock(() => {
+        writeAllShards(normalizeDb(parsed));
+      });
+    } catch (writeError) {
+      console.error('[store] failed to write recovered database, trying older backups:', errorMessage(writeError));
+      continue;
+    }
+    console.error(`[store] storage was unreadable (${reasonText}); restored from ${restoredName}`
+      + (preserved.length ? `; previous files kept as ${preserved.join(', ')}` : '')
+      + '; data written after that backup may be lost');
+    return readDbUnlocked();
+  }
+  throw new StoreUnreadableError(
+    `存储处于异常状态且没有可用的有效备份（${reasonText}；已检查 ${inspected} 个候选）`
+    + (preserved.length ? `；原文件保留为 ${preserved.join(', ')}` : '')
+    + '。拒绝创建空数据库覆盖现场。',
+    'anomaly',
+  );
+}
+
+// Trusted startup entry: classify the storage, and on damage attempt a
+// validated backup restore once. Ordinary readDb()/updateDb() callers never
+// trigger recovery — an unreadable store surfaces as a clear error instead of
+// an implicit database reset (findings F01/F03).
+export function openStore(): void {
+  fs.mkdirSync(getDataDir(), { recursive: true });
+  let openError: unknown = null;
+  try {
+    ensureStore();
+    readDbUnlocked();
+  } catch (error) {
+    openError = error;
+  }
+  if (!openError) return;
+  if (openError instanceof StoreUnreadableError
+    && (openError.reason === 'access' || openError.reason === 'future-version')) {
+    throw openError;
+  }
+  recoverStorageFromBackups(openError);
 }
 
 function readDbUnlocked() {
   const dataDir = getDataDir();
   const signature = coreFileSignature();
   if (cachedStore?.dataDir === dataDir && cachedStore.coreSignature === signature) return cachedStore.db;
-  try {
-    const db = readLogicalDbFromDisk();
-    cachedStore = { dataDir, db, coreSignature: signature };
-    invalidateStoreCaches();
-    return db;
-  } catch (error) {
-    const db = recoverCorruptDb(error);
-    cachedStore = { dataDir, db, coreSignature: coreFileSignature() };
-    invalidateStoreCaches();
-    return db;
-  }
+  const db = readLogicalDbFromDisk();
+  cachedStore = { dataDir, db, coreSignature: signature };
+  invalidateStoreCaches();
+  return db;
 }
 
 export function readDb() {
