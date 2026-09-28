@@ -690,7 +690,7 @@ export async function buildPreparedPlayerSkillProfile(
       if (!Number.isSafeInteger(beatmapId) || beatmapId <= 0) throw new Error('BEATMAP_ID_MISSING');
       const mods = scoreMods(score);
       const modLabel = mods.length ? mods.join('') : 'NM';
-      const analysis = await requestSkillProfilerAnalysisCachedWithFetch(beatmapId, mods);
+      const analysis = await requestSkillProfilerAnalysisCachedWithFetch(beatmapId, mods, profilerIdentity);
       if (analysis?.status !== 'OK' || !analysis?.axes) throw new Error(`ANALYSIS_${analysis?.status || 'INVALID'}`);
       const quality = scoreAchievementQuality(score);
       const demandAxes = {} as Record<PlayerSkillAxis, number>;

@@ -214,7 +214,7 @@ export function aggregateRecentSkillProfile(groups: RecentAnalyzedGroup[], longT
   });
 }
 
-async function buildUncached(osuId: number, prepared: Awaited<ReturnType<typeof preparePlayerSkillProfile>>): Promise<Record<string, any>> {
+async function buildUncached(osuId: number, prepared: Awaited<ReturnType<typeof preparePlayerSkillProfile>>, profilerIdentity: SkillProfilerIdentity): Promise<Record<string, any>> {
   const now = Date.now();
   const [user, collected, longTerm] = await Promise.all([
     prepared.user || getUserById(osuId, 'osu'),
@@ -260,7 +260,7 @@ async function buildUncached(osuId: number, prepared: Awaited<ReturnType<typeof 
       const score = bestAttempt(group);
       try {
         const totalStars = Number(score?.modded_star_rating ?? (group.mods.length ? NaN : score?.beatmap?.difficulty_rating));
-        const analysis = await requestSkillProfilerAnalysisCachedWithFetch(group.beatmapId, group.mods);
+        const analysis = await requestSkillProfilerAnalysisCachedWithFetch(group.beatmapId, group.mods, profilerIdentity);
         if (analysis?.status !== 'OK' || !analysis?.axes) throw new Error(`ANALYSIS_${analysis?.status || 'INVALID'}`);
         const demand = {} as Record<PlayerSkillAxis, number>;
         for (const axis of PLAYER_SKILL_AXES) {
@@ -347,7 +347,7 @@ export async function buildPlayerRecentSkillProfilePayload(osuId: number): Promi
       traceEvent('TOOL', 'Skill：开始计算当前玩家近期表现', {
         status: 'running', osuId, queuePosition: ticket.position,
       });
-      return buildUncached(osuId, prepared);
+      return buildUncached(osuId, prepared, profilerIdentity);
     });
     recentInflight.set(cacheKey, pending);
     const payload = await pending;

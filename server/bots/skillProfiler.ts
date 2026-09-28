@@ -3,6 +3,7 @@ import { createHash, randomUUID } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { getDataDir } from '../store.js';
+import { traceEvent } from '../requestTrace.js';
 import {
   PLAYER_SKILL_AXIS_LABELS,
   PLAYER_SKILL_AXIS_ORDER,
@@ -184,13 +185,30 @@ function normalizedCacheMods(mods: string[]): string[] {
     .map((mod) => mod === 'DC' ? 'HT' : mod).filter((mod) => !neutral.has(mod)))].sort();
 }
 
+// v1 keyed only [algorithmId, mapDemandVersion, beatmapId, mods] and silently
+// served pre-recalibration results (finding F09). v2 namespaces the cache with
+// the full result identity, so entries written before this schema can never be
+// a hit and every semantic identity field participates in invalidation.
+const ANALYSIS_CACHE_SCHEMA = 2;
+
 export async function requestSkillProfilerAnalysisCachedWithFetch(
   beatmapId: number,
   mods: string[] = [],
+  expectedIdentity?: SkillProfilerIdentity,
 ): Promise<any> {
-  const identity = await getSkillProfilerIdentity();
+  // Pinning the identity for a whole batch keeps one player profile on a single
+  // calibration even if the workbench recalibrates mid-run (finding F09, §6.2).
+  const identity = expectedIdentity ?? await getSkillProfilerIdentity();
   const canonicalMods = normalizedCacheMods(mods);
-  const source = JSON.stringify([identity.algorithmId, identity.mapDemandVersion, beatmapId, canonicalMods]);
+  const source = JSON.stringify([
+    ANALYSIS_CACHE_SCHEMA,
+    identity.algorithmId,
+    identity.mapDemandVersion,
+    identity.unifiedScaleId,
+    identity.unifiedCalibrationKey,
+    beatmapId,
+    canonicalMods,
+  ]);
   const key = createHash('sha256').update(source).digest('hex');
   const existing = analysisInflight.get(key);
   if (existing) return existing;
@@ -198,9 +216,16 @@ export async function requestSkillProfilerAnalysisCachedWithFetch(
     const file = analysisCachePath(key);
     try {
       const cached = JSON.parse(fs.readFileSync(file, 'utf8'));
-      if (cached?.key === source && cached?.analysis?.status === 'OK') return cached.analysis;
-    } catch { /* cache miss */ }
+      if (cached?.key === source && cached?.analysis?.status === 'OK') {
+        assertAnalysisIdentity(cached.analysis, identity);
+        return cached.analysis;
+      }
+    } catch (error: any) {
+      if (error?.message?.startsWith('ANALYSIS_IDENTITY_MISMATCH')) throw error;
+      /* cache miss */
+    }
     const analysis = await requestSkillProfilerAnalysisWithFetch(beatmapId, canonicalMods);
+    assertAnalysisIdentity(analysis, identity);
     if (analysis?.status === 'OK') {
       let temporary = '';
       try {
@@ -208,6 +233,12 @@ export async function requestSkillProfilerAnalysisCachedWithFetch(
         temporary = `${file}.${process.pid}.${randomUUID()}.tmp`;
         fs.writeFileSync(temporary, JSON.stringify({ key: source, analysis }), { encoding: 'utf8', flag: 'wx' });
         fs.copyFileSync(temporary, file);
+      } catch (error: any) {
+        // The cache is optional and rebuildable: a failed write must degrade to
+        // a logged warning, never override the successful analysis (F11).
+        traceEvent('TOOL', 'Skill：分析缓存写入失败，结果照常返回', {
+          status: 'error', beatmapId, error: String(error?.message || error).slice(0, 160),
+        });
       } finally {
         if (temporary) try { fs.unlinkSync(temporary); } catch { /* best effort */ }
       }
@@ -220,6 +251,28 @@ export async function requestSkillProfilerAnalysisCachedWithFetch(
   } finally {
     if (analysisInflight.get(key) === pending) analysisInflight.delete(key);
   }
+}
+
+// Cross-check the response's self-reported identity against the identity the
+// result was requested under. A workbench that recalibrated mid-batch must not
+// have its new-scale output silently mixed into a batch pinned to the old one.
+function assertAnalysisIdentity(analysis: any, expected: SkillProfilerIdentity): void {
+  if (!expected || !analysis) return;
+  const reported = analysis.identity || {};
+  const reportedAlgorithm = String(reported.algorithm_id || '');
+  const reportedVersion = String(reported.map_demand_version || '');
+  if (!reportedAlgorithm && !reportedVersion) return;
+  if ((reportedAlgorithm && reportedAlgorithm !== expected.algorithmId)
+    || (reportedVersion && reportedVersion !== expected.mapDemandVersion)) {
+    throw new Error(
+      `ANALYSIS_IDENTITY_MISMATCH: expected ${expected.algorithmId}/${expected.mapDemandVersion},`
+      + ` got ${reportedAlgorithm}/${reportedVersion}`,
+    );
+  }
+}
+
+export function resetSkillProfilerIdentityCacheForTests(): void {
+  identityCache = null;
 }
 
 function beatmapFileBaseUrl(): URL {
@@ -398,8 +451,20 @@ export async function ensureSkillProfilerBeatmap(beatmapId: number): Promise<voi
 }
 
 function finiteNumber(value: unknown): number | null {
-  const number = Number(value);
-  return Number.isFinite(number) ? number : null;
+  // Measurement contract: only finite numbers are real values. null and
+  // missing fields must stay missing — Number(null) is 0, which would disguise
+  // unknown evidence as a genuine zero measurement (finding F10). Strings are
+  // accepted only as explicit numeric literals; booleans, arrays and objects
+  // are never measurements.
+  if (value === null || value === undefined || typeof value === 'boolean') return null;
+  if (typeof value === 'number') return Number.isFinite(value) ? value : null;
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+    if (!trimmed || !/^-?\d+(?:\.\d+)?$/.test(trimmed)) return null;
+    const parsed = Number(trimmed);
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+  return null;
 }
 
 export function skillProfilerAxisValue(
@@ -420,7 +485,12 @@ export function skillProfilerAxisValue(
   return {
     value: finiteNumber(item?.stars),
     scale: 'v040_axis',
-    status: candidateAttached ? 'CANDIDATE_NOT_ADMITTED' : String(item?.confidence || 'UNVERIFIED'),
+    // An ADMITTED axis with an unusable unified value falls back to the legacy
+    // axis, and the status must say why: the number shown is legacy-scale, not
+    // an admitted unified measurement.
+    status: candidateAttached ? 'CANDIDATE_NOT_ADMITTED'
+      : unifiedReady ? 'UNIFIED_VALUE_INVALID_LEGACY'
+      : String(item?.confidence || 'UNVERIFIED'),
   };
 }
 
