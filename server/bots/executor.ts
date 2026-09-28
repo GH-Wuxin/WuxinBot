@@ -1558,7 +1558,7 @@ function scoreAccuracyPercent(score: OsuScore): number | null {
 
 export function formatInternalScoreLine(
   score: OsuScore,
-  options: { index?: number; includeCombo?: boolean; includeWeight?: boolean } = {}
+  options: { index?: number; includeCombo?: boolean; includeWeight?: boolean; includePp?: boolean } = {}
 ): string {
   const stars = scoreStarRating(score);
   const accuracy = scoreAccuracyPercent(score);
@@ -1577,7 +1577,10 @@ export function formatInternalScoreLine(
   if (options.includeCombo) {
     fields.push(`${score.max_combo || 0}/${beatmap.max_combo || '?'}x`);
   }
-  fields.push(`${Number(score.pp || 0).toFixed(1)}pp`);
+  if (options.includePp !== false) {
+    const pp = Number((score as any).pp);
+    fields.push(Number.isFinite(pp) ? `${pp.toFixed(1)}pp` : 'PP 未返回');
+  }
   if (options.includeWeight) {
     const weighted = Number((score as any).weight?.pp);
     fields.push(`加权 ${Number.isFinite(weighted) ? weighted.toFixed(1) : Number(score.pp || 0).toFixed(1)}pp`);
@@ -1777,7 +1780,7 @@ export async function executeInternalBotCommand(
               const identityScores = await getUserRecentScores(user.id, 'osu', 1);
               if (Array.isArray(identityScores) && identityScores.length > 0) {
                 const [identityScore] = (await enrichScoreStarRatings(identityScores, 'osu')).scores;
-                identityLine = formatInternalScoreLine(identityScore, { includeCombo: true });
+                identityLine = formatInternalScoreLine(identityScore, { includeCombo: true, includePp: false });
               }
             } catch {
               // The bridge result is still deliverable, but the missing BID
@@ -1786,7 +1789,7 @@ export async function executeInternalBotCommand(
             return {
               content: [
                 bridgeReply.text || `${user.username} 最近一次 osu! 成绩：`,
-                `结构化谱面标识：${identityLine}`,
+                `结构化谱面标识（PP 见上方成绩卡）：${identityLine}`,
               ].join('\n'),
               images: bridgeReply.images,
             };
