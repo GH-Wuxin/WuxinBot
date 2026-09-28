@@ -2,7 +2,8 @@
 
 import { readDb, updateDb, nowIso } from '../store.js';
 import { completeChat } from '../bot/llm.js';
-import { traceEvent } from '../requestTrace.js';
+import { traceEvent, startRequestTrace, finishRequestTrace, withRequestTrace, requestTraceIdFor } from '../requestTrace.js';
+import { withLlmTurnPolicy } from '../llmPolicy.js';
 import { collectPlayerData, collectPlayerOneLineData, collectRecentPlayerData } from './collector.js';
 import { retrieveKnowledgeForPrompt } from '../bot/knowledgeBase.js';
 import {
@@ -75,6 +76,8 @@ interface QueueEntry {
   mode: OsuMode;
   userId: string;
   groupId: string;
+  /** Request identity captured at enqueue so the job owns its own trace. */
+  requestId: string;
   resolve: (result: any) => void;
 }
 
@@ -1550,13 +1553,58 @@ async function runMvpAnalysisCommand(
   return result.text;
 }
 
+// One user Analyze request is one logical job. It must never execute inside
+// the first requester's async turn: that would spend the requester's model
+// budget on other jobs and mis-attribute their traces and ledger entries
+// (finding F04). Each job re-enters its own trace context and gets a fresh
+// execution budget, so queue waiting never consumes the execution deadline.
+const ANALYZE_JOB_BUDGET = { maxCalls: 4, timeoutMs: 600_000 };
+
+function analyzeExecutionAllowed(entry: QueueEntry): string | null {
+  // Admission was checked at accept time; eligibility is re-checked when the
+  // job actually starts, so a paused or disabled group cannot run a task that
+  // was queued before the change (§5.3).
+  const fresh = readDb();
+  if (fresh.settings?.globalPaused) return 'OSU_ANALYZE_PAUSED: 全局暂停中，排队任务已取消';
+  const groupRow = fresh.groups?.find((group) => String(group.groupId) === String(entry.groupId));
+  if (groupRow && groupRow.enabled === false) return 'OSU_ANALYZE_GROUP_DISABLED: 该群已停用，排队任务已取消';
+  return null;
+}
+
+async function runQueuedAnalyzeEntry(entry: QueueEntry): Promise<string> {
+  const requestId = `${entry.requestId || 'osu-analyze'}:job`;
+  startRequestTrace(entry.event, requestId);
+  return withRequestTrace(requestId, async () => {
+    traceEvent('INGRESS', 'osu_analyze_job_started', {
+      originalRequestId: entry.requestId || '',
+      userId: entry.userId,
+      groupId: entry.groupId,
+      target: String(entry.target),
+      mode: entry.mode,
+    });
+    try {
+      const blocked = analyzeExecutionAllowed(entry);
+      if (blocked) throw new Error(blocked);
+      const text = await withLlmTurnPolicy(
+        () => runMvpAnalysisCommand(entry.event, entry.target, entry.mode),
+        ANALYZE_JOB_BUDGET,
+      );
+      finishRequestTrace('completed', { queued: true, reason: 'osu analyze job completed' });
+      return text;
+    } catch (error) {
+      finishRequestTrace('failed', { queued: true, error: String(error?.message || error).slice(0, 300) });
+      throw error;
+    }
+  });
+}
+
 async function drainQueue() {
   while (queue.length > 0) {
     currentEntry = queue.shift()!;
     running = true;
     const entry = currentEntry;
     try {
-      const text = await runMvpAnalysisCommand(entry.event, entry.target, entry.mode);
+      const text = await runQueuedAnalyzeEntry(entry);
       await sendAsReply(entry.event, entry.sendMessage, text);
       entry.resolve({ replied: true, reason: 'osu analyze 完成', text });
     } catch (error) {
@@ -1621,7 +1669,7 @@ async function handleOsuBind(ctx: OsuCommandContext) {
   return { replied: true, reason: msg };
 }
 
-async function handleOsuAnalyze(ctx: OsuCommandContext) {
+export async function handleOsuAnalyze(ctx: OsuCommandContext) {
   const { event, sendMessage, subFree, options, db } = ctx;
   if (!ENABLE_OSU_ANALYZE) {
     const message = '/w osu analyze 暂不可用；请稍后再试。';
@@ -1643,7 +1691,10 @@ async function handleOsuAnalyze(ctx: OsuCommandContext) {
     }
   }
 
-  // Prevent double-submit: same user can't have multiple pending analyses
+  // Prevent double-submit: same user can't have multiple pending analyses.
+  // Dedupe, capacity, and the queue push must be one synchronous section —
+  // awaiting the queue notice between check and push let concurrent requests
+  // pass the same checks (finding F05).
   const isSameUser = (e: QueueEntry) => String(e.userId) === String(event.userId);
   if (currentEntry && isSameUser(currentEntry)) {
     if (sendMessage) await sendAsReply(event, sendMessage, '这份 Analyze 正在生成，别重复提交。');
@@ -1658,25 +1709,37 @@ async function handleOsuAnalyze(ctx: OsuCommandContext) {
     return { replied: true, reason: `osu analyze 队列已满（${queue.length}/${MAX_ANALYZE_QUEUE}）` };
   }
 
-  // Enqueue
-  const position = queue.length + (running ? 1 : 0);
+  // Reserve the slot first. The task is accepted the moment it is enqueued;
+  // the queue notice is a side effect of acceptance, and a failed notice must
+  // not undo the reservation or leave the entry undefined (§5.2).
+  let resolveEntry!: (result: { replied?: boolean; reason?: string; text?: string; error?: string }) => void;
+  const completion = new Promise<{ replied?: boolean; reason?: string; text?: string; error?: string }>((resolve) => {
+    resolveEntry = resolve;
+  });
+  const entry: QueueEntry = {
+    event, sendMessage,
+    target, mode,
+    userId: String(event.userId),
+    groupId: String(event.groupId),
+    requestId: requestTraceIdFor(event),
+    resolve: resolveEntry,
+  };
+  queue.push(entry);
+  if (!running) void drainQueue();
+
+  const ahead = queue.length - 1 + (running ? 1 : 0);
   if (sendMessage) {
-    const statusMsg = position > 0
-      ? `已加入 Analyze 队列（前面还有 ${position} 人），到你时我会 @ 你。`
+    const statusMsg = ahead > 0
+      ? `已加入 Analyze 队列（前面还有 ${ahead} 人），到你时我会 @ 你。`
       : 'pippi 正在整理这份玩家数据，马上生成 Analyze 报告…';
-    await sendAsReply(event, sendMessage, statusMsg);
+    try {
+      await sendAsReply(event, sendMessage, statusMsg);
+    } catch (notifyError) {
+      console.error('[osu analyze] 排队提示发送失败（任务保持已接受）：', notifyError?.message || notifyError);
+    }
   }
 
-  return new Promise((resolve) => {
-    queue.push({
-      event, sendMessage,
-      target, mode,
-      userId: String(event.userId),
-      groupId: String(event.groupId),
-      resolve
-    });
-    if (!running) drainQueue();
-  });
+  return completion;
 }
 
 async function handleOsuRecent(ctx: OsuCommandContext) {
