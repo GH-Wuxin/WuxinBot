@@ -817,7 +817,8 @@ export function analyzeData(input: AnalyzerInput): AnalyzerSections {
 export function buildAnalysisPrompt(
   sections: AnalyzerSections,
   personalityPrompt: string,
-  narrative: AnalysisNarrativeContext = {}
+  narrative: AnalysisNarrativeContext = {},
+  promptSections: Record<string, string> = {},
 ): { system: string; user: string } {
   const taskRules = [
     OSU_WIKI_DOMAIN_RULES,
@@ -850,6 +851,7 @@ export function buildAnalysisPrompt(
     scene: 'osu_analysis',
     compactAnalysisPersona: true,
     userPersonality: personalityPrompt || '',
+    promptSections,
     taskRules: `${taskRules}\n${perspectiveRule}`,
   });
 
@@ -881,6 +883,7 @@ export function buildAnalysisEditorPrompt(
   narrative: AnalysisNarrativeContext = {},
   personalityPrompt = '',
   styleAvoidance?: AnalysisStyleAvoidance,
+  promptSections: Record<string, string> = {},
 ): { system: string; user: string } {
   const sparseSample = /BP 样本成熟度:[^\n]*稀疏早期样本/.test(sections.safeFacts);
   const perspective = narrative.perspective === 'self'
@@ -908,6 +911,7 @@ export function buildAnalysisEditorPrompt(
     scene: 'osu_analysis',
     compactAnalysisPersona: true,
     userPersonality: personalityPrompt,
+    promptSections,
     taskRules: editorRules,
     includeFactBoundaries: false,
   });
@@ -1067,6 +1071,7 @@ export function buildAnalysisSectionCommentsPrompt(
   personalityPrompt = '',
   styleAvoidance?: AnalysisStyleAvoidance,
   requestedKeys: readonly (keyof AnalysisSectionComments)[] = ANALYSIS_COMMENT_KEYS,
+  promptSections: Record<string, string> = {},
 ): { system: string; user: string } {
   void styleAvoidance;
   const targetKeys = requestedKeys.length > 0 ? requestedKeys : ANALYSIS_COMMENT_KEYS;
@@ -1103,6 +1108,7 @@ export function buildAnalysisSectionCommentsPrompt(
     scene: 'osu_analysis',
     compactAnalysisPersona: true,
     userPersonality: personalityPrompt,
+    promptSections,
     taskRules,
     includeFactBoundaries: false,
   });

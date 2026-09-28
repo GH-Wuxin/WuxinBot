@@ -366,6 +366,8 @@ const initialDb = {
     groupContextSearchCharBudget: 12000,
         botNames: '小深,机器人,bot,pippi',
     personalityPrompt: defaultPrompt,
+    personaPromptSections: {},
+    personaModulePrompts: {},
     oneBotHttpUrl: 'http://127.0.0.1:3000',
     oneBotWsUrl: 'ws://127.0.0.1:3001',
     oneBotAccessToken: '',

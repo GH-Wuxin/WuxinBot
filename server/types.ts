@@ -73,6 +73,10 @@ export interface DbSettings {
   groupContextSearchCharBudget?: number;
   botNames: string;
   personalityPrompt: string;
+  /** Optional edits to built-in Pippi prompt layers; missing keys retain source defaults. */
+  personaPromptSections?: Record<string, string>;
+  /** Optional per-module personality additions appended to the system prompt. */
+  personaModulePrompts?: Record<string, string>;
   baselinePersonalityPrompt?: string;
   oneBotHttpUrl: string;
   oneBotWsUrl: string;

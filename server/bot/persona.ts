@@ -269,6 +269,7 @@ const SCENE_SERIOUS = [
 interface PippiPromptInput {
   scene: PippiScene;
   userPersonality?: string;       // user's custom supplement (db.personalityPrompt)
+  promptSections?: Record<string, string>; // editable operator overrides; absent keys preserve built-ins
   relationshipContext?: string;   // memory, group profile, relationship profile blocks
   topicKnowledge?: string;        // detailed osu! knowledge selected for the current message
   knowledgeBlocks?: PromptKnowledgeBlock[]; // optional KB v4.1 retrieval (never when KB disabled)
@@ -278,29 +279,59 @@ interface PippiPromptInput {
   compactAnalysisPersona?: boolean;
 }
 
+const PIPPI_PROMPT_SECTION_DEFINITIONS = [
+  { id: 'coreIdentity', title: '完整人格核心', description: '日常、命令与严肃对话使用的身份、性格和表达方式。', defaultContent: PIPPI_CORE },
+  { id: 'analysisPersona', title: 'osu 分析人格', description: '分析任务使用的精简人格层。', defaultContent: PIPPI_ANALYSIS_CORE_COMPACT },
+  { id: 'osuKnowledge', title: 'osu! 基础知识', description: '各场景共用的 osu! 知识底层。', defaultContent: PIPPI_OSU_CORE_KNOWLEDGE },
+  { id: 'factBoundaries', title: '事实边界', description: '数据不足、推测与未知信息的处理约束。', defaultContent: PIPPI_FACT_BOUNDARIES },
+  { id: 'sceneCasual', title: '日常聊天场景', description: '群聊与私聊的日常语气。', defaultContent: SCENE_CASUAL },
+  { id: 'sceneOsuAnalysis', title: 'osu 分析场景', description: '玩家分析时的表达方式。', defaultContent: SCENE_OSU_ANALYSIS },
+  { id: 'sceneCommand', title: '命令反馈场景', description: '命令响应的简洁与可操作性要求。', defaultContent: SCENE_COMMAND },
+  { id: 'sceneSerious', title: '严肃对话场景', description: '用户处于困难或紧急情形时的表达要求。', defaultContent: SCENE_SERIOUS },
+  { id: 'communityBanter', title: '社区语料语感', description: '仅注入日常聊天的脱敏社区短反应语料。', defaultContent: PIPPI_BANTER_BLOCK },
+] as const;
+
+export function getPippiPromptSectionCatalog(overrides: Record<string, string> = {}) {
+  return PIPPI_PROMPT_SECTION_DEFINITIONS.map(({ id, title, description, defaultContent }) => ({
+    id,
+    title,
+    description,
+    defaultContent,
+    currentContent: Object.prototype.hasOwnProperty.call(overrides || {}, id)
+      ? String(overrides[id] ?? '')
+      : defaultContent,
+    isOverridden: Object.prototype.hasOwnProperty.call(overrides || {}, id),
+  }));
+}
+
 export function buildPippiPrompt(input: PippiPromptInput): string {
+  const section = (id: string, fallback: string) => (
+    Object.prototype.hasOwnProperty.call(input.promptSections || {}, id)
+      ? String(input.promptSections?.[id] ?? '')
+      : fallback
+  );
   const sceneRules: Record<PippiScene, string> = {
-    casual: SCENE_CASUAL,
-    osu_analysis: SCENE_OSU_ANALYSIS,
-    command: SCENE_COMMAND,
-    serious: SCENE_SERIOUS,
+    casual: section('sceneCasual', SCENE_CASUAL),
+    osu_analysis: section('sceneOsuAnalysis', SCENE_OSU_ANALYSIS),
+    command: section('sceneCommand', SCENE_COMMAND),
+    serious: section('sceneSerious', SCENE_SERIOUS),
   };
 
   const parts: string[] = [];
 
   // Layer 1: Core identity and worldview
   parts.push(input.scene === 'osu_analysis' && input.compactAnalysisPersona
-    ? PIPPI_ANALYSIS_CORE_COMPACT
-    : PIPPI_CORE);
+    ? section('analysisPersona', PIPPI_ANALYSIS_CORE_COMPACT)
+    : section('coreIdentity', PIPPI_CORE));
 
   // Layer 1b: pippi is never an osu! blank slate. This compact, sourced core
   // stays present in casual, command, serious and analysis scenes alike.
-  parts.push(PIPPI_OSU_CORE_KNOWLEDGE);
+  parts.push(section('osuKnowledge', PIPPI_OSU_CORE_KNOWLEDGE));
 
   // Layer 2: Fact boundaries. Some tightly scoped tasks provide a shorter,
   // task-local evidence contract to avoid burying the actual writing brief.
   if (input.includeFactBoundaries !== false) {
-    parts.push(PIPPI_FACT_BOUNDARIES);
+    parts.push(section('factBoundaries', PIPPI_FACT_BOUNDARIES));
   }
 
   // Layer 3: Stable operator personality supplement. Keep this before the
@@ -320,7 +351,7 @@ export function buildPippiPrompt(input: PippiPromptInput): string {
 
   // Layer 4b: casual-only community reaction bank (never in analysis/command/serious)
   if (input.scene === 'casual') {
-    parts.push(PIPPI_BANTER_BLOCK);
+    parts.push(section('communityBanter', PIPPI_BANTER_BLOCK));
   }
 
   // Layer 5: retrieve only the detailed domain block relevant to this turn.
@@ -350,7 +381,7 @@ export function buildPippiPrompt(input: PippiPromptInput): string {
     parts.push(`\n当前运行时信息：\n${input.factualContext}`);
   }
 
-  return parts.join('\n\n---\n\n');
+  return parts.filter(Boolean).join('\n\n---\n\n');
 }
 
 // ── Scene detection (deterministic, no extra LLM call) ──

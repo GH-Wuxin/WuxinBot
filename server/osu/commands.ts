@@ -510,6 +510,8 @@ async function generateAnalysisSectionComments(
     narrative,
     personalityPrompt,
     styleAvoidance,
+    undefined,
+    db?.settings?.personaPromptSections || {},
   );
   let candidate = '';
   let lastParsed: AnalysisSectionComments | null = previous?.comments || null;
@@ -754,7 +756,13 @@ async function generateConclusion(
   rejected: string;
   trace: { attempt: number; outcome: 'accepted' | 'rejected' | 'error' | 'repaired'; reasons: string[] }[];
 }> {
-  const prompt = buildAnalysisEditorPrompt(analysis, narrative, personalityPrompt, styleAvoidance);
+  const prompt = buildAnalysisEditorPrompt(
+    analysis,
+    narrative,
+    personalityPrompt,
+    styleAvoidance,
+    db?.settings?.personaPromptSections || {},
+  );
   let lastCandidate = previous?.text || '';
   let lastReasons: string[] = previous?.reasons || [];
   const trace: { attempt: number; outcome: 'accepted' | 'rejected' | 'error' | 'repaired'; reasons: string[]; draft?: string }[] = [];

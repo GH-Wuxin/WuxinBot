@@ -20,6 +20,7 @@
     "search:agent:verify": "node --import tsx tools/search-agent-loop-verify.mjs",
     "runtime:safety:verify": "node --import tsx tools/runtime-safety-verify.mjs && node --import tsx tools/health-runtime-verify.mjs && node --import tsx tools/health-delivery-verify.mjs",
     "request:trace:verify": "node --import tsx tools/request-trace-verify.mjs",
+    "persona:verify": "node --import tsx tools/persona-studio-verify.mjs",
     "console:verify": "node --import tsx tools/console-osu-verify.mjs",
     "usage:verify": "node --import tsx tools/usage-totals-verify.mjs && node --import tsx tools/health-accounting-verify.mjs",
     "codex:verify": "node --import tsx tools/codex-app-server-verify.mjs && node --import tsx tools/codex-executable-verify.mjs",
