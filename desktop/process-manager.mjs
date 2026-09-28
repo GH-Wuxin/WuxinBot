@@ -1,12 +1,19 @@
-import { execFile, spawn } from 'node:child_process';
+import { spawn } from 'node:child_process';
 import fs from 'node:fs';
 import fsp from 'node:fs/promises';
-import net from 'node:net';
 import os from 'node:os';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { isDeepStrictEqual } from 'node:util';
+import {
+  collectOwnedProcesses, isLiveChild, listPortListeners, listSystemProcesses,
+  loopbackListeners, matchesDefinition, probePort, runFile, sameProcess, waitForPort,
+} from './process-inspection.mjs';
 
 const WINDOWS = process.platform === 'win32';
-const MAX_PROCESS_OUTPUT = 8 * 1024 * 1024;
+const CONFIG_VERSION = 2;
+const DEFAULT_SETTINGS = { autoLaunch: false, startOnOpen: false, stopOnClose: true };
+const CONFIG_FIELDS = ['label', 'group', 'command', 'cwd', 'port', 'enabled', 'autoStart', 'stopOnClose', 'args', 'env', 'matcher', 'stopCommand', 'stopArgs'];
 
 function text(value) {
   return String(value ?? '').trim();
@@ -27,6 +34,49 @@ function normalizeArgs(args) {
 function normalizeEnv(env) {
   if (!env || typeof env !== 'object') return {};
   return Object.fromEntries(Object.entries(env).map(([key, value]) => [String(key), String(value)]));
+}
+
+// These are the selectors exposed by the current profiler CLI. The v0.40
+// release worktree has its own formal selector; v100 is the older stable line.
+// Keep both explicit so a saved old Desktop config cannot silently start the
+// wrong algorithm.
+const PROFILER_ALGORITHMS = new Set([
+  'v040-formal', 'v100', 'v101-experimental',
+  'v010-beta9.2', 'v010-beta9.1', 'v010-beta9', 'v010-beta8',
+  'v010-beta7', 'v010-beta6', 'v010-beta5', 'v010-beta4',
+  'v010-beta3', 'v010-beta2', 'v010-beta1', 'v096',
+]);
+
+function normalizeProfilerArgs(args, fallback = 'v040-formal') {
+  const normalized = normalizeArgs(args);
+  for (let index = 0; index < normalized.length; index += 1) {
+    const arg = normalized[index];
+    if (arg === '--algorithm') {
+      if (!PROFILER_ALGORITHMS.has(normalized[index + 1])) normalized[index + 1] = fallback;
+      continue;
+    }
+    if (arg.startsWith('--algorithm=')) {
+      const value = arg.slice('--algorithm='.length);
+      if (!PROFILER_ALGORITHMS.has(value)) normalized[index] = `--algorithm=${fallback}`;
+    }
+  }
+  return normalized;
+}
+
+function normalizeWuxinArgs(args, cwd = '') {
+  const normalized = normalizeArgs(args);
+  const base = isAbsoluteCommand(cwd) ? path.resolve(cwd) : '';
+  for (let index = 0; index < Math.min(normalized.length, 2); index += 1) {
+    let value = normalized[index] || '';
+    if (value.startsWith('file://')) {
+      try { value = fileURLToPath(value); } catch { /* leave malformed values for the normal error path */ }
+    }
+    if (base && isAbsoluteCommand(value)) {
+      const relative = path.relative(base, path.resolve(value));
+      if (relative && !relative.startsWith('..') && !path.isAbsolute(relative)) normalized[index] = relative;
+    }
+  }
+  return normalized;
 }
 
 function compactError(value) {
@@ -101,13 +151,13 @@ function buildDefaultDefinitions(projectRoot) {
     path.join(shellDir, 'NapCatWinBootMain.exe'),
   );
   const napcatUserData = envOr('NAPCAT_USER_DATA_DIR', 'D:\\PippiQQProfile');
-  const profilerRoot = envOr('SKILL_PROFILER_ROOT', 'G:\\My pack\\Agent Work\\osu-skill-profiler');
+  const profilerRoot = envOr('SKILL_PROFILER_ROOT', 'G:\\My pack\\Agent Work\\codex_work\\osu-skill-profiler-v040-release');
   const profilerCli = path.join(profilerRoot, 'tools', 'map_demand_v01', 'cli.py');
-  const profilerManifest = envOr('SKILL_PROFILER_MANIFEST', path.join(profilerRoot, 'training', 'datasets', 'std_manifest.json'));
-  // The profiler CLI currently exposes v100 as its frozen formal release.
-  // Keep the override for local experiments, but do not ship the removed
-  // v040-formal selector as the Desktop default.
-  const profilerAlgorithm = envOr('SKILL_PROFILER_ALGORITHM', 'v100');
+  // The formal release worktree contains the v0.40 runtime. Keep the large
+  // local manifest in the main checkout instead of the release worktree's
+  // placeholder manifest.
+  const profilerManifest = envOr('SKILL_PROFILER_MANIFEST', 'G:\\My pack\\Agent Work\\osu-skill-profiler\\training\\datasets\\std_manifest.json');
+  const profilerAlgorithm = envOr('SKILL_PROFILER_ALGORITHM', 'v040-formal');
   const yumuNode = firstExisting(envOr('YUMU_NODE', ''), path.join(runtime, 'node-v22.23.1-win-x64', 'node-v22.23.1-win-x64', 'node.exe'), node);
   const yumuDir = envOr('YUMU_DIR', path.join(localRoot, 'sources', 'yumu-image'));
   const yumuImageEnv = {
@@ -161,7 +211,7 @@ function buildDefaultDefinitions(projectRoot) {
       id: 'postgres', label: 'PostgreSQL', group: '基础依赖', port: 5432,
       command: pgCtl, cwd: postgresDir, args: ['start', '-D', postgresCluster, '-l', path.join(localRoot, 'logs', 'postgresql.log'), '-w'],
       stopCommand: pgCtl, stopArgs: ['stop', '-D', postgresCluster, '-m', 'fast'],
-      matcher: { includes: ['postgres'] },
+      matcher: { includes: [postgresCluster], executablePaths: [path.join(postgresDir, 'bin', 'postgres.exe')] },
     }),
     definition({
       id: 'mariadb', label: 'MariaDB', group: '基础依赖', port: 3306,
@@ -172,7 +222,11 @@ function buildDefaultDefinitions(projectRoot) {
       id: 'ppplus', label: 'PP+ PerformancePlus', group: 'PP+ / 外部 Bot', port: 5000,
       // Launch through the bundled host explicitly. Starting the apphost exe
       // can fall back to the system .NET installation on Windows.
-      command: dotnet, cwd: path.dirname(ppplusDll), args: [path.basename(ppplusDll)], env: dotnetEnv,
+      // The shipped runtime currently carries ASP.NET Core 10 while the
+      // calculator targets net8.  Make the roll-forward part of the command
+      // line as well as the environment so it survives Electron/Windows
+      // launchers that sanitize DOTNET_* variables.
+      command: dotnet, cwd: path.dirname(ppplusDll), args: ['--roll-forward', 'Major', path.basename(ppplusDll)], env: dotnetEnv,
       requiredPaths: [ppplusDll],
       matcher: { includes: [path.basename(ppplusDll)] },
     }),
@@ -182,7 +236,11 @@ function buildDefaultDefinitions(projectRoot) {
       matcher: { includes: [path.basename(ppplusJar), 'ppplus-aggregate'] },
     }),
     definition({
-      id: 'yumuImage', label: 'yumu-image 渲染器', group: '外部 Bot', port: 8388,
+      // yumu-image is a renderer client. It connects to Yumu's 8388
+      // render-ws and to Wuxin's 8389 render-ws; it does not listen on a
+      // port itself. Giving it port=8388 made Desktop wait for a listener
+      // that can only be provided by the separate Yumu process.
+      id: 'yumuImage', label: 'yumu-image 渲染器', group: '外部 Bot', port: null,
       command: yumuNode, cwd: yumuDir, args: [path.join(yumuDir, 'main.js')], env: yumuImageEnv,
       matcher: { includes: [path.join(yumuDir, 'main.js')] },
     }),
@@ -199,7 +257,7 @@ function buildDefaultDefinitions(projectRoot) {
     }),
     definition({
       id: 'hydrant', label: '消防栓 Hydrant', group: '外部 Bot', port: 8800,
-      command: dotnet, cwd: hydrantDir, args: [hydrantDll],
+      command: dotnet, cwd: hydrantDir, args: ['--roll-forward', 'Major', hydrantDll], env: dotnetEnv,
       matcher: { includes: [path.basename(hydrantDll)] },
     }),
     definition({
@@ -210,7 +268,7 @@ function buildDefaultDefinitions(projectRoot) {
     definition({
       id: 'napcat', label: 'NapCat / QQ', group: '消息入口', port: 3001,
       command: napcat, cwd: shellDir, args: [`--user-data-dir=${napcatUserData}`],
-      matcher: { includes: [shellDir] },
+      matcher: { includes: [shellDir], executablePaths: [path.join(shellDir, 'QQ.exe')] },
     }),
     definition({
       id: 'skillProfiler', label: 'Skill Profiler', group: '分析服务', port: 8767, enabled: false,
@@ -221,102 +279,143 @@ function buildDefaultDefinitions(projectRoot) {
     definition({
       id: 'wuxin', label: 'WuxinBot', group: '核心服务', port: 8787, enabled: true, autoStart: true,
       command: node, cwd: projectRoot,
-      args: [wuxinTsxCli, wuxinEntry],
-      env: { PORT: '8787' },
-      matcher: { includes: [wuxinEntry] },
+      args: [path.relative(projectRoot, wuxinTsxCli), path.relative(projectRoot, wuxinEntry)],
+      // The bridge reads Hydrant's token and LazyBot's config through the
+      // deployment root.  Desktop knows this root; pass it explicitly instead
+      // of relying on the process cwd (which is the Wuxin checkout).
+      env: {
+        PORT: '8787',
+        BOTS_ROOT: localRoot,
+        LAZYBOT_CONFIG_PATH: lazybotConfig,
+        HYDRANT_CONFIG_PATH: path.join(localRoot, 'configs', 'private', 'hydrant', 'appsettings.json'),
+      },
+      // Match both an absolute entry path from an older config and the
+      // relative path used by the Windows Node CLI after migration.
+      matcher: { includes: [path.join('server', 'index.ts')] },
     }),
   ];
 }
 
 function mergeDefinition(defaultDefinition, savedDefinition) {
-  if (!savedDefinition || typeof savedDefinition !== 'object') return defaultDefinition;
-  const result = { ...defaultDefinition };
-  for (const key of ['label', 'group', 'command', 'cwd', 'port', 'enabled', 'autoStart', 'stopOnClose']) {
-    if (savedDefinition[key] !== undefined) result[key] = savedDefinition[key];
+  const result = { ...defaultDefinition, args: [...defaultDefinition.args], env: { ...defaultDefinition.env } };
+  if (savedDefinition && typeof savedDefinition === 'object') {
+    for (const key of ['label', 'group', 'command', 'cwd', 'port', 'enabled', 'autoStart', 'stopOnClose']) {
+      if (savedDefinition[key] !== undefined) result[key] = savedDefinition[key];
+    }
+    if (Array.isArray(savedDefinition.args)) result.args = normalizeArgs(savedDefinition.args);
+    if (savedDefinition.env && typeof savedDefinition.env === 'object') {
+      result.env = { ...normalizeEnv(defaultDefinition.env) };
+      for (const [key, value] of Object.entries(savedDefinition.env)) {
+        if (value === null) delete result.env[key];
+        else result.env[key] = String(value);
+      }
+    }
+    if (savedDefinition.matcher && typeof savedDefinition.matcher === 'object') result.matcher = { ...defaultDefinition.matcher, ...savedDefinition.matcher };
+    if (savedDefinition.stopCommand !== undefined) result.stopCommand = text(savedDefinition.stopCommand);
+    if (Array.isArray(savedDefinition.stopArgs)) result.stopArgs = normalizeArgs(savedDefinition.stopArgs);
   }
-  if (Array.isArray(savedDefinition.args)) result.args = normalizeArgs(savedDefinition.args);
-  if (savedDefinition.env && typeof savedDefinition.env === 'object') result.env = normalizeEnv(savedDefinition.env);
-  if (savedDefinition.matcher && typeof savedDefinition.matcher === 'object') result.matcher = savedDefinition.matcher;
-  if (savedDefinition.stopCommand !== undefined) result.stopCommand = text(savedDefinition.stopCommand);
-  if (Array.isArray(savedDefinition.stopArgs)) result.stopArgs = normalizeArgs(savedDefinition.stopArgs);
+  if (result.id === 'wuxin') {
+    result.args = normalizeWuxinRuntimeArgs(result.args, result.cwd);
+    if (Object.hasOwn(result.env, 'NODE_OPTIONS')) {
+      result.env.NODE_OPTIONS = stripLegacyTsxLoaderOption(result.env.NODE_OPTIONS);
+    }
+  }
   return result;
 }
 
-function runFile(command, args, options = {}) {
-  return new Promise((resolve, reject) => {
-    execFile(command, args, { windowsHide: true, maxBuffer: MAX_PROCESS_OUTPUT, ...options }, (error, stdout, stderr) => {
-      if (error) {
-        error.stdout = stdout;
-        error.stderr = stderr;
-        reject(error);
-        return;
-      }
-      resolve({ stdout: String(stdout || ''), stderr: String(stderr || '') });
-    });
-  });
+function normalizeWuxinRuntimeArgs(args, cwd) {
+  const normalized = normalizeArgs(args);
+  const root = path.resolve(cwd || process.cwd());
+  const usesTsxLoader = normalized.some((arg) => /(?:^|[\\/])tsx[\\/]dist[\\/]loader\.mjs$/i.test(arg));
+  const cliIndex = normalized.findIndex((arg) => /(?:^|[\\/])tsx[\\/]dist[\\/]cli\.mjs$/i.test(arg));
+  const entryIndex = normalized.findIndex((arg) => /(?:^|[\\/])server[\\/]index\.ts$/i.test(arg));
+
+  // Older Desktop configs used a Windows-relative loader URL. Node treats it
+  // as a package name, so it fails before server/index.ts can run. Launch the
+  // current tsx CLI and entrypoint by absolute path, rooted at the selected
+  // Wuxin checkout, including when a v2 override still carries that old form.
+  if (usesTsxLoader || cliIndex >= 0 && entryIndex > cliIndex) {
+    const trailingArgs = entryIndex >= 0 ? normalized.slice(entryIndex + 1) : [];
+    return [
+      path.join(root, 'node_modules', 'tsx', 'dist', 'cli.mjs'),
+      path.join(root, 'server', 'index.ts'),
+      ...trailingArgs,
+    ];
+  }
+  return normalized;
 }
 
-async function listSystemProcesses() {
-  if (WINDOWS) {
-    const script = '$ErrorActionPreference="SilentlyContinue"; Get-CimInstance Win32_Process | Select-Object ProcessId,ParentProcessId,Name,ExecutablePath,CommandLine | ConvertTo-Json -Compress';
-    try {
-      const result = await runFile('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', script]);
-      if (!result.stdout.trim()) return [];
-      const parsed = JSON.parse(result.stdout);
-      const rows = Array.isArray(parsed) ? parsed : [parsed];
-      return rows.map((row) => ({
-        pid: Number(row.ProcessId),
-        ppid: Number(row.ParentProcessId),
-        name: text(row.Name),
-        executablePath: text(row.ExecutablePath),
-        commandLine: text(row.CommandLine),
-      })).filter((row) => Number.isInteger(row.pid) && row.pid > 0);
-    } catch {
-      return [];
+function stripLegacyTsxLoaderOption(value) {
+  return String(value || '')
+    .replace(/(?:^|\s)(?:--loader|--import|--require|-r)(?:=|\s+)(?:"[^"]*tsx[\\/]dist[\\/]loader\.mjs"|'[^']*tsx[\\/]dist[\\/]loader\.mjs'|[^\s]+tsx[\\/]dist[\\/]loader\.mjs)(?=\s|$)/gi, ' ')
+    .trim();
+}
+
+function definitionOverrides(definition, defaults) {
+  const overrides = {};
+  for (const key of CONFIG_FIELDS) {
+    if (key === 'env') continue;
+    if (definition[key] !== undefined && !isDeepStrictEqual(definition[key], defaults[key])) overrides[key] = definition[key];
+  }
+  const env = {};
+  for (const key of new Set([...Object.keys(defaults.env || {}), ...Object.keys(definition.env || {})])) {
+    if (definition.env?.[key] !== defaults.env?.[key]) env[key] = definition.env?.[key] ?? null;
+  }
+  if (Object.keys(env).length) overrides.env = env;
+  return overrides;
+}
+
+function migrateLegacyDefinition(defaultDefinition, savedDefinition) {
+  const result = mergeDefinition(defaultDefinition, savedDefinition);
+  if (!savedDefinition || typeof savedDefinition !== 'object') return result;
+  // v1 saved whole defaults, with no indication of user edits. Only recognize
+  // known generated shapes here; all other differences become user overrides.
+  if (result.id === 'postgres' && isDeepStrictEqual(savedDefinition.matcher?.includes, ['postgres'])) {
+    result.matcher = defaultDefinition.matcher;
+  } else if (result.id === 'wuxin') {
+    result.args = normalizeWuxinArgs(result.args, result.cwd);
+    const oldMatcher = savedDefinition.matcher?.includes;
+    if (Array.isArray(oldMatcher) && oldMatcher.length === 1
+      && [path.join(result.cwd, 'server', 'index.ts'), path.join('server', 'index.ts')].includes(oldMatcher[0])) {
+      result.matcher = defaultDefinition.matcher;
     }
+  } else if (result.id === 'skillProfiler') {
+    const savedRoot = text(savedDefinition.cwd);
+    const knownRoots = [defaultDefinition.cwd, 'G:\\My pack\\Agent Work\\osu-skill-profiler'];
+    const knownManifest = [defaultDefinition.args[4], path.join(savedRoot, 'training', 'datasets', 'std_manifest.json')].includes(result.args[4]);
+    const generatedArgs = ['-u', path.join(savedRoot, 'tools', 'map_demand_v01', 'cli.py'), 'bid-review-ui', '--manifest', result.args[4], '--no-open', '--algorithm', result.args[7]];
+    if (knownRoots.includes(savedRoot) && knownManifest && isDeepStrictEqual(result.args, generatedArgs)
+      && ['v100', 'v040', 'v040-formal'].includes(result.args[7])) {
+      result.cwd = defaultDefinition.cwd;
+      result.args = [...defaultDefinition.args];
+      result.matcher = defaultDefinition.matcher;
+    } else {
+      // Keep a deliberate alternate profiler/algorithm, including its root.
+      result.args = normalizeProfilerArgs(result.args);
+    }
+  } else if (result.id === 'ppplus') {
+    const savedCommand = text(savedDefinition.command);
+    const savedArgs = normalizeArgs(savedDefinition.args);
+    const oldAppHost = savedCommand === path.join(defaultDefinition.cwd, 'Difficalcy.PerformancePlus.exe') && savedArgs.length === 0;
+    const systemDotnet = /^dotnet(?:\.exe)?$/i.test(savedCommand)
+      || /[\\/]Program Files[\\/]dotnet[\\/]dotnet\.exe$/i.test(savedCommand);
+    const oldDllArgs = [path.basename(defaultDefinition.args[2]), path.join(defaultDefinition.cwd, defaultDefinition.args[2])];
+    const knownDotnet = systemDotnet || savedCommand === defaultDefinition.command;
+    const oldDllShape = savedArgs.length === 1 && oldDllArgs.includes(savedArgs[0]);
+    const currentDllShape = savedArgs.length === 3 && savedArgs[0] === '--roll-forward' && savedArgs[1] === 'Major' && oldDllArgs.includes(savedArgs[2]);
+    if (oldAppHost || knownDotnet && (oldDllShape || systemDotnet && currentDllShape)) {
+      result.command = defaultDefinition.command;
+      result.cwd = defaultDefinition.cwd;
+      result.args = [...defaultDefinition.args];
+    }
+  } else if (result.id === 'hydrant') {
+    if (isDeepStrictEqual(result.args, defaultDefinition.args.slice(2))) result.args = [...defaultDefinition.args];
+  } else if (result.id === 'yumuImage') {
+    // Migrate the old saved `port: 8388` value. 8388 belongs to YumuBot;
+    // this process is only a renderer client.
+    if (result.port === 8388) result.port = defaultDefinition.port;
   }
-  try {
-    const result = await runFile('ps', ['-axo', 'pid=,ppid=,comm=,args=']);
-    return result.stdout.split(/\r?\n/).map((line) => {
-      const match = line.trim().match(/^(\d+)\s+(\d+)\s+(\S+)\s*(.*)$/);
-      if (!match) return null;
-      return { pid: Number(match[1]), ppid: Number(match[2]), name: match[3], executablePath: match[3], commandLine: match[4] };
-    }).filter(Boolean);
-  } catch {
-    return [];
-  }
-}
-
-function matchesDefinition(processInfo, definition) {
-  if (!processInfo || processInfo.pid === process.pid) return false;
-  const haystack = `${processInfo.executablePath}\n${processInfo.commandLine}`.toLowerCase();
-  const includes = Array.isArray(definition.matcher?.includes) ? definition.matcher.includes : [];
-  return includes.length > 0 && includes.every((needle) => haystack.includes(String(needle).toLowerCase()));
-}
-
-function waitForPort(port, timeoutMs = 20_000) {
-  if (!port) return Promise.resolve(true);
-  const deadline = Date.now() + timeoutMs;
-  return new Promise((resolve) => {
-    const probe = () => {
-      const socket = net.createConnection({ host: '127.0.0.1', port });
-      let settled = false;
-      const finish = (value) => {
-        if (settled) return;
-        settled = true;
-        socket.destroy();
-        resolve(value);
-      };
-      socket.setTimeout(500, () => finish(false));
-      socket.once('connect', () => finish(true));
-      socket.once('error', () => finish(false));
-      socket.once('close', () => {
-        if (Date.now() >= deadline) finish(false);
-        else if (!settled) setTimeout(probe, 250);
-      });
-    };
-    probe();
-  });
+  return result;
 }
 
 function commandForSpawn(command) {
@@ -324,33 +423,69 @@ function commandForSpawn(command) {
 }
 
 export class ProcessManager {
-  constructor({ projectRoot, configDir, onLog = () => {} }) {
+  constructor({ projectRoot, configDir, onLog = () => {}, buildDefinitions = buildDefaultDefinitions, runtime = {}, readinessTimeoutMs = 20_000 }) {
     this.projectRoot = projectRoot;
     this.configDir = configDir;
     this.configFile = path.join(configDir, 'desktop-runtime.json');
     this.logDir = path.join(configDir, 'logs');
     this.onLog = onLog;
+    this.buildDefinitions = buildDefinitions;
+    this.runtime = { listProcesses: listSystemProcesses, listListeners: listPortListeners, probePort, runFile, spawn, ...runtime };
+    this.readinessTimeoutMs = readinessTimeoutMs;
     this.children = new Map();
+    this.launches = new Map();
+    this.starting = new Map();
+    this.closing = false;
+    this.startGeneration = 0;
     this.lastErrors = new Map();
+    this.defaults = new Map();
+    this.processOverrides = new Map();
     this.config = null;
     this.writePromise = Promise.resolve();
+    this.initialization = null;
+    this.statePromise = null;
   }
 
-  async initialize() {
+  initialize() {
+    if (this.config) return Promise.resolve(this.config);
+    if (!this.initialization) this.initialization = this.loadConfig().catch((error) => {
+      this.config = null;
+      this.initialization = null;
+      throw error;
+    });
+    return this.initialization;
+  }
+
+  async loadConfig() {
     await fsp.mkdir(this.configDir, { recursive: true });
     await fsp.mkdir(this.logDir, { recursive: true });
     let saved = null;
-    try { saved = JSON.parse(await fsp.readFile(this.configFile, 'utf8')); } catch { /* first run */ }
-    const defaults = buildDefaultDefinitions(this.projectRoot);
-    const savedProcesses = new Map((Array.isArray(saved?.processes) ? saved.processes : []).map((item) => [item?.id, item]));
+    try { saved = JSON.parse(await fsp.readFile(this.configFile, 'utf8')); }
+    catch (error) { if (error.code !== 'ENOENT') throw new Error(`无法读取 Desktop 配置，原文件已保留：${error.message}`); }
+    if (saved?.version > CONFIG_VERSION) throw new Error(`Desktop 配置版本 ${saved.version} 高于当前支持的版本 ${CONFIG_VERSION}`);
+    const defaults = this.buildDefinitions(this.projectRoot);
+    this.defaults = new Map(defaults.map((definition) => [definition.id, definition]));
+    if (saved && saved.version !== CONFIG_VERSION) {
+      await fsp.copyFile(this.configFile, `${this.configFile}.v1.backup`, fs.constants.COPYFILE_EXCL).catch((error) => {
+        if (error.code !== 'EEXIST') throw error;
+      });
+      for (const previous of Array.isArray(saved.processes) ? saved.processes : []) {
+        const baseline = this.defaults.get(previous?.id);
+        if (!baseline) continue;
+        const overrides = definitionOverrides(migrateLegacyDefinition(baseline, previous), baseline);
+        if (Object.keys(overrides).length) this.processOverrides.set(previous.id, overrides);
+      }
+      this.onLog({ level: 'info', message: 'Desktop 配置已迁移，原始 v1 文件已备份' });
+    } else if (saved?.processOverrides && typeof saved.processOverrides === 'object' && !Array.isArray(saved.processOverrides)) {
+      for (const [id, overrides] of Object.entries(saved.processOverrides)) {
+        if (!safeId(id) || !overrides || typeof overrides !== 'object' || Array.isArray(overrides)) continue;
+        this.processOverrides.set(id, Object.fromEntries(CONFIG_FIELDS.filter((key) => overrides[key] !== undefined).map((key) => [key, overrides[key]])));
+      }
+    }
     this.config = {
-      version: 1,
-      settings: {
-        autoLaunch: Boolean(saved?.settings?.autoLaunch),
-        startOnOpen: saved?.settings?.startOnOpen === undefined ? false : Boolean(saved.settings.startOnOpen),
-        stopOnClose: saved?.settings?.stopOnClose === undefined ? true : Boolean(saved.settings.stopOnClose),
-      },
-      processes: defaults.map((definition) => mergeDefinition(definition, savedProcesses.get(definition.id))),
+      version: CONFIG_VERSION,
+      settings: Object.fromEntries(Object.entries(DEFAULT_SETTINGS).map(([key, fallback]) => [key, saved?.settings?.[key] === undefined ? fallback : Boolean(saved.settings[key])])),
+      processes: defaults.map((definition) => mergeDefinition(definition, this.processOverrides.get(definition.id))),
     };
     await this.persist();
     return this.config;
@@ -370,8 +505,12 @@ export class ProcessManager {
 
   async persist() {
     if (!this.config) return;
-    const serialized = JSON.stringify(this.config, null, 2);
-    this.writePromise = this.writePromise.then(async () => {
+    const serialized = JSON.stringify({
+      version: CONFIG_VERSION,
+      settings: Object.fromEntries(Object.entries(this.config.settings).filter(([key, value]) => value !== DEFAULT_SETTINGS[key])),
+      processOverrides: Object.fromEntries(this.processOverrides),
+    }, null, 2);
+    this.writePromise = this.writePromise.catch(() => {}).then(async () => {
       const temp = `${this.configFile}.${process.pid}.tmp`;
       await fsp.writeFile(temp, serialized, 'utf8');
       await fsp.rename(temp, this.configFile);
@@ -399,30 +538,82 @@ export class ProcessManager {
       if (patch[key] !== undefined) definition[key] = Boolean(patch[key]);
     }
     if (patch.port !== undefined) {
-      const port = Number(patch.port);
+      const port = patch.port === null ? null : Number(patch.port);
+      if (port === null) definition.port = null;
       if (Number.isInteger(port) && port >= 0 && port <= 65535) definition.port = port;
     }
     if (Array.isArray(patch.args)) definition.args = normalizeArgs(patch.args);
     if (patch.env && typeof patch.env === 'object') definition.env = normalizeEnv(patch.env);
+    const overrides = definitionOverrides(definition, this.defaults.get(id));
+    if (Object.keys(overrides).length) this.processOverrides.set(id, overrides);
+    else this.processOverrides.delete(id);
     await this.persist();
     return definition;
   }
 
   async matchingProcesses(definition, allProcesses = null) {
-    const processes = allProcesses || await listSystemProcesses();
+    const processes = allProcesses || await this.runtime.listProcesses();
     return processes.filter((processInfo) => matchesDefinition(processInfo, definition));
   }
 
-  async state() {
+  async inspect() {
+    const [processes, listeners] = await Promise.allSettled([this.runtime.listProcesses(), this.runtime.listListeners()]);
+    return {
+      processes: processes.status === 'fulfilled' ? processes.value : [],
+      listeners: listeners.status === 'fulfilled' ? listeners.value : [],
+    };
+  }
+
+  ownedProcesses(id, processes) {
+    return collectOwnedProcesses(this.launches.get(id), processes);
+  }
+
+  async portStatus(definition, snapshot, owned, { managedOnly = false } = {}) {
+    if (!definition.port) return { open: false, ready: true, conflict: false, pids: [] };
+    const open = await this.runtime.probePort(definition.port);
+    if (!open) return { open: false, ready: false, conflict: false, pids: [] };
+    const pids = [...new Set(loopbackListeners(snapshot.listeners, definition.port).map((item) => item.pid))];
+    const ownedPids = new Set(owned.map((item) => item.pid));
+    const verified = pids.filter((pid) => ownedPids.has(pid) || !managedOnly
+      && matchesDefinition(snapshot.processes.find((item) => item.pid === pid), definition));
+    const ready = pids.length > 0 && verified.length === pids.length;
+    return { open, ready, conflict: !ready, pids };
+  }
+
+  portError(definition, port) {
+    return port.pids.length
+      ? `端口 ${definition.port} 被其他进程占用（PID ${port.pids.join(', ')}）`
+      : `端口 ${definition.port} 已监听，但无法确认进程归属`;
+  }
+
+  state() {
+    // The console polls this every 2.5s and each snapshot spawns PowerShell.
+    // Coalesce overlapping reads so a slow snapshot cannot stack concurrent
+    // IPC calls into parallel process enumerations.
+    if (this.statePromise) return this.statePromise;
+    const promise = this.computeState().finally(() => {
+      if (this.statePromise === promise) this.statePromise = null;
+    });
+    this.statePromise = promise;
+    return promise;
+  }
+
+  async computeState() {
     if (!this.config) await this.initialize();
-    const allProcesses = await listSystemProcesses();
+    const snapshot = await this.inspect();
     const processes = await Promise.all(this.definitions.map(async (definition) => {
-      const matches = await this.matchingProcesses(definition, allProcesses);
-      const child = this.children.get(definition.id);
-      const managed = Boolean(child && child.exitCode === null && !child.killed);
+      const matches = await this.matchingProcesses(definition, snapshot.processes);
+      const owned = this.ownedProcesses(definition.id, snapshot.processes);
+      const launch = this.launches.get(definition.id);
+      const managed = owned.length > 0;
+      const port = await this.portStatus(definition, snapshot, owned);
       const running = managed || matches.length > 0;
       const requirementErrors = missingRequirements(definition);
       const available = commandExists(definition.command) && requirementErrors.length === 0;
+      if (running && port.ready) this.lastErrors.delete(definition.id);
+      const status = port.conflict ? 'conflict'
+        : running && !port.ready ? (launch?.timedOut ? 'unready' : 'starting')
+          : running ? 'running' : available ? 'stopped' : 'missing';
       return {
         id: definition.id,
         label: definition.label,
@@ -435,9 +626,14 @@ export class ProcessManager {
         stopOnClose: definition.stopOnClose !== false,
         port: definition.port || null,
         available,
-        status: running ? 'running' : (available ? 'stopped' : 'missing'),
-        pids: [...new Set([...matches.map((item) => item.pid), ...(managed ? [child.pid] : [])])],
-        lastError: child?.lastError || this.lastErrors.get(definition.id) || requirementErrors.join('；'),
+        status,
+        managed,
+        source: managed ? 'managed' : running ? 'external' : null,
+        ready: running && port.ready,
+        ownedPids: owned.map((item) => item.pid),
+        pids: [...new Set([...matches.map((item) => item.pid), ...owned.map((item) => item.pid)])],
+        lastError: port.conflict ? this.portError(definition, port)
+          : launch?.child?.lastError || this.lastErrors.get(definition.id) || requirementErrors.join('；'),
       };
     }));
     return {
@@ -447,24 +643,94 @@ export class ProcessManager {
     };
   }
 
-  async start(id) {
-    const definition = this.getDefinition(id);
+  start(id) {
+    if (this.closing) return Promise.reject(new Error('Desktop 正在退出，启动已取消'));
+    const pending = this.starting.get(id);
+    if (pending) return pending.promise;
+    const entry = { controller: new AbortController() };
+    entry.promise = Promise.resolve().then(() => this.startProcess(id, entry.controller.signal)).finally(() => {
+      if (this.starting.get(id) === entry) this.starting.delete(id);
+    });
+    this.starting.set(id, entry);
+    return entry.promise;
+  }
+
+  async startProcess(id, signal) {
+    if (!this.config) await this.initialize();
+    const configured = this.getDefinition(id);
+    const definition = configured ? mergeDefinition(configured) : null;
     if (!definition) throw new Error(`未知进程：${id}`);
     if (!definition.enabled) throw new Error(`${definition.label} 已被关闭，请先打开进程开关`);
-    const existing = await this.matchingProcesses(definition);
-    if (existing.length > 0) return { alreadyRunning: true, pids: existing.map((item) => item.pid) };
+    const ensureActive = () => {
+      if (this.closing || signal.aborted) throw new Error(`${definition.label} 的启动已取消`);
+    };
+    ensureActive();
+    const snapshot = await this.inspect();
+    ensureActive();
+    const existing = await this.matchingProcesses(definition, snapshot.processes);
+    const owned = this.ownedProcesses(id, snapshot.processes);
+    const port = await this.portStatus(definition, snapshot, owned);
+    ensureActive();
+    if (port.conflict) {
+      const error = this.portError(definition, port);
+      this.lastErrors.set(id, error);
+      throw new Error(`${definition.label} 无法启动：${error}`);
+    }
+    if (existing.length || owned.length) {
+      if (!port.ready) throw new Error(`${definition.label} 已有进程，但端口 ${definition.port} 尚未就绪，请查看日志`);
+      this.lastErrors.delete(id);
+      return { alreadyRunning: true, ready: true, managed: owned.length > 0, pids: [...new Set([...existing, ...owned].map((item) => item.pid))] };
+    }
     if (!commandExists(definition.command)) throw new Error(`${definition.label} 的启动文件不存在：${definition.command}`);
     const missing = missingRequirements(definition);
     if (missing.length) throw new Error(`${definition.label} 尚未就绪：${missing.join('；')}`);
 
+    // Kanon writes downloaded .osu files relative to its working directory.
+    // The packaged artifact does not ship the cache directory, and without it
+    // a recent-score request crashes during PP calculation before it can send
+    // the panel reply. Create it at the same boundary used for every launch so
+    // manual starts and restarts behave identically.
+    if (definition.id === 'kanon') {
+      const kanonRoot = definition.cwd || this.projectRoot;
+      const kanonWork = path.join(kanonRoot, 'work');
+      await fsp.mkdir(path.join(kanonWork, 'beatmap'), { recursive: true });
+      // The packaged executable expects its Takumi font bundle under the same
+      // relative work directory. Keep the artifact self-contained while using
+      // the checked-in deployment bundle as the source of truth.
+      const fontSource = path.resolve(kanonRoot, '..', '..', 'data', 'kanon', 'work', 'fonts');
+      const fontTarget = path.join(kanonWork, 'fonts');
+      if (fs.existsSync(fontSource)) {
+        await fsp.cp(fontSource, fontTarget, { recursive: true, force: false });
+      }
+      const workSource = path.resolve(kanonRoot, '..', '..', 'data', 'kanon', 'work');
+      const workSentinel = path.join(kanonWork, 'templates', 'ScorePanelV2', 'index.jinja');
+      if (!fs.existsSync(workSentinel) && fs.existsSync(workSource)) {
+        await fsp.cp(workSource, kanonWork, { recursive: true, force: false });
+      }
+      const resourceSource = path.resolve(kanonRoot, '..', '..', 'sources', 'kanon-bot', 'resources');
+      const resourceTarget = path.join(kanonRoot, 'resources');
+      const resourceSentinel = path.join(resourceTarget, 'templates', 'ScorePanelV2', 'index.jinja');
+      if (!fs.existsSync(resourceSentinel) && fs.existsSync(resourceSource)) {
+        await fsp.cp(resourceSource, resourceTarget, { recursive: true, force: false });
+      }
+    }
+
+    ensureActive();
     const logBase = path.join(this.logDir, definition.id);
     const stdout = fs.createWriteStream(`${logBase}.stdout.log`, { flags: 'a' });
     const stderr = fs.createWriteStream(`${logBase}.stderr.log`, { flags: 'a' });
     const spawnCommand = commandForSpawn(definition.command);
     const args = [...spawnCommand.argsPrefix, ...definition.args];
-    const child = spawn(spawnCommand.command, args, {
+    const childEnv = { ...process.env, ...definition.env };
+    if (definition.id === 'wuxin' && childEnv.NODE_OPTIONS) {
+      const safeNodeOptions = stripLegacyTsxLoaderOption(childEnv.NODE_OPTIONS);
+      if (safeNodeOptions) childEnv.NODE_OPTIONS = safeNodeOptions;
+      else delete childEnv.NODE_OPTIONS;
+    }
+    const spawnedAt = Date.now();
+    const child = this.runtime.spawn(spawnCommand.command, args, {
       cwd: definition.cwd || this.projectRoot,
-      env: { ...process.env, ...definition.env },
+      env: childEnv,
       windowsHide: true,
       detached: false,
       shell: false,
@@ -477,16 +743,25 @@ export class ProcessManager {
     child.stdout?.pipe(stdout);
     child.stderr?.pipe(stderr);
     child.lastError = '';
+    const launch = {
+      pid: child.pid, child, definition, timedOut: false,
+      evidence: new Map(child.pid ? [[child.pid, { pid: child.pid, spawnedAt, createdAt: null, exitedAt: null }]] : []),
+    };
     this.lastErrors.delete(definition.id);
     this.children.set(definition.id, child);
+    this.launches.set(definition.id, launch);
     this.onLog({ level: 'info', message: `${definition.label} 已发起启动`, id: definition.id });
     child.once('error', (error) => {
       child.lastError = error?.message || String(error);
+      this.lastErrors.set(definition.id, compactError(child.lastError));
       this.onLog({ level: 'error', message: `${definition.label} 启动失败：${child.lastError}`, id: definition.id });
     });
     child.once('exit', (code, signal) => {
-      stdout.end();
-      stderr.end();
+      const root = launch.evidence.get(child.pid);
+      if (root) {
+        root.exitedAt = Date.now();
+        root.exitConfirmed = true;
+      }
       if (this.children.get(definition.id) === child) this.children.delete(definition.id);
       const detail = compactError(stderrTail);
       if (child.intentionalStop || code === 0 || !detail && !code && !signal) this.lastErrors.delete(definition.id);
@@ -494,50 +769,112 @@ export class ProcessManager {
       const suffix = child.intentionalStop ? '' : (detail ? `：${detail}` : '');
       this.onLog({ level: child.intentionalStop || code === 0 ? 'info' : 'warn', message: `${definition.label} 已退出 (${code ?? signal ?? 'unknown'})${suffix}`, id: definition.id });
     });
+    child.once('close', () => {
+      stdout.end();
+      stderr.end();
+      if (this.children.get(definition.id) === child) this.children.delete(definition.id);
+    });
+    await new Promise((resolve, reject) => {
+      child.once('spawn', resolve);
+      child.once('error', reject);
+    });
+    ensureActive();
     if (definition.port) {
-      const ready = await waitForPort(definition.port, 20_000);
-      if (!ready && child.exitCode !== null) throw new Error(`${definition.label} 启动后立即退出，请查看桌面日志`);
+      const failed = () => Boolean(child.lastError || child.intentionalStop || child.signalCode || child.exitCode !== null && child.exitCode !== 0);
+      const ready = await waitForPort(definition.port, {
+        timeoutMs: this.readinessTimeoutMs,
+        probe: this.runtime.probePort,
+        cancelled: () => this.closing || signal.aborted || failed(),
+        verify: async () => {
+          const current = await this.inspect();
+          const ownedNow = this.ownedProcesses(id, current.processes);
+          const status = await this.portStatus(definition, current, ownedNow, { managedOnly: true });
+          if (status.conflict && status.pids.length) throw new Error(`${definition.label} 启动失败：${this.portError(definition, status)}`);
+          return status.ready;
+        },
+      });
+      ensureActive();
+      if (!ready) {
+        launch.timedOut = !failed();
+        const error = failed()
+          ? `${definition.label} 启动后退出或失败，请查看桌面日志${child.lastError ? `：${compactError(child.lastError)}` : ''}`
+          : `${definition.label} 启动未就绪：等待端口 ${definition.port} 超时（${this.readinessTimeoutMs / 1000} 秒）`;
+        this.lastErrors.set(id, error);
+        throw new Error(error);
+      }
     }
-    return { started: true, pid: child.pid };
+    return { started: true, ready: true, pid: child.pid };
   }
 
-  async killPid(pid) {
-    if (!Number.isInteger(pid) || pid <= 0 || pid === process.pid) return;
-    if (WINDOWS) {
-      try { await runFile('taskkill.exe', ['/PID', String(pid), '/T', '/F']); } catch { /* already exited */ }
-    } else {
-      try { process.kill(pid, 'SIGTERM'); } catch { /* already exited */ }
+  async killPid(pid, evidence, launch) {
+    if (!Number.isInteger(pid) || pid <= 0 || pid === process.pid) return false;
+    const liveRoot = launch?.pid === pid && isLiveChild(launch.child);
+    if (!liveRoot) {
+      // A retained launcher PID can be reused. Recheck identity before killing.
+      const processes = await this.runtime.listProcesses();
+      if (!sameProcess(processes.find((item) => item.pid === pid), evidence)) return false;
     }
+    if (WINDOWS) {
+      try { await this.runtime.runFile('taskkill.exe', ['/PID', String(pid), '/T', '/F']); }
+      catch (error) {
+        const remaining = await this.runtime.listProcesses();
+        if (sameProcess(remaining.find((item) => item.pid === pid), evidence) || liveRoot && isLiveChild(launch.child)) throw error;
+        return false;
+      }
+    } else {
+      try { process.kill(pid, 'SIGTERM'); } catch (error) { if (error.code !== 'ESRCH') throw error; return false; }
+    }
+    return true;
   }
 
   async stop(id) {
     const definition = this.getDefinition(id);
     if (!definition) throw new Error(`未知进程：${id}`);
-    if (definition.stopCommand && commandExists(definition.stopCommand)) {
-      try { await runFile(definition.stopCommand, normalizeArgs(definition.stopArgs)); } catch (error) {
+    this.starting.get(id)?.controller.abort();
+    const launch = this.launches.get(id);
+    if (!launch) return { stopped: false, notManaged: true, pids: [] };
+    const child = launch.child;
+    child.intentionalStop = true;
+    let snapshot = await this.inspect();
+    let owned = this.ownedProcesses(id, snapshot.processes);
+    if (!owned.length) return { stopped: false, notManaged: true, pids: [] };
+    const originalPids = owned.map((item) => item.pid);
+    const launchedDefinition = launch.definition;
+    const port = await this.portStatus(launchedDefinition, snapshot, owned, { managedOnly: true });
+    if (port.ready && launchedDefinition.stopCommand && commandExists(launchedDefinition.stopCommand)) {
+      try { await this.runtime.runFile(launchedDefinition.stopCommand, normalizeArgs(launchedDefinition.stopArgs)); } catch (error) {
         this.onLog({ level: 'warn', message: `${definition.label} 停止命令返回错误：${error?.message || error}`, id });
       }
+      snapshot = await this.inspect();
+      owned = this.ownedProcesses(id, snapshot.processes);
     }
-    const allProcesses = await listSystemProcesses();
-    const matches = await this.matchingProcesses(definition, allProcesses);
-    const child = this.children.get(id);
-    if (child) child.intentionalStop = true;
-    const pids = [...new Set([...matches.map((item) => item.pid), child?.pid].filter(Boolean))];
-    await Promise.all(pids.map((pid) => this.killPid(pid)));
-    if (child && this.children.get(id) === child) this.children.delete(id);
-    this.onLog({ level: 'info', message: `${definition.label} 已请求停止`, id });
-    return { stopped: true, pids };
+    const ownedPids = new Set(owned.map((item) => item.pid));
+    // Windows taskkill /T handles the descendants of each surviving owned root.
+    const targets = WINDOWS ? owned.filter((item) => !ownedPids.has(item.ppid)) : [...owned].reverse();
+    await Promise.all(targets.map((item) => this.killPid(item.pid, launch.evidence.get(item.pid), launch)));
+    this.lastErrors.delete(id);
+    this.onLog({ level: 'info', message: `${definition.label} 已请求停止本窗口启动的进程`, id });
+    return { stopped: true, pids: originalPids };
   }
 
   async restart(id) {
-    await this.stop(id);
+    const result = await this.stop(id);
+    if (result.notManaged) {
+      const definition = this.getDefinition(id);
+      const existing = await this.matchingProcesses(definition);
+      if (existing.length || definition.port && await this.runtime.probePort(definition.port)) {
+        throw new Error(`${definition.label} 由外部启动，不能在此窗口重启`);
+      }
+    }
     await new Promise((resolve) => setTimeout(resolve, 600));
     return this.start(id);
   }
 
   async startAll({ onlyAutoStart = false } = {}) {
     const results = [];
+    const generation = this.startGeneration;
     for (const definition of this.definitions) {
+      if (this.closing || generation !== this.startGeneration) break;
       if (!definition.enabled || (onlyAutoStart && !definition.autoStart)) continue;
       try { results.push({ id: definition.id, ok: true, result: await this.start(definition.id) }); }
       catch (error) { results.push({ id: definition.id, ok: false, error: error?.message || String(error) }); }
@@ -546,6 +883,7 @@ export class ProcessManager {
   }
 
   async stopAll({ respectStopOnClose = false } = {}) {
+    this.startGeneration += 1;
     const results = [];
     for (const definition of [...this.definitions].reverse()) {
       if (respectStopOnClose && definition.stopOnClose === false) continue;
@@ -553,6 +891,25 @@ export class ProcessManager {
       catch (error) { results.push({ id: definition.id, ok: false, error: error?.message || String(error) }); }
     }
     return results;
+  }
+
+  async restartAll() {
+    const snapshot = await this.inspect();
+    const ids = this.definitions.filter((definition) => definition.enabled
+      && this.ownedProcesses(definition.id, snapshot.processes).length).map((definition) => definition.id);
+    const results = [];
+    for (const id of ids) {
+      if (this.closing) break;
+      try { results.push({ id, ok: true, result: await this.restart(id) }); }
+      catch (error) { results.push({ id, ok: false, error: error.message || String(error) }); }
+    }
+    return results;
+  }
+
+  async shutdown() {
+    this.closing = true;
+    for (const entry of this.starting.values()) entry.controller.abort();
+    if (this.settings.stopOnClose !== false) await this.stopAll({ respectStopOnClose: true });
   }
 }
 
