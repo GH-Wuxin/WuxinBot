@@ -419,7 +419,10 @@ export function collectEventVisionImages(event) {
 export function allowedByOsuCommandOnlyMode(event, quickMatch = null) {
   const text = String(event?.text || '').trim();
   const ownerCommand = /^\/w(?:uxin)?\s+([^\s]+)/i.exec(text)?.[1]?.toLowerCase() || '';
-  if (ownerCommand) return ['osu', 'skill', 'cd', 'mode'].includes(ownerCommand);
+  // `/w info` is the deterministic player Skill Profiler command. It must
+  // remain reachable in osu-only groups just like `/w skill`; otherwise the
+  // hard ingress gate discards it before the owner dispatcher can run.
+  if (ownerCommand) return ['osu', 'skill', 'info', 'cd', 'mode'].includes(ownerCommand);
   return quickMatch?.def?.kind === 'osu';
 }
 
