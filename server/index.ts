@@ -4,7 +4,7 @@ import net from 'node:net';
 import fs from 'node:fs';
 import path from 'node:path';
 import express from 'express';
-import { ensureStore, currentStorageRevision, publicDb, publicMemory, readDb, updateDb, upsertBy, nowIso, saveConfigSnapshot, listConfigSnapshots, restoreConfigSnapshot } from './store.js';
+import { openStore, currentStorageRevision, publicDb, publicMemory, readDb, updateDb, upsertBy, nowIso, saveConfigSnapshot, listConfigSnapshots, restoreConfigSnapshot } from './store.js';
 import { createBackup, listBackups, restoreBackup, deleteBackup, pruneAutoBackups } from './backup.js';
 import { connectOneBot, getOneBotStatus, handleOneBotEvent, sendOneBotMessage, shutdownOneBot } from './onebot.js';
 import { processIncoming, decideReply } from './bot.js';
@@ -119,7 +119,14 @@ try {
 }
 
 releaseInstanceLock = acquireInstanceLock(port);
-ensureStore();
+// Fail closed: if storage cannot be opened or recovered, no business starts.
+// Damage must never be answered by silently creating an empty database.
+try {
+  openStore();
+} catch (error) {
+  console.error('[store] 启动失败：存储无法打开，服务未启动。', String((error as Error)?.message || error));
+  process.exit(1);
+}
 
 // Authentication is consulted on every API request. Keep this one scalar in
 // memory instead of synchronously parsing the entire (currently ~34 MB) JSON

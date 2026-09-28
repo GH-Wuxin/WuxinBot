@@ -1,14 +1,20 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { readDb, writeDb } from './store.js';
+import { readDb, writeDb, isValidLogicalDbShape, getDataDir } from './store.js';
 
-const dataDir = process.env.DATA_DIR || path.join(process.env.APPDATA || path.join(process.env.USERPROFILE || 'C:', 'AppData', 'Roaming'), 'Wuxin');
-const dbPath = path.join(dataDir, 'db.json');
-const backupDir = path.join(dataDir, 'backups');
+// The data root is resolved per call (not at import time) so tests and tools
+// that set DATA_DIR after importing this module stay isolated from production
+// and every consumer follows the one shared DataRoot (finding F08).
+function backupDir() {
+  return path.join(getDataDir(), 'backups');
+}
+function dbPath() {
+  return path.join(getDataDir(), 'db.json');
+}
 const BACKUP_TYPES = new Set(['manual', 'auto', 'pre-restore']);
 
 function ensureBackupDir() {
-  fs.mkdirSync(backupDir, { recursive: true });
+  fs.mkdirSync(backupDir(), { recursive: true });
 }
 
 function safeBackupName(name) {
@@ -16,22 +22,22 @@ function safeBackupName(name) {
   if (!name.endsWith('.json')) return null;
   if (name !== path.basename(name)) return null;
   if (/[/\\:]/.test(name) || name.includes('..')) return null;
-  const resolved = path.resolve(backupDir, name);
-  if (!resolved.startsWith(path.resolve(backupDir) + path.sep)) return null;
+  const resolved = path.resolve(backupDir(), name);
+  if (!resolved.startsWith(path.resolve(backupDir()) + path.sep)) return null;
   return resolved;
 }
 
 export function createBackup(type = 'manual') {
   ensureBackupDir();
-  if (!fs.existsSync(dbPath)) return null;
+  if (!fs.existsSync(dbPath())) return null;
   const safeType = String(type || '').trim();
   if (!BACKUP_TYPES.has(safeType)) {
     throw new Error(`不支持的备份类型: ${safeType || '(空)'}`);
   }
   const ts = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
   const name = `${safeType}-${ts}.json`;
-  const dest = path.resolve(backupDir, name);
-  if (!dest.startsWith(path.resolve(backupDir) + path.sep)) {
+  const dest = path.resolve(backupDir(), name);
+  if (!dest.startsWith(path.resolve(backupDir()) + path.sep)) {
     throw new Error('备份路径越界');
   }
   // db.json is only the small core shard in storage v1. Backups deliberately
@@ -46,9 +52,9 @@ export function createBackup(type = 'manual') {
 
 export function listBackups() {
   ensureBackupDir();
-  const files = fs.readdirSync(backupDir).filter((f) => f.endsWith('.json') && !f.endsWith('.meta.json'));
+  const files = fs.readdirSync(backupDir()).filter((f) => f.endsWith('.json') && !f.endsWith('.meta.json'));
   return files.map((name) => {
-    const filePath = path.join(backupDir, name);
+    const filePath = path.join(backupDir(), name);
     const metaPath = filePath + '.meta.json';
     let meta = { type: 'unknown', name, createdAt: '', size: 0 };
     try {
@@ -67,11 +73,16 @@ export function restoreBackup(name) {
   // Validate JSON before restore
   let json;
   try {
-    const raw = fs.readFileSync(filePath, 'utf8').replace(/^﻿/, '');
+    const raw = fs.readFileSync(filePath, 'utf8').replace(/^\uFEFF/, '');
     json = JSON.parse(raw);
     if (!json || typeof json !== 'object') throw new Error('不是有效的JSON对象');
   } catch (e) {
     return { ok: false, error: `备份文件 JSON 校验失败：${e.message}` };
+  }
+  // A restorable backup must be a complete logical database, not merely
+  // parseable JSON — fragments would normalize into a plausible empty store.
+  if (!isValidLogicalDbShape(json)) {
+    return { ok: false, error: '备份缺少核心数据结构（settings 或主要集合），不是完整的逻辑数据库，已拒绝恢复' };
   }
   // Auto-backup current DB before restore (pre-restore safety)
   createBackup('pre-restore');
@@ -84,10 +95,9 @@ export function deleteBackup(name) {
   ensureBackupDir();
   const filePath = safeBackupName(name);
   if (!filePath) return { ok: false, error: `无效的备份名称: ${name}` };
-  const metaPath = filePath + '.meta.json';
   if (!fs.existsSync(filePath)) return { ok: false, error: `备份 ${name} 不存在` };
   fs.unlinkSync(filePath);
-  try { fs.unlinkSync(metaPath); } catch { /* ignore */ }
+  try { fs.unlinkSync(filePath + '.meta.json'); } catch { /* ignore */ }
   return { ok: true };
 }
 
@@ -99,8 +109,8 @@ export function pruneAutoBackups() {
   const auto = all.filter((b) => b.type === 'auto');
   if (auto.length > 10) {
     for (const b of auto.slice(10)) {
-      try { fs.unlinkSync(path.join(backupDir, b.name)); } catch { /* ignore */ }
-      try { fs.unlinkSync(path.join(backupDir, b.name + '.meta.json')); } catch { /* ignore */ }
+      try { fs.unlinkSync(path.join(backupDir(), b.name)); } catch { /* ignore */ }
+      try { fs.unlinkSync(path.join(backupDir(), b.name + '.meta.json')); } catch { /* ignore */ }
       pruned++;
     }
   }
@@ -108,8 +118,8 @@ export function pruneAutoBackups() {
   const preRestore = all.filter((b) => b.type === 'pre-restore');
   if (preRestore.length > 5) {
     for (const b of preRestore.slice(5)) {
-      try { fs.unlinkSync(path.join(backupDir, b.name)); } catch { /* ignore */ }
-      try { fs.unlinkSync(path.join(backupDir, b.name + '.meta.json')); } catch { /* ignore */ }
+      try { fs.unlinkSync(path.join(backupDir(), b.name)); } catch { /* ignore */ }
+      try { fs.unlinkSync(path.join(backupDir(), b.name + '.meta.json')); } catch { /* ignore */ }
       pruned++;
     }
   }
