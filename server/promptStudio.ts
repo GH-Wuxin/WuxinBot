@@ -142,8 +142,27 @@ export function beginPromptCall(input: {
     const options = input.options || {};
     const module = input.module || resolvePromptModule(options);
     const id = String(input.id || crypto.randomUUID());
+    // Snapshot budget: keep every leading system/developer instruction block,
+    // then the most recent tail within the 32-message cap. Clipping by count
+    // is a truncation even when the characters fit — a dropped leading system
+    // message must never look like a complete prompt (finding F14).
+    const MESSAGE_SNAPSHOT_LIMIT = 32;
+    const allMessages = Array.isArray(input.messages) ? input.messages : [];
+    const originalMessageCount = allMessages.length;
+    const head: any[] = [];
+    let headIndex = 0;
+    while (headIndex < allMessages.length
+      && ['system', 'developer'].includes(String(allMessages[headIndex]?.role || '').toLowerCase())) {
+      head.push(allMessages[headIndex]);
+      headIndex += 1;
+    }
+    const clippedHead = head.slice(0, MESSAGE_SNAPSHOT_LIMIT);
+    const tailBudget = Math.max(0, MESSAGE_SNAPSHOT_LIMIT - clippedHead.length);
+    const tail = allMessages.slice(headIndex).slice(-tailBudget);
+    const retained = [...clippedHead, ...tail];
+    const droppedMessageCount = originalMessageCount - retained.length;
     let remaining = MAX_CALL_CHARS;
-    const messages = (Array.isArray(input.messages) ? input.messages : []).slice(-32).map((message: any) => {
+    const messages = retained.map((message: any) => {
       const role = String(message?.role || 'unknown').slice(0, 30);
       const content = safeMessageContent(message?.content ?? '', Math.min(16_000, remaining));
       remaining = Math.max(0, remaining - content.length);
@@ -151,6 +170,13 @@ export function beginPromptCall(input: {
     });
     const toolText = safePromptText(input.tools || [], Math.min(remaining, 18_000));
     remaining = Math.max(0, remaining - toolText.length);
+    const truncationReasons: string[] = [];
+    if (droppedMessageCount > 0) {
+      truncationReasons.push(`消息数量截断：原始 ${originalMessageCount} 条，快照保留 ${retained.length} 条（全部前导 system/developer 指令 + 最近的会话消息），中间 ${droppedMessageCount} 条未展示`);
+    }
+    if (messages.some((message) => message.truncated)) {
+      truncationReasons.push('部分消息或工具快照超出字符预算被截断');
+    }
     const snapshot = {
       id,
       requestId: currentRequestTraceId(),
@@ -161,12 +187,16 @@ export function beginPromptCall(input: {
       provider: String(input.provider || '').slice(0, 80),
       model: String(input.model || '').slice(0, 120),
       status: 'running',
+      originalMessageCount,
+      retainedMessageCount: retained.length,
+      droppedMessageCount,
+      truncationReasons,
       messages,
       tools: toolText,
       toolChoice: safePromptText(options.tool_choice || 'auto', 500),
       responseFormat: safePromptText(options.responseFormat || '', 3000),
       response: null,
-      truncated: remaining <= 0 || messages.some((message) => message.truncated) || toolText.includes('[快照已截断]'),
+      truncated: droppedMessageCount > 0 || remaining <= 0 || messages.some((message) => message.truncated) || toolText.includes('[快照已截断]'),
     };
     promptCalls.delete(id);
     promptCalls.set(id, snapshot);

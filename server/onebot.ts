@@ -109,10 +109,37 @@ async function fetchWithTimeout(url, options, timeoutMs = 12_000) {
   return { ok: response.ok, status: response.status, text: async () => bytes.toString('utf8') };
 }
 
+// OneBot 11 echoes must be a JSON object that carries status/retcode. HTTP 200
+// or an empty body says nothing about delivery; 'async' (retcode 1) means the
+// action was submitted but the outcome is unknown — that is neither a
+// confirmed success nor a failure, so callers must not treat it as a send
+// failure and blindly resend (finding F12).
+export function parseOneBotEcho(payload) {
+  if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
+    return { kind: 'failed', detail: 'OneBot 返回了无法解析的回执（空 body、HTML 或非 JSON 对象）' };
+  }
+  const status = typeof payload.status === 'string' ? payload.status.toLowerCase() : null;
+  const hasRetcode = payload.retcode !== undefined && payload.retcode !== null;
+  if (status === 'async' || (hasRetcode && Number(payload.retcode) === 1)) {
+    return { kind: 'async' };
+  }
+  if (status === 'failed') {
+    const code = hasRetcode ? Number(payload.retcode) : 'failed';
+    return { kind: 'failed', detail: `retcode ${code} ${String(payload.message || payload.wording || payload.msg || '').slice(0, 500)}`.trim() };
+  }
+  if (hasRetcode && Number(payload.retcode) !== 0) {
+    return { kind: 'failed', detail: `retcode ${Number(payload.retcode)} ${String(payload.message || payload.wording || payload.msg || '').slice(0, 500)}` };
+  }
+  if (status === 'ok' || (!status && hasRetcode && Number(payload.retcode) === 0)) {
+    return { kind: 'ok' };
+  }
+  return { kind: 'failed', detail: 'OneBot 回执缺少 status/retcode，无法确认结果' };
+}
+
 async function assertOneBotSuccess(response, label) {
   const body = await response.text();
   if (!response.ok) {
-    throw new Error(`${label}：HTTP ${response.status} ${body}`);
+    throw new Error(`${label}：HTTP ${response.status} ${String(body).slice(0, 500)}`);
   }
 
   let payload = null;
@@ -124,12 +151,12 @@ async function assertOneBotSuccess(response, label) {
     }
   }
 
-  const retcode = Number(payload?.retcode ?? 0);
-  if (payload?.status === 'failed' || retcode !== 0) {
-    const detail = payload?.message || payload?.wording || payload?.msg || body;
-    throw new Error(`${label}：retcode ${retcode} ${String(detail || '').slice(0, 500)}`);
+  const echo = parseOneBotEcho(payload);
+  if (echo.kind === 'failed') {
+    throw new Error(`${label}：${echo.detail}`);
   }
-
+  // 'ok' is a confirmed success; 'async' returns the payload as an accepted-
+  // unknown submission and is deliberately not an error here.
   return payload;
 }
 
@@ -285,8 +312,11 @@ export async function probeGetStatus() {
     } catch {
       // Invalid JSON handled below as a failed probe.
     }
-    if (!response.ok || payload?.status === 'failed' || Number(payload?.retcode ?? 0) !== 0) {
-      throw new Error(payload?.message || payload?.wording || `HTTP ${response.status}`);
+    const echo = parseOneBotEcho(payload);
+    if (echo.kind !== 'ok') {
+      // Invalid envelopes and async echoes cannot confirm QQ status; reporting
+      // them as ok:true kept the observer blind to real failures (finding F12).
+      throw new Error(echo.detail || 'get_status 回执无法确认结果');
     }
     const data = payload?.data || {};
     connectionStatus.applyGetStatus({
