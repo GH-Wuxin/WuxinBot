@@ -211,9 +211,18 @@ export function subscribeRequestTraceStream({ onMessage, onState }) {
   const openBridgeStream = async () => {
     onState?.('connecting');
     const opened = await desktopApi.api.sseOpen({ url: streamUrl, headers: sseHeaders() });
+    if (!opened?.id) throw new Error('实时追踪连接未返回标识');
+    if (stopped) {
+      try { await Promise.resolve(desktopApi.api.sseClose(opened.id)).catch(() => {}); } catch { /* renderer is closing */ }
+      return;
+    }
     let buffer = '';
     let settleStream;
-    const settled = new Promise((resolve) => { settleStream = resolve; });
+    let rejectStream;
+    const settled = new Promise((resolve, reject) => {
+      settleStream = resolve;
+      rejectStream = reject;
+    });
     const off = desktopApi.api.onSseEvent(opened.id, (payload) => {
       if (stopped) return;
       if (payload?.type === 'open') onState?.('connected');
@@ -223,13 +232,18 @@ export function subscribeRequestTraceStream({ onMessage, onState }) {
         buffer = parsed.remainder;
         for (const message of parsed.messages) onMessage?.(message);
       } else {
-        settleStream(new Error(payload?.type === 'error' ? (payload.message || '实时追踪连接失败') : '实时追踪连接已结束'));
+        rejectStream(new Error(payload?.type === 'error' ? (payload.message || '实时追踪连接失败') : '实时追踪连接已结束'));
       }
     });
+    activeCleanup.push(() => { settleStream?.(); });
     activeCleanup.push(off);
-    activeCleanup.push(() => { void desktopApi.api.sseClose(opened.id); });
+    activeCleanup.push(() => {
+      try { void Promise.resolve(desktopApi.api.sseClose(opened.id)).catch(() => {}); } catch { /* renderer is closing */ }
+    });
     try {
       await settled;
+    } catch (error) {
+      if (!stopped) throw error;
     } finally {
       cleanupActive();
     }
@@ -244,6 +258,10 @@ export function subscribeRequestTraceStream({ onMessage, onState }) {
       signal: controller.signal,
     });
     if (!response.ok || !response.body) throw new Error(`实时追踪连接失败 (${response.status})`);
+    if (stopped) {
+      try { await response.body.cancel?.(); } catch { /* stream is already closing */ }
+      return;
+    }
     onState?.('connected');
     const reader = response.body.getReader();
     const decoder = new TextDecoder();

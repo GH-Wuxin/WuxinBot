@@ -77,6 +77,10 @@ export function isAllowedDesktopUrl(url, trust) {
   return document !== null && trust.trustedDocuments.has(document);
 }
 
+export function desktopDocumentIdentity(url) {
+  return normalizeDocument(url);
+}
+
 /**
  * Electron's event.sender identifies the webContents and senderFrame identifies
  * the exact frame. Both identities are required; same-webContents subframes
