@@ -11,6 +11,8 @@ import {
   setOneBotDetail,
   recordSendSuccess,
   recordSendError,
+  recordSendAcceptedUnknown,
+  recordSendUnknown,
   recordGroupActivity,
   getConnectionAggregates,
   resetRecentGroupSample,
@@ -109,37 +111,70 @@ async function fetchWithTimeout(url, options, timeoutMs = 12_000) {
   return { ok: response.ok, status: response.status, text: async () => bytes.toString('utf8') };
 }
 
-// OneBot 11 echoes must be a JSON object that carries status/retcode. HTTP 200
-// or an empty body says nothing about delivery; 'async' (retcode 1) means the
-// action was submitted but the outcome is unknown — that is neither a
-// confirmed success nor a failure, so callers must not treat it as a send
-// failure and blindly resend (finding F12).
+export class OneBotDeliveryError extends Error {
+  constructor(message, deliveryOutcome, detail = '') {
+    super(message);
+    this.name = 'OneBotDeliveryError';
+    this.deliveryOutcome = deliveryOutcome;
+    this.detail = detail;
+  }
+}
+
+function echoResult(kind, outcome, detail = '') {
+  return detail ? { kind, outcome, detail } : { kind, outcome };
+}
+
+function echoDetail(payload, fallback) {
+  const code = Object.prototype.hasOwnProperty.call(payload || {}, 'retcode')
+    ? String(payload.retcode)
+    : '';
+  const message = String(payload?.message || payload?.wording || payload?.msg || '').slice(0, 500);
+  return `${fallback}${code ? ` retcode ${code}` : ''}${message ? ` ${message}` : ''}`.trim();
+}
+
+// OneBot 11 echoes must be a JSON object with a strict status/retcode pair,
+// except for the deliberately retained numeric-retcode-only compatibility
+// branch. HTTP 200 or an empty body says nothing about delivery; 'async'
+// means accepted but not confirmed. Keep protocol/transport uncertainty
+// separate from a confirmed action failure so callers do not blindly resend.
 export function parseOneBotEcho(payload) {
   if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
-    return { kind: 'failed', detail: 'OneBot 返回了无法解析的回执（空 body、HTML 或非 JSON 对象）' };
+    return echoResult('failed', 'unknown', 'OneBot 返回了无法解析的回执（空 body、HTML 或非 JSON 对象）');
   }
+  const hasStatus = Object.prototype.hasOwnProperty.call(payload, 'status');
   const status = typeof payload.status === 'string' ? payload.status.toLowerCase() : null;
-  const hasRetcode = payload.retcode !== undefined && payload.retcode !== null;
-  if (status === 'async' || (hasRetcode && Number(payload.retcode) === 1)) {
-    return { kind: 'async' };
+  const hasRetcode = Object.prototype.hasOwnProperty.call(payload, 'retcode');
+  const retcode = payload.retcode;
+  const validRetcode = typeof retcode === 'number' && Number.isInteger(retcode) && Number.isFinite(retcode);
+  if (hasRetcode && !validRetcode) {
+    return echoResult('failed', 'unknown', echoDetail(payload, 'OneBot retcode 类型无效'));
   }
-  if (status === 'failed') {
-    const code = hasRetcode ? Number(payload.retcode) : 'failed';
-    return { kind: 'failed', detail: `retcode ${code} ${String(payload.message || payload.wording || payload.msg || '').slice(0, 500)}`.trim() };
+  if (hasStatus) {
+    if (!status || !hasRetcode) {
+      return echoResult('failed', 'unknown', 'OneBot 回执必须同时包含有效 status 与 retcode');
+    }
+    if (status === 'ok' && retcode === 0) return echoResult('ok', 'confirmed_success');
+    if (status === 'async' && retcode === 1) return echoResult('async', 'accepted_unknown');
+    if (status === 'failed' && retcode !== 0) {
+      return echoResult('failed', 'confirmed_failure', echoDetail(payload, 'OneBot action failed'));
+    }
+    return echoResult('failed', 'unknown', echoDetail(payload, 'OneBot status/retcode 矛盾'));
   }
-  if (hasRetcode && Number(payload.retcode) !== 0) {
-    return { kind: 'failed', detail: `retcode ${Number(payload.retcode)} ${String(payload.message || payload.wording || payload.msg || '').slice(0, 500)}` };
+  if (hasRetcode && retcode === 0) return echoResult('ok', 'confirmed_success');
+  if (hasRetcode && retcode === 1) return echoResult('async', 'accepted_unknown');
+  if (hasRetcode) {
+    return echoResult('failed', 'confirmed_failure', echoDetail(payload, 'OneBot action failed'));
   }
-  if (status === 'ok' || (!status && hasRetcode && Number(payload.retcode) === 0)) {
-    return { kind: 'ok' };
-  }
-  return { kind: 'failed', detail: 'OneBot 回执缺少 status/retcode，无法确认结果' };
+  return echoResult('failed', 'unknown', 'OneBot 回执缺少 status/retcode，无法确认结果');
 }
 
 async function assertOneBotSuccess(response, label) {
   const body = await response.text();
   if (!response.ok) {
-    throw new Error(`${label}：HTTP ${response.status} ${String(body).slice(0, 500)}`);
+    throw new OneBotDeliveryError(
+      `${label}：HTTP ${response.status} ${String(body).slice(0, 500)}`,
+      'unknown',
+    );
   }
 
   let payload = null;
@@ -147,17 +182,26 @@ async function assertOneBotSuccess(response, label) {
     try {
       payload = JSON.parse(body);
     } catch {
-      throw new Error(`${label}：OneBot 返回了无效 JSON`);
+      throw new OneBotDeliveryError(`${label}：OneBot 返回了无效 JSON`, 'unknown');
     }
   }
 
   const echo = parseOneBotEcho(payload);
-  if (echo.kind === 'failed') {
-    throw new Error(`${label}：${echo.detail}`);
+  if (echo.outcome === 'confirmed_failure' || echo.outcome === 'unknown') {
+    throw new OneBotDeliveryError(`${label}：${echo.detail}`, echo.outcome, echo.detail);
   }
   // 'ok' is a confirmed success; 'async' returns the payload as an accepted-
   // unknown submission and is deliberately not an error here.
   return payload;
+}
+
+function deliveryResult(payload) {
+  const echo = parseOneBotEcho(payload);
+  return {
+    kind: echo.kind,
+    outcome: echo.outcome,
+    messageId: payload?.data?.message_id,
+  };
 }
 
 function dedupeImages(images) {
@@ -228,8 +272,8 @@ async function sendOneBotMessageInner(event, text, options = {}) {
       headers,
       body: JSON.stringify(body)
     });
-    await assertOneBotSuccess(response, '发送 QQ 合并转发失败');
-    return;
+    const payload = await assertOneBotSuccess(response, '发送 QQ 合并转发失败');
+    return deliveryResult(payload);
   }
 
   const endpoint = event.type === 'private' ? '/send_private_msg' : '/send_group_msg';
@@ -249,19 +293,30 @@ async function sendOneBotMessageInner(event, text, options = {}) {
     headers,
     body: JSON.stringify(body)
   });
-  await assertOneBotSuccess(response, '发送 QQ 消息失败');
+  const payload = await assertOneBotSuccess(response, '发送 QQ 消息失败');
+  return deliveryResult(payload);
 }
 
 export async function sendOneBotMessage(event, text, options = {}) {
   const startedAt = Date.now();
   try {
     const result = await sendOneBotMessageInner(event, text, options);
-    recordSendSuccess(Date.now() - startedAt);
+    const latencyMs = Date.now() - startedAt;
+    if (result?.outcome === 'accepted_unknown') {
+      recordSendAcceptedUnknown(latencyMs);
+      connectionStatus.recordEvent('send_accepted_unknown', { latencyMs, messageId: result.messageId });
+    } else {
+      recordSendSuccess(latencyMs);
+      connectionStatus.recordEvent('send_confirmed', { latencyMs, messageId: result?.messageId });
+    }
     return result;
   } catch (error) {
     const latencyMs = Date.now() - startedAt;
-    recordSendError(error, latencyMs);
-    connectionStatus.recordEvent('send_error', {
+    const deliveryOutcome = error?.deliveryOutcome === 'confirmed_failure' ? 'confirmed_failure' : 'unknown';
+    if (deliveryOutcome === 'confirmed_failure') recordSendError(error, latencyMs);
+    else recordSendUnknown(error, latencyMs);
+    connectionStatus.recordEvent(deliveryOutcome === 'confirmed_failure' ? 'send_failed' : 'send_unknown', {
+      outcome: deliveryOutcome,
       error: String(error?.message || error).slice(0, 300),
       latencyMs,
     });
