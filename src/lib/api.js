@@ -14,6 +14,54 @@ export function resetAdminAuthPrompt() {
   authPromptCancelled = false;
 }
 
+// Electron does not implement window.prompt (it throws), so the packaged
+// Desktop console could never answer the 401 password challenge and locked
+// itself out after an admin password was set. Build a minimal in-page dialog
+// instead; resolves null when cancelled.
+function promptPassword(message) {
+  return new Promise((resolve) => {
+    if (typeof document === 'undefined') return resolve(null);
+    const overlay = document.createElement('div');
+    overlay.style.cssText = 'position:fixed;inset:0;background:rgba(10,8,16,.62);display:flex;align-items:center;justify-content:center;z-index:99999;font-family:inherit;';
+    const card = document.createElement('div');
+    card.style.cssText = 'background:#221d31;color:#eee;padding:22px 24px;border-radius:12px;min-width:320px;box-shadow:0 18px 60px rgba(0,0,0,.5);display:flex;flex-direction:column;gap:14px;';
+    const label = document.createElement('div');
+    label.textContent = message;
+    label.style.cssText = 'font-size:14px;line-height:1.5;';
+    const input = document.createElement('input');
+    input.type = 'password';
+    input.autocomplete = 'off';
+    input.style.cssText = 'padding:9px 11px;border-radius:8px;border:1px solid #4a4160;background:#17141f;color:#eee;font-size:14px;outline:none;';
+    const buttons = document.createElement('div');
+    buttons.style.cssText = 'display:flex;gap:10px;justify-content:flex-end;';
+    const cancel = document.createElement('button');
+    cancel.textContent = '取消';
+    cancel.style.cssText = 'padding:8px 16px;border-radius:8px;border:1px solid #4a4160;background:transparent;color:#bbb;cursor:pointer;';
+    const submit = document.createElement('button');
+    submit.textContent = '确定';
+    submit.style.cssText = 'padding:8px 16px;border-radius:8px;border:none;background:#7c6cf0;color:#fff;cursor:pointer;';
+    buttons.append(cancel, submit);
+    card.append(label, input, buttons);
+    overlay.append(card);
+    document.body.append(overlay);
+
+    const finish = (value) => {
+      overlay.remove();
+      window.removeEventListener('keydown', onKeyDown, true);
+      resolve(value);
+    };
+    const onKeyDown = (event) => {
+      if (event.key === 'Escape') { event.stopPropagation(); finish(null); }
+      if (event.key === 'Enter') { event.stopPropagation(); finish(input.value); }
+    };
+    cancel.addEventListener('click', () => finish(null));
+    submit.addEventListener('click', () => finish(input.value));
+    overlay.addEventListener('click', (event) => { if (event.target === overlay) finish(null); });
+    window.addEventListener('keydown', onKeyDown, true);
+    input.focus();
+  });
+}
+
 export async function api(path, options = {}, allowAuthRetry = true) {
   const { timeoutMs = DEFAULT_TIMEOUT_MS, signal: externalSignal, ...fetchOptions } = options;
   const controller = new AbortController();
@@ -42,7 +90,7 @@ export async function api(path, options = {}, allowAuthRetry = true) {
     try { data = await response.json(); } catch { throw new Error(`服务器错误 (${response.status})`); }
     if (response.status === 401 && allowAuthRetry && !authPromptActive && !authPromptCancelled) {
       authPromptActive = true;
-      const password = window.prompt('控制台已启用管理密码，请输入：');
+      const password = await promptPassword('控制台已启用管理密码，请输入：');
       authPromptActive = false;
       if (password === null) {
         authPromptCancelled = true;
