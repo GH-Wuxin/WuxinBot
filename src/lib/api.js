@@ -74,6 +74,7 @@ async function performRequest(path, { method = 'GET', headers = {}, body, timeou
       ok: result.status >= 200 && result.status < 300,
       status: result.status,
       text: async () => result.body,
+      json: async () => JSON.parse(result.body),
     };
   }
   return fetch(apiUrl(path), { method, headers, body });
