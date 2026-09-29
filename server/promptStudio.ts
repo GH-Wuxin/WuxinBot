@@ -158,7 +158,7 @@ export function beginPromptCall(input: {
     }
     const clippedHead = head.slice(0, MESSAGE_SNAPSHOT_LIMIT);
     const tailBudget = Math.max(0, MESSAGE_SNAPSHOT_LIMIT - clippedHead.length);
-    const tail = allMessages.slice(headIndex).slice(-tailBudget);
+    const tail = tailBudget > 0 ? allMessages.slice(headIndex).slice(-tailBudget) : [];
     const retained = [...clippedHead, ...tail];
     const droppedMessageCount = originalMessageCount - retained.length;
     let remaining = MAX_CALL_CHARS;
