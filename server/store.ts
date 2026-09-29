@@ -127,6 +127,21 @@ function isShardedCore(value) {
   return value?._storage?.format === SHARDED_STORAGE_FORMAT;
 }
 
+function hasStorageMarker(value) {
+  return Boolean(value && typeof value === 'object'
+    && Object.prototype.hasOwnProperty.call(value, '_storage'));
+}
+
+function unsupportedStorageMarker(value) {
+  const marker = value?._storage;
+  const format = marker && typeof marker === 'object' ? marker.format : undefined;
+  const version = marker && typeof marker === 'object' ? marker.version : undefined;
+  return new StoreUnreadableError(
+    `数据库存储标记不受支持（format=${String(format ?? '<missing>')}，version=${String(version ?? '<missing>')}），已拒绝按旧格式迁移。`,
+    'future-version',
+  );
+}
+
 function invalidateStoreCaches() {
   cachedPublicDb = null;
 }
@@ -616,10 +631,11 @@ function parseJsonFile(filePath: string, label = '数据库文件') {
 
 function readLogicalDbFromDisk() {
   const core = parseJsonFile(getDbPath());
+  if (hasStorageMarker(core) && !isShardedCore(core)) throw unsupportedStorageMarker(core);
   if (!isShardedCore(core)) return normalizeDb(core);
-  if (Number(core._storage?.version || 0) > 1) {
+  if (Number(core._storage?.version || 0) !== 1) {
     throw new StoreUnreadableError(
-      `数据库存储版本 ${Number(core._storage?.version)} 高于当前支持的版本 1，请升级程序后再使用该数据目录。`,
+      `数据库存储版本 ${String(core._storage?.version ?? '<missing>')} 不是当前支持的版本 1，请升级程序后再使用该数据目录。`,
       'future-version',
     );
   }
@@ -763,10 +779,11 @@ export function ensureStore() {
       core.reason,
     );
   }
-  if (isShardedCore(core.value)) {
-    if (Number(core.value._storage?.version || 0) > 1) {
+  if (hasStorageMarker(core.value)) {
+    if (!isShardedCore(core.value)) throw unsupportedStorageMarker(core.value);
+    if (Number(core.value._storage?.version || 0) !== 1) {
       throw new StoreUnreadableError(
-        `数据库存储版本 ${Number(core.value._storage?.version)} 高于当前支持的版本 1，请升级程序后再使用该数据目录。`,
+        `数据库存储版本 ${String(core.value._storage?.version ?? '<missing>')} 不是当前支持的版本 1，请升级程序后再使用该数据目录。`,
         'future-version',
       );
     }
@@ -830,6 +847,7 @@ const OPTIONAL_BACKUP_ARRAY_KEYS = [
   'unmetCapabilities',
   'adminActions',
   'usageEvents',
+  'configSnapshots',
 ];
 const OPTIONAL_BACKUP_OBJECT_KEYS = [
   'botRegistry',
@@ -841,7 +859,6 @@ const OPTIONAL_BACKUP_OBJECT_KEYS = [
   'groupExperience',
   'profileV3',
   'usage',
-  'configSnapshots',
 ];
 
 export function isValidLogicalDbShape(value: unknown): boolean {

@@ -8,7 +8,7 @@ assertNotProduction(dataDir);
 
 const { ensureStore, updateDb } = await import('../server/store.ts');
 const { getHealth } = await import('../server/health.ts');
-const { sendOneBotMessage } = await import('../server/onebot.ts?delivery-verify');
+const { getOneBotStatus, probeGetStatus, sendOneBotMessage } = await import('../server/onebot.ts?delivery-verify');
 ensureStore();
 
 let mode = 'ok';
@@ -81,6 +81,11 @@ try {
     );
   }
   assert.equal(getHealth().sendMessage.unknownCount, 3, 'HTTP/protocol uncertainty is accounted separately');
+
+  mode = 'http-error';
+  await probeGetStatus();
+  await probeGetStatus();
+  assert.equal(getOneBotStatus().apiReachable, false, 'get_status HTTP 500 must not be treated as a successful probe');
 
   mode = 'ok';
   const afterUnknown = await sendOneBotMessage(event, 'after-unknown');

@@ -360,6 +360,7 @@ export async function probeGetStatus() {
         headers: oneBotHeaders(db),
         body: '{}',
       });
+    if (!response.ok) throw new Error(`get_status HTTP ${response.status}`);
     const body = await response.text();
     let payload = null;
     try {

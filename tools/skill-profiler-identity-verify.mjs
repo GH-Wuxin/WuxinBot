@@ -205,6 +205,24 @@ try {
   assert.equal(dt.unified_measurements.mod_context, 'DT', 'NC folds to DT context');
   console.log('PASS [identity:NM-HR-DT-contexts]');
 
+  // A single NM calibration is not a wildcard for DT/HD. The missing DT
+  // context remains a legal raw-axis-only request, while an attached response
+  // claiming DT calibration must fail closed.
+  const nmOnlyIdentity = identity({
+    unifiedCalibrationKey: 'NM:UCAL-NM:ACTIVE',
+    mapDemandCalibrationId: 'MAP_DEMAND_CALIBRATION_UNCONFIGURED',
+  });
+  responseMode = 'raw';
+  const dtRaw = await request(profiler, 5008, ['DT'], nmOnlyIdentity);
+  assert.equal(dtRaw.unified_measurements.status, 'NOT_CONFIGURED', 'unconfigured DT stays raw-axis-only when only NM is calibrated');
+  responseMode = 'A';
+  await assert.rejects(
+    request(profiler, 5009, ['DT'], nmOnlyIdentity),
+    /ANALYSIS_IDENTITY_MISMATCH/,
+    'an attached DT response must not borrow the only NM calibration',
+  );
+  console.log('PASS [identity:partial-context-does-not-wildcard]');
+
   const { playerProfileCacheKey } = await import('../server/bots/playerSkillProfile.ts');
   const { recentProfileCacheKey } = await import('../server/bots/playerRecentSkillProfile.ts');
   assert.notEqual(
