@@ -636,19 +636,69 @@ test('real launcher can exit while its later-ready child remains managed and sto
   await waitClosed(port);
 });
 
-test('desktop IPC guard allowlists only the app origins', async () => {
-  const { desktopAllowedOrigins, isAllowedDesktopUrl } = await import('../desktop/ipc-guard.mjs');
-  const dev = desktopAllowedOrigins({ devUrl: 'http://127.0.0.1:5173', apiBase: 'http://127.0.0.1:8787' });
-  assert.equal(isAllowedDesktopUrl('http://127.0.0.1:5173/console', dev), true, 'dev origin allowed');
-  assert.equal(isAllowedDesktopUrl('file:///G:/app/dist/index.html', dev), true, 'file renderer allowed');
-  assert.equal(isAllowedDesktopUrl('http://127.0.0.1:8787/index.html', dev), true, 'loopback api page allowed');
+test('desktop IPC guard binds the trusted document and top-level frame', async () => {
+  const {
+    desktopAllowedOrigins,
+    isAllowedDesktopUrl,
+    isTrustedDesktopFrame,
+  } = await import('../desktop/ipc-guard.mjs');
+  const dev = desktopAllowedOrigins({ devUrl: 'http://127.0.0.1:5173/console' });
+  assert.equal(isAllowedDesktopUrl('http://127.0.0.1:5173/console', dev), true, 'dev document allowed');
+  assert.equal(isAllowedDesktopUrl('http://127.0.0.1:5173/console#route', dev), true, 'document hash allowed');
+  assert.equal(isAllowedDesktopUrl('http://127.0.0.1:5173/other', dev), false, 'navigated dev document refused');
+  assert.equal(isAllowedDesktopUrl('http://127.0.0.1:5173/console?query=1', dev), false, 'dev query document refused');
+  assert.equal(isAllowedDesktopUrl('http://127.0.0.1:8787/index.html', dev), false, 'api origin not privileged');
   assert.equal(isAllowedDesktopUrl('http://127.0.0.1:9999/index.html', dev), false, 'foreign loopback port refused');
-  assert.equal(isAllowedDesktopUrl('https://127.0.0.1:8787', dev), false, 'https is a different origin');
-  assert.equal(isAllowedDesktopUrl('http://evil.example/attack', dev), false, 'remote origin refused');
+  assert.equal(isAllowedDesktopUrl('https://127.0.0.1:5173/console', dev), false, 'protocol change refused');
+  assert.equal(isAllowedDesktopUrl('file:///G:/other/local.html', dev), false, 'arbitrary local file refused');
+  assert.equal(isAllowedDesktopUrl('about:blank', dev), false, 'null-origin document refused');
+  assert.equal(isAllowedDesktopUrl('data:text/html,ok', dev), false, 'data document refused');
+  assert.equal(isAllowedDesktopUrl('blob:http://127.0.0.1:5173/id', dev), false, 'blob document refused');
   assert.equal(isAllowedDesktopUrl('not a url', dev), false, 'malformed url refused');
-  const packaged = desktopAllowedOrigins({ apiBase: 'http://127.0.0.1:8787' });
-  assert.equal(isAllowedDesktopUrl('http://127.0.0.1:5173', packaged), false, 'dev origin not allowlisted when packaged');
-  assert.equal(isAllowedDesktopUrl('file:///G:/app/dist/index.html', packaged), true, 'packaged file renderer allowed');
+
+  const packagedPath = process.platform === 'win32' ? 'G:\\app\\dist\\index.html' : '/tmp/app/dist/index.html';
+  const packagedUrl = process.platform === 'win32' ? 'file:///G:/app/dist/index.html' : 'file:///tmp/app/dist/index.html';
+  const packaged = desktopAllowedOrigins({
+    packagedIndex: packagedPath,
+    fallbackUrl: 'http://127.0.0.1:8787',
+  });
+  assert.equal(isAllowedDesktopUrl('http://127.0.0.1:5173/console', packaged), false, 'dev document not packaged');
+  assert.equal(isAllowedDesktopUrl(packagedUrl, packaged), true, 'packaged file renderer allowed');
+  assert.equal(isAllowedDesktopUrl(`${packagedUrl}#route`, packaged), true, 'packaged hash allowed');
+  assert.equal(isAllowedDesktopUrl(`${packagedUrl}?query=1`, packaged), false, 'packaged query refused');
+  assert.equal(isAllowedDesktopUrl(packagedUrl.replace('index.html', 'index.html.bak'), packaged), false, 'similar path refused');
+  assert.equal(isAllowedDesktopUrl('file://server/share/app/dist/index.html', packaged), false, 'UNC document refused');
+  assert.equal(isAllowedDesktopUrl('http://127.0.0.1:8787/', packaged), true, 'explicit fallback document allowed');
+  assert.equal(isAllowedDesktopUrl('http://127.0.0.1:8787/index.html', packaged), false, 'fallback origin not broadly trusted');
+  assert.equal(isAllowedDesktopUrl('http://127.0.0.1:8787/api/state', packaged), false, 'api path not a trusted document');
+
+  const mainFrame = { url: packagedUrl };
+  const mainWebContents = { mainFrame };
+  assert.equal(isTrustedDesktopFrame({
+    mainWebContents,
+    sender: mainWebContents,
+    senderFrame: mainFrame,
+    trust: packaged,
+  }), true, 'trusted main document passes');
+  assert.equal(isTrustedDesktopFrame({
+    mainWebContents,
+    sender: mainWebContents,
+    senderFrame: { url: packagedUrl },
+    trust: packaged,
+  }), false, 'same webContents subframe refused');
+  assert.equal(isTrustedDesktopFrame({
+    mainWebContents,
+    sender: { mainFrame },
+    senderFrame: mainFrame,
+    trust: packaged,
+  }), false, 'other window refused');
+  mainFrame.url = packagedUrl.replace('index.html', 'other.html');
+  assert.equal(isTrustedDesktopFrame({
+    mainWebContents,
+    sender: mainWebContents,
+    senderFrame: mainFrame,
+    trust: packaged,
+  }), false, 'navigated-away main document refused');
 });
 
 test('api bridge pins targets to the loopback /api surface', async () => {

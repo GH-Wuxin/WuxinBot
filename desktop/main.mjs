@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { ProcessManager } from './process-manager.mjs';
-import { desktopAllowedOrigins, isAllowedDesktopUrl } from './ipc-guard.mjs';
+import { desktopAllowedOrigins, isAllowedDesktopUrl, isTrustedDesktopFrame } from './ipc-guard.mjs';
 import { resolveApiRequest, MAX_API_RESPONSE_BYTES } from './api-bridge.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -12,10 +12,16 @@ const packagedRoot = path.join(process.resourcesPath, 'app.asar.unpacked');
 const projectRoot = process.env.WUXIN_PROJECT_ROOT || (app.isPackaged ? packagedRoot : sourceRoot);
 const devUrl = process.env.WUXIN_DEV_SERVER_URL || '';
 const productionApi = 'http://127.0.0.1:8787';
+const packagedIndex = path.join(projectRoot, 'dist', 'index.html');
 process.env.WUXIN_DESKTOP_API_BASE = devUrl ? '' : productionApi;
-// IPC senders and top-level navigation must stay inside the app's own
-// origins (S01 layer 1). External content is handed to the system browser.
-const allowedOrigins = desktopAllowedOrigins({ devUrl, apiBase: productionApi });
+// IPC senders and navigation must stay on an explicitly trusted document
+// (S01 layer 1). An API origin is not trusted wholesale; the loopback root is
+// listed only as the explicit last-resort fallback document.
+const allowedOrigins = desktopAllowedOrigins({
+  devUrl,
+  packagedIndex: devUrl ? '' : packagedIndex,
+  fallbackUrl: devUrl ? '' : productionApi,
+});
 
 let mainWindow = null;
 let manager = null;
@@ -67,7 +73,7 @@ async function loadUrlWithRetry(url, attempts = 16) {
 }
 
 async function loadConsole() {
-  const localIndex = path.join(projectRoot, 'dist', 'index.html');
+  const localIndex = packagedIndex;
   // The browser entry is intentionally removed from the server. Packaged
   // Desktop therefore loads its bundled renderer directly and talks to the
   // loopback API through preload's apiBaseUrl. Dev mode still uses Vite so
@@ -133,10 +139,10 @@ function createWindow() {
     log(`已阻止弹窗打开：${url}`);
     return { action: 'deny' };
   });
-  mainWindow.webContents.on('will-navigate', (event, url) => {
-    if (isAllowedDesktopUrl(url, allowedOrigins)) return;
+  mainWindow.webContents.on('will-frame-navigate', (event, url, isMainFrame) => {
+    if (isMainFrame && isAllowedDesktopUrl(url, allowedOrigins)) return;
     event.preventDefault();
-    log(`已阻止导航到未授权页面：${url}`);
+    log(`已阻止导航到未授权页面：${url} mainFrame=${isMainFrame}`);
   });
   mainWindow.on('closed', () => { mainWindow = null; });
   void loadConsole();
@@ -157,9 +163,12 @@ async function shutdownManagedProcesses() {
 
 function isTrustedIpcSender(event) {
   if (!mainWindow || mainWindow.isDestroyed()) return false;
-  if (event?.sender !== mainWindow.webContents) return false;
-  const frameUrl = String(event?.senderFrame?.url || '');
-  return isAllowedDesktopUrl(frameUrl, allowedOrigins);
+  return isTrustedDesktopFrame({
+    mainWebContents: mainWindow.webContents,
+    sender: event?.sender,
+    senderFrame: event?.senderFrame,
+    trust: allowedOrigins,
+  });
 }
 
 // Every runtime IPC handler goes through this guard: a compromised or foreign
