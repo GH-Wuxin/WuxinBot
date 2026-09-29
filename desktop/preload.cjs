@@ -4,6 +4,7 @@ contextBridge.exposeInMainWorld('desktop', {
   isDesktop: true,
   platform: process.platform,
   apiBaseUrl: process.env.WUXIN_DESKTOP_API_BASE || '',
+  apiTransport: process.env.WUXIN_DESKTOP_API_TRANSPORT === 'fetch' ? 'fetch' : 'bridge',
   runtime: {
     getState: () => ipcRenderer.invoke('runtime:state'),
     start: (id) => ipcRenderer.invoke('runtime:start', id),

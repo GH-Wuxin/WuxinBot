@@ -14,6 +14,7 @@ const devUrl = process.env.WUXIN_DEV_SERVER_URL || '';
 const productionApi = 'http://127.0.0.1:8787';
 const packagedIndex = path.join(projectRoot, 'dist', 'index.html');
 process.env.WUXIN_DESKTOP_API_BASE = devUrl ? '' : productionApi;
+process.env.WUXIN_DESKTOP_API_TRANSPORT = devUrl ? 'fetch' : 'bridge';
 // IPC senders and navigation must stay on an explicitly trusted document
 // (S01 layer 1). An API origin is not trusted wholesale; the loopback root is
 // listed only as the explicit last-resort fallback document.

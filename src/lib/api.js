@@ -2,7 +2,8 @@ const ADMIN_PASSWORD_KEY = 'wuxinAdminPassword';
 const DEFAULT_TIMEOUT_MS = 30_000;
 
 function apiUrl(pathname) {
-  const base = typeof window !== 'undefined' ? String(window.desktop?.apiBaseUrl || '') : '';
+  const desktop = typeof window !== 'undefined' ? window.desktop : null;
+  const base = desktop?.apiTransport === 'bridge' ? String(desktop.apiBaseUrl || '') : '';
   if (!base || /^https?:\/\//i.test(String(pathname))) return pathname;
   return `${base.replace(/\/$/, '')}/${String(pathname).replace(/^\//, '')}`;
 }
@@ -68,7 +69,7 @@ function promptPassword(message) {
 // fetch. Returns a minimal Response-like object either way.
 async function performRequest(path, { method = 'GET', headers = {}, body, timeoutMs = DEFAULT_TIMEOUT_MS } = {}) {
   const desktopApi = typeof window !== 'undefined' ? window.desktop : null;
-  if (desktopApi?.isDesktop && typeof desktopApi.api?.httpRequest === 'function') {
+  if (desktopApi?.apiTransport === 'bridge' && typeof desktopApi.api?.httpRequest === 'function') {
     const result = await desktopApi.api.httpRequest({ url: apiUrl(path), method, headers, body, timeoutMs });
     return {
       ok: result.status >= 200 && result.status < 300,
@@ -150,7 +151,7 @@ export function parseSseBuffer(input) {
 export function subscribeRequestTraceStream({ onMessage, onState }) {
   const controller = new AbortController();
   const desktopApi = typeof window !== 'undefined' ? window.desktop : null;
-  const useBridge = Boolean(desktopApi?.isDesktop && typeof desktopApi.api?.sseOpen === 'function');
+  const useBridge = Boolean(desktopApi?.apiTransport === 'bridge' && typeof desktopApi.api?.sseOpen === 'function');
   let stopped = false;
   let retryTimer = null;
   let releaseRetryWait = null;
