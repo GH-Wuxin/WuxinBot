@@ -4,6 +4,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { ProcessManager } from './process-manager.mjs';
 import { desktopAllowedOrigins, isAllowedDesktopUrl } from './ipc-guard.mjs';
+import { resolveApiRequest, MAX_API_RESPONSE_BYTES } from './api-bridge.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const sourceRoot = path.resolve(__dirname, '..');
@@ -101,10 +102,10 @@ function createWindow() {
       preload: path.join(__dirname, 'preload.cjs'),
       contextIsolation: true,
       nodeIntegration: false,
-      // The fallback file:// page still needs to reach the loopback API when
-      // the bot is stopped on first launch. The renderer is local, and the
-      // API base is always loopback-only.
-      webSecurity: false,
+      // The renderer reaches the loopback API exclusively through the guarded
+      // main-process bridge above, so same-origin policy stays enforced; the
+      // file:// entry and every page it shows are local (S01 layer 2).
+      webSecurity: true,
     },
   });
   mainWindow.webContents.on('did-fail-load', (_event, errorCode, errorDescription, validatedURL, isMainFrame) => {
@@ -192,6 +193,89 @@ function registerIpc() {
   }));
   ipcMain.handle('window:minimize', guardIpc(() => mainWindow?.minimize()));
   ipcMain.handle('window:close', guardIpc(() => mainWindow?.close()));
+  registerApiBridgeIpc();
+}
+
+// The renderer reaches the loopback bot API only through this guarded bridge,
+// so webSecurity stays enabled: targets are pinned to the loopback API base,
+// /api/* paths, fixed methods, and an allowlisted header set (S01 layer 2).
+const sseStreams = new Map();
+let sseSequence = 0;
+
+function sendToSender(sender, channel, payload) {
+  try {
+    if (!sender.isDestroyed()) sender.send(channel, payload);
+  } catch { /* renderer gone mid-stream */ }
+}
+
+function registerApiBridgeIpc() {
+  ipcMain.handle('api:request', guardIpc(async (_event, request = {}) => {
+    const { url, method, headers } = resolveApiRequest({
+      apiBase: productionApi, url: request?.url, method: request?.method, headers: request?.headers,
+    });
+    const timeoutMs = Math.max(1000, Math.min(120_000, Number(request?.timeoutMs) || 60_000));
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
+    timer.unref?.();
+    try {
+      const response = await fetch(url, {
+        method,
+        headers,
+        body: typeof request?.body === 'string' ? request.body : undefined,
+        signal: controller.signal,
+      });
+      const bytes = await response.arrayBuffer();
+      if (bytes.byteLength > MAX_API_RESPONSE_BYTES) {
+        return { status: 502, body: JSON.stringify({ ok: false, error: 'API bridge response too large' }) };
+      }
+      return { status: response.status, body: Buffer.from(bytes).toString('utf8') };
+    } catch (error) {
+      if (error?.name === 'AbortError') {
+        return { status: 0, body: JSON.stringify({ ok: false, error: `请求超时（${Math.round(timeoutMs / 1000)} 秒）` }) };
+      }
+      return { status: 0, body: JSON.stringify({ ok: false, error: String(error?.message || error) }) };
+    } finally {
+      clearTimeout(timer);
+    }
+  }));
+
+  ipcMain.handle('api:sse:open', guardIpc(async (event, request = {}) => {
+    const { url, headers } = resolveApiRequest({
+      apiBase: productionApi, url: request?.url, method: 'GET', headers: request?.headers,
+    });
+    sseSequence += 1;
+    const id = `sse-${sseSequence}`;
+    const controller = new AbortController();
+    sseStreams.set(id, controller);
+    void (async () => {
+      try {
+        const response = await fetch(url, { headers, cache: 'no-store', signal: controller.signal });
+        if (!response.ok || !response.body) throw new Error(`实时追踪连接失败 (${response.status})`);
+        sendToSender(event.sender, `api:sse:${id}`, { type: 'open', status: response.status });
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+        while (!controller.signal.aborted) {
+          const { value, done } = await reader.read();
+          if (done) break;
+          sendToSender(event.sender, `api:sse:${id}`, { type: 'chunk', text: decoder.decode(value, { stream: true }) });
+        }
+        sendToSender(event.sender, `api:sse:${id}`, { type: 'end' });
+      } catch (error) {
+        if (!controller.signal.aborted) {
+          sendToSender(event.sender, `api:sse:${id}`, { type: 'error', message: String(error?.message || error) });
+        }
+      } finally {
+        sseStreams.delete(id);
+      }
+    })();
+    return { id };
+  }));
+
+  ipcMain.handle('api:sse:close', guardIpc((_event, id) => {
+    sseStreams.get(String(id))?.abort();
+    sseStreams.delete(String(id));
+    return true;
+  }));
 }
 
 async function boot() {

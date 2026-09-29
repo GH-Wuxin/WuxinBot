@@ -62,6 +62,23 @@ function promptPassword(message) {
   });
 }
 
+// In the packaged Desktop client the renderer never fetches the loopback API
+// cross-origin: requests go through the guarded main-process bridge
+// (desktop/preload.cjs → api:request). The browser/dev path keeps direct
+// fetch. Returns a minimal Response-like object either way.
+async function performRequest(path, { method = 'GET', headers = {}, body, timeoutMs = DEFAULT_TIMEOUT_MS } = {}) {
+  const desktopApi = typeof window !== 'undefined' ? window.desktop : null;
+  if (desktopApi?.isDesktop && typeof desktopApi.api?.httpRequest === 'function') {
+    const result = await desktopApi.api.httpRequest({ url: apiUrl(path), method, headers, body, timeoutMs });
+    return {
+      ok: result.status >= 200 && result.status < 300,
+      status: result.status,
+      text: async () => result.body,
+    };
+  }
+  return fetch(apiUrl(path), { method, headers, body });
+}
+
 export async function api(path, options = {}, allowAuthRetry = true) {
   const { timeoutMs = DEFAULT_TIMEOUT_MS, signal: externalSignal, ...fetchOptions } = options;
   const controller = new AbortController();
@@ -80,11 +97,11 @@ export async function api(path, options = {}, allowAuthRetry = true) {
     ...(fetchOptions.headers || {})
   };
   try {
-    const response = await fetch(apiUrl(path), {
-      ...fetchOptions,
+    const response = await performRequest(path, {
+      method: fetchOptions.method || 'GET',
       headers,
-      signal: controller.signal,
-      body: fetchOptions.body ? JSON.stringify(fetchOptions.body) : undefined
+      body: fetchOptions.body ? JSON.stringify(fetchOptions.body) : undefined,
+      timeoutMs,
     });
     let data;
     try { data = await response.json(); } catch { throw new Error(`服务器错误 (${response.status})`); }
@@ -131,37 +148,86 @@ export function parseSseBuffer(input) {
 
 export function subscribeRequestTraceStream({ onMessage, onState }) {
   const controller = new AbortController();
+  const desktopApi = typeof window !== 'undefined' ? window.desktop : null;
+  const useBridge = Boolean(desktopApi?.isDesktop && typeof desktopApi.api?.sseOpen === 'function');
   let stopped = false;
   let retryTimer = null;
   let releaseRetryWait = null;
+  const activeCleanup = [];
+  const cleanupActive = () => {
+    while (activeCleanup.length) {
+      try { activeCleanup.pop()(); } catch { /* ignore */ }
+    }
+  };
+  const streamUrl = apiUrl('/api/request-traces/stream?limit=80');
+  const sseHeaders = () => {
+    const savedPassword = window.sessionStorage.getItem(ADMIN_PASSWORD_KEY) || '';
+    return {
+      Accept: 'text/event-stream',
+      ...(savedPassword ? { 'X-Wuxin-Admin-Password': savedPassword } : {}),
+    };
+  };
+
+  // Desktop bridge variant: the main process owns the HTTP stream and forwards
+  // raw text chunks; the renderer keeps its own SSE framing via parseSseBuffer.
+  const openBridgeStream = async () => {
+    onState?.('connecting');
+    const opened = await desktopApi.api.sseOpen({ url: streamUrl, headers: sseHeaders() });
+    let buffer = '';
+    let settleStream;
+    const settled = new Promise((resolve) => { settleStream = resolve; });
+    const off = desktopApi.api.onSseEvent(opened.id, (payload) => {
+      if (stopped) return;
+      if (payload?.type === 'open') onState?.('connected');
+      else if (payload?.type === 'chunk') {
+        buffer += payload.text || '';
+        const parsed = parseSseBuffer(buffer);
+        buffer = parsed.remainder;
+        for (const message of parsed.messages) onMessage?.(message);
+      } else {
+        settleStream(new Error(payload?.type === 'error' ? (payload.message || '实时追踪连接失败') : '实时追踪连接已结束'));
+      }
+    });
+    activeCleanup.push(off);
+    activeCleanup.push(() => { void desktopApi.api.sseClose(opened.id); });
+    try {
+      await settled;
+    } finally {
+      cleanupActive();
+    }
+    if (!stopped) throw new Error('实时追踪连接已结束');
+  };
+
+  const openFetchStream = async () => {
+    onState?.('connecting');
+    const response = await fetch(streamUrl, {
+      headers: sseHeaders(),
+      cache: 'no-store',
+      signal: controller.signal,
+    });
+    if (!response.ok || !response.body) throw new Error(`实时追踪连接失败 (${response.status})`);
+    onState?.('connected');
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+    while (!stopped) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      const parsed = parseSseBuffer(buffer);
+      buffer = parsed.remainder;
+      for (const message of parsed.messages) onMessage?.(message);
+    }
+    if (!stopped) throw new Error('实时追踪连接已结束');
+  };
+
   void (async () => {
     while (!stopped) {
       try {
-        onState?.('connecting');
-        const savedPassword = window.sessionStorage.getItem(ADMIN_PASSWORD_KEY) || '';
-        const response = await fetch(apiUrl('/api/request-traces/stream?limit=80'), {
-          headers: {
-            Accept: 'text/event-stream',
-            ...(savedPassword ? { 'X-Wuxin-Admin-Password': savedPassword } : {}),
-          },
-          cache: 'no-store',
-          signal: controller.signal,
-        });
-        if (!response.ok || !response.body) throw new Error(`实时追踪连接失败 (${response.status})`);
-        onState?.('connected');
-        const reader = response.body.getReader();
-        const decoder = new TextDecoder();
-        let buffer = '';
-        while (!stopped) {
-          const { value, done } = await reader.read();
-          if (done) break;
-          buffer += decoder.decode(value, { stream: true });
-          const parsed = parseSseBuffer(buffer);
-          buffer = parsed.remainder;
-          for (const message of parsed.messages) onMessage?.(message);
-        }
-        if (!stopped) throw new Error('实时追踪连接已结束');
+        if (useBridge) await openBridgeStream();
+        else await openFetchStream();
       } catch (error) {
+        cleanupActive();
         if (stopped || error?.name === 'AbortError') break;
         onState?.('fallback', error?.message || String(error));
       }
@@ -179,6 +245,7 @@ export function subscribeRequestTraceStream({ onMessage, onState }) {
   })();
   return () => {
     stopped = true;
+    cleanupActive();
     if (retryTimer) window.clearTimeout(retryTimer);
     releaseRetryWait?.();
     releaseRetryWait = null;
