@@ -23,6 +23,9 @@ const state = {
     recentFailures: 0,
     successCount: 0,
     failureCount: 0,
+    acceptedUnknownCount: 0,
+    unknownCount: 0,
+    lastOutcome: '',
     totalLatencyMs: 0,
     callCount: 0,
   },
@@ -110,6 +113,7 @@ export function setOneBotDetail(detail) {
 
 export function recordSendSuccess(latencyMs = 0) {
   state.sendMessage.lastSuccessAt = new Date().toISOString();
+  state.sendMessage.lastOutcome = 'confirmed_success';
   state.sendMessage.successCount += 1;
   state.sendMessage.callCount += 1;
   state.sendMessage.totalLatencyMs += latencyMs || 0;
@@ -118,8 +122,25 @@ export function recordSendSuccess(latencyMs = 0) {
 
 export function recordSendError(error, latencyMs = 0) {
   state.sendMessage.lastError = new Date().toISOString();
+  state.sendMessage.lastOutcome = 'confirmed_failure';
   state.sendMessage.recentFailures += 1;
   state.sendMessage.failureCount += 1;
+  state.sendMessage.callCount += 1;
+  state.sendMessage.totalLatencyMs += latencyMs || 0;
+}
+
+export function recordSendAcceptedUnknown(latencyMs = 0) {
+  state.sendMessage.lastOutcome = 'accepted_unknown';
+  state.sendMessage.acceptedUnknownCount += 1;
+  state.sendMessage.callCount += 1;
+  state.sendMessage.totalLatencyMs += latencyMs || 0;
+  state.sendMessage.recentFailures = 0;
+}
+
+export function recordSendUnknown(error, latencyMs = 0) {
+  state.sendMessage.lastError = new Date().toISOString() + ' ' + String(error?.message || error || '');
+  state.sendMessage.lastOutcome = 'unknown';
+  state.sendMessage.unknownCount += 1;
   state.sendMessage.callCount += 1;
   state.sendMessage.totalLatencyMs += latencyMs || 0;
 }
@@ -142,6 +163,8 @@ export function getConnectionAggregates() {
   return {
     sendSuccess: state.sendMessage.successCount,
     sendFailures: state.sendMessage.failureCount,
+    sendAcceptedUnknown: state.sendMessage.acceptedUnknownCount,
+    sendUnknown: state.sendMessage.unknownCount,
     sendAvgLatencyMs,
     activeGroups: recentGroups.size,
     activeProcessing: state.activeProcessing,
