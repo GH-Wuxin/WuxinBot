@@ -3,7 +3,12 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { ProcessManager } from './process-manager.mjs';
-import { desktopAllowedOrigins, isAllowedDesktopUrl, isTrustedDesktopFrame } from './ipc-guard.mjs';
+import {
+  desktopAllowedOrigins,
+  desktopDocumentIdentity,
+  isAllowedDesktopUrl,
+  isTrustedDesktopFrame,
+} from './ipc-guard.mjs';
 import { resolveApiRequest, MAX_API_RESPONSE_BYTES } from './api-bridge.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -121,6 +126,7 @@ function createWindow() {
   mainWindow.webContents.on('did-finish-load', () => log(`渲染器完成加载：${mainWindow.webContents.getURL()}`));
   mainWindow.webContents.on('render-process-gone', (_event, details) => {
     log(`渲染器进程结束：reason=${details.reason} exitCode=${details.exitCode}`);
+    closeSseStreamsForWebContents(mainWindow?.webContents);
   });
   mainWindow.webContents.on('console-message', (_event, level, message, line, sourceId) => {
     if (level >= 2) log(`渲染器控制台：${message} (${sourceId}:${line})`);
@@ -141,11 +147,17 @@ function createWindow() {
     return { action: 'deny' };
   });
   mainWindow.webContents.on('will-frame-navigate', (event, url, isMainFrame) => {
-    if (isMainFrame && isAllowedDesktopUrl(url, allowedOrigins)) return;
-    event.preventDefault();
-    log(`已阻止导航到未授权页面：${url} mainFrame=${isMainFrame}`);
+    if (!(isMainFrame && isAllowedDesktopUrl(url, allowedOrigins))) {
+      event.preventDefault();
+      log(`已阻止导航到未授权页面：${url} mainFrame=${isMainFrame}`);
+      return;
+    }
+    closeSseStreamsForFrame(mainWindow.webContents, mainWindow.webContents.mainFrame);
   });
-  mainWindow.on('closed', () => { mainWindow = null; });
+  mainWindow.on('closed', () => {
+    closeSseStreamsForWebContents(mainWindow?.webContents);
+    mainWindow = null;
+  });
   void loadConsole();
 }
 
@@ -214,6 +226,7 @@ const pendingHttpCancels = new Map();
 const HTTP_CANCEL_TTL_MS = 30_000;
 const MAX_PENDING_HTTP_CANCELS = 512;
 const sseStreams = new Map();
+const MAX_SSE_STREAMS = 8;
 let sseSequence = 0;
 
 function normalizeHttpRequestId(value) {
@@ -247,6 +260,69 @@ function abortedApiResponse(controller, timeoutMs) {
       error: timedOut ? `请求超时（${Math.round(timeoutMs / 1000)} 秒）` : '请求已取消',
     }),
   };
+}
+
+function sameSseOwner(entry, event) {
+  const frame = event?.senderFrame;
+  return entry?.sender === event?.sender
+    && entry?.senderFrame === frame
+    && entry?.document === desktopDocumentIdentity(frame?.url);
+}
+
+function closeSseEntry(entry) {
+  if (!entry || entry.state === 'closed') return false;
+  entry.state = 'closed';
+  entry.controller.abort('client');
+  if (sseStreams.get(entry.id) === entry) sseStreams.delete(entry.id);
+  return true;
+}
+
+function closeSseStreamsForWebContents(webContents) {
+  if (!webContents) return;
+  for (const entry of sseStreams.values()) {
+    if (entry.sender === webContents) closeSseEntry(entry);
+  }
+}
+
+function closeSseStreamsForFrame(webContents, frame) {
+  if (!webContents || !frame) return;
+  for (const entry of sseStreams.values()) {
+    if (entry.sender === webContents && entry.senderFrame === frame) closeSseEntry(entry);
+  }
+}
+
+function closeAllSseStreams() {
+  for (const entry of sseStreams.values()) closeSseEntry(entry);
+}
+
+async function runSseStream(entry) {
+  try {
+    const response = await fetch(entry.url, {
+      headers: entry.headers,
+      cache: 'no-store',
+      signal: entry.controller.signal,
+    });
+    if (entry.state === 'closed') return;
+    if (!response.ok || !response.body) throw new Error(`实时追踪连接失败 (${response.status})`);
+    sendToSender(entry.sender, `api:sse:${entry.id}`, { type: 'open', status: response.status });
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    while (entry.state !== 'closed' && !entry.controller.signal.aborted) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      if (entry.state !== 'closed') {
+        sendToSender(entry.sender, `api:sse:${entry.id}`, { type: 'chunk', text: decoder.decode(value, { stream: true }) });
+      }
+    }
+    if (entry.state !== 'closed') sendToSender(entry.sender, `api:sse:${entry.id}`, { type: 'end' });
+  } catch (error) {
+    if (entry.state !== 'closed' && !entry.controller.signal.aborted) {
+      sendToSender(entry.sender, `api:sse:${entry.id}`, { type: 'error', message: String(error?.message || error) });
+    }
+  } finally {
+    entry.state = 'closed';
+    if (sseStreams.get(entry.id) === entry) sseStreams.delete(entry.id);
+  }
 }
 
 function sendToSender(sender, channel, payload) {
@@ -316,37 +392,41 @@ function registerApiBridgeIpc() {
     const { url, headers } = resolveApiRequest({
       apiBase: productionApi, url: request?.url, method: 'GET', headers: request?.headers,
     });
+    if (sseStreams.size >= MAX_SSE_STREAMS) throw new Error('实时追踪连接数已达上限');
+    const document = desktopDocumentIdentity(event?.senderFrame?.url);
+    if (!document) throw new Error('实时追踪来源文档无效');
     sseSequence += 1;
     const id = `sse-${sseSequence}`;
-    const controller = new AbortController();
-    sseStreams.set(id, controller);
-    void (async () => {
-      try {
-        const response = await fetch(url, { headers, cache: 'no-store', signal: controller.signal });
-        if (!response.ok || !response.body) throw new Error(`实时追踪连接失败 (${response.status})`);
-        sendToSender(event.sender, `api:sse:${id}`, { type: 'open', status: response.status });
-        const reader = response.body.getReader();
-        const decoder = new TextDecoder();
-        while (!controller.signal.aborted) {
-          const { value, done } = await reader.read();
-          if (done) break;
-          sendToSender(event.sender, `api:sse:${id}`, { type: 'chunk', text: decoder.decode(value, { stream: true }) });
-        }
-        sendToSender(event.sender, `api:sse:${id}`, { type: 'end' });
-      } catch (error) {
-        if (!controller.signal.aborted) {
-          sendToSender(event.sender, `api:sse:${id}`, { type: 'error', message: String(error?.message || error) });
-        }
-      } finally {
-        sseStreams.delete(id);
-      }
-    })();
+    sseStreams.set(id, {
+      id,
+      sender: event.sender,
+      senderFrame: event.senderFrame,
+      document,
+      url,
+      headers,
+      controller: new AbortController(),
+      state: 'opening',
+      listening: false,
+    });
     return { id };
   }));
 
-  ipcMain.handle('api:sse:close', guardIpc((_event, id) => {
-    sseStreams.get(String(id))?.abort();
-    sseStreams.delete(String(id));
+  ipcMain.handle('api:sse:listen', guardIpc((event, id) => {
+    const entry = sseStreams.get(String(id));
+    if (!entry || !sameSseOwner(entry, event)) return false;
+    if (entry.state === 'closed') return false;
+    if (entry.listening) return true;
+    entry.listening = true;
+    entry.state = 'active';
+    void runSseStream(entry);
+    return true;
+  }));
+
+  ipcMain.handle('api:sse:close', guardIpc((event, id) => {
+    const entry = sseStreams.get(String(id));
+    if (!entry) return true;
+    if (!sameSseOwner(entry, event)) return false;
+    closeSseEntry(entry);
     return true;
   }));
 }
@@ -387,6 +467,7 @@ if (!singleInstance) {
     if (quitting) return;
     event.preventDefault();
     quitting = true;
+    closeAllSseStreams();
     void shutdownManagedProcesses().catch((error) => log(`进程清理失败：${error.message || error}`)).finally(() => app.exit(0));
   });
   app.on('window-all-closed', () => app.quit());

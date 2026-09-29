@@ -38,6 +38,11 @@ contextBridge.exposeInMainWorld('desktop', {
     onSseEvent: (id, handler) => {
       const listener = (_event, payload) => handler(payload);
       ipcRenderer.on(`api:sse:${id}`, listener);
+      void ipcRenderer.invoke('api:sse:listen', id).then((accepted) => {
+        if (!accepted) handler({ type: 'error', message: '实时追踪连接已关闭' });
+      }).catch((error) => {
+        handler({ type: 'error', message: String(error?.message || error) });
+      });
       return () => ipcRenderer.removeListener(`api:sse:${id}`, listener);
     },
   },
