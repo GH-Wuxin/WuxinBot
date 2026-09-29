@@ -603,8 +603,15 @@ function writeDirtyShards(db, dirtyKeys: Set<string>) {
   invalidateStoreCaches();
 }
 
-function parseJsonFile(filePath: string) {
-  return JSON.parse(fs.readFileSync(filePath, 'utf8').replace(/^\uFEFF/, ''));
+function parseJsonFile(filePath: string, label = '数据库文件') {
+  let raw;
+  try {
+    raw = fs.readFileSync(filePath, 'utf8');
+  } catch (error) {
+    if (isMissingFileError(error)) throw error;
+    throw storageAccessError(label, error);
+  }
+  return JSON.parse(raw.replace(/^\uFEFF/, ''));
 }
 
 function readLogicalDbFromDisk() {
@@ -621,8 +628,12 @@ function readLogicalDbFromDisk() {
   delete merged._storage;
   for (const spec of SHARD_SPECS) {
     const filePath = shardPath(spec.name);
-    if (!fs.existsSync(filePath)) throw new Error(`数据库分片缺失: ${spec.file}`);
-    Object.assign(merged, parseJsonFile(filePath));
+    try {
+      Object.assign(merged, parseJsonFile(filePath, `数据库分片 ${spec.file}`));
+    } catch (error) {
+      if (isMissingFileError(error)) throw new Error(`数据库分片缺失: ${spec.file}`);
+      throw error;
+    }
   }
   return normalizeDb(merged);
 }
@@ -661,6 +672,23 @@ function errorMessage(error: unknown): string {
   return String((error as Error)?.message || error);
 }
 
+function isMissingFileError(error: any): boolean {
+  return error?.code === 'ENOENT';
+}
+
+function storageAccessError(label: string, error: unknown): StoreUnreadableError {
+  return new StoreUnreadableError(`${label}不可访问：${errorMessage(error)}`, 'access');
+}
+
+function statIfPresent(filePath: string, label: string): fs.Stats | null {
+  try {
+    return fs.statSync(filePath);
+  } catch (error) {
+    if (isMissingFileError(error)) return null;
+    throw storageAccessError(label, error);
+  }
+}
+
 type CoreRead =
   | { kind: 'missing' }
   | { kind: 'parsed'; value: any }
@@ -689,18 +717,23 @@ function readCoreFile(): CoreRead {
 function hasSideData(): boolean {
   const dataDir = getDataDir();
   for (const spec of SHARD_SPECS) {
-    if (fs.existsSync(path.join(dataDir, spec.file))) return true;
+    if (statIfPresent(path.join(dataDir, spec.file), `数据库分片 ${spec.file}`)) return true;
   }
   const backupDir = path.join(dataDir, 'backups');
-  try {
-    if (fs.existsSync(backupDir)
-      && fs.readdirSync(backupDir).some((name) => name.endsWith('.json') && !name.endsWith('.meta.json'))) {
-      return true;
+  if (statIfPresent(backupDir, '数据库备份目录')) {
+    let names;
+    try {
+      names = fs.readdirSync(backupDir);
+    } catch (error) {
+      throw storageAccessError('数据库备份目录', error);
     }
-  } catch { /* unreadable dir carries no signal here */ }
+    if (names.some((name) => name.endsWith('.json') && !name.endsWith('.meta.json'))) return true;
+  }
   try {
     if (fs.readdirSync(dataDir).some((name) => name.includes('.corrupt-'))) return true;
-  } catch { /* ignore */ }
+  } catch (error) {
+    throw storageAccessError('数据库目录', error);
+  }
   return false;
 }
 
@@ -760,21 +793,25 @@ export function ensureStore() {
 
 function listBackupCandidates(): string[] {
   const backupDir = path.join(getDataDir(), 'backups');
+  const backupStat = statIfPresent(backupDir, '数据库备份目录');
+  if (!backupStat) return [];
+  let names;
   try {
-    if (!fs.existsSync(backupDir)) return [];
-    // Newest first by modification time: names mix types (auto/manual/pre-shard),
-    // so lexicographic order would not reflect which snapshot is freshest.
-    return fs.readdirSync(backupDir)
-      .filter((name) => name.endsWith('.json') && !name.endsWith('.meta.json'))
-      .map((name) => {
-        try { return { name, mtime: fs.statSync(path.join(backupDir, name)).mtimeMs }; }
-        catch { return { name, mtime: 0 }; }
-      })
-      .sort((left, right) => right.mtime - left.mtime)
-      .map((item) => path.join(backupDir, item.name));
-  } catch {
-    return [];
+    names = fs.readdirSync(backupDir);
+  } catch (error) {
+    throw storageAccessError('数据库备份目录', error);
   }
+  // Newest first by modification time: names mix types (auto/manual/pre-shard),
+  // so lexicographic order would not reflect which snapshot is freshest.
+  return names
+    .filter((name) => name.endsWith('.json') && !name.endsWith('.meta.json'))
+    .map((name) => {
+      const stat = statIfPresent(path.join(backupDir, name), `备份 ${name}`);
+      return stat ? { name, mtime: stat.mtimeMs } : null;
+    })
+    .filter(Boolean)
+    .sort((left, right) => right.mtime - left.mtime)
+    .map((item) => path.join(backupDir, item.name));
 }
 
 // A restore candidate must prove it is a complete logical database, not merely
@@ -829,6 +866,45 @@ export function isValidLogicalDbShape(value: unknown): boolean {
   return true;
 }
 
+function authoritativeStoreFiles(): string[] {
+  return [getDbPath(), ...SHARD_SPECS.map((spec) => path.join(getDataDir(), spec.file))];
+}
+
+function preserveAuthoritativeFiles(): { preserved: string[]; missing: string[] } {
+  const stamp = new Date().toISOString().replace(/[:.]/g, '-');
+  const preserved: string[] = [];
+  const missing: string[] = [];
+  for (const file of authoritativeStoreFiles()) {
+    const name = path.basename(file);
+    const stat = statIfPresent(file, `权威文件 ${name}`);
+    if (!stat) {
+      missing.push(name);
+      continue;
+    }
+    if (!stat.isFile()) {
+      throw new StoreUnreadableError(`权威文件 ${name} 不是普通文件，无法保全现场。`, 'access');
+    }
+
+    const evidenceName = `${name}.corrupt-${stamp}`;
+    const evidencePath = path.join(getDataDir(), evidenceName);
+    try {
+      fs.copyFileSync(file, evidencePath);
+      const sourceBytes = fs.readFileSync(file);
+      const evidenceBytes = fs.readFileSync(evidencePath);
+      if (!sourceBytes.equals(evidenceBytes)) {
+        throw new Error('保全副本字节校验不一致');
+      }
+    } catch (copyError) {
+      throw new StoreUnreadableError(
+        `无法保全权威文件 ${name}：${errorMessage(copyError)}`,
+        'access',
+      );
+    }
+    preserved.push(evidenceName);
+  }
+  return { preserved, missing };
+}
+
 function recoverStorageFromBackups(reasonError: unknown): any {
   lastDbReadFailureAt = Date.now();
   const reasonText = errorMessage(reasonError).slice(0, 300);
@@ -840,62 +916,65 @@ function recoverStorageFromBackups(reasonError: unknown): any {
     console.error('[store] recovery skipped (untrusted entry):', errorMessage(assertError));
   }
 
-  // Preserve every authoritative file before touching anything, so a failed
-  // recovery attempt stays retryable and the damage never expands (F03).
-  const stamp = new Date().toISOString().replace(/[:.]/g, '-');
-  const preserved: string[] = [];
-  if (canWrite) {
-    for (const file of [getDbPath(), ...SHARD_SPECS.map((spec) => path.join(getDataDir(), spec.file))]) {
+  const recover = () => {
+    // The recovery lock covers evidence capture, candidate selection and the
+    // eventual write. No older writer can change the files between those
+    // phases, and no nested writeDb()/withDbLock call is needed.
+    const evidence = canWrite ? preserveAuthoritativeFiles() : { preserved: [], missing: [] };
+    const candidates = listBackupCandidates();
+    let inspected = 0;
+    for (const candidate of candidates) {
+      inspected += 1;
+      let raw;
       try {
-        if (fs.existsSync(file)) {
-          const evidenceName = `${path.basename(file)}.corrupt-${stamp}`;
-          fs.copyFileSync(file, path.join(getDataDir(), evidenceName));
-          preserved.push(evidenceName);
-        }
-      } catch (copyError) {
-        console.error('[store] failed to preserve evidence copy:', errorMessage(copyError));
+        raw = fs.readFileSync(candidate, 'utf8');
+      } catch (readError) {
+        if (isMissingFileError(readError)) continue;
+        throw storageAccessError(`备份 ${path.basename(candidate)}`, readError);
       }
-    }
-  }
 
-  const candidates = listBackupCandidates();
-  let inspected = 0;
-  for (const candidate of candidates) {
-    inspected += 1;
-    let parsed: any = null;
-    try {
-      parsed = JSON.parse(fs.readFileSync(candidate, 'utf8').replace(/^\uFEFF/, ''));
-    } catch { /* unreadable candidate; try older snapshots */ }
-    if (!isValidLogicalDbShape(parsed)) {
-      console.error(`[store] backup ${path.basename(candidate)} is not a complete logical database, skipping`);
-      continue;
-    }
-    const restoredName = path.basename(candidate);
-    if (!canWrite) {
-      throw new StoreUnreadableError(
-        `存储异常（${reasonText}），已在 ${restoredName} 找到有效备份，但当前入口没有写入权限，无法执行恢复。`,
-        'anomaly',
-      );
-    }
-    try {
-      withDbLock(() => {
+      let parsed: any = null;
+      try {
+        parsed = JSON.parse(raw.replace(/^\uFEFF/, ''));
+      } catch { /* malformed candidate; continue to an older candidate */ }
+      if (!isValidLogicalDbShape(parsed)) {
+        console.error(`[store] backup ${path.basename(candidate)} is not a complete logical database, skipping`);
+        continue;
+      }
+      const restoredName = path.basename(candidate);
+      if (!canWrite) {
+        throw new StoreUnreadableError(
+          `存储异常（${reasonText}），已在 ${restoredName} 找到有效备份，但当前入口没有写入权限，无法执行恢复。`,
+          'anomaly',
+        );
+      }
+      try {
         writeAllShards(normalizeDb(parsed));
-      });
-    } catch (writeError) {
-      console.error('[store] failed to write recovered database, trying older backups:', errorMessage(writeError));
-      continue;
+      } catch (writeError) {
+        // A valid candidate that cannot be written is not an invalid
+        // candidate. Trying an older backup would hide a write failure and
+        // could overwrite a different state, so stop immediately.
+        throw new StoreUnreadableError(
+          `有效备份 ${restoredName} 的恢复写入失败，已停止，不继续尝试更旧备份：${errorMessage(writeError)}`,
+          'anomaly',
+        );
+      }
+      console.error(`[store] storage was unreadable (${reasonText}); restored from ${restoredName}`
+        + (evidence.preserved.length ? `; previous files kept as ${evidence.preserved.join(', ')}` : '')
+        + (evidence.missing.length ? `; missing before recovery: ${evidence.missing.join(', ')}` : '')
+        + '; data written after that backup may be lost');
+      return readDbUnlocked();
     }
-    console.error(`[store] storage was unreadable (${reasonText}); restored from ${restoredName}`
-      + (preserved.length ? `; previous files kept as ${preserved.join(', ')}` : '')
-      + '; data written after that backup may be lost');
-    return readDbUnlocked();
-  }
-  throw new StoreUnreadableError(
-    `存储处于异常状态且没有可用的有效备份（${reasonText}；已检查 ${inspected} 个候选）`
-    + (preserved.length ? `；原文件保留为 ${preserved.join(', ')}` : '')
-    + '。拒绝创建空数据库覆盖现场。',
-    'anomaly',
-  );
+    throw new StoreUnreadableError(
+      `存储处于异常状态且没有可用的有效备份（${reasonText}；已检查 ${inspected} 个候选）`
+      + (evidence.preserved.length ? `；原文件保留为 ${evidence.preserved.join(', ')}` : '')
+      + (evidence.missing.length ? `；恢复前缺失 ${evidence.missing.join(', ')}` : '')
+      + '。拒绝创建空数据库覆盖现场。',
+      'anomaly',
+    );
+  };
+
+  return canWrite ? withDbLock(recover) : recover();
 }
 
 // Trusted startup entry: classify the storage, and on damage attempt a
