@@ -19,6 +19,7 @@ import {
 } from './playerSkillProfile.js';
 import {
   getSkillProfilerIdentity,
+  normalizeSkillProfilerIdentity,
   skillProfilerConcurrency,
   skillProfilerAxisValue,
   requestSkillProfilerAnalysisCachedWithFetch,
@@ -42,12 +43,17 @@ const recentInflight = new Map<string, Promise<Record<string, any>>>();
 export type RecentEvidence = 'SUFFICIENT' | 'LOWER_BOUND' | 'INSUFFICIENT';
 
 export function recentProfileCacheKey(osuId: number, identity: SkillProfilerIdentity): string {
+  const normalizedIdentity = normalizeSkillProfilerIdentity(identity);
   return JSON.stringify([
     RECENT_PROFILE_CACHE_POLICY_ID,
-    identity.algorithmId,
-    identity.mapDemandVersion,
-    identity.unifiedScaleId,
-    identity.unifiedCalibrationKey,
+    normalizedIdentity.algorithmId,
+    normalizedIdentity.mapDemandVersion,
+    normalizedIdentity.analysisSchemaVersion,
+    normalizedIdentity.axisSchemaVersion,
+    normalizedIdentity.unifiedSchemaVersion,
+    normalizedIdentity.unifiedScaleId,
+    normalizedIdentity.unifiedCalibrationKey,
+    normalizedIdentity.mapDemandCalibrationId,
     osuId,
   ]);
 }

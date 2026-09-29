@@ -20,6 +20,17 @@ const MAX_RESPONSE_BYTES = 256 * 1024;
 const MAX_OSU_FILE_BYTES = 4 * 1024 * 1024;
 const DEFAULT_OSU_FILE_BASE_URL = 'https://osu.ppy.sh/osu/';
 const IDENTITY_CACHE_TTL_MS = 30_000;
+const ANALYSIS_RESPONSE_SCHEMA_VERSION = 'map_demand_bid_analysis_v0.1.0';
+const UNVERIFIED_AXIS_SCHEMA = 'UNVERIFIED_AXIS_SCHEMA';
+const UNIFIED_SCHEMA_UNCONFIGURED = 'UNIFIED_SCHEMA_UNCONFIGURED';
+const UNIFIED_SCALE_UNCONFIGURED = 'UNIFIED_SCALE_UNCONFIGURED';
+const UNIFIED_CALIBRATION_UNCONFIGURED = 'UNIFIED_CALIBRATION_UNCONFIGURED';
+const MAP_DEMAND_CALIBRATION_UNCONFIGURED = 'MAP_DEMAND_CALIBRATION_UNCONFIGURED';
+const MOD_CONTEXT_ORDER = [
+  'NF', 'EZ', 'HD', 'HR', 'SD', 'DT', 'RX', 'HT', 'NC', 'FL',
+  'AT', 'SO', 'AP', 'PF', 'DC', 'DA', 'WU', 'WD', 'AS', 'TP',
+];
+const NEUTRAL_PROFILER_MODS = new Set(['NM', 'NF', 'SD', 'PF']);
 let identityCache: { at: number; value: SkillProfilerIdentity } | null = null;
 const analysisInflight = new Map<string, Promise<any>>();
 const PREFETCH_CONCURRENCY = 4;
@@ -32,6 +43,14 @@ export interface SkillProfilerIdentity {
   mapDemandVersion: string;
   unifiedScaleId: string;
   unifiedCalibrationKey: string;
+  /** The response schema is not returned by /api/state, so use the locked API contract. */
+  analysisSchemaVersion?: string;
+  /** Optional on older callers; populated by the current /api/state. */
+  axisSchemaVersion?: string;
+  /** Optional when the unified calibration lane is unavailable. */
+  unifiedSchemaVersion?: string;
+  /** Top-level map-demand calibration, distinct from unified per-context calibration. */
+  mapDemandCalibrationId?: string;
 }
 
 const AXIS_LABELS = PLAYER_SKILL_AXIS_LABELS;
@@ -64,6 +83,34 @@ export function skillProfilerConcurrency(): number {
   const parsed = Number(process.env.SKILL_PROFILER_CONCURRENCY);
   if (!Number.isFinite(parsed)) return DEFAULT_SKILL_PROFILER_CONCURRENCY;
   return Math.max(1, Math.min(MAX_SKILL_PROFILER_CONCURRENCY, Math.floor(parsed)));
+}
+
+function textField(value: unknown): string {
+  return typeof value === 'string' ? value.trim() : String(value ?? '').trim();
+}
+
+interface NormalizedSkillProfilerIdentity {
+  algorithmId: string;
+  mapDemandVersion: string;
+  analysisSchemaVersion: string;
+  axisSchemaVersion: string;
+  unifiedSchemaVersion: string;
+  unifiedScaleId: string;
+  unifiedCalibrationKey: string;
+  mapDemandCalibrationId: string;
+}
+
+export function normalizeSkillProfilerIdentity(identity: SkillProfilerIdentity): NormalizedSkillProfilerIdentity {
+  return {
+    algorithmId: textField(identity?.algorithmId) || 'UNVERIFIED_ALGORITHM',
+    mapDemandVersion: textField(identity?.mapDemandVersion) || 'UNVERIFIED_VERSION',
+    analysisSchemaVersion: textField(identity?.analysisSchemaVersion) || ANALYSIS_RESPONSE_SCHEMA_VERSION,
+    axisSchemaVersion: textField(identity?.axisSchemaVersion) || UNVERIFIED_AXIS_SCHEMA,
+    unifiedSchemaVersion: textField(identity?.unifiedSchemaVersion) || UNIFIED_SCHEMA_UNCONFIGURED,
+    unifiedScaleId: textField(identity?.unifiedScaleId) || UNIFIED_SCALE_UNCONFIGURED,
+    unifiedCalibrationKey: textField(identity?.unifiedCalibrationKey) || UNIFIED_CALIBRATION_UNCONFIGURED,
+    mapDemandCalibrationId: textField(identity?.mapDemandCalibrationId) || MAP_DEMAND_CALIBRATION_UNCONFIGURED,
+  };
 }
 
 async function withAnalysisSlot<T>(run: () => Promise<T>): Promise<T> {
@@ -159,7 +206,7 @@ export async function getSkillProfilerIdentity(): Promise<SkillProfilerIdentity>
   if (identityCache && Date.now() - identityCache.at < IDENTITY_CACHE_TTL_MS) return identityCache.value;
   const state = await getProfiler('/api/state');
   const unified = state?.unified_measurements || {};
-  const contexts = unified?.contexts && typeof unified.contexts === 'object'
+  const contexts = unified?.contexts && typeof unified.contexts === 'object' && !Array.isArray(unified.contexts)
     ? Object.entries(unified.contexts as Record<string, any>)
       .sort(([left], [right]) => left.localeCompare(right))
       .map(([context, payload]) => `${context}:${String((payload as any)?.calibration_id || '')}:${String((payload as any)?.status || '')}`)
@@ -168,8 +215,12 @@ export async function getSkillProfilerIdentity(): Promise<SkillProfilerIdentity>
   const value = {
     algorithmId: String(state?.algorithm_id || 'UNVERIFIED_ALGORITHM'),
     mapDemandVersion: String(state?.map_demand_version || 'UNVERIFIED_VERSION'),
-    unifiedScaleId: String(unified?.scale_id || 'UNIFIED_SCALE_UNCONFIGURED'),
-    unifiedCalibrationKey: contexts || 'UNIFIED_CALIBRATION_UNCONFIGURED',
+    analysisSchemaVersion: ANALYSIS_RESPONSE_SCHEMA_VERSION,
+    axisSchemaVersion: String(state?.axis_schema_version || UNVERIFIED_AXIS_SCHEMA),
+    unifiedSchemaVersion: String(unified?.schema_version || UNIFIED_SCHEMA_UNCONFIGURED),
+    unifiedScaleId: String(unified?.scale_id || UNIFIED_SCALE_UNCONFIGURED),
+    unifiedCalibrationKey: contexts || UNIFIED_CALIBRATION_UNCONFIGURED,
+    mapDemandCalibrationId: String(state?.calibration_id || MAP_DEMAND_CALIBRATION_UNCONFIGURED),
   };
   identityCache = { at: Date.now(), value };
   return value;
@@ -186,10 +237,10 @@ function normalizedCacheMods(mods: string[]): string[] {
 }
 
 // v1 keyed only [algorithmId, mapDemandVersion, beatmapId, mods] and silently
-// served pre-recalibration results (finding F09). v2 namespaces the cache with
-// the full result identity, so entries written before this schema can never be
-// a hit and every semantic identity field participates in invalidation.
-const ANALYSIS_CACHE_SCHEMA = 2;
+// served pre-recalibration results (finding F09). v2 added the first calibration
+// fields. v3 namespaces the cache with the complete result identity and context,
+// so entries written before this contract can never be a hit.
+const ANALYSIS_CACHE_SCHEMA = 3;
 
 export async function requestSkillProfilerAnalysisCachedWithFetch(
   beatmapId: number,
@@ -200,12 +251,17 @@ export async function requestSkillProfilerAnalysisCachedWithFetch(
   // calibration even if the workbench recalibrates mid-run (finding F09, §6.2).
   const identity = expectedIdentity ?? await getSkillProfilerIdentity();
   const canonicalMods = normalizedCacheMods(mods);
+  const normalizedIdentity = normalizeSkillProfilerIdentity(identity);
   const source = JSON.stringify([
     ANALYSIS_CACHE_SCHEMA,
-    identity.algorithmId,
-    identity.mapDemandVersion,
-    identity.unifiedScaleId,
-    identity.unifiedCalibrationKey,
+    normalizedIdentity.algorithmId,
+    normalizedIdentity.mapDemandVersion,
+    normalizedIdentity.analysisSchemaVersion,
+    normalizedIdentity.axisSchemaVersion,
+    normalizedIdentity.unifiedSchemaVersion,
+    normalizedIdentity.unifiedScaleId,
+    normalizedIdentity.unifiedCalibrationKey,
+    normalizedIdentity.mapDemandCalibrationId,
     beatmapId,
     canonicalMods,
   ]);
@@ -214,18 +270,23 @@ export async function requestSkillProfilerAnalysisCachedWithFetch(
   if (existing) return existing;
   const pending = (async () => {
     const file = analysisCachePath(key);
+    let cachedPayload: any = null;
     try {
-      const cached = JSON.parse(fs.readFileSync(file, 'utf8'));
-      if (cached?.key === source && cached?.analysis?.status === 'OK') {
-        assertAnalysisIdentity(cached.analysis, identity);
-        return cached.analysis;
-      }
-    } catch (error: any) {
-      if (error?.message?.startsWith('ANALYSIS_IDENTITY_MISMATCH')) throw error;
+      cachedPayload = JSON.parse(fs.readFileSync(file, 'utf8'));
+    } catch {
       /* cache miss */
     }
+    if (cachedPayload?.key === source && cachedPayload?.analysis?.status === 'OK') {
+      try {
+        assertAnalysisIdentity(cachedPayload.analysis, identity, canonicalMods);
+        return cachedPayload.analysis;
+      } catch (error: any) {
+        if (!error?.message?.startsWith('ANALYSIS_IDENTITY_MISMATCH')) throw error;
+        isolateInvalidAnalysisCache(file, error.message);
+      }
+    }
     const analysis = await requestSkillProfilerAnalysisWithFetch(beatmapId, canonicalMods);
-    assertAnalysisIdentity(analysis, identity);
+    assertAnalysisIdentity(analysis, identity, canonicalMods);
     if (analysis?.status === 'OK') {
       let temporary = '';
       try {
@@ -253,21 +314,164 @@ export async function requestSkillProfilerAnalysisCachedWithFetch(
   }
 }
 
+function isolateInvalidAnalysisCache(file: string, reason: string): void {
+  const isolated = `${file}.invalid-${process.pid}-${randomUUID()}`;
+  try {
+    fs.renameSync(file, isolated);
+    traceEvent('TOOL', 'Skill：隔离身份不一致的分析缓存', {
+      status: 'running', file: path.basename(file), isolated: path.basename(isolated),
+      reason: reason.slice(0, 220),
+    });
+  } catch (error: any) {
+    traceEvent('TOOL', 'Skill：身份异常缓存隔离失败，继续受控刷新', {
+      status: 'error', file: path.basename(file), error: String(error?.message || error).slice(0, 160),
+    });
+  }
+}
+
+function canonicalProfilerModContext(mods: string[]): string {
+  const order = new Map(MOD_CONTEXT_ORDER.map((mod, index) => [mod, index]));
+  const effective = mods
+    .map((mod) => {
+      const upper = String(mod).toUpperCase();
+      if (upper === 'NC') return 'DT';
+      if (upper === 'DC') return 'HT';
+      return upper;
+    })
+    .filter((mod) => !NEUTRAL_PROFILER_MODS.has(mod));
+  return [...new Set(effective)]
+    .sort((left, right) => (order.get(left) ?? MOD_CONTEXT_ORDER.length) - (order.get(right) ?? MOD_CONTEXT_ORDER.length) || left.localeCompare(right))
+    .join('') || 'NM';
+}
+
+function unifiedCalibrationForContext(identity: NormalizedSkillProfilerIdentity, context: string): string | null {
+  if (identity.unifiedCalibrationKey === UNIFIED_CALIBRATION_UNCONFIGURED) return null;
+  const entries = identity.unifiedCalibrationKey.split('|').map((entry) => {
+    const first = entry.indexOf(':');
+    const last = entry.lastIndexOf(':');
+    if (first <= 0 || last <= first) return null;
+    return {
+      context: entry.slice(0, first),
+      calibrationId: entry.slice(first + 1, last),
+      status: entry.slice(last + 1),
+    };
+  }).filter((entry): entry is { context: string; calibrationId: string; status: string } => Boolean(entry));
+  const exact = entries.find((entry) => entry.context === context);
+  if (exact) return exact.calibrationId || null;
+  if (context === 'NM') {
+    const defaultEntry = entries.find((entry) => entry.context.toLowerCase() === 'default');
+    if (defaultEntry) return defaultEntry.calibrationId || null;
+  }
+  return entries.length === 1 ? (entries[0].calibrationId || null) : null;
+}
+
+function firstIdentityField(...values: unknown[]): string {
+  for (const value of values) {
+    const text = textField(value);
+    if (text) return text;
+  }
+  return '';
+}
+
 // Cross-check the response's self-reported identity against the identity the
 // result was requested under. A workbench that recalibrated mid-batch must not
 // have its new-scale output silently mixed into a batch pinned to the old one.
-function assertAnalysisIdentity(analysis: any, expected: SkillProfilerIdentity): void {
-  if (!expected || !analysis) return;
-  const reported = analysis.identity || {};
-  const reportedAlgorithm = String(reported.algorithm_id || '');
-  const reportedVersion = String(reported.map_demand_version || '');
-  if (!reportedAlgorithm && !reportedVersion) return;
-  if ((reportedAlgorithm && reportedAlgorithm !== expected.algorithmId)
-    || (reportedVersion && reportedVersion !== expected.mapDemandVersion)) {
-    throw new Error(
-      `ANALYSIS_IDENTITY_MISMATCH: expected ${expected.algorithmId}/${expected.mapDemandVersion},`
-      + ` got ${reportedAlgorithm}/${reportedVersion}`,
-    );
+function assertAnalysisIdentity(analysis: any, expected: SkillProfilerIdentity, requestedMods: string[] = []): void {
+  if (!expected || !analysis || analysis.status !== 'OK') return;
+  const normalized = normalizeSkillProfilerIdentity(expected);
+  const reported = analysis.identity && typeof analysis.identity === 'object' ? analysis.identity : {};
+  const unified = analysis.unified_measurements && typeof analysis.unified_measurements === 'object'
+    ? analysis.unified_measurements : {};
+  const mismatch = (field: string, expectedValue: string, actualValue: string): never => {
+    throw new Error(`ANALYSIS_IDENTITY_MISMATCH: ${field} expected ${expectedValue}, got ${actualValue || '<missing>'}`);
+  };
+  const requireValue = (field: string, value: string): string => {
+    if (!value) mismatch(field, 'present', '');
+    return value;
+  };
+
+  const reportedAlgorithm = firstIdentityField(reported.algorithm_id, analysis.algorithm_id);
+  const reportedVersion = firstIdentityField(reported.map_demand_version, analysis.map_demand_version);
+  if (!reportedAlgorithm || !reportedVersion) {
+    mismatch('algorithm/map_demand_version', `${normalized.algorithmId}/${normalized.mapDemandVersion}`, 'missing');
+  }
+  if (reportedAlgorithm !== normalized.algorithmId) mismatch('algorithm_id', normalized.algorithmId, reportedAlgorithm);
+  if (reportedVersion !== normalized.mapDemandVersion) mismatch('map_demand_version', normalized.mapDemandVersion, reportedVersion);
+
+  const reportedSchema = firstIdentityField(analysis.schema_version, reported.schema_version);
+  if (reportedSchema !== normalized.analysisSchemaVersion) {
+    mismatch('analysis_schema_version', normalized.analysisSchemaVersion, reportedSchema);
+  }
+
+  const reportedMapCalibration = firstIdentityField(reported.calibration_id, analysis.calibration_id);
+  if (normalized.mapDemandCalibrationId !== MAP_DEMAND_CALIBRATION_UNCONFIGURED) {
+    if (!reportedMapCalibration) mismatch('map_demand_calibration_id', normalized.mapDemandCalibrationId, 'missing');
+    if (reportedMapCalibration !== normalized.mapDemandCalibrationId) {
+      mismatch('map_demand_calibration_id', normalized.mapDemandCalibrationId, reportedMapCalibration);
+    }
+  } else if (reportedMapCalibration) {
+    mismatch('map_demand_calibration_id', MAP_DEMAND_CALIBRATION_UNCONFIGURED, reportedMapCalibration);
+  }
+
+  const reportedAxisSchema = firstIdentityField(
+    reported.axis_schema_version,
+    analysis.axis_schema_version,
+  );
+  if (reportedAxisSchema && normalized.axisSchemaVersion !== UNVERIFIED_AXIS_SCHEMA
+    && reportedAxisSchema !== normalized.axisSchemaVersion) {
+    mismatch('axis_schema_version', normalized.axisSchemaVersion, reportedAxisSchema);
+  }
+
+  const requestedContext = canonicalProfilerModContext(requestedMods);
+  const expectedUnifiedCalibration = unifiedCalibrationForContext(normalized, requestedContext);
+  const unifiedStatus = firstIdentityField(unified.status).toUpperCase();
+  const reportedUnifiedSchema = firstIdentityField(unified.schema_version, reported.unified_schema_version);
+  const reportedScale = firstIdentityField(
+    unified.scale_id,
+    unified.unified_scale_id,
+    reported.unified_scale_id,
+    reported.scale_id,
+  );
+  const reportedContext = firstIdentityField(unified.mod_context, reported.mod_context);
+  const reportedUnifiedCalibration = firstIdentityField(
+    unified.calibration_id,
+    analysis.unified_calibration_id,
+    reported.unified_calibration_id,
+  );
+  const expectedScaleConfigured = normalized.unifiedScaleId !== UNIFIED_SCALE_UNCONFIGURED;
+  const expectedUnifiedSchemaConfigured = normalized.unifiedSchemaVersion !== UNIFIED_SCHEMA_UNCONFIGURED;
+
+  if (unifiedStatus === 'ATTACHED') {
+    requireValue('unified.schema_version', reportedUnifiedSchema);
+    requireValue('unified.scale_id', reportedScale);
+    requireValue('unified.mod_context', reportedContext);
+    requireValue('unified.calibration_id', reportedUnifiedCalibration);
+    if (!expectedScaleConfigured) mismatch('unified.status', 'raw-axis-only', 'ATTACHED');
+    if (reportedScale !== normalized.unifiedScaleId) mismatch('unified.scale_id', normalized.unifiedScaleId, reportedScale);
+    if (expectedUnifiedSchemaConfigured && reportedUnifiedSchema !== normalized.unifiedSchemaVersion) {
+      mismatch('unified.schema_version', normalized.unifiedSchemaVersion, reportedUnifiedSchema);
+    }
+    if (reportedContext !== requestedContext) mismatch('unified.mod_context', requestedContext, reportedContext);
+    if (!expectedUnifiedCalibration) mismatch('unified.calibration_id', 'configured current context', reportedUnifiedCalibration);
+    if (reportedUnifiedCalibration !== expectedUnifiedCalibration) {
+      mismatch('unified.calibration_id', expectedUnifiedCalibration, reportedUnifiedCalibration);
+    }
+  } else {
+    if (expectedUnifiedCalibration) {
+      mismatch('unified.status', 'ATTACHED', unifiedStatus || 'missing');
+    }
+    if (reportedUnifiedCalibration) {
+      mismatch('unified.calibration_id', 'unconfigured current context', reportedUnifiedCalibration);
+    }
+    if (reportedScale && expectedScaleConfigured && reportedScale !== normalized.unifiedScaleId) {
+      mismatch('unified.scale_id', normalized.unifiedScaleId, reportedScale);
+    }
+    if (reportedUnifiedSchema && expectedUnifiedSchemaConfigured && reportedUnifiedSchema !== normalized.unifiedSchemaVersion) {
+      mismatch('unified.schema_version', normalized.unifiedSchemaVersion, reportedUnifiedSchema);
+    }
+    if (reportedContext && reportedContext !== requestedContext) {
+      mismatch('unified.mod_context', requestedContext, reportedContext);
+    }
   }
 }
 

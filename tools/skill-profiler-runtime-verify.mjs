@@ -47,7 +47,13 @@ const server = http.createServer((req, res) => {
       active += 1; peak = Math.max(peak, active);
       return setTimeout(() => {
         active -= 1;
-        res.end(JSON.stringify({ status: 'OK', beatmap: { beatmap_id: bid } }));
+        res.end(JSON.stringify({
+          status: 'OK',
+          schema_version: 'map_demand_bid_analysis_v0.1.0',
+          identity: { algorithm_id: 'RUNTIME_TEST', map_demand_version: 'test' },
+          unified_measurements: { status: 'NOT_CONFIGURED' },
+          beatmap: { beatmap_id: bid },
+        }));
       }, bid >= 100 ? 600 : 0);
     }
     res.writeHead(404); res.end('{}');

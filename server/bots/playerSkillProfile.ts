@@ -3,6 +3,7 @@ import { getUserBestScores, getUserById } from '../osu/api.js';
 import { normalizedScoreMods } from '../osu/scoreMetrics.js';
 import {
   getSkillProfilerIdentity,
+  normalizeSkillProfilerIdentity,
   skillProfilerConcurrency,
   skillProfilerAxisValue,
   requestSkillProfilerAnalysisCachedWithFetch,
@@ -518,13 +519,18 @@ export function playerProfileCacheKey(
   limit: number,
   identity: SkillProfilerIdentity,
 ): string {
+  const normalizedIdentity = normalizeSkillProfilerIdentity(identity);
   return JSON.stringify([
     PLAYER_SKILL_TITLE_POLICY_ID,
     PLAYER_SKILL_QUALITY_POLICY_ID,
-    identity.algorithmId,
-    identity.mapDemandVersion,
-    identity.unifiedScaleId,
-    identity.unifiedCalibrationKey,
+    normalizedIdentity.algorithmId,
+    normalizedIdentity.mapDemandVersion,
+    normalizedIdentity.analysisSchemaVersion,
+    normalizedIdentity.axisSchemaVersion,
+    normalizedIdentity.unifiedSchemaVersion,
+    normalizedIdentity.unifiedScaleId,
+    normalizedIdentity.unifiedCalibrationKey,
+    normalizedIdentity.mapDemandCalibrationId,
     osuId,
     limit,
   ]);
