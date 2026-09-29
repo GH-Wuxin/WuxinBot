@@ -362,7 +362,11 @@ function unifiedCalibrationForContext(identity: NormalizedSkillProfilerIdentity,
     const defaultEntry = entries.find((entry) => entry.context.toLowerCase() === 'default');
     if (defaultEntry) return defaultEntry.calibrationId || null;
   }
-  return entries.length === 1 ? (entries[0].calibrationId || null) : null;
+  // A calibration explicitly scoped to another context must never become a
+  // wildcard merely because it is the only configured entry. Missing context
+  // configuration is a valid raw-axis-only lane; only an explicit exact or
+  // protocol-defined default entry may attach a calibration.
+  return null;
 }
 
 function firstIdentityField(...values: unknown[]): string {

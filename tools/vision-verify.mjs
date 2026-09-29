@@ -13,7 +13,7 @@ const testDataDir = createTestDataDir('wuxin-vision');
 process.on('exit', () => cleanupTestDir(testDataDir));
 const { extractReplyMessageId, asksToInspectVisual, extractImageInputs } = await import('../server/bot/cleaning.ts');
 const { collectEventVisionImages, decideReply } = await import('../server/bot.ts');
-const { completeChat } = await import('../server/bot/llm.ts');
+const { completeChat, resolveVisionImageUrl } = await import('../server/bot/llm.ts');
 const { buildPrompt, modelSupportsVision, responseOptionsFor } = await import('../server/bot/prompt.ts');
 
 function assert(cond, msg) {
@@ -244,6 +244,50 @@ async function main() {
   assert(wireParts.some((part) => part?.type === 'image_url'), 'DeepSeek Vision request must include image_url');
 
   console.log('PASS: Test 5 — DeepSeek Flash alias sends image to Vision endpoint');
+
+  // ============================================================
+  // Test 6: Codex App Server must inline remote QQ image URLs
+  // ============================================================
+  console.log('Test 6: Codex remote image compatibility');
+
+  const originalImageFetch = globalThis.fetch;
+  const remoteQqImage = 'https://multimedia.nt.qq.com.cn/download?appid=1407&file=vision-test';
+  let imageFetchCalls = 0;
+  globalThis.fetch = async () => {
+    imageFetchCalls += 1;
+    return new Response(new Uint8Array([137, 80, 78, 71]), {
+      status: 200,
+      headers: { 'content-type': 'image/png', 'content-length': '4' },
+    });
+  };
+  try {
+    const codexDb = {
+      settings: {
+        llmProvider: 'codex-app-server',
+        visionImageTransport: 'auto',
+        visionMaxImageBytes: 1_000_000,
+      },
+    };
+    const codexDataUrl = await resolveVisionImageUrl(codexDb, { url: remoteQqImage });
+    assert(codexDataUrl.startsWith('data:image/png;base64,'), 'Codex must receive an inline image data URL');
+    assert(imageFetchCalls === 1, 'Codex must download each remote image once');
+
+    const codexUrlConfigured = await resolveVisionImageUrl({
+      settings: { ...codexDb.settings, visionImageTransport: 'url' },
+    }, { url: remoteQqImage });
+    assert(codexUrlConfigured.startsWith('data:image/png;base64,'), 'Codex must override URL transport for compatibility');
+    assert(imageFetchCalls === 2, 'Codex URL override must still download the image');
+
+    const compatibleUrl = await resolveVisionImageUrl({
+      settings: { llmProvider: 'openai-compatible', visionImageTransport: 'auto' },
+    }, { url: remoteQqImage });
+    assert(compatibleUrl === remoteQqImage, 'OpenAI-compatible auto transport must keep remote image URLs');
+    assert(imageFetchCalls === 2, 'non-Codex auto transport must not download a remote URL');
+  } finally {
+    globalThis.fetch = originalImageFetch;
+  }
+
+  console.log('PASS: Test 6 — Codex inlines remote images without changing other providers');
 
   // ============================================================
   console.log('\nAll vision verification tests PASSED.');

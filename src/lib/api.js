@@ -138,7 +138,15 @@ export async function api(path, options = {}, allowAuthRetry = true) {
     });
     if (controller.signal.aborted) throw abortError();
     let data;
-    try { data = await response.json(); } catch { throw new Error(`服务器错误 (${response.status})`); }
+    try {
+      data = await response.json();
+    } catch (error) {
+      // A request can be cancelled after response headers arrive but while the
+      // body is still being consumed. Preserve cancellation/timeout semantics
+      // instead of misreporting the aborted response as "服务器错误 (200)".
+      if (controller.signal.aborted || error?.name === 'AbortError') throw abortError();
+      throw new Error(`服务器错误 (${response.status})`);
+    }
     if (response.status === 0 && (data?.code === 'ABORT_ERR' || data?.code === 'TIMEOUT')) {
       if (data.code === 'TIMEOUT') timedOut = true;
       throw abortError(data.error || '请求已取消');

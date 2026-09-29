@@ -364,8 +364,16 @@ async function localImageAsDataUrl(file, maxBytes) {
   } finally { await handle.close(); }
 }
 
-async function resolveVisionImageUrl(db, image, options = {}) {
-  const transport = String(db.settings.visionImageTransport || 'auto').toLowerCase();
+/**
+ * Codex App Server only accepts image inputs as inline data URLs. QQ image
+ * segments are normally remote URLs, so the adapter must download them before
+ * handing the message to Codex. Other OpenAI-compatible providers keep their
+ * configured transport behavior unchanged.
+ */
+export async function resolveVisionImageUrl(db, image, options = {}) {
+  const provider = llmProvider(db);
+  const configuredTransport = String(db.settings.visionImageTransport || 'auto').toLowerCase();
+  const transport = provider === 'codex-app-server' ? 'data' : configuredTransport;
   const maxBytes = Math.max(256_000, Math.min(20_000_000, Number(db.settings.visionMaxImageBytes || 6_000_000)));
   const timeoutMs = Math.max(1, Math.min(30_000, Number(db.settings.visionImageTimeoutMs || 8000), options.visionRemainingMs ?? Infinity));
   const url = String(image?.url || '').trim();
@@ -373,7 +381,10 @@ async function resolveVisionImageUrl(db, image, options = {}) {
 
   if (transport === 'url' && url) return url;
   if (transport === 'data') {
-    if (url) return fetchImageAsDataUrl(url, timeoutMs, maxBytes);
+    if (url) {
+      if (url.startsWith('data:')) return url;
+      return fetchImageAsDataUrl(url, timeoutMs, maxBytes);
+    }
     if (file) return localImageAsDataUrl(file, maxBytes);
   }
   if (url) {

@@ -59,10 +59,20 @@ try {
   check(!store.isValidLogicalDbShape({ ...emptyLogicalDb, _storage: { format: 'wuxin-sharded-v1', version: 2, shards: {} } }), 'future storage version is rejected');
   check(!store.isValidLogicalDbShape({ ...emptyLogicalDb, _storage: { format: 'wuxin-sharded-v1', version: 1 } }), 'incomplete storage marker is rejected');
 
+  store.updateDb((db) => {
+    store.saveConfigSnapshot(db);
+    db.settings.ownerQq = 'snapshot-round-trip';
+  });
   const created = backup.createBackup('manual');
   check(Boolean(created?.name), 'current backup is created');
   const createdPayload = JSON.parse(fs.readFileSync(path.join(dataDir, 'backups', created.name), 'utf8'));
   check(store.isValidLogicalDbShape(createdPayload), 'current backup payload is recognized');
+  check(Array.isArray(createdPayload.configSnapshots), 'exported config snapshots keep their array shape');
+
+  store.updateDb((db) => { db.settings.ownerQq = 'before-snapshot-restore'; });
+  const snapshotRestore = backup.restoreBackup(created.name);
+  check(snapshotRestore.ok, 'backup with config snapshots restores successfully');
+  check(store.readDb().settings.ownerQq === 'snapshot-round-trip', 'snapshot backup restores settings');
 
   store.updateDb((db) => { db.settings.ownerQq = 'keep-before-invalid-restore'; });
   const backupDir = path.join(dataDir, 'backups');
@@ -84,6 +94,18 @@ try {
   fs.writeFileSync(path.join(backupDir, 'fixture.json.meta.json'), JSON.stringify(createdPayload), 'utf8');
   const metaRestore = backup.restoreBackup('fixture.json.meta.json');
   check(!metaRestore.ok, 'meta sidecar is not restorable as a backup');
+
+  fs.writeFileSync(path.join(dataDir, 'db.json'), JSON.stringify({
+    settings: {},
+    _storage: { format: 'wuxin-sharded-v2', version: 2, shards: {} },
+  }), 'utf8');
+  let unknownMarkerRejected = false;
+  try {
+    store.ensureStore();
+  } catch (error) {
+    unknownMarkerRejected = /存储标记不受支持/.test(String(error?.message || error));
+  }
+  check(unknownMarkerRejected, 'unknown storage marker stops startup migration');
 } finally {
   cleanupTestDir(dataDir);
 }

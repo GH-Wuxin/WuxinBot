@@ -62,3 +62,35 @@ test('packaged cancellation sends only its request id and ignores a late success
   resolveHttp({ status: 200, body: JSON.stringify({ ok: true, via: 'late-success' }) });
   await assert.rejects(pending, /请求已取消/, 'late success must not escape cancellation');
 });
+
+test('cancellation while consuming a response body keeps cancellation semantics', async () => {
+  const previousFetch = globalThis.fetch;
+  const controller = new AbortController();
+  let bodyStarted = false;
+  globalThis.fetch = async () => ({
+    ok: true,
+    status: 200,
+    json: () => {
+      bodyStarted = true;
+      return new Promise((resolve, reject) => {
+        controller.signal.addEventListener(
+          'abort',
+          () => reject(Object.assign(new Error('aborted'), { name: 'AbortError' })),
+          { once: true },
+        );
+      });
+    },
+  });
+  window.desktop = undefined;
+  try {
+    const pending = api('/api/state', { signal: controller.signal, timeoutMs: 5_000 });
+    for (let attempt = 0; attempt < 20 && !bodyStarted; attempt += 1) {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    }
+    assert.equal(bodyStarted, true, 'response body consumption must start');
+    controller.abort();
+    await assert.rejects(pending, /请求已取消/, 'body-stage cancellation must not become server error 200');
+  } finally {
+    globalThis.fetch = previousFetch;
+  }
+});
