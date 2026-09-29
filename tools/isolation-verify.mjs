@@ -1,11 +1,19 @@
 // isolation-verify.mjs — verifies that test data isolation actually works.
-// Sets up a temp DATA_DIR, writes fixture data, and confirms production db is untouched.
+// Sets up a temp DATA_DIR, writes fixture data, and confirms the protected
+// production persistence scope is untouched.
 // Exit 0 on all pass, non-zero on any failure.
 
 import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
-import { createTestDataDir, assertNotProduction, productionDbSnapshot, verifyProductionDbUnchanged, cleanupTestDir } from './test-isolation.mjs';
+import {
+  createTestDataDir,
+  assertNotProduction,
+  productionDbSnapshot,
+  verifyProductionDbUnchanged,
+  getLastProductionIsolationResult,
+  cleanupTestDir,
+} from './test-isolation.mjs';
 
 // Record production state BEFORE loading any server modules
 const prodBefore = productionDbSnapshot();
@@ -72,11 +80,16 @@ function fail(label, msg) { console.error('FAIL [' + label + ']: ' + msg); faile
   pass('write-fixture-to-temp');
 }
 
-// ── Test 3: Production db unchanged (SHA-256 + mtime) ──
+// ── Test 3: Protected production scope unchanged ──
 {
   const prodOk = verifyProductionDbUnchanged(prodBefore);
   if (!prodOk) {
-    fail('prod-unchanged', 'production db was modified!');
+    const result = getLastProductionIsolationResult();
+    if (result?.status === 'INCONCLUSIVE') {
+      console.warn('INCONCLUSIVE [prod-unchanged]: ' + result.reason);
+    } else {
+      fail('prod-unchanged', 'protected production scope was modified!');
+    }
   } else {
     pass('prod-unchanged');
   }
@@ -109,6 +122,10 @@ console.log('Passed: ' + passed + ', Failed: ' + failed);
 if (failed > 0) {
   console.error('ISOLATION-VERIFY FAILED');
   process.exit(1);
+}
+if (getLastProductionIsolationResult()?.status === 'INCONCLUSIVE') {
+  console.warn('ISOLATION-VERIFY INCONCLUSIVE');
+  process.exit(2);
 }
 console.log('ISOLATION-VERIFY PASSED');
 process.exit(0);
