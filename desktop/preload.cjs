@@ -26,4 +26,17 @@ contextBridge.exposeInMainWorld('desktop', {
     close: () => ipcRenderer.invoke('window:close'),
     minimize: () => ipcRenderer.invoke('window:minimize'),
   },
+  // Guarded loopback API bridge (S01 layer 2): requests are validated and
+  // performed in the main process so the renderer never needs cross-origin
+  // fetch. The renderer-side network funnel is src/lib/api.js.
+  api: {
+    httpRequest: (request) => ipcRenderer.invoke('api:request', request),
+    sseOpen: (request) => ipcRenderer.invoke('api:sse:open', request),
+    sseClose: (id) => ipcRenderer.invoke('api:sse:close', id),
+    onSseEvent: (id, handler) => {
+      const listener = (_event, payload) => handler(payload);
+      ipcRenderer.on(`api:sse:${id}`, listener);
+      return () => ipcRenderer.removeListener(`api:sse:${id}`, listener);
+    },
+  },
 });

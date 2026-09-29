@@ -650,3 +650,21 @@ test('desktop IPC guard allowlists only the app origins', async () => {
   assert.equal(isAllowedDesktopUrl('http://127.0.0.1:5173', packaged), false, 'dev origin not allowlisted when packaged');
   assert.equal(isAllowedDesktopUrl('file:///G:/app/dist/index.html', packaged), true, 'packaged file renderer allowed');
 });
+
+test('api bridge pins targets to the loopback /api surface', async () => {
+  const { resolveApiRequest } = await import('../desktop/api-bridge.mjs');
+  const request = resolveApiRequest({
+    apiBase: 'http://127.0.0.1:8787',
+    url: 'http://127.0.0.1:8787/api/state',
+    method: 'post',
+    headers: { 'Content-Type': 'application/json', 'X-Wuxin-Admin-Password': 'pw', Cookie: 'session=1' },
+  });
+  assert.equal(request.method, 'POST');
+  assert.equal(request.headers['X-Wuxin-Admin-Password'], 'pw');
+  assert.equal(request.headers.Cookie, undefined, 'non-allowlisted headers are dropped');
+  assert.throws(() => resolveApiRequest({ apiBase: 'http://127.0.0.1:8787', url: 'http://127.0.0.1:9999/api/state' }), /origin/, 'foreign port refused');
+  assert.throws(() => resolveApiRequest({ apiBase: 'http://127.0.0.1:8787', url: 'https://evil.example/api/state' }), /origin/, 'remote origin refused');
+  assert.throws(() => resolveApiRequest({ apiBase: 'http://127.0.0.1:8787', url: 'http://127.0.0.1:8787/settings' }), /\/api\//, 'non-api path refused');
+  assert.throws(() => resolveApiRequest({ apiBase: 'http://127.0.0.1:8787', url: 'http://127.0.0.1:8787/api/state', method: 'TRACE' }), /method/i, 'unsafe method refused');
+  assert.throws(() => resolveApiRequest({ apiBase: 'https://api.example.com', url: 'https://api.example.com/api/x' }), /loopback/, 'non-loopback base refused');
+});
