@@ -92,8 +92,7 @@ async function main() {
             }
           }]
         };
-    res.writeHead(200, { 'Content-Type': 'application/json' });
-    res.end(JSON.stringify({
+    const response = {
       id: `fixture-completion-${llmCalls}`,
       object: 'chat.completion',
       created: Math.floor(Date.now() / 1000),
@@ -104,7 +103,59 @@ async function main() {
         finish_reason: alreadyHasToolResult ? 'stop' : 'tool_calls'
       }],
       usage: { prompt_tokens: 5, completion_tokens: 2, total_tokens: 7 }
-    }));
+    };
+    if (request.stream === true) {
+      // DeepSeek requests are streamed whenever the production request trace
+      // is active. Keep the fixture protocol-compatible so tool_calls are not
+      // silently reduced to an empty completion in this regression test.
+      res.writeHead(200, {
+        'Content-Type': 'text/event-stream',
+        'Cache-Control': 'no-cache',
+        Connection: 'keep-alive',
+      });
+      const writeChunk = (delta, finishReason = null, usage = undefined) => {
+        const chunk = {
+          id: response.id,
+          object: 'chat.completion.chunk',
+          created: response.created,
+          model: response.model,
+          choices: [{ index: 0, delta, finish_reason: finishReason }],
+          ...(usage ? { usage } : {}),
+        };
+        res.write(`data: ${JSON.stringify(chunk)}\n\n`);
+      };
+      const assistant = response.choices[0].message;
+      if (assistant.tool_calls?.length) {
+        const call = assistant.tool_calls[0];
+        writeChunk({
+          role: 'assistant',
+          tool_calls: [{
+            index: 0,
+            id: call.id,
+            type: call.type,
+            function: call.function,
+          }],
+        });
+        writeChunk({}, 'tool_calls');
+      } else {
+        writeChunk({ role: 'assistant', content: assistant.content || '' });
+        writeChunk({}, 'stop');
+      }
+      if (request.stream_options?.include_usage) {
+        res.write(`data: ${JSON.stringify({
+          id: response.id,
+          object: 'chat.completion.chunk',
+          created: response.created,
+          model: response.model,
+          choices: [],
+          usage: response.usage,
+        })}\n\n`);
+      }
+      res.end('data: [DONE]\n\n');
+      return;
+    }
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify(response));
   });
   await new Promise((resolve) => llmServer.listen(0, '127.0.0.1', resolve));
   const llmPort = llmServer.address().port;
@@ -346,10 +397,10 @@ async function main() {
     assert(harnessResult.replied === true, 'deterministic route must produce a reply');
     // Deterministic routing uses yumu (internal channel) — no QQ bot command is sent.
     assert(botCommandsSent === 0, `deterministic route must not send QQ bot command, got ${botCommandsSent}`);
-    // Only one LLM call: the lead write after requiredTool execution.
-    // (llmCalls increased from the baseline by exactly 1 for the lead call.)
-    assert(llmCalls === llmCallsBeforeDetRoute + 1,
-      `deterministic route must make exactly 1 LLM lead call, got ${llmCalls - llmCallsBeforeDetRoute}`);
+    // The bound internal yumu route is deterministic: it must not spend an
+    // LLM call for either tool planning or cosmetic lead text.
+    assert(llmCalls === llmCallsBeforeDetRoute,
+      `deterministic route must make exactly 0 LLM calls, got ${llmCalls - llmCallsBeforeDetRoute}`);
     assert(finalSends.length >= 1, `deterministic route must send at least one message, got ${finalSends.length}`);
     console.log('PASS: deterministic osu! routing executes before LLM tool loop');
 
@@ -401,7 +452,9 @@ async function main() {
         assert(resolved, 'fixture bot response must resolve the active tool request');
         return;
       }
-      llSends.push({ text: String(text || ''), options });
+      const deliveredText = String(text || '');
+      if (/^正在(?:思考|查询或整理结果)…$/.test(deliveredText)) return;
+      llSends.push({ text: deliveredText, options });
     });
     assert(llHarnessResult.replied === true, 'LLM tool loop must produce a reply');
     assert(llBotCommandsSent === 1, `tool loop must send exactly one bot command, got ${llBotCommandsSent}`);
@@ -492,7 +545,9 @@ async function main() {
         assert(resolved, 'complete BP fixture response must resolve the active tool request');
         return;
       }
-      directListSends.push({ text: String(text || ''), options });
+      const deliveredText = String(text || '');
+      if (/^正在(?:思考|查询或整理结果)…$/.test(deliveredText)) return;
+      directListSends.push({ text: deliveredText, options });
     });
     assert(directListHarnessResult.replied === true, 'direct BP list must produce a reply');
     assert(bpCommandsSent === 1, `direct-list flow must send exactly one bot command, got ${bpCommandsSent}`);
