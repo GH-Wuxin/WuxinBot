@@ -32,6 +32,7 @@ contextBridge.exposeInMainWorld('desktop', {
   // fetch. The renderer-side network funnel is src/lib/api.js.
   api: {
     httpRequest: (request) => ipcRenderer.invoke('api:request', request),
+    cancelHttpRequest: (requestId) => ipcRenderer.invoke('api:request:cancel', requestId),
     sseOpen: (request) => ipcRenderer.invoke('api:sse:open', request),
     sseClose: (id) => ipcRenderer.invoke('api:sse:close', id),
     onSseEvent: (id, handler) => {

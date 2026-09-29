@@ -1,5 +1,17 @@
 const ADMIN_PASSWORD_KEY = 'wuxinAdminPassword';
 const DEFAULT_TIMEOUT_MS = 30_000;
+let requestSequence = 0;
+
+function nextRequestId() {
+  requestSequence = (requestSequence + 1) % 1_000_000_000;
+  return `api-${Date.now().toString(36)}-${requestSequence.toString(36)}`;
+}
+
+function abortError(message = '请求已取消') {
+  const error = new Error(message);
+  error.name = 'AbortError';
+  return error;
+}
 
 function apiUrl(pathname) {
   const desktop = typeof window !== 'undefined' ? window.desktop : null;
@@ -67,18 +79,34 @@ function promptPassword(message) {
 // cross-origin: requests go through the guarded main-process bridge
 // (desktop/preload.cjs → api:request). The browser/dev path keeps direct
 // fetch. Returns a minimal Response-like object either way.
-async function performRequest(path, { method = 'GET', headers = {}, body, timeoutMs = DEFAULT_TIMEOUT_MS } = {}) {
+async function performRequest(path, {
+  method = 'GET', headers = {}, body, timeoutMs = DEFAULT_TIMEOUT_MS, signal, requestId,
+} = {}) {
   const desktopApi = typeof window !== 'undefined' ? window.desktop : null;
   if (desktopApi?.apiTransport === 'bridge' && typeof desktopApi.api?.httpRequest === 'function') {
-    const result = await desktopApi.api.httpRequest({ url: apiUrl(path), method, headers, body, timeoutMs });
-    return {
-      ok: result.status >= 200 && result.status < 300,
-      status: result.status,
-      text: async () => result.body,
-      json: async () => JSON.parse(result.body),
+    if (signal?.aborted) throw abortError();
+    const cancel = () => {
+      if (requestId && typeof desktopApi.api.cancelHttpRequest === 'function') {
+        try { void Promise.resolve(desktopApi.api.cancelHttpRequest(requestId)).catch(() => {}); } catch { /* renderer is closing */ }
+      }
     };
+    signal?.addEventListener('abort', cancel, { once: true });
+    try {
+      const result = await desktopApi.api.httpRequest({
+        url: apiUrl(path), method, headers, body, timeoutMs, requestId,
+      });
+      return {
+        ok: result.status >= 200 && result.status < 300,
+        status: result.status,
+        text: async () => result.body,
+        json: async () => JSON.parse(result.body),
+      };
+    } finally {
+      signal?.removeEventListener('abort', cancel);
+    }
   }
-  return fetch(apiUrl(path), { method, headers, body });
+  if (signal?.aborted) throw abortError();
+  return fetch(apiUrl(path), { method, headers, body, signal });
 }
 
 export async function api(path, options = {}, allowAuthRetry = true) {
@@ -93,6 +121,7 @@ export async function api(path, options = {}, allowAuthRetry = true) {
   if (externalSignal?.aborted) abortFromCaller();
   else externalSignal?.addEventListener('abort', abortFromCaller, { once: true });
   const savedPassword = window.sessionStorage.getItem(ADMIN_PASSWORD_KEY) || '';
+  const requestId = nextRequestId();
   const headers = {
     'Content-Type': 'application/json',
     ...(savedPassword ? { 'X-Wuxin-Admin-Password': savedPassword } : {}),
@@ -104,9 +133,16 @@ export async function api(path, options = {}, allowAuthRetry = true) {
       headers,
       body: fetchOptions.body ? JSON.stringify(fetchOptions.body) : undefined,
       timeoutMs,
+      signal: controller.signal,
+      requestId,
     });
+    if (controller.signal.aborted) throw abortError();
     let data;
     try { data = await response.json(); } catch { throw new Error(`服务器错误 (${response.status})`); }
+    if (response.status === 0 && (data?.code === 'ABORT_ERR' || data?.code === 'TIMEOUT')) {
+      if (data.code === 'TIMEOUT') timedOut = true;
+      throw abortError(data.error || '请求已取消');
+    }
     if (response.status === 401 && allowAuthRetry && !authPromptActive && !authPromptCancelled) {
       authPromptActive = true;
       const password = await promptPassword('控制台已启用管理密码，请输入：');

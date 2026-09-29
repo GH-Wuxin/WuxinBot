@@ -209,8 +209,45 @@ function registerIpc() {
 // The renderer reaches the loopback bot API only through this guarded bridge,
 // so webSecurity stays enabled: targets are pinned to the loopback API base,
 // /api/* paths, fixed methods, and an allowlisted header set (S01 layer 2).
+const httpRequests = new Map();
+const pendingHttpCancels = new Map();
+const HTTP_CANCEL_TTL_MS = 30_000;
+const MAX_PENDING_HTTP_CANCELS = 512;
 const sseStreams = new Map();
 let sseSequence = 0;
+
+function normalizeHttpRequestId(value) {
+  const id = String(value ?? '');
+  return /^[A-Za-z0-9._:-]{1,128}$/u.test(id) ? id : null;
+}
+
+function httpRequestKey(sender, requestId) {
+  return `${sender?.id ?? 'unknown'}:${requestId}`;
+}
+
+function prunePendingHttpCancels() {
+  const now = Date.now();
+  for (const [key, expiresAt] of pendingHttpCancels) {
+    if (expiresAt <= now) pendingHttpCancels.delete(key);
+  }
+  while (pendingHttpCancels.size > MAX_PENDING_HTTP_CANCELS) {
+    const oldest = pendingHttpCancels.keys().next().value;
+    if (oldest === undefined) break;
+    pendingHttpCancels.delete(oldest);
+  }
+}
+
+function abortedApiResponse(controller, timeoutMs) {
+  const timedOut = controller.signal.reason === 'timeout';
+  return {
+    status: 0,
+    body: JSON.stringify({
+      ok: false,
+      code: timedOut ? 'TIMEOUT' : 'ABORT_ERR',
+      error: timedOut ? `请求超时（${Math.round(timeoutMs / 1000)} 秒）` : '请求已取消',
+    }),
+  };
+}
 
 function sendToSender(sender, channel, payload) {
   try {
@@ -219,15 +256,22 @@ function sendToSender(sender, channel, payload) {
 }
 
 function registerApiBridgeIpc() {
-  ipcMain.handle('api:request', guardIpc(async (_event, request = {}) => {
+  ipcMain.handle('api:request', guardIpc(async (event, request = {}) => {
     const { url, method, headers } = resolveApiRequest({
       apiBase: productionApi, url: request?.url, method: request?.method, headers: request?.headers,
     });
     const timeoutMs = Math.max(1000, Math.min(120_000, Number(request?.timeoutMs) || 60_000));
+    const requestId = normalizeHttpRequestId(request?.requestId);
+    const requestKey = requestId ? httpRequestKey(event.sender, requestId) : null;
     const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), timeoutMs);
+    prunePendingHttpCancels();
+    if (requestKey && httpRequests.has(requestKey)) throw new Error('重复的 API requestId');
+    if (requestKey && pendingHttpCancels.delete(requestKey)) controller.abort('client');
+    if (requestKey) httpRequests.set(requestKey, { sender: event.sender, controller });
+    const timer = setTimeout(() => controller.abort('timeout'), timeoutMs);
     timer.unref?.();
     try {
+      if (controller.signal.aborted) return abortedApiResponse(controller, timeoutMs);
       const response = await fetch(url, {
         method,
         headers,
@@ -235,18 +279,37 @@ function registerApiBridgeIpc() {
         signal: controller.signal,
       });
       const bytes = await response.arrayBuffer();
+      if (controller.signal.aborted) return abortedApiResponse(controller, timeoutMs);
       if (bytes.byteLength > MAX_API_RESPONSE_BYTES) {
         return { status: 502, body: JSON.stringify({ ok: false, error: 'API bridge response too large' }) };
       }
       return { status: response.status, body: Buffer.from(bytes).toString('utf8') };
     } catch (error) {
+      if (controller.signal.aborted) return abortedApiResponse(controller, timeoutMs);
       if (error?.name === 'AbortError') {
         return { status: 0, body: JSON.stringify({ ok: false, error: `请求超时（${Math.round(timeoutMs / 1000)} 秒）` }) };
       }
       return { status: 0, body: JSON.stringify({ ok: false, error: String(error?.message || error) }) };
     } finally {
       clearTimeout(timer);
+      if (requestKey && httpRequests.get(requestKey)?.controller === controller) httpRequests.delete(requestKey);
+      if (requestKey) pendingHttpCancels.delete(requestKey);
     }
+  }));
+
+  ipcMain.handle('api:request:cancel', guardIpc((event, rawRequestId) => {
+    const requestId = normalizeHttpRequestId(rawRequestId);
+    if (!requestId) return false;
+    const requestKey = httpRequestKey(event.sender, requestId);
+    prunePendingHttpCancels();
+    const active = httpRequests.get(requestKey);
+    if (active) {
+      active.controller.abort('client');
+      return true;
+    }
+    pendingHttpCancels.set(requestKey, Date.now() + HTTP_CANCEL_TTL_MS);
+    prunePendingHttpCancels();
+    return true;
   }));
 
   ipcMain.handle('api:sse:open', guardIpc(async (event, request = {}) => {
