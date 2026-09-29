@@ -14,6 +14,7 @@ const files = fs.readdirSync(toolsDir)
 
 let passed = 0;
 const failures = [];
+const inconclusives = [];
 const startedAt = Date.now();
 
 for (const file of files) {
@@ -31,6 +32,9 @@ for (const file of files) {
   if (ok) {
     passed++;
     console.log(`PASS ${file}`);
+  } else if (result.status === 2 && !result.error) {
+    inconclusives.push(file);
+    console.log(`INCONCLUSIVE ${file}`);
   } else {
     failures.push(file + (result.error ? ` (${result.error.message})` : ` (exit ${result.status})`));
     console.log(`FAIL ${file}`);
@@ -41,5 +45,10 @@ const seconds = ((Date.now() - startedAt) / 1000).toFixed(1);
 console.log(`\n${passed}/${files.length} passed in ${seconds}s`);
 if (failures.length) {
   console.log('Failures:\n  ' + failures.join('\n  '));
-  process.exit(1);
+}
+if (inconclusives.length) {
+  console.log('Inconclusive isolation results:\n  ' + inconclusives.join('\n  '));
+}
+if (failures.length || inconclusives.length) {
+  process.exit(failures.length ? 1 : 2);
 }
