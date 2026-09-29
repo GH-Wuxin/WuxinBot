@@ -76,6 +76,9 @@
   "build": {
     "appId": "local.wuxinbot.desktop",
     "productName": "WuxinBot Desktop",
+    "directories": {
+      "output": "release"
+    },
     "files": [
       "desktop/**/*",
       "dist/**/*",
