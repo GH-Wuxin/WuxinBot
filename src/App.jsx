@@ -98,7 +98,7 @@ export function App() {
     setTimeout(() => setToast(''), 1800);
   };
 
-  if (!state && desktop) return <RuntimePage standalone onServerReady={refresh} />;
+  if (!state && desktop) return <RuntimePage standalone onServerReady={refresh} loadError={loadError} />;
   if (!state) {
     return <div className="boot"><p>{loadError || '正在打开控制台...'}</p>{loadError && <button onClick={() => { resetAdminAuthPrompt(); refresh(); }}>重试</button>}</div>;
   }

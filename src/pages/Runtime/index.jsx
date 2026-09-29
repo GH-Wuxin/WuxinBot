@@ -37,7 +37,7 @@ function editableDraft(process) {
   };
 }
 
-export function RuntimePage({ standalone = false, onServerReady }) {
+export function RuntimePage({ standalone = false, onServerReady, loadError = '' }) {
   const desktop = isDesktop();
   const [snapshot, setSnapshot] = useState(null);
   const [busy, setBusy] = useState('');
@@ -152,6 +152,7 @@ export function RuntimePage({ standalone = false, onServerReady }) {
     </SettingGroup>
 
     {error && <div className="runtime-page__error" role="alert">{error}</div>}
+    {standalone && loadError && <div className="runtime-page__error" role="alert">控制台连接失败，服务器就绪后会自动进入完整界面（每 10 秒重试）：{loadError}</div>}
 
     <div className="runtime-process-groups">
       {groups.map((group) => <section key={group.label} className="runtime-process-group"><header><div><span className="section-header__eyebrow">PROCESS GROUP</span><h3>{group.label}</h3></div><span className="runtime-process-group__count">{group.processes.length} 个组件</span></header><div className="runtime-process-grid">{group.processes.map((process) => {
