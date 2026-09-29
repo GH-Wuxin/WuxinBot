@@ -34,10 +34,16 @@ globalThis.fetch = (async (url, options = {}) => {
     return jsonResponse({
       algorithm_id: 'v040-formal',
       map_demand_version: 'v0.40',
+      axis_schema_version: 'axes-v040',
+      calibration_id: 'MAP-CAL-A',
       unified_measurements: {
+        schema_version: 'unified-v1',
         scale_id: 'US-1',
         status: 'ATTACHED',
-        contexts: { default: { calibration_id: calibrationId, status: 'ACTIVE' } },
+        contexts: {
+          NM: { calibration_id: calibrationId, status: 'ACTIVE' },
+          HR: { calibration_id: calibrationId, status: 'ACTIVE' },
+        },
       },
     });
   }
@@ -46,14 +52,22 @@ globalThis.fetch = (async (url, options = {}) => {
     const bid = Number(body.beatmap_id);
     return jsonResponse({
       status: 'OK',
+      schema_version: 'map_demand_bid_analysis_v0.1.0',
       identity: analyzeIdentityOverride
-        ? { algorithm_id: analyzeIdentityOverride.algorithm_id, map_demand_version: analyzeIdentityOverride.map_demand_version }
-        : { algorithm_id: 'v040-formal', map_demand_version: 'v0.40' },
+        ? {
+          algorithm_id: analyzeIdentityOverride.algorithm_id,
+          map_demand_version: analyzeIdentityOverride.map_demand_version,
+          calibration_id: 'MAP-CAL-A',
+        }
+        : { algorithm_id: 'v040-formal', map_demand_version: 'v0.40', calibration_id: 'MAP-CAL-A' },
       beatmap: { beatmap_id: bid, local_nm_stars: 6.5 },
       axes: {
         reading: { stars: bid === 300 ? null : 7, unified_star_status: 'ADMITTED', unified_star_equivalent: bid === 300 ? null : unifiedValue, confidence: 'MEASURED' },
       },
-      unified_measurements: { status: 'ATTACHED' },
+      unified_measurements: {
+        status: 'ATTACHED', schema_version: 'unified-v1', scale_id: 'US-1',
+        mod_context: body.mods?.includes('HR') ? 'HR' : 'NM', calibration_id: calibrationId,
+      },
     });
   }
   return jsonResponse({ error: 'NOT_FOUND' }, 404);
@@ -62,6 +76,13 @@ globalThis.fetch = (async (url, options = {}) => {
 try {
   const profiler = await import('../server/bots/skillProfiler.ts');
   const axes = await import('../server/bots/playerSkillAxes.ts');
+
+  const stateIdentity = await profiler.getSkillProfilerIdentity();
+  assert(stateIdentity.mapDemandCalibrationId === 'MAP-CAL-A'
+    && stateIdentity.axisSchemaVersion === 'axes-v040'
+    && stateIdentity.unifiedSchemaVersion === 'unified-v1'
+    && stateIdentity.unifiedCalibrationKey.includes('NM:CAL-A:ACTIVE'),
+  'identity:state-captures-top-level-and-unified-fields', JSON.stringify(stateIdentity));
 
   // ── F10: missing values stay missing, real values keep their source ──
   const invalidUnified = profiler.skillProfilerAxisValue({
@@ -136,7 +157,11 @@ try {
       algorithmId: 'v040-formal',
       mapDemandVersion: 'v0.40',
       unifiedScaleId: 'US-1',
-      unifiedCalibrationKey: 'default:CAL-A:ACTIVE',
+      unifiedCalibrationKey: 'HR:CAL-A:ACTIVE',
+      analysisSchemaVersion: 'map_demand_bid_analysis_v0.1.0',
+      axisSchemaVersion: 'axes-v040',
+      unifiedSchemaVersion: 'unified-v1',
+      mapDemandCalibrationId: 'MAP-CAL-A',
     });
   } catch (error) { mismatchError = error; }
   assert(String(mismatchError?.message || '').startsWith('ANALYSIS_IDENTITY_MISMATCH'),
@@ -150,9 +175,32 @@ try {
     algorithmId: 'v040-formal',
     mapDemandVersion: 'v0.40',
     unifiedScaleId: 'US-1',
-    unifiedCalibrationKey: 'default:CAL-A:ACTIVE',
+    unifiedCalibrationKey: 'HR:CAL-A:ACTIVE',
+    analysisSchemaVersion: 'map_demand_bid_analysis_v0.1.0',
+    axisSchemaVersion: 'axes-v040',
+    unifiedSchemaVersion: 'unified-v1',
+    mapDemandCalibrationId: 'MAP-CAL-A',
   });
   assert(analyzeCalls === 1 && pinned.status === 'OK', 'batch:mismatch-not-cached', String(analyzeCalls));
+
+  // A top-level map-demand calibration conflict is independent from the
+  // per-context unified calibration conflict.
+  analyzeIdentityOverride = null;
+  let mapCalibrationMismatch = null;
+  const originalMapCalibration = 'MAP-CAL-A';
+  try {
+    await profiler.requestSkillProfilerAnalysisCachedWithFetch(401, [], {
+      algorithmId: 'v040-formal',
+      mapDemandVersion: 'v0.40',
+      unifiedScaleId: 'US-1',
+      unifiedCalibrationKey: 'NM:CAL-A:ACTIVE',
+      analysisSchemaVersion: 'map_demand_bid_analysis_v0.1.0',
+      axisSchemaVersion: 'axes-v040',
+      unifiedSchemaVersion: 'unified-v1',
+      mapDemandCalibrationId: originalMapCalibration,
+    });
+  } catch (error) { mapCalibrationMismatch = error; }
+  assert(!mapCalibrationMismatch, 'identity:matching-top-level-calibration-accepted', String(mapCalibrationMismatch?.message || mapCalibrationMismatch));
 
   // Axis catalog sanity: every player axis label maps from the shared catalog.
   assert(axes.PLAYER_SKILL_AXIS_ORDER.length === 9, 'axes:nine-dimensions');
