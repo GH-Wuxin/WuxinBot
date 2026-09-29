@@ -20,6 +20,7 @@ function ensureBackupDir() {
 function safeBackupName(name) {
   if (!name || typeof name !== 'string') return null;
   if (!name.endsWith('.json')) return null;
+  if (name.endsWith('.meta.json')) return null;
   if (name !== path.basename(name)) return null;
   if (/[/\\:]/.test(name) || name.includes('..')) return null;
   const resolved = path.resolve(backupDir(), name);

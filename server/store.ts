@@ -778,16 +778,55 @@ function listBackupCandidates(): string[] {
 }
 
 // A restore candidate must prove it is a complete logical database, not merely
-// parseable JSON. createBackup() always dumps the full logical shape, so real
-// backups contain the core collections; `{}`, arrays, or fragments must be
-// skipped instead of being normalized into a plausible-looking empty store.
-const REQUIRED_BACKUP_EVIDENCE_KEYS = ['users', 'groups', 'messages', 'decisions', 'memories', 'commandLogs'];
+// parseable JSON. createBackup() always dumps the full logical shape, while
+// older supported exports may omit newer optional collections. The five
+// historical core collections are therefore required; optional fields are
+// type-checked when present instead of being silently normalized.
+const REQUIRED_BACKUP_ARRAY_KEYS = ['users', 'groups', 'messages', 'decisions', 'memories'];
+const OPTIONAL_BACKUP_ARRAY_KEYS = [
+  'commandLogs',
+  'groupProfiles',
+  'relationshipProfiles',
+  'profileLogs',
+  'toolCallLogs',
+  'skillProfilerRuns',
+  'unmetCapabilities',
+  'adminActions',
+  'usageEvents',
+];
+const OPTIONAL_BACKUP_OBJECT_KEYS = [
+  'botRegistry',
+  'skillStore',
+  'groupBotConfig',
+  'pendingPairCounts',
+  'trustScores',
+  'experience',
+  'groupExperience',
+  'profileV3',
+  'usage',
+  'configSnapshots',
+];
 
 export function isValidLogicalDbShape(value: unknown): boolean {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
-  if (typeof (value as any).settings !== 'object' || (value as any).settings === null) return false;
-  const present = REQUIRED_BACKUP_EVIDENCE_KEYS.filter((key) => key in (value as any)).length;
-  return present >= 3;
+  const record = value as Record<string, any>;
+  if (typeof record.settings !== 'object' || record.settings === null || Array.isArray(record.settings)) return false;
+
+  if (Object.prototype.hasOwnProperty.call(record, '_storage')) {
+    const marker = record._storage;
+    if (!marker || typeof marker !== 'object' || Array.isArray(marker)
+      || marker.format !== SHARDED_STORAGE_FORMAT
+      || marker.version !== 1
+      || !marker.shards || typeof marker.shards !== 'object' || Array.isArray(marker.shards)) {
+      return false;
+    }
+  }
+
+  if (REQUIRED_BACKUP_ARRAY_KEYS.some((key) => !Array.isArray(record[key]))) return false;
+  if (OPTIONAL_BACKUP_ARRAY_KEYS.some((key) => key in record && !Array.isArray(record[key]))) return false;
+  if (OPTIONAL_BACKUP_OBJECT_KEYS.some((key) => key in record
+    && (!record[key] || typeof record[key] !== 'object' || Array.isArray(record[key])))) return false;
+  return true;
 }
 
 function recoverStorageFromBackups(reasonError: unknown): any {
