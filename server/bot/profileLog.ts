@@ -37,18 +37,24 @@ export function newRunId(): string {
 
 // Write a profile log entry
 export function writeProfileLog(entry: Omit<ProfileLogEntry, 'id' | 'createdAt'>): void {
-  updateDb((draft) => {
-    if (!draft.profileLogs) draft.profileLogs = [];
-    draft.profileLogs.push({
-      id: crypto.randomUUID(),
-      ...entry,
-      createdAt: nowIso(),
-    });
-    // Keep only the latest MAX_LOGS entries
-    if (draft.profileLogs.length > MAX_LOGS) {
-      draft.profileLogs = draft.profileLogs.slice(-MAX_LOGS);
-    }
+  updateDb((draft) => appendProfileLog(draft, entry));
+}
+
+/** Append a profile log to an already-open store mutation. */
+export function appendProfileLog(
+  draft: any,
+  entry: Omit<ProfileLogEntry, 'id' | 'createdAt'>,
+): void {
+  if (!draft.profileLogs) draft.profileLogs = [];
+  draft.profileLogs.push({
+    id: crypto.randomUUID(),
+    ...entry,
+    createdAt: nowIso(),
   });
+  // Keep only the latest MAX_LOGS entries
+  if (draft.profileLogs.length > MAX_LOGS) {
+    draft.profileLogs = draft.profileLogs.slice(-MAX_LOGS);
+  }
 }
 
 // Query profile logs with optional filters

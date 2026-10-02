@@ -146,33 +146,49 @@ export async function ownerRefreshHandler(ctx: OwnerHandlerContext): Promise<Own
   const total = mems.length + gps.length + rels.length;
   startRecalc(total, 'QQ端重算');
   let pCount = 0, gCount = 0, rCount = 0;
-  for (const mem of mems) {
-    if (getRecalcProgress().stopped) break;
-    try {
-      const outcome = await maybeUpdateMemoryProfile({
-        ...ctx.event,
-        userId: String(mem.userId),
-        nickname: mem.nickname || String(mem.userId),
-        messageId: `${ctx.event.messageId || 'memory-recalc'}:${mem.userId}`,
-      }, { force: true, kind: 'memory-recalc' });
-      if (outcome.ok) pCount++;
-    } catch { /* skip */ }
-    tickRecalc();
+  let failure = '';
+  try {
+    for (const mem of mems) {
+      if (getRecalcProgress().stopped) break;
+      try {
+        const outcome = await maybeUpdateMemoryProfile({
+          ...ctx.event,
+          userId: String(mem.userId),
+          nickname: mem.nickname || String(mem.userId),
+          messageId: `${ctx.event.messageId || 'memory-recalc'}:${mem.userId}`,
+        }, { force: true, kind: 'memory-recalc' });
+        if (outcome.ok) pCount++;
+      } catch { /* skip */ }
+      tickRecalc();
+    }
+    for (const g of gps) {
+      if (getRecalcProgress().stopped) break;
+      try { const r = await updateGroupProfile(readDb(), g.groupId); if (r.ok) gCount++; } catch { /* skip */ }
+      tickRecalc();
+    }
+    for (const rp of rels) {
+      if (getRecalcProgress().stopped) break;
+      try {
+        const r = await updateRelationshipProfile(readDb(), rp.groupId, rp.userA, rp.userB);
+        if (r?.ok !== false && !r?.skipped) rCount++;
+      } catch { /* skip */ }
+      tickRecalc();
+    }
+  } catch (error) {
+    failure = String(error?.message || error).slice(0, 300);
+    console.error('[recalc] QQ端重算异常结束:', failure);
+  } finally {
+    if (getRecalcProgress().running) {
+      finishRecalc(getRecalcProgress().stopped
+        ? 'QQ端已停止'
+        : (failure ? `QQ端重算失败：${failure}` : 'QQ端全部重算完成'));
+    }
   }
-  for (const g of gps) {
-    if (getRecalcProgress().stopped) break;
-    try { const r = await updateGroupProfile(readDb(), g.groupId); if (r.ok) gCount++; } catch { /* skip */ }
-    tickRecalc();
+  if (failure) {
+    const reply = `重算失败：${failure}`;
+    if (ctx.sendMessage) await ctx.sendMessage(ctx.event, reply);
+    return { replied: Boolean(ctx.sendMessage), reason: reply, error: failure };
   }
-  for (const rp of rels) {
-    if (getRecalcProgress().stopped) break;
-    try {
-      const r = await updateRelationshipProfile(readDb(), rp.groupId, rp.userA, rp.userB);
-      if (r?.ok !== false && !r?.skipped) rCount++;
-    } catch { /* skip */ }
-    tickRecalc();
-  }
-  finishRecalc(getRecalcProgress().stopped ? 'QQ端已停止' : 'QQ端全部重算完成');
   const reply = getRecalcProgress().stopped
     ? `重算已停止。完成：个人${pCount}/群${gCount}/关系${rCount}`
     : `全部重算完成。\n个人画像：${pCount} 人\n群聊画像：${gCount} 群\n关系画像：${rCount} 对`;

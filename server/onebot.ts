@@ -2,7 +2,7 @@
 import WebSocket from 'ws';
 import { fetchBoundedBody } from './httpBody.js';
 import { readDb } from './store.js';
-import { oneBotToInternal, processIncoming } from './bot.js';
+import { oneBotToInternal, processIncomingAdmitted } from './bot.js';
 import { extractImageInputs, normalizeMessage } from './bot/cleaning.js';
 import {
   setOneBotConnected,
@@ -19,6 +19,7 @@ import {
 } from './health.js';
 import { createConnectionStatus } from './onebotStatus.js';
 import { tryResolveBotResponse } from './bots/executor.js';
+import { runInboundTask } from './bot/inboundGate.js';
 
 let ws;
 let reconnectTimer = null;
@@ -409,6 +410,11 @@ export async function handleOneBotEvent(event, sendMessage = sendOneBotMessage) 
     return { consumed: false, ignored: true };
   }
 
+  return runInboundTask('onebot.event', () => handleOneBotEventAdmitted(event, sendMessage));
+}
+
+async function handleOneBotEventAdmitted(event, sendMessage = sendOneBotMessage) {
+
   // Normalize once before either routing path. Bot replies can arrive in a
   // private chat or in the configured group, and their image segments must be
   // preserved for the pending tool call instead of being discarded.
@@ -426,7 +432,7 @@ export async function handleOneBotEvent(event, sendMessage = sendOneBotMessage) 
     return { consumed: true, botResponse: true };
   }
 
-  const result = await processIncoming(normalized, sendMessage);
+  const result = await processIncomingAdmitted(normalized, sendMessage);
   return { consumed: false, botResponse: false, result };
 }
 

@@ -4,7 +4,7 @@ import net from 'node:net';
 import fs from 'node:fs';
 import path from 'node:path';
 import express from 'express';
-import { openStore, currentStorageRevision, publicDb, publicMemory, readDb, updateDb, upsertBy, nowIso, saveConfigSnapshot, listConfigSnapshots, restoreConfigSnapshot } from './store.js';
+import { openStore, currentStorageRevision, getStoreLockStats, getStoreWriteStats, publicDb, publicMemory, readDb, updateDb, upsertBy, nowIso, saveConfigSnapshot, listConfigSnapshots, restoreConfigSnapshot } from './store.js';
 import { createBackup, listBackups, restoreBackup, deleteBackup, pruneAutoBackups } from './backup.js';
 import { connectOneBot, getOneBotStatus, handleOneBotEvent, sendOneBotMessage, shutdownOneBot } from './onebot.js';
 import { processIncoming, decideReply } from './bot.js';
@@ -13,6 +13,9 @@ import { getReplyQueueStats } from './bot/queue.js';
 import { buildPrompt } from './bot/prompt.js';
 import { callLLM } from './bot/llm.js';
 import { getHealth, getRecalcProgress, startRecalc, tickRecalc, stopRecalc, finishRecalc } from './health.js';
+import { getBackgroundTaskStats, runBackgroundTask, waitForBackgroundTasks } from './backgroundTasks.js';
+import { getInboundAdmissionStats, stopInboundAdmission, waitForInboundTasks } from './bot/inboundGate.js';
+import { getLlmAdmissionStats } from './llmPolicy.js';
 import { getKbHealth } from './bot/knowledgeBase.js';
 import { getGroupProfile, updateGroupProfile, clearGroupProfile, hasGroupProfileContent } from './bot/groupProfile.js';
 import { getRelationshipProfile, updateRelationshipProfile, clearRelationshipProfile, isSubstantiveRelationshipProfile } from './bot/relationshipProfile.js';
@@ -21,7 +24,7 @@ import { evaluateTrustScores } from './bot/trust.js';
 import { decayInactiveUsers } from './bot/experience.js';
 import { queryProfileLogs, getProfileLogStats } from './bot/profileLog.js';
 import { updateProviderSettings } from './modelConfig.js';
-import { getRenderServer, startRenderServer } from './bots/renderServer.js';
+import { getRenderServer, startRenderServer, stopRenderServer } from './bots/renderServer.js';
 import { removeLazybotBinding, syncLazybotBinding } from './bots/bindingSync.js';
 import { sharedGroupBotConfigPath } from './bots/externalPaths.js';
 import { acquireInstanceLock } from './instanceLock.js';
@@ -39,6 +42,11 @@ import {
 
 const port = Number(process.env.PORT || 8787);
 let releaseInstanceLock = () => {};
+let httpServer: any = null;
+let shutdownPromise: Promise<void> | null = null;
+let shutdownExitScheduled = false;
+let crashCleanupPromise: Promise<void> | null = null;
+let crashExitScheduled = false;
 
 function releaseServerInstanceLock() {
   try { releaseInstanceLock(); } catch { /* best-effort process cleanup */ }
@@ -47,10 +55,8 @@ function releaseServerInstanceLock() {
 // ── Process guards (P0-A) ──
 // These exist to leave a stack + exit reason behind, NOT to swallow errors
 // and keep running. uncaughtException / unhandledRejection still terminate
-// the process. Before exiting they make a best-effort request to close the
-// OneBot WS (listeners are detached and ws.close() is called, but process.exit
-// may not wait for the close handshake to finish). SIGINT/SIGTERM use the same
-// cleanup plus a short 200ms grace period.
+// the process. Before exiting they run the same bounded resource cleanup as a
+// normal shutdown, but always retain a hard exit deadline.
 function writeCrashLog(kind, error) {
   try {
     const dir = path.join(process.cwd(), 'logs');
@@ -65,48 +71,144 @@ function writeCrashLog(kind, error) {
 }
 
 process.on('uncaughtException', (error) => {
-  console.error('[crash] uncaughtException:', error);
-  writeCrashLog('uncaughtException', error);
-  try {
-    shutdownOneBot();
-  } catch (shutdownError) {
-    console.error('[crash] shutdownOneBot failed:', String(shutdownError?.message || shutdownError));
-  }
-  shutdownCodexAppServer();
-  releaseServerInstanceLock();
-  process.exit(1);
+  handleFatalProcessError('uncaughtException', error);
 });
 
 process.on('unhandledRejection', (reason) => {
   const error = reason instanceof Error ? reason : new Error(String(reason));
-  console.error('[crash] unhandledRejection:', error);
-  writeCrashLog('unhandledRejection', error);
-  try {
-    shutdownOneBot();
-  } catch (shutdownError) {
-    console.error('[crash] shutdownOneBot failed:', String(shutdownError?.message || shutdownError));
-  }
-  shutdownCodexAppServer();
-  releaseServerInstanceLock();
-  process.exit(1);
+  handleFatalProcessError('unhandledRejection', error);
 });
 
-function gracefulShutdown(signal) {
-  console.log(`[shutdown] ${signal} received, requesting OneBot connection close`);
-  try {
-    shutdownOneBot();
-  } catch (error) {
-    console.error('[shutdown] shutdownOneBot failed:', String(error?.message || error));
-  }
-  shutdownCodexAppServer();
-  releaseServerInstanceLock();
-  // Best effort only: ws.close() is requested but a 200ms grace period cannot
-  // guarantee the close handshake completes before process exit.
-  setTimeout(() => process.exit(0), 200);
+function closeHttpServer(): Promise<void> {
+  const current = httpServer;
+  httpServer = null;
+  if (!current) return Promise.resolve();
+  try { current.closeAllConnections?.(); } catch { /* best effort */ }
+  return new Promise((resolve) => {
+    try { current.close(() => resolve()); } catch { resolve(); }
+  });
 }
 
-process.on('SIGINT', () => gracefulShutdown('SIGINT'));
-process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
+async function stopMatchManager(): Promise<void> {
+  const { shutdownMatchManager } = await import('./osu/match.js');
+  await shutdownMatchManager();
+}
+
+function boundedDelay(ms: number): Promise<void> {
+  return new Promise((resolve) => {
+    const timer = setTimeout(resolve, ms);
+    timer.unref?.();
+  });
+}
+
+async function emergencyShutdown(): Promise<void> {
+  if (crashCleanupPromise) return crashCleanupPromise;
+  crashCleanupPromise = (async () => {
+    stopInboundAdmission();
+    try { shutdownOneBot(); } catch (error) {
+      console.error('[crash] shutdownOneBot failed:', String(error?.message || error));
+    }
+    try { shutdownCodexAppServer(); } catch (error) {
+      console.error('[crash] shutdownCodexAppServer failed:', String(error?.message || error));
+    }
+    try {
+      await Promise.race([stopMatchManager(), boundedDelay(500)]);
+    } catch (error) {
+      console.error('[crash] shutdownMatchManager failed:', String(error?.message || error));
+    }
+    try {
+      await Promise.race([closeHttpServer(), boundedDelay(500)]);
+    } catch (error) {
+      console.error('[crash] closeHttpServer failed:', String(error?.message || error));
+    }
+    try {
+      const renderStop = stopRenderServer().catch((error) => {
+        console.error('[crash] stopRenderServer failed:', String(error?.message || error));
+      });
+      await Promise.race([renderStop, boundedDelay(500)]);
+    } catch (error) {
+      console.error('[crash] render cleanup failed:', String(error?.message || error));
+    }
+    try { await waitForInboundTasks(500); } catch { /* process is already failing */ }
+    try { await waitForBackgroundTasks(500); } catch { /* process is already failing */ }
+    releaseServerInstanceLock();
+  })();
+  return crashCleanupPromise;
+}
+
+function handleFatalProcessError(kind: string, error: any): void {
+  console.error(`[crash] ${kind}:`, error);
+  writeCrashLog(kind, error);
+  if (crashExitScheduled) return;
+  crashExitScheduled = true;
+
+  // A broken process must never remain alive indefinitely because cleanup got
+  // stuck on a socket or renderer. The timer is intentionally referenced.
+  const hardExit = setTimeout(() => process.exit(1), 2_000);
+  void emergencyShutdown()
+    .catch((cleanupError) => {
+      console.error('[crash] emergency cleanup failed:', String(cleanupError?.message || cleanupError));
+    })
+    .finally(() => {
+      clearTimeout(hardExit);
+      process.exit(1);
+    });
+}
+
+async function gracefulShutdown(signal) {
+  if (shutdownPromise) return shutdownPromise;
+  shutdownPromise = (async () => {
+    console.log(`[shutdown] ${signal} received, stopping ingress and draining background work`);
+    stopInboundAdmission();
+    try {
+      // Stop new QQ events/reconnects before closing the local HTTP and render
+      // endpoints. The instance lock stays held until all bounded cleanup is
+      // finished, so a replacement process cannot overlap this one.
+      shutdownOneBot();
+    } catch (error) {
+      console.error('[shutdown] shutdownOneBot failed:', String(error?.message || error));
+    }
+    try { shutdownCodexAppServer(); } catch (error) {
+      console.error('[shutdown] shutdownCodexAppServer failed:', String(error?.message || error));
+    }
+
+    try {
+      await Promise.race([stopMatchManager(), boundedDelay(500)]);
+    } catch (error) {
+      console.error('[shutdown] shutdownMatchManager failed:', String(error?.message || error));
+    }
+
+    await Promise.race([closeHttpServer(), boundedDelay(500)]);
+    const renderStop = stopRenderServer().catch((error) => {
+      console.error('[shutdown] stopRenderServer failed:', String(error?.message || error));
+    });
+    await Promise.race([renderStop, boundedDelay(500)]);
+
+    const inbound = await waitForInboundTasks(1_200);
+    if (!inbound.drained) {
+      console.warn(`[shutdown] ${inbound.active} inbound task(s) did not finish before timeout`);
+    }
+    const drained = await waitForBackgroundTasks(1_200);
+    if (!drained.drained) {
+      console.warn(`[shutdown] ${drained.active} background task(s) did not finish before timeout`);
+    }
+    releaseServerInstanceLock();
+  })();
+
+  try {
+    await shutdownPromise;
+  } finally {
+    // The bounded cleanup above is intentionally followed by a short grace
+    // period for socket close callbacks; it must never hold the desktop open.
+    if (!shutdownExitScheduled) {
+      shutdownExitScheduled = true;
+      setTimeout(() => process.exit(0), 200).unref?.();
+    }
+  }
+}
+
+process.on('SIGINT', () => { void gracefulShutdown('SIGINT'); });
+process.on('SIGTERM', () => { void gracefulShutdown('SIGTERM'); });
 process.on('exit', releaseServerInstanceLock);
 
 // Node 20.11.1 crashes with ERR_INTERNAL_ASSERTION in internalConnectMultiple
@@ -745,7 +847,7 @@ app.post('/api/osu/player/:id/analyze', async (req, res) => {
   setStoredAnalysis(osuId, running);
   res.status(202).json(ok({ analysis: running, started: true }));
 
-  void (async () => {
+  void runBackgroundTask('osu.analyzer-mvp', async () => {
     try {
       const db = readDb();
       const { runAnalyzerMvp } = await import('./osu/analyzerMvp.js');
@@ -774,7 +876,7 @@ app.post('/api/osu/player/:id/analyze', async (req, res) => {
         error: String(error?.message || error).slice(0, 500),
       });
     }
-  })();
+  });
 });
 
 app.get('/api/diagnostics', (_req, res) => {
@@ -793,6 +895,11 @@ app.get('/api/diagnostics', (_req, res) => {
     users: db.users,
     memories: db.memories,
     usage: db.usage,
+    storeWrites: getStoreWriteStats(),
+    storeLocks: getStoreLockStats(),
+    backgroundTasks: getBackgroundTaskStats(),
+    inboundAdmission: getInboundAdmissionStats(),
+    llmAdmission: getLlmAdmissionStats(),
     recentMessages: db.messages.slice(-120),
     recentDecisions: db.decisions.slice(-160),
     recentCommandLogs: (db.commandLogs || []).slice(-160),
@@ -1116,6 +1223,11 @@ app.post('/api/clear-context', (_req, res) => {
 app.get('/api/health', (_req, res) => {
   const health: any = getHealth();
   health.replyQueues = getReplyQueueStats();
+  health.storeWrites = getStoreWriteStats();
+  health.storeLocks = getStoreLockStats();
+  health.backgroundTasks = getBackgroundTaskStats();
+  health.inboundAdmission = getInboundAdmissionStats();
+  health.llmAdmission = getLlmAdmissionStats();
   res.json(health);
 });
 
@@ -1334,38 +1446,54 @@ app.post('/api/recalc', (_req, res) => {
   const state = getRecalcProgress();
   if (state.running) return res.json({ ok: false, error: '已经在重算中' });
   // Start in background
-  void (async () => {
-    const db = readDb();
-    const mems = (db.memories || []).filter((m) => m.enabled && (m.samples || []).filter((s) => s.usedForProfile).length >= 3);
-    const gps = (db.groups || []).filter((g) => g.enabled);
-    const rels = (db.relationshipProfiles || []).filter((r) => r.enabled !== false);
-    const total = mems.length + gps.length + rels.length;
-    startRecalc(total, '正在重算全部画像');
-    const { maybeUpdateMemoryProfile } = await import('./bot/memory.js');
-    const { updateGroupProfile } = await import('./bot/groupProfile.js');
-    const { updateRelationshipProfile } = await import('./bot/relationshipProfile.js');
-    for (const mem of mems) {
-      if (getRecalcProgress().stopped) break;
-      try {
-        await maybeUpdateMemoryProfile({
-          type: 'private', groupId: '', userId: String(mem.userId), nickname: mem.nickname || String(mem.userId),
-          messageId: `memory-recalc:${mem.userId}:${Date.now()}`
-        }, { force: true, kind: 'memory-recalc' });
-      } catch { /* skip */ }
-      tickRecalc();
+  void runBackgroundTask('recalc.api', async () => {
+    let started = false;
+    try {
+      const db = readDb();
+      const mems = (db.memories || []).filter((m) => m.enabled && (m.samples || []).filter((s) => s.usedForProfile).length >= 3);
+      const gps = (db.groups || []).filter((g) => g.enabled);
+      const rels = (db.relationshipProfiles || []).filter((r) => r.enabled !== false);
+      const total = mems.length + gps.length + rels.length;
+      startRecalc(total, '正在重算全部画像');
+      started = true;
+      const { maybeUpdateMemoryProfile } = await import('./bot/memory.js');
+      const { updateGroupProfile } = await import('./bot/groupProfile.js');
+      const { updateRelationshipProfile } = await import('./bot/relationshipProfile.js');
+      for (const mem of mems) {
+        if (getRecalcProgress().stopped) break;
+        try {
+          await maybeUpdateMemoryProfile({
+            type: 'private', groupId: '', userId: String(mem.userId), nickname: mem.nickname || String(mem.userId),
+            messageId: `memory-recalc:${mem.userId}:${Date.now()}`
+          }, { force: true, kind: 'memory-recalc' });
+        } catch { /* skip */ }
+        tickRecalc();
+      }
+      for (const g of gps) {
+        if (getRecalcProgress().stopped) break;
+        try { await updateGroupProfile(readDb(), g.groupId); } catch { /* skip */ }
+        tickRecalc();
+      }
+      for (const rp of rels) {
+        if (getRecalcProgress().stopped) break;
+        try { await updateRelationshipProfile(readDb(), rp.groupId, rp.userA, rp.userB); } catch { /* skip */ }
+        tickRecalc();
+      }
+      finishRecalc(getRecalcProgress().stopped ? '已停止' : '全部重算完成');
+    } catch (error) {
+      const message = String(error?.message || error).slice(0, 300);
+      console.error('[recalc] 后台重算异常结束:', message);
+      if (started && getRecalcProgress().running) {
+        finishRecalc(getRecalcProgress().stopped ? '已停止' : `重算失败：${message}`);
+      }
+    } finally {
+      // No background job may leave the GUI's singleton progress marker stuck
+      // at running after an unexpected exception or module-load failure.
+      if (started && getRecalcProgress().running) {
+        finishRecalc(getRecalcProgress().stopped ? '已停止' : '重算异常结束');
+      }
     }
-    for (const g of gps) {
-      if (getRecalcProgress().stopped) break;
-      try { await updateGroupProfile(readDb(), g.groupId); } catch { /* skip */ }
-      tickRecalc();
-    }
-    for (const rp of rels) {
-      if (getRecalcProgress().stopped) break;
-      try { await updateRelationshipProfile(readDb(), rp.groupId, rp.userA, rp.userB); } catch { /* skip */ }
-      tickRecalc();
-    }
-    finishRecalc(getRecalcProgress().stopped ? '已停止' : '全部重算完成');
-  })();
+  });
   res.json({ ok: true });
 });
 
@@ -1402,7 +1530,7 @@ app.use((err, _req, res, _next) => {
   res.status(err?.status || err?.statusCode || 500).json({ ok: false, error: message });
 });
 
-app.listen(port, '127.0.0.1', async () => {
+httpServer = app.listen(port, '127.0.0.1', async () => {
   const { setMatchSender, matchManager } = await import('./osu/match.js');
   const { sendOneBotMessage } = await import('./onebot.js');
   const { migrateLegacyLevels } = await import('./bot/experience.js');

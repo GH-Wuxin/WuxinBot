@@ -3,6 +3,7 @@ import path from 'node:path';
 import {pathToFileURL} from 'node:url';
 import {chromium,type Browser} from 'playwright-core';
 import {getDataDir} from '../../store.js';
+import {runBackgroundTask} from '../../backgroundTasks.js';
 
 let browserPromise: Promise<Browser> | null = null;
 let queue: Promise<unknown> = Promise.resolve();
@@ -71,7 +72,7 @@ async function render(html:string):Promise<Buffer>{
     await context?.close();
     // This directory is created by mkdtemp directly under the render root.
     if(path.dirname(path.resolve(folder))===path.resolve(root))fs.rmSync(folder,{recursive:true,force:true});
-    idleTimer=setTimeout(()=>void closeSkillCardBrowser(),IDLE_MS);
+    idleTimer=setTimeout(()=>void runBackgroundTask('skill-card.browser-close',closeSkillCardBrowser),IDLE_MS);
     idleTimer.unref?.();
   }
 }

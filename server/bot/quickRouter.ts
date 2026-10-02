@@ -21,6 +21,7 @@ import {
   buildQuickShadowSummary,
 } from './quickMemory.js';
 import { registerPendingQuickObservation } from './quickContext.js';
+import { runBackgroundTask } from '../backgroundTasks.js';
 import {
   EXCLAMATION_DEFS,
   SLASH_DEFS,
@@ -506,7 +507,7 @@ async function handleQuickCommandInner(
     const fallback = `快捷指令查询完成（${def.source} 面板，结果见图片）`;
     const placeholder = `【快捷查询】${requester}：${fallback}`;
     const pendingId = recordQuickContextPending(event, placeholder, images, traceId);
-    void registerPendingQuickObservation(event, async () => {
+    void runBackgroundTask('quick-context.shadow', () => registerPendingQuickObservation(event, async () => {
       try {
         const summary = await buildQuickShadowSummary(
           capability,
@@ -524,7 +525,7 @@ async function handleQuickCommandInner(
         // pending entry always settles so a later turn can never hang.
         hydrateQuickContextPending(event, pendingId, placeholder, images, traceId);
       }
-    });
+    }));
   };
 
   // Per-group bot toggle: when a specific bot is disabled for this group, its

@@ -81,11 +81,12 @@ let lastAutoBackupAt = 0;
 let lastDbReadFailureAt = 0;
 
 const SHARDED_STORAGE_FORMAT = 'wuxin-sharded-v1';
+const MEMORY_BUCKET_COUNT = 16;
 const SHARD_SPECS = [
   {
     name: 'profiles',
     file: 'db-profiles.json',
-    keys: new Set(['memories', 'groupProfiles', 'relationshipProfiles', 'pendingPairCounts', 'profileLogs', 'profileV3'])
+    keys: new Set(['groupProfiles', 'relationshipProfiles', 'pendingPairCounts', 'profileLogs', 'profileV3'])
   },
   { name: 'messages', file: 'db-messages.json', keys: new Set(['messages']) },
   { name: 'decisions', file: 'db-decisions.json', keys: new Set(['decisions']) },
@@ -96,10 +97,104 @@ const SHARD_SPECS = [
   },
   { name: 'osu', file: 'db-osu.json', keys: new Set(['skillProfilerRuns']) }
 ];
+const MEMORY_BUCKET_SPECS = Array.from({ length: MEMORY_BUCKET_COUNT }, (_, index) => {
+  const suffix = index.toString(16).padStart(2, '0');
+  return { name: `memories-${suffix}`, file: `db-memories-${suffix}.json`, keys: new Set<string>() };
+});
+const ALL_SHARD_SPECS = [...SHARD_SPECS, ...MEMORY_BUCKET_SPECS];
 let cachedStore: { dataDir: string; db: any; coreSignature: string } | null = null;
 let cachedPublicDb: { db: any; minute: number; includeMemorySamples: boolean; value: any } | null = null;
 let storageRevision = '';
 let revisionSequence = 0;
+let storageMemoryBucketsEnabled = false;
+let storageMemoryBucketsDataDir = '';
+const STORE_SLOW_WRITE_MS = 500;
+const storeWriteStats = {
+  since: new Date().toISOString(),
+  count: 0,
+  fullWrites: 0,
+  dirtyWrites: 0,
+  slowWrites: 0,
+  totalDurationMs: 0,
+  totalDataBytes: 0,
+  maxDurationMs: 0,
+  lastAt: '',
+  lastOperation: '',
+  lastDurationMs: 0,
+  lastDataBytes: 0,
+  lastShards: [] as Array<{ name: string; bytes: number }>
+};
+const storeLockStats = {
+  since: new Date().toISOString(),
+  acquisitions: 0,
+  contended: 0,
+  timeoutCount: 0,
+  totalWaitMs: 0,
+  maxWaitMs: 0,
+  lastWaitMs: 0,
+  lastOwnerPid: 0,
+  lastContentionAt: '',
+  lastTimeoutAt: ''
+};
+
+function recordStoreWrite(operation: 'full' | 'dirty', startedAtMs: number, shards: Array<{ name: string; bytes: number }>) {
+  const durationMs = Math.max(0, Date.now() - startedAtMs);
+  const dataBytes = shards.reduce((total, shard) => total + shard.bytes, 0);
+  storeWriteStats.count += 1;
+  if (operation === 'full') storeWriteStats.fullWrites += 1;
+  else storeWriteStats.dirtyWrites += 1;
+  if (durationMs >= STORE_SLOW_WRITE_MS) storeWriteStats.slowWrites += 1;
+  storeWriteStats.totalDurationMs += durationMs;
+  storeWriteStats.totalDataBytes += dataBytes;
+  storeWriteStats.maxDurationMs = Math.max(storeWriteStats.maxDurationMs, durationMs);
+  storeWriteStats.lastAt = new Date().toISOString();
+  storeWriteStats.lastOperation = operation;
+  storeWriteStats.lastDurationMs = durationMs;
+  storeWriteStats.lastDataBytes = dataBytes;
+  storeWriteStats.lastShards = shards.map((shard) => ({ ...shard }));
+}
+
+/** In-process write telemetry for health/diagnostic views; counters reset on restart. */
+export function getStoreWriteStats() {
+  return {
+    ...storeWriteStats,
+    lastShards: storeWriteStats.lastShards.map((shard) => ({ ...shard }))
+  };
+}
+
+function recordStoreLock(waitMs: number, ownerPid = 0, timedOut = false) {
+  const elapsed = Math.max(0, Math.round(waitMs));
+  storeLockStats.acquisitions += 1;
+  storeLockStats.totalWaitMs += elapsed;
+  storeLockStats.maxWaitMs = Math.max(storeLockStats.maxWaitMs, elapsed);
+  storeLockStats.lastWaitMs = elapsed;
+  storeLockStats.lastOwnerPid = Number.isInteger(ownerPid) && ownerPid > 0 ? ownerPid : 0;
+  if (elapsed > 0) {
+    storeLockStats.contended += 1;
+    storeLockStats.lastContentionAt = new Date().toISOString();
+  }
+  if (timedOut) storeLockStats.timeoutCount += 1;
+  if (timedOut) storeLockStats.lastTimeoutAt = new Date().toISOString();
+}
+
+/** In-process lock telemetry for diagnosing duplicate writers and event-loop stalls. */
+export function getStoreLockStats() {
+  return { ...storeLockStats };
+}
+
+function memoryBucketName(userId: unknown): string {
+  const value = String(userId ?? '');
+  let hash = 2166136261;
+  for (let index = 0; index < value.length; index += 1) {
+    hash ^= value.charCodeAt(index);
+    hash = Math.imul(hash, 16777619);
+  }
+  return MEMORY_BUCKET_SPECS[(hash >>> 0) % MEMORY_BUCKET_COUNT].name;
+}
+
+function hasMemoryBucketMarker(marker: any): boolean {
+  return MEMORY_BUCKET_SPECS.every((spec) => marker?.shards?.[spec.name] === spec.file);
+}
 
 function shardNameForKey(key: string) {
   for (const spec of SHARD_SPECS) if (spec.keys.has(key)) return spec.name;
@@ -109,7 +204,7 @@ function shardNameForKey(key: string) {
 
 function shardPath(name: string) {
   if (name === 'core') return getDbPath();
-  const spec = SHARD_SPECS.find((candidate) => candidate.name === name);
+  const spec = ALL_SHARD_SPECS.find((candidate) => candidate.name === name);
   if (!spec) throw new Error(`未知数据库分片: ${name}`);
   return path.join(getDataDir(), spec.file);
 }
@@ -119,7 +214,7 @@ function storageMarker() {
     format: SHARDED_STORAGE_FORMAT,
     version: 1,
     revision: storageRevision,
-    shards: Object.fromEntries(SHARD_SPECS.map((spec) => [spec.name, spec.file]))
+    shards: Object.fromEntries(ALL_SHARD_SPECS.map((spec) => [spec.name, spec.file]))
   };
 }
 
@@ -220,6 +315,8 @@ function lockOwnerIsAlive() {
 
 function withDbLock(callback) {
   fs.mkdirSync(getDataDir(), { recursive: true });
+  const waitStartedAtMs = Date.now();
+  let lastOwnerPid = 0;
   let handle;
   for (let attempt = 0; attempt < 200; attempt += 1) {
     try {
@@ -229,6 +326,10 @@ function withDbLock(callback) {
     } catch (error) {
       const lockExists = fs.existsSync(getDbLockPath());
       if (!['EEXIST', 'EPERM', 'EACCES'].includes(error?.code)) throw error;
+      try {
+        const ownerPid = Number(fs.readFileSync(getDbLockPath(), 'utf8').trim());
+        if (Number.isInteger(ownerPid) && ownerPid > 0) lastOwnerPid = ownerPid;
+      } catch { /* the lock may be between create and pid write */ }
       if (!lockExists) {
         sleepSync(10);
         continue;
@@ -236,7 +337,11 @@ function withDbLock(callback) {
       let stale = false;
       try {
         const ageMs = Date.now() - fs.statSync(getDbLockPath()).mtimeMs;
-        stale = ageMs > 30_000 || (ageMs > 2_000 && !lockOwnerIsAlive());
+        // Never steal a lock merely because a legitimate write is slow. A
+        // live owner may be serializing a large shard or waiting on Windows
+        // filesystem latency; deleting its lock would permit concurrent writes
+        // and defeat the whole cross-process consistency boundary.
+        stale = ageMs > 2_000 && !lockOwnerIsAlive();
       } catch {
         stale = false;
       }
@@ -247,7 +352,15 @@ function withDbLock(callback) {
       }
     }
   }
-  if (handle === undefined) throw new Error('数据库写入锁等待超时，请检查是否重复启动了多个 Wuxin 后端。');
+  const waitMs = Date.now() - waitStartedAtMs;
+  if (handle === undefined) {
+    recordStoreLock(waitMs, lastOwnerPid, true);
+    throw new Error(`数据库写入锁等待超时（已等待 ${waitMs}ms，持有者 PID ${lastOwnerPid || '未知'}），请检查是否重复启动了多个 Wuxin 后端。`);
+  }
+  recordStoreLock(waitMs, lastOwnerPid, false);
+  if (waitMs >= STORE_SLOW_WRITE_MS) {
+    console.warn(`[store] 数据库写入锁竞争：等待 ${waitMs}ms，持有者 PID ${lastOwnerPid || '未知'}`);
+  }
   try {
     return callback();
   } finally {
@@ -274,6 +387,7 @@ function writeJsonAtomic(filePath, value, pretty = true) {
     try { if (fs.existsSync(tempPath)) fs.unlinkSync(tempPath); } catch { /* ignore cleanup failure */ }
     throw error;
   }
+  return Buffer.byteLength(payload, 'utf8');
 }
 
 // This is only the factory-default prompt used when data/db.json does not exist,
@@ -572,48 +686,98 @@ export function normalizeDb(db) {
   return applyRetention(db);
 }
 
-function splitDb(db) {
+function splitDb(db, requestedNames?: Set<string>) {
+  const names = requestedNames || new Set(['core', ...ALL_SHARD_SPECS.map((spec) => spec.name)]);
   const buckets = new Map<string, Record<string, any>>([
-    ['core', {}],
-    ...SHARD_SPECS.map((spec) => [spec.name, {}] as [string, Record<string, any>])
+    ...Array.from(names).map((name) => [name, {}] as [string, Record<string, any>])
   ]);
   for (const [key, value] of Object.entries(db || {})) {
     if (key === '_storage') continue;
+    if (key === 'memories') {
+      const requestedMemoryBuckets = MEMORY_BUCKET_SPECS.some((spec) => names.has(spec.name));
+      if (!requestedMemoryBuckets) continue;
+      for (const memory of Array.isArray(value) ? value : []) {
+        const name = memoryBucketName(memory?.userId);
+        if (!names.has(name)) continue;
+        const bucket = buckets.get(name);
+        if (!bucket) continue;
+        if (!Array.isArray(bucket.memories)) bucket.memories = [];
+        bucket.memories.push(memory);
+      }
+      continue;
+    }
     const name = shardNameForKey(key);
-    (buckets.get(name) || buckets.get('core'))![key] = value;
+    if (names.has(name)) (buckets.get(name) || buckets.get('core'))![key] = value;
   }
-  buckets.get('core')!._storage = storageMarker();
+  if (names.has('core')) buckets.get('core')!._storage = storageMarker();
   return buckets;
 }
 
-function writeShard(db, name: string) {
-  const buckets = splitDb(db);
-  const value = buckets.get(name) || {};
+function writeShardValue(value: Record<string, any> | undefined, name: string) {
   // Core stays formatted because it contains the small, hand-editable settings.
   // Large append-heavy shards are compact to avoid wasting ~18 MB on whitespace.
-  writeJsonAtomic(shardPath(name), value, name === 'core');
+  return writeJsonAtomic(shardPath(name), value || {}, name === 'core');
 }
 
 function writeAllShards(db) {
+  const startedAtMs = Date.now();
   const normalized = applyRetention(db);
   nextStorageRevision();
-  for (const spec of SHARD_SPECS) writeShard(normalized, spec.name);
+  // Build the bucket map once. The previous implementation called splitDb()
+  // once per shard, repeatedly walking the complete in-memory database during
+  // startup migrations and full rewrites.
+  const buckets = splitDb(normalized);
+  const writtenShards = [];
+  for (const spec of SHARD_SPECS) {
+    writtenShards.push({ name: spec.name, bytes: writeShardValue(buckets.get(spec.name), spec.name) });
+  }
+  for (const spec of MEMORY_BUCKET_SPECS) {
+    writtenShards.push({ name: spec.name, bytes: writeShardValue(buckets.get(spec.name), spec.name) });
+  }
   // Commit the marker last. A legacy db.json therefore remains authoritative if
   // migration is interrupted before every shard has been written.
-  writeShard(normalized, 'core');
+  writtenShards.push({ name: 'core', bytes: writeShardValue(buckets.get('core'), 'core') });
+  recordStoreWrite('full', startedAtMs, writtenShards);
+  storageMemoryBucketsEnabled = true;
+  storageMemoryBucketsDataDir = getDataDir();
   cachedStore = { dataDir: getDataDir(), db: normalized, coreSignature: coreFileSignature() };
   invalidateStoreCaches();
   return normalized;
 }
 
-function writeDirtyShards(db, dirtyKeys: Set<string>) {
+function writeDirtyShards(db, dirtyKeys: Set<string>, dirtyMemoryBuckets: Set<string> = new Set()) {
+  if (!storageMemoryBucketsEnabled || storageMemoryBucketsDataDir !== getDataDir()) {
+    // A legacy sharded store still keeps memories inside db-profiles.json.
+    // Convert it on the first trusted mutation so no sample data is lost.
+    writeAllShards(db);
+    return;
+  }
+  const startedAtMs = Date.now();
   const dirtyShards = new Set<string>();
-  for (const key of dirtyKeys) dirtyShards.add(shardNameForKey(key));
+  for (const key of dirtyKeys) {
+    if (key === 'memories') continue;
+    dirtyShards.add(shardNameForKey(key));
+  }
+  if (dirtyKeys.has('memories')) {
+    if (dirtyMemoryBuckets.has('*') || dirtyMemoryBuckets.size === 0) {
+      for (const spec of MEMORY_BUCKET_SPECS) dirtyShards.add(spec.name);
+    } else {
+      for (const name of dirtyMemoryBuckets) dirtyShards.add(name);
+    }
+  }
   nextStorageRevision();
+  // Split once per committed mutation. This matters for the production store,
+  // where the profiles shard is tens of megabytes and updateDb is called for
+  // both user traffic and background profile work.
+  const buckets = splitDb(db, new Set([...dirtyShards, 'core']));
   // Data shards are committed before the small core/revision file. Other
   // processes use the core signature as their cache invalidation signal.
-  for (const name of dirtyShards) if (name !== 'core') writeShard(db, name);
-  writeShard(db, 'core');
+  const writtenShards = [];
+  for (const name of dirtyShards) {
+    if (name !== 'core') writtenShards.push({ name, bytes: writeShardValue(buckets.get(name), name) });
+  }
+  writtenShards.push({ name: 'core', bytes: writeShardValue(buckets.get('core'), 'core') });
+  recordStoreWrite('dirty', startedAtMs, writtenShards);
   cachedStore = { dataDir: getDataDir(), db, coreSignature: coreFileSignature() };
   invalidateStoreCaches();
 }
@@ -632,14 +796,18 @@ function parseJsonFile(filePath: string, label = '数据库文件') {
 function readLogicalDbFromDisk() {
   const core = parseJsonFile(getDbPath());
   if (hasStorageMarker(core) && !isShardedCore(core)) throw unsupportedStorageMarker(core);
+  storageMemoryBucketsEnabled = false;
+  storageMemoryBucketsDataDir = getDataDir();
   if (!isShardedCore(core)) return normalizeDb(core);
   if (Number(core._storage?.version || 0) !== 1) {
     throw new StoreUnreadableError(
-      `数据库存储版本 ${String(core._storage?.version ?? '<missing>')} 不是当前支持的版本 1，请升级程序后再使用该数据目录。`,
+      `数据库存储版本 ${String(core._storage?.version ?? '<missing>')} 高于当前支持的版本 1，请升级程序后再使用该数据目录。`,
       'future-version',
     );
   }
   storageRevision = String(core._storage?.revision || '');
+  const useMemoryBuckets = hasMemoryBucketMarker(core._storage);
+  storageMemoryBucketsEnabled = useMemoryBuckets;
   const merged = { ...core };
   delete merged._storage;
   for (const spec of SHARD_SPECS) {
@@ -650,6 +818,26 @@ function readLogicalDbFromDisk() {
       if (isMissingFileError(error)) throw new Error(`数据库分片缺失: ${spec.file}`);
       throw error;
     }
+  }
+  if (useMemoryBuckets) {
+    const memories = [];
+    for (const spec of MEMORY_BUCKET_SPECS) {
+      const filePath = shardPath(spec.name);
+      let parsed;
+      try {
+        parsed = parseJsonFile(filePath, `数据库分片 ${spec.file}`);
+      } catch (error) {
+        if (isMissingFileError(error)) throw new Error(`数据库分片缺失: ${spec.file}`);
+        throw error;
+      }
+      if (Object.prototype.hasOwnProperty.call(parsed, 'memories')) {
+        if (!Array.isArray(parsed.memories)) {
+          throw new Error(`数据库分片 ${spec.file} 中的 memories 不是数组`);
+        }
+        memories.push(...parsed.memories);
+      }
+    }
+    merged.memories = memories;
   }
   return normalizeDb(merged);
 }
@@ -732,7 +920,7 @@ function readCoreFile(): CoreRead {
 // surviving data (finding F03).
 function hasSideData(): boolean {
   const dataDir = getDataDir();
-  for (const spec of SHARD_SPECS) {
+  for (const spec of ALL_SHARD_SPECS) {
     if (statIfPresent(path.join(dataDir, spec.file), `数据库分片 ${spec.file}`)) return true;
   }
   const backupDir = path.join(dataDir, 'backups');
@@ -783,7 +971,7 @@ export function ensureStore() {
     if (!isShardedCore(core.value)) throw unsupportedStorageMarker(core.value);
     if (Number(core.value._storage?.version || 0) !== 1) {
       throw new StoreUnreadableError(
-        `数据库存储版本 ${String(core.value._storage?.version ?? '<missing>')} 不是当前支持的版本 1，请升级程序后再使用该数据目录。`,
+        `数据库存储版本 ${String(core.value._storage?.version ?? '<missing>')} 高于当前支持的版本 1，请升级程序后再使用该数据目录。`,
         'future-version',
       );
     }
@@ -884,7 +1072,7 @@ export function isValidLogicalDbShape(value: unknown): boolean {
 }
 
 function authoritativeStoreFiles(): string[] {
-  return [getDbPath(), ...SHARD_SPECS.map((spec) => path.join(getDataDir(), spec.file))];
+  return [getDbPath(), ...ALL_SHARD_SPECS.map((spec) => path.join(getDataDir(), spec.file))];
 }
 
 function preserveAuthoritativeFiles(): { preserved: string[]; missing: string[] } {
@@ -1061,12 +1249,57 @@ function unwrapTrackedValue(value, rawTargets: WeakMap<object, object>, seen = n
   return result;
 }
 
+function isArrayIndexProperty(property: PropertyKey): boolean {
+  return typeof property === 'string' && /^(0|[1-9]\d*)$/.test(property);
+}
+
+function markMemoryBucketMutation(
+  dirtyMemoryBuckets: Set<string> | undefined,
+  rootKey: string,
+  memoryBucket: string,
+  object: any,
+  property: PropertyKey,
+  value: any,
+  rawTargets: WeakMap<object, object>
+) {
+  if (!dirtyMemoryBuckets || rootKey !== 'memories') return;
+
+  // Once a memory entry has been resolved, all nested mutations belong to
+  // that entry's bucket. A userId edit also touches the destination bucket.
+  if (memoryBucket) {
+    dirtyMemoryBuckets.add(memoryBucket);
+    if (property === 'userId') {
+      const nextValue = unwrapTrackedValue(value, rawTargets);
+      dirtyMemoryBuckets.add(memoryBucketName(nextValue));
+    }
+    return;
+  }
+
+  // This is the top-level memories array. Array length changes do not identify
+  // a bucket; index writes/deletes do, based on the old or new entry.
+  if (Array.isArray(object)) {
+    if (property === 'length') return;
+    if (isArrayIndexProperty(property)) {
+      const nextValue = value === undefined ? object[property as any] : unwrapTrackedValue(value, rawTargets);
+      dirtyMemoryBuckets.add(memoryBucketName(nextValue?.userId));
+      return;
+    }
+  }
+
+  // Replacing the complete memories collection, or mutating an unresolvable
+  // shape, is rare but must remain correct rather than silently missing a
+  // bucket.
+  dirtyMemoryBuckets.add('*');
+}
+
 function trackedMutationProxy(
   target,
   dirtyKeys: Set<string>,
   rootKey = '',
   proxies = new WeakMap(),
-  rawTargets = new WeakMap<object, object>()
+  rawTargets = new WeakMap<object, object>(),
+  dirtyMemoryBuckets?: Set<string>,
+  memoryBucket = ''
 ) {
   if (!target || typeof target !== 'object') return target;
   if (proxies.has(target)) return proxies.get(target);
@@ -1074,16 +1307,31 @@ function trackedMutationProxy(
     get(object, property, receiver) {
       const value = Reflect.get(object, property, receiver);
       const nextRoot = rootKey || (typeof property === 'string' ? property : '');
-      return trackedMutationProxy(value, dirtyKeys, nextRoot, proxies, rawTargets);
+      let nextMemoryBucket = memoryBucket;
+      if (rootKey === 'memories' && Array.isArray(object) && isArrayIndexProperty(property)) {
+        const rawValue = rawTargets.get(value) || value;
+        nextMemoryBucket = memoryBucketName(rawValue?.userId);
+      }
+      return trackedMutationProxy(
+        value,
+        dirtyKeys,
+        nextRoot,
+        proxies,
+        rawTargets,
+        dirtyMemoryBuckets,
+        nextMemoryBucket
+      );
     },
     set(object, property, value, receiver) {
       const key = rootKey || (typeof property === 'string' ? property : '');
       if (key) dirtyKeys.add(key);
+      markMemoryBucketMutation(dirtyMemoryBuckets, rootKey, memoryBucket, object, property, value, rawTargets);
       return Reflect.set(object, property, unwrapTrackedValue(value, rawTargets), receiver);
     },
     deleteProperty(object, property) {
       const key = rootKey || (typeof property === 'string' ? property : '');
       if (key) dirtyKeys.add(key);
+      markMemoryBucketMutation(dirtyMemoryBuckets, rootKey, memoryBucket, object, property, undefined, rawTargets);
       return Reflect.deleteProperty(object, property);
     }
   });
@@ -1098,13 +1346,14 @@ export function updateDb(mutator) {
   return withDbLock(() => {
     const db = readDbUnlocked();
     const dirtyKeys = new Set<string>();
-    const trackedDb = trackedMutationProxy(db, dirtyKeys);
+    const dirtyMemoryBuckets = new Set<string>();
+    const trackedDb = trackedMutationProxy(db, dirtyKeys, '', new WeakMap(), new WeakMap(), dirtyMemoryBuckets);
     let result;
     try {
       result = mutator(trackedDb);
       applyRetention(trackedDb);
       if (dirtyKeys.size > 0) {
-        writeDirtyShards(db, dirtyKeys);
+        writeDirtyShards(db, dirtyKeys, dirtyMemoryBuckets);
         autoBackupIfDue(db);
       }
     } catch (error) {

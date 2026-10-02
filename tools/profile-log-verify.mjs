@@ -5,7 +5,7 @@ import path from 'node:path';
 const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'wuxin-profile-log-'));
 process.env.DATA_DIR = tmpDir;
 
-const { ensureStore, readDb, updateDb } = await import('../server/store.ts');
+const { ensureStore, readDb, updateDb, getStoreWriteStats } = await import('../server/store.ts');
 const {
   recordMemoryObservation,
   commitMemoryProfileResult,
@@ -53,10 +53,12 @@ function event(id, text) {
 try {
   console.log('Test 1: sample/evidence/threshold logs persist');
   resetDb();
+  const writesBeforeObservation = getStoreWriteStats().dirtyWrites;
   const result = recordMemoryObservation(
     event('m1', '我喜欢打CS2，也经常和朋友聊游戏。'),
     { policy: 'normal', attentionLevel: 3, allowCommands: false },
   );
+  const writesForObservation = getStoreWriteStats().dirtyWrites - writesBeforeObservation;
   const db1 = readDb();
   const events1 = (db1.profileLogs || []).map((log) => log.event);
   assert(result.shouldUpdate === false, 'first sample should not trigger profile update');
@@ -64,6 +66,9 @@ try {
   assert(events1.includes('evidence.created'), 'evidence.created should be logged');
   assert(events1.includes('profile.threshold_check'), 'profile.threshold_check should be logged');
   assert(db1.profileV3?.u1?.evidence?.length === 1, 'profileV3 evidence should persist');
+  assert(db1.memories?.[0]?.messageCount === 1, 'new memory counters should persist');
+  assert(db1.memories?.[0]?.samples?.length === 1, 'new memory sample should persist');
+  assert(writesForObservation === 1, 'observation should commit memory, evidence and logs in one write');
 
   console.log('Test 2: commit logs patch/no-change after DB mutation');
   const outcome = commitMemoryProfileResult('u1', {

@@ -238,6 +238,9 @@ export async function ownerProfileHandler(ctx: OwnerHandlerContext): Promise<Own
           manualNotes: '', profilingRule: '', createdAt: nowIso(), updatedAt: nowIso()
         };
         draft.memories.push(mem);
+        // Re-resolve the attached entry before applying the rule; inserted
+        // plain objects are unwrapped by the mutation proxy.
+        mem = draft.memories.find((entry) => String(entry.userId) === String(ruleTarget));
       }
       mem.profilingRule = ruleText || '';
       mem.updatedAt = nowIso();

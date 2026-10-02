@@ -48,8 +48,15 @@ try {
   if (decision.shouldReply || !decision.reason.includes('35/45')) throw new Error(`低分门控决策异常：${decision.reason}`);
   let after = readDb();
   const gateEvent = after.usageEvents.find((event) => event.kind === 'reply-gate');
-  if (after.usage.totalTokens !== 124 || after.usage.requests !== 1 || gateEvent?.promptTokens !== 123 || gateEvent?.gateScore !== 35) {
-    throw new Error('门控 Token 未正确计入总用量或明细');
+  if (
+    after.usage.totalTokens !== 124
+    || after.usage.requests !== 1
+    || gateEvent?.promptTokens !== 0
+    || gateEvent?.accountingExcluded !== true
+    || gateEvent?.observedUsage?.promptTokens !== 123
+    || gateEvent?.gateScore !== 35
+  ) {
+    throw new Error(`门控 Token 未正确计入总用量或明细：${JSON.stringify({ usage: after.usage, gateEvent })}`);
   }
 
   const positive = await decideReply({ db: readDb(), ...input, text: '[CQ:at,qq=20002] 这个话题你们怎么看' });

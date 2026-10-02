@@ -11,7 +11,7 @@ import { completeCodexAppServerChat, codexInvocationConfig } from '../codexAppSe
 import { mergeLlmUsage } from '../usage.js';
 import { fetchBoundedBody } from '../httpBody.js';
 import { recordLlmInvocation } from '../llmLedger.js';
-import { reserveLlmInvocation, markTurnFallback, hasTurnFallback } from '../llmPolicy.js';
+import { waitForLlmInvocation, markTurnFallback, hasTurnFallback } from '../llmPolicy.js';
 import { applyModulePersonality, beginPromptCall, finishPromptCall, resolvePromptModule } from '../promptStudio.js';
 import {
   currentRequestTraceId,
@@ -493,7 +493,7 @@ export async function completeChat(db, options = {}) {
       traceEvent('MODEL', 'provider_fallback_reused', { provider: 'codex-app-server', reason: 'earlier failure in same turn' });
       return runFallback('本轮沿用已成功的备用供应商');
     }
-    const reservation = reserveLlmInvocation(Number(options.timeoutMs || db.settings.codexTimeoutMs || 90_000));
+    const reservation = await waitForLlmInvocation(Number(options.timeoutMs || db.settings.codexTimeoutMs || 90_000));
     const invocationId = crypto.randomUUID();
     const started = Date.now();
     const invocationConfig = codexInvocationConfig(db.settings, options);
@@ -636,7 +636,7 @@ export async function completeChat(db, options = {}) {
 
   let providerAttempt = 0;
   const runCompletion = async (nextParams) => {
-    const reservation = reserveLlmInvocation(Number(options.timeoutMs || 45_000) + 1000);
+    const reservation = await waitForLlmInvocation(Number(options.timeoutMs || 45_000) + 1000);
     providerAttempt += 1;
     const invocationId = crypto.randomUUID();
     const invocationStarted = Date.now();
