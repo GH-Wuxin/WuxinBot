@@ -9,6 +9,7 @@ import { activeModelName } from '../modelConfig.js';
 import { completeChat } from './llm.js';
 import { findRecentInteractionPairs } from './signals.js';
 import { textWithoutControlPlaceholders } from './cleaning.js';
+import { runBackgroundTask } from '../backgroundTasks.js';
 
 let autoUpdateLock = new Set();
 
@@ -80,12 +81,16 @@ export function incrementPairPending(db, groupId, userId) {
     }
     if (count >= 25 && !autoUpdateLock.has(pKey)) {
       autoUpdateLock.add(pKey);
-      void updateRelationshipProfile(updated, parsed.groupId, parsed.userA, parsed.userB).then((result) => {
-        if (result.ok) {
-          updateDb((draft) => { if (draft.pendingPairCounts) draft.pendingPairCounts[pKey] = 0; });
+      void runBackgroundTask('relationship-profile.auto-update', async () => {
+        try {
+          const result = await updateRelationshipProfile(updated, parsed.groupId, parsed.userA, parsed.userB);
+          if (result.ok) {
+            updateDb((draft) => { if (draft.pendingPairCounts) draft.pendingPairCounts[pKey] = 0; });
+          }
+        } finally {
+          autoUpdateLock.delete(pKey);
         }
-        autoUpdateLock.delete(pKey);
-      }).catch(() => { autoUpdateLock.delete(pKey); });
+      });
     }
   }
 }

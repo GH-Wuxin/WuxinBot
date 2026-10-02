@@ -60,7 +60,7 @@ function sweepExpiredEntries(now: number): void {
 export function registerPendingQuickObservation(
   event: any,
   work: () => Promise<void>,
-): void {
+): Promise<void> {
   const key = quickContextPendingKey(event);
   const id = `qobs-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
   let entry: PendingQuickObservation | null = null;
@@ -88,6 +88,7 @@ export function registerPendingQuickObservation(
   if (list.length > MAX_PENDING_PER_KEY) list.shift();
   pendingByKey.set(key, list);
   if (pendingByKey.size > MAX_PENDING_PER_PROCESS) sweepExpiredEntries(entry.visibleAt);
+  return promise;
 }
 
 /**
@@ -105,13 +106,19 @@ export async function settlePendingQuickObservations(
   if (traceId) markLatencySpan(traceId, 'quick_context_drain_start', { pendingCount: entries.length });
   const startedAt = Date.now();
   const waitMs = positiveEnvMs('QUICK_CONTEXT_PENDING_WAIT_MS', 30_000);
+  let timeoutTimer: NodeJS.Timeout | undefined;
   const timeout = new Promise<'timeout'>((resolve) => {
-    setTimeout(() => resolve('timeout'), waitMs);
+    timeoutTimer = setTimeout(() => resolve('timeout'), waitMs);
+    timeoutTimer.unref?.();
   });
-  await Promise.race([
-    Promise.allSettled(entries.map((entry) => entry.promise)),
-    timeout,
-  ]);
+  try {
+    await Promise.race([
+      Promise.allSettled(entries.map((entry) => entry.promise)),
+      timeout,
+    ]);
+  } finally {
+    if (timeoutTimer) clearTimeout(timeoutTimer);
+  }
   const waitedMs = Date.now() - startedAt;
   if (traceId) markLatencySpan(traceId, 'quick_context_drain_done', { waitedMs, pendingCount: entries.length });
   return { waitedMs, pendingCount: entries.length };

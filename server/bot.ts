@@ -84,6 +84,8 @@ import {
   isSearchAvailable,
 } from './bot/search.js';
 import { setBotPaused, getRecalcProgress, startRecalc, tickRecalc, finishRecalc, markActiveProcessing } from './health.js';
+import { runBackgroundTask } from './backgroundTasks.js';
+import { runInboundTask } from './bot/inboundGate.js';
 import {
   currentRequestTraceId,
   finishRequestTrace,
@@ -438,7 +440,11 @@ function llmTurnLimitsForEvent(event) {
   return undefined;
 }
 
-export async function processIncoming(event, sendMessage = undefined, queuedDecision = undefined, isFromDrain = false) {
+export function processIncoming(event, sendMessage = undefined, queuedDecision = undefined, isFromDrain = false) {
+  return runInboundTask('onebot.message', () => processIncomingAdmitted(event, sendMessage, queuedDecision, isFromDrain));
+}
+
+export async function processIncomingAdmitted(event, sendMessage = undefined, queuedDecision = undefined, isFromDrain = false) {
   const queueOwner = { key: '' };
   const requestId = requestTraceIdFor(event);
   startRequestTrace(event, requestId);
@@ -645,12 +651,12 @@ async function processIncomingInner(event, sendMessage = undefined, queuedDecisi
 
     const memoryRecord = recordMemoryObservation(event, userPolicy);
     if (memoryRecord.shouldUpdate) {
-      void maybeUpdateMemoryProfile(event);
+      void runBackgroundTask('memory.profile', () => maybeUpdateMemoryProfile(event));
     } else {
       maybeSweepDueMemoryProfiles(event);
     }
     if (event.images?.length) {
-      void maybeRecordImageMemorySummary(event, userPolicy);
+      void runBackgroundTask('memory.image-summary', () => maybeRecordImageMemorySummary(event, userPolicy));
     }
 
     // Group profile auto-update: increment pending counter, trigger if threshold reached
@@ -664,7 +670,7 @@ async function processIncomingInner(event, sendMessage = undefined, queuedDecisi
       if (xpResult.levelUp && db.settings.levelUpNotifyEnabled !== false) {
         const oldPp = levelToPp(xpResult.oldLevel);
         const newPp = levelToPp(xpResult.newLevel);
-        void (async () => {
+        void runBackgroundTask('level-up.phrase', async () => {
           try {
             const liveDb = readDb();
             // Real player pp (osu API has a 6h cache; skill snapshot as fallback).
@@ -708,7 +714,7 @@ async function processIncomingInner(event, sendMessage = undefined, queuedDecisi
               }
             });
           } catch { /* non-fatal */ }
-        })();
+        });
       }
     }
   }

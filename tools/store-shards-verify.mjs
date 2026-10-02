@@ -43,6 +43,10 @@ try {
 
   const expectedFiles = ['db.json', 'db-profiles.json', 'db-messages.json', 'db-decisions.json', 'db-telemetry.json', 'db-osu.json'];
   for (const file of expectedFiles) assert(fs.existsSync(path.join(dataDir, file)), `created:${file}`);
+  const memoryFiles = fs.readdirSync(dataDir)
+    .filter((file) => /^db-memories-[0-9a-f]{2}\.json$/.test(file))
+    .sort();
+  assert(memoryFiles.length === 16, 'created:memory-buckets', `expected 16, got ${memoryFiles.length}`);
 
   const core = JSON.parse(fs.readFileSync(path.join(dataDir, 'db.json'), 'utf8'));
   assert(core._storage?.format === 'wuxin-sharded-v1', 'core:marker');
@@ -61,12 +65,27 @@ try {
   store.updateDb((db) => {
     db.messages.push({ id: 'm2', role: 'assistant', content: 'world', createdAt: '2026-01-01T00:00:01.000Z' });
   });
+  const writeStats = store.getStoreWriteStats();
+  assert(writeStats.dirtyWrites >= 1, 'write-telemetry:dirty-write-count');
+  assert(writeStats.lastOperation === 'dirty' && writeStats.lastDataBytes > 0, 'write-telemetry:last-write');
+  assert(writeStats.lastShards.some((shard) => shard.name === 'messages'), 'write-telemetry:messages-shard');
   const after = Object.fromEntries(expectedFiles.map((file) => [file, hash(path.join(dataDir, file))]));
   assert(before['db-messages.json'] !== after['db-messages.json'], 'selective-write:messages-changed');
   assert(before['db.json'] !== after['db.json'], 'selective-write:core-revision-changed');
   for (const file of expectedFiles.filter((name) => !['db.json', 'db-messages.json'].includes(name))) {
     assert(before[file] === after[file], `selective-write:${file}-unchanged`);
   }
+
+  const beforeMemoryBuckets = Object.fromEntries(memoryFiles.map((file) => [file, hash(path.join(dataDir, file))]));
+  const beforeProfiles = hash(path.join(dataDir, 'db-profiles.json'));
+  store.updateDb((db) => {
+    db.memories.find((memory) => memory.userId === 'u1').samples.push({ content: 'sample-b', usedForProfile: true });
+  });
+  const afterMemoryBuckets = Object.fromEntries(memoryFiles.map((file) => [file, hash(path.join(dataDir, file))]));
+  const changedMemoryBuckets = memoryFiles.filter((file) => beforeMemoryBuckets[file] !== afterMemoryBuckets[file]);
+  assert(changedMemoryBuckets.length === 1, 'memory-write:one-bucket-changed', `changed ${changedMemoryBuckets.join(', ')}`);
+  assert(beforeProfiles === hash(path.join(dataDir, 'db-profiles.json')), 'memory-write:profiles-unchanged');
+  assert(store.readDb().memories?.[0]?.samples?.some((sample) => sample.content === 'sample-b'), 'memory-write:sample-readable');
 
   const publicA = store.publicDb();
   const publicB = store.publicDb();

@@ -104,12 +104,18 @@ function persistQuickContext(
     ).slice(0, SUMMARY_LIMIT);
     updateDb((draft) => {
       if (!Array.isArray(draft.messages)) draft.messages = [];
-      const alreadyRecorded = Boolean(
-        messageId &&
-        draft.messages.some(
-          (m: any) => m.role === 'user' && m.messageId === messageId,
-        ),
-      );
+      let alreadyRecorded = false;
+      if (messageId) {
+        // Message history is append-ordered; recent duplicates are common
+        // during webhook retries, so stop as soon as the id is found.
+        for (let index = draft.messages.length - 1; index >= 0; index -= 1) {
+          const message = draft.messages[index];
+          if (message.role === 'user' && message.messageId === messageId) {
+            alreadyRecorded = true;
+            break;
+          }
+        }
+      }
       if (alreadyRecorded) return;
 
       draft.messages.push({

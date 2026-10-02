@@ -9,7 +9,7 @@ const { recordLlmInvocation } = await import('../server/llmLedger.ts');
 const { mergeLlmUsage, usageEventFields, applyUsageTotals, measuredPromptTokens } = await import('../server/usage.ts');
 const { mapCodexTokenUsage, parseCodexAdapterEnvelope, codexInvocationConfig } = await import('../server/codexAppServer.ts');
 const { runToolLoop, mergeToolLoopResults, executeToolCall, registerPendingBotCall, tryResolveBotResponse } = await import('../server/bots/executor.ts');
-const { withLlmTurnPolicy, reserveLlmInvocation, hasTurnFallback, markTurnFallback } = await import('../server/llmPolicy.ts');
+const { withLlmTurnPolicy, reserveLlmInvocation, waitForLlmInvocation, hasTurnFallback, markTurnFallback } = await import('../server/llmPolicy.ts');
 
 const usage = { total_tokens: 120, prompt_tokens: 100, completion_tokens: 20,
   prompt_tokens_details: { cached_tokens: 72 }, completion_tokens_details: { reasoning_tokens: 8 } };
@@ -124,6 +124,15 @@ try {
   const claims = Array.from({ length: 4 }, () => reserveLlmInvocation(1000));
   assert.throws(() => reserveLlmInvocation(1000), /CAPACITY_EXHAUSTED/);
   claims.forEach(claim => claim.release());
+  const occupied = Array.from({ length: 4 }, () => reserveLlmInvocation(1000));
+  const queuedAt = Date.now();
+  const waiting = waitForLlmInvocation(1000);
+  setTimeout(() => occupied[0].release(), 25);
+  const waited = await waiting;
+  assert.ok(Date.now() - queuedAt >= 15, 'production admission should wait for a released slot');
+  waited.release();
+  occupied.slice(1).forEach(claim => claim.release());
+  console.log('PASS async LLM admission waits for capacity instead of failing immediately');
   assert.equal(codexInvocationConfig({ codexReasoningEffort: 'max' }, { thinking: { type: 'disabled' } }).effort, 'low');
   assert.equal(codexInvocationConfig({}, { reasoning_effort: 'high' }).effort, 'high');
   assert.equal(codexInvocationConfig({}, { maxTokens: 30 }).capabilities.hardMaxTokens, false);

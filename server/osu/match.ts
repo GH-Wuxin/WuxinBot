@@ -170,6 +170,13 @@ export class MatchListener {
     }, TIMEOUT_MS);
   }
 
+  private clearTimers(): void {
+    if (this.timer) clearTimeout(this.timer);
+    if (this.killTimer) clearTimeout(this.killTimer);
+    this.timer = null;
+    this.killTimer = null;
+  }
+
   // One poll round, then schedule the next one. Scheduling happens only after
   // a round fully completes, so two listen() calls can never run concurrently.
   private async tick(): Promise<void> {
@@ -184,11 +191,21 @@ export class MatchListener {
   stop(type: MatchStopType): void {
     if (this.stopped) return;
     this.stopped = true;
-    if (this.timer) clearTimeout(this.timer);
-    if (this.killTimer) clearTimeout(this.killTimer);
-    this.timer = null;
-    this.killTimer = null;
+    this.clearTimers();
     this.emit('matchEnd', { type });
+  }
+
+  /**
+   * Stop polling during process shutdown without sending a fake match-end
+   * message or deleting the persisted listener. The next process can restore
+   * the listener and continue watching the same match.
+   */
+  stopSilently(): Promise<void> {
+    if (!this.stopped) {
+      this.stopped = true;
+      this.clearTimers();
+    }
+    return this.eventChain;
   }
 
   get isStopped(): boolean {
@@ -357,6 +374,7 @@ export class MatchListener {
 
 class MatchManager {
   private listeners = new Map<number, MatchListener>();
+  private shuttingDown = false;
 
   private loadState(): Record<string, MatchListenerState> {
     return (readDb().osuMatchListeners || {}) as Record<string, MatchListenerState>;
@@ -374,6 +392,7 @@ class MatchManager {
     rawText: string,
     isOwner: boolean,
   ): Promise<MatchCommandResult> {
+    if (this.shuttingDown) return { text: '服务器正在关闭，请稍后再试。' };
     const text = String(rawText || '').trim();
     const groupId = String(event.groupId || '');
     const userId = String(event.userId || '');
@@ -447,6 +466,7 @@ class MatchManager {
     if (match.match.end_time) {
       return { text: `比赛 ${matchId}（${match.match.name}）已经结束了。` };
     }
+    if (this.shuttingDown) return { text: '服务器正在关闭，请稍后再试。' };
 
     // Skip rounds: lastEventId aligned to the last N-th round event.
     let lastEventId = match.latest_event_id;
@@ -649,8 +669,10 @@ class MatchManager {
   }
 
   async restore(db: any): Promise<void> {
+    if (this.shuttingDown) return;
     const state = this.loadState();
     for (const [id, e] of Object.entries(state)) {
+      if (this.shuttingDown) return;
       const matchId = Number(id);
       if (!Number.isFinite(matchId) || this.listeners.has(matchId)) continue;
       try {
@@ -659,6 +681,7 @@ class MatchManager {
           delete state[id];
           continue;
         }
+        if (this.shuttingDown) return;
         const listener = new MatchListener(match, matchId, (type, data) =>
           this.handleListenerEvent(matchId, type, data),
         );
@@ -679,6 +702,14 @@ class MatchManager {
     }
     this.saveState(state);
   }
+
+  async shutdown(): Promise<void> {
+    if (this.shuttingDown) return;
+    this.shuttingDown = true;
+    const listeners = [...this.listeners.values()];
+    this.listeners.clear();
+    await Promise.allSettled(listeners.map((listener) => listener.stopSilently()));
+  }
 }
 
 function stopTypeText(type: string): string {
@@ -693,6 +724,10 @@ function stopTypeText(type: string): string {
 }
 
 export const matchManager = new MatchManager();
+
+export async function shutdownMatchManager(): Promise<void> {
+  await matchManager.shutdown();
+}
 
 export function setMatchSender(fn: SendMessage): void {
   (globalThis as any).__matchSender = fn;

@@ -6,7 +6,7 @@
 // 4. Only patch changed fields, never wholesale overwrite
 
 import { readDb, updateDb, nowIso } from '../store.js';
-import { writeProfileLog, newRunId } from './profileLog.js';
+import { writeProfileLog, appendProfileLog, newRunId } from './profileLog.js';
 import { textWithoutControlPlaceholders } from './cleaning.js';
 
 // ── Evidence types ──
@@ -112,6 +112,66 @@ export function extractEvidenceFromSample(
 // ── Evidence aggregation ──
 
 // Merge new evidence into existing evidence list
+export function applyEvidenceToDraft(
+  draft: any,
+  userId: string,
+  newClaim: { source: EvidenceSource; strength: EvidenceStrength; claim: string },
+  groupId: string,
+  sampleId: string,
+  day: string,
+): boolean {
+  if (!draft.profileV3) draft.profileV3 = {};
+  let profile = draft.profileV3[userId];
+  if (!profile) {
+    profile = { userId, nickname: '', evidence: [], aggregationCount: 0 };
+    draft.profileV3[userId] = profile;
+    // updateDb unwraps assigned objects before attaching them to the
+    // authoritative database. Continue through the attached proxy so later
+    // evidence mutations are not made on the detached source object.
+    profile = draft.profileV3[userId];
+  }
+
+  // Find existing evidence that matches the claim (same source type, similar claim)
+  const existing = profile.evidence.find((e) =>
+    !e.supersededBy &&
+    e.source === newClaim.source &&
+    e.claim.slice(0, 40) === newClaim.claim.slice(0, 40) &&
+    new Date(e.updatedAt).getTime() > Date.now() - 30 * 86400000 // Within 30 days
+  );
+
+  if (existing) {
+    // Strengthen existing evidence
+    if (!existing.rawSamples.includes(sampleId)) existing.rawSamples.push(sampleId);
+    if (!existing.groups.includes(groupId)) existing.groups.push(groupId);
+    if (!existing.days.includes(day)) existing.days.push(day);
+    existing.crossGroup = existing.groups.length >= 2;
+    existing.crossDay = existing.days.length >= 2;
+    existing.updatedAt = nowIso();
+    // Upgrade strength if cross-session
+    if (existing.crossDay && existing.strength === 'weak') existing.strength = 'moderate';
+    if (existing.crossDay && existing.crossGroup && existing.strength === 'moderate') existing.strength = 'strong';
+  } else {
+    // Create new evidence
+    profile.evidence.push({
+      id: crypto.randomUUID(),
+      userId,
+      source: newClaim.source,
+      strength: newClaim.strength,
+      claim: newClaim.claim,
+      rawSamples: [sampleId],
+      groups: [groupId],
+      days: [day],
+      crossGroup: false,
+      crossDay: false,
+      createdAt: nowIso(),
+      updatedAt: nowIso(),
+    });
+  }
+
+  profile.lastEvidenceAt = nowIso();
+  return true;
+}
+
 export function addEvidence(
   userId: string,
   newClaim: { source: EvidenceSource; strength: EvidenceStrength; claim: string },
@@ -121,52 +181,7 @@ export function addEvidence(
 ): void {
   let shouldLog = false;
   updateDb((draft) => {
-    if (!draft.profileV3) draft.profileV3 = {};
-    let profile = draft.profileV3[userId];
-    if (!profile) {
-      profile = { userId, nickname: '', evidence: [], aggregationCount: 0 };
-      draft.profileV3[userId] = profile;
-    }
-
-    // Find existing evidence that matches the claim (same source type, similar claim)
-    const existing = profile.evidence.find((e) =>
-      !e.supersededBy &&
-      e.source === newClaim.source &&
-      e.claim.slice(0, 40) === newClaim.claim.slice(0, 40) &&
-      new Date(e.updatedAt).getTime() > Date.now() - 30 * 86400000 // Within 30 days
-    );
-
-    if (existing) {
-      // Strengthen existing evidence
-      if (!existing.rawSamples.includes(sampleId)) existing.rawSamples.push(sampleId);
-      if (!existing.groups.includes(groupId)) existing.groups.push(groupId);
-      if (!existing.days.includes(day)) existing.days.push(day);
-      existing.crossGroup = existing.groups.length >= 2;
-      existing.crossDay = existing.days.length >= 2;
-      existing.updatedAt = nowIso();
-      // Upgrade strength if cross-session
-      if (existing.crossDay && existing.strength === 'weak') existing.strength = 'moderate';
-      if (existing.crossDay && existing.crossGroup && existing.strength === 'moderate') existing.strength = 'strong';
-    } else {
-      // Create new evidence
-      profile.evidence.push({
-        id: crypto.randomUUID(),
-        userId,
-        source: newClaim.source,
-        strength: newClaim.strength,
-        claim: newClaim.claim,
-        rawSamples: [sampleId],
-        groups: [groupId],
-        days: [day],
-        crossGroup: false,
-        crossDay: false,
-        createdAt: nowIso(),
-        updatedAt: nowIso(),
-      });
-    }
-
-    profile.lastEvidenceAt = nowIso();
-    shouldLog = true;
+    shouldLog = applyEvidenceToDraft(draft, userId, newClaim, groupId, sampleId, day);
   });
   if (shouldLog) {
     writeProfileLog({

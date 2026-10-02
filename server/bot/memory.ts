@@ -7,9 +7,10 @@ import { recordDecisionError } from '../health.js';
 import { hasVisualPlaceholder, textWithoutControlPlaceholders } from './cleaning.js';
 import { completeChat, llmProvider, mergeUsage } from './llm.js';
 import { trustInteractionBonus } from './trust.js';
-import { writeProfileLog, newRunId } from './profileLog.js';
-import { extractEvidenceFromSample, addEvidence } from './profileV3.js';
+import { writeProfileLog, appendProfileLog, newRunId } from './profileLog.js';
+import { extractEvidenceFromSample, applyEvidenceToDraft } from './profileV3.js';
 import { activeModelName } from '../modelConfig.js';
+import { runBackgroundTask } from '../backgroundTasks.js';
 
 const PROFILE_FIELDS = ['summary', 'traits', 'speechStyle', 'behavior', 'preferences'];
 const MEMORY_SWEEP_INTERVAL_MS = 90_000;
@@ -22,6 +23,10 @@ let profileQueueDepth = 0;
 let activeProfileUserId = '';
 let lastMemorySweepAt = 0;
 let profileLlmCircuit = { until: 0, fingerprint: '', reason: '' };
+const IMAGE_SUMMARY_MAX_QUEUE = 16;
+let imageSummaryQueueTail = Promise.resolve();
+let imageSummaryQueueDepth = 0;
+const imageSummaryInFlight = new Set();
 const EMPTY_PROFILE_EXACT = new Set([
   '暂无', '无', '未知', '不明', '没有足够信息', '无法判断', '暂时无法判断', '暂无明显信息',
   '暂无有效信息', '证据不足', '样本不足', '信息不足'
@@ -393,16 +398,23 @@ export function classifyMemorySample(text) {
 }
 
 function captureContext(db, event) {
-  const nearby = (db.messages || [])
-    .filter((m) => String(m.groupId) === String(event.groupId) && m.inContext !== false)
-    .slice(-7)
-    .map((m) => ({
+  // Messages are append-ordered. Walk backwards and stop after collecting the
+  // seven relevant entries instead of filtering the entire retained history
+  // for every incoming message.
+  const nearby = [];
+  const messages = db.messages || [];
+  for (let index = messages.length - 1; index >= 0 && nearby.length < 7; index -= 1) {
+    const m = messages[index];
+    if (String(m.groupId) !== String(event.groupId) || m.inContext === false) continue;
+    nearby.push({
       role: m.role,
       userId: String(m.userId),
       nickname: m.nickname || String(m.userId),
       content: textWithoutControlPlaceholders(m.content).slice(0, 120),
       createdAt: m.createdAt,
-    }));
+    });
+  }
+  nearby.reverse();
   return {
     groupId: String(event.groupId),
     messageId: event.messageId,
@@ -426,7 +438,6 @@ export function recordMemoryObservation(event, userPolicy) {
     writeProfileLog({ runId: '', event: 'sample.rejected', userId: String(event.userId), nickname: event.nickname, groupId: String(event.groupId), detail: '空消息不进入长期记忆', meta: { type: sample.type } });
     return { shouldUpdate: false, reason: '空消息不进入长期记忆' };
   }
-  writeProfileLog({ runId: '', event: sample.usedForProfile ? 'sample.accepted' : 'sample.rejected', userId: String(event.userId), nickname: event.nickname, groupId: String(event.groupId), detail: sample.reason, meta: { type: sample.type, riskLevel: sample.riskLevel, usedForProfile: sample.usedForProfile, contentPreview: (sample.content || '').slice(0, 80) } });
   let shouldUpdate = false;
   let thresholdLog = null;
   const evidenceClaim = sample.usedForProfile && sample.content
@@ -434,6 +445,20 @@ export function recordMemoryObservation(event, userPolicy) {
     : null;
   const evidenceDay = String(event.createdAt || nowIso()).slice(0, 10);
   updateDb((draft) => {
+    appendProfileLog(draft, {
+      runId: '',
+      event: sample.usedForProfile ? 'sample.accepted' : 'sample.rejected',
+      userId: String(event.userId),
+      nickname: event.nickname,
+      groupId: String(event.groupId),
+      detail: sample.reason,
+      meta: {
+        type: sample.type,
+        riskLevel: sample.riskLevel,
+        usedForProfile: sample.usedForProfile,
+        contentPreview: (sample.content || '').slice(0, 80),
+      },
+    });
     if (!draft.memories) draft.memories = [];
     let memory = draft.memories.find((entry) => String(entry.userId) === String(event.userId));
     if (!memory) {
@@ -445,6 +470,9 @@ export function recordMemoryObservation(event, userPolicy) {
         manualNotes: '', profilingRule: '', profileMeta: {}, recentDynamics: [], createdAt: nowIso(), updatedAt: nowIso()
       };
       draft.memories.push(memory);
+      // The mutation proxy unwraps values inserted into arrays. Re-resolve the
+      // attached entry before changing counters/samples below.
+      memory = draft.memories.find((entry) => String(entry.userId) === String(event.userId));
     }
     const thresholds = memoryThresholds(draft, importance);
     const trustMul = trustInteractionBonus(draft, event.userId).memoryThresholdMul;
@@ -491,12 +519,25 @@ export function recordMemoryObservation(event, userPolicy) {
       retryBlockedMs,
       shouldUpdate
     };
-  });
-  if (evidenceClaim) {
-    addEvidence(String(event.userId), evidenceClaim, String(event.groupId), event.messageId, evidenceDay);
-  }
-  if (thresholdLog) {
-    writeProfileLog({
+
+    if (evidenceClaim && applyEvidenceToDraft(
+      draft,
+      String(event.userId),
+      evidenceClaim,
+      String(event.groupId),
+      event.messageId,
+      evidenceDay,
+    )) {
+      appendProfileLog(draft, {
+        runId: '',
+        event: 'evidence.created',
+        userId: String(event.userId),
+        groupId: String(event.groupId),
+        detail: `[${evidenceClaim.source}/${evidenceClaim.strength}] ${evidenceClaim.claim.slice(0, 80)}`,
+        meta: { source: evidenceClaim.source, strength: evidenceClaim.strength },
+      });
+    }
+    appendProfileLog(draft, {
       runId: '',
       event: 'profile.threshold_check',
       userId: String(event.userId),
@@ -505,9 +546,9 @@ export function recordMemoryObservation(event, userPolicy) {
       detail: shouldUpdate
         ? `达到画像更新阈值：${thresholdLog.pendingCount}/${thresholdLog.updateEvery}`
         : `未达到画像更新阈值：消息 ${thresholdLog.profileMessageCount}/${thresholdLog.minMessages}，待更新 ${thresholdLog.pendingCount}/${thresholdLog.updateEvery}`,
-      meta: thresholdLog
+      meta: thresholdLog,
     });
-  }
+  });
   return { shouldUpdate, reason: shouldUpdate ? '达到画像更新阈值' : (memoryImportance(readDb(), userPolicy).label) };
 }
 
@@ -546,7 +587,7 @@ function autoImageMemoryBudget(db, event, policy) {
   return { ok: true, reason: '' };
 }
 
-export async function maybeRecordImageMemorySummary(event, userPolicy) {
+async function processImageMemorySummary(event, userPolicy) {
   const db = readDb();
   if (db.settings.memoryEnabled === false) return { ok: false, reason: '长期记忆已关闭' };
   if (!event.images?.length) return { ok: false, reason: '没有图片' };
@@ -621,6 +662,9 @@ export async function maybeRecordImageMemorySummary(event, userPolicy) {
         manualNotes: '', profilingRule: '', profileMeta: {}, recentDynamics: [], createdAt: nowIso(), updatedAt: nowIso()
       };
       draft.memories.push(memory);
+      // The mutation proxy unwraps values inserted into arrays. Re-resolve the
+      // attached entry before changing counters/samples below.
+      memory = draft.memories.find((entry) => String(entry.userId) === String(event.userId));
     }
     if ((memory.samples || []).some((sample) => sample.type === 'image-summary' && sample.context?.messageId === event.messageId)) return;
 
@@ -676,8 +720,40 @@ export async function maybeRecordImageMemorySummary(event, userPolicy) {
     shouldUpdate = memory.profileMessageCount >= thresholds.minMessages && (memory.pendingCount >= thresholds.updateEvery || bootstrapReady);
   });
 
-  if (shouldUpdate) void maybeUpdateMemoryProfile(event);
+  if (shouldUpdate) {
+    void runBackgroundTask('memory.profile-from-image', () => maybeUpdateMemoryProfile(event));
+  }
   return { ok: true, shouldUpdate, summary };
+}
+
+/**
+ * Vision memory is deliberately serialized. The budget check in
+ * processImageMemorySummary reads the store before calling the model; allowing
+ * several image jobs to pass that check concurrently would overshoot both the
+ * configured daily budget and the machine's available resources.
+ */
+export function maybeRecordImageMemorySummary(event, userPolicy) {
+  const messageId = String(event?.messageId || '');
+  const inFlightKey = messageId
+    ? `${String(event?.groupId || 'private')}:${messageId}`
+    : '';
+  if (inFlightKey && imageSummaryInFlight.has(inFlightKey)) {
+    return Promise.resolve({ ok: false, reason: '同一图片消息的视觉摘要已在处理中' });
+  }
+  if (imageSummaryQueueDepth >= IMAGE_SUMMARY_MAX_QUEUE) {
+    return Promise.resolve({ ok: false, reason: '视觉记忆摘要队列已满，本次图片稍后不再自动摘要' });
+  }
+
+  imageSummaryQueueDepth += 1;
+  if (inFlightKey) imageSummaryInFlight.add(inFlightKey);
+  const run = imageSummaryQueueTail.then(() => processImageMemorySummary(event, userPolicy));
+  // Keep later jobs flowing even if an unexpected persistence error escapes the
+  // worker. The caller-visible promise still preserves that error result.
+  imageSummaryQueueTail = run.then(() => undefined, () => undefined);
+  return run.finally(() => {
+    imageSummaryQueueDepth = Math.max(0, imageSummaryQueueDepth - 1);
+    if (inFlightKey) imageSummaryInFlight.delete(inFlightKey);
+  });
 }
 
 const STOP_BIGRAMS = new Set([
@@ -1340,6 +1416,6 @@ export function maybeSweepDueMemoryProfiles(event) {
       createdAt: nowIso()
     });
   });
-  void maybeUpdateMemoryProfile(sweepEvent);
+  void runBackgroundTask('memory.profile-sweep', () => maybeUpdateMemoryProfile(sweepEvent));
   return { started: true, reason: '已启动画像后台补偿更新', userId };
 }

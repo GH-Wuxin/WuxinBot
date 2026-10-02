@@ -50,6 +50,17 @@ function autoLaunchState() {
   try { return Boolean(app.getLoginItemSettings().openAtLogin); } catch { return false; }
 }
 
+function runtimeBuildIdentity() {
+  const version = app.getVersion();
+  if (!app.isPackaged) return `${version} (source)`;
+  try {
+    const stat = fs.statSync(path.join(process.resourcesPath, 'app.asar'));
+    return `${version} (asar:${Math.trunc(stat.mtimeMs)})`;
+  } catch {
+    return `${version} (packaged)`;
+  }
+}
+
 function setAutoLaunch(enabled) {
   const args = process.defaultApp ? [app.getAppPath()] : [];
   app.setLoginItemSettings({
@@ -435,7 +446,7 @@ async function boot() {
   await app.whenReady();
   diagnosticLogPath = path.join(app.getPath('userData'), 'desktop-main.log');
   try { fs.writeFileSync(diagnosticLogPath, ''); } catch { /* continue without file logging */ }
-  log(`启动：isPackaged=${app.isPackaged} appPath=${app.getAppPath()} projectRoot=${projectRoot}`);
+  log(`启动：build=${runtimeBuildIdentity()} isPackaged=${app.isPackaged} appPath=${app.getAppPath()} projectRoot=${projectRoot}`);
   manager = new ProcessManager({
     projectRoot,
     configDir: app.getPath('userData'),

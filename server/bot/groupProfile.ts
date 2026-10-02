@@ -6,6 +6,7 @@ import { applyUsageTotals, usageEventFields } from '../usage.js';
 import { activeModelName } from '../modelConfig.js';
 import { completeChat } from './llm.js';
 import { textWithoutControlPlaceholders } from './cleaning.js';
+import { runBackgroundTask } from '../backgroundTasks.js';
 
 const PROFILE_FIELDS = ['atmosphere', 'topics', 'humorStyle', 'pace', 'boundaries', 'botStrategy'];
 
@@ -171,6 +172,9 @@ export function incrementGroupProfilePending(db, groupId, eventText) {
         createdAt: nowIso(), updatedAt: nowIso(),
       };
       draft.groupProfiles.push(gp);
+      // Re-resolve the attached entry before mutating it; inserted plain
+      // objects are intentionally unwrapped by the mutation proxy.
+      gp = draft.groupProfiles.find((entry) => String(entry.groupId) === String(groupId));
     }
     gp.pendingMessageCount = (gp.pendingMessageCount || 0) + 1;
     gp.updatedAt = nowIso();
@@ -179,7 +183,7 @@ export function incrementGroupProfilePending(db, groupId, eventText) {
   const updated = readDb();
   const profile = (updated.groupProfiles || []).find((p) => String(p.groupId) === String(groupId));
   if (profile && profile.enabled !== false && profile.pendingMessageCount >= threshold) {
-    void maybeAutoUpdateGroupProfile(groupId);
+    void runBackgroundTask('group-profile.auto-update', () => maybeAutoUpdateGroupProfile(groupId));
   }
 }
 
