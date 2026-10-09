@@ -133,6 +133,21 @@ export function assertLlmTurnActive() {
   if (turn && Date.now() >= turn.deadline) throw new Error('LLM_TURN_BUDGET_EXHAUSTED: 本轮总时限已达到上限');
 }
 
+/**
+ * Run detached work without the caller's turn budget.
+ *
+ * AsyncLocalStorage propagates into async work started inside the turn, so a
+ * background profile refresh used to inherit the inbound message's 12-call /
+ * 180s budget. Under any burst (a global recalculation queues hundreds of
+ * profiles) that budget is spent at once and nearly every refresh fails with
+ * LLM_TURN_BUDGET_EXHAUSTED while the recalculation counter still advances -
+ * a silent mass failure. Detached work is instead bounded by the model
+ * admission gate (concurrency + waiting cap) and its own per-call timeout.
+ */
+export function runDetachedFromTurnPolicy<T>(task: () => T): T {
+  return context.run(undefined as unknown as TurnPolicy, task);
+}
+
 // Same-turn fallback memory is enough to avoid repeatedly hitting a known
 // failed transport. A new user turn can retry after login/settings recover.
 export function markTurnFallback(key: string) { context.getStore()?.fallbackKeys.add(key); }

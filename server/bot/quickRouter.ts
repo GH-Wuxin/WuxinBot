@@ -5,9 +5,9 @@
 // the registry below; implemented commands execute directly against the shared
 // internal engine, while not-yet-migrated commands fall through to the normal
 // LLM pipeline so the group experience never regresses.
-import { readDb, updateDb, nowIso } from '../store.js';
+import { updateDb } from '../store.js';
 import { getGroup, getUserPolicy } from './gate.js';
-import { hasCommandPermission, commandDeniedReply, writeCommandLog } from './commands.js';
+import { commandDeniedReply, writeCommandLog } from './commands.js';
 import {
   executeInternalBotCommand,
   parseEmbeddedBpCommand,
@@ -27,7 +27,6 @@ import {
   SLASH_DEFS,
   HYDRANT_DEFS,
   finalizeQuickDef,
-  type QuickCommandDef,
   type RawQuickCommandDef,
 } from './commands/quick.meta.js';
 import { normalizeAlias } from './commands/alias.js';
@@ -642,7 +641,12 @@ async function handleQuickCommandInner(
     }
     if (traceId) markLatencySpan(traceId, 'subject_resolution_done', { resolved: Boolean(bridgeUser) });
     try {
-      const bridgeTimeout = def.source === 'lazybot' ? 30_000 : 60_000;
+      // Hydrant's profile/where/PP+ commands have a complete internal-engine
+      // substitute, so waiting the full 60s only delays the user's answer:
+      // production logs showed "hydrant 调用超时（60s）" followed by a successful
+      // internal reply. Give it a shorter window and fall back sooner. Yumu and
+      // Kanon keep the longer budget because their rendered panels are the point.
+      const bridgeTimeout = def.source === 'lazybot' ? 30_000 : def.source === 'hydrant' ? 25_000 : 60_000;
       if (traceId) markLatencySpan(traceId, 'bridge_request_start', { source: def.source });
       bridgeAlreadyAttemptedFor = def.source;
       const reply = await callLocalBot(def.source, bridgeCommand, bridgeContext, bridgeTimeout);

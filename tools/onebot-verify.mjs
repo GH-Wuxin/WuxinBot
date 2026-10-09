@@ -44,6 +44,9 @@ async function main() {
 
   let mode = 'failed';
   let getMsgFixture = null;
+  // When true the fixture never finishes /get_msg, reproducing the NapCat stall
+  // that used to hold an inbound admission slot for the full 12s deadline.
+  let hangGetMsg = false;
   const oneBotRequests = [];
   const server = http.createServer(async (req, res) => {
     let raw = '';
@@ -52,6 +55,7 @@ async function main() {
     oneBotRequests.push({ url: req.url, body });
     res.writeHead(200, { 'Content-Type': 'application/json' });
     if (req.url === '/get_msg') {
+      if (hangGetMsg) return;
       res.end(JSON.stringify(getMsgFixture
         ? { status: 'ok', retcode: 0, data: getMsgFixture }
         : { status: 'failed', retcode: 404, message: 'fixture message missing' }));
@@ -195,6 +199,45 @@ async function main() {
     });
     assert(hydrated.quotedMessage?.text.includes('被引用的原图'), 'quoted text must be loaded through OneBot get_msg');
     assert(hydrated.quotedMessage?.images?.[0]?.url === 'https://example.invalid/quoted.jpg', 'quoted image URL must be loaded through OneBot get_msg');
+
+    // Regression: quoted-message hydration must never stall the inbound pipeline.
+    // Every quote holds one of the six inbound admission slots while NapCat
+    // answers /get_msg, so an unresolvable quote used to cost a full 12s.
+    const getMsgCalls = () => oneBotRequests.filter((request) => request.url === '/get_msg').length;
+
+    // 1. A quote the local store already resolved costs no round trip.
+    const beforeSkip = getMsgCalls();
+    const locallyResolved = await hydrateQuotedMessage({
+      source: 'onebot', type: 'group', groupId: '1', userId: '2', messageId: '9933',
+      replyMessageId: '9933', text: '@Pippi 这个呢', images: [],
+      quotedMessage: { messageId: '9933', text: '本地已有引用', images: [], userId: '7', nickname: 'local' },
+    });
+    assert(getMsgCalls() === beforeSkip, 'a locally resolved quote must not trigger a get_msg round trip');
+    assert(locallyResolved.quotedMessage?.text === '本地已有引用', 'a locally resolved quote must be preserved as-is');
+
+    // 2. A get_msg that never answers must fail fast against the short budget.
+    hangGetMsg = true;
+    const stallStartedAt = Date.now();
+    const stalled = await hydrateQuotedMessage({
+      source: 'onebot', type: 'group', groupId: '1', userId: '2', messageId: '9944',
+      replyMessageId: 'hung-9944', text: '@Pippi 看看这个', images: [],
+    });
+    const stallMs = Date.now() - stallStartedAt;
+    hangGetMsg = false;
+    assert(!stalled.quotedMessage, 'a hung get_msg must fall back to local content');
+    assert(stallMs < 6_000, `a hung get_msg must not hold an inbound slot for 12s (waited ${stallMs}ms)`);
+
+    // 3. The failure is remembered, so quoting the same message again is free.
+    const beforeRetry = getMsgCalls();
+    const retryStartedAt = Date.now();
+    await hydrateQuotedMessage({
+      source: 'onebot', type: 'group', groupId: '1', userId: '2', messageId: '9955',
+      replyMessageId: 'hung-9944', text: '再引用一次同一条', images: [],
+    });
+    const retryMs = Date.now() - retryStartedAt;
+    assert(getMsgCalls() === beforeRetry, 'an unresolvable quote must not be re-requested on every reference');
+    assert(retryMs < 500, `a cached quoted-message failure must return immediately (waited ${retryMs}ms)`);
+    console.log('PASS: quoted-message hydration fails fast, skips local hits and caches failures');
     console.log('PASS: OneBot HTTP business status verification');
     console.log('PASS: QQ reply segment output and quoted-message hydration');
 
@@ -599,9 +642,7 @@ main().then(() => {
   if (!prodOk) {
     console.error('FATAL: production database was modified during test!');
     process.exit(1);
-  }
-  console.log('[isolation] production db unchanged: ' + prodOk);
-  cleanupTestDir(testDataDir);
+  }  cleanupTestDir(testDataDir);
 }).catch((error) => {
   console.error(error);
   process.exit(1);

@@ -24,6 +24,7 @@ import { activeModelName, activateModelProfile, activeProviderLabel, updateProvi
 import { isSearchAvailable, getLastSearchStatus } from '../search.js';
 import { sendForwardText } from '../reply.js';
 import { OWNER_FALLBACK_HELP } from './help.js';
+import { runBackgroundTask } from '../../backgroundTasks.js';
 import type { OwnerHandlerContext, OwnerCommandResult } from './types.js';
 
 export async function ownerWhyHandler(ctx: OwnerHandlerContext): Promise<OwnerCommandResult> {
@@ -138,13 +139,17 @@ export async function ownerPromptHandler(ctx: OwnerHandlerContext): Promise<Owne
 export async function ownerRefreshHandler(ctx: OwnerHandlerContext): Promise<OwnerCommandResult> {
   const state = getRecalcProgress();
   if (state.running) { const reply = `正在重算中：${state.done}/${state.total}（${state.label}）`; if (ctx.sendMessage) await ctx.sendMessage(ctx.event, reply); return { replied: Boolean(ctx.sendMessage), reason: reply }; }
-  if (ctx.sendMessage) await ctx.sendMessage(ctx.event, '正在重算全部画像，稍候…');
   const db = readDb();
   const mems = (db.memories || []).filter((m) => m.enabled && (m.samples || []).filter((s) => s.usedForProfile).length >= 3);
   const gps = (db.groups || []).filter((g) => g.enabled);
   const rels = (db.relationshipProfiles || []).filter((r) => r.enabled !== false);
   const total = mems.length + gps.length + rels.length;
   startRecalc(total, 'QQ端重算');
+  // A full recalculation runs for minutes. Awaiting it here held the command's
+  // reply (and, before the budget fix, its model budget) for >4 minutes, so the
+  // QQ side saw no answer at all. Dispatch it as detached work and report
+  // progress through /w recalc.
+  void runBackgroundTask('recalc.qq', async () => {
   let pCount = 0, gCount = 0, rCount = 0;
   let failure = '';
   try {
@@ -184,14 +189,9 @@ export async function ownerRefreshHandler(ctx: OwnerHandlerContext): Promise<Own
         : (failure ? `QQ端重算失败：${failure}` : 'QQ端全部重算完成'));
     }
   }
-  if (failure) {
-    const reply = `重算失败：${failure}`;
-    if (ctx.sendMessage) await ctx.sendMessage(ctx.event, reply);
-    return { replied: Boolean(ctx.sendMessage), reason: reply, error: failure };
-  }
-  const reply = getRecalcProgress().stopped
-    ? `重算已停止。完成：个人${pCount}/群${gCount}/关系${rCount}`
-    : `全部重算完成。\n个人画像：${pCount} 人\n群聊画像：${gCount} 群\n关系画像：${rCount} 对`;
+  if (failure) console.error('[recalc] QQ端重算失败:', failure);
+  });
+  const reply = `已开始全局重算：个人画像 ${mems.length} 人、群画像 ${gps.length} 群、关系画像 ${rels.length} 对。用 /w recalc 查看进度。`;
   if (ctx.sendMessage) await ctx.sendMessage(ctx.event, reply);
   return { replied: Boolean(ctx.sendMessage), reason: reply };
 }
