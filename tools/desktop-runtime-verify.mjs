@@ -10,7 +10,7 @@ import { setTimeout as pause } from 'node:timers/promises';
 import { fileURLToPath } from 'node:url';
 import test from 'node:test';
 import { createPackage, extractFile } from '@electron/asar';
-import { activatePreparedFix, patchDesktopArchive } from './apply-desktop-runtime-fix.mjs';
+import { activatePreparedFix, desktopFiles, patchDesktopArchive } from './apply-desktop-runtime-fix.mjs';
 import { ProcessManager, buildDefaultDefinitions } from '../desktop/process-manager.mjs';
 import {
   collectOwnedProcesses, loopbackListeners, matchesDefinition, parseHttpServiceState, parseWindowsListeners,
@@ -398,7 +398,10 @@ test('Desktop package patch preserves all unrelated archive metadata and payload
   const patched = path.join(configDir, 'patched.asar');
   await createPackage(input, original);
   const report = await patchDesktopArchive({ sourceArchive: original, targetArchive: patched });
-  assert.equal(report.files.length, 3);
+  // The whole desktop layer is patched, so assert against the tool's own list
+  // instead of a hardcoded count that silently rots when a file is added.
+  assert.equal(report.files.length, desktopFiles.length);
+  assert.deepEqual(report.files.map((item) => item.filename).sort(), [...desktopFiles].sort());
   assert.equal(extractFile(patched, path.join('server', 'keep.txt')).toString(), 'unrelated server contents');
   assert.equal(extractFile(patched, path.join('desktop', 'main.mjs')).toString(), await fs.readFile(path.join(projectRoot, 'desktop', 'main.mjs'), 'utf8'));
 });
@@ -484,7 +487,7 @@ test('open ports with foreign or unidentified owners are conflicts, not running 
     assert.equal(state.status, 'conflict');
     assert.equal(state.ready, false);
     assert.deepEqual(state.pids, []);
-    await assert.rejects(manager.start('sandbox'), /被其他进程占用|无法确认进程归属/);
+    await assert.rejects(manager.start('sandbox'), /被其他进程占用|被占用：|无法确认进程归属/);
     assert.equal(manager.launches.size, 0);
   }
 });
@@ -598,7 +601,7 @@ test('real foreign listener blocks launch without being labelled as the target s
   await new Promise((resolve) => server.listen(port, '127.0.0.1', resolve));
   t.after(() => new Promise((resolve) => server.close(resolve)));
   assert.equal((await manager.state()).processes[0].status, 'conflict');
-  await assert.rejects(manager.start('sandbox'), /被其他进程占用/);
+  await assert.rejects(manager.start('sandbox'), /被其他进程占用|被占用：/);
   assert.equal(manager.children.size, 0);
   await manager.stop('sandbox');
   assert.equal(await probePort(port), true);
@@ -717,4 +720,100 @@ test('api bridge pins targets to the loopback /api surface', async () => {
   assert.throws(() => resolveApiRequest({ apiBase: 'http://127.0.0.1:8787', url: 'http://127.0.0.1:8787/settings' }), /\/api\//, 'non-api path refused');
   assert.throws(() => resolveApiRequest({ apiBase: 'http://127.0.0.1:8787', url: 'http://127.0.0.1:8787/api/state', method: 'TRACE' }), /method/i, 'unsafe method refused');
   assert.throws(() => resolveApiRequest({ apiBase: 'https://api.example.com', url: 'https://api.example.com/api/x' }), /loopback/, 'non-loopback base refused');
+});
+
+test('a contested port names its holders so the operator can decide', async (t) => {
+  const holder = {
+    pid: 43210, ppid: 1, name: 'python.exe', executablePath: 'C:\\Python313\\python.exe',
+    commandLine: '"C:\\Python313\\python.exe" -u tools\\cli.py bid-review-ui', createdAt: Date.now() - 5000,
+  };
+  const { manager } = await setup(t, [baseDefinition({ port: 12345 })], {
+    runtime: {
+      ...emptyRuntime,
+      probePort: async () => true,
+      listListeners: async () => [{ address: '127.0.0.1', port: 12345, pid: holder.pid }],
+      listProcesses: async () => [holder],
+    },
+  });
+  await manager.initialize();
+  const state = (await manager.state()).processes[0];
+  assert.equal(state.status, 'conflict');
+  assert.equal(state.portProcesses.length, 1);
+  assert.equal(state.portProcesses[0].pid, 43210);
+  assert.equal(state.portProcesses[0].name, 'python.exe');
+  assert.equal(state.portProcesses[0].kind, 'foreign');
+  assert.match(state.portProcesses[0].commandLine, /bid-review-ui/);
+  assert.match(state.lastError, /python\.exe \(PID 43210\)/);
+});
+
+test('another instance of the SAME component is attributed, so it is not a takeover conflict', async (t) => {
+  const holder = {
+    pid: 43211, ppid: 1, name: 'node.exe', executablePath: process.execPath,
+    commandLine: '"' + process.execPath + '" desktop-test', createdAt: Date.now(),
+  };
+  const { manager } = await setup(t, [baseDefinition({ port: 12346 })], {
+    runtime: {
+      ...emptyRuntime,
+      probePort: async () => true,
+      listListeners: async () => [{ address: '127.0.0.1', port: 12346, pid: holder.pid }],
+      listProcesses: async () => [holder],
+    },
+  });
+  await manager.initialize();
+  const state = (await manager.state()).processes[0];
+  // Recognised as this component running elsewhere: reported as running/external
+  // and deliberately NOT offered for takeover, matching the documented rule that
+  // Desktop does not stop services it did not start unless they are unidentified.
+  assert.equal(state.status, 'running');
+  assert.equal(state.source, 'external');
+  assert.equal(state.managed, false);
+  assert.deepEqual(state.portProcesses, []);
+});
+
+test('takeOver refuses when nothing holds the port', async (t) => {
+  const { manager } = await setup(t, [baseDefinition({ port: 12347 })], { runtime: { ...emptyRuntime, probePort: async () => false } });
+  await manager.initialize();
+  await assert.rejects(manager.takeOver('sandbox'), /没有被占用的进程/);
+});
+
+test('takeOver refuses for a component without a port or when disabled', async (t) => {
+  const { manager } = await setup(t, [baseDefinition(), baseDefinition({ id: 'off', port: 12349, enabled: false })], { runtime: emptyRuntime });
+  await manager.initialize();
+  await assert.rejects(manager.takeOver('sandbox'), /没有配置端口/);
+  await assert.rejects(manager.takeOver('off'), /未启用/);
+  await assert.rejects(manager.takeOver('nope'), /未知进程/);
+});
+
+test('killPortListener refuses a PID that is not the current listener on that port', async (t) => {
+  const { manager } = await setup(t, [baseDefinition({ port: 12348 })], { runtime: { ...emptyRuntime, listListeners: async () => [] } });
+  await manager.initialize();
+  // Stale PID from an earlier snapshot must never be killed.
+  await assert.rejects(manager.killPortListener(99999, 12348), /已不再监听端口 12348/);
+  // Never the Desktop's own process.
+  await assert.rejects(manager.killPortListener(process.pid, 12348), /拒绝终止 PID/);
+  await assert.rejects(manager.killPortListener(0, 12348), /拒绝终止 PID/);
+});
+
+test('takeOver stops a real foreign listener and starts the managed component in its place', async (t) => {
+  const { manager, port } = await liveManager(t);
+  const blocker = spawn(process.execPath, ['-e', 'require("net").createServer(function(s){s.end()}).listen(' + port + ',"127.0.0.1")'], { stdio: 'ignore', windowsHide: true });
+  t.after(() => { try { blocker.kill(); } catch { /* already gone */ } });
+  for (let i = 0; i < 80 && !(await probePort(port)); i++) await pause(100);
+  assert.equal(await probePort(port), true, 'blocker must hold the port');
+
+  const before = (await manager.state()).processes[0];
+  assert.equal(before.status, 'conflict');
+  assert.ok(before.portProcesses.some((item) => item.pid === blocker.pid), 'blocker must be listed as a holder');
+
+  const result = await manager.takeOver('sandbox');
+  assert.deepEqual(result.takenOver.map((item) => item.pid), [blocker.pid]);
+  assert.equal(result.started, true);
+  assert.equal(result.ready, true);
+
+  await pause(400);
+  assert.ok(blocker.exitCode !== null || blocker.signalCode !== null, 'blocker must be terminated');
+  const after = (await manager.state()).processes[0];
+  assert.equal(after.status, 'running');
+  assert.equal(after.managed, true);
+  assert.deepEqual(after.portProcesses, []);
 });

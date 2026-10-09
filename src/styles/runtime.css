@@ -182,6 +182,65 @@
   font-size: 12px;
 }
 
+/* Port takeover: name the processes holding the port before offering to stop
+   them, so the operator can decide with the actual command line in front of them. */
+.runtime-process-card__holders {
+  display: grid;
+  gap: 8px;
+  padding: 10px 12px;
+  margin-top: 4px;
+  background: rgba(255, 113, 130, 0.07);
+  border: 1px solid rgba(255, 113, 130, 0.28);
+  border-radius: var(--v2-radius-sm);
+}
+
+.runtime-process-card__holders-title {
+  margin: 0;
+  color: var(--v2-text-muted);
+  font-size: 12px;
+}
+
+.runtime-process-card__holders ul {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.runtime-process-card__holders li {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.runtime-process-card__holder-head {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: baseline;
+}
+
+.runtime-process-card__holder-head span {
+  color: var(--v2-text-muted);
+  font-size: 12px;
+}
+
+.runtime-process-card__holders code,
+.runtime-process-card__holders small {
+  display: block;
+  overflow: hidden;
+  max-width: 100%;
+  color: var(--v2-text-muted);
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.runtime-process-card__holders .ui-button {
+  justify-self: start;
+}
+
 .runtime-process-card__error {
   margin: 0;
   color: var(--v2-danger);

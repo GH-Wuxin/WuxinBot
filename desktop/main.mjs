@@ -213,6 +213,7 @@ function registerIpc() {
   ipcMain.handle('runtime:start', guardIpc((_event, id) => manager.start(String(id))));
   ipcMain.handle('runtime:stop', guardIpc((_event, id) => manager.stop(String(id))));
   ipcMain.handle('runtime:restart', guardIpc((_event, id) => manager.restart(String(id))));
+  ipcMain.handle('runtime:takeover', guardIpc((_event, id) => manager.takeOver(String(id))));
   ipcMain.handle('runtime:start-all', guardIpc(() => manager.startAll()));
   ipcMain.handle('runtime:stop-all', guardIpc(() => manager.stopAll()));
   ipcMain.handle('runtime:restart-all', guardIpc(() => manager.restartAll()));
