@@ -10,6 +10,7 @@ contextBridge.exposeInMainWorld('desktop', {
     start: (id) => ipcRenderer.invoke('runtime:start', id),
     stop: (id) => ipcRenderer.invoke('runtime:stop', id),
     restart: (id) => ipcRenderer.invoke('runtime:restart', id),
+    takeOver: (id) => ipcRenderer.invoke('runtime:takeover', id),
     startAll: () => ipcRenderer.invoke('runtime:start-all'),
     stopAll: () => ipcRenderer.invoke('runtime:stop-all'),
     restartAll: () => ipcRenderer.invoke('runtime:restart-all'),

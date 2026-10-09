@@ -6,7 +6,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { isDeepStrictEqual } from 'node:util';
 import {
-  collectOwnedProcesses, isLiveChild, listPortListeners, listSystemProcesses,
+  collectOwnedProcesses, describeProcesses, isLiveChild, listPortListeners, listSystemProcesses,
   loopbackListeners, matchesDefinition, probePort, runFile, sameProcess, waitForPort,
 } from './process-inspection.mjs';
 
@@ -569,21 +569,32 @@ export class ProcessManager {
   }
 
   async portStatus(definition, snapshot, owned, { managedOnly = false } = {}) {
-    if (!definition.port) return { open: false, ready: true, conflict: false, pids: [] };
+    if (!definition.port) return { open: false, ready: true, conflict: false, pids: [], processes: [] };
     const open = await this.runtime.probePort(definition.port);
-    if (!open) return { open: false, ready: false, conflict: false, pids: [] };
+    if (!open) return { open: false, ready: false, conflict: false, pids: [], processes: [] };
     const pids = [...new Set(loopbackListeners(snapshot.listeners, definition.port).map((item) => item.pid))];
     const ownedPids = new Set(owned.map((item) => item.pid));
     const verified = pids.filter((pid) => ownedPids.has(pid) || !managedOnly
       && matchesDefinition(snapshot.processes.find((item) => item.pid === pid), definition));
     const ready = pids.length > 0 && verified.length === pids.length;
-    return { open, ready, conflict: !ready, pids };
+    // Identify every listener so the console can name it and offer a takeover.
+    // 'owned' = started by this window, 'matching' = another instance of this
+    // same component, 'foreign' = an unrelated process.
+    const processes = describeProcesses(pids, snapshot.processes).map((item) => ({
+      ...item,
+      kind: ownedPids.has(item.pid) ? 'owned'
+        : matchesDefinition(snapshot.processes.find((row) => row.pid === item.pid), definition) ? 'matching'
+          : 'foreign',
+    }));
+    return { open, ready, conflict: !ready, pids, processes };
   }
 
   portError(definition, port) {
-    return port.pids.length
-      ? `端口 ${definition.port} 被其他进程占用（PID ${port.pids.join(', ')}）`
-      : `端口 ${definition.port} 已监听，但无法确认进程归属`;
+    if (!port.pids.length) return `端口 ${definition.port} 已监听，但无法确认进程归属`;
+    const holders = port.processes || [];
+    if (!holders.length) return `端口 ${definition.port} 被其他进程占用（PID ${port.pids.join(', ')}）`;
+    const detail = holders.map((item) => `${item.name || '未知进程'} (PID ${item.pid})`).join('、');
+    return `端口 ${definition.port} 被占用：${detail}`;
   }
 
   state() {
@@ -632,6 +643,9 @@ export class ProcessManager {
         ready: running && port.ready,
         ownedPids: owned.map((item) => item.pid),
         pids: [...new Set([...matches.map((item) => item.pid), ...owned.map((item) => item.pid)])],
+        // Present only while the port is contested; drives the console's
+        // "who holds this port / stop it and start mine" affordance.
+        portProcesses: port.conflict ? port.processes || [] : [],
         lastError: port.conflict ? this.portError(definition, port)
           : launch?.child?.lastError || this.lastErrors.get(definition.id) || requirementErrors.join('；'),
       };
@@ -868,6 +882,64 @@ export class ProcessManager {
     }
     await new Promise((resolve) => setTimeout(resolve, 600));
     return this.start(id);
+  }
+
+  /**
+   * Stop whatever currently holds this component's port and start the managed
+   * process in its place. The operator confirms in the console; every PID is
+   * re-verified as the live listener on THIS port immediately before it is
+   * terminated, so a stale PID from an earlier snapshot can never be killed.
+   */
+  async takeOver(id) {
+    if (this.closing) throw new Error('Desktop 正在退出，接管已取消');
+    if (!this.config) await this.initialize();
+    const definition = this.getDefinition(id);
+    if (!definition) throw new Error(`未知进程：${id}`);
+    if (!definition.port) throw new Error(`${definition.label} 没有配置端口，无需接管`);
+    if (!definition.enabled) throw new Error(`${definition.label} 未启用，请先启用再接管`);
+
+    const snapshot = await this.inspect();
+    const owned = this.ownedProcesses(id, snapshot.processes);
+    const port = await this.portStatus(definition, snapshot, owned);
+    const targets = (port.processes || []).filter((item) => item.kind !== 'owned');
+    if (!targets.length) {
+      if (port.ready) return { takenOver: [], alreadyReady: true };
+      throw new Error(`端口 ${definition.port} 当前没有被占用的进程`);
+    }
+
+    const takenOver = [];
+    for (const target of targets) {
+      await this.killPortListener(target.pid, definition.port);
+      takenOver.push({ pid: target.pid, name: target.name, kind: target.kind });
+    }
+
+    // Wait for the port to actually free, otherwise the managed process loses
+    // the race against the process that was just terminated.
+    const deadline = Date.now() + 15_000;
+    while (Date.now() < deadline && await this.runtime.probePort(definition.port)) {
+      await new Promise((resolve) => setTimeout(resolve, 250));
+    }
+    if (await this.runtime.probePort(definition.port)) {
+      throw new Error(`已终止 ${takenOver.map((item) => item.pid).join(', ')}，但端口 ${definition.port} 仍在监听`);
+    }
+
+    const started = await this.start(id);
+    return { takenOver, ...started };
+  }
+
+  /** Terminate one PID only while it is still the listener on `port`. */
+  async killPortListener(pid, port) {
+    if (!Number.isInteger(pid) || pid <= 0 || pid === process.pid) throw new Error(`拒绝终止 PID ${pid}`);
+    const listeners = await this.runtime.listListeners();
+    if (!loopbackListeners(listeners, port).some((item) => item.pid === pid)) {
+      throw new Error(`PID ${pid} 已不再监听端口 ${port}，接管已取消`);
+    }
+    if (WINDOWS) {
+      await this.runtime.runFile('taskkill.exe', ['/PID', String(pid), '/T', '/F']);
+    } else {
+      try { process.kill(pid, 'SIGTERM'); } catch (error) { if (error.code !== 'ESRCH') throw error; }
+    }
+    return true;
   }
 
   async startAll({ onlyAutoStart = false } = {}) {

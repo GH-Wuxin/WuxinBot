@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Circle, MonitorCog, Play, Power, RefreshCw, Save, Settings2, Square } from 'lucide-react';
-import { Button, Card, Pill, SectionHeader, SettingGroup, Switch } from '../../components/ui/index.jsx';
+import { Button, Card, ConfirmDialog, Pill, SectionHeader, SettingGroup, Switch } from '../../components/ui/index.jsx';
 
 const statusCopy = {
   running: ['运行中', 'success'],
@@ -45,6 +45,7 @@ export function RuntimePage({ standalone = false, onServerReady, loadError = '' 
   const [editing, setEditing] = useState('');
   const [draft, setDraft] = useState(null);
   const [logs, setLogs] = useState([]);
+  const [takingOver, setTakingOver] = useState(null);
 
   const refresh = useCallback(async () => {
     if (!desktop) return;
@@ -133,7 +134,7 @@ export function RuntimePage({ standalone = false, onServerReady, loadError = '' 
     <SectionHeader
       eyebrow="WUXINBOT DESKTOP"
       title="运行控制"
-      description="管理 WuxinBot、NapCat、PP+ 与相关服务。外部运行的组件只显示状态，本窗口启动的组件可以停止和重启。"
+      description="管理 WuxinBot、NapCat、PP+ 与相关服务。外部运行的组件只显示状态；端口被别的进程占用时可以查看占用者并一键停止它、改由本窗口启动。"
       actions={<div className="runtime-page__actions"><Button icon={Play} variant="primary" loading={busy === 'start-all'} onClick={() => invoke('start-all', () => window.desktop.runtime.startAll())}>启动已启用组件</Button><Button icon={Square} loading={busy === 'stop-all'} onClick={() => invoke('stop-all', () => window.desktop.runtime.stopAll())}>停止本窗口组件</Button><Button icon={RefreshCw} loading={busy === 'restart-all'} onClick={() => invoke('restart-all', () => window.desktop.runtime.restartAll())}>重启本窗口组件</Button></div>}
     />
 
@@ -162,11 +163,22 @@ export function RuntimePage({ standalone = false, onServerReady, loadError = '' 
           <div className="runtime-process-card__header"><div className="runtime-process-card__title"><span className={`runtime-process-card__icon runtime-process-card__icon--${tone}`}><MonitorCog size={17} /></span><div><h4>{process.label}</h4><small>{processSummary(process)}</small></div></div><Pill tone={tone}>{label}</Pill></div>
           <div className="runtime-process-card__switches"><Switch checked={Boolean(process.enabled)} label="进程启用" description="参与一键启动" disabled={isBusy} onChange={(event) => updateProcess(process, { enabled: event.target.checked }, true)} /><Switch checked={Boolean(process.autoStart)} label="自动启动" description="客户端打开时启动" disabled={isBusy || !process.enabled} onChange={(event) => updateProcess(process, { autoStart: event.target.checked })} /></div>
           <div className="runtime-process-card__actions"><Button size="sm" icon={Play} variant="primary" disabled={process.status !== 'stopped' || !process.enabled} loading={busy === process.id} onClick={() => invoke(process.id, () => window.desktop.runtime.start(process.id))}>启动</Button><Button size="sm" icon={Square} disabled={!process.managed} loading={busy === `stop:${process.id}`} onClick={() => invoke(`stop:${process.id}`, () => window.desktop.runtime.stop(process.id))}>停止</Button><Button size="sm" icon={RefreshCw} disabled={!process.enabled || process.status === 'missing' || process.status === 'conflict' || process.source === 'external'} loading={busy === `restart:${process.id}`} onClick={() => invoke(`restart:${process.id}`, () => window.desktop.runtime.restart(process.id))}>重启</Button><Button size="sm" icon={Settings2} onClick={() => editing === process.id ? (setEditing(''), setDraft(null)) : beginEdit(process)}>配置</Button></div>
+          {process.status === 'conflict' && (process.portProcesses || []).length > 0 && <div className="runtime-process-card__holders"><p className="runtime-process-card__holders-title">端口 {process.port} 当前被这些进程占用：</p><ul>{(process.portProcesses || []).map((item) => <li key={item.pid}><div className="runtime-process-card__holder-head"><strong>{item.name || '未知进程'}</strong><span>PID {item.pid}{item.kind === 'matching' ? ' · 同组件的其他实例' : item.kind === 'foreign' ? ' · 其他进程' : ''}</span></div>{item.executablePath && <code title={item.executablePath}>{item.executablePath}</code>}{item.commandLine && <small title={item.commandLine}>{item.commandLine}</small>}</li>)}</ul><Button size="sm" variant="danger" icon={Power} loading={busy === `takeover:${process.id}`} onClick={() => setTakingOver(process)}>停止占用进程并启动</Button></div>}
           {editing === process.id && draft && <div className="runtime-process-card__editor"><label>启动文件<input className="ui-input" value={draft.command} onChange={(event) => setDraft((current) => ({ ...current, command: event.target.value }))} /></label><label>工作目录<input className="ui-input" value={draft.cwd} onChange={(event) => setDraft((current) => ({ ...current, cwd: event.target.value }))} /></label><label>参数（每行一个）<textarea className="ui-textarea" rows="4" value={draft.args} onChange={(event) => setDraft((current) => ({ ...current, args: event.target.value }))} /></label><Button size="sm" icon={Save} variant="primary" loading={busy === `update:${process.id}`} onClick={() => saveEdit(process)}>保存配置</Button></div>}
           {process.lastError && <p className="runtime-process-card__error">{process.lastError}</p>}
         </Card>;
       })}</div></section>)}
     </div>
+
+    <ConfirmDialog
+      open={Boolean(takingOver)}
+      title={takingOver ? `停止占用进程并启动 ${takingOver.label}` : ''}
+      description={takingOver ? `将强制终止：${(takingOver.portProcesses || []).map((item) => `${item.name || '未知进程'} (PID ${item.pid})`).join('、')}，包括它们的子进程。随后启动 ${takingOver.label}（端口 ${takingOver.port}）。这会立即中断这些进程正在做的事。` : ''}
+      confirmLabel="停止并启动"
+      busy={busy === `takeover:${takingOver?.id}`}
+      onCancel={() => setTakingOver(null)}
+      onConfirm={() => { const target = takingOver; setTakingOver(null); return invoke(`takeover:${target.id}`, () => window.desktop.runtime.takeOver(target.id)); }}
+    />
 
     <Card className="runtime-log-card"><header><div><span className="section-header__eyebrow">DESKTOP LOG</span><h3>最近操作</h3></div><Button size="sm" onClick={() => setLogs([])}>清空</Button></header>{logs.length ? <ul>{logs.map((entry, index) => <li key={`${entry.id || 'runtime'}-${index}`}><Circle size={8} /> <span>{entry.message || JSON.stringify(entry)}</span></li>)}</ul> : <p>尚无新的进程操作。</p>}</Card>
   </>;

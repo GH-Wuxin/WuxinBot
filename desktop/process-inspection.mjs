@@ -110,6 +110,24 @@ export function loopbackListeners(listeners, port) {
   return ipv4.length ? ipv4 : rows.filter((item) => item.address === '::');
 }
 
+/**
+ * Describe listener PIDs so the console can show the operator exactly which
+ * process holds a port before they decide to stop it.
+ */
+export function describeProcesses(pids, processes) {
+  const rows = new Map(processes.map((row) => [row.pid, row]));
+  return [...new Set(pids)].map((pid) => {
+    const row = rows.get(pid);
+    return {
+      pid,
+      name: String(row?.name || ''),
+      executablePath: String(row?.executablePath || ''),
+      commandLine: String(row?.commandLine || ''),
+      startedAt: Number.isFinite(row?.createdAt) ? new Date(row.createdAt).toISOString() : '',
+    };
+  });
+}
+
 export function matchesDefinition(processInfo, definition) {
   if (!processInfo || processInfo.pid === process.pid) return false;
   const normalize = (value) => String(value || '').replaceAll('\\', '/').toLowerCase();

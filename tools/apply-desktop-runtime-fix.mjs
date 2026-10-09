@@ -10,7 +10,10 @@ import { extractFile, getRawHeader } from '@electron/asar';
 import { Pickle } from '@electron/asar/lib/pickle.js';
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const desktopFiles = ['main.mjs', 'process-manager.mjs', 'process-inspection.mjs'];
+// The whole desktop layer, not a subset: a fix that touches preload.cjs (e.g.
+// exposing a new runtime IPC) is useless if only the main-process files are
+// patched, because the renderer would call an API the preload never exposed.
+export const desktopFiles = ['main.mjs', 'process-manager.mjs', 'process-inspection.mjs', 'ipc-guard.mjs', 'api-bridge.mjs', 'preload.cjs'];
 
 function digest(buffer) {
   return crypto.createHash('sha256').update(buffer).digest('hex');
