@@ -2,61 +2,17 @@
 import { readDb, updateDb, nowIso } from '../store.js';
 import { applyUsageTotals, usageEventFields } from '../usage.js';
 import {
-  normalizeMessage,
-  extractImageInputs,
-  extractAtTargets,
-  extractReplyMessageId,
   mentionsBot,
-  isQuestion,
-  hasVisualPlaceholder,
   asksToInspectVisual,
   looksLikeVisualFollowup,
-  onlyVisualMessage,
   textWithoutControlPlaceholders,
-  cardPlaceholder
 } from './cleaning.js';
 import {
-  callLLM,
   completeChat
 } from './llm.js';
 import {
-  commandRoleLevel,
-  commandRoleName,
-  userCommandRoleId,
-  hasCommandPermission,
-  commandDeniedReply,
-  parseCommandMeta,
-  writeCommandLog
-} from './commands.js';
-import {
-  buildPrompt,
-  describePolicy,
-  describeModel,
-  getPricing,
-  calcCost,
-  asksForExplicitSearch,
-  isLongFormRequest,
-  taskComplexityScore,
-  autoModelForTask,
-  responseOptionsFor,
-  ownerPrivateContextStats,
-  promptContextMessages,
-  memoryPromptBlock,
   modelSupportsVision,
-  sumUsageSince,
-  startOfLocalDayTime
 } from './prompt.js';
-import {
-  sanitizeReply,
-  sendReplySegments,
-  isWeirdReply,
-  rewriteNormalReply,
-  visualLimitationReply,
-  sendForwardText,
-  splitReplySegments,
-  isIdentityQuestion,
-  neutralIdentityReply
-} from './reply.js';
 import { activeModelName, activateModelProfile } from '../modelConfig.js';
 
 export function looksLikeExternalBotSender(

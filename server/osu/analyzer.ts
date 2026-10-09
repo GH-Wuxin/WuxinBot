@@ -1340,7 +1340,6 @@ export function validateAnalysisSectionComments(
   narrative: AnalysisNarrativeContext = {}
 ): { ok: boolean; reasons: string[] } {
   const reasons: string[] = [];
-  const values = ANALYSIS_COMMENT_KEYS.map(key => comments[key]);
 
   for (const key of ANALYSIS_COMMENT_KEYS) {
     const value = String(comments[key] || '').trim();

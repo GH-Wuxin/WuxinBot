@@ -238,9 +238,6 @@ export interface NamedBotRequest {
   botName: string;
 }
 
-const BOT_INVOKE_PREFIX =
-  /(?:用|叫|让|喊|找|请|麻烦|拜托|使用|调用|召唤|切换|换成|换用)/i;
-// After a named bot we expect an action verb, punctuation, whitespace, or EOS.
 const BOT_ACTION_AFTER = '(?:[\\s，,。！？!?：:]|查|看|帮|在|来|上|说|会|能)';
 
 export function detectNamedBotRequest(

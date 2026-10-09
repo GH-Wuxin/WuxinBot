@@ -7,7 +7,6 @@ import { fileURLToPath } from 'node:url';
 import { getCachedClassifications, saveClassifications } from './oracleCache.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const SCRIPT = path.resolve(__dirname, '..', '..', '..', 'My pack', 'osu_oracle', 'predict_onnx.py');
 
 export interface ClassifierResult {
   distribution: Record<string, number>;   // { stream: 87, aim: 9, tech: 3, alt: 1 }

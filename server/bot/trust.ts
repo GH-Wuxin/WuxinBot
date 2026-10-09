@@ -1,8 +1,6 @@
 // Auto trust scoring — now backed by the experience level system.
 // Scores are computed from XP/level instead of the old trustScores mechanism.
-import { readDb, updateDb, nowIso } from '../store.js';
 import { getXpBonus, getExperience } from './experience.js';
-import { extractSignals, computeInteractionDiversity, countRecentNegativeSignals } from './signals.js';
 
 // Legacy compat: getTrustMeta returns experience data in old shape
 export function getTrustMeta(db, userId) {

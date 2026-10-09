@@ -6,7 +6,7 @@
 // 4. Only patch changed fields, never wholesale overwrite
 
 import { readDb, updateDb, nowIso } from '../store.js';
-import { writeProfileLog, appendProfileLog, newRunId } from './profileLog.js';
+import { writeProfileLog } from './profileLog.js';
 import { textWithoutControlPlaceholders } from './cleaning.js';
 
 // ── Evidence types ──
@@ -96,7 +96,7 @@ export function extractEvidenceFromSample(
   }
 
   // Style patterns
-  for (const { pattern, source, strength } of STYLE_PATTERNS) {
+  for (const { pattern } of STYLE_PATTERNS) {
     if (pattern.test(clean)) {
       return {
         source: 'speech-style' as EvidenceSource,

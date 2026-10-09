@@ -220,11 +220,6 @@ function hslToHex(hue:number,saturation:number,lightness:number){
   return '#'+channel(0)+channel(8)+channel(4);
 }
 
-function rgbToHex(red:number,green:number,blue:number){
-  return '#'+[red,green,blue].map(value=>Math.round(clamp(value/255)*255).toString(16).padStart(2,'0')).join('');
-}
-
-/** Keep the cover's hue, but use it as a restrained tint rather than a full-bleed image palette. */
 export function mapSkillCardThemeFromColor(red:number,green:number,blue:number):MapSkillCardTheme{
   const {hue,saturation}=rgbToHsl(red,green,blue);
   const tintSaturation=Math.min(.82,saturation*.9+.18);
@@ -288,14 +283,7 @@ function tierBackground(level:number,tierColor:string,mode:'normal'|'inverse'|'h
   return {paper,panel:mixHex(paper,'#ffffff',.045),rule:mixHex(paper,'#ffffff',.14),ruleSoft:mixHex(paper,'#ffffff',.085)};
 }
 
-function sampleCounts(sample:any){
-  if(Array.isArray(sample?.modCounts))return Object.entries(Object.fromEntries(sample.modCounts.map((item:any)=>[String(item.mods||'NM'),finite(item.count)])));
-  return Object.entries(sample?.modCounts||{});
-}
 
-function evidenceRows(rows:any[],top:any):string{
-  return rows.map((row:any)=>`<div class="evidence-row" data-beatmap-id="${esc(row.beatmapId)}"><span class="bp-number">#${fmt(row.rank)}</span><div class="evidence-title"><b>${esc(row.title)}</b><small>${esc(row.version)}</small></div><div class="mod">${esc(row.mods?.join('')||'NM')}</div><div class="score-data"><b>${n(row.accuracy,2)}<em>%</em></b><small>${fmt(numeric(row.pp)===null?null:Math.round(row.pp))} pp</small></div><div class="evidence-value"><b style="color:${top.color}">${n(row.axes?.[top.key])}</b><small>${top.abbr} OUTPUT${top.unit==='independent'?' /10':''}</small></div></div>`).join('');
-}
 
 function playerBpEvidence(rows:any[],top:any,sampleLabel:string):string{
   const items=[...(rows||[])]
@@ -328,7 +316,6 @@ function playerPage(payload:any,avatar:string){
   const axesByKey=Object.fromEntries(p.axes.map((axis:any)=>[axis.key,axis]));
   const tierLabel=view.rated&&view.tier?`TIER ${roman} · ${view.tier.en}`:'UNRATED';
   const title=view.rated?(mark?.label||view.title||profile.profileTitle||profile.profileType||'PROFILE'):'UNRATED';
-  const primary=Array.isArray(profile.primaryAxes)?profile.primaryAxes.slice(0,2).map((label:string)=>label==='Micro Precision'||label==='Precision Aim'?'Spatial Precision':label).join(' · '):topDef.label;
   const pp=fmt(numeric(user.pp)===null?null:Math.round(user.pp));
   const sample=payload.sample||{};
   const tierColor=view.rated?String(view.tier?.color||'#aeb5ad'):'#aeb5ad';

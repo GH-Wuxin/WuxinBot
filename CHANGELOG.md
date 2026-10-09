@@ -2,6 +2,38 @@
 
 ## Unreleased
 
+### 清理（代码考古第一批）
+- **测试隔离三态被塌缩成 boolean，导致门禁对自己说谎**。`tools/test-isolation.mjs` 的 `classifyProductionSnapshot` 本来就返回 PASS / FAIL / INCONCLUSIVE 三态，`recordIsolationResult` 也会为 INCONCLUSIVE 设好退出码 2，但 `verifyProductionDbUnchanged` 最后一行把它压成 `status === 'PASS'`。于是"无法证明生产库未被修改"在约 15 个调用点被当成**"生产库被改"硬失败**：只要机器上跑着 Wuxin（开发机的常态），门禁就永远红，而且会打印与事实相反的消息 —— 实测 `agent-tool-surface-hardening-verify` 在 before/after scope sha256 **逐字节相同**的情况下仍打印 `production db changed`。现在只有**被证实**的修改才算失败，INCONCLUSIVE 保留自己的状态与退出码 2；同时删掉 8 个 verifier 里把这枚 boolean 当结论打印的 `[isolation] production db unchanged: …` 行（`recordIsolationResult` 已经打印了权威的 `RESULT=` 行）。`tools/test-isolation-verify.mjs` 新增 4 条契约测试锁住这三态，防止塌缩回潮。
+- **删除约 1,570 行死代码**。`server/osu/commands.ts` 的 `OSU_HANDLERS` 只登记 bind/analyze/clear/help，`handleOsuRecent`、`runLegacyAnalysis`、`runAnalysis` 三个函数**全仓零调用者**（编译器 `--noUnusedLocals` 独立证实）。删除它们后编译器逐层暴露出整条旧分析链：`generateConclusion`(131 行)、`generateAnalysisSectionComments`(206 行)、`reviewFullReport`(66 行)、`repairFailedText`、`findAnalysisStyleReuse`、`rejectedSectionKeys` 等 —— 该文件由 2,070 行降至 898 行（**−1,172 行**）。连带 `server/osu/oneLineReview.ts`（**332 行**，其 7 个导出全部只被已删的 `runAnalysis` 使用）与其验证器（69 行）一并删除。文档 `docs/WUXINBOT_PROMPT_REVIEW_AUDIT_V01.md` 曾把 `runAnalysis` 描述成"现行 analyze 管线"，实际现行路径是 `runMvpAnalysisCommand`。
+- **清掉 81 处编译器证实的死声明，并把这个检查加进门禁**。`npm run typecheck` 只跑 `tsc --noEmit`，"声明了但从未读取"完全不可见。清理 `gate.ts`(26 处，含 :5-19 一整片无人使用的 import)、`queue.ts`(5 个 import 块整块未用)、`owner/profile.ts`(10 处 `const x = ctx.x`)、`index.ts`(导入了 `decideReply`/`buildPrompt`/`callLLM` 却从不使用) 等之后，`typecheck` 脚本改为 `tsc --noEmit --noUnusedLocals`，现在全仓 **0 处**，且不会再退化。
+- **把"grep 源文本"的断言换成真调用**。`tools/prompt-review-slim-phase0-verify.mjs` 有两条断言直接读取 `server/osu/commands.ts` 的**源文本**，检查里面是否还包含 `ENABLE_RUNTIME_LLM_FACT_REVIEW = true` 与 `v.kind !== 'quality'`。源文本断言只会在有人编辑该文件时失败，**从不会因行为变化而失败**，而它们钉住的正是编译器已证实不可达的旧 reviewer 分支 —— 等于在保护死代码。现在改为真调用 `applyReviewerHardFallbacks` 断言行为："quality 裁决不降级任何段落"与"hard 裁决确定性地降级结论"。
+- **删除恒真的死开关** `ENABLE_RUNTIME_LLM_FACT_REVIEW = true`（`:1070` 的 `&&` 右侧恒真）与随旧链一起消失的 `ENABLE_OSU_ANALYZE` 守卫分支；删除已成孤儿的 `RECENT_COOLDOWN` 导出。
+
+### 新增
+- **运行控制：端口占用可查看并接管**。此前端口被别的进程占用时只显示「端口占用（PID …）」，既看不到是谁占的，也没有任何办法让 Desktop 接手。现在：
+  - **显示占用者**：状态里给出进程名、PID、可执行文件路径与完整命令行；同一组件的另一个实例会标注「同组件的其他实例」，其余标注「其他进程」。
+  - **由用户决定接管**：卡片上出现「停止占用进程并启动」按钮，点击后弹确认框，列出将被强制终止的进程（含子进程），确认才执行。
+  - **安全约束**：每个 PID 在**终止前**会重新校验它此刻仍是该端口的监听者，过期快照里的 PID 永远不会被误杀；拒绝终止 Desktop 自身；接管前校验组件已启用且配置了端口。
+  - 实现：`desktop/process-inspection.mjs` 新增 `describeProcesses`；`process-manager.mjs` 的 `portStatus` 增加占用者分类（owned/matching/foreign）、`portError` 带进程名、新增 `takeOver(id)` 与 `killPortListener(pid, port)`；新增 IPC `runtime:takeover` 与 `window.desktop.runtime.takeOver`；`src/pages/Runtime/index.jsx` 增加占用者列表与确认对话框。
+  - `tools/apply-desktop-runtime-fix.mjs` 的补丁范围由 3 个文件改为整层 6 个（补上此前漏掉的 `preload.cjs`、`ipc-guard.mjs`、`api-bridge.mjs`）—— 否则新增的 preload API 永远不会出现在已安装应用中。
+  - 测试：`tools/desktop-runtime-verify.mjs` 新增 6 个用例（占用者描述、同组件实例归属、无占用时拒绝接管、无端口/未启用/未知 id 的拒绝、终止前监听者校验、真实外部进程的完整接管），并修正 3 个因本次行为变更而过期的断言。**46/46 通过**。
+
+### 修复
+- **引用消息不再阻塞入站管线**：`hydrateQuotedMessage` 过去对每条引用回复同步等待 NapCat `/get_msg`，用的是 12 秒默认超时。NapCat 对已淘汰缓存的消息从不响应，于是一次引用就占住 6 个入站准入槽之一长达 12 秒（生产日志累计 446 次超时 + 54 次 `fetch failed`，并触发过 48 槽等待队列耗尽）。现在：本地库已解析出引用内容时不再发网络请求；超时收紧到 2.5 秒；同一 `message_id` 的失败在 5 分钟内不再重试（上限 500 条）。最坏耗时由 12 秒降至 2.5 秒，重复引用降至 0。
+- **单实例锁失败不再伪装成崩溃**：`acquireInstanceLock` 抛错原本无人接住，会走 `uncaughtException` 写一份 crash 日志并打印带 source-map 误导帧的堆栈（曾连续 3 次）。现在输出一行 `[instance] 启动失败：…` 后 `process.exit(1)`，行为与紧随其后的 `openStore` fail-closed 分支一致。
+- **`UserEntry.policy` 类型补齐 `owner`**：`server/types.ts` 的联合类型漏了 `'owner'`，而 `USER_POLICIES`（`server/index.ts`）与 `bot.ts` 的限频绕过分支都按 owner 处理。补上并加注释说明必须与 `USER_POLICIES` 同步。
+- **文档不再指向已移除的维护脚本**：`tools/restart-wuxin.ps1`、`tools/start-napcat.ps1`、`tools/wuxin-guard.ps1` 已在桌面端「运行控制」页上线时删除（`c0c7311`），但 README 与 `docs/EXTERNAL_INTEGRATION.md` 仍在指引调用。两份现行文档改为指向 Desktop 运行控制页，并保留删除说明。
+
+- **记忆画像批量更新不再整体失败（D1）**：`llmPolicy` 的回合预算存在 `AsyncLocalStorage` 中，而入站回合用 `withLlmTurnPolicy` 包住整条消息处理，于是 `runBackgroundTask('memory.profile', …)` 在分离之后仍继承该回合的 12 次调用 / 180 秒预算。任何批量触发（`/w refresh` 的全局重算）都会瞬间耗尽预算：生产日志出现 283 次 `profile.error`（其中 279 次 `LLM_TURN_BUDGET_EXHAUSTED`，涉及 280 个用户），而重算计数照常推进 —— 静默的批量失败。现在 `backgroundTasks` 通过新增的 `runDetachedFromTurnPolicy` 脱离调用方预算，改由模型准入闸门（并发 4 / 排队 32）与单次调用超时约束。修复后同一路径 45 分钟内 0 错误、5 次 LLM 成功返回、4 份画像实际落盘。
+- **画像更新超时不再被 120 秒硬编码压制（D2）**：`memory.ts` 的 `PROFILE_UPDATE_TIMEOUT_MS = 120_000` 覆盖了 `settings.codexTimeoutMs`，在 `gpt-6-luna` + `reasoningEffort: max` 下必然超时（owner 的 `lastProfileStatus` 长期为 error，控制台「重算画像」返回 400）。改为 `profileUpdateTimeoutMs(settings)`：以 240 秒为下限，并按配置的 provider 超时上浮。实测 `POST /api/memories/:id/recalculate` 由 400 / 120 秒超时变为 200 / 57 秒成功。
+- **`/w exp add|set` 首次写入不再丢失（D3）**：在 `updateDb` 的写代理内"先挂载新建对象、再修改它"，该修改不会落盘；于是给尚无经验记录的新成员发经验时，条目以 `xp:0` 落盘，却仍回"已给 X 增加 N XP"的成功提示（假成功）。现在新建分支直接构造带最终值的完整条目再挂载。实测 `set 250 → xp=250`、`add 50 → xp=300`。
+- **`/w refresh` 不再阻塞 4 分钟（D4）**：全局重算改为 `runBackgroundTask('recalc.qq')` 派发，命令立即回复"已开始全局重算：个人画像 N 人、群画像 M 群、关系画像 K 对。用 /w recalc 查看进度。"。实测由 >240 秒客户端超时变为 210 毫秒返回。
+- **hydrant 桥接超时收紧（D6）**：`quickRouter` 原先只区分 lazybot(30s) 与其它(60s)，hydrant 因此要等满 60 秒才回退内部引擎（生产日志 `hydrant 调用超时（60s）` 之后内部引擎正常作答）。hydrant 的 profile/where/PP+ 都有完整的内部替代实现，改为 25 秒。
+- **`/w osu clear bind` 需要显式确认（D7）**：绑定是长期资产且会同步到 LazyBot，原先裸命令即静默解绑发送者自己。现在先返回"解绑会删除你与 osu! 玩家「X」的绑定（并同步到 LazyBot），操作不可撤销。确认请发送：/w osu clear bind confirm"，只有带 `confirm` 才执行；`handleOsuClear` 的严格解析只对 `bind` 放行 `bind confirm` 这一种双词形式，其余动作仍拒绝模糊写法。
+- **`/w info p:…` 写法错误给出用法提示（D8）**：`p:[SHK]Wuxin` 这类缺外层方括号的写法被原样透传给 osu! API，回的是裸 `osu! 资源不存在 /users/@p%3A…`。现在识别为写法错误并回"玩家名写法有误。名字含空格或方括号时要整个包在 p:[...] 里…"。
+- **`/w skill recent` 不再把正常状态说成失败（D9）**：证据不足原本以抛错表达，被共用包装器渲染成"指令执行失败：近期证据暂不足…"。改为正常回复"近期证据暂不足，请稍后积累更多近期成绩后再试。"。
+- **`maxTokens` 默认值对齐（D11）**：`initialDb.settings.maxTokens` 原为 300，而调用路径 `options.maxTokens || settings.maxTokens || 420` 把 `''` 视为"用内置默认"。任何让该键回落到 initialDb 的路径都会把回复上限从 420 悄悄降到 300（测试中确实观测到 `''` → `300` 的漂移，触发点未能定位）。默认值改为 `''` 并加注释，消除这一不一致。
+
 ### 安全与可靠性
 - 修复配置快照中 API Key/后台密码会通过 `/api/state` 返回浏览器的问题。
 - 控制台状态响应由约 23.49 MB 降至约 1.08 MB，日志和画像样本改为限量返回，轮询间隔改为 10 秒。
