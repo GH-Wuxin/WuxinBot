@@ -486,7 +486,11 @@ const initialDb = {
     visionMemoryEnabled: true,
     visionMemoryPureImagePolicy: 'important',
     temperature: 0.4,
-    maxTokens: 300,
+    // '' means "no explicit cap": llm.ts resolves it to its own 420 fallback.
+    // It used to default to 300 here, so any path that let this key fall back
+    // to initialDb silently lowered the reply cap (observed during testing as a
+    // drift 300 that had not been set by the operator).
+    maxTokens: '',
     contextLimit: 30,
     ownerPrivateContextCharBudget: 24000,
     groupContextSearchEnabled: true,

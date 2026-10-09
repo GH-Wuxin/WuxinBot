@@ -36,6 +36,36 @@ const RECONNECT_MAX_DELAY_MS = 30_000;
 // auth rejection) drive a fixed 1s accept-close storm forever.
 const RECONNECT_STABLE_AFTER_MS = 30_000;
 
+// Quoted-message hydration sits on the inbound critical path: every reply or
+// quote holds one of the six inbound admission slots while NapCat answers
+// /get_msg. NapCat never answers for messages it has dropped from its cache, so
+// the 12s default deadline turned each of those into a 12s stall (446 logged
+// timeouts, plus the burst that exhausted the 48-slot waiting queue). Keep the
+// deadline short, remember failures so a repeatedly quoted message does not pay
+// it twice, and skip the round trip when the local store already resolved it.
+const QUOTED_MESSAGE_TIMEOUT_MS = 2_500;
+const QUOTED_MESSAGE_FAILURE_TTL_MS = 5 * 60_000;
+const QUOTED_MESSAGE_FAILURE_CACHE_MAX = 500;
+const quotedMessageFailures = new Map<string, number>();
+
+function quotedMessageFailureCached(messageId: string): boolean {
+  const expiresAt = quotedMessageFailures.get(messageId);
+  if (!expiresAt) return false;
+  if (expiresAt <= Date.now()) {
+    quotedMessageFailures.delete(messageId);
+    return false;
+  }
+  return true;
+}
+
+function rememberQuotedMessageFailure(messageId: string): void {
+  if (quotedMessageFailures.size >= QUOTED_MESSAGE_FAILURE_CACHE_MAX) {
+    const oldest = quotedMessageFailures.keys().next();
+    if (!oldest.done) quotedMessageFailures.delete(oldest.value);
+  }
+  quotedMessageFailures.set(messageId, Date.now() + QUOTED_MESSAGE_FAILURE_TTL_MS);
+}
+
 // P0-A: four-dimensional connection observer (transport / NapCat API /
 // QQ session / heartbeat). It never reconnects or restarts anything; it only
 // records evidence so "WS alive but QQ dead" is observable.
@@ -218,6 +248,14 @@ function dedupeImages(images) {
 export async function hydrateQuotedMessage(event) {
   const replyMessageId = String(event?.replyMessageId || '').trim();
   if (!replyMessageId) return event;
+
+  // oneBotToInternal already resolved this quote from the local store, text and
+  // images included. Asking NapCat again only re-fetches what we already have.
+  if (event?.quotedMessage) return event;
+
+  // A message NapCat cannot serve now will not become servable seconds later.
+  if (quotedMessageFailureCached(replyMessageId)) return event;
+
   const db = readDb();
   const baseUrl = String(db.settings.oneBotHttpUrl || '').replace(/\/$/, '');
   if (!baseUrl) return event;
@@ -228,7 +266,7 @@ export async function hydrateQuotedMessage(event) {
       method: 'POST',
       headers: oneBotHeaders(db),
       body: JSON.stringify({ message_id: messageId }),
-    });
+    }, QUOTED_MESSAGE_TIMEOUT_MS);
     const payload = await assertOneBotSuccess(response, '读取 QQ 引用消息失败');
     const data = payload?.data || {};
     const structured = data.message;
@@ -249,6 +287,7 @@ export async function hydrateQuotedMessage(event) {
       },
     };
   } catch (error) {
+    rememberQuotedMessageFailure(replyMessageId);
     console.warn('[onebot] 无法读取引用消息，保留本地回退内容:', error?.message || error);
     return event;
   }

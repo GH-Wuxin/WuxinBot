@@ -130,7 +130,10 @@ export interface UserEntry {
   groupId: string;
   userId: string;
   nickname: string;
-  policy: 'normal' | 'whitelist' | 'priority' | 'muted' | 'blocked' | 'admin';
+  // Must stay in sync with USER_POLICIES in server/index.ts: 'owner' is a real
+  // stored policy (server/bot.ts branches on it to bypass rate limits), and
+  // leaving it out of this union is what let the drift go unnoticed.
+  policy: 'normal' | 'whitelist' | 'priority' | 'muted' | 'blocked' | 'admin' | 'owner';
   attentionLevel: number;
   allowCommands: boolean;
   commandRoleId?: string;

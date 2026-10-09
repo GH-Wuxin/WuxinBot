@@ -38,7 +38,6 @@ export async function ownerLvHandler(ctx: OwnerHandlerContext): Promise<OwnerCom
   const db = ctx.commandDb;
   const targetQq = extractAtQq(ctx.subCommand || ctx.parts[2] || '') || ctx.event.userId;
   const exp = getExperience(db, targetQq);
-  const targetUser = (db.users || []).find((u) => String(u.groupId) === String(ctx.event.groupId) && String(u.userId) === targetQq);
   const nickname = groupDisplayName(db, ctx.event, targetQq);
   const isSelf = String(targetQq) === String(ctx.event.userId);
   const bar = formatXpBar(exp);
@@ -71,7 +70,6 @@ export async function ownerTopHandler(ctx: OwnerHandlerContext): Promise<OwnerCo
   for (let i = 0; i < groupEntries.length; i++) {
     const ge = groupEntries[i];
     const exp = getExperience(db, ge.userId);
-    const info = getLevelInfo(exp.level);
     const user = (db.users || []).find((u) => String(u.groupId) === groupId && String(u.userId) === String(ge.userId));
     const name = groupDisplayName(db, ctx.event, ge.userId) || user?.customName || ge.userId;
     const currentPp = levelToPp(exp.level);
@@ -230,12 +228,12 @@ export async function ownerMeHandler(ctx: OwnerHandlerContext): Promise<OwnerCom
     if (ctx.sendMessage) await ctx.sendMessage(ctx.event, `查看画像需要达到 100pp 等级（Lv.1）。你当前是 ${levelToPp(exp.level)}pp（Lv.${exp.level}）。`);
     return { replied: Boolean(ctx.sendMessage), reason: '等级不足' };
   }
+  const info = getLevelInfo(exp.level);
   const mem = (db.memories || []).find((m) => String(m.userId) === String(ctx.event.userId));
   if (!mem) {
     if (ctx.sendMessage) await ctx.sendMessage(ctx.event, '还没有关于你的画像数据。多聊聊天就有了。');
     return { replied: Boolean(ctx.sendMessage), reason: '无画像' };
   }
-  const info = getLevelInfo(exp.level);
   const lines = [
     `📋 Wuxin 眼中的你`,
     `───────────────`,
@@ -263,7 +261,6 @@ export async function ownerExpHandler(ctx: OwnerHandlerContext): Promise<OwnerCo
     return { replied: Boolean(ctx.sendMessage), reason: 'exp 用法' };
   }
   const exp = getExperience(db, targetQq);
-  const info = getLevelInfo(exp.level);
   const user = (db.users || []).find((u) => String(u.groupId) === String(ctx.event.groupId) && String(u.userId) === targetQq);
   const nickname = groupDisplayName(db, ctx.event, targetQq);
 
@@ -276,15 +273,24 @@ export async function ownerExpHandler(ctx: OwnerHandlerContext): Promise<OwnerCo
   if (verb === 'add' && Number.isFinite(amount) && amount > 0) {
     updateDb((draft) => {
       if (!draft.experience) draft.experience = {};
-      let e = draft.experience[targetQq];
-      if (!e) {
-        e = { xp: 0, level: 0, dailyXp: 0, dailyDate: '', activeDays: 0, streakDays: 0, lastMsgDate: '', lastLevelUpAt: '', lastDecayCheck: '' };
-        draft.experience[targetQq] = e;
+      const existing = draft.experience[targetQq];
+      if (!existing) {
+        // Attach an entry that ALREADY carries the final values. Mutating an
+        // object after attaching it inside this write proxy loses the mutation,
+        // so the first-ever grant for a member silently persisted as xp:0 while
+        // the command still reported success.
+        const xp = amount;
+        const level = levelFromXp(xp);
+        draft.experience[targetQq] = {
+          xp, level, dailyXp: 0, dailyDate: '', activeDays: 0, streakDays: 0,
+          lastMsgDate: '', lastLevelUpAt: level > 0 ? nowIso() : '', lastDecayCheck: '',
+        };
+        return;
       }
-      e.xp += amount;
+      existing.xp += amount;
       // Re-evaluate level (level N = N*100 XP)
-      const newLevel = levelFromXp(e.xp);
-      if (newLevel > e.level) { e.level = newLevel; e.lastLevelUpAt = nowIso(); }
+      const newLevel = levelFromXp(existing.xp);
+      if (newLevel > existing.level) { existing.level = newLevel; existing.lastLevelUpAt = nowIso(); }
     });
     const newExp = getExperience(readDb(), targetQq);
     const newInfo = getLevelInfo(newExp.level);
@@ -295,13 +301,17 @@ export async function ownerExpHandler(ctx: OwnerHandlerContext): Promise<OwnerCo
   if (verb === 'set' && Number.isFinite(amount) && amount >= 0) {
     updateDb((draft) => {
       if (!draft.experience) draft.experience = {};
-      let e = draft.experience[targetQq];
-      if (!e) {
-        e = { xp: 0, level: 0, dailyXp: 0, dailyDate: '', activeDays: 0, streakDays: 0, lastMsgDate: '', lastLevelUpAt: '', lastDecayCheck: '' };
-        draft.experience[targetQq] = e;
+      const existing = draft.experience[targetQq];
+      if (!existing) {
+        // Same reason as the add branch above: build it complete, then attach.
+        draft.experience[targetQq] = {
+          xp: amount, level: levelFromXp(amount), dailyXp: 0, dailyDate: '', activeDays: 0,
+          streakDays: 0, lastMsgDate: '', lastLevelUpAt: '', lastDecayCheck: '',
+        };
+        return;
       }
-      e.xp = amount;
-      e.level = levelFromXp(e.xp);
+      existing.xp = amount;
+      existing.level = levelFromXp(existing.xp);
     });
     const newExp = getExperience(readDb(), targetQq);
     const newInfo = getLevelInfo(newExp.level);

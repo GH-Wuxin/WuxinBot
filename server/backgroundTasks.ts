@@ -1,3 +1,5 @@
+import { runDetachedFromTurnPolicy } from './llmPolicy.js';
+
 type BackgroundTaskRecord = {
   id: string;
   label: string;
@@ -40,7 +42,9 @@ export function runBackgroundTask<T>(label: string, task: () => Promise<T> | T):
 
   let promise: Promise<T | undefined>;
   promise = Promise.resolve()
-    .then(task)
+    // Detached work must not inherit the inbound turn's model budget; see
+    // runDetachedFromTurnPolicy for the silent mass failure this caused.
+    .then(() => runDetachedFromTurnPolicy(task))
     .then(
       (value) => {
         activeTasks.delete(id);

@@ -108,11 +108,9 @@ npm start
 
 管理控制台由 WuxinBot Desktop 提供；启动客户端后在控制台中配置 OneBot WebSocket / HTTP 地址并连接。默认值分别为 `ws://127.0.0.1:3001` 和 `http://127.0.0.1:3000`。
 
-Windows 下如需在后台重启服务，可使用正式维护脚本：
+Windows 下组件的启动、停止与重启统一由 WuxinBot Desktop 的「运行控制」页负责：单项启停、批量重启、就绪探测与进程归属校验都在那里，见 [`docs/DESKTOP_CLIENT.md`](./docs/DESKTOP_CLIENT.md)。
 
-```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File .\tools\restart-wuxin.ps1
-```
+早期版本提供的 `tools/restart-wuxin.ps1`、`tools/start-napcat.ps1`、`tools/wuxin-guard.ps1` 已随该页面上线而移除，不要再按旧文档调用。仓库内仍可用 `启动Wuxin.bat` / `停止Wuxin.bat` 启停开发态服务；正式运行请走 Desktop，避免同时存在两个 Wuxin 后端（同一 `DATA_DIR` 只允许一个实例）。
 
 如需为已有 NapCat 实例启用本地 OneBot HTTP/WS，可运行：
 

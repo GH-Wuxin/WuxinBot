@@ -15,7 +15,16 @@ import { runBackgroundTask } from '../backgroundTasks.js';
 const PROFILE_FIELDS = ['summary', 'traits', 'speechStyle', 'behavior', 'preferences'];
 const MEMORY_SWEEP_INTERVAL_MS = 90_000;
 const PROFILE_LLM_CIRCUIT_MS = 10 * 60_000;
-const PROFILE_UPDATE_TIMEOUT_MS = 120_000;
+// Floor for a profile-update model call. The payload is large and, with a
+// high-reasoning Codex model, the old hardcoded 120s was routinely exceeded -
+// which set lastProfileStatus=error and made the console's "recalculate
+// profile" button return 400. The configured provider timeout now raises the
+// floor instead of being overridden by this constant.
+const PROFILE_UPDATE_TIMEOUT_FLOOR_MS = 240_000;
+function profileUpdateTimeoutMs(settings: any): number {
+  const configured = Number(settings?.codexTimeoutMs || 0);
+  return Math.max(PROFILE_UPDATE_TIMEOUT_FLOOR_MS, (Number.isFinite(configured) ? configured : 0) + 90_000);
+}
 const PROFILE_RETRY_BACKOFF_MS = [5, 15, 30, 60].map((minutes) => minutes * 60_000);
 const profileUpdatePromises = new Map();
 let profileQueueTail = Promise.resolve();
@@ -922,7 +931,7 @@ ${isLegacyProfile ? '- 旧版画像缺上下文，与上下文样本一致的保
 ${memory.profilingRule ? `- 【硬性约束】${memory.profilingRule}` : ''}` },
         { role: 'user', content: `QQ号：${memory.userId}\n昵称：${memory.nickname || memory.userId}\n\n样本统计：真实文本 ${usedSamples.length} 条，覆盖 ${sampleDayCount} 天 / ${sampleGroupCount} 个群。提示：统计来自长期历史与最近上下文混合取样，不只是最近几十条。\n\n已有长期画像：\n${existing}${useV2 ? `\n已有近期动态：\n${JSON.stringify((memory.recentDynamics || []).slice(-5).map((d) => d.topic + ': ' + d.summary))}\n\n话题聚类分析：\n${longTermBlock || '无跨场景长期候选'}\n${recentDynamicsBlock || '无短期高频话题'}` : ''}\n\n样本与上下文：\n${sampleBlocks}\n\n低权重背景：\n${cardText}` }
       ],
-      temperature: 0.2, maxTokens: 1000, timeoutMs: PROFILE_UPDATE_TIMEOUT_MS, label: '画像更新'
+      temperature: 0.2, maxTokens: 1000, timeoutMs: profileUpdateTimeoutMs(db?.settings), label: '画像更新'
     });
   } catch (error) {
     error.profileRunId = runId;
@@ -943,7 +952,7 @@ ${memory.profilingRule ? `- 【硬性约束】${memory.profilingRule}` : ''}` },
         ],
         temperature: 0,
         maxTokens: 1200,
-        timeoutMs: PROFILE_UPDATE_TIMEOUT_MS,
+        timeoutMs: profileUpdateTimeoutMs(db?.settings),
         label: '画像JSON修复'
       });
       return {

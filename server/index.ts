@@ -7,17 +7,15 @@ import express from 'express';
 import { openStore, currentStorageRevision, getStoreLockStats, getStoreWriteStats, publicDb, publicMemory, readDb, updateDb, upsertBy, nowIso, saveConfigSnapshot, listConfigSnapshots, restoreConfigSnapshot } from './store.js';
 import { createBackup, listBackups, restoreBackup, deleteBackup, pruneAutoBackups } from './backup.js';
 import { connectOneBot, getOneBotStatus, handleOneBotEvent, sendOneBotMessage, shutdownOneBot } from './onebot.js';
-import { processIncoming, decideReply } from './bot.js';
+import { processIncoming } from './bot.js';
 import { runSandboxPreview } from './sandboxPreview.js';
 import { getReplyQueueStats } from './bot/queue.js';
-import { buildPrompt } from './bot/prompt.js';
-import { callLLM } from './bot/llm.js';
 import { getHealth, getRecalcProgress, startRecalc, tickRecalc, stopRecalc, finishRecalc } from './health.js';
 import { getBackgroundTaskStats, runBackgroundTask, waitForBackgroundTasks } from './backgroundTasks.js';
 import { getInboundAdmissionStats, stopInboundAdmission, waitForInboundTasks } from './bot/inboundGate.js';
 import { getLlmAdmissionStats } from './llmPolicy.js';
 import { getKbHealth } from './bot/knowledgeBase.js';
-import { getGroupProfile, updateGroupProfile, clearGroupProfile, hasGroupProfileContent } from './bot/groupProfile.js';
+import { getGroupProfile, updateGroupProfile, clearGroupProfile } from './bot/groupProfile.js';
 import { getRelationshipProfile, updateRelationshipProfile, clearRelationshipProfile, isSubstantiveRelationshipProfile } from './bot/relationshipProfile.js';
 import { getMemoryProfileQueueStatus, maybeUpdateMemoryProfile } from './bot/memory.js';
 import { evaluateTrustScores } from './bot/trust.js';
@@ -220,7 +218,16 @@ try {
   // Older/other runtimes simply keep the default.
 }
 
-releaseInstanceLock = acquireInstanceLock(port);
+// A duplicate instance is an expected operator situation (a leftover server, a
+// second desktop start, a stale lock). Refuse it with one clear line and a
+// non-zero exit instead of letting it reach the crash log as an
+// uncaughtException, which buried the real cause under a source-mapped stack.
+try {
+  releaseInstanceLock = acquireInstanceLock(port);
+} catch (error) {
+  console.error('[instance] 启动失败：', String((error as Error)?.message || error));
+  process.exit(1);
+}
 // Fail closed: if storage cannot be opened or recovered, no business starts.
 // Damage must never be answered by silently creating an empty database.
 try {

@@ -47,14 +47,11 @@ OSU_CLIENT_SECRET=你的osu客户端Secret
 3. 在控制台「QQ连接」页面填写 HTTP `http://127.0.0.1:3000` 与
    WebSocket `ws://127.0.0.1:3001`，保存并连接。
 
-### 运维脚本
+### 运维入口
 
-- `tools/start-napcat.ps1`：启动 NapCat。需要
-  `NAPCAT_SHELL_DIR`（NapCat Shell 目录）、`NAPCAT_USER_DATA_DIR`（QQ 数据目录）
-  与可选的 `NAPCAT_LAUNCHER_NAME`（为空时自动探测 `NapCatWinBootMain*.exe`）。
-- `tools/wuxin-guard.ps1`：守护 Wuxin、NapCat（监听 3001）与 yumu-image。
-  yumu-image 需要 `YUMU_NODE` 与 `YUMU_DIR`；未配置时跳过该守护项。
-- `tools/restart-wuxin.ps1`：重启 Wuxin，优先使用项目自带 `portable-node`。
+组件的启动、停止、重启与就绪检查现在统一由 **WuxinBot Desktop 的「运行控制」页**负责，NapCat、yumu-image、Wuxin 与四个外部 Bot 都在同一处管理，自带端口归属校验（见 [`DESKTOP_CLIENT.md`](./DESKTOP_CLIENT.md)）。NapCat 的 `NAPCAT_SHELL_DIR`、`NAPCAT_USER_DATA_DIR`、`NAPCAT_LAUNCHER_NAME` 改为在 Desktop 的组件参数里配置。
+
+早期版本提供的 `tools/start-napcat.ps1`、`tools/wuxin-guard.ps1`、`tools/restart-wuxin.ps1` 已随该页面上线而移除，不要再按旧文档调用。`tools/` 下当前只保留 `tools/enable-napcat-local-onebot.ps1`。
 
 ## 4. LLM
 

@@ -60,6 +60,20 @@ function readExplicitPlayerReference(value: string, start = 0): ExplicitPlayerRe
   return null;
 }
 
+/**
+ * A token that starts with `p:[` but is not a complete reference - e.g.
+ * `p:[SHK]Wuxin` where the correct form is `p:[[SHK]Wuxin]` - used to be
+ * forwarded verbatim to the osu! API, which answered with a raw
+ * `osu! 资源不存在 /users/@p%3A...` error and no hint about the syntax.
+ */
+function malformedExplicitPlayer(value: string): boolean {
+  const raw = String(value || '').trim();
+  if (!/^p:\[/i.test(raw)) return false;
+  return readExplicitPlayerReference(raw)?.end !== raw.length;
+}
+
+const EXPLICIT_PLAYER_USAGE = '玩家名写法有误。名字含空格或方括号时要整个包在 p:[...] 里，例如 /w info p:[[SHK]Wuxin]、/w info p:[Tong Tong]。';
+
 function unwrapExplicitPlayer(value: string): string {
   const raw = String(value || '').trim();
   const explicit = readExplicitPlayerReference(raw);
@@ -357,6 +371,10 @@ async function renderPlayerSkillProfileForContext(
 
 export async function ownerInfoHandler(ctx: OwnerHandlerContext): Promise<OwnerCommandResult> {
   const request = parsePlayerInfoRequest(ctx.commandArgs);
+  if (malformedExplicitPlayer(request.player)) {
+    if (ctx.sendMessage) await ctx.sendMessage(ctx.event, EXPLICIT_PLAYER_USAGE);
+    return { replied: Boolean(ctx.sendMessage), reason: EXPLICIT_PLAYER_USAGE };
+  }
   return renderPlayerSkillProfileForContext(ctx, request.player);
 }
 
@@ -407,7 +425,13 @@ export async function ownerSkillHandler(ctx: OwnerHandlerContext): Promise<Owner
       const message = String(error?.message || error);
       if (message === 'RECENT_SKILL_TIMEOUT') throw new Error('Recent Skill 生成超时；已保留成功的谱面分析缓存，请稍后重试。');
       const insufficient = /^RECENT_SKILL_INSUFFICIENT(?:_AFTER_FILTER)?:([0-9]+)$/.exec(message);
-      if (insufficient) throw new Error('近期证据暂不足，请稍后积累更多近期成绩后重试。');
+      if (insufficient) {
+        // Insufficient recent evidence is a normal domain state. Throwing made
+        // the shared wrapper answer "指令执行失败：…", which reads as a crash.
+        const reason = '近期证据暂不足，请稍后积累更多近期成绩后再试。';
+        if (ctx.sendMessage) await ctx.sendMessage(ctx.event, reason);
+        return { replied: Boolean(ctx.sendMessage), reason };
+      }
       throw error;
     } finally {
       if (timer) clearTimeout(timer);
