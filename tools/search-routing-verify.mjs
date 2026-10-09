@@ -234,7 +234,5 @@ cleanupTestDir(testDataDir);
 if (failed > 0) {
   console.error('SEARCH-ROUTING-VERIFY FAILED');
   process.exit(1);
-}
-console.log('[isolation] production db unchanged: ' + prodOk);
-console.log('SEARCH-ROUTING-VERIFY PASSED');
+}console.log('SEARCH-ROUTING-VERIFY PASSED');
 process.exit(0);

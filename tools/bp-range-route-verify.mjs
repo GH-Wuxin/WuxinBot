@@ -273,7 +273,5 @@ cleanupTestDir(testDataDir);
 if (failed > 0) {
   console.error('BP-RANGE-ROUTE-VERIFY FAILED');
   process.exit(1);
-}
-console.log('[isolation] production db unchanged: ' + prodOk);
-console.log('BP-RANGE-ROUTE-VERIFY PASSED');
+}console.log('BP-RANGE-ROUTE-VERIFY PASSED');
 process.exit(0);

@@ -182,7 +182,5 @@ cleanupTestDir(testDataDir);
 if (failed > 0) {
   console.error('NAMED-BOT-SANDBOX-VERIFY FAILED');
   process.exit(1);
-}
-console.log('[isolation] production db unchanged: ' + prodOk);
-console.log('NAMED-BOT-SANDBOX-VERIFY PASSED');
+}console.log('NAMED-BOT-SANDBOX-VERIFY PASSED');
 process.exit(0);

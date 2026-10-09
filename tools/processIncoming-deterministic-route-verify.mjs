@@ -353,7 +353,5 @@ cleanupTestDir(testDataDir);
 if (failed > 0) {
   console.error('PROCESSINCOMING-DETERMINISTIC-ROUTE-VERIFY FAILED');
   process.exit(1);
-}
-console.log('[isolation] production db unchanged: ' + prodOk);
-console.log('PROCESSINCOMING-DETERMINISTIC-ROUTE-VERIFY PASSED');
+}console.log('PROCESSINCOMING-DETERMINISTIC-ROUTE-VERIFY PASSED');
 process.exit(0);

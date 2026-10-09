@@ -188,9 +188,7 @@ main().then(() => {
     // here means the live bot is actively writing (sandboxed CIM queries
     // cannot always detect that process). Warn instead of failing the verify.
     console.warn('[isolation] production db changed during test (live bot likely writing); test DATA_DIR was isolated');
-  }
-  console.log('[isolation] production db unchanged: ' + prodOk);
-  cleanupTestDir(testDataDir);
+  }  cleanupTestDir(testDataDir);
 }).catch((error) => {
   console.error(error);
   cleanupTestDir(testDataDir);
