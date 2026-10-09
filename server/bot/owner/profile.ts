@@ -14,11 +14,7 @@ import type { OwnerHandlerContext, OwnerCommandResult } from './types.js';
 export async function ownerNoteHandler(ctx: OwnerHandlerContext): Promise<OwnerCommandResult> {
   const event = ctx.event;
   const sendMessage = ctx.sendMessage;
-  const permissions = ctx.permissions;
   const parts = ctx.parts;
-  const subCommand = ctx.subCommand;
-  const commandArgs = ctx.commandArgs;
-  const commandDb = ctx.commandDb;
 
   const action = (parts[2] || '').toLowerCase();
   const noteTarget = (event.atTargets && event.atTargets[0]) || (action === 'show' || action === 'clear' ? parts[3] : parts[2]);
@@ -86,11 +82,8 @@ export async function ownerNoteHandler(ctx: OwnerHandlerContext): Promise<OwnerC
 export async function ownerProfileHandler(ctx: OwnerHandlerContext): Promise<OwnerCommandResult> {
   const event = ctx.event;
   const sendMessage = ctx.sendMessage;
-  const permissions = ctx.permissions;
   const parts = ctx.parts;
   const subCommand = ctx.subCommand;
-  const commandArgs = ctx.commandArgs;
-  const commandDb = ctx.commandDb;
 
   const action = subCommand || 'update';
   // /w profile show @某人 — view profile
@@ -338,11 +331,8 @@ export async function ownerProfileHandler(ctx: OwnerHandlerContext): Promise<Own
 export async function ownerRelationHandler(ctx: OwnerHandlerContext): Promise<OwnerCommandResult> {
   const event = ctx.event;
   const sendMessage = ctx.sendMessage;
-  const permissions = ctx.permissions;
   const parts = ctx.parts;
   const subCommand = ctx.subCommand;
-  const commandArgs = ctx.commandArgs;
-  const commandDb = ctx.commandDb;
 
   const relAction = subCommand || 'show';
   const targetA = (event.atTargets && event.atTargets[0]) || parts[3];

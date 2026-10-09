@@ -14,7 +14,6 @@ import { fileURLToPath } from 'node:url';
 import { hydrantConfigPath } from './externalPaths.js';
 import {
   beginBridgeTimeline,
-  type BridgeTimelineHandle,
 } from '../perf/bridgeTimeline.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));

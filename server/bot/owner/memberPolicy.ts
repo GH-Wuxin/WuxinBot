@@ -2,7 +2,7 @@
 // Decomposed from server/bot/ownerCommands.ts; dispatch already handled
 // unknown/usage/permission checks, so only the DB update + reply remain.
 import { describePolicy } from '../prompt.js';
-import { readDb, updateDb, nowIso } from '../../store.js';
+import { updateDb, nowIso } from '../../store.js';
 import type { OwnerHandlerContext, OwnerCommandResult } from './types.js';
 
 export async function ownerMemberPolicyHandler(ctx: OwnerHandlerContext): Promise<OwnerCommandResult> {

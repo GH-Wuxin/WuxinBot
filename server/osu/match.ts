@@ -12,10 +12,10 @@
 // pipeline, event-order serialization and cursor fixes.
 
 import { getMatch, getMatchAfter, getBeatmap } from './api.js';
-import { buildMatchRating, serializeRound, type MatchRatingJson } from './matchRating.js';
+import { buildMatchRating, serializeRound } from './matchRating.js';
 import { renderPanel } from '../bots/renderServer.js';
 import { updateDb, readDb } from '../store.js';
-import type { OsuMatch, OsuMatchEvent, OsuMatchRound, OsuMatchUser } from './types.js';
+import type { OsuMatch, OsuMatchEvent, OsuMatchUser } from './types.js';
 
 export type MatchStopType = 'MATCH_END' | 'USER_STOP' | 'SUPER_STOP' | 'SERVER_REBOOT' | 'TIME_OUT';
 
@@ -395,7 +395,6 @@ class MatchManager {
     if (this.shuttingDown) return { text: '服务器正在关闭，请稍后再试。' };
     const text = String(rawText || '').trim();
     const groupId = String(event.groupId || '');
-    const userId = String(event.userId || '');
 
     // Parse: [matchID] [operate] [#skip]
     const tokens = text.split(/\s+/).filter(Boolean);
@@ -671,7 +670,7 @@ class MatchManager {
   async restore(db: any): Promise<void> {
     if (this.shuttingDown) return;
     const state = this.loadState();
-    for (const [id, e] of Object.entries(state)) {
+    for (const [id] of Object.entries(state)) {
       if (this.shuttingDown) return;
       const matchId = Number(id);
       if (!Number.isFinite(matchId) || this.listeners.has(matchId)) continue;

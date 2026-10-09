@@ -1,9 +1,6 @@
 // Pure route resolution for owner-command dispatch.
 // It decides handlerKey + exact permission key for every /w branch, including
 // the historical quirks (preset denies with `mode`, group add owner text, etc).
-import {
-  isMemberPolicyCommand,
-} from '../commands/owner.meta.js';
 import type { OwnerHandlerContext, OwnerHandlerKey } from './types.js';
 
 export type OwnerRouteResolution =
@@ -34,7 +31,7 @@ function directRoute(handlerKey: OwnerHandlerKey, permissionKey?: string, denyRe
 }
 
 export function resolveOwnerRoute(ctx: OwnerHandlerContext): OwnerRouteResolution {
-  const { command, isWuxinCommand, subCommand, parts, commandArgs, permissions, commandUserPolicy, target } = ctx;
+  const { command, isWuxinCommand, subCommand, parts, permissions, commandUserPolicy, target } = ctx;
 
   if (command === '/help' && !isWuxinCommand) {
     return { kind: 'reply', replied: false, reason: '忽略裸 /help，避免和其他 bot 冲突' };

@@ -24,7 +24,7 @@ import { lookupSkill, lookupSkillByQQ } from './skills.js';
 import { getRenderServer } from './renderServer.js';
 import { scoreStarRating } from '../osu/scoreMetrics.js';
 import { enrichScoreStarRatings } from '../osu/starRating.js';
-import type { OsuMode, OsuScore, OsuUser } from '../osu/types.js';
+import type { OsuScore, OsuUser } from '../osu/types.js';
 import { describeFilters, isEmptyFilters } from '../osu/recommendFilters.js';
 import type { RecommendFilters } from '../osu/recommendFilters.js';
 import { thinkingParamsForLevel } from '../bot/llm.js';
@@ -559,7 +559,7 @@ async function executeToolCallInner(
     selfQq?: string;
   }
 ): Promise<ToolResult> {
-  const { db, userId, groupId, event } = context;
+  const { db, userId } = context;
   const toolName = toolCall.function.name;
   let args: Record<string, unknown> = {};
 

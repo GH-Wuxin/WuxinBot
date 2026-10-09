@@ -9,7 +9,6 @@ import {
 } from '../osu/classifier.js';
 import { readDb, updateDb } from '../store.js';
 import {
-  loadInternalOsuUser,
   resolveInternalPlayerTarget,
   type TargetResolutionExtra,
 } from './executor.js';

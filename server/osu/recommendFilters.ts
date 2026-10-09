@@ -80,7 +80,6 @@ const FIELD_KEY: Record<string, { min: string; max: string }> = {
   similar: { min: 'similarMin', max: 'similarMax' },
 };
 
-const VALID_FIELDS = new Set(Object.keys(FIELD_KEY));
 const KNOWN_MOD_COMBOS = ['NC', 'DT', 'HD', 'HR', 'HT', 'EZ', 'FL', 'SO', 'NF'];
 
 function splitModCombo(combo: string): string[] | null {
