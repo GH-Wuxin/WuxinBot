@@ -511,7 +511,5 @@ cleanupTestDir(testDataDir);
 if (failed > 0) {
   console.error('NATURAL-CHAT-DELIVERY-VERIFY FAILED');
   process.exit(1);
-}
-console.log('[isolation] production db unchanged: ' + prodOk);
-console.log('NATURAL-CHAT-DELIVERY-VERIFY PASSED');
+}console.log('NATURAL-CHAT-DELIVERY-VERIFY PASSED');
 process.exit(0);

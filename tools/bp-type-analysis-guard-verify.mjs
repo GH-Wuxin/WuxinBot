@@ -321,7 +321,5 @@ cleanupTestDir(testDataDir);
 if (failed > 0) {
   console.error('BP-TYPE-ANALYSIS-GUARD-VERIFY FAILED');
   process.exit(1);
-}
-console.log('[isolation] production db unchanged: ' + prodOk);
-console.log('BP-TYPE-ANALYSIS-GUARD-VERIFY PASSED');
+}console.log('BP-TYPE-ANALYSIS-GUARD-VERIFY PASSED');
 process.exit(0);

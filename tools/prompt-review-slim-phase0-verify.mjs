@@ -23,7 +23,7 @@ const { buildPippiPrompt, detectScene } = await import('../server/bot/persona.ts
 const { buildBotToolSchemas } = await import('../server/bots/registry.ts');
 const { getAllCommandHelpEntries, canViewCommand, canListCommand } = await import('../server/bot/commands/index.ts');
 const { buildAnalysisReviewerPrompt, parseReviewerVerdicts } = await import('../server/osu/analyzer.ts');
-const { OSU_ANALYSIS_MODEL, OSU_REVIEW_MODEL } = await import('../server/osu/commands.ts');
+const { OSU_ANALYSIS_MODEL, OSU_REVIEW_MODEL, applyReviewerHardFallbacks } = await import('../server/osu/commands.ts');
 const { rewriteNormalReply, isWeirdReply, isIdentityQuestion } = await import('../server/bot/reply.ts');
 const {
   buildRewriteEntry,
@@ -191,11 +191,39 @@ const normal = buildPrompt(makeDb(), { groupId: 'G1', name: 'PHASE0_GROUP' }, ev
   check(reviewPrompt.system.includes('事实质检员') && !reviewPrompt.system.includes('你是 pippi'), 'fixture analyze reviewer: no-persona fact checker unchanged');
   check(reviewPrompt.user.includes('<verified_facts>') && reviewPrompt.user.includes('<report>'), 'fixture analyze reviewer: input structure unchanged');
   check(OSU_ANALYSIS_MODEL === 'deepseek-v4-flash' && OSU_REVIEW_MODEL === 'deepseek-v4-flash', 'fixture analyze reviewer: model pins unchanged');
-  const source = fs.readFileSync(path.join(root, 'server', 'osu', 'commands.ts'), 'utf8');
-  check(source.includes('ENABLE_RUNTIME_LLM_FACT_REVIEW = true'), 'fixture analyze reviewer: review still mandatory flag');
+  // These two checks used to read commands.ts as raw text and assert that certain
+  // strings were still present. A source-text assertion can only ever fail when
+  // somebody edits the file — never when behaviour changes — and these two were
+  // pinning the legacy reviewer branch that the compiler has since proved
+  // unreachable (handleOsuRecent / runLegacyAnalysis / runAnalysis). They are now
+  // real calls against the behaviour that still matters.
+  const sectionKeys = ['profile', 'top', 'top5', 'mods', 'pplus', 'recent', 'classification'];
+  const reviewerAnalysis = {
+    safeSectionFallbacks: Object.fromEntries(sectionKeys.map((key) => [key, 'fallback:' + key])),
+    safePippiFallback: 'fallback:conclusion',
+  };
+  const llmComments = Object.fromEntries(sectionKeys.map((key) => [key, 'llm:' + key]));
+  const qualityOnly = applyReviewerHardFallbacks(
+    reviewerAnalysis, llmComments, 'llm:conclusion',
+    [{ section: 'profile', kind: 'quality', reason: 'style only' }],
+  );
+  check(
+    qualityOnly.downgradedSections.length === 0
+      && qualityOnly.conclusion === 'llm:conclusion'
+      && qualityOnly.comments?.profile === 'llm:profile',
+    'fixture quality dead branch: a quality verdict degrades nothing',
+  );
+  const hardReviewerReject = applyReviewerHardFallbacks(
+    reviewerAnalysis, llmComments, 'llm:conclusion',
+    [{ section: 'conclusion', kind: 'hard', reason: 'fact mismatch' }],
+  );
+  check(
+    hardReviewerReject.conclusionDowngraded && hardReviewerReject.conclusion === 'fallback:conclusion',
+    'fixture analyze reviewer: a hard reject degrades the conclusion deterministically',
+  );
   const qualityVerdicts = parseReviewerVerdicts(JSON.stringify({ verdicts: [{ section: 'profile', result: 'REJECT', kind: 'quality', reason: 'style only' }, { section: 'top', result: 'PASS' }, { section: 'top5', result: 'PASS' }, { section: 'mods', result: 'PASS' }, { section: 'pplus', result: 'PASS' }, { section: 'recent', result: 'PASS' }, { section: 'classification', result: 'PASS' }, { section: 'conclusion', result: 'PASS' }] }));
   check(qualityVerdicts && qualityVerdicts[0].kind === 'quality', 'fixture quality dead branch: parser still parses quality kind');
-  check(source.includes("v.kind !== 'quality'") && source.includes('applyReviewerHardFallbacks'), 'fixture quality dead branch: production only applies hard rejects');
+
 }
 
 // ── 4. Dedup regression ──

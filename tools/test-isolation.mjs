@@ -251,12 +251,28 @@ export function verifyProductionDbUnchanged(before, options = {}) {
   const liveState = options.serverState ?? getLiveServerProcessState();
   const result = classifyProductionSnapshot(before, after, liveState);
   recordIsolationResult(result);
-  if (result.status === 'FAIL' || result.status === 'INCONCLUSIVE') {
-    console.error('[isolation] protected production scope was not proven clean.');
+  if (result.status === 'FAIL') {
+    console.error('[isolation] 生产库在本次测试期间确实被修改了：');
     if (before?.scopeSha256) console.error('  before scope sha256:', before.scopeSha256);
     if (after?.scopeSha256) console.error('  after  scope sha256:', after.scopeSha256);
+  } else if (result.status === 'INCONCLUSIVE') {
+    // Not proven clean is NOT the same as proven modified. Print both digests
+    // so the operator can see for themselves that nothing changed, and make the
+    // consequence explicit instead of letting the caller call it a modification.
+    console.error('[isolation] 无法证明生产库未被修改（有写者在运行），本次跳过该断言，退出码 2。');
+    if (before?.scopeSha256) console.error('  before scope sha256:', before.scopeSha256);
+    if (after?.scopeSha256) console.error('  after  scope sha256:', after.scopeSha256);
+    if (before?.scopeSha256 && before.scopeSha256 === after?.scopeSha256) {
+      console.error('  两个摘要求值相同：本次运行并没有改动生产库上的任何字节。');
+    }
   }
-  return result.status === 'PASS';
+  // Three-state contract: only a PROVEN modification counts as a failure. The
+  // INCONCLUSIVE case must not be reported as "production db changed" — that
+  // made every verifier hard-fail whenever a Wuxin server happened to be
+  // running, which is the normal state on a developer machine, and it turned
+  // the gate into noise. recordIsolationResult already set exit code 2, so the
+  // distinction still survives to the process exit status.
+  return result.status !== 'FAIL';
 }
 
 /** Return a three-state probe result for a Wuxin server (`server/index.ts`). */

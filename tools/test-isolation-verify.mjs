@@ -9,8 +9,10 @@ import {
   cleanupTestDir,
   classifyProductionSnapshot,
   createTestDataDir,
+  getLastProductionIsolationResult,
   getLiveServerProcessState,
   productionDbSnapshot,
+  verifyProductionDbUnchanged,
 } from './test-isolation.mjs';
 
 let passed = 0;
@@ -100,6 +102,32 @@ try {
     classifyProductionSnapshot(null, unchanged, 'not-running').status === 'INCONCLUSIVE',
     'missing baseline never passes',
   );
+
+  // ── Contract: verifyProductionDbUnchanged must not collapse the three states ──
+  // Regression: it used to return `status === 'PASS'`, so every one of the ~15
+  // callers reported "production db changed" whenever a Wuxin server happened to
+  // be running — the normal state on a developer machine — even when the
+  // before/after digests were byte-identical. That turned the whole gate into
+  // noise. Only a PROVEN modification may be reported as a failure.
+  const inconclusive = verifyProductionDbUnchanged(before, {
+    after: unchanged, serverState: 'live', productionDir: syntheticProductionDir,
+  });
+  check(inconclusive === true, 'an unprovable isolation run is not reported as a modification');
+  check(
+    getLastProductionIsolationResult()?.status === 'INCONCLUSIVE',
+    'an unprovable isolation run keeps its own status for the caller',
+  );
+
+  const modified = verifyProductionDbUnchanged(before, {
+    after: changedShard, serverState: 'not-running', productionDir: syntheticProductionDir,
+  });
+  check(modified === false, 'a proven production modification is still a failure');
+  check(getLastProductionIsolationResult()?.status === 'FAIL', 'a proven modification reports FAIL');
+
+  const provenClean = verifyProductionDbUnchanged(before, {
+    after: unchanged, serverState: 'not-running', productionDir: syntheticProductionDir,
+  });
+  check(provenClean === true, 'a proven-clean run passes');
 
   const probe = getLiveServerProcessState();
   check(['live', 'not-running', 'unknown'].includes(probe.state), 'process probe returns a three-state result');
