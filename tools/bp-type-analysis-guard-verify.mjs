@@ -10,7 +10,7 @@ process.env.OSU_ORACLE_DISABLED = '1';
 assertNotProduction(testDataDir);
 
 const prodBefore = productionDbSnapshot();
-console.log('[isolation] production db snapshot: ' + (prodBefore ? prodBefore.sha256.slice(0, 12) + '...' : 'N/A'));
+console.log('[isolation] production db snapshot: ' + (prodBefore?.sha256 ? prodBefore.sha256.slice(0, 12) + '...' : 'N/A'));
 
 const { ensureStore, updateDb, readDb } = await import('../server/store.ts');
 const { processIncoming } = await import('../server/bot.ts');

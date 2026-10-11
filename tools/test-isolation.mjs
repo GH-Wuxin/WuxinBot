@@ -135,6 +135,7 @@ function snapshotError(root, error) {
   return {
     root,
     path: path.join(root, 'db.json'),
+    missing: false,
     error: error instanceof Error ? error.message : String(error),
     files: null,
     scopeSha256: null,
@@ -165,7 +166,23 @@ export function assertNotProduction(testDataDir) {
 
 export function productionDbSnapshot({ productionDir = PRODUCTION_DIR } = {}) {
   const root = path.resolve(productionDir);
-  if (!fs.existsSync(root)) return null;
+  if (!fs.existsSync(root)) {
+    // A fresh CI runner legitimately has no production data directory yet.
+    // Keep that state as a real, comparable snapshot instead of returning
+    // null, which would make every isolated verifier inconclusive.
+    const files = {};
+    return {
+      root,
+      path: path.join(root, 'db.json'),
+      size: null,
+      mtimeMs: null,
+      mtime: null,
+      sha256: null,
+      scopeSha256: scopeDigest(files),
+      files,
+      missing: true,
+    };
+  }
   try {
     const files = collectScopedEntries(root);
     const core = files['db.json'];
@@ -180,6 +197,7 @@ export function productionDbSnapshot({ productionDir = PRODUCTION_DIR } = {}) {
       sha256: core?.sha256 ?? null,
       scopeSha256: scopeDigest(files),
       files,
+      missing: false,
     };
   } catch (error) {
     return snapshotError(root, error);
@@ -202,7 +220,7 @@ export function classifyProductionSnapshot(before, after, liveState) {
     };
   }
 
-  const changed = before.scopeSha256 !== after.scopeSha256;
+  const changed = before.missing !== after.missing || before.scopeSha256 !== after.scopeSha256;
   const state = normalizeLiveState(liveState);
   if (state === 'live') {
     return {
@@ -225,6 +243,13 @@ export function classifyProductionSnapshot(before, after, liveState) {
       status: 'FAIL',
       reason: 'protected production scope changed during the test',
       changed: true,
+    };
+  }
+  if (before.missing && after.missing) {
+    return {
+      status: 'PASS',
+      reason: 'production root is absent and no writer is running',
+      changed: false,
     };
   }
   return { status: 'PASS', reason: 'protected production scope is unchanged', changed: false };

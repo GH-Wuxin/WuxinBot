@@ -86,10 +86,27 @@ function messageTimeLabel(message) {
   return new Date(message.createdAt).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' });
 }
 
+function stickerHistoryNotice(message) {
+  const sticker = message.sticker;
+  if (!sticker?.id) return '';
+  const statusLabels = {
+    reserved: '已预留',
+    dry_run: '仅调试未发送',
+    rejected: '未发送',
+    confirmed_success: '已确认发送',
+    accepted_unknown: '已接受但结果未知',
+    confirmed_failure: '发送失败',
+    unknown: '结果未知',
+  };
+  const semantic = [sticker.emotion, sticker.description].filter(Boolean).join('，');
+  const reason = sticker.reason ? `；原因：${sticker.reason}` : '';
+  return `（附带表情 ${sticker.id}${semantic ? `：${semantic}` : ''}；${statusLabels[sticker.outcome] || sticker.outcome}${reason}）`;
+}
+
 function groupHistoryLine(db, message) {
   const canSee = modelSupportsVision(db);
   const rawContent = canSee ? String(message.content || '') : stripMediaPlaceholders(message.content);
-  const content = rawContent.replace(/\r?\n/g, '\n  ');
+  const content = `${rawContent}${stickerHistoryNotice(message)}`.replace(/\r?\n/g, '\n  ');
   if (message.role === 'assistant') {
     const target = message.replyToUserId
       ? `，回复 ${message.replyToNickname || '群友'}（QQ:${message.replyToUserId}）`
@@ -115,7 +132,7 @@ function formatHistoryForModel(db, historyMessages, isGroup) {
   const canSee = modelSupportsVision(db);
   return historyMessages.map((message) => {
     const content = message.role === 'assistant'
-      ? message.content
+      ? `${message.content || ''}${stickerHistoryNotice(message)}`
       : `[${messageTimeLabel(message)}] ${message.nickname || message.userId || '群友'}（QQ:${message.userId || 'unknown'}）：${message.content}`;
     return {
       role: message.role === 'assistant' ? 'assistant' : 'user',
@@ -267,7 +284,9 @@ function limitMessagesByCharBudget(messages, budget) {
   let used = 0;
   for (let index = messages.length - 1; index >= 0; index -= 1) {
     const message = messages[index];
-    const cost = String(message.content || '').length + String(message.nickname || message.userId || '').length + 24;
+    const cost = String(message.content || '').length
+      + String(message.sticker?.description || '').length
+      + String(message.nickname || message.userId || '').length + 24;
     if (selected.length >= 6 && used + cost > maxChars) break;
     selected.unshift(message);
     used += cost;

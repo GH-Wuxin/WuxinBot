@@ -65,6 +65,27 @@ try {
     'unchanged scope passes with no running writer',
   );
 
+  const missingProductionDir = path.join(syntheticProductionDir, 'missing-production-root');
+  const missingBefore = productionDbSnapshot({ productionDir: missingProductionDir });
+  const missingAfter = productionDbSnapshot({ productionDir: missingProductionDir });
+  check(missingBefore?.missing === true, 'absent production root is represented explicitly');
+  check(
+    classifyProductionSnapshot(missingBefore, missingAfter, 'not-running').status === 'PASS',
+    'absent production root passes with no running writer',
+  );
+  fs.mkdirSync(missingProductionDir);
+  const createdProductionRoot = productionDbSnapshot({ productionDir: missingProductionDir });
+  check(
+    classifyProductionSnapshot(missingBefore, createdProductionRoot, 'not-running').status === 'FAIL',
+    'production root created during the test fails the inventory check',
+  );
+  fs.rmSync(missingProductionDir, { recursive: true, force: true });
+  const deletedProductionRoot = productionDbSnapshot({ productionDir: missingProductionDir });
+  check(
+    classifyProductionSnapshot(createdProductionRoot, deletedProductionRoot, 'not-running').status === 'FAIL',
+    'production root deleted during the test fails the inventory check',
+  );
+
   fs.writeFileSync(path.join(syntheticProductionDir, 'db-profiles.json'), '{"profiles":[1]}\n');
   const changedShard = productionDbSnapshot({ productionDir: syntheticProductionDir });
   check(

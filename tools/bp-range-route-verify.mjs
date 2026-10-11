@@ -16,7 +16,7 @@ process.env.PIPPI_AGENT_RUNTIME_MODE = 'legacy';
 assertNotProduction(testDataDir);
 
 const prodBefore = productionDbSnapshot();
-console.log('[isolation] production db snapshot: ' + (prodBefore ? prodBefore.sha256.slice(0, 12) + '...' : 'N/A'));
+console.log('[isolation] production db snapshot: ' + (prodBefore?.sha256 ? prodBefore.sha256.slice(0, 12) + '...' : 'N/A'));
 
 // Offline osu! API mock: the internal tool must succeed deterministically so
 // the E2E can observe query_osu tool_calls in the lead request.

@@ -88,7 +88,7 @@ export interface StickerDryRunResult {
 
 export interface StickerSelectionValidationResult {
   ok: boolean;
-  selected?: Pick<StickerPick, 'id' | 'name' | 'emotion' | 'risk' | 'path'>;
+  selected?: Pick<StickerPick, 'id' | 'name' | 'emotion' | 'risk' | 'path'> & { description: string };
   reason?: string;
   error?: string;
   validation?: ReturnType<typeof validateStickerCatalog>;
@@ -308,6 +308,7 @@ export function validateStickerSelection(input: {
       emotion: picked.emotion,
       risk: picked.risk,
       path: picked.path,
+      description: picked.entry.description,
     },
   };
 }

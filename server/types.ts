@@ -210,6 +210,23 @@ export interface MemorySample {
   };
 }
 
+export type StickerHistoryOutcome =
+  | 'reserved'
+  | 'dry_run'
+  | 'rejected'
+  | 'confirmed_success'
+  | 'accepted_unknown'
+  | 'confirmed_failure'
+  | 'unknown';
+
+export interface StickerHistory {
+  id: string;
+  emotion?: string;
+  description?: string;
+  outcome: StickerHistoryOutcome;
+  reason?: string;
+}
+
 export interface MessageRecord {
   id: string;
   requestId?: string;
@@ -224,6 +241,7 @@ export interface MessageRecord {
   nickname: string;
   content: string;
   media?: { images?: { type: 'image'; url?: string; file?: string }[] };
+  sticker?: StickerHistory;
   inContext: boolean;
   createdAt: string;
 }

@@ -26,6 +26,7 @@ assertNotProduction(dataDir);
 
 const {
   ensureStore,
+  readDb,
   updateDb,
 } = await import('../server/store.ts');
 const {
@@ -35,8 +36,12 @@ const {
   recordStickerDecisionInDb,
   reserveStickerDelivery,
 } = await import('../server/bot/stickers/delivery.ts?contract-verify');
+const { pickCodeSticker, pickSticker } = await import('../server/bot/stickers/index.ts?contract-verify');
 const { ensureStickerReplyFallback, stickerFailureFallback } = await import(
   '../server/bot/stickers/replyDelivery.ts?contract-verify'
+);
+const { parseStickerReply, resolveStickerReplyCapability } = await import(
+  '../server/bot/stickers/finalReply.ts?contract-verify'
 );
 const { sendOneBotMessage } = await import('../server/onebot.ts?sticker-contract-verify');
 
@@ -79,6 +84,23 @@ let server;
 let requestBody = null;
 try {
   const baseTime = 5_000_000;
+
+  const validEnvelope = JSON.stringify({ reply: '你好', mode: 'none', sticker_id: null });
+  assert.equal(parseStickerReply(`${validEnvelope}\n附注`).structured, true);
+  assert.equal(parseStickerReply(`${validEnvelope}\n附注`).reply, '你好');
+  assert.equal(parseStickerReply(`${validEnvelope.slice(0, -1)}`).reply, '你好');
+  assert.equal(parseStickerReply(`说明：${validEnvelope}`).reply, '你好');
+  assert.equal(resolveStickerReplyCapability({ eligible: true, deliveryMode: 'off' }).enabled, false);
+  assert.equal(resolveStickerReplyCapability({
+    eligible: true,
+    deliveryMode: 'live',
+    buildInstruction: () => { throw new Error('fixture catalogue failure'); },
+  }).reason, 'catalog_unavailable');
+
+  // Code-owned pools may opt into code-gated groups; the ordinary picker and
+  // model path must continue to reject the same group.
+  assert.equal(pickSticker('thinking', { rng: () => 0 }), null);
+  assert.equal(pickCodeSticker('thinking', { rng: () => 0 })?.id, 'thinking_01');
 
   // 1. A -> B -> A must still detect the first A inside the full duplicate
   // window. A latest-record-only implementation incorrectly allows this.
@@ -211,6 +233,30 @@ try {
   assert.equal(metricsAfterSend.recent24hByGroup['metrics-group'], 1);
   assert.equal(metricsAfterSend.recent24hBySticker.thanks, 1);
   assert.equal(metricsAfterSend.stickerOutcomes.thanks.confirmed_success, 1);
+
+  // The production tracked proxy stores assigned objects by value. A reject
+  // must therefore re-assign the normalized state after incrementing its
+  // counters; mutating the detached local object alone loses the accounting.
+  updateDb((db) => {
+    db.settings.stickerPolicy = basePolicy(['proxy-group'], {
+      groupCooldownSec: 60,
+      duplicateStickerCooldownSec: 0,
+    });
+    db.stickerDeliveryState = undefined;
+  });
+  const proxyAllowed = reserveStickerDelivery({
+    eventType: 'group', groupId: 'proxy-group', userId: 'proxy-user',
+    messageId: 'proxy-1', stickerId: 'hello',
+  }, { nowMs: baseTime });
+  const proxyRejected = reserveStickerDelivery({
+    eventType: 'group', groupId: 'proxy-group', userId: 'proxy-user',
+    messageId: 'proxy-2', stickerId: 'received',
+  }, { nowMs: baseTime + 1 });
+  const proxyState = readDb().stickerDeliveryState;
+  assert.equal(proxyAllowed.ok, true);
+  assert.equal(proxyRejected.reason, 'cooldown');
+  assert.equal(proxyState.counters.rejected.cooldown, 1);
+  assert.equal(proxyState.counters.selected, 2);
 
   // 4. The allowlisted reservation target and final OneBot target must be the
   // same. The source group is deliberately different from the target group.
