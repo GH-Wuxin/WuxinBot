@@ -31,7 +31,13 @@ const server = http.createServer((req, res) => {
         res.writeHead(503);
         return res.end(JSON.stringify({ error: 'TRANSIENT_FIXTURE_FAILURE' }));
       }
-      return res.end(JSON.stringify({ status: 'OK', beatmap: { beatmap_id: bid }, axes: Object.fromEntries(axes.map(axis => [axis, { stars: 4 }])), identity: { algorithm_id: 'BATCH_TEST', map_demand_version: 'test' } }));
+      return res.end(JSON.stringify({
+        status: 'OK',
+        schema_version: 'map_demand_bid_analysis_v0.1.0',
+        beatmap: { beatmap_id: bid },
+        axes: Object.fromEntries(axes.map(axis => [axis, { stars: 4 }])),
+        identity: { algorithm_id: 'BATCH_TEST', map_demand_version: 'test' },
+      }));
     }
     res.writeHead(404); res.end('{}');
   });

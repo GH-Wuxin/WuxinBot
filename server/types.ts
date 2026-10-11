@@ -42,6 +42,8 @@ export interface ReplyDecision {
 export interface DbSettings {
   globalPaused: boolean;
   onlyMentionMode: boolean;
+  replyGateNaturalThreshold?: number;
+  replyGateLightThreshold?: number;
   apiKey: string;
   apiBaseUrl: string;
   deepseekApiKey?: string;
@@ -78,6 +80,16 @@ export interface DbSettings {
   /** Optional per-module personality additions appended to the system prompt. */
   personaModulePrompts?: Record<string, string>;
   baselinePersonalityPrompt?: string;
+  stickerPolicy?: {
+    mode?: 'off' | 'dry-run' | 'live';
+    groupIds?: string[];
+    groupCooldownSec?: number;
+    userCooldownSec?: number;
+    hourlyLimit?: number;
+    dailyLimit?: number;
+    userDailyLimit?: number;
+    duplicateStickerCooldownSec?: number;
+  };
   oneBotHttpUrl: string;
   oneBotWsUrl: string;
   oneBotAccessToken: string;
@@ -92,9 +104,6 @@ export interface DbSettings {
   agentRuntimeMode?: 'legacy' | 'model_first';
   /** Phase 2 v1 master switch; env REASONING_ENABLED=false|0 is a hard veto. */
   reasoningEnabled: boolean;
-  llmReplyGateMaxPerHour?: number;
-  llmReplyGateNaturalThreshold?: number;
-  llmReplyGateLightThreshold?: number;
   ignoreSystemFacts: boolean;
   memoryEnabled: boolean;
   memoryMinMessages: number;

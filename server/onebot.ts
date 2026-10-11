@@ -317,7 +317,13 @@ async function sendOneBotMessageInner(event, text, options = {}) {
   }
 
   const endpoint = event.type === 'private' ? '/send_private_msg' : '/send_group_msg';
-  const replyToMessageId = String(options.replyToMessageId || '').trim();
+  const explicitReplyToMessageId = String(options.replyToMessageId || '').trim();
+  const automaticReplyToMessageId = options.suppressReply === true
+    ? ''
+    : event?.source === 'onebot' && event?.type === 'group' && event?.replyToCurrentMessage === true
+      ? String(event.messageId || '').trim()
+      : '';
+  const replyToMessageId = explicitReplyToMessageId || automaticReplyToMessageId;
   const shouldQuote = event.type === 'group' && replyToMessageId;
   const senderQq = String(event.userId || '').trim();
   const alreadyMentionsSender = senderQq && String(text || '').includes(`[CQ:at,qq=${senderQq}]`);

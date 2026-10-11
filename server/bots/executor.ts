@@ -19,6 +19,9 @@ import {
   osuCapabilityForToolCall,
 } from './agentToolContracts.js';
 import { markLatencySpan } from '../perf/latencyTrace.js';
+import { stickerPath } from '../bot/stickers/index.js';
+import { runStickerDryRun } from '../bot/stickers/debug.js';
+import { withStickerReplyInstruction } from '../bot/stickers/finalReply.js';
 import { traceEvent } from '../requestTrace.js';
 import { lookupSkill, lookupSkillByQQ } from './skills.js';
 import { getRenderServer } from './renderServer.js';
@@ -203,6 +206,40 @@ function finishPendingBotCall(entry: PendingBotCall, timeoutWithoutContent = fal
 function schedulePendingSettlement(entry: PendingBotCall, delayMs: number): void {
   if (entry.settleTimer) clearTimeout(entry.settleTimer);
   entry.settleTimer = setTimeout(() => finishPendingBotCall(entry), delayMs);
+}
+
+// ── 工具失败 → 状态图 ──
+
+/**
+ * 把工具失败分类到对应的状态图。
+ *
+ * 为什么集中在这里：osu 层有 20+ 个抛错点（超时 / 5xx / 429 / 404 / 空数据 / 凭据缺失），
+ * 在每个 throw 处各挂一次既散又容易漏。错误串本来就是用户可见文案的来源，在这里一处分类即可全覆盖。
+ *
+ * 配置缺失刻意返回 null（不发图）：那不是「服务挂了」，等不回来，要的是运维动作；
+ * 发 service_down 会让用户以为等等就好。
+ */
+export function failureStickerFor(message: unknown): string | null {
+  const m = String((message as any)?.message || message || '');
+  if (/未配置|未设置|请在环境变量/.test(m)) return null;
+  if (/资源不存在|不存在|没有可用|score_not_found|not_found/i.test(m)) return 'no_data';
+  // 上游状态码有两种写法：osu 层是「osu! API 500 /path」，PP+ 是「认证 HTTP 500」。
+  // 不写成裸的 /[45]\d\d/ —— 错误串里常带 pp 值、用户 ID 之类的数字，会误判。
+  if (/超时|timeout|网络|请求失败|(?:API|HTTP)\s*[45]\d\d|\b429\b|不可用|认证失败|failed/i.test(m)) return 'service_down';
+  return null;
+}
+
+/**
+ * 给失败的 ToolResult 挂上状态图（走 deliverOnlyImages：只下发，不进会话媒体）。
+ *
+ * 注意这是**代码通路** —— 图不依赖 LLM，所以 LLM 挂掉时「服务挂了」这张照样发得出去。
+ * 取不到图时原样返回，不影响失败结果本身。
+ */
+function withFailureSticker<T extends Record<string, unknown>>(result: T, message: unknown): T {
+  const id = failureStickerFor(message);
+  if (!id) return result;
+  const file = stickerPath(id);
+  return file ? ({ ...result, deliverOnlyImages: [file] } as T) : result;
 }
 
 // ── Register a pending call ──
@@ -590,6 +627,58 @@ async function executeToolCallInner(
   // ── Execute ──
 
   switch (toolName) {
+    case 'send_sticker': {
+      const stickerId = String(args.sticker_id || '').trim();
+      try {
+        const dryRun = runStickerDryRun({
+          stickerId,
+          groupId: context.groupId,
+          userId,
+          messageId: context.event?.messageId,
+          verifyHashes: false,
+        });
+        const metadata = {
+          requestId: toolCall.id,
+          actualExecutor: 'sticker_debug_dry_run',
+          stickerId,
+          stickerDebugTraceId: dryRun.trace.id,
+          sendSkipped: true,
+          success: dryRun.ok,
+          args: { sticker_id: stickerId },
+          ...(dryRun.selected ? { selected: dryRun.selected } : {}),
+        };
+        if (!dryRun.ok) {
+          return {
+            toolCallId: toolCall.id,
+            ok: false,
+            content: `表情选择未通过 dry-run：${dryRun.error || '未知原因'}。本次没有发送图片。`,
+            error: 'sticker_selection_rejected',
+            metadata,
+          };
+        }
+        return {
+          toolCallId: toolCall.id,
+          ok: true,
+          content: `表情选择已通过 dry-run：${dryRun.selected?.name || dryRun.selected?.id || stickerId}。本次只记录选择结果，没有发送图片。`,
+          metadata,
+        };
+      } catch (error) {
+        return {
+          toolCallId: toolCall.id,
+          ok: false,
+          content: '表情选择 dry-run 无法完成，本次没有发送图片。',
+          error: `sticker_dry_run_failed: ${String((error as Error)?.message || error).slice(0, 300)}`,
+          metadata: {
+            requestId: toolCall.id,
+            actualExecutor: 'sticker_debug_dry_run',
+            stickerId,
+            sendSkipped: true,
+            success: false,
+          },
+        };
+      }
+    }
+
     case 'list_bots': {
       const registry = loadRegistry(db);
       const bots = enabledBots(registry);
@@ -673,12 +762,13 @@ async function executeToolCallInner(
       try {
         user = await loadInternalOsuUser(target);
       } catch (error) {
-        return {
+        const msg = String((error as Error)?.message || error);
+        return withFailureSticker({
           toolCallId: toolCall.id,
           ok: false,
-          content: `找不到 osu! 用户 "${player}"：${String((error as Error)?.message || error)}`,
-          error: String((error as Error)?.message || error)
-        };
+          content: `找不到 osu! 用户 "${player}"：${msg}`,
+          error: msg
+        }, msg);
       }
 
       const { getUserRecentScores } = await import('../osu/api.js');
@@ -686,20 +776,22 @@ async function executeToolCallInner(
       try {
         rawScores = await getUserRecentScores(user.id, 'osu', 3);
       } catch (error) {
-        return {
+        const msg = String((error as Error)?.message || error);
+        return withFailureSticker({
           toolCallId: toolCall.id,
           ok: false,
-          content: `查询 ${user.username} 最近成绩失败：${String((error as Error)?.message || error)}`,
-          error: String((error as Error)?.message || error)
-        };
+          content: `查询 ${user.username} 最近成绩失败：${msg}`,
+          error: msg
+        }, msg);
       }
 
       if (!Array.isArray(rawScores) || rawScores.length === 0) {
-        return {
+        // 查询成功但没记录 —— 属于「查无数据」，不是服务故障。
+        return withFailureSticker({
           toolCallId: toolCall.id,
           ok: true,
           content: `${user.username} 的实时 recent 查询：osu! API 未返回记录（可能最近没有提交成绩，或新成绩尚未同步）。这仅代表没有近期记录，不代表账号从未打过图；技能快照请用 get_player_skill。`
-        };
+        }, '没有可用的记录');
       }
 
       const enriched = (await enrichScoreStarRatings(rawScores, 'osu')).scores;
@@ -748,12 +840,13 @@ async function executeToolCallInner(
             },
           };
         } catch (err) {
-          return {
+          const msg = String((err as Error)?.message || err);
+          return withFailureSticker({
             toolCallId: toolCall.id,
             ok: false,
-            content: `${capability} 查询失败: ${String((err as Error)?.message || err)}`,
-            error: String((err as Error)?.message || err),
-          };
+            content: `${capability} 查询失败: ${msg}`,
+            error: msg,
+          }, msg);
         }
       }
 
@@ -814,10 +907,10 @@ async function executeToolCallInner(
             }
           }
         }
-        const result: { content: string; images: string[]; final?: boolean } =
+        const result: { content: string; images: string[]; final?: boolean; deliverOnlyImages?: string[] } =
           typeof rawResult === 'string'
             ? { content: rawResult, images: [] as string[] }
-            : { content: rawResult.content, images: rawResult.images || [], final: rawResult.final };
+            : { content: rawResult.content, images: rawResult.images || [], final: rawResult.final, deliverOnlyImages: rawResult.deliverOnlyImages || [] };
         if (result.final) {
           return {
             toolCallId: toolCall.id,
@@ -840,6 +933,7 @@ async function executeToolCallInner(
           ok: true,
           content: `Wuxin 内部 osu! 查询（capability=${capability}，数据来源：osu! API v2 / PP+ / skill store）：\n${result.content}`,
           images: result.images,
+          deliverOnlyImages: result.deliverOnlyImages,
           directContent: directContentForBotResult(
             { name: capability, trigger: '', description: '', params: [], returns: result.images.length > 0 ? 'image' : 'text' },
             result.content,
@@ -2302,6 +2396,10 @@ export interface ToolLoopOptions {
   deduplicateToolCalls?: boolean;
   /** Return typed evidence envelopes to the model instead of prose blobs. */
   structuredToolResults?: boolean;
+  /** Optional response envelope requested only for the final synthesis call. */
+  finalResponseFormat?: Record<string, unknown>;
+  /** Instruction paired with finalResponseFormat; never sent to planner turns. */
+  finalResponseInstruction?: string;
   /** Shadow reasoning: per-turn id + router. Recording only; never applied. */
   turnId?: string;
   reasoningRouter?: ReasoningShadowSink;
@@ -2324,6 +2422,8 @@ export interface ToolLoopResult {
   recommendToolCalled: boolean;
   /** Image references/CQ codes are kept out of LLM messages and returned to the caller. */
   images: string[];
+  /** Images delivered to QQ only; never persisted as conversation media. */
+  deliverOnlyImages?: string[];
   /** Structured text that the caller must append verbatim after the short LLM lead. */
   directContent: string;
   /** A2 accounting: calls not executed because a hard cap was reached. */
@@ -2344,6 +2444,7 @@ export function mergeToolLoopResults(previous: ToolLoopResult, next: ToolLoopRes
     ...next,
     usage: mergeLlmUsage(previous.usage, next.usage),
     images: [...new Set([...(previous.images || []), ...(next.images || [])])],
+    deliverOnlyImages: [...new Set([...(previous.deliverOnlyImages || []), ...(next.deliverOnlyImages || [])])],
     directContent: [...new Set([previous.directContent, next.directContent].filter(Boolean))].join('\n\n'),
     toolCallsMade: previous.toolCallsMade + next.toolCallsMade,
     iterations: previous.iterations + next.iterations,
@@ -2457,7 +2558,9 @@ export async function runToolLoop(
     maxIterations = 5, temperature, maxTokens, model, label,
     requiredTool, evidenceRequirement, deliverDirectContent = false,
     continueAfterDirectPayload = false, deduplicateToolCalls = false,
-    structuredToolResults = false
+    structuredToolResults = false,
+    finalResponseFormat,
+    finalResponseInstruction,
   } = options;
   const executeToolCallFn = options.executeToolCallFn || executeToolCall;
   const executeTracedToolCall = async (toolCall: any, toolContext: any) => {
@@ -2516,8 +2619,18 @@ export async function runToolLoop(
   let hardCapReached = false;
   let evidenceRequirementSatisfied = false;
   const collectedImages: string[] = [];
+  const collectedDeliverOnlyImages: string[] = [];
   const collectedDirectContent: string[] = [];
   const successfulToolCallSignatures = new Set<string>();
+
+  const collectDeliverOnlyImages = (result: ToolResult | undefined): void => {
+    for (const image of result?.deliverOnlyImages || []) {
+      const imageRef = String(image || '').trim();
+      if (imageRef && !collectedDeliverOnlyImages.includes(imageRef)) {
+        collectedDeliverOnlyImages.push(imageRef);
+      }
+    }
+  };
 
   const mergeEvidenceFallback = async (): Promise<ToolLoopResult> => {
     const fallback = await runToolLoop(completeChatFn, {
@@ -2536,6 +2649,10 @@ export async function runToolLoop(
     if (fallback.directContent && !combinedDirect.includes(fallback.directContent)) {
       combinedDirect.push(fallback.directContent);
     }
+    const combinedDeliverOnlyImages = [...collectedDeliverOnlyImages];
+    for (const image of fallback.deliverOnlyImages || []) {
+      if (image && !combinedDeliverOnlyImages.includes(image)) combinedDeliverOnlyImages.push(image);
+    }
     return {
       ...fallback,
       usage: mergeLlmUsage(totalUsage, fallback.usage),
@@ -2543,6 +2660,7 @@ export async function runToolLoop(
       iterations: iterations + fallback.iterations,
       recommendToolCalled: recommendToolCalled || fallback.recommendToolCalled,
       images: combinedImages,
+      deliverOnlyImages: combinedDeliverOnlyImages,
       directContent: combinedDirect.filter(Boolean).join('\n\n'),
       toolCallsSkippedByCap: toolCallsSkippedByCap + (fallback.toolCallsSkippedByCap || 0),
       hardCapReached: hardCapReached || Boolean(fallback.hardCapReached),
@@ -2632,6 +2750,7 @@ export async function runToolLoop(
         iterations: 0,
         recommendToolCalled: false,
         images: [],
+        deliverOnlyImages: [],
         directContent: '',
         toolCallsSkippedByCap: 1,
         hardCapReached: true,
@@ -2655,6 +2774,7 @@ export async function runToolLoop(
     const result = await executeTracedToolCall(syntheticCall, {
       db, userId, groupId, sendMessage, event, selfQq
     });
+    collectDeliverOnlyImages(result);
     if (
       result.ok &&
       requiredTool.toolName === 'query_osu' &&
@@ -2681,6 +2801,7 @@ export async function runToolLoop(
           iterations: 1,
           recommendToolCalled,
           images: [],
+          deliverOnlyImages: collectedDeliverOnlyImages,
           directContent: '',
           toolCallsSkippedByCap: 0,
           hardCapReached: false,
@@ -2695,6 +2816,7 @@ export async function runToolLoop(
         iterations: 1,
         recommendToolCalled,
         images: [],
+        deliverOnlyImages: collectedDeliverOnlyImages,
         directContent: sanitizeDirectDeliveryContent(result.directContent || result.content),
         toolCallsSkippedByCap: 0,
         hardCapReached: false,
@@ -2713,6 +2835,7 @@ export async function runToolLoop(
         iterations: 1,
         recommendToolCalled,
         images: [],
+        deliverOnlyImages: collectedDeliverOnlyImages,
         directContent: '',
         toolCallsSkippedByCap: 0,
         hardCapReached: false,
@@ -2730,6 +2853,7 @@ export async function runToolLoop(
         iterations: 1,
         recommendToolCalled,
         images: [],
+        deliverOnlyImages: collectedDeliverOnlyImages,
         directContent: '',
         toolCallsSkippedByCap: 0,
         hardCapReached: false,
@@ -2751,6 +2875,7 @@ export async function runToolLoop(
         iterations: 1,
         recommendToolCalled,
         images: [],
+        deliverOnlyImages: collectedDeliverOnlyImages,
         directContent: '',
         toolCallsSkippedByCap: 0,
         hardCapReached: false,
@@ -2856,6 +2981,7 @@ export async function runToolLoop(
         iterations,
         recommendToolCalled,
         images: collectedImages,
+        deliverOnlyImages: collectedDeliverOnlyImages,
         directContent: collectedDirectContent.join('\n\n'),
         toolCallsSkippedByCap: 0,
         hardCapReached: false,
@@ -2907,6 +3033,7 @@ export async function runToolLoop(
       iterations,
       recommendToolCalled,
       images: collectedImages,
+      deliverOnlyImages: collectedDeliverOnlyImages,
       directContent: collectedDirectContent.join('\n\n'),
       toolCallsSkippedByCap: 0,
       hardCapReached: false,
@@ -2941,10 +3068,17 @@ export async function runToolLoop(
     const plannerDecision = decideCall(plannerInput.callRole, plannerInput);
     const plannerWire = wireForLevel(plannerDecision.level);
     const thinkingOn = plannerWire.thinking?.type === 'enabled';
+    // A model may finish immediately after a tool result, before the bounded
+    // final-synthesis fallback. Give that finishing path the same envelope
+    // contract without adding another model request. Tool calls still take
+    // precedence when the model decides more evidence is needed.
+    const plannerMessages = finalResponseInstruction
+      ? withStickerReplyInstruction(currentMessages, `${finalResponseInstruction}\n如果仍需要工具，先使用结构化 tool_calls；只有决定结束本轮时才输出上面的 JSON。`)
+      : currentMessages;
     let response;
     try {
       response = await completeChatFn(db, {
-        messages: currentMessages,
+        messages: plannerMessages,
         // A direct payload is already the requested product. The next model
         // turn is only a cosmetic lead, so tools must be disabled or some
         // providers will issue the same query_bot call again.
@@ -2978,6 +3112,7 @@ export async function runToolLoop(
           iterations,
           recommendToolCalled,
           images: collectedImages,
+          deliverOnlyImages: collectedDeliverOnlyImages,
           directContent: collectedDirectContent.join('\n\n'),
           toolCallsSkippedByCap,
           hardCapReached,
@@ -3011,6 +3146,7 @@ export async function runToolLoop(
         iterations,
         recommendToolCalled,
         images: collectedImages,
+        deliverOnlyImages: collectedDeliverOnlyImages,
         directContent: collectedDirectContent.join('\n\n'),
         toolCallsSkippedByCap,
         hardCapReached,
@@ -3067,6 +3203,7 @@ export async function runToolLoop(
         iterations,
         recommendToolCalled,
         images: collectedImages,
+        deliverOnlyImages: collectedDeliverOnlyImages,
         directContent: collectedDirectContent.join('\n\n'),
         toolCallsSkippedByCap,
         hardCapReached,
@@ -3144,6 +3281,7 @@ export async function runToolLoop(
       const result = await executeTracedToolCall(tc, {
         db, userId, groupId, sendMessage, event, selfQq
       });
+      collectDeliverOnlyImages(result);
       // Accounting is tied to the executor boundary, not to whether its
       // returned content is safe enough to expose to the LLM. Reaching this
       // line means one tool call actually executed and settled with a result.
@@ -3173,6 +3311,7 @@ export async function runToolLoop(
           iterations,
           recommendToolCalled,
           images: collectedImages,
+          deliverOnlyImages: collectedDeliverOnlyImages,
           directContent: [...collectedDirectContent, finalDirect].filter(Boolean).join('\n\n'),
           toolCallsSkippedByCap,
           hardCapReached,
@@ -3286,6 +3425,9 @@ export async function runToolLoop(
   } else {
     finalPrompt = '请基于以上工具调用结果给出 pippi 的自然评价，不要再调用工具。';
   }
+  if (finalResponseInstruction) {
+    finalPrompt += `\n\n${finalResponseInstruction}`;
+  }
   currentMessages.push({
     role: 'user',
     content: finalPrompt
@@ -3311,6 +3453,7 @@ export async function runToolLoop(
       temperature,
       maxTokens,
       model,
+      ...(finalResponseFormat ? { responseFormat: finalResponseFormat } : {}),
       label: label ? `${label} [最终回答]` : undefined,
       traceRole: 'tool_synthesis',
       tracePurpose: 'tool_result_synthesis',
@@ -3324,6 +3467,7 @@ export async function runToolLoop(
         iterations,
         recommendToolCalled,
         images: collectedImages,
+        deliverOnlyImages: collectedDeliverOnlyImages,
         directContent: collectedDirectContent.join('\n\n'),
         toolCallsSkippedByCap,
         hardCapReached,
@@ -3347,6 +3491,7 @@ export async function runToolLoop(
     iterations,
     recommendToolCalled,
     images: collectedImages,
+    deliverOnlyImages: collectedDeliverOnlyImages,
     directContent: collectedDirectContent.join('\n\n'),
     toolCallsSkippedByCap,
     hardCapReached,

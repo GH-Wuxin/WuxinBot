@@ -1,19 +1,15 @@
-// Conversation context helpers + LLM reply gate. Type-checked module.
-import { readDb, updateDb, nowIso } from '../store.js';
-import { applyUsageTotals, usageEventFields } from '../usage.js';
+// Conversation context and message-participation helpers. Type-checked module.
+import { readDb } from '../store.js';
 import {
   mentionsBot,
   asksToInspectVisual,
   looksLikeVisualFollowup,
+  isQuestion,
   textWithoutControlPlaceholders,
 } from './cleaning.js';
 import {
-  completeChat
-} from './llm.js';
-import {
   modelSupportsVision,
 } from './prompt.js';
-import { activeModelName, activateModelProfile } from '../modelConfig.js';
 
 export function looksLikeExternalBotSender(
   event,
@@ -153,11 +149,14 @@ export function limitMessagesByCharBudget(messages, budget) {
 
 export function countRecentReplies(db, groupId, minutes) {
   const since = Date.now() - minutes * 60 * 1000;
-  return db.messages.filter(
-    (message) =>
-      String(message.groupId) === String(groupId) &&
-      message.role === 'assistant' &&
-      new Date(message.createdAt).getTime() >= since
+  // Count reply decisions rather than only successful assistant messages.
+  // A downstream OneBot failure must still consume the participation budget;
+  // otherwise every following message looks like the bot never replied and
+  // can start another model turn.
+  return (db.decisions || []).filter((decision) =>
+    String(decision.groupId) === String(groupId) &&
+    decision.shouldReply === true &&
+    new Date(decision.createdAt).getTime() >= since
   ).length;
 }
 
@@ -172,10 +171,65 @@ export function countRecentUserMessages(db, groupId, minutes) {
 }
 
 export function lastAssistantAt(db, groupId) {
-  const last = [...db.messages]
+  const lastAssistant = [...db.messages]
     .reverse()
     .find((message) => String(message.groupId) === String(groupId) && message.role === 'assistant');
-  return last ? new Date(last.createdAt).getTime() : 0;
+  const lastAttempt = [...(db.decisions || [])]
+    .reverse()
+    .find((decision) => String(decision.groupId) === String(groupId) && decision.shouldReply === true);
+  return Math.max(
+    lastAssistant ? new Date(lastAssistant.createdAt).getTime() : 0,
+    lastAttempt ? new Date(lastAttempt.createdAt).getTime() : 0,
+  );
+}
+
+/**
+ * Cheap, deterministic participation scoring for natural/light groups.
+ *
+ * This is deliberately not a second model call. The main reply model remains
+ * the only LLM turn for an accepted message; this score only decides whether
+ * an ordinary unmentioned message is worth admitting to that turn.
+ */
+export function scoreReplyParticipation(
+  db,
+  groupId,
+  text,
+  { userPolicy = {} }: { userPolicy?: { policy?: string } } = {},
+) {
+  const clean = textWithoutControlPlaceholders(String(text || '')).trim();
+  const characterCount = [...clean].length;
+  if (!clean || /^[/!]/.test(clean)) {
+    return { score: 0, characterCount, recentUserMessages5m: 0, recentBotReplies10m: 0, busy: false };
+  }
+
+  const recentUserMessages5m = countRecentUserMessages(db, groupId, 5);
+  const recentBotReplies10m = countRecentReplies(db, groupId, 10);
+  const busy = recentUserMessages5m >= 10;
+  let score = Math.min(45, characterCount * 3);
+
+  // A little structure is stronger evidence than raw length, but none of
+  // these signals selects a sticker or interprets a particular keyword.
+  if (characterCount >= 6) score += 5;
+  if (characterCount >= 18) score += 5;
+  if (isQuestion(clean)) score += 30;
+  if (/[!?！？]/.test(clean)) score += 5;
+  if (/[。；;\n]/.test(clean)) score += 5;
+
+  if (userPolicy?.policy === 'trusted' || userPolicy?.policy === 'priority'
+    || userPolicy?.policy === 'admin' || userPolicy?.policy === 'owner') {
+    score += 10;
+  }
+  if (busy) score -= 20;
+  if (recentBotReplies10m >= 3) score -= 15;
+  else if (recentBotReplies10m >= 1) score -= 5;
+
+  return {
+    score: Math.max(0, Math.min(100, score)),
+    characterCount,
+    recentUserMessages5m,
+    recentBotReplies10m,
+    busy,
+  };
 }
 
 export function lastAssistantMessage(db, groupId) {
@@ -235,188 +289,3 @@ export function shouldUseRecentVisionImage(db, event) {
   const botConversation = recentBotConversation(db, event.groupId, 180);
   return mentioned || botConversation.active;
 }
-
-export function recentLlmGateCalls(db, groupId, minutes = 60) {
-  const since = Date.now() - minutes * 60_000;
-  return (db.usageEvents || []).filter((event) =>
-    event.kind === 'reply-gate' &&
-    String(event.groupId || '') === String(groupId || '') &&
-    new Date(event.createdAt || 0).getTime() >= since
-  ).length;
-}
-
-interface GateUsageRecord {
-  groupId: any;
-  userId: any;
-  result?: any;
-  error?: any;
-  verdict?: any;
-  threshold?: any;
-}
-
-export function recordLlmGateUsage({ groupId, userId, result, error, verdict, threshold }: GateUsageRecord) {
-  updateDb((draft) => {
-    draft.usageEvents ||= [];
-    const usage = result?.usage || {};
-    if (result) {
-      applyUsageTotals(draft.usage, usage);
-      if (!usage?.accounted) draft.usage.requests += 1;
-    } else {
-      draft.usage.errors += 1;
-    }
-    draft.usageEvents.push({
-      id: crypto.randomUUID(),
-      kind: 'reply-gate',
-      groupId,
-      userId,
-      model: result?.model || activeModelName(draft.settings),
-      provider: result?.provider || draft.settings.llmProvider,
-      ...usageEventFields(usage),
-      latencyMs: result?.latencyMs || 0,
-      gateScore: verdict?.score,
-      gateReason: verdict?.reason || '',
-      gateThreshold: threshold,
-      gateDecision: Number.isFinite(verdict?.score) ? (verdict.score >= threshold ? 'reply' : 'silent') : 'invalid',
-      gateRaw: verdict?.raw || '',
-      error: error ? String(error).slice(0, 180) : '',
-      createdAt: nowIso()
-    });
-    draft.usageEvents = draft.usageEvents.slice(-5000);
-  });
-}
-
-export function cleanGateMessage(value, marksOtherMention = false) {
-  const raw = String(value || '');
-  const hasAt = /\[CQ:at,qq=[^\]]+\]/i.test(raw);
-  const cleaned = textWithoutControlPlaceholders(raw)
-    .replace(/\[CQ:(?:markdown|json|xml|forward)[^\]]*\]/gi, ' ')
-    .replace(/\[CQ:[^\]]+\]/g, ' ')
-    .replace(/\s+/g, ' ')
-    .trim();
-  if (!cleaned) return '';
-  return marksOtherMention && hasAt ? `（这条消息提及了其他群友）${cleaned}` : cleaned;
-}
-
-export function parseGateVerdict(value) {
-  const raw = String(value || '').trim().slice(0, 240);
-  const unfenced = raw.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '').trim();
-  try {
-    const match = unfenced.match(/\{[\s\S]*\}/);
-    if (match) {
-      const parsed = JSON.parse(match[0]);
-      const score = Math.max(0, Math.min(100, Number(parsed.score)));
-      if (Number.isFinite(score)) {
-        return { score, reason: String(parsed.reason || '模型未说明理由').slice(0, 40), raw };
-      }
-    }
-  } catch { /* fall through to tolerant parsing */ }
-  const lineScore = unfenced.match(/SCORE\s*=\s*(\d{1,3})/i);
-  if (lineScore) {
-    const lineReason = unfenced.match(/REASON\s*=\s*([^\r\n]+)/i);
-    return {
-      score: Math.max(0, Math.min(100, Number(lineScore[1]))),
-      reason: String(lineReason?.[1] || '模型未说明理由').slice(0, 40),
-      raw
-    };
-  }
-  const scoreMatch = unfenced.match(/(?:score|分数|意愿)\D{0,8}(\d{1,3})/i);
-  if (scoreMatch) {
-    return { score: Math.max(0, Math.min(100, Number(scoreMatch[1]))), reason: '从非标准输出提取分数', raw };
-  }
-  if (/^不回/.test(unfenced)) return { score: 0, reason: '模型明确选择不回复', raw };
-  if (/^回/.test(unfenced)) return { score: 100, reason: '模型明确选择回复', raw };
-  return { score: null, reason: '模型没有给出可识别分数', raw };
-}
-
-// LLM reply gate: replaces Math.random() dice in light/natural modes. Calls
-// are metered like normal completions and may be capped per group per hour.
-export async function llmReplyGate(db, groupId, text, { mode, question, chatIsBusy, recentBotReplies10m, userPolicy, userId }) {
-  const hourlyLimit = Math.max(0, Number(db.settings.llmReplyGateMaxPerHour || 0));
-  if (hourlyLimit > 0 && recentLlmGateCalls(db, groupId) >= hourlyLimit) {
-    return { shouldReply: false, reason: `LLM 门控已达到每小时 ${hourlyLimit} 次上限` };
-  }
-  const recentMessages = (db.messages || [])
-    .filter(m => String(m.groupId) === String(groupId) && m.role === 'user')
-    .slice(-8)
-    .map((message) => ({ ...message, gateText: cleanGateMessage(message.content) }))
-    .filter((message) => message.gateText)
-    .slice(-5);
-
-  const contextLines = recentMessages.map(m =>
-    `${m.nickname || m.userId}: ${m.gateText.slice(0, 120)}`
-  ).join('\n');
-  const latestText = cleanGateMessage(text, true) || '（无有效文字）';
-  const threshold = mode === 'light'
-    ? Math.max(0, Math.min(100, Number(db.settings.llmReplyGateLightThreshold ?? 70)))
-    : Math.max(0, Math.min(100, Number(db.settings.llmReplyGateNaturalThreshold ?? 45)));
-
-  const senderNote = userPolicy?.policy === 'trusted' ? '\n发消息的人是群里的信任成员。' :
-    userPolicy?.policy === 'priority' ? '\n发消息的人是重点关注对象。' : '';
-
-  const busyNote = chatIsBusy ? '\n注意：当前群聊很活跃，请慎重接话。' : '';
-  const fatigueNote = recentBotReplies10m >= 3 ? '\n你近期已经说了不少话，不要每条都接。' : '';
-  const questionNote = question ? '\n这条消息看起来是个问题。' : '';
-
-  const prompt = [
-    '你是QQ群里的一名普通群友。请判断是否值得主动接上最新一句话。机器人已经通过硬性安全和频率检查，现在只需要判断聊天价值。',
-    '',
-    `当前参与模式：${mode === 'light' ? '轻度参与（更克制）' : '自然群友（可以主动参与）'}`,
-    `系统会在分数达到 ${threshold} 时回复。请诚实评分，不要为了“谨慎”习惯性给低分。`,
-    '',
-    '评分参考：',
-    '- 85-100：明确向大家提问、邀请回应、需要安慰或非常适合接梗',
-    '- 60-84：有清晰话题、观点、经历或玩笑，你能自然贡献一句',
-    '- 40-59：普通闲聊但仍有可接内容；自然群友模式下可以参与',
-    '- 20-39：明显主要说给另一位群友、片段信息、接话价值较低',
-    '- 0-19：纯指令、机器内容、无意义灌水、话题已结束',
-    '- 没有 @ 机器人不是扣分理由；主动接话本来就是本次判断的目的',
-    '- 提及其他群友只说明主要对象可能不是你，不代表绝对不能参与；结合内容判断',
-    '',
-    '最近聊天记录：',
-    contextLines || '（没有更多上下文）',
-    '',
-    `最新消息：${latestText}`,
-    senderNote,
-    busyNote,
-    fatigueNote,
-    questionNote,
-    '',
-    '必须先输出分数，严格使用两行纯文本，不要 Markdown：',
-    'SCORE=0到100的整数',
-    'REASON=不超过20个字的理由'
-  ].join('\n');
-
-  // Resolve effective settings to check whether an API key is configured before
-  // even attempting the call. Without this, every gate attempt would fail
-  // silently with the user seeing only "LLM 门控调用失败" in decision logs.
-  const resolvedSettings = activateModelProfile(db.settings, activeModelName(db.settings));
-  const usesCodexAccount = String(resolvedSettings.llmProvider || '') === 'codex-app-server';
-  const hasApiKey = String(resolvedSettings.apiKey || db.settings.apiKey || '').trim().length > 0;
-  if (!usesCodexAccount && !hasApiKey) {
-    return { shouldReply: false, reason: 'LLM 门控跳过（API Key 未配置）' };
-  }
-
-  try {
-    const result = await completeChat(db, {
-      messages: [{ role: 'user', content: prompt }],
-      // Reasoning models may spend the first part of max_tokens internally and
-      // otherwise return empty content. Keep enough room for a visible score.
-      maxTokens: 512,
-      temperature: 0.2,
-      timeoutMs: 15_000,
-      label: 'LLM门控'
-    });
-    const verdict = parseGateVerdict(result.text);
-    recordLlmGateUsage({ groupId, userId, result, verdict, threshold });
-    if (!Number.isFinite(verdict.score)) {
-      return { shouldReply: false, reason: `LLM 门控输出无效：${verdict.reason}` };
-    }
-    const reason = `LLM 门控 ${verdict.score}/${threshold}：${verdict.reason}`;
-    return { shouldReply: verdict.score >= threshold, reason };
-  } catch (error) {
-    const detail = String(error?.message || error?.code || error).slice(0, 100);
-    recordLlmGateUsage({ groupId, userId, error: detail, threshold });
-    return { shouldReply: false, reason: `LLM 门控失败：${detail}` };
-  }
-}
-

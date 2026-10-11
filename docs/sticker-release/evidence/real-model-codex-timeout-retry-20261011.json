@@ -1,0 +1,48 @@
+{
+  "ok": true,
+  "provider": "codex-app-server",
+  "model": "gpt-6-luna",
+  "startedAt": "2026-10-10T17:56:22.205Z",
+  "finishedAt": "2026-10-10T17:56:50.084Z",
+  "scenarioCount": 2,
+  "concurrency": 1,
+  "timeoutMs": 45000,
+  "catalogCount": 33,
+  "byCategory": {
+    "ordinary_chat": {
+      "total": 2,
+      "pass": 2,
+      "fail": 0
+    }
+  },
+  "results": [
+    {
+      "id": "ordinary-02",
+      "category": "ordinary_chat",
+      "ok": true,
+      "latencyMs": 11657,
+      "mode": "none",
+      "stickerId": null,
+      "structured": true,
+      "protocolOk": true,
+      "stickerValid": true,
+      "modeAllowed": true,
+      "textPresent": true,
+      "mustRemainText": false
+    },
+    {
+      "id": "ordinary-09",
+      "category": "ordinary_chat",
+      "ok": true,
+      "latencyMs": 16220,
+      "mode": "text_image",
+      "stickerId": "confused",
+      "structured": true,
+      "protocolOk": true,
+      "stickerValid": true,
+      "modeAllowed": true,
+      "textPresent": true,
+      "mustRemainText": true
+    }
+  ]
+}

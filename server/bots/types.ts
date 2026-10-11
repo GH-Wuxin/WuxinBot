@@ -71,6 +71,13 @@ export interface ToolResult {
   content: string;      // text to feed back to LLM
   images?: string[];    // image URLs or data URIs
   /**
+   * Images to deliver to QQ verbatim but NOT record as conversation media.
+   * Stickers use this: they must reach the chat, but the model never needs
+   * to see them again on later turns, and the vision budget belongs to real
+   * content. Contrast `images`, which is carried into message history.
+   */
+  deliverOnlyImages?: string[];
+  /**
    * Terminal deterministic reply. When true the caller must deliver
    * directContent (or content) verbatim and must NOT ask the LLM to write a
    * lead, comment, or evaluate the result. Only explicit terminal states set
@@ -148,6 +155,7 @@ export interface SkillStore {
 
 export type AllowedOperationType =
   | 'query_osu'
+  | 'send_sticker'
   | 'query_external_bot'
   | 'query_bot'
   | 'get_player_skill'

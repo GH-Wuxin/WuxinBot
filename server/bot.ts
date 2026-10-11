@@ -59,6 +59,7 @@ import {
 import {
   sanitizeReply,
   sendReplySegments,
+  isDirectBotMention,
   replyToCurrentMessageOptions,
   isWeirdReply,
   rewriteNormalReply,
@@ -83,7 +84,7 @@ import {
   extractSearchQuery,
   isSearchAvailable,
 } from './bot/search.js';
-import { setBotPaused, getRecalcProgress, startRecalc, tickRecalc, finishRecalc, markActiveProcessing } from './health.js';
+import { setBotPaused, getRecalcProgress, startRecalc, tickRecalc, finishRecalc, markActiveProcessing, recordDecisionError } from './health.js';
 import { runBackgroundTask } from './backgroundTasks.js';
 import { runInboundTask } from './bot/inboundGate.js';
 import {
@@ -134,22 +135,40 @@ import {
   ownerPrivateMessages,
   limitMessagesByCharBudget,
   countRecentReplies,
-  countRecentUserMessages,
+  scoreReplyParticipation,
   lastAssistantAt,
   lastAssistantMessage,
   isPrivilegedForConversation,
   looksLikeReplyToBot,
   recentBotConversation,
   recentVisionImageMessages,
-  shouldUseRecentVisionImage,
-  recentLlmGateCalls,
-  recordLlmGateUsage,
-  cleanGateMessage,
-  parseGateVerdict,
-  llmReplyGate
+  shouldUseRecentVisionImage
 } from './bot/gate.js';
 import { handleOwnerCommand } from './bot/ownerCommands.js';
 import { matchQuickCommand, handleQuickCommand } from './bot/quickRouter.js';
+import { pickSticker, withSticker } from './bot/stickers/index.js';
+import {
+  beginLiveStickerDebug,
+  stickerDebugShouldDryRun,
+  validateStickerSelection,
+  type StickerDebugSession,
+} from './bot/stickers/debug.js';
+import {
+  buildStickerReplyInstruction,
+  parseStickerReply,
+  STICKER_REPLY_RESPONSE_FORMAT,
+  withStickerReplyInstruction,
+} from './bot/stickers/finalReply.js';
+import {
+  completeStickerDelivery,
+  recordStickerDecisionInDb,
+  reserveStickerDelivery,
+  type StickerDeliveryOutcome,
+} from './bot/stickers/delivery.js';
+import {
+  ensureStickerReplyFallback,
+  stickerFailureFallback,
+} from './bot/stickers/replyDelivery.js';
 import { settlePendingQuickObservations } from './bot/quickContext.js';
 
 function replyTargetMetadata(event) {
@@ -288,8 +307,9 @@ const MERGE_FORWARD_MIN_CHARS = 200;
 // messages are queued; after the current reply finishes, queued messages from
 // the same member are merged into one reply and processed automatically.
 export async function decideReply({ db, group, userPolicy, text, mentioned, userId, images = [] }) {
-  // This is the main "should the bot speak?" gate. Keep cheap deterministic
-  // checks first; only call the configured LLM after this returns shouldReply=true.
+  // Keep the participation boundary deterministic. Natural/light group
+  // messages use a local score before entering the one main reply-model turn;
+  // there is deliberately no second LLM preflight call here.
   if (db.settings.globalPaused) return { shouldReply: false, reason: '机器人处于全局暂停状态' };
   if (!group?.enabled) return { shouldReply: false, reason: '这个群没有启用机器人' };
   if (userPolicy.policy === 'blocked') return { shouldReply: false, reason: '该用户在黑名单中', inContext: false };
@@ -345,11 +365,25 @@ export async function decideReply({ db, group, userPolicy, text, mentioned, user
   if (inCooldown) return { shouldReply: false, reason: '距离上次发言太近，正在冷却' };
 
   if (group.mode === 'light' || group.mode === 'natural') {
-    const recentBotReplies10m = countRecentReplies(db, group.groupId, 10);
-    const recentUserMessages5m = countRecentUserMessages(db, group.groupId, 5);
-    const question = isQuestion(text);
-    const chatIsBusy = recentUserMessages5m >= 10;
-    return await llmReplyGate(db, group.groupId, text, { mode: group.mode, question, chatIsBusy, recentBotReplies10m, userPolicy, userId });
+    const thresholdKey = group.mode === 'light'
+      ? 'replyGateLightThreshold'
+      : 'replyGateNaturalThreshold';
+    const defaultThreshold = group.mode === 'light' ? 70 : 45;
+    const threshold = Math.max(0, Math.min(100, Number(
+      db.settings[thresholdKey] ?? defaultThreshold,
+    )));
+    const participation = scoreReplyParticipation(db, group.groupId, text, { userPolicy });
+    const modeLabel = group.mode === 'light' ? '轻度参与' : '自然群友';
+    if (participation.score < threshold) {
+      return {
+        shouldReply: false,
+        reason: `${modeLabel}门控 ${participation.score}/${threshold}，未达到接话阈值`,
+      };
+    }
+    return {
+      shouldReply: true,
+      reason: `${modeLabel}门控 ${participation.score}/${threshold}，交给主回复模型`,
+    };
   }
 
   return { shouldReply: false, reason: '这条消息没有达到当前主动性阈值' };
@@ -497,6 +531,10 @@ async function processIncomingInner(event, sendMessage = undefined, queuedDecisi
 
   const db = readDb();
   const settings = db.settings;
+  // Preserve the distinction between a direct @mention and natural group
+  // participation before command/quick routes can send anything. The reply
+  // helper uses this in every final delivery branch.
+  event.replyToCurrentMessage = isDirectBotMention(event, settings);
   if (settings.selfQq && String(event.userId) === String(settings.selfQq)) {
     return { replied: false, reason: '忽略机器人自己的消息' };
   }
@@ -610,6 +648,7 @@ async function processIncomingInner(event, sendMessage = undefined, queuedDecisi
     inContext: decision.inContext !== false,
     visualLimitation: Boolean(decision.visualLimitation),
     mentioned,
+    replyToCurrentMessage: Boolean(event.replyToCurrentMessage),
     atTargets: event?.atTargets || [],
   });
 
@@ -787,6 +826,7 @@ async function processIncomingInner(event, sendMessage = undefined, queuedDecisi
   queueOwner.key = replyLockKey;
 
   let thinkingTimer = null;
+let waitUpTimer = null;
   let modelStageStarted = false;
   let deliveryStarted = false;
   try {
@@ -905,6 +945,11 @@ async function processIncomingInner(event, sendMessage = undefined, queuedDecisi
       return { replied: true, text: replyText, reason: '搜索请求但未接入真实搜索源' };
     }
 
+    // Natural replies decide an optional sticker only in their final model
+    // output. Data queries, explicit searches and named-bot routes keep their
+    // existing delivery semantics and do not pay for a sticker envelope.
+    const stickerReplyEnabled = !explicitSearch && !osuDataIntent && !namedBotRequest;
+
     const searchMode = responseOptions.searchMode || liveDb.settings.webSearchMode || 'balanced';
     const maxSearchCalls = searchMode === 'deep' ? 3 : (searchMode === 'fast' ? 1 : 2);
     const agentRuntimeMode = agentRuntimeModeFor(liveDb);
@@ -937,10 +982,14 @@ async function processIncomingInner(event, sendMessage = undefined, queuedDecisi
     const thinkingDelay = Number(liveDb.settings.thinkingNoticeDelayMs || 3000);
     let thinkingSent = false;
 
-    const sendThinking = async (text) => {
+    // 图由代码直接触发（pickSticker + withSticker），不经过 LLM —— 「正在查询」这类提示
+    // 发生在 LLM 还没出声的时候（实测 /w info 要 40~70 秒），本来就不可能有 LLM 文案。
+    // thinking 是 4 张的池，这里随机取一张。
+    const sendThinking = async (text, stickerKey = 'thinking') => {
       if (thinkingSent || !sendMessage) return;
       thinkingSent = true;
-      await sendMessage(event, text);
+      const picked = pickSticker(stickerKey);
+      await sendMessage(event, picked ? withSticker(text, picked.id) : text);
     };
 
     if (thinkingMode === 'simple') {
@@ -957,6 +1006,19 @@ async function processIncomingInner(event, sendMessage = undefined, queuedDecisi
       }, thinkingDelay);
     }
     // 'off' — never send
+
+    // 二段提示：查询拖久了再发一张「别催·在算了」。一段（thinking）默认 3 秒，
+    // 二段默认 25 秒 —— 让用户在长查询中途知道 bot 没死。thinkingNoticeMode 为 off 时两段都不发。
+    if (thinkingMode !== 'off') {
+      waitUpTimer = setTimeout(() => {
+        void sendOptionalNotice(async () => {
+          if (!sendMessage) return;
+          const picked = pickSticker('wait_up');
+          const text = useTools ? '还在查，稍等一下…' : '还在处理，稍等一下…';
+          await sendMessage(event, picked ? withSticker(text, picked.id) : text);
+        });
+      }, Number(liveDb.settings.waitUpNoticeDelayMs || 25000));
+    }
 
     // If user asks to look at images but none attached, attach only the most
     // recent relevant image. This keeps vision on-demand and avoids paying for
@@ -990,7 +1052,13 @@ async function processIncomingInner(event, sendMessage = undefined, queuedDecisi
     // ── Bot harness tool loop ──
     let ai;
     let toolImages = [];
+    let toolDeliverImages = [];
     let toolDirectContent = '';
+    let modelStickerPath = '';
+    let modelStickerCqCode = '';
+    let modelStickerReservationId = '';
+    let modelStickerDebugSession: StickerDebugSession | null = null;
+    let modelStickerSelectionValid = false;
     let requiredToolLed = false;
     let evidenceProtectedTurn = false;
     if (useTools) {
@@ -1109,6 +1177,10 @@ async function processIncomingInner(event, sendMessage = undefined, queuedDecisi
         continueAfterDirectPayload: modelFirstRuntime,
         deduplicateToolCalls: modelFirstRuntime,
         structuredToolResults: modelFirstRuntime,
+        ...(stickerReplyEnabled ? {
+          finalResponseFormat: STICKER_REPLY_RESPONSE_FORMAT,
+          finalResponseInstruction: buildStickerReplyInstruction(),
+        } : {}),
         turnId,
         reasoningRouter,
         executeToolCallFn: executeConversationTool,
@@ -1171,6 +1243,7 @@ async function processIncomingInner(event, sendMessage = undefined, queuedDecisi
         latencyMs: undefined
       };
       toolImages = toolResult.images || [];
+      toolDeliverImages = toolResult.deliverOnlyImages || [];
       toolDirectContent = String(toolResult.directContent || '').trim();
     } else {
       // Phase 2 v1 context dependency: prior context is a precondition only;
@@ -1183,10 +1256,14 @@ async function processIncomingInner(event, sendMessage = undefined, queuedDecisi
       const convDecision = reasoningRouter.resolve(convInput, convTurn);
       convTurn = reasoningRouter.mergeTurn(convTurn, convDecision);
       const convWire = thinkingParamsForLevel(convDecision.level, reasoningEnabledFor(liveDb));
-      ai = await callLLM(liveDb, messages, searchMode, {
+      const finalMessages = stickerReplyEnabled
+        ? withStickerReplyInstruction(messages)
+        : messages;
+      ai = await callLLM(liveDb, finalMessages, searchMode, {
         maxTokens: responseOptions.maxTokens,
         overrideModel: responseOptions.overrideModel,
         visionImages,
+        ...(stickerReplyEnabled ? { responseFormat: STICKER_REPLY_RESPONSE_FORMAT } : {}),
         traceRole: 'conversation',
         tracePurpose: 'conversation_reply',
         ...convWire
@@ -1201,8 +1278,14 @@ async function processIncomingInner(event, sendMessage = undefined, queuedDecisi
       });
     }
 
+    const stickerReply = stickerReplyEnabled
+      ? parseStickerReply(ai.text)
+      : { reply: String(ai.text || ''), stickerId: null, mode: 'none' as const, structured: false };
+    ai.text = stickerReply.reply;
+    const stickerDecisionId = stickerReplyEnabled ? stickerReply.stickerId : null;
+    const imageOnlySticker = stickerReplyEnabled && stickerReply.mode === 'image_only';
     let replyText = sanitizeReply(ai.text, liveDb.settings);
-    const imageCqCodes = toolImages.map(toolImageToCq).filter(Boolean);
+    const imageCqCodes = [...toolImages, ...toolDeliverImages].map(toolImageToCq).filter(Boolean);
     const hasDirectToolDelivery = Boolean(toolDirectContent || imageCqCodes.length > 0);
     const rewriteEligible = isWeirdReply(replyText);
     const rewriteSkipReason = normalReplyRewriteSkipReason({
@@ -1256,7 +1339,7 @@ async function processIncomingInner(event, sendMessage = undefined, queuedDecisi
         }
       }
     }
-    if (!replyText && imageCqCodes.length === 0) {
+    if (!replyText && imageCqCodes.length === 0 && !imageOnlySticker) {
       // The required-tool cosmetic lead can legitimately end up empty when the
       // model only emitted tool-call markup (sanitized away before this point)
       // and no direct payload exists to deliver. Do not claim a result exists
@@ -1268,20 +1351,153 @@ async function processIncomingInner(event, sendMessage = undefined, queuedDecisi
         throw new Error('模型返回了空内容。');
       }
     }
-    if (!replyText) replyText = imageCqCodes.length > 0 ? '查好了，结果在图里。' : '查好了。';
+    if (!replyText && imageCqCodes.length > 0) replyText = '查好了，结果在图里。';
 
     // Deliver a queued level-up phrase as part of this reply (never standalone).
     const pendingUpKey = String(event.userId);
     const pendingUp = readDb().pendingLevelUps?.[pendingUpKey];
     if (pendingUp?.text) {
-      const atLead = `[CQ:at,qq=${event.userId}] ${pendingUp.text}`;
+      // 文案本身已经走过「LLM 生成 + levelUpFallback 回退」（见上方 completeChat），
+      // 这里只把升级的表情挂上 —— 图由代码触发，不依赖 LLM。
+      const atLead = withSticker(`[CQ:at,qq=${event.userId}] ${pendingUp.text}`, 'applause');
       replyText = replyText ? `${atLead}\n\n${replyText}` : atLead;
       updateDb((draft) => {
         if (draft.pendingLevelUps) delete draft.pendingLevelUps[pendingUpKey];
       });
     }
 
-    const deliveredText = [replyText, toolDirectContent].filter(Boolean).join('\n\n');
+    // Validate the model's optional image only after all reply editing is
+    // complete. A rewrite or a deterministic lead must be able to veto a
+    // now-inappropriate reaction. Direct tool payloads and code-triggered
+    // status stickers already have their own delivery semantics.
+    if (stickerDecisionId && (replyText.trim() || imageOnlySticker) && !hasDirectToolDelivery && !pendingUp?.text) {
+      try {
+        modelStickerDebugSession = beginLiveStickerDebug({
+          groupId: event.groupId,
+          userId: event.userId,
+          messageId: event.messageId,
+        });
+        const debugDryRun = stickerDebugShouldDryRun({ groupId: event.groupId, userId: event.userId });
+        const validation = validateStickerSelection({
+          stickerId: stickerDecisionId,
+          verifyHashes: false,
+        });
+        if (modelStickerDebugSession) {
+          modelStickerDebugSession.record('catalog_validated', validation.validation?.ok ? 'ok' : 'failed', {
+            manifestCount: validation.validation?.manifestCount,
+            annotationCount: validation.validation?.annotationCount,
+            verifyHashes: false,
+          });
+          modelStickerDebugSession.record('catalog_loaded', validation.ok ? 'ok' : 'failed', {
+            candidateCount: validation.candidateCount || 0,
+          });
+          modelStickerDebugSession.record('model_selected', 'received', { stickerId: stickerDecisionId });
+        }
+        if (!validation.ok) {
+          modelStickerDebugSession?.finish('failed', {
+            reason: validation.reason || 'selection_rejected',
+            error: validation.error,
+            sendSkipped: true,
+          });
+          traceEvent('TOOL', 'sticker_final_decision', {
+            status: 'rejected',
+            stickerId: stickerDecisionId,
+            stickerDebugTraceId: modelStickerDebugSession?.traceId,
+            structured: stickerReply.structured,
+            sendSkipped: true,
+            deliveryReason: validation.reason || 'selection_rejected',
+          });
+        } else if (debugDryRun) {
+          modelStickerSelectionValid = true;
+          modelStickerDebugSession?.record('selection_validated', 'ok', validation.selected || {});
+          modelStickerDebugSession?.record('send_requested', 'skipped', { reason: 'debug_dry_run' });
+          modelStickerDebugSession?.finish('dry_run', { wouldSend: validation.selected?.id, sendSkipped: true });
+          traceEvent('TOOL', 'sticker_final_decision', {
+            status: 'dry_run',
+            stickerId: stickerDecisionId,
+            stickerDebugTraceId: modelStickerDebugSession?.traceId,
+            structured: stickerReply.structured,
+            sendSkipped: true,
+            deliveryReason: 'debug_dry_run',
+          });
+        } else {
+          modelStickerSelectionValid = true;
+          const delivery = sendMessage
+            ? reserveStickerDelivery({
+                eventType: event.type,
+                groupId: event.groupId,
+                userId: event.userId,
+                messageId: event.messageId,
+                stickerId: stickerDecisionId,
+              })
+            : { ok: false, reason: 'mode' as const };
+          modelStickerDebugSession?.record('selection_validated', 'ok', validation.selected || {});
+          if (delivery.ok && delivery.path) {
+            modelStickerPath = delivery.path;
+            modelStickerCqCode = toolImageToCq(delivery.path);
+            modelStickerReservationId = delivery.reservationId || '';
+            modelStickerDebugSession?.record('send_requested', 'reserved', {
+              stickerId: delivery.stickerId,
+              reservationId: delivery.reservationId,
+            });
+          } else {
+            modelStickerDebugSession?.finish('completed', {
+              sendSkipped: true,
+              deliveryReason: delivery.reason || 'mode',
+            });
+          }
+          traceEvent('TOOL', 'sticker_final_decision', {
+            status: delivery.ok ? 'live_reserved' : 'validated',
+            stickerId: stickerDecisionId,
+            stickerDebugTraceId: modelStickerDebugSession?.traceId,
+            structured: stickerReply.structured,
+            sendSkipped: !delivery.ok,
+            deliveryReason: delivery.reason || '',
+          });
+        }
+      } catch (error) {
+        modelStickerDebugSession?.finish('failed', {
+          sendSkipped: true,
+          error: String((error as Error)?.message || error).slice(0, 300),
+        });
+        traceEvent('TOOL', 'sticker_final_decision', {
+          status: 'error',
+          stickerId: stickerDecisionId,
+          structured: stickerReply.structured,
+          stickerDebugTraceId: modelStickerDebugSession?.traceId,
+          sendSkipped: true,
+          error: String((error as Error)?.message || error).slice(0, 300),
+        });
+      }
+    }
+
+    // An image-only decision is optional. If validation, policy, or delivery
+    // prevents the image, retain a small text fallback instead of emitting an
+    // empty QQ message.
+    replyText = ensureStickerReplyFallback(replyText, modelStickerCqCode);
+
+    // Count the eligible natural reply before the actual image send. A
+    // confirmed or unknown OneBot outcome must not erase the denominator used
+    // to calibrate proposal and delivery rates.
+    if (stickerReplyEnabled) {
+      try {
+        updateDb((draft) => {
+          recordStickerDecisionInDb(draft, {
+            mode: stickerReply.mode,
+            stickerId: stickerDecisionId || undefined,
+            validSelection: modelStickerSelectionValid,
+            groupId: event.groupId,
+          });
+        });
+      } catch (error) {
+        traceEvent('ERROR', 'sticker_metrics_record_failed', {
+          status: 'degraded',
+          error: String(error?.message || error).slice(0, 200),
+        });
+      }
+    }
+
+    let deliveredText = [replyText, toolDirectContent].filter(Boolean).join('\n\n');
     const deliveredMediaImages = toolImages.map(toolImageToMediaInput).filter(Boolean);
 
     // Merged-forward cards require BOTH: the output would actually split into
@@ -1294,10 +1510,11 @@ async function processIncomingInner(event, sendMessage = undefined, queuedDecisi
     const isLongReply = responseOptions.longForm || (!withinMergeFloor && segmentCount >= 2);
     let segments;
     if (thinkingTimer) { clearTimeout(thinkingTimer); thinkingTimer = null; }
+    if (waitUpTimer) { clearTimeout(waitUpTimer); waitUpTimer = null; }
     deliveryStarted = true;
     traceEvent('SEND', 'qq_delivery_started', {
       contentLength: deliveredText.length,
-      imageCount: imageCqCodes.length,
+      imageCount: imageCqCodes.length + (modelStickerCqCode ? 1 : 0),
       deliveryMode: hasDirectToolDelivery ? 'direct-tool' : (isLongReply ? 'forward' : 'segments'),
     });
     if (hasDirectToolDelivery) {
@@ -1307,6 +1524,81 @@ async function processIncomingInner(event, sendMessage = undefined, queuedDecisi
       const outboundText = [deliveredText, ...imageCqCodes].filter(Boolean).join('\n');
       if (sendMessage) await sendMessage(event, outboundText, replyToCurrentMessageOptions(event));
       segments = [outboundText];
+    } else if (modelStickerCqCode && sendMessage) {
+      try {
+        let stickerResult;
+        if (isLongReply) {
+          await sendForwardText(sendMessage, event, 'Wuxin 回复', deliveredText);
+          stickerResult = await sendMessage(event, modelStickerCqCode, replyToCurrentMessageOptions(event));
+          segments = [deliveredText, modelStickerCqCode];
+        } else {
+          const outboundText = [deliveredText, modelStickerCqCode].filter(Boolean).join('\n');
+          stickerResult = await sendMessage(event, outboundText, replyToCurrentMessageOptions(event));
+          segments = [outboundText];
+        }
+        const rawOutcome = stickerResult?.outcome;
+        const stickerOutcome: StickerDeliveryOutcome = rawOutcome === 'confirmed_success'
+          || rawOutcome === 'accepted_unknown'
+          || rawOutcome === 'confirmed_failure'
+          || rawOutcome === 'unknown'
+          ? rawOutcome
+          : 'unknown';
+        if (modelStickerReservationId) {
+          completeStickerDelivery(modelStickerReservationId, stickerOutcome);
+        }
+        modelStickerDebugSession?.record('send_confirmed', stickerOutcome, {
+          stickerId: stickerDecisionId,
+          reservationId: modelStickerReservationId || undefined,
+        });
+        modelStickerDebugSession?.finish(
+          stickerOutcome === 'confirmed_success' || stickerOutcome === 'accepted_unknown' ? 'completed' : 'failed',
+          { outcome: stickerOutcome, sendSkipped: false },
+        );
+        traceEvent('SEND', 'sticker_delivery_completed', {
+          status: stickerOutcome,
+          stickerId: stickerDecisionId,
+          reservationId: modelStickerReservationId || undefined,
+        });
+      } catch (error) {
+        const confirmedFailure = error?.deliveryOutcome === 'confirmed_failure';
+        let fallbackSent = false;
+        // A confirmed image failure means the combined text+image request was
+        // not accepted. Deliver the necessary text alone; an unknown outcome
+        // is never retried because the original request may have landed.
+        const fallbackText = stickerFailureFallback({
+          deliveredText,
+          confirmedFailure,
+          isLongReply,
+        });
+        if (fallbackText && sendMessage) {
+          try {
+            await sendMessage(event, fallbackText, replyToCurrentMessageOptions(event));
+            deliveredText = fallbackText;
+            segments = [fallbackText];
+            fallbackSent = true;
+          } catch {
+            // Keep the original confirmed failure if even the text fallback fails.
+          }
+        }
+        if (modelStickerReservationId) {
+          completeStickerDelivery(
+            modelStickerReservationId,
+            confirmedFailure ? 'confirmed_failure' : 'unknown',
+          );
+        }
+        modelStickerDebugSession?.record('send_confirmed', confirmedFailure ? 'confirmed_failure' : 'unknown', {
+          stickerId: stickerDecisionId,
+          reservationId: modelStickerReservationId || undefined,
+        });
+        modelStickerDebugSession?.finish('failed', { sendSkipped: false });
+        traceEvent('SEND', 'sticker_delivery_completed', {
+          status: confirmedFailure ? 'confirmed_failure' : 'unknown',
+          stickerId: stickerDecisionId,
+          reservationId: modelStickerReservationId || undefined,
+          error: String(error?.message || error).slice(0, 300),
+        });
+        if (!fallbackSent) throw error;
+      }
     } else if (isLongReply && sendMessage) {
       await sendForwardText(sendMessage, event, 'Wuxin 回复', deliveredText);
       segments = [deliveredText];
@@ -1353,6 +1645,7 @@ async function processIncomingInner(event, sendMessage = undefined, queuedDecisi
       replied: true,
       text: deliveredText,
       images: toolImages,
+      stickers: [...toolDeliverImages, ...(modelStickerPath ? [modelStickerPath] : [])],
       segments,
       usage: ai.usage,
       latencyMs: ai.latencyMs,
@@ -1360,12 +1653,20 @@ async function processIncomingInner(event, sendMessage = undefined, queuedDecisi
     };
   } catch (error) {
     if (thinkingTimer) { clearTimeout(thinkingTimer); thinkingTimer = null; }
+    if (waitUpTimer) { clearTimeout(waitUpTimer); waitUpTimer = null; }
     traceEvent(deliveryStarted ? 'SEND' : 'ERROR', deliveryStarted ? 'qq_delivery_failed_or_unknown' : 'reply_generation_failed', { status: 'error', error: String(error) });
     // Once QQ delivery starts, timeout may mean accepted-but-unacknowledged.
     // Do not resend the answer or a contradictory failure notice in that case.
-    if (modelStageStarted && !deliveryStarted && sendMessage) {
+    // Natural group participation is opportunistic. If its model turn fails,
+    // do not create a second unsolicited group message just to announce the
+    // failure. Direct @mentions explicitly asked for a response and may still
+    // receive the existing failure notice.
+    const directConversation = event.type === 'private';
+    if (modelStageStarted && !deliveryStarted && sendMessage
+      && (event.replyToCurrentMessage === true || directConversation)) {
       await sendOptionalNotice(() => sendMessage(event, '[系统] 这次查询或回复未能完成，请稍后重试。'));
     }
+    recordDecisionError(`回复失败：${String(error?.message || error).slice(0, 500)}`);
     updateDb((draft) => {
       draft.usage.errors += 1;
       draft.usageEvents ||= [];
@@ -1390,5 +1691,6 @@ async function processIncomingInner(event, sendMessage = undefined, queuedDecisi
     return { replied: false, error: error.message, reason: decision.reason };
   } finally {
     if (thinkingTimer) clearTimeout(thinkingTimer);
+    if (waitUpTimer) clearTimeout(waitUpTimer);
   }
 }

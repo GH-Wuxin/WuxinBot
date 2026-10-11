@@ -3,6 +3,7 @@
 import { readDb, updateDb, nowIso } from '../store.js';
 import { traceEvent, startRequestTrace, finishRequestTrace, withRequestTrace, requestTraceIdFor } from '../requestTrace.js';
 import { withLlmTurnPolicy } from '../llmPolicy.js';
+import { withSticker } from '../bot/stickers/index.js';
 import { analyzeData } from './analyzer.js';
 import type {
   AnalysisSectionComments,
@@ -579,7 +580,8 @@ async function handleOsuBind(ctx: OsuCommandContext) {
     userId = user.id;
   } catch (error) {
     const msg = `osu! 用户 "${username}" 查不到。`;
-    if (sendMessage) await sendMessage(event, msg);
+    // 查无此人 —— 属于「查无数据」，附 no_data（不是服务故障）。
+    if (sendMessage) await sendMessage(event, withSticker(msg, 'no_data'));
     return { replied: true, reason: msg };
   }
   updateDb((draft) => {
@@ -593,7 +595,8 @@ async function handleOsuBind(ctx: OsuCommandContext) {
     console.error(`[bind] LazyBot 绑定同步失败: ${syncResult.error || '未知错误'}`);
   }
   const msg = `已将 QQ 绑定到 osu! ${username}（ID: ${userId}）。`;
-  if (sendMessage) await sendMessage(event, msg);
+  // 绑定成功：附 bound 表情。图由代码触发，不依赖 LLM。
+  if (sendMessage) await sendMessage(event, withSticker(msg, 'bound'));
   return { replied: true, reason: msg };
 }
 

@@ -10,7 +10,7 @@ import { connectOneBot, getOneBotStatus, handleOneBotEvent, sendOneBotMessage, s
 import { processIncoming } from './bot.js';
 import { runSandboxPreview } from './sandboxPreview.js';
 import { getReplyQueueStats } from './bot/queue.js';
-import { getHealth, getRecalcProgress, startRecalc, tickRecalc, stopRecalc, finishRecalc } from './health.js';
+import { getHealth, getRecalcProgress, startRecalc, tickRecalc, stopRecalc, finishRecalc, setBotPaused } from './health.js';
 import { getBackgroundTaskStats, runBackgroundTask, waitForBackgroundTasks } from './backgroundTasks.js';
 import { getInboundAdmissionStats, stopInboundAdmission, waitForInboundTasks } from './bot/inboundGate.js';
 import { getLlmAdmissionStats } from './llmPolicy.js';
@@ -27,6 +27,16 @@ import { removeLazybotBinding, syncLazybotBinding } from './bots/bindingSync.js'
 import { sharedGroupBotConfigPath } from './bots/externalPaths.js';
 import { acquireInstanceLock } from './instanceLock.js';
 import { listRequestTraces, subscribeRequestTraces } from './requestTrace.js';
+import {
+  clearStickerDebugTraces,
+  getStickerDebugState,
+  listStickerDebugTraces,
+  runStickerDryRun,
+  setStickerDebugMode,
+  type StickerDebugMode,
+} from './bot/stickers/debug.js';
+import { getStickerDeliveryStats, stickerDeliveryConfig } from './bot/stickers/delivery.js';
+import { validateStickerCatalog } from './bot/stickers/index.js';
 import { getPippiPromptSectionCatalog } from './bot/persona.js';
 import { getPersonaStudioCatalog, listPromptCalls } from './promptStudio.js';
 import {
@@ -232,8 +242,26 @@ try {
 // Damage must never be answered by silently creating an empty database.
 try {
   openStore();
+  // Restore the persisted pause state before OneBot can deliver new events.
+  // This keeps the health snapshot and admission behavior consistent across
+  // restarts while the operator is investigating a production incident.
+  setBotPaused(Boolean(readDb().settings.globalPaused));
 } catch (error) {
   console.error('[store] 启动失败：存储无法打开，服务未启动。', String((error as Error)?.message || error));
+  process.exit(1);
+}
+
+// The sticker selector has one strict data boundary. If the generated asset
+// list and the manually audited visual annotations diverge, stop here with a
+// precise report instead of letting the model operate on partial metadata.
+try {
+  const stickerCatalog = validateStickerCatalog();
+  if (!stickerCatalog.ok) {
+    console.error('[stickers] 启动失败：清单与视觉标注不一致。', JSON.stringify(stickerCatalog));
+    process.exit(1);
+  }
+} catch (error) {
+  console.error('[stickers] 启动失败：清单或视觉标注无法读取。', String((error as Error)?.message || error));
   process.exit(1);
 }
 
@@ -363,6 +391,118 @@ app.post('/api/codex/logout', async (_req, res) => {
 
 app.get('/api/request-traces', (req, res) => {
   res.json(ok({ traces: listRequestTraces(Number(req.query.limit || 80)) }));
+});
+
+// Sticker decision diagnostics stay local and in memory. They are deliberately
+// separate from normal bot settings so enabling a trace cannot persist across
+// a restart or silently change production behaviour.
+const STICKER_DEBUG_MODES = new Set<StickerDebugMode>(['off', 'dry-run', 'trace-once']);
+app.get('/api/sticker-debug', (req, res) => {
+  res.setHeader('Cache-Control', 'no-store');
+  res.json(ok({
+    debug: getStickerDebugState(),
+    catalog: validateStickerCatalog(),
+    delivery: getStickerDeliveryStats(),
+    traces: listStickerDebugTraces(Number(req.query.limit || 20)),
+  }));
+});
+
+app.get('/api/sticker-policy', (_req, res) => {
+  res.setHeader('Cache-Control', 'no-store');
+  res.json(ok({
+    policy: stickerDeliveryConfig(),
+    delivery: getStickerDeliveryStats(),
+  }));
+});
+
+app.post('/api/sticker-policy', (req, res) => {
+  const incoming = req.body && typeof req.body === 'object' ? req.body : {};
+  const mode = String(incoming.mode || '').trim();
+  if (!['off', 'dry-run', 'live'].includes(mode)) {
+    res.status(400).json({ ok: false, error: 'mode 必须是 off、dry-run 或 live' });
+    return;
+  }
+  const groupIds = Array.isArray(incoming.groupIds)
+    ? [...new Set(incoming.groupIds.map((id) => String(id || '').trim()).filter(Boolean))].slice(0, 256)
+    : [];
+  const allGroups = incoming.allGroups === true;
+  if (mode === 'live' && !allGroups && groupIds.length === 0) {
+    res.status(400).json({ ok: false, error: 'live 模式必须明确指定至少一个群白名单，或显式设置 allGroups=true' });
+    return;
+  }
+  const integer = (value, fallback, min, max) => {
+    const result = value === undefined || value === null || value === '' ? fallback : Number(value);
+    return Number.isInteger(result) && result >= min && result <= max ? result : null;
+  };
+  const current = readDb().settings.stickerPolicy || {};
+  const groupCooldownSec = integer(incoming.groupCooldownSec, current.groupCooldownSec ?? 600, 0, 86_400);
+  const userCooldownSec = integer(incoming.userCooldownSec, current.userCooldownSec ?? 1_200, 0, 604_800);
+  const hourlyLimit = integer(incoming.hourlyLimit, current.hourlyLimit ?? 3, 0, 10_000);
+  const dailyLimit = integer(incoming.dailyLimit, current.dailyLimit ?? 16, 0, 100_000);
+  const userDailyLimit = integer(incoming.userDailyLimit, current.userDailyLimit ?? 4, 0, 100_000);
+  const duplicateStickerCooldownSec = integer(
+    incoming.duplicateStickerCooldownSec,
+    current.duplicateStickerCooldownSec ?? 7_200,
+    0,
+    2_592_000,
+  );
+  if ([groupCooldownSec, userCooldownSec, hourlyLimit, dailyLimit, userDailyLimit, duplicateStickerCooldownSec].some((value) => value === null)) {
+    res.status(400).json({ ok: false, error: '频率参数超出允许范围或不是整数' });
+    return;
+  }
+  updateDb((db) => {
+    db.settings.stickerPolicy = {
+      mode,
+      allGroups,
+      groupIds,
+      groupCooldownSec,
+      userCooldownSec,
+      hourlyLimit,
+      dailyLimit,
+      userDailyLimit,
+      duplicateStickerCooldownSec,
+    };
+  });
+  res.json(ok({ policy: stickerDeliveryConfig(), delivery: getStickerDeliveryStats() }));
+});
+
+app.post('/api/sticker-debug/mode', (req, res) => {
+  const mode = String(req.body?.mode || '').trim() as StickerDebugMode;
+  if (!STICKER_DEBUG_MODES.has(mode)) {
+    res.status(400).json({ ok: false, error: 'mode 必须是 off、dry-run 或 trace-once' });
+    return;
+  }
+  const groupId = limitedText(req.body?.groupId, 80);
+  const userId = limitedText(req.body?.userId, 80);
+  if (mode !== 'off' && !groupId && !userId) {
+    res.status(400).json({ ok: false, error: '开启调试时必须指定 groupId 或 userId，避免影响所有消息' });
+    return;
+  }
+  res.json(ok({ debug: setStickerDebugMode(mode, { groupId: groupId || undefined, userId: userId || undefined }) }));
+});
+
+app.delete('/api/sticker-debug/traces', (_req, res) => {
+  clearStickerDebugTraces();
+  res.json(ok({ debug: getStickerDebugState(), traces: [] }));
+});
+
+app.post('/api/sticker-debug/dry-run', (req, res) => {
+  const stickerId = limitedText(req.body?.stickerId, 80);
+  if (!stickerId) {
+    res.status(400).json({ ok: false, error: '缺少 stickerId' });
+    return;
+  }
+  try {
+    const result = runStickerDryRun({
+      stickerId,
+      groupId: limitedText(req.body?.groupId, 80) || undefined,
+      userId: limitedText(req.body?.userId, 80) || undefined,
+      messageId: limitedText(req.body?.messageId, 160) || undefined,
+    });
+    res.status(result.ok ? 200 : 422).json(result.ok ? ok(result) : { ok: false, ...result });
+  } catch (error) {
+    res.status(500).json({ ok: false, error: `表情包 dry-run 失败：${String(error?.message || error).slice(0, 300)}` });
+  }
 });
 
 app.get('/api/persona/studio', (_req, res) => {
@@ -931,6 +1071,10 @@ app.post('/api/settings', (req, res) => {
     const previousOsuSecret = db.settings.osuClientSecret;
     const previousPplusSecret = db.settings.pplusClientSecret;
     db.settings = updateProviderSettings(db.settings, incoming);
+    // Keep the in-memory health snapshot aligned with GUI/API settings writes.
+    // The persisted setting is the source of truth for message admission, but
+    // a stale health flag makes an active pause look ineffective in the UI.
+    setBotPaused(Boolean(db.settings.globalPaused));
     db.settings.oneBotAccessToken = keepSecret('oneBotAccessToken') ? previousOneBotToken : incoming.oneBotAccessToken;
     db.settings.adminPassword = keepSecret('adminPassword') ? previousAdminPassword : incoming.adminPassword;
     db.settings.osuClientSecret = keepSecret('osuClientSecret') ? previousOsuSecret : incoming.osuClientSecret;
@@ -1559,5 +1703,5 @@ httpServer = app.listen(port, '127.0.0.1', async () => {
   connectOneBot();
   // Start Wuxin's local yumu-image endpoint on 8389. The renderer keeps its
   // original 8388 connection and opens this second connection independently.
-  startRenderServer(8389);
+  startRenderServer(Number(process.env.WUXIN_RENDER_PORT || 8389));
 });

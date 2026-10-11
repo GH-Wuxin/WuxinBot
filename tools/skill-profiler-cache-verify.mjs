@@ -171,7 +171,7 @@ try {
   // Mismatched results must not be cached: the next call with the expected
   // identity goes to the provider again and succeeds.
   analyzeCalls = 0;
-  const pinned = await profiler.requestSkillProfilerAnalysisCachedWithFetch(400, [], {
+  const pinned = await profiler.requestSkillProfilerAnalysisCachedWithFetch(400, ['HR'], {
     algorithmId: 'v040-formal',
     mapDemandVersion: 'v0.40',
     unifiedScaleId: 'US-1',

@@ -8,6 +8,7 @@
 import { updateDb } from '../store.js';
 import { getGroup, getUserPolicy } from './gate.js';
 import { commandDeniedReply, writeCommandLog } from './commands.js';
+import { withSticker } from './stickers/index.js';
 import {
   executeInternalBotCommand,
   parseEmbeddedBpCommand,
@@ -454,7 +455,8 @@ async function handleQuickCommandInner(
   const meta = finalizeQuickDef(def);
   if ((meta.permission === 'group_admin' || def.kind === 'admin') && !permissions.isOwner && !permissions.isAdmin) {
     const reply = commandDeniedReply(db, 'admin');
-    if (sendMessage) await sendMessage(event, reply);
+    // 权限拒绝：附 no_permission 表情。图由代码直接触发，不经过 LLM。
+    if (sendMessage) await sendMessage(event, withSticker(reply, 'no_permission'));
     return { handled: true, replied: true, reason: '权限不足' };
   }
 
