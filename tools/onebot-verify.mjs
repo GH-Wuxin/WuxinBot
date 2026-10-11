@@ -24,6 +24,7 @@ async function main() {
   const { ensureStore, readDb, updateDb } = await import('../server/store.ts');
   const { handleOneBotEvent, hydrateQuotedMessage, sendOneBotMessage } = await import('../server/onebot.ts');
   const { compactDirectToolLead, processIncoming } = await import('../server/bot.ts');
+  const { isDirectBotMention, replyToCurrentMessageOptions } = await import('../server/bot/reply.ts');
   const {
     registerPendingBotCall,
     tryResolveBotResponse
@@ -182,6 +183,31 @@ async function main() {
     );
     const quotedSend = oneBotRequests.at(-1)?.body?.message || '';
     assert(quotedSend.startsWith('[CQ:reply,id=7788][CQ:at,qq=2] '), 'group reply must quote the source message and mention its sender');
+
+    await sendOneBotMessage(
+      { source: 'onebot', type: 'group', groupId: '1', userId: '2', messageId: 'auto-quote', replyToCurrentMessage: true },
+      '自动引用',
+    );
+    const automaticQuotedSend = oneBotRequests.at(-1)?.body?.message || '';
+    assert(automaticQuotedSend.startsWith('[CQ:reply,id=auto-quote][CQ:at,qq=2] '), 'direct @ response must be quoted by the OneBot delivery layer');
+
+    await sendOneBotMessage(
+      { source: 'onebot', type: 'group', groupId: '1', userId: '2', messageId: 'natural-message', replyToCurrentMessage: false },
+      '自然接话',
+    );
+    const naturalSend = oneBotRequests.at(-1)?.body?.message || '';
+    assert(!naturalSend.includes('[CQ:reply,'), 'natural group response must not be quoted by the OneBot delivery layer');
+
+    const mentionedEvent = {
+      source: 'onebot', type: 'group', groupId: '1', userId: '2', messageId: 'mention-1',
+      atTargets: ['REDACTED_QQ_002'], raw: { self_id: 'REDACTED_QQ_002' },
+    };
+    assert(isDirectBotMention(mentionedEvent, readDb().settings), 'a direct @ of self QQ must be recognized');
+    const mentionOptions = replyToCurrentMessageOptions({ ...mentionedEvent, replyToCurrentMessage: true });
+    assert(mentionOptions.replyToMessageId === 'mention-1', 'direct @ reply must carry the source message id');
+    const naturalOptions = replyToCurrentMessageOptions({ ...mentionedEvent, messageId: 'natural-1', replyToCurrentMessage: false });
+    assert(!naturalOptions.replyToMessageId, 'natural group participation must not carry a QQ reply reference');
+    console.log('PASS: @ replies quote; natural replies stay unquoted');
 
     getMsgFixture = {
       message_id: 9911,

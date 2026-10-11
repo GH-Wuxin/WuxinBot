@@ -12,9 +12,7 @@ const server = http.createServer(async (req, res) => {
   let body = '';
   for await (const chunk of req) body += chunk;
   requestBodies.push(JSON.parse(body));
-  const gateContent = requestCount === 1
-    ? 'SCORE=35\nREASON=接话价值较低'
-    : 'SCORE=78\nREASON=有明确话题可接';
+  const gateContent = 'SCORE=35\nREASON=旧门控不应再被调用';
   res.writeHead(200, { 'content-type': 'application/json' });
   res.end(JSON.stringify({
     id: 'gate-test', object: 'chat.completion', created: Math.floor(Date.now() / 1000), model: 'gate-test-model',
@@ -26,52 +24,79 @@ const server = http.createServer(async (req, res) => {
 try {
   await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
   const port = server.address().port;
-  const { ensureStore, readDb, writeDb, updateDb } = await import('../server/store.ts');
+  const { ensureStore, readDb, writeDb } = await import('../server/store.ts');
   const { decideReply } = await import('../server/bot.ts');
   ensureStore();
   const db = readDb();
   db.settings = {
     ...db.settings,
     llmProvider: 'openai-compatible', apiBaseUrl: `http://127.0.0.1:${port}/v1`,
-    apiKey: 'gate-test-key', model: 'gate-test-model', llmReplyGateMaxPerHour: 0
+    apiKey: 'gate-test-key', model: 'gate-test-model',
+    replyGateNaturalThreshold: 45,
+    replyGateLightThreshold: 70,
   };
   db.groups = [{ groupId: '990001', name: 'Gate Test', enabled: true, mode: 'natural', maxPerHour: 20, cooldownSec: 0 }];
   db.messages = [];
   db.usageEvents = [];
   writeDb(db);
 
-  const input = {
+  const naturalStrong = {
     group: db.groups[0], userPolicy: { policy: 'normal', attentionLevel: 3, allowCommands: false },
-    text: '今天这个话题还挺有意思', mentioned: false, userId: '10001', images: []
+    text: '这个话题为什么会变成这样？', mentioned: false, userId: '10001', images: []
   };
-  const decision = await decideReply({ db: readDb(), ...input });
-  if (decision.shouldReply || !decision.reason.includes('35/45')) throw new Error(`低分门控决策异常：${decision.reason}`);
-  let after = readDb();
-  const gateEvent = after.usageEvents.find((event) => event.kind === 'reply-gate');
-  if (
-    after.usage.totalTokens !== 124
-    || after.usage.requests !== 1
-    || gateEvent?.promptTokens !== 0
-    || gateEvent?.accountingExcluded !== true
-    || gateEvent?.observedUsage?.promptTokens !== 123
-    || gateEvent?.gateScore !== 35
-  ) {
-    throw new Error(`门控 Token 未正确计入总用量或明细：${JSON.stringify({ usage: after.usage, gateEvent })}`);
+  const decision = await decideReply({ db: readDb(), ...naturalStrong });
+  if (!decision.shouldReply || !decision.reason.includes('自然群友门控')) {
+    throw new Error(`自然参与强消息没有通过本地门控：${decision.reason}`);
   }
-
-  const positive = await decideReply({ db: readDb(), ...input, text: '[CQ:at,qq=20002] 这个话题你们怎么看' });
-  if (!positive.shouldReply || !positive.reason.includes('78/45')) throw new Error(`高分门控决策异常：${positive.reason}`);
-  const sentPrompt = requestBodies[1]?.messages?.[0]?.content || '';
-  if (sentPrompt.includes('[CQ:at')) throw new Error('门控提示词仍包含原始 CQ at 码');
-
-  after = readDb();
-  if (after.usage.totalTokens !== 248 || after.usage.requests !== 2) throw new Error('第二次门控调用未计入用量');
-  updateDb((draft) => { draft.settings.llmReplyGateMaxPerHour = 2; });
-  const limited = await decideReply({ db: readDb(), ...input });
-  if (!limited.reason.includes('达到每小时 2 次上限') || requestCount !== 2) {
-    throw new Error('门控频率上限未阻止第二次 API 调用');
+  const naturalWeak = await decideReply({
+    db: readDb(),
+    ...naturalStrong,
+    text: '嗯',
+  });
+  if (naturalWeak.shouldReply || !naturalWeak.reason.includes('未达到接话阈值')) {
+    throw new Error(`自然参与弱消息没有被门控拒绝：${naturalWeak.reason}`);
   }
-  console.log('PASS LLM gate: scoring, CQ cleaning, usage accounting and hourly limit');
+  const light = { ...db.groups[0], mode: 'light' };
+  const lightStrong = await decideReply({
+    db: readDb(),
+    ...naturalStrong,
+    group: light,
+    text: '我觉得这个方案还需要重新考虑一下，为什么要这样设计？',
+  });
+  if (!lightStrong.shouldReply || !lightStrong.reason.includes('轻度参与门控')) {
+    throw new Error(`轻度参与强消息没有通过本地门控：${lightStrong.reason}`);
+  }
+  const lightWeak = await decideReply({
+    db: readDb(),
+    ...naturalStrong,
+    group: light,
+    text: '今天这个话题还挺有意思',
+  });
+  if (lightWeak.shouldReply || !lightWeak.reason.includes('未达到接话阈值')) {
+    throw new Error(`轻度参与弱消息没有被更严格门控：${lightWeak.reason}`);
+  }
+  if (requestCount !== 0 || requestBodies.length !== 0) {
+    throw new Error(`本地参与门控不应触发额外 LLM 调用：${requestCount}`);
+  }
+  const after = readDb();
+  if (after.usageEvents.some((event) => event.kind === 'reply-gate')) {
+    throw new Error('不应再写入 reply-gate 用量事件');
+  }
+  const throttled = readDb();
+  throttled.groups = [{ ...throttled.groups[0], mode: 'natural', cooldownSec: 30 }];
+  throttled.decisions = [{
+    id: 'prior-reply-attempt', groupId: '990001', shouldReply: true,
+    createdAt: new Date().toISOString(),
+  }];
+  writeDb(throttled);
+  const failedDeliveryCooldown = await decideReply({
+    db: readDb(), ...naturalStrong, group: throttled.groups[0],
+  });
+  if (failedDeliveryCooldown.shouldReply || !failedDeliveryCooldown.reason.includes('冷却')) {
+    throw new Error(`失败交付后的回复尝试没有占用冷却：${failedDeliveryCooldown.reason}`);
+  }
+  console.log('PASS reply participation: natural/light modes use one local threshold gate');
+  console.log('PASS reply participation: failed delivery attempts still consume cooldown');
 } finally {
   await new Promise((resolve) => server.close(resolve));
   fs.rmSync(dataDir, { recursive: true, force: true });

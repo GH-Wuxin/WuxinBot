@@ -15,6 +15,8 @@ export type OwnerRouteResolution =
       reply?: string;
       reason: string;
       replied: boolean;
+      /** 这是权限拒绝时，附哪张表情（由消费方拼进文本）。正常回复不要设。 */
+      denyStickerId?: string;
     };
 
 const POLICY_COMMAND_PATHS = new Set([
@@ -52,6 +54,7 @@ export function resolveOwnerRoute(ctx: OwnerHandlerContext): OwnerRouteResolutio
         reply: '只有 bot 所有者可以使用 /w exp。',
         reason: 'exp 权限限制',
         replied: Boolean(ctx.sendMessage),
+        denyStickerId: 'no_permission',
       };
     }
     return { kind: 'handler', handlerKey: 'exp' };
@@ -64,6 +67,7 @@ export function resolveOwnerRoute(ctx: OwnerHandlerContext): OwnerRouteResolutio
         reply: '只有 bot 所有者可以使用 /w op。',
         reason: 'op 权限限制',
         replied: Boolean(ctx.sendMessage),
+        denyStickerId: 'no_permission',
       };
     }
     if (!target) {

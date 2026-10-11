@@ -9,13 +9,17 @@ const { recordLlmInvocation } = await import('../server/llmLedger.ts');
 const { mergeLlmUsage, usageEventFields, applyUsageTotals, measuredPromptTokens } = await import('../server/usage.ts');
 const { mapCodexTokenUsage, parseCodexAdapterEnvelope, codexInvocationConfig } = await import('../server/codexAppServer.ts');
 const { runToolLoop, mergeToolLoopResults, executeToolCall, registerPendingBotCall, tryResolveBotResponse } = await import('../server/bots/executor.ts');
-const { withLlmTurnPolicy, reserveLlmInvocation, waitForLlmInvocation, hasTurnFallback, markTurnFallback } = await import('../server/llmPolicy.ts');
+const { withLlmTurnPolicy, reserveLlmInvocation, waitForLlmInvocation, hasTurnFallback, markTurnFallback, runDetachedFromTurnPolicy, getLlmAdmissionStats } = await import('../server/llmPolicy.ts');
+const { getHealth, recordSendError } = await import('../server/health.ts');
 
 const usage = { total_tokens: 120, prompt_tokens: 100, completion_tokens: 20,
   prompt_tokens_details: { cached_tokens: 72 }, completion_tokens_details: { reasoning_tokens: 8 } };
 const completion = text => ({ text, usage, raw: { choices: [{ message: { content: text } }] } });
 try {
   ensureStore();
+  recordSendError(new Error('fixture send failure'), 12);
+  assert.match(getHealth().sendMessage.lastError, /fixture send failure/);
+  console.log('PASS send health retains a bounded confirmed-failure reason');
   assert.equal(mapCodexTokenUsage().cache_metrics_available, false);
   assert.equal(mapCodexTokenUsage().usage_known, false);
   const mixed = mergeLlmUsage(usage, { prompt_tokens: 900, total_tokens: 900 });
@@ -133,6 +137,26 @@ try {
   waited.release();
   occupied.slice(1).forEach(claim => claim.release());
   console.log('PASS async LLM admission waits for capacity instead of failing immediately');
+
+  // Detached profile/image work gets one dedicated slot and cannot starve a
+  // foreground group reply. A second background call may wait, but a
+  // foreground call must still acquire one of the remaining global slots.
+  const backgroundClaim = await runDetachedFromTurnPolicy(() => waitForLlmInvocation(1000));
+  let backgroundSettled = false;
+  const backgroundWaiting = runDetachedFromTurnPolicy(() => waitForLlmInvocation(1000))
+    .then((claim) => { backgroundSettled = true; return claim; });
+  await new Promise(resolve => setTimeout(resolve, 25));
+  assert.equal(backgroundSettled, false, 'a second background call must respect the dedicated background slot');
+  const foregroundClaim = await withLlmTurnPolicy(() => waitForLlmInvocation(1000));
+  const admission = getLlmAdmissionStats();
+  assert.equal(admission.backgroundActive, 1);
+  foregroundClaim.release();
+  backgroundClaim.release();
+  const releasedBackgroundClaim = await backgroundWaiting;
+  releasedBackgroundClaim.release();
+  assert.equal(getLlmAdmissionStats().backgroundActive, 0);
+  console.log('PASS background LLM work is capped and foreground admission keeps priority');
+
   assert.equal(codexInvocationConfig({ codexReasoningEffort: 'max' }, { thinking: { type: 'disabled' } }).effort, 'low');
   assert.equal(codexInvocationConfig({}, { reasoning_effort: 'high' }).effort, 'high');
   assert.equal(codexInvocationConfig({}, { maxTokens: 30 }).capabilities.hardMaxTokens, false);

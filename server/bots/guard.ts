@@ -23,6 +23,7 @@ import {
 // real channel (QQ adapter) are confirmed — it must not be callable by default.
 const ALLOWED_OPERATIONS: ReadonlySet<AllowedOperationType> = new Set([
   'query_osu',
+  'send_sticker',
   'query_bot',
   'get_player_skill',
   'osu_analyze_beatmap_skills',
@@ -57,6 +58,7 @@ const QUERY_OSU_PARAM_KEYS: ReadonlySet<string> = new Set([
 
 const PARAM_KEYS: Readonly<Record<AllowedOperationType, ReadonlySet<string>>> = {
   query_osu: QUERY_OSU_PARAM_KEYS,
+  send_sticker: new Set(['sticker_id']),
   query_external_bot: new Set(['bot', 'command']),
   query_bot: new Set(['bot', 'command', 'username', 'bp_rank', 'bp_start', 'bp_end']),
   get_player_skill: new Set(['player']),
@@ -167,6 +169,12 @@ export function validateOperation(op: AllowedOperation): { ok: true } | { ok: fa
 
   // Specific parameter validation
   switch (op.type) {
+    case 'send_sticker': {
+      const stickerId = String(op.params.sticker_id || '').trim();
+      const stickerIdError = validatePlayerText(stickerId, 'sticker_id', true);
+      if (stickerIdError) return { ok: false, reason: stickerIdError };
+      break;
+    }
     case 'query_osu': {
       const capability = String(op.params.capability || '').trim();
       if (!capability || !isCallableCapability(capability)) {

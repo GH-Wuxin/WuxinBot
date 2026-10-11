@@ -15,6 +15,7 @@ import {
   OWNER_DEFAULT_COMMAND_PERMISSIONS,
 } from './commands/owner.meta.js';
 import { OWNER_HANDLER_REGISTRY } from './owner/registry.js';
+import { withSticker } from './stickers/index.js';
 import { resolveOwnerRoute } from './owner/router.js';
 import type { OwnerHandlerContext } from './owner/types.js';
 
@@ -129,7 +130,11 @@ async function runOwnerCommand(event, sendMessage, permissions = { isOwner: true
   const route = resolveOwnerRoute(context);
 
   if (route.kind === 'reply') {
-    if (route.reply !== undefined && sendMessage) await sendMessage(event, route.reply);
+    if (route.reply !== undefined && sendMessage) {
+      // 只有被显式标成权限拒绝的回复才附图：这个分支同时承载 /help、用法提示等正常回复。
+      const text = route.denyStickerId ? withSticker(route.reply, route.denyStickerId) : route.reply;
+      await sendMessage(event, text);
+    }
     return { replied: route.replied, reason: route.reason };
   }
 
@@ -141,7 +146,8 @@ async function runOwnerCommand(event, sendMessage, permissions = { isOwner: true
   if (route.permissionKey && !ownerHasCommandPermission(commandDb, commandUserPolicy, permissions, route.permissionKey)) {
     const denyReplyKey = route.denyReplyKey || route.permissionKey;
     const reason = ownerCommandDeniedReply(commandDb, denyReplyKey);
-    if (sendMessage) await sendMessage(event, reason);
+    // 走到这里必然是权限不足，直接附图（图由代码触发，不依赖 LLM）。
+    if (sendMessage) await sendMessage(event, withSticker(reason, 'no_permission'));
     return { replied: Boolean(sendMessage), reason };
   }
 

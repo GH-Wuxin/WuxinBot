@@ -459,6 +459,8 @@ const initialDb = {
   settings: {
     globalPaused: false,
     onlyMentionMode: false,
+    replyGateNaturalThreshold: 45,
+    replyGateLightThreshold: 70,
     llmProvider: process.env.LLM_PROVIDER || 'deepseek',
     apiKey: process.env.LLM_API_KEY || process.env.DEEPSEEK_API_KEY || '',
     apiBaseUrl: process.env.LLM_API_BASE_URL || DEEPSEEK_BASE_URL,
@@ -501,6 +503,19 @@ const initialDb = {
     personalityPrompt: defaultPrompt,
     personaPromptSections: {},
     personaModulePrompts: {},
+    // Sticker delivery is closed by default. A gray/test rollout must opt in
+    // through the protected configuration path or an explicit test override.
+    stickerPolicy: {
+      mode: 'off',
+      allGroups: false,
+      groupIds: [],
+      groupCooldownSec: 600,
+      userCooldownSec: 1200,
+      hourlyLimit: 3,
+      dailyLimit: 16,
+      userDailyLimit: 4,
+      duplicateStickerCooldownSec: 7200,
+    },
     oneBotHttpUrl: 'http://127.0.0.1:3000',
     oneBotWsUrl: 'ws://127.0.0.1:3001',
     oneBotAccessToken: '',
@@ -517,9 +532,6 @@ const initialDb = {
     enableAutoModel: true,
     agentRuntimeMode: 'model_first',
     reasoningEnabled: false,
-    llmReplyGateMaxPerHour: 0,
-    llmReplyGateNaturalThreshold: 45,
-    llmReplyGateLightThreshold: 70,
     ignoreSystemFacts: false,
     memoryEnabled: true,
     memoryMinMessages: 5,
@@ -587,6 +599,20 @@ const initialDb = {
 
 export function normalizeDb(db) {
   const settings = db.settings || {};
+  // The old names belonged to the removed second-LLM gate. Migrate them once
+  // to the local participation gate so existing operator choices survive
+  // without keeping a misleading dead configuration surface.
+  if (!Object.prototype.hasOwnProperty.call(settings, 'replyGateNaturalThreshold')
+    && Object.prototype.hasOwnProperty.call(settings, 'llmReplyGateNaturalThreshold')) {
+    settings.replyGateNaturalThreshold = settings.llmReplyGateNaturalThreshold;
+  }
+  if (!Object.prototype.hasOwnProperty.call(settings, 'replyGateLightThreshold')
+    && Object.prototype.hasOwnProperty.call(settings, 'llmReplyGateLightThreshold')) {
+    settings.replyGateLightThreshold = settings.llmReplyGateLightThreshold;
+  }
+  delete settings.llmReplyGateMaxPerHour;
+  delete settings.llmReplyGateNaturalThreshold;
+  delete settings.llmReplyGateLightThreshold;
   // Shortcut commands are always available subject to the normal group/bot
   // controls; discard the retired extra activation switches.
   delete settings.quickRouterEnabled;

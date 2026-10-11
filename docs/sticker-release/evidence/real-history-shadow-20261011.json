@@ -1,0 +1,121 @@
+{
+  "ok": true,
+  "mode": "dry-run",
+  "destinationGroupId": "1083681153",
+  "sourceGroups": [
+    "682910196",
+    "712531032",
+    "885215108"
+  ],
+  "sampleCount": 6,
+  "repliedCount": 6,
+  "proposalCount": 3,
+  "proposalRate": 0.5,
+  "senderImageCount": 0,
+  "timeoutMs": 45000,
+  "results": [
+    {
+      "sampleIndex": 0,
+      "sourceGroupId": "712531032",
+      "inputHash": "7ce8295e7131dc33",
+      "inputLength": 94,
+      "elapsedMs": 26293,
+      "replied": true,
+      "proposedStickerId": null,
+      "traceFound": false,
+      "traceStatus": null,
+      "dryRun": false,
+      "senderCallCount": 2,
+      "senderImageCount": 0,
+      "textLengths": [
+        31,
+        25
+      ]
+    },
+    {
+      "sampleIndex": 1,
+      "sourceGroupId": "712531032",
+      "inputHash": "d2b10532d1256924",
+      "inputLength": 10,
+      "elapsedMs": 14532,
+      "replied": true,
+      "proposedStickerId": "cheer",
+      "traceFound": true,
+      "traceStatus": "dry_run",
+      "dryRun": true,
+      "senderCallCount": 1,
+      "senderImageCount": 0,
+      "textLengths": [
+        30
+      ]
+    },
+    {
+      "sampleIndex": 2,
+      "sourceGroupId": "682910196",
+      "inputHash": "fb606afd55beb73a",
+      "inputLength": 4,
+      "elapsedMs": 21478,
+      "replied": true,
+      "proposedStickerId": "cheer",
+      "traceFound": true,
+      "traceStatus": "dry_run",
+      "dryRun": true,
+      "senderCallCount": 1,
+      "senderImageCount": 0,
+      "textLengths": [
+        42
+      ]
+    },
+    {
+      "sampleIndex": 3,
+      "sourceGroupId": "682910196",
+      "inputHash": "8e604ac27d3fe1ef",
+      "inputLength": 4,
+      "elapsedMs": 25499,
+      "replied": true,
+      "proposedStickerId": "playful_smirk",
+      "traceFound": true,
+      "traceStatus": "dry_run",
+      "dryRun": true,
+      "senderCallCount": 1,
+      "senderImageCount": 0,
+      "textLengths": [
+        25
+      ]
+    },
+    {
+      "sampleIndex": 4,
+      "sourceGroupId": "885215108",
+      "inputHash": "ff8cb3082a2b6652",
+      "inputLength": 4,
+      "elapsedMs": 28586,
+      "replied": true,
+      "proposedStickerId": null,
+      "traceFound": false,
+      "traceStatus": null,
+      "dryRun": false,
+      "senderCallCount": 1,
+      "senderImageCount": 0,
+      "textLengths": [
+        21
+      ]
+    },
+    {
+      "sampleIndex": 5,
+      "sourceGroupId": "885215108",
+      "inputHash": "44cdeb1a9be4e3b5",
+      "inputLength": 7,
+      "elapsedMs": 19908,
+      "replied": true,
+      "proposedStickerId": null,
+      "traceFound": false,
+      "traceStatus": null,
+      "dryRun": false,
+      "senderCallCount": 1,
+      "senderImageCount": 0,
+      "textLengths": [
+        33
+      ]
+    }
+  ]
+}

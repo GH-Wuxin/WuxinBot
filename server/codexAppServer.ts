@@ -59,6 +59,12 @@ const APP_SERVER_ARGS = [
   'app-server',
 ];
 
+// WuxinBot creates an ephemeral Codex thread for each inference call. The
+// protocol does not expose a portable thread-close operation across the
+// supported Codex builds, so bound the lifetime of one app-server process and
+// recycle it after a timeout or a finite number of completed turns.
+const MAX_WUXIN_TURNS_PER_APP_SERVER = 32;
+
 function cleanText(value: unknown) {
   return String(value ?? '').replace(/\u0000/g, '').trim();
 }
@@ -213,6 +219,9 @@ export class CodexAppServerClient {
   private generation = 0;
   private failureListeners = new Set<(error: Error) => void>();
   private stderrTail: string[] = [];
+  private activeWuxinTurns = 0;
+  private completedWuxinTurns = 0;
+  private recycleRequested = false;
 
   isRunning() {
     return Boolean(this.child && !this.child.killed && this.child.exitCode == null);
@@ -389,6 +398,32 @@ export class CodexAppServerClient {
 
   getGeneration() { return this.generation; }
 
+  beginWuxinTurn() {
+    this.activeWuxinTurns += 1;
+    this.completedWuxinTurns += 1;
+    if (this.completedWuxinTurns >= MAX_WUXIN_TURNS_PER_APP_SERVER) {
+      this.recycleRequested = true;
+    }
+  }
+
+  endWuxinTurn(options: { timedOut?: boolean } = {}) {
+    this.activeWuxinTurns = Math.max(0, this.activeWuxinTurns - 1);
+    if (options.timedOut) this.recycleRequested = true;
+    if (this.activeWuxinTurns === 0 && this.recycleRequested && this.isRunning()) {
+      console.warn('[codex-app-server] 回收达到生命周期上限或超时的 app-server 进程');
+      this.shutdown();
+    }
+  }
+
+  getWuxinTurnLifecycleStats() {
+    return {
+      active: this.activeWuxinTurns,
+      completed: this.completedWuxinTurns,
+      recycleRequested: this.recycleRequested,
+      maxTurns: MAX_WUXIN_TURNS_PER_APP_SERVER,
+    };
+  }
+
   onEvent(listener: (event: RpcEvent) => void) {
     this.listeners.add(listener);
     return () => this.listeners.delete(listener);
@@ -400,6 +435,9 @@ export class CodexAppServerClient {
     const child = this.child;
     this.child = null;
     this.startPromise = null;
+    this.activeWuxinTurns = 0;
+    this.completedWuxinTurns = 0;
+    this.recycleRequested = false;
     this.rejectPending(new Error('Codex App Server 已关闭'));
     if (!child) return;
     try { child.stdin.end(); } catch { /* best effort */ }
@@ -498,6 +536,8 @@ export async function completeCodexAppServerChat(db: any, options: JsonObject = 
   const timeoutMs = Math.max(1, Number(options.timeoutMs ?? settings.codexTimeoutMs ?? 90_000));
   const input = buildCodexAdapterInput(options.messages || [], options.tools || [], options.responseFormat);
   const startedAt = Date.now();
+  let timedOut = false;
+  rpcClient.beginWuxinTurn();
   const remainingMs = () => {
     const remaining = timeoutMs - (Date.now() - startedAt);
     if (remaining <= 0) throw new Error('Codex App Server total deadline exceeded');
@@ -613,6 +653,7 @@ export async function completeCodexAppServerChat(db: any, options: JsonObject = 
       latencyMs: Date.now() - startedAt,
     };
   } catch (error) {
+    timedOut = /(?:超时|deadline exceeded|timed out)/iu.test(String((error as any)?.message || error));
     if (expectedTurnId && rpcClient.isRunning() && generation === rpcClient.getGeneration()) {
       void rpcClient.request('turn/interrupt', { threadId, turnId: expectedTurnId }, 5_000, command).catch(() => {});
     }
@@ -624,5 +665,6 @@ export async function completeCodexAppServerChat(db: any, options: JsonObject = 
     if (timeout) clearTimeout(timeout);
     unsubscribe();
     unsubscribeFailure();
+    rpcClient.endWuxinTurn({ timedOut });
   }
 }

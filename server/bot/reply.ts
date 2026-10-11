@@ -98,8 +98,22 @@ function wait(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+/**
+ * Only an actual @mention of Pippi should produce a QQ native reply. Natural
+ * unsolicited group participation must stay as an ordinary group message;
+ * otherwise every proactive interjection gets a distracting quote bubble.
+ */
+export function isDirectBotMention(event, settings = {}) {
+  if (event?.source !== 'onebot' || event?.type !== 'group') return false;
+  const botQq = String(settings?.selfQq || event?.raw?.self_id || '').trim();
+  if (!botQq || !Array.isArray(event?.atTargets)) return false;
+  return event.atTargets.some((qq) => String(qq) === botQq);
+}
+
 export function replyToCurrentMessageOptions(event, extra = {}) {
+  const explicitReplyId = String(extra?.replyToMessageId || '').trim();
   if (event?.source !== 'onebot' || event?.type !== 'group' || !event?.messageId) return extra;
+  if (event?.replyToCurrentMessage !== true && !explicitReplyId) return extra;
   return {
     ...extra,
     replyToMessageId: String(event.messageId),
@@ -114,7 +128,7 @@ export async function sendReplySegments(sendMessage, event, replyText) {
     await sendMessage(
       event,
       segments[index],
-      index === 0 ? replyToCurrentMessageOptions(event) : undefined,
+      index === 0 ? replyToCurrentMessageOptions(event) : { suppressReply: true },
     );
     if (index < segments.length - 1) await wait(700 + Math.floor(Math.random() * 600));
   }

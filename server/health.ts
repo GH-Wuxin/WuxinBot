@@ -121,7 +121,7 @@ export function recordSendSuccess(latencyMs = 0) {
 }
 
 export function recordSendError(error, latencyMs = 0) {
-  state.sendMessage.lastError = new Date().toISOString();
+  state.sendMessage.lastError = new Date().toISOString() + ' ' + String(error?.message || error || '').slice(0, 500);
   state.sendMessage.lastOutcome = 'confirmed_failure';
   state.sendMessage.recentFailures += 1;
   state.sendMessage.failureCount += 1;

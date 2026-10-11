@@ -67,6 +67,18 @@ try {
   off(); client.shutdown();
   console.log('PASS real Codex client: handshake barrier, old-process isolation, exit notification');
 
+  const lifecycleClient = new CodexAppServerClient(fakeSpawn);
+  const lifecycleRequest = lifecycleClient.request('account/read');
+  await new Promise(r => setImmediate(r));
+  const lifecycleChild = children.at(-1);
+  lifecycleChild.handshake();
+  await lifecycleRequest;
+  lifecycleClient.beginWuxinTurn();
+  lifecycleClient.endWuxinTurn({ timedOut: true });
+  assert.equal(lifecycleClient.isRunning(), false, 'a timed-out Wuxin turn must request app-server recycling');
+  assert.equal(lifecycleChild.killed, true, 'recycling must terminate the stale app-server child');
+  console.log('PASS Codex lifecycle: timed-out Wuxin turn requests bounded app-server recycling');
+
   for (const exitDuringTurn of [false, true]) {
     const processFailure = new Error('process lost');
     const rpc = new CodexAppServerClient(() => {

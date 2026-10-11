@@ -280,10 +280,9 @@ export function ModelsPage({ db, saveSettings }) {
           </>}
         </SettingGroup>
 
-        <SettingGroup className="model-panel model-panel--participation" title="主动参与" description="这些参数只影响自然/轻度模式的接话判断。">
-          <SettingRow title="每群每小时 AI 判断次数" description="0 表示无限制" control={<NumberInput min={0} max={1000} value={draft.llmReplyGateMaxPerHour ?? 0} onChange={(llmReplyGateMaxPerHour) => updateDraft({ llmReplyGateMaxPerHour })} />} />
-          <SettingRow title="自然群友阈值" control={<NumberInput min={0} max={100} value={draft.llmReplyGateNaturalThreshold ?? 45} onChange={(llmReplyGateNaturalThreshold) => updateDraft({ llmReplyGateNaturalThreshold })} />} />
-          <SettingRow title="轻度参与阈值" control={<NumberInput min={0} max={100} value={draft.llmReplyGateLightThreshold ?? 70} onChange={(llmReplyGateLightThreshold) => updateDraft({ llmReplyGateLightThreshold })} />} />
+        <SettingGroup className="model-panel model-panel--participation" title="主动参与" description="自然/轻度模式先用本地规则判断是否值得接话，不会额外调用一次 LLM。">
+          <SettingRow title="自然群友阈值" description="本地接话评分达到此值才进入主模型" control={<NumberInput min={0} max={100} value={draft.replyGateNaturalThreshold ?? 45} onChange={(replyGateNaturalThreshold) => updateDraft({ replyGateNaturalThreshold })} />} />
+          <SettingRow title="轻度参与阈值" description="比自然群友模式更克制" control={<NumberInput min={0} max={100} value={draft.replyGateLightThreshold ?? 70} onChange={(replyGateLightThreshold) => updateDraft({ replyGateLightThreshold })} />} />
           <SettingRow title="思考状态提示" control={<Select value={draft.thinkingNoticeMode || 'slow'} onChange={(event) => updateDraft({ thinkingNoticeMode: event.target.value })} options={[{ value: 'off', label: '关闭' }, { value: 'simple', label: '简短' }, { value: 'detail', label: '详细' }, { value: 'slow', label: '仅慢请求显示' }]} />} />
           {draft.thinkingNoticeMode === 'slow' && <SettingRow title="慢请求延迟" description="至少 500ms" control={<NumberInput min={500} value={draft.thinkingNoticeDelayMs || 3000} onChange={(thinkingNoticeDelayMs) => updateDraft({ thinkingNoticeDelayMs })} suffix="ms" />} />}
         </SettingGroup>
