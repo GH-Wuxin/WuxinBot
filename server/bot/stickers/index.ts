@@ -338,6 +338,22 @@ export function pickSticker(
   key: string,
   options: { maxRisk?: StickerRisk; rng?: () => number } = {},
 ): StickerPick | null {
+  return pickStickerInternal(key, options, false);
+}
+
+/** Code-only group picker. Model selection still goes through pickForModel(). */
+export function pickCodeSticker(
+  key: string,
+  options: { maxRisk?: StickerRisk; rng?: () => number } = {},
+): StickerPick | null {
+  return pickStickerInternal(key, options, true);
+}
+
+function pickStickerInternal(
+  key: string,
+  options: { maxRisk?: StickerRisk; rng?: () => number },
+  allowCodeGroup: boolean,
+): StickerPick | null {
   const maxRisk = options.maxRisk || 'medium';
   const rng = options.rng || Math.random;
   load();
@@ -352,7 +368,7 @@ export function pickSticker(
   //  - context 分支不进随机：串/跳、鼠/板 必须按语境选，随机取会在两个不同含义之间乱跳
   //  - code 门槛不进 LLM 通路：状态图必须由代码在对应分支直接触发
   const candidates = (byGroup?.get(key) || byEmotion?.get(key) || [])
-    .filter((s) => s.mode === 'random' && s.gate !== 'code' && allowed(s, maxRisk));
+    .filter((s) => s.mode === 'random' && (allowCodeGroup || s.gate !== 'code') && allowed(s, maxRisk));
   if (!candidates.length) return null;
   const picked = candidates[Math.min(candidates.length - 1, Math.floor(rng() * candidates.length))];
   const p = stickerPath(picked.id);

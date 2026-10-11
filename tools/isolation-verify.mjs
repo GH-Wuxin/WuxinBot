@@ -25,7 +25,7 @@ console.log('[isolation] production db BEFORE:');
 console.log('  path:  ' + prodBefore.path);
 console.log('  size:  ' + prodBefore.size);
 console.log('  mtime: ' + prodBefore.mtime);
-console.log('  sha256:' + prodBefore.sha256.slice(0, 16) + '...');
+console.log('  sha256:' + (prodBefore.sha256 ? prodBefore.sha256.slice(0, 16) : 'N/A') + '...');
 
 // Create temp data directory (BEFORE any server module import)
 const testDataDir = createTestDataDir('wuxin-isolation');

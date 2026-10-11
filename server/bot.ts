@@ -146,7 +146,7 @@ import {
 } from './bot/gate.js';
 import { handleOwnerCommand } from './bot/ownerCommands.js';
 import { matchQuickCommand, handleQuickCommand } from './bot/quickRouter.js';
-import { pickSticker, withSticker } from './bot/stickers/index.js';
+import { pickCodeSticker, pickSticker, withSticker } from './bot/stickers/index.js';
 import {
   beginLiveStickerDebug,
   stickerDebugShouldDryRun,
@@ -154,8 +154,8 @@ import {
   type StickerDebugSession,
 } from './bot/stickers/debug.js';
 import {
-  buildStickerReplyInstruction,
   parseStickerReply,
+  resolveStickerReplyCapability,
   STICKER_REPLY_RESPONSE_FORMAT,
   withStickerReplyInstruction,
 } from './bot/stickers/finalReply.js';
@@ -163,6 +163,7 @@ import {
   completeStickerDelivery,
   recordStickerDecisionInDb,
   reserveStickerDelivery,
+  stickerDeliveryConfig,
   type StickerDeliveryOutcome,
 } from './bot/stickers/delivery.js';
 import {
@@ -170,6 +171,14 @@ import {
   stickerFailureFallback,
 } from './bot/stickers/replyDelivery.js';
 import { settlePendingQuickObservations } from './bot/quickContext.js';
+
+let stickerReplyCapabilityWarningLogged = false;
+
+function recordStickerReplyCapabilityWarning(error) {
+  if (stickerReplyCapabilityWarningLogged) return;
+  stickerReplyCapabilityWarningLogged = true;
+  console.warn('[sticker] optional model-reply catalogue unavailable; continuing without sticker protocol:', String(error?.message || error).slice(0, 240));
+}
 
 function replyTargetMetadata(event) {
   return {
@@ -948,7 +957,15 @@ let waitUpTimer = null;
     // Natural replies decide an optional sticker only in their final model
     // output. Data queries, explicit searches and named-bot routes keep their
     // existing delivery semantics and do not pay for a sticker envelope.
-    const stickerReplyEnabled = !explicitSearch && !osuDataIntent && !namedBotRequest;
+    const stickerCapability = resolveStickerReplyCapability({
+      eligible: !explicitSearch && !osuDataIntent && !namedBotRequest,
+      deliveryMode: stickerDeliveryConfig(liveDb).mode,
+    });
+    if (stickerCapability.reason === 'catalog_unavailable') {
+      recordStickerReplyCapabilityWarning(new Error('manifest or visual annotations could not be loaded'));
+    }
+    const stickerReplyEnabled = stickerCapability.enabled;
+    const stickerReplyInstruction = stickerCapability.instruction;
 
     const searchMode = responseOptions.searchMode || liveDb.settings.webSearchMode || 'balanced';
     const maxSearchCalls = searchMode === 'deep' ? 3 : (searchMode === 'fast' ? 1 : 2);
@@ -988,7 +1005,7 @@ let waitUpTimer = null;
     const sendThinking = async (text, stickerKey = 'thinking') => {
       if (thinkingSent || !sendMessage) return;
       thinkingSent = true;
-      const picked = pickSticker(stickerKey);
+      const picked = pickCodeSticker(stickerKey);
       await sendMessage(event, picked ? withSticker(text, picked.id) : text);
     };
 
@@ -1059,6 +1076,7 @@ let waitUpTimer = null;
     let modelStickerReservationId = '';
     let modelStickerDebugSession: StickerDebugSession | null = null;
     let modelStickerSelectionValid = false;
+    let modelStickerHistory = null;
     let requiredToolLed = false;
     let evidenceProtectedTurn = false;
     if (useTools) {
@@ -1177,9 +1195,9 @@ let waitUpTimer = null;
         continueAfterDirectPayload: modelFirstRuntime,
         deduplicateToolCalls: modelFirstRuntime,
         structuredToolResults: modelFirstRuntime,
-        ...(stickerReplyEnabled ? {
+        ...(stickerReplyEnabled && stickerReplyInstruction ? {
           finalResponseFormat: STICKER_REPLY_RESPONSE_FORMAT,
-          finalResponseInstruction: buildStickerReplyInstruction(),
+          finalResponseInstruction: stickerReplyInstruction,
         } : {}),
         turnId,
         reasoningRouter,
@@ -1256,14 +1274,14 @@ let waitUpTimer = null;
       const convDecision = reasoningRouter.resolve(convInput, convTurn);
       convTurn = reasoningRouter.mergeTurn(convTurn, convDecision);
       const convWire = thinkingParamsForLevel(convDecision.level, reasoningEnabledFor(liveDb));
-      const finalMessages = stickerReplyEnabled
-        ? withStickerReplyInstruction(messages)
+      const finalMessages = stickerReplyEnabled && stickerReplyInstruction
+        ? withStickerReplyInstruction(messages, stickerReplyInstruction)
         : messages;
       ai = await callLLM(liveDb, finalMessages, searchMode, {
         maxTokens: responseOptions.maxTokens,
         overrideModel: responseOptions.overrideModel,
         visionImages,
-        ...(stickerReplyEnabled ? { responseFormat: STICKER_REPLY_RESPONSE_FORMAT } : {}),
+        ...(stickerReplyEnabled && stickerReplyInstruction ? { responseFormat: STICKER_REPLY_RESPONSE_FORMAT } : {}),
         traceRole: 'conversation',
         tracePurpose: 'conversation_reply',
         ...convWire
@@ -1382,6 +1400,13 @@ let waitUpTimer = null;
           stickerId: stickerDecisionId,
           verifyHashes: false,
         });
+        modelStickerHistory = {
+          id: stickerDecisionId,
+          ...(validation.selected?.emotion ? { emotion: validation.selected.emotion } : {}),
+          ...(validation.selected?.description ? { description: validation.selected.description } : {}),
+          outcome: 'rejected',
+          ...(validation.reason ? { reason: validation.reason } : {}),
+        };
         if (modelStickerDebugSession) {
           modelStickerDebugSession.record('catalog_validated', validation.validation?.ok ? 'ok' : 'failed', {
             manifestCount: validation.validation?.manifestCount,
@@ -1409,6 +1434,13 @@ let waitUpTimer = null;
           });
         } else if (debugDryRun) {
           modelStickerSelectionValid = true;
+          modelStickerHistory = {
+            ...modelStickerHistory,
+            ...(validation.selected?.emotion ? { emotion: validation.selected.emotion } : {}),
+            ...(validation.selected?.description ? { description: validation.selected.description } : {}),
+            outcome: 'dry_run',
+            reason: 'debug_dry_run',
+          };
           modelStickerDebugSession?.record('selection_validated', 'ok', validation.selected || {});
           modelStickerDebugSession?.record('send_requested', 'skipped', { reason: 'debug_dry_run' });
           modelStickerDebugSession?.finish('dry_run', { wouldSend: validation.selected?.id, sendSkipped: true });
@@ -1436,11 +1468,22 @@ let waitUpTimer = null;
             modelStickerPath = delivery.path;
             modelStickerCqCode = toolImageToCq(delivery.path);
             modelStickerReservationId = delivery.reservationId || '';
+            modelStickerHistory = {
+              ...modelStickerHistory,
+              ...(validation.selected?.emotion ? { emotion: validation.selected.emotion } : {}),
+              ...(validation.selected?.description ? { description: validation.selected.description } : {}),
+              outcome: 'reserved',
+            };
             modelStickerDebugSession?.record('send_requested', 'reserved', {
               stickerId: delivery.stickerId,
               reservationId: delivery.reservationId,
             });
           } else {
+            modelStickerHistory = {
+              ...modelStickerHistory,
+              outcome: 'rejected',
+              reason: delivery.reason || 'mode',
+            };
             modelStickerDebugSession?.finish('completed', {
               sendSkipped: true,
               deliveryReason: delivery.reason || 'mode',
@@ -1456,6 +1499,11 @@ let waitUpTimer = null;
           });
         }
       } catch (error) {
+        modelStickerHistory = {
+          ...(modelStickerHistory || { id: stickerDecisionId }),
+          outcome: 'rejected',
+          reason: 'validation_error',
+        };
         modelStickerDebugSession?.finish('failed', {
           sendSkipped: true,
           error: String((error as Error)?.message || error).slice(0, 300),
@@ -1509,6 +1557,7 @@ let waitUpTimer = null;
     const withinMergeFloor = deliveredText.length <= MERGE_FORWARD_MIN_CHARS;
     const isLongReply = responseOptions.longForm || (!withinMergeFloor && segmentCount >= 2);
     let segments;
+    let deliveryStatus = 'ok';
     if (thinkingTimer) { clearTimeout(thinkingTimer); thinkingTimer = null; }
     if (waitUpTimer) { clearTimeout(waitUpTimer); waitUpTimer = null; }
     deliveryStarted = true;
@@ -1525,27 +1574,18 @@ let waitUpTimer = null;
       if (sendMessage) await sendMessage(event, outboundText, replyToCurrentMessageOptions(event));
       segments = [outboundText];
     } else if (modelStickerCqCode && sendMessage) {
-      try {
-        let stickerResult;
-        if (isLongReply) {
-          await sendForwardText(sendMessage, event, 'Wuxin 回复', deliveredText);
-          stickerResult = await sendMessage(event, modelStickerCqCode, replyToCurrentMessageOptions(event));
-          segments = [deliveredText, modelStickerCqCode];
-        } else {
-          const outboundText = [deliveredText, modelStickerCqCode].filter(Boolean).join('\n');
-          stickerResult = await sendMessage(event, outboundText, replyToCurrentMessageOptions(event));
-          segments = [outboundText];
-        }
-        const rawOutcome = stickerResult?.outcome;
-        const stickerOutcome: StickerDeliveryOutcome = rawOutcome === 'confirmed_success'
-          || rawOutcome === 'accepted_unknown'
-          || rawOutcome === 'confirmed_failure'
-          || rawOutcome === 'unknown'
-          ? rawOutcome
-          : 'unknown';
+      const completeModelStickerOutcome = (stickerOutcome: StickerDeliveryOutcome, error?: unknown) => {
         if (modelStickerReservationId) {
           completeStickerDelivery(modelStickerReservationId, stickerOutcome);
         }
+        if (isLongReply && stickerOutcome !== 'confirmed_success' && stickerOutcome !== 'accepted_unknown') {
+          deliveryStatus = 'partial';
+        }
+        modelStickerHistory = {
+          ...(modelStickerHistory || { id: stickerDecisionId }),
+          outcome: stickerOutcome,
+          ...(error ? { reason: String(error?.message || error).slice(0, 240) } : {}),
+        };
         modelStickerDebugSession?.record('send_confirmed', stickerOutcome, {
           stickerId: stickerDecisionId,
           reservationId: modelStickerReservationId || undefined,
@@ -1558,7 +1598,46 @@ let waitUpTimer = null;
           status: stickerOutcome,
           stickerId: stickerDecisionId,
           reservationId: modelStickerReservationId || undefined,
+          ...(error ? { error: String(error?.message || error).slice(0, 300) } : {}),
         });
+      };
+      try {
+        let stickerResult;
+        if (isLongReply) {
+          await sendForwardText(sendMessage, event, 'Wuxin 回复', deliveredText);
+          // The body is already visible to the user. A later optional sticker
+          // failure must not turn this successful turn into replied=false or
+          // cause the long body to be sent a second time.
+          segments = [deliveredText];
+          try {
+            stickerResult = await sendMessage(event, modelStickerCqCode, replyToCurrentMessageOptions(event));
+            segments = [deliveredText, modelStickerCqCode];
+            const rawOutcome = stickerResult?.outcome;
+            const stickerOutcome: StickerDeliveryOutcome = rawOutcome === 'confirmed_success'
+              || rawOutcome === 'accepted_unknown'
+              || rawOutcome === 'confirmed_failure'
+              || rawOutcome === 'unknown'
+              ? rawOutcome
+              : 'unknown';
+            completeModelStickerOutcome(stickerOutcome);
+          } catch (error) {
+            const confirmedFailure = error?.deliveryOutcome === 'confirmed_failure';
+            deliveryStatus = 'partial';
+            completeModelStickerOutcome(confirmedFailure ? 'confirmed_failure' : 'unknown', error);
+          }
+        } else {
+          const outboundText = [deliveredText, modelStickerCqCode].filter(Boolean).join('\n');
+          stickerResult = await sendMessage(event, outboundText, replyToCurrentMessageOptions(event));
+          segments = [outboundText];
+          const rawOutcome = stickerResult?.outcome;
+          const stickerOutcome: StickerDeliveryOutcome = rawOutcome === 'confirmed_success'
+            || rawOutcome === 'accepted_unknown'
+            || rawOutcome === 'confirmed_failure'
+            || rawOutcome === 'unknown'
+            ? rawOutcome
+            : 'unknown';
+          completeModelStickerOutcome(stickerOutcome);
+        }
       } catch (error) {
         const confirmedFailure = error?.deliveryOutcome === 'confirmed_failure';
         let fallbackSent = false;
@@ -1586,6 +1665,11 @@ let waitUpTimer = null;
             confirmedFailure ? 'confirmed_failure' : 'unknown',
           );
         }
+        modelStickerHistory = {
+          ...(modelStickerHistory || { id: stickerDecisionId }),
+          outcome: confirmedFailure ? 'confirmed_failure' : 'unknown',
+          reason: String(error?.message || error).slice(0, 240),
+        };
         modelStickerDebugSession?.record('send_confirmed', confirmedFailure ? 'confirmed_failure' : 'unknown', {
           stickerId: stickerDecisionId,
           reservationId: modelStickerReservationId || undefined,
@@ -1605,7 +1689,7 @@ let waitUpTimer = null;
     } else {
       segments = await sendReplySegments(sendMessage, event, deliveredText);
     }
-    traceEvent('SEND', 'qq_delivery_completed', { status: 'ok', segmentCount: segments.length });
+    traceEvent('SEND', 'qq_delivery_completed', { status: deliveryStatus, segmentCount: segments.length });
 
     updateDb((draft) => {
       draft.messages.push({
@@ -1619,6 +1703,7 @@ let waitUpTimer = null;
         nickname: '机器人',
         content: deliveredText,
         media: deliveredMediaImages.length > 0 ? { images: deliveredMediaImages } : undefined,
+        sticker: modelStickerHistory || undefined,
         inContext: true,
         createdAt: nowIso()
       });

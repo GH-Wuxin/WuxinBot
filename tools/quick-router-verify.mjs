@@ -14,7 +14,7 @@ const testDataDir = createTestDataDir('wuxin-quickrouter');
 process.env.DATA_DIR = testDataDir;
 assertNotProduction(testDataDir);
 const prodBefore = productionDbSnapshot();
-console.log('[isolation] production db snapshot: ' + (prodBefore ? prodBefore.sha256.slice(0, 12) + '...' : 'N/A'));
+console.log('[isolation] production db snapshot: ' + (prodBefore?.sha256 ? prodBefore.sha256.slice(0, 12) + '...' : 'N/A'));
 
 const { ensureStore, readDb, updateDb } = await import('../server/store.ts');
 const { matchQuickCommand, handleQuickCommand, parseOsuArgs, quickPayload } = await import('../server/bot/quickRouter.ts');

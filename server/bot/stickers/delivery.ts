@@ -381,10 +381,15 @@ function countSince(records: StickerDeliveryRecord[], predicate: (record: Sticke
 }
 
 function reject(
+  db: StickerDeliveryDbLike,
   state: StickerDeliveryState,
   reason: StickerDeliveryRejectReason,
 ): StickerDeliveryReservation {
   state.counters.rejected[reason] = (state.counters.rejected[reason] || 0) + 1;
+  // updateDb() unwraps assigned objects into a detached raw value. Re-assign
+  // after mutating the local normalized state so rejected decisions and the
+  // selected counter are persisted on every exit path, not only on success.
+  db.stickerDeliveryState = state;
   return { ok: false, reason };
 }
 
@@ -397,21 +402,21 @@ function reserveInDb(
   const state = pruneState(normalizeState(db.stickerDeliveryState), nowMs);
   db.stickerDeliveryState = state;
 
-  if (config.mode !== 'live') return reject(state, 'mode');
-  if (String(input.eventType || '') !== 'group') return reject(state, 'private');
+  if (config.mode !== 'live') return reject(db, state, 'mode');
+  if (String(input.eventType || '') !== 'group') return reject(db, state, 'private');
 
   const groupId = String(input.groupId || '').trim();
   const userId = String(input.userId || '').trim() || 'unknown';
   const messageId = String(input.messageId || '').trim();
-  if (!groupId || (!config.allGroups && !config.groupIds.includes(groupId))) return reject(state, 'group');
+  if (!groupId || (!config.allGroups && !config.groupIds.includes(groupId))) return reject(db, state, 'group');
 
   const picked = pickForModel(String(input.stickerId || '').trim());
-  if (!picked) return reject(state, 'unknown_sticker');
+  if (!picked) return reject(db, state, 'unknown_sticker');
   state.counters.selected += 1;
 
   if (messageId && state.records.some((record) => record.groupId === groupId
     && record.messageId === messageId && isBudgetRecord(record))) {
-    return reject(state, 'duplicate_turn');
+    return reject(db, state, 'duplicate_turn');
   }
 
   const latestGroup = state.records
@@ -422,29 +427,29 @@ function reserveInDb(
     && record.stickerId === picked.id
     && isWithinWindow(record.at, nowMs, config.duplicateStickerCooldownMs));
   if (repeatedStickerInWindow) {
-    return reject(state, 'duplicate');
+    return reject(db, state, 'duplicate');
   }
   if (latestGroup && isWithinWindow(latestGroup.at, nowMs, config.groupCooldownMs)) {
-    return reject(state, 'cooldown');
+    return reject(db, state, 'cooldown');
   }
 
   const latestUser = state.records
     .filter((record) => sameUser(record, groupId, userId) && isBudgetRecord(record))
     .sort((a, b) => b.at - a.at)[0];
   if (latestUser && isWithinWindow(latestUser.at, nowMs, config.userCooldownMs)) {
-    return reject(state, 'user_cooldown');
+    return reject(db, state, 'user_cooldown');
   }
 
   const groupHourCount = countSince(state.records, (record) => record.groupId === groupId, nowMs - 60 * 60_000);
-  if (config.hourlyLimit <= groupHourCount) return reject(state, 'hourly_limit');
+  if (config.hourlyLimit <= groupHourCount) return reject(db, state, 'hourly_limit');
   const groupDayCount = countSince(state.records, (record) => record.groupId === groupId, nowMs - 24 * 60 * 60_000);
-  if (config.dailyLimit <= groupDayCount) return reject(state, 'daily_limit');
+  if (config.dailyLimit <= groupDayCount) return reject(db, state, 'daily_limit');
   const userDayCount = countSince(
     state.records,
     (record) => sameUser(record, groupId, userId),
     nowMs - 24 * 60 * 60_000,
   );
-  if (config.userDailyLimit <= userDayCount) return reject(state, 'user_daily_limit');
+  if (config.userDailyLimit <= userDayCount) return reject(db, state, 'user_daily_limit');
 
   const reservationId = crypto.randomUUID();
   state.records.push({

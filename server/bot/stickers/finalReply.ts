@@ -10,6 +10,12 @@ export interface ParsedStickerReply {
 /** OpenAI-compatible JSON mode; Codex receives the same contract as an adapter instruction. */
 export const STICKER_REPLY_RESPONSE_FORMAT = { type: 'json_object' } as const;
 
+export interface StickerReplyCapability {
+  enabled: boolean;
+  instruction: string | null;
+  reason: 'enabled' | 'route' | 'off' | 'catalog_unavailable';
+}
+
 let cachedInstruction: string | null = null;
 
 function compactStickerCatalog(): string {
@@ -39,6 +45,30 @@ export function buildStickerReplyInstruction(): string {
   return cachedInstruction;
 }
 
+/**
+ * Resolve the optional model-selected sticker protocol once per turn.
+ * A broken optional catalogue must degrade to the ordinary text path instead
+ * of escaping into the main model call. `buildInstruction` is injectable only
+ * so the failure boundary itself can be tested without touching installed
+ * sticker assets.
+ */
+export function resolveStickerReplyCapability(options: {
+  eligible: boolean;
+  deliveryMode: string;
+  buildInstruction?: () => string;
+}): StickerReplyCapability {
+  if (!options.eligible) return { enabled: false, instruction: null, reason: 'route' };
+  if (options.deliveryMode === 'off') return { enabled: false, instruction: null, reason: 'off' };
+  try {
+    const instruction = (options.buildInstruction || buildStickerReplyInstruction)();
+    return instruction.trim()
+      ? { enabled: true, instruction, reason: 'enabled' }
+      : { enabled: false, instruction: null, reason: 'catalog_unavailable' };
+  } catch {
+    return { enabled: false, instruction: null, reason: 'catalog_unavailable' };
+  }
+}
+
 function unwrapJsonText(value: string): string {
   const trimmed = value.trim();
   const fenced = trimmed.match(/^```(?:json)?\s*([\s\S]*?)\s*```$/i);
@@ -48,12 +78,57 @@ function unwrapJsonText(value: string): string {
 function jsonCandidates(value: string): string[] {
   const normalized = unwrapJsonText(value);
   const candidates = [normalized];
-  const firstObject = normalized.indexOf('{');
-  const lastObject = normalized.lastIndexOf('}');
-  if (firstObject > 0 && lastObject > firstObject) {
-    candidates.push(normalized.slice(firstObject, lastObject + 1));
+  const extracted: string[] = [];
+
+  // Find bounded, balanced JSON objects in one pass instead of repeatedly
+  // rescanning every opening brace. This handles valid JSON followed by a
+  // model tail, ignores braces inside strings, and stays linear on malformed
+  // or adversarial output.
+  const starts: number[] = [];
+  let inString = false;
+  let escaped = false;
+  for (let index = 0; index < normalized.length; index += 1) {
+    const character = normalized[index];
+    if (inString) {
+      if (escaped) escaped = false;
+      else if (character === '\\') escaped = true;
+      else if (character === '"') inString = false;
+      continue;
+    }
+    if (character === '"') {
+      inString = true;
+      continue;
+    }
+    if (character === '{') {
+      starts.push(index);
+      continue;
+    }
+    if (character === '}' && starts.length > 0) {
+      const start = starts.pop()!;
+      extracted.push(normalized.slice(start, index + 1));
+      if (extracted.length > 8) extracted.shift();
+    }
   }
-  return candidates;
+  return [...candidates, ...extracted.reverse().filter((candidate) => candidate !== normalized)];
+}
+
+function malformedStickerReplyFallback(raw: string): string | null {
+  const looksLikeEnvelope = /["']reply["']\s*:/u.test(raw)
+    && /["'](?:mode|sticker_id)["']\s*:/u.test(raw);
+  if (!looksLikeEnvelope) return null;
+
+  // Recover only a complete JSON string value. If the reply itself is cut off,
+  // use a stable neutral acknowledgement rather than exposing protocol text.
+  const replyMatch = raw.match(/["']reply["']\s*:\s*("(?:\\.|[^"\\])*")/u);
+  if (replyMatch) {
+    try {
+      const recovered = JSON.parse(replyMatch[1]);
+      if (typeof recovered === 'string') return recovered.trim() || '收到。';
+    } catch {
+      // Fall through to the neutral protocol-error acknowledgement.
+    }
+  }
+  return '收到。';
 }
 
 /**
@@ -91,7 +166,12 @@ export function parseStickerReply(value: unknown): ParsedStickerReply {
       // Try the bounded object slice before treating the content as plain text.
     }
   }
-  return { reply: raw, stickerId: null, mode: 'none', structured: false };
+  return {
+    reply: malformedStickerReplyFallback(raw) ?? raw,
+    stickerId: null,
+    mode: 'none',
+    structured: false,
+  };
 }
 
 /** Add the final-output contract without modifying the caller's message array. */

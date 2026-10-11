@@ -19,7 +19,7 @@ const testDataDir = createTestDataDir('wuxin-kb');
 process.env.DATA_DIR = testDataDir;
 assertNotProduction(testDataDir);
 const prodBefore = productionDbSnapshot();
-console.log('[isolation] production db snapshot: ' + (prodBefore ? prodBefore.sha256.slice(0, 12) + '...' : 'N/A'));
+console.log('[isolation] production db snapshot: ' + (prodBefore?.sha256 ? prodBefore.sha256.slice(0, 12) + '...' : 'N/A'));
 
 // ── 1. Build the knowledge base into the isolated data dir ──
 

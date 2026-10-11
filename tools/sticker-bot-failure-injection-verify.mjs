@@ -14,6 +14,7 @@ const { getStickerDeliveryState, getStickerDeliveryStats } = await import(
 );
 
 let llmRequests = 0;
+let llmReplyEnvelope = { reply: '', mode: 'image_only', sticker_id: 'hello' };
 let timeoutServer;
 let failureServer;
 const llmServer = http.createServer((req, res) => {
@@ -22,8 +23,8 @@ const llmServer = http.createServer((req, res) => {
   req.on('end', () => {
     llmRequests += 1;
     const body = JSON.parse(raw || '{}');
-    assert.equal(body.response_format?.type, 'json_object');
-    const content = JSON.stringify({ reply: '', mode: 'image_only', sticker_id: 'hello' });
+    const stickerProtocolEnabled = body.response_format?.type === 'json_object';
+    const content = stickerProtocolEnabled ? JSON.stringify(llmReplyEnvelope) : '收到。';
     const response = {
       id: `sticker-fixture-${llmRequests}`,
       object: 'chat.completion',
@@ -68,8 +69,7 @@ updateDb((db) => {
   db.stickerDeliveryState = undefined;
 });
 
-function event(groupId, messageId) {
-  const mentioned = arguments.length < 3 || arguments[2] !== false;
+function event(groupId, messageId, mentioned = true, textOverride = '') {
   return {
     source: 'onebot',
     type: 'group',
@@ -77,7 +77,7 @@ function event(groupId, messageId) {
     groupId,
     userId: '900000002',
     nickname: 'fixture-user',
-    text: mentioned ? '[CQ:at,qq=900000001] 给个反应' : '自然接话失败测试',
+    text: textOverride || (mentioned ? '[CQ:at,qq=900000001] 给个反应' : '自然接话失败测试'),
     atTargets: mentioned ? ['900000001'] : [],
     images: [],
     raw: {},
@@ -162,6 +162,34 @@ try {
   assert.equal(state.records.at(-1).outcome, 'confirmed_failure');
   assert.equal(state.counters.confirmedFailure, 1);
   assert.equal(getStickerDeliveryStats().counters.byGroup['sticker-send-group'].eligibleReplies, 1);
+
+  // A long reply is delivered as a forward first. If only the optional sticker
+  // send fails afterwards, the body must remain a successful reply and must be
+  // written to history exactly once.
+  llmReplyEnvelope = { reply: '这是一段已经送达的长回复正文。', mode: 'text_image', sticker_id: 'hello' };
+  configurePolicy(['sticker-send-group']);
+  const longSends = [];
+  const longResult = await processIncoming(
+    event('sticker-send-group', 'sticker-long-message', true, '写一篇长文，说明刚才的结果'),
+    async (_event, text) => {
+      const value = String(text || '');
+      longSends.push(value);
+      if (value.includes('[CQ:image')) {
+        const error = new Error('fixture long-reply sticker failure');
+        error.deliveryOutcome = 'confirmed_failure';
+        throw error;
+      }
+      return { outcome: 'confirmed_success', messageId: 22 };
+    },
+  );
+  assert.equal(longResult.replied, true);
+  assert.equal(longSends.length, 2);
+  assert.equal(longSends[0], 'Wuxin 回复');
+  assert.equal(longSends[1].includes('[CQ:image'), true);
+  const longHistory = readDb().messages.at(-1);
+  assert.equal(longHistory.content, '这是一段已经送达的长回复正文。');
+  assert.equal(longHistory.sticker?.outcome, 'confirmed_failure');
+  llmReplyEnvelope = { reply: '', mode: 'image_only', sticker_id: 'hello' };
 
   // Unknown outcome: never retry the image or invent a text resend, because
   // the first request may already have reached QQ. The reservation remains a

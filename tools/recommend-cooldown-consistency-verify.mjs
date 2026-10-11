@@ -31,7 +31,7 @@ process.env.DATA_DIR = testDataDir;
 assertNotProduction(testDataDir);
 const prodBefore = productionDbSnapshot();
 console.log('[isolation] test data dir: ' + testDataDir);
-console.log('[isolation] production db snapshot: ' + (prodBefore ? prodBefore.sha256.slice(0, 12) + '...' : 'N/A'));
+console.log('[isolation] production db snapshot: ' + (prodBefore?.sha256 ? prodBefore.sha256.slice(0, 12) + '...' : 'N/A'));
 
 // ── Offline osu! API mock (same fixture world as recommend-verify.mjs) ──
 const MAPS = [
