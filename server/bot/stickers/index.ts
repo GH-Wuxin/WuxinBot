@@ -494,7 +494,7 @@ export function stickerCount(): number {
 // 与 server/bot.ts 的 escapeCqParam 同一套转义。没有直接复用是因为其一为模块内私有函数，
 // 其二从 stickers 反向 import bot.ts 会形成循环依赖。资源路径本身是纯 ASCII 且无逗号，
 // 这里保留转义只为不依赖该前提。
-function cqImageFor(filePath: string): string {
+export function cqImageFor(filePath: string): string {
   const href = pathToFileURL(filePath).href
     .replace(/&/g, '&amp;')
     .replace(/\[/g, '&#91;')

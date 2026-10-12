@@ -146,7 +146,8 @@ import {
 } from './bot/gate.js';
 import { handleOwnerCommand } from './bot/ownerCommands.js';
 import { matchQuickCommand, handleQuickCommand } from './bot/quickRouter.js';
-import { pickCodeSticker, pickSticker, withSticker } from './bot/stickers/index.js';
+import { cqImageFor, pickCodeSticker, pickSticker, withSticker } from './bot/stickers/index.js';
+import { rollRandomImage } from './bot/randomImages.js';
 import {
   beginLiveStickerDebug,
   stickerDebugShouldDryRun,
@@ -587,6 +588,17 @@ async function processIncomingInner(event, sendMessage = undefined, queuedDecisi
     // profile counters are touched. This is what makes the mode a real privacy
     // and cost boundary instead of another probabilistic reply policy.
     return { replied: false, reason: '本群为仅 osu! 指令模式，忽略非 osu! 内容' };
+  }
+
+  // 随机表情包：与「要不要回复」完全无关 —— 群里每来一条别人的消息就掷一次骰子，
+  // 命中就单独甩一张图。放在 osu 档早退之后，于是 mention / osu 档的群自然不参与；
+  // 自触发在上面 547 行就已经返回了。掷骰本身不花钱、不调模型。
+  if (event.type === 'group' && sendMessage && (group?.mode === 'natural' || group?.mode === 'light')) {
+    const roll = rollRandomImage(event.groupId, group.mode);
+    if (roll.file) {
+      // 不 await：发图失败不该影响正常回复，也不该拖慢这一轮。
+      Promise.resolve(sendMessage(event, cqImageFor(roll.file))).catch(() => undefined);
+    }
   }
   if (event.type === 'group' && looksLikeExternalBotSender(event, settings) && !isGroupOwner) {
     const reason = '忽略疑似其他机器人账号的消息';
