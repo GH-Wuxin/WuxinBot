@@ -102,10 +102,29 @@ if (!fs.existsSync(POOL)) fs.mkdirSync(POOL, { recursive: true });
 const poolEntries = readImage(POOL);
 const extras = SOURCE === POOL || !fs.existsSync(SOURCE) ? [] : readImage(SOURCE);
 
-// 池里已有的内容哈希：用来去重，也让重复运行变成无操作。
+// 去重必须按**摘掉 caBX 之后**的内容算，不能按原始字节。
+// 池里的文件是归一化过的、源文件还带着 caBX —— 按原始字节比，同一张图会被当成
+// 两张（实测：26 张池内文件 + 26 张同源文件 = 53 张，一张都没去重掉）。
+function contentKey(buffer) {
+  return sha256(stripC2pa(buffer).buffer);
+}
+
 const knownHashes = new Map();
+const duplicatePoolFiles = [];
 for (const entry of poolEntries) {
-  knownHashes.set(sha256(fs.readFileSync(entry.file)), { file: entry.file, name: entry.name });
+  const key = contentKey(fs.readFileSync(entry.file));
+  const seen = knownHashes.get(key);
+  if (seen) {
+    // 同一内容在池里有多个编号：保留编号小的，其余删掉。
+    const keepNumber = Number(seen.name.slice(6, seen.name.lastIndexOf('.'))) || 0;
+    const thisNumber = Number(entry.name.slice(6, entry.name.lastIndexOf('.'))) || 0;
+    if (keepNumber && thisNumber && thisNumber < keepNumber) {
+      duplicatePoolFiles.push(seen.file);
+      knownHashes.set(key, { file: entry.file, name: entry.name });
+    } else duplicatePoolFiles.push(entry.file);
+    continue;
+  }
+  knownHashes.set(key, { file: entry.file, name: entry.name });
 }
 
 const taken = takenNumbers(poolEntries);
@@ -125,18 +144,18 @@ const toNumber = poolEntries.filter((entry) => {
 const additions = [];
 for (const entry of extras) {
   const buffer = fs.readFileSync(entry.file);
-  const hash = sha256(buffer);
-  if (knownHashes.has(hash)) continue;
-  knownHashes.set(hash, { file: entry.file, name: entry.name });
+  const key = contentKey(buffer);
+  if (knownHashes.has(key)) continue;
+  knownHashes.set(key, { file: entry.file, name: entry.name });
   additions.push({ ...entry, buffer });
 }
 
 console.log('  图池   ' + POOL);
 console.log('  源目录 ' + SOURCE + (extras.length ? '' : '（不存在或与图池相同，跳过）'));
 console.log('');
-console.log('  图池现有      ' + poolEntries.length + ' 张（其中 ' + toNumber.length + ' 张需要改成 pippi-NN）');
+console.log('  图池现有      ' + poolEntries.length + ' 张（其中 ' + toNumber.length + ' 张需要改成 pippi-NN，' + duplicatePoolFiles.length + ' 张是同内容重复）');
 console.log('  源目录        ' + extras.length + ' 张，按内容去重后新增 ' + additions.length + ' 张');
-console.log('  计划结果      ' + (poolEntries.length + additions.length) + ' 张');
+console.log('  计划结果      ' + (poolEntries.length - duplicatePoolFiles.length + additions.length) + ' 张');
 console.log('');
 
 if (args.dryRun) {
@@ -150,6 +169,12 @@ if (args.dryRun) {
 let renamed = 0;
 let added = 0;
 let stripped = 0;
+let pruned = 0;
+
+// 0) 先清掉池内同内容的重复文件（保留编号最小的那个）
+for (const file of duplicatePoolFiles) {
+  if (fs.existsSync(file)) { fs.rmSync(file); pruned += 1; }
+}
 
 // 1) 池内不合规命名的：摘块 + 改名
 for (const entry of toNumber) {
@@ -178,6 +203,36 @@ for (const entry of additions) {
   added += 1;
 }
 
+// 4) 清掉重复后编号会有空洞，压紧一次。正常导入只是往后追加、不产生空洞，
+//    所以这一步只在真删过东西时才动，不会每跑一次就重编号。
+// 判据是「编号是否连续」，不是「这次有没有删过东西」—— 否则上一次清理留下的
+// 空洞永远补不上（实测：删了 26 张重复后编号停在 …26, 53，重跑却报重编号 0）。
+// 编号连续时这一步是空操作，所以幂等。
+let compacted = 0;
+{
+  const remaining = readImage(POOL);
+  const wanted = remaining.map((entry, index) => 'pippi-' + pad(index + 1) + '.png');
+  const renames = [];
+  remaining.forEach((entry, index) => {
+    if (entry.name !== wanted[index]) renames.push({ from: entry.file, to: path.join(POOL, wanted[index]) });
+  });
+  if (renames.length) {
+    const staged = [];
+    // 先全部挪到临时名，避免目标名与尚未处理的文件撞车。
+    renames.forEach((item, index) => {
+      const temporary = path.join(POOL, '__compact_' + index + '.tmp');
+      fs.renameSync(item.from, temporary);
+      staged.push({ temporary, target: item.to });
+    });
+    for (const item of staged) {
+      // 目标名可能正好被另一张占用，占用的那个此时已在临时名下。
+      if (fs.existsSync(item.target)) fs.rmSync(item.target);
+      fs.renameSync(item.temporary, item.target);
+    }
+    compacted = renames.length;
+  }
+}
+
 const final = readImage(POOL);
-console.log('  改名 ' + renamed + ' · 新增 ' + added + ' · 摘掉 caBX ' + stripped + ' 个块');
+console.log('  去重删除 ' + pruned + ' · 重编号 ' + compacted + ' · 改名 ' + renamed + ' · 新增 ' + added + ' · 摘掉 caBX ' + stripped + ' 个块');
 console.log('  图池现在 ' + final.length + ' 张：' + final.slice(0, 3).map((e) => e.name).join(', ') + ' … ' + final.slice(-2).map((e) => e.name).join(', '));
