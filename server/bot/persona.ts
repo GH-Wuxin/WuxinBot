@@ -218,12 +218,41 @@ const PIPPI_FACT_BOUNDARIES = [
 
 const SCENE_CASUAL = [
   '当前场景：日常聊天。',
-  '- 自然、简短，像熟悉的群友',
+  '- 像熟悉的群友',
   '- 可以表达自己的看法，不使用客服式套话',
   '- 不主动把无关话题扯到 osu!',
   '- 不强行插入 Auto 梗',
   '- 根据群聊气氛控制参与度，不抢占所有对话',
   '- 熟悉以后可以更随意，但不能仅凭熟悉度无条件附和',
+].join('\n');
+
+// Group-chat *form* rules, kept apart from SCENE_CASUAL because they must not
+// reach every casual turn: a question actually addressed to pippi still
+// deserves a real answer, and the terse form truncates it.  Leaving the block
+// out is stronger than telling the model to ignore it -- measured over six
+// paraphrases per scenario, an in-prompt exception bought back ~2 characters.
+// The counterpart for a question actually addressed to pippi.  Dropping the
+// short-form guide entirely fixed the truncation but also dropped the
+// group-member voice: punctuation jumped from 2% to 21% on casual cases
+// because the answers reverted to assistant prose.  So the addressed question
+// gets its own block instead of none -- complete, but still spoken.
+const CASUAL_ANSWER_GUIDE = [
+  '【回答提问】对方是在问你，用群友的方式把问题答清楚：',
+  '- 直接给答案，不铺垫、不复述问题、不写"总结一下"这类收尾',
+  '- 答完就停，不多加无关的补充、建议或追问',
+  '- 口语短句，不写成书面段落',
+  '- 需要几步就说几步，但不为了短而漏掉关键信息',
+].join('\n');
+
+const CASUAL_FORM_GUIDE = [
+  '【群聊形态】像群友随手打字，不是写回复稿：',
+  '- 不要用句号结尾，短句直接连着说',
+  '- 一次只说一个点，说完就停；不补充背景、不总结、不额外再添一句',
+  '- 长度贴近真实群友：日常回复多数在 10 个字以内，一两个字、一个符号、一个表情都算完整回复',
+  '- 不复述对方刚说过的话',
+  '- 不在句尾追问或反问；想接话就直接说',
+  '- 不主动给建议，不做安慰式收尾',
+  '- 梗听懂就接住，不把梗解释一遍',
 ].join('\n');
 
 const PIPPI_BANTER_BLOCK = [
@@ -277,6 +306,8 @@ interface PippiPromptInput {
   factualContext?: string;        // visual capability, model info, search mode, etc.
   includeFactBoundaries?: boolean;
   compactAnalysisPersona?: boolean;
+  /** True when the turn is a question actually addressed to pippi. */
+  addressedQuestion?: boolean;
 }
 
 const PIPPI_PROMPT_SECTION_DEFINITIONS = [
@@ -289,6 +320,8 @@ const PIPPI_PROMPT_SECTION_DEFINITIONS = [
   { id: 'sceneCommand', title: '命令反馈场景', description: '命令响应的简洁与可操作性要求。', defaultContent: SCENE_COMMAND },
   { id: 'sceneSerious', title: '严肃对话场景', description: '用户处于困难或紧急情形时的表达要求。', defaultContent: SCENE_SERIOUS },
   { id: 'communityBanter', title: '社区语料语感', description: '仅注入日常聊天的脱敏社区短反应语料。', defaultContent: PIPPI_BANTER_BLOCK },
+  { id: 'casualFormGuide', title: '群聊短回复形态', description: '普通群聊的短消息形态要求；被 @ 的提问改注入 casualAnswerGuide。', defaultContent: CASUAL_FORM_GUIDE },
+  { id: 'casualAnswerGuide', title: '被 @ 提问的回答形态', description: '被直接提问时：答清楚，但仍用群友的口语短句。', defaultContent: CASUAL_ANSWER_GUIDE },
 ] as const;
 
 export function getPippiPromptSectionCatalog(overrides: Record<string, string> = {}) {
@@ -349,8 +382,15 @@ export function buildPippiPrompt(input: PippiPromptInput): string {
   // Layer 4: Scene rules
   parts.push(sceneRules[input.scene] || sceneRules.casual);
 
-  // Layer 4b: casual-only community reaction bank (never in analysis/command/serious)
+  // Layer 4b: casual-only blocks (never in analysis/command/serious).
+  // The short-form guide is skipped when the turn is a question actually
+  // addressed to pippi, so the answer keeps room to be an answer.
   if (input.scene === 'casual') {
+    // Three-way by design: ambient chatter gets the short form, an addressed
+    // question gets the answer form, and a non-casual scene gets neither.
+    parts.push(input.addressedQuestion
+      ? section('casualAnswerGuide', CASUAL_ANSWER_GUIDE)
+      : section('casualFormGuide', CASUAL_FORM_GUIDE));
     parts.push(section('communityBanter', PIPPI_BANTER_BLOCK));
   }
 
