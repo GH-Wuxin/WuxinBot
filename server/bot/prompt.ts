@@ -182,6 +182,33 @@ export function asksForExplicitSearch(text) {
   return false;
 }
 
+// Literal question markers.  This gate decides one thing only: whether the
+// group short-form guide is injected.  Getting it slightly wrong costs a
+// terser answer, not a broken one, so a plain word list beats a pattern --
+// and a false positive such as "没什么" is harmless at this granularity.
+const QUESTION_MARKERS = [
+  '为什么', '为啥', '如何', '是不是', '能不能', '可不可以',
+  '多少', '有没有', '要不要', '好不好', '对不对', '什么关系', '算什么', '怎么样',
+];
+
+export function looksLikeQuestion(text) {
+  const value = String(text || '').trim();
+  if (!value) return false;
+  if (value.endsWith('?') || value.endsWith('？')) return true;
+  if (value.endsWith('吗') || value.endsWith('呢')) return true;
+  if (QUESTION_MARKERS.some((marker) => value.includes(marker))) return true;
+  // Bare 「怎么」 is too broad to treat as a question on its own:
+  // 「这群怎么这么安静」and「今天怎么这么靠谱」are exclamations, and
+  // routing them to the answer path is what pushed casual punctuation
+  // back up from 2% to 21% in the first run of this rule.
+  const index = value.indexOf('怎么');
+  if (index >= 0) {
+    const after = value.slice(index + 2, index + 4);
+    if (after !== '这么' && after !== '那么') return true;
+  }
+  return false;
+}
+
 export function isLongFormRequest(text) {
   return /作文|文章|长文|写一篇|写个|续写|继续|补上|结尾|三百字|300字|[0-9０-９]{3,}\s*字|不少于|大约.*字|高考作文|议论文|小说|故事/.test(String(text || ''));
 }
@@ -511,8 +538,15 @@ export function buildPrompt(db, group, event, userPolicy, options = {}) {
       .join('\n');
   }
 
+  // A question that was actually addressed to pippi keeps the full answer
+  // budget: the group short-form guide exists for ambient chatter, and
+  // applying it to "DT为什么会让AR变高" collapsed a 75-character explanation
+  // into 21.  Un-addressed questions stay casual -- in a group, most of them
+  // are not aimed at her.
+  const addressedQuestion = looksLikeQuestion(event.text) && Boolean(atSelf);
   const systemPrompt = buildPippiPrompt({
     scene,
+    addressedQuestion,
     userPersonality: userPersonality || '',
     promptSections: db.settings.personaPromptSections || {},
     relationshipContext: relBlocks || undefined,
