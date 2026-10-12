@@ -20,3 +20,9 @@ release/
 portable-node/
 artifacts/
 .public-export/
+
+# 回放/实验的本地产物：source-data 副本会带上生产库凭据，绝不能提交
+tmp/*-source.json
+tmp/_pyarrow/
+tmp/ds-arm-*.json
+tmp/arm-*.json
