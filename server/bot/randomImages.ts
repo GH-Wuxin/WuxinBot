@@ -137,11 +137,16 @@ export function rollRandomImage(groupId: string, mode: string | undefined): Rand
     const chance = Number.isFinite(previous.chance) ? Number(previous.chance) : rates.base;
     const hit = Math.random() < chance;
     const picked = hit ? files[Math.floor(Math.random() * files.length)] : null;
+    // 未命中时必须**继承**上次命中的记录。早先只在命中那一支里写这两个字段，
+    // 结果命中后只要再掷一次骰子，lastFile / lastHitAt 就被抹掉了 —— 于是
+    // 「刚才发出去的是哪张」变得无从查证（发出的图不进消息库）。
     const next: Record<string, unknown> = {
       chance: hit ? rates.base : Math.min(1, chance + rates.step),
       rolls: Number(previous.rolls || 0) + 1,
       hits: Number(previous.hits || 0) + (hit ? 1 : 0),
     };
+    if (previous.lastHitAt) next.lastHitAt = previous.lastHitAt;
+    if (previous.lastFile) next.lastFile = previous.lastFile;
     if (hit) {
       next.lastHitAt = new Date().toISOString();
       next.lastFile = picked;
