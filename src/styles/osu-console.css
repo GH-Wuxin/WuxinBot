@@ -307,3 +307,18 @@ body { font-family: 'Segoe UI', 'Microsoft YaHei', system-ui, sans-serif; }
   .osu-request-detail .trace-event::before { left: -15px; }
   .osu-request-detail > .log-row { padding-inline: 6px; }
 }
+
+/* 随机甩图：各群状态与最近发送 */
+.osu-random-image { grid-column: 1 / -1; }
+.osu-random-image__groups { display: flex; flex-direction: column; }
+.osu-random-image__group { display: flex; align-items: center; gap: 12px; padding: 7px 0; border-bottom: 1px solid #ffffff07; font-size: 12px; }
+.osu-random-image__group:last-child { border-bottom: 0; }
+.osu-random-image__group--idle { opacity: .5; }
+.osu-random-image__name { min-width: 118px; font-weight: 600; }
+.osu-random-image__mode { min-width: 60px; color: var(--v2-text-muted); }
+.osu-random-image__last { margin-left: auto; color: var(--v2-text-soft); }
+.osu-random-image__recent { display: grid; grid-template-columns: repeat(auto-fill,minmax(92px,1fr)); gap: 10px; }
+.osu-random-image__recent figure { margin: 0; }
+.osu-random-image__recent img { width: 100%; aspect-ratio: 1; object-fit: cover; border-radius: 8px; border: 1px solid var(--v2-border); background: #17121e; }
+.osu-random-image__recent figcaption { margin-top: 5px; font-size: 11px; color: var(--v2-text-soft); }
+.osu-random-image__recent figcaption small { display: block; font-size: 10px; color: var(--v2-text-muted); }
