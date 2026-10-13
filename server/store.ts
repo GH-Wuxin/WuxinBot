@@ -516,6 +516,16 @@ const initialDb = {
       userDailyLimit: 4,
       duplicateStickerCooldownSec: 7200,
     },
+    // 群聊随机甩图。数值必须与 server/bot/randomImages.ts 的 DEFAULTS 一致 ——
+    // 这里一旦存在该键，randomImageConfig 就会以这里的值为准。
+    // 默认值来自实测：轻度参与期望 84.5 条一命中、自然群友 47.8 条，区分度 1.77 倍。
+    randomImage: {
+      enabled: true,
+      natural: { base: 0.005, step: 0.0005 },
+      light: { base: 0.001, step: 0.0002 },
+      recentWindow: 8,
+      recentDecay: 0.35,
+    },
     oneBotHttpUrl: 'http://127.0.0.1:3000',
     oneBotWsUrl: 'ws://127.0.0.1:3001',
     oneBotAccessToken: '',

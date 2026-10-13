@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { ArrowDownLeft, ArrowUpRight, ChevronRight, Clock3, MessageCircle, RefreshCw, UsersRound, Zap } from 'lucide-react';
 import { usePollingResource } from '../../app/polling.js';
 import { api } from '../../lib/api.js';
-import { Button, Card, ErrorState, LoadingState, SegmentedControl, SectionHeader, StatusBadge, Switch } from '../../components/ui/index.jsx';
+import { Button, Card, ErrorState, LoadingState, NumberInput, SegmentedControl, SectionHeader, SettingGroup, SettingRow, StatusBadge, Switch } from '../../components/ui/index.jsx';
 import { formatNumber, periodLabels, quotaWindows, shortNumber, usagePeriods, usageSummary } from './usageView.js';
 
 const apiModels = { 'deepseek-v4-flash': 'V4 Flash', 'deepseek-v4-pro': 'V4 Pro', 'deepseek-chat': 'Chat', 'deepseek-reasoner': 'Reasoner' };
@@ -57,6 +57,46 @@ function QuotaPanel({ enabled, onNavigate }) {
   </Card>;
 }
 
+// 由基础概率与每次累加算出「平均多少条发言出一张」。
+// 和 randomImages.ts 的算法一致：每条没中就把概率加 step，中了回到 base。
+function expectedInterval(base, step) {
+  let survival = 1, mean = 0;
+  for (let n = 1; n <= 20000; n += 1) {
+    mean += survival;
+    survival *= (1 - Math.min(1, base + step * (n - 1)));
+    if (survival < 1e-12) break;
+  }
+  return Math.round(mean);
+}
+
+function RandomImageCard({ settings, saveSettings }) {
+  const current = settings.randomImage || {};
+  const light = current.light || { base: 0.001, step: 0.0002 };
+  const natural = current.natural || { base: 0.005, step: 0.0005 };
+  const enabled = current.enabled !== false;
+  const lightBase = Number(light.base ?? 0.001);
+  const naturalBase = Number(natural.base ?? 0.005);
+  // 保存时必须整块替换：后端只按顶层键过滤，嵌套对象不做合并。
+  const write = (next) => saveSettings({
+    randomImage: {
+      enabled: next.enabled ?? enabled,
+      natural: { base: next.naturalBase ?? naturalBase, step: Number(natural.step ?? 0.0005) },
+      light: { base: next.lightBase ?? lightBase, step: Number(light.step ?? 0.0002) },
+      recentWindow: Number(current.recentWindow ?? 8),
+      recentDecay: Number(current.recentDecay ?? 0.35),
+    },
+  });
+  const pace = (base, step) => '约 ' + expectedInterval(base, step) + ' 条发言出一张';
+  return <Card>
+    <SectionHeader title='群聊随机发图' />
+    <SettingGroup title='概率' description='群里每有一条别人的发言就掷一次骰子，命中就单独发一张图、不带文字。只在「轻度参与」和「自然群友」两个档位生效。'>
+      <SettingRow title='开启' description='关闭后完全不掷骰子。' control={<Switch checked={enabled} onChange={event => write({ enabled: event.target.checked })} />} />
+      <SettingRow title='轻度参与' description={'基础概率；' + pace(lightBase, Number(light.step ?? 0.0002))} control={<NumberInput value={Number((lightBase * 100).toFixed(3))} min={0} max={100} step={0.01} suffix='%' onChange={value => write({ lightBase: value / 100 })} />} />
+      <SettingRow title='自然群友' description={'基础概率；' + pace(naturalBase, Number(natural.step ?? 0.0005))} control={<NumberInput value={Number((naturalBase * 100).toFixed(3))} min={0} max={100} step={0.01} suffix='%' onChange={value => write({ naturalBase: value / 100 })} />} />
+    </SettingGroup>
+  </Card>;
+}
+
 export function DashboardPage({ db, oneBot, saveSettings, refreshState, onNavigate }) {
   const [period, setPeriod] = useState('hourly24');
   const health = usePollingResource(() => api('/api/health'), 5000);
@@ -83,6 +123,6 @@ export function DashboardPage({ db, oneBot, saveSettings, refreshState, onNaviga
       <Button variant="ghost" size="sm" onClick={() => onNavigate('logs')}>查看运行日志<ChevronRight size={14} /></Button>
     </Card></aside></div>
     <section className="osu-today" aria-label="自然日与累计指标"><div><MessageCircle size={18} /><span>今日消息<small>今日 00:00 至今</small></span><strong>{formatNumber(db.stateStats?.todayMessages ?? db.messages?.length)}</strong></div><div><Zap size={18} /><span>今日 Token<small>与滚动 24 小时不同</small></span><strong>{shortNumber(db.usageStats?.today?.totalTokens).value}{shortNumber(db.usageStats?.today?.totalTokens).unit}</strong></div><div><UsersRound size={18} /><span>经验成员<small>累计 {formatNumber(db.usage?.replies)} 次回复</small></span><strong>{Object.keys(db.experience || {}).length}</strong></div></section>
-    <section className="dashboard-controls"><Card><SectionHeader title="参与方式" /><Switch checked={Boolean(db.settings.onlyMentionMode)} onChange={event => saveSettings({ onlyMentionMode: event.target.checked })} label="临时只在 @ 时回复" description="立即生效；关闭后恢复各群自己的参与模式。" /></Card><Card><SectionHeader title="快速切换模型" actions={<Button variant="ghost" size="sm" onClick={() => onNavigate('model')}>设置<ChevronRight size={14} /></Button>} /><SegmentedControl value={effectiveModel} onChange={model => saveSettings(codexActive ? { codexModel: model } : { model })} label="快速切换模型" options={modelOptions} /></Card></section>
+    <section className="dashboard-controls"><Card><SectionHeader title="参与方式" /><Switch checked={Boolean(db.settings.onlyMentionMode)} onChange={event => saveSettings({ onlyMentionMode: event.target.checked })} label="临时只在 @ 时回复" description="立即生效；关闭后恢复各群自己的参与模式。" /></Card><Card><SectionHeader title="快速切换模型" actions={<Button variant="ghost" size="sm" onClick={() => onNavigate('model')}>设置<ChevronRight size={14} /></Button>} /><SegmentedControl value={effectiveModel} onChange={model => saveSettings(codexActive ? { codexModel: model } : { model })} label="快速切换模型" options={modelOptions} /></Card><RandomImageCard settings={db.settings} saveSettings={saveSettings} /></section>
   </div>;
 }
