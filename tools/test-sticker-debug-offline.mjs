@@ -1,4 +1,6 @@
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import path from 'node:path';
 import {
   buildStickerSelectionTool,
   explainModelStickerEligibility,
@@ -42,8 +44,17 @@ assert.equal(pickForModel('laugh'), null);
 assert.equal(pickForModel('amused'), null);
 assert.equal(pickForModel('service_down', { allowedGates: ['code'] }), null);
 assert.equal(explainModelStickerEligibility('service_down', { allowedGates: ['code'] }).reason, 'gate');
-assert.equal(pickForModel('dt_zoom', { allowedGates: ['topic'] }), null);
-assert.equal(pickForModel('dt_zoom', { allowedGates: ['topic'], contextTopics: ['dt'] })?.id, 'dt_zoom');
+// 从这里起用的是清单里的真实条目，不写死具体 id —— 这个测试要保的是
+// 「精确 ID + 门禁 + 话题」这套契约，不是某一张贴纸。原先写死 dt_zoom，
+// 那张挪进随机池之后这里就挂了。
+const topicExample = JSON.parse(fs.readFileSync(path.resolve('server/bot/stickers/manifest.json'), 'utf8'))
+  .stickers.find((entry) => entry.gate === 'topic' && Array.isArray(entry.topics) && entry.topics.length);
+assert.ok(topicExample, '应当至少有一张带话题的 topic 档贴纸');
+assert.equal(pickForModel(topicExample.id, { allowedGates: ['topic'] }), null);
+assert.equal(
+  pickForModel(topicExample.id, { allowedGates: ['topic'], contextTopics: topicExample.topics })?.id,
+  topicExample.id,
+);
 
 const candidates = listModelStickers();
 assert.ok(candidates.length > 0);
