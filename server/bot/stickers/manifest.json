@@ -1,7 +1,7 @@
 {
   "version": 1,
   "generatedFrom": "Pippi_%E8%A1%A8%E6%83%85%E5%8C%85%E5%85%A8%E9%9B%86_2026-10-09",
-  "count": 56,
+  "count": 43,
   "stickers": [
     {
       "id": "hello",
@@ -295,24 +295,6 @@
       "size": "512x512"
     },
     {
-      "id": "200bpm",
-      "name": "超过200BPM就不行",
-      "category": "osu专属梗",
-      "emotion": "self_deprecating",
-      "description": "> < 眼崩溃大哭，字幕 >200bpm",
-      "risk": "low",
-      "caption": true,
-      "group": "200bpm",
-      "mode": "random",
-      "gate": "topic",
-      "topics": [
-        "bpm"
-      ],
-      "file": "pippi_200bpm.png",
-      "sha256": "de15bb421459708187217a1b648e959731cb5835d09eea662b9015444b02692c",
-      "size": "512x512"
-    },
-    {
       "id": "pp_minus_1000",
       "name": "不好意思扣了你1000pp",
       "category": "osu专属梗",
@@ -331,24 +313,6 @@
       "size": "512x512"
     },
     {
-      "id": "30000pp",
-      "name": "不想和30000pp以下的说话",
-      "category": "osu专属梗",
-      "emotion": "taunting",
-      "description": "对着镜头指人，高pp门槛玩笑",
-      "risk": "high",
-      "caption": true,
-      "group": "30000pp",
-      "mode": "random",
-      "gate": "topic",
-      "topics": [
-        "pp"
-      ],
-      "file": "pippi_30000pp.png",
-      "sha256": "caab86b4ba4d88d01df4d13e5f66f25ca772576e5a79cf252ed5d52865ac4956",
-      "size": "512x512"
-    },
-    {
       "id": "choke_above",
       "name": "楼上刷pp必Choke",
       "category": "osu专属梗",
@@ -364,150 +328,6 @@
       ],
       "file": "pippi_choke_above.png",
       "sha256": "6dbf54ecc4c1f7249973cb4cd1dd87baf7062217e6768ef4017a23b89b102c3d",
-      "size": "512x512"
-    },
-    {
-      "id": "stream_smell",
-      "name": "打串的一股味",
-      "category": "osu专属梗",
-      "emotion": "taunting",
-      "description": "捂鼻面色一沉，打串梗",
-      "risk": "high",
-      "caption": true,
-      "group": "smell",
-      "mode": "context",
-      "gate": "topic",
-      "topics": [
-        "stream"
-      ],
-      "file": "pippi_stream_smell.png",
-      "sha256": "a6a5db6ae9266e6ae37eeee0ba7e800b625ca24bf57f362935f93ef765603383",
-      "size": "512x512"
-    },
-    {
-      "id": "jump_smell",
-      "name": "打跳的一股味",
-      "category": "osu专属梗",
-      "emotion": "taunting",
-      "description": "捂鼻面色一沉，打跳梗",
-      "risk": "high",
-      "caption": true,
-      "group": "smell",
-      "mode": "context",
-      "gate": "topic",
-      "topics": [
-        "jump"
-      ],
-      "file": "pippi_jump_smell.png",
-      "sha256": "0cf516637f41e7f09b29f78ef780e813be56be7acf67704d12c0295b4f48c1d2",
-      "size": "512x512"
-    },
-    {
-      "id": "stream_mindset",
-      "name": "无语·典型的串批思维",
-      "category": "osu专属梗",
-      "emotion": "sarcastic",
-      "description": "半睁眼摊手、蓝色汗滴",
-      "risk": "high",
-      "caption": true,
-      "group": "mindset",
-      "mode": "context",
-      "gate": "topic",
-      "topics": [
-        "stream"
-      ],
-      "file": "pippi_stream_mindset.png",
-      "sha256": "66f68ec4cfa27aabdda74837418076e4c9a790f20d1c6171d32e8cbfe7d61c8c",
-      "size": "512x512"
-    },
-    {
-      "id": "jump_mindset",
-      "name": "无语·典型的跳批思维",
-      "category": "osu专属梗",
-      "emotion": "sarcastic",
-      "description": "半睁眼摊手、蓝色汗滴",
-      "risk": "high",
-      "caption": true,
-      "group": "mindset",
-      "mode": "context",
-      "gate": "topic",
-      "topics": [
-        "jump"
-      ],
-      "file": "pippi_jump_mindset.png",
-      "sha256": "44269bd47321621f754c38a321b5e01fa5bb622b37d75557c2c77790c5b47da2",
-      "size": "512x512"
-    },
-    {
-      "id": "hr_muscle",
-      "name": "HR·肌肉猛女",
-      "category": "osu_Mod",
-      "emotion": "comedic",
-      "description": "双臂展示肌肉，Hard Rock图标",
-      "risk": "low",
-      "caption": true,
-      "group": "hr_muscle",
-      "mode": "random",
-      "gate": "topic",
-      "topics": [
-        "hr"
-      ],
-      "file": "pippi_hr_muscle.png",
-      "sha256": "7f91b73b8bb9b5864de5b76ae03987e169b3c2634285909bb670553a02423766",
-      "size": "512x512"
-    },
-    {
-      "id": "hr_flip",
-      "name": "HR·倒立惊慌",
-      "category": "osu_Mod",
-      "emotion": "panicked",
-      "description": "倒立张开双手，下方HR图标",
-      "risk": "low",
-      "caption": true,
-      "group": "hr_flip",
-      "mode": "random",
-      "gate": "topic",
-      "topics": [
-        "hr"
-      ],
-      "file": "pippi_hr_flip.png",
-      "sha256": "0258ed28ff681c3045f4e363225bc1cb82fb036b8c09d649a0585e8b77191d1f",
-      "size": "512x512"
-    },
-    {
-      "id": "hd_fade",
-      "name": "HD·正在消失",
-      "category": "osu_Mod",
-      "emotion": "panicked",
-      "description": "正立从左到右隐形，下方HD图标",
-      "risk": "low",
-      "caption": true,
-      "group": "hd_fade",
-      "mode": "random",
-      "gate": "topic",
-      "topics": [
-        "hd"
-      ],
-      "file": "pippi_hd_fade.png",
-      "sha256": "75686cf952dabb0f774f0923c76bd51c7b130079bfc991e680066e58c563cc3d",
-      "size": "512x512"
-    },
-    {
-      "id": "hdhr_combo",
-      "name": "HDHR·倒立消失",
-      "category": "osu_Mod",
-      "emotion": "panicked",
-      "description": "人物倒立+渐隐，HD与HR两个模组图标",
-      "risk": "low",
-      "caption": true,
-      "group": "hdhr_combo",
-      "mode": "random",
-      "gate": "topic",
-      "topics": [
-        "hdhr"
-      ],
-      "file": "pippi_hdhr_combo.png",
-      "sha256": "bbe61c0eca816a8e525c203ed237b82142a016582087e881075615a8edc837a9",
       "size": "512x512"
     },
     {
@@ -658,60 +478,6 @@
       "gate": "loose",
       "file": "pippi_flee.png",
       "sha256": "4a919a34c5335538d4f54efd7438a4dd614c129daff09591413afab7f0ebd44f",
-      "size": "512x512"
-    },
-    {
-      "id": "dt_zoom",
-      "name": "DT·加速冲刺",
-      "category": "osu_Mod",
-      "emotion": "panicked",
-      "description": "向镜头冲刺、强烈横向残影、张嘴冒汗，下方 Double 徽章",
-      "risk": "low",
-      "caption": true,
-      "group": "dt_zoom",
-      "mode": "random",
-      "gate": "topic",
-      "topics": [
-        "dt"
-      ],
-      "file": "pippi_dt_zoom.png",
-      "sha256": "51689a1cfaa98bb671262c1e92433f468fac00a997dfe35aad752da1fba66903",
-      "size": "512x512"
-    },
-    {
-      "id": "dthd_combo",
-      "name": "DTHD·加速隐身",
-      "category": "osu_Mod",
-      "emotion": "panicked",
-      "description": "冲刺姿态叠加半透明重影，下方 Double 与 Hidden 双徽章",
-      "risk": "low",
-      "caption": true,
-      "group": "dthd_combo",
-      "mode": "random",
-      "gate": "topic",
-      "topics": [
-        "dthd"
-      ],
-      "file": "pippi_dthd_combo.png",
-      "sha256": "a0484bccfb053a952518d4273fff46718f9563677d780ed3ed9a2325c3aed5b6",
-      "size": "512x512"
-    },
-    {
-      "id": "my_choke",
-      "name": "我自己Choke了",
-      "category": "osu专属梗",
-      "emotion": "self_deprecating",
-      "description": "双手抱头、紧闭双眼、冒汗，底部「1 miss!」字幕",
-      "risk": "low",
-      "caption": true,
-      "group": "my_choke",
-      "mode": "random",
-      "gate": "topic",
-      "topics": [
-        "own_miss"
-      ],
-      "file": "pippi_my_choke.png",
-      "sha256": "29cbb06b9c8f3e7cfd3d3789fad7ca4b6fce0c17edd23b485b7e1903a3b92846",
       "size": "512x512"
     },
     {
