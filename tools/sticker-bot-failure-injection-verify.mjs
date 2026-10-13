@@ -234,9 +234,20 @@ try {
       return { outcome: 'confirmed_success', messageId: 3 };
     },
   );
+// 失败提示本身要有断言，但断言不能把字符串写死 —— 那会把「提示带不带图」这种
+// 表现细节变成契约。这里检验的是意图：提示发出去了，而且是 service_down 那张
+// （gate=code 的状态图，走 withSticker 不经过 LLM）。其余断言不变：失败不得
+// 触碰贴纸预算（records 为空、eligibleReplies 为 0）。
+const FAILURE_NOTICE = '[系统] 这次查询或回复未能完成，请稍后重试。';
+function assertFailureNotice(sends, label) {
+  assert.equal(sends.length, 1, label + ' 应当只发一条');
+  assert.ok(sends[0].startsWith(FAILURE_NOTICE), label + ' 首行应是失败提示，实际: ' + sends[0]);
+  assert.ok(sends[0].includes('pippi_service_down.png'), label + ' 应当附 service_down，实际: ' + sends[0]);
+}
+
   const timeoutElapsedMs = Date.now() - timeoutStartedAt;
   assert.equal(timeoutResult.replied, false);
-  assert.deepEqual(timeoutSends, ['[系统] 这次查询或回复未能完成，请稍后重试。']);
+  assertFailureNotice(timeoutSends, '超时兜底');
   assert.equal(getStickerDeliveryState().records.length, 0);
   assert.equal(getStickerDeliveryStats().counters.eligibleReplies, 0);
   assert.ok(timeoutElapsedMs < 60_000, `bot timeout fallback exceeded bound: ${timeoutElapsedMs}ms`);
@@ -262,7 +273,7 @@ try {
     async (_event, text) => { directFailureSends.push(String(text || '')); return { outcome: 'confirmed_success', messageId: 4 }; },
   );
   assert.equal(directFailureResult.replied, false);
-  assert.deepEqual(directFailureSends, ['[系统] 这次查询或回复未能完成，请稍后重试。']);
+  assertFailureNotice(directFailureSends, '被 @ 时模型失败');
 
   const naturalFailureSends = [];
   const naturalFailureResult = await processIncoming(
