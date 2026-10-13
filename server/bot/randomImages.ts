@@ -24,6 +24,10 @@ export interface RandomImageConfig {
   enabled: boolean;
   natural: RandomImageRates;
   light: RandomImageRates;
+  /** 最近这么多次发送会被降权（软规则，不是排除：仍然可能抽中，只是不常见）。 */
+  recentWindow: number;
+  /** 每往前退一次，权重乘以多少。1 = 不降权，0 = 退化成硬排除。 */
+  recentDecay: number;
 }
 
 /**
@@ -38,6 +42,12 @@ const DEFAULTS: RandomImageConfig = {
   enabled: true,
   natural: { base: 0.005, step: 0.0005 },
   light: { base: 0.001, step: 0.0002 },
+  // 软规则：最近 8 次发送过的图按 0.35^k 降权（k = 往前数第几次）。
+  // 上一张的权重是 0.35，再上一张 0.12，更早的 0.04；窗口外一律 1。
+  // 池子 27 张时，上一张被再抽中的概率约 1.2%（不降权是 3.7%）——
+  // 压低到三分之一，但没有归零，所以真人那种偶尔连着发同一张仍然保留。
+  recentWindow: 8,
+  recentDecay: 0.35,
 };
 
 function clampRate(value: unknown, fallback: number): number {
@@ -53,10 +63,14 @@ export function randomImageConfig(db: any): RandomImageConfig {
     base: clampRate(slot?.base, fallback.base),
     step: clampRate(slot?.step, fallback.step),
   });
+  const window = Number(raw.recentWindow);
+  const decay = Number(raw.recentDecay);
   return {
     enabled: raw.enabled !== false,
     natural: pick(raw.natural, DEFAULTS.natural),
     light: pick(raw.light, DEFAULTS.light),
+    recentWindow: Number.isFinite(window) && window >= 0 ? Math.floor(window) : DEFAULTS.recentWindow,
+    recentDecay: Number.isFinite(decay) && decay >= 0 && decay <= 1 ? decay : DEFAULTS.recentDecay,
   };
 }
 
@@ -107,6 +121,52 @@ export function listRandomImages(db: any): string[] {
   return files;
 }
 
+/**
+ * 从图池里挑一张，最近发过的按倒数第几次降权（**软规则**）。
+ *
+ * 不用硬排除：真人也会偶尔连着发同一张，只是不常见。硬排除会让「重复」这件事
+ * 彻底消失，反而不像人；而且池子比排除数小时还得写退让逻辑。
+ * 降权则是概率上压低 —— 抽中的可能始终存在，池子再小也不会卡住。
+ *
+ * 权重：窗口内往前数第 k 次发过的图 = decay^k（同名取最强的那次抑制），
+ * 窗口外 = 1。decay=0 时等价于硬排除，decay=1 时等价于不降权。
+ */
+function pickWeighted(files: string[], previous: any, window: number, decay: number): string {
+  const nameOf = (file: unknown) => path.basename(String(file || ''));
+  const suppress = new Map<string, number>();
+  const note = (name: string, weight: number) => {
+    if (!name) return;
+    const existing = suppress.get(name);
+    if (existing === undefined || weight < existing) suppress.set(name, weight);
+  };
+  // window = 0 表示关闭降权。注意不能写成 slice(-window)：slice(-0) 等于 slice(0)，
+  // 会返回整个数组，于是「关闭」反而变成「全部降权」。
+  const history = Array.isArray(previous?.recent) ? previous.recent : [];
+  const recent = window > 0 ? history.slice(-window) : [];
+  recent.forEach((entry, index) => {
+    // 倒数第 1 次 = 上一次发送，抑制最强。
+    const stepsBack = recent.length - index;
+    note(nameOf(entry?.file), Math.pow(decay, stepsBack));
+  });
+  // 流水是后来才加的：窗口内没有流水时用 lastFile 兜底，否则升级那一刻会漏掉一张。
+  if (window > 0 && !recent.length) note(nameOf(previous?.lastFile), Math.pow(decay, 1));
+
+  let total = 0;
+  const weights = files.map((file) => {
+    const weight = suppress.get(path.basename(file)) ?? 1;
+    total += weight;
+    return { file, weight };
+  });
+  // 全被压到 0（decay=0 且每张都在窗口内）时退回均匀取，保证一定发得出去。
+  if (!(total > 0)) return files[Math.floor(Math.random() * files.length)];
+  let roll = Math.random() * total;
+  for (const item of weights) {
+    roll -= item.weight;
+    if (roll <= 0) return item.file;
+  }
+  return weights[weights.length - 1].file;
+}
+
 export interface RandomImageRoll {
   /** 命中的图片路径；没命中或有任何前置条件不满足时为 null。 */
   file: string | null;
@@ -139,7 +199,7 @@ export function rollRandomImage(groupId: string, mode: string | undefined): Rand
     const previous = (db.randomImageState && db.randomImageState[groupId]) || {};
     const chance = Number.isFinite(previous.chance) ? Number(previous.chance) : rates.base;
     const hit = Math.random() < chance;
-    const picked = hit ? files[Math.floor(Math.random() * files.length)] : null;
+    const picked = hit ? pickWeighted(files, previous, config.recentWindow, config.recentDecay) : null;
     // 未命中时必须**继承**上次命中的记录。早先只在命中那一支里写这两个字段，
     // 结果命中后只要再掷一次骰子，lastFile / lastHitAt 就被抹掉了 —— 于是
     // 「刚才发出去的是哪张」变得无从查证（发出的图不进消息库）。
