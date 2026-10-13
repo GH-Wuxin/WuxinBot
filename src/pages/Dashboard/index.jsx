@@ -71,6 +71,15 @@ function expectedInterval(base, step) {
 
 // 图池里的文件名一律是 pippi-NN.png，展示时去掉前缀和后缀。
 // 这里用字面比较而不是正则：只是一次去后缀，没必要引入模式匹配。
+// 接口返回的是 ISO UTC 字符串。直接截字符串会显示成 UTC，比国内时间早 8 小时，
+// 所以一律用 Date 的本地取值（getMonth/getDate/getHours 都是本地时区）。
+function shortLocalTime(value) {
+  const date = new Date(value);
+  if (!Number.isFinite(date.getTime())) return '';
+  const pad = (number) => String(number).padStart(2, '0');
+  return (date.getMonth() + 1) + '-' + pad(date.getDate()) + ' ' + pad(date.getHours()) + ':' + pad(date.getMinutes());
+}
+
 function shortPoolName(file) {
   const text = String(file || '');
   const base = text.endsWith('.png') ? text.slice(0, -4) : text;
@@ -123,7 +132,7 @@ function RandomImageCard({ settings, saveSettings }) {
       {recent.length ? <div className='osu-random-image__recent'>
         {recent.map(item => <figure key={item.groupId + item.at + item.file}>
           <img src={apiUrl('/api/random-image/file?name=' + encodeURIComponent(item.file))} alt={item.file} loading='lazy' />
-          <figcaption>{shortPoolName(item.file)}<small>{item.groupName || item.groupId} · {String(item.at).slice(5, 16).replace('T', ' ')}</small></figcaption>
+          <figcaption>{shortPoolName(item.file)}<small>{item.groupName || item.groupId} · {shortLocalTime(item.at)}</small></figcaption>
         </figure>)}
       </div> : <p className='osu-muted'>{stats.loading ? '正在读取…' : '还没有发过图'}</p>}
     </SettingGroup>
