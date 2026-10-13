@@ -30,8 +30,11 @@ import {
 
 const catalog = validateStickerCatalog({ verifyHashes: true });
 assert.equal(catalog.ok, true, JSON.stringify(catalog));
-assert.equal(catalog.manifestCount, 63);
-assert.equal(catalog.annotationCount, 63);
+// 不写死条数：这个测试要保的是「清单与人工标注一一对应」，不是某个体量。
+// 不一致时 catalog.ok 已经是 false（上一行已断言），这里再钉住两者相等，
+// 这样增删表情包不会误报，而真正的错配仍然会被抓住。
+assert.equal(catalog.manifestCount, catalog.annotationCount);
+assert.ok(catalog.manifestCount > 0, '贴纸清单不应为空');
 
 // The model path is an exact-ID contract. Group/emotion fallback belongs only
 // to the deterministic code path.

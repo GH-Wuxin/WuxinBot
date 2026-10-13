@@ -5,528 +5,1068 @@
     "hello": {
       "action": "抬起一只手挥手",
       "expression": "闭眼微笑",
-      "cues": ["半身", "无道具"],
-      "bestFor": ["打招呼", "友好开场", "轻松回应"],
-      "avoid": ["正式公告", "严肃拒绝"],
+      "cues": [
+        "半身",
+        "无道具"
+      ],
+      "bestFor": [
+        "打招呼",
+        "友好开场",
+        "轻松回应"
+      ],
+      "avoid": [
+        "正式公告",
+        "严肃拒绝"
+      ],
       "intensity": "light"
     },
     "received": {
       "action": "一只手做 OK 手势，另一只手指向自己",
       "expression": "温和微笑",
-      "cues": ["粉色强调线"],
-      "visibleText": ["收到"],
-      "bestFor": ["确认收到", "回应通知", "表示已看到"],
-      "avoid": ["代替实际完成承诺"],
+      "cues": [
+        "粉色强调线"
+      ],
+      "visibleText": [
+        "收到"
+      ],
+      "bestFor": [
+        "确认收到",
+        "回应通知",
+        "表示已看到"
+      ],
+      "avoid": [
+        "代替实际完成承诺"
+      ],
       "intensity": "light"
     },
     "thanks": {
       "action": "双手合十放在胸前",
       "expression": "睁眼微笑、脸颊泛红",
-      "cues": ["粉色爱心"],
-      "visibleText": ["谢谢"],
-      "bestFor": ["感谢帮助", "感谢分享", "礼貌回应"],
-      "avoid": ["嘲讽", "拒绝"],
+      "cues": [
+        "粉色爱心"
+      ],
+      "visibleText": [
+        "谢谢"
+      ],
+      "bestFor": [
+        "感谢帮助",
+        "感谢分享",
+        "礼貌回应"
+      ],
+      "avoid": [
+        "嘲讽",
+        "拒绝"
+      ],
       "intensity": "medium"
     },
     "shocked": {
       "action": "抬手靠近胸口",
       "expression": "睁大眼、张嘴惊讶",
-      "cues": ["正面半身", "粉色冲击线"],
-      "bestFor": ["意外消息", "突然结果", "轻度震惊"],
-      "avoid": ["真实灾难", "严重悲剧"],
+      "cues": [
+        "正面半身",
+        "粉色冲击线"
+      ],
+      "bestFor": [
+        "意外消息",
+        "突然结果",
+        "轻度震惊"
+      ],
+      "avoid": [
+        "真实灾难",
+        "严重悲剧"
+      ],
       "intensity": "medium"
     },
     "shocked_grossed": {
       "action": "双手蜷在胸前，身体缩紧",
       "expression": "惊恐、嫌弃、脸红冒汗",
-      "cues": ["红色爆炸线", "明显防御姿势"],
-      "bestFor": ["离谱内容", "被恶心到", "强烈不适或震惊"],
-      "avoid": ["真实伤害", "严肃争执", "不熟的人身攻击"],
+      "cues": [
+        "红色爆炸线",
+        "明显防御姿势"
+      ],
+      "bestFor": [
+        "离谱内容",
+        "被恶心到",
+        "强烈不适或震惊"
+      ],
+      "avoid": [
+        "真实伤害",
+        "严肃争执",
+        "不熟的人身攻击"
+      ],
       "intensity": "strong"
     },
     "admire": {
       "action": "双手合十靠近胸口",
       "expression": "眼冒星星、崇拜地张嘴",
-      "cues": ["星光", "半身"],
-      "visibleText": ["大神啊！"],
-      "bestFor": ["高光成绩", "破纪录", "明显强者表现"],
-      "avoid": ["失败成绩", "反讽普通表现"],
+      "cues": [
+        "星光",
+        "半身"
+      ],
+      "visibleText": [
+        "大神啊！"
+      ],
+      "bestFor": [
+        "高光成绩",
+        "破纪录",
+        "明显强者表现"
+      ],
+      "avoid": [
+        "失败成绩",
+        "反讽普通表现"
+      ],
       "intensity": "strong"
     },
     "ask_speed": {
       "action": "双手合十作请求状",
       "expression": "眼神期待、崇拜",
-      "cues": ["粉色强调线", "半身"],
-      "visibleText": ["大佬分我手速"],
-      "bestFor": ["称赞高速度", "高 BPM", "向强者撒娇求教"],
-      "avoid": ["正式技术说明", "非 osu 话题"],
+      "cues": [
+        "粉色强调线",
+        "半身"
+      ],
+      "visibleText": [
+        "大佬分我手速"
+      ],
+      "bestFor": [
+        "称赞高速度",
+        "高 BPM",
+        "向强者撒娇求教"
+      ],
+      "avoid": [
+        "正式技术说明",
+        "非 osu 话题"
+      ],
       "intensity": "medium"
     },
     "ciallo": {
       "action": "比 V 手势并眨眼",
       "expression": "活泼坏笑",
-      "cues": ["粉色爱心和星星", "大面积粉色背景装饰"],
-      "visibleText": ["Ciallo~"],
-      "bestFor": ["熟人打招呼", "轻松整活", "俏皮回应"],
-      "avoid": ["正式通知"],
+      "cues": [
+        "粉色爱心和星星",
+        "大面积粉色背景装饰"
+      ],
+      "visibleText": [
+        "Ciallo~"
+      ],
+      "bestFor": [
+        "熟人打招呼",
+        "轻松整活",
+        "俏皮回应"
+      ],
+      "avoid": [
+        "正式通知"
+      ],
       "intensity": "medium"
     },
     "shy_soft_smile": {
       "action": "一只手轻触脸颊",
       "expression": "轻柔微笑、轻微脸红",
-      "cues": ["半身", "无文字"],
-      "bestFor": ["含蓄回应", "轻微开心", "被温和夸奖"],
-      "avoid": ["明确承诺", "强烈情绪"],
-      "intensity": "light"
-    },
-    "guilty_shrug": {
-      "action": "双手在肩旁摊开",
-      "expression": "心虚、不自在",
-      "cues": ["耸肩", "半身"],
-      "bestFor": ["被抓包", "解释不了", "轻微心虚"],
-      "avoid": ["正式道歉", "真实事故"],
+      "cues": [
+        "半身",
+        "无文字"
+      ],
+      "bestFor": [
+        "含蓄回应",
+        "轻微开心",
+        "被温和夸奖"
+      ],
+      "avoid": [
+        "明确承诺",
+        "强烈情绪"
+      ],
       "intensity": "light"
     },
     "embarrassed_scratching": {
       "action": "一只手挠头",
       "expression": "尴尬、脸红、局促",
-      "cues": ["汗滴", "半身"],
-      "bestFor": ["小失误", "忘事", "尴尬回应"],
-      "avoid": ["重大错误", "真实危机"],
+      "cues": [
+        "汗滴",
+        "半身"
+      ],
+      "bestFor": [
+        "小失误",
+        "忘事",
+        "尴尬回应"
+      ],
+      "avoid": [
+        "重大错误",
+        "真实危机"
+      ],
       "intensity": "light"
-    },
-    "tired": {
-      "action": "肩膀下垂、身体无力地站着",
-      "expression": "半睁眼、面无表情",
-      "cues": ["叹气符号", "疲惫姿态"],
-      "bestFor": ["疲惫", "懒得吐槽", "无言以对"],
-      "avoid": ["真实绝望", "需要认真安慰的情况"],
-      "intensity": "medium"
     },
     "serious": {
       "action": "正面站定，双手放下",
       "expression": "半眯眼、严肃无表情",
-      "cues": ["大号粉色字幕"],
-      "visibleText": ["严肃"],
-      "bestFor": ["认真讨论中的玩笑", "强调一句话", "故作严肃"],
-      "avoid": ["真正的正式声明", "安慰悲伤的人"],
+      "cues": [
+        "大号粉色字幕"
+      ],
+      "visibleText": [
+        "严肃"
+      ],
+      "bestFor": [
+        "认真讨论中的玩笑",
+        "强调一句话",
+        "故作严肃"
+      ],
+      "avoid": [
+        "真正的正式声明",
+        "安慰悲伤的人"
+      ],
       "intensity": "medium"
     },
     "pout": {
       "action": "双手垂下、身体绷着站立",
       "expression": "皱眉、嘟嘴、生闷气",
-      "cues": ["全身构图", "无文字"],
-      "bestFor": ["玩笑式不满", "轻微抱怨", "可爱地抗议"],
-      "avoid": ["激烈冲突", "真正愤怒"],
+      "cues": [
+        "全身构图",
+        "无文字"
+      ],
+      "bestFor": [
+        "玩笑式不满",
+        "轻微抱怨",
+        "可爱地抗议"
+      ],
+      "avoid": [
+        "激烈冲突",
+        "真正愤怒"
+      ],
       "intensity": "medium"
     },
     "tsundere": {
       "action": "双臂抱胸",
       "expression": "侧目、别扭、不满",
-      "cues": ["身体略侧", "抱臂"],
-      "bestFor": ["熟人玩笑", "口是心非", "轻度拒绝"],
-      "avoid": ["真正的冲突", "对陌生人发火"],
+      "cues": [
+        "身体略侧",
+        "抱臂"
+      ],
+      "bestFor": [
+        "熟人玩笑",
+        "口是心非",
+        "轻度拒绝"
+      ],
+      "avoid": [
+        "真正的冲突",
+        "对陌生人发火"
+      ],
       "intensity": "medium"
     },
     "shy": {
       "action": "双手局促地抬在身前",
       "expression": "脸红、羞怯微笑",
-      "cues": ["轻微扭捏", "半身"],
-      "bestFor": ["被夸奖", "害羞回应", "含蓄接受好意"],
-      "avoid": ["正式确认", "强烈拒绝"],
+      "cues": [
+        "轻微扭捏",
+        "半身"
+      ],
+      "bestFor": [
+        "被夸奖",
+        "害羞回应",
+        "含蓄接受好意"
+      ],
+      "avoid": [
+        "正式确认",
+        "强烈拒绝"
+      ],
       "intensity": "light"
     },
     "playful_smirk": {
       "action": "一手叉腰，另一手托着下巴",
       "expression": "侧眼、调皮坏笑",
-      "cues": ["轻微得意姿态"],
-      "bestFor": ["成功整活", "轻度揶揄", "小恶作剧"],
-      "avoid": ["嘲讽陌生人", "真实冲突"],
+      "cues": [
+        "轻微得意姿态"
+      ],
+      "bestFor": [
+        "成功整活",
+        "轻度揶揄",
+        "小恶作剧"
+      ],
+      "avoid": [
+        "嘲讽陌生人",
+        "真实冲突"
+      ],
       "intensity": "medium"
     },
     "little_devil": {
       "action": "手指靠近嘴角，身体向前倾",
       "expression": "露虎牙、俏皮坏笑",
-      "cues": ["小爱心", "近距离半身"],
-      "bestFor": ["小小捉弄", "俏皮挑衅", "得意回应"],
-      "avoid": ["刻薄攻击", "严肃争执"],
+      "cues": [
+        "小爱心",
+        "近距离半身"
+      ],
+      "bestFor": [
+        "小小捉弄",
+        "俏皮挑衅",
+        "得意回应"
+      ],
+      "avoid": [
+        "刻薄攻击",
+        "严肃争执"
+      ],
       "intensity": "medium"
     },
     "cover_giggle": {
       "action": "一只手挡住嘴",
       "expression": "脸红、含蓄偷笑",
-      "cues": ["近距离半身", "笑意克制"],
-      "bestFor": ["小趣闻", "轻微偷笑", "不想笑得太明显"],
-      "avoid": ["嘲笑他人不幸", "大笑场合"],
+      "cues": [
+        "近距离半身",
+        "笑意克制"
+      ],
+      "bestFor": [
+        "小趣闻",
+        "轻微偷笑",
+        "不想笑得太明显"
+      ],
+      "avoid": [
+        "嘲笑他人不幸",
+        "大笑场合"
+      ],
       "intensity": "light"
-    },
-    "cartoon_out": {
-      "action": "身体横躺、双手按在胸前",
-      "expression": "X 眼、吐舌头、彻底倒地",
-      "cues": ["旋涡和晕眩符号", "夸张卡通倒地"],
-      "bestFor": ["被难度击倒", "精力耗尽", "夸张失败玩笑"],
-      "avoid": ["真实伤亡", "严重事故"],
-      "intensity": "extreme"
     },
     "teary": {
       "action": "双手垂下、整个人站着不动",
       "expression": "委屈、泪眼、嘴角下垂",
-      "cues": ["全身构图", "无文字"],
-      "bestFor": ["撒娇", "轻度难过", "可爱地表达委屈"],
-      "avoid": ["真实危机", "需要严肃安慰的情况"],
+      "cues": [
+        "全身构图",
+        "无文字"
+      ],
+      "bestFor": [
+        "撒娇",
+        "轻度难过",
+        "可爱地表达委屈"
+      ],
+      "avoid": [
+        "真实危机",
+        "需要严肃安慰的情况"
+      ],
       "intensity": "medium"
-    },
-    "hug_knees": {
-      "action": "坐着蜷缩并抱住膝盖",
-      "expression": "低头、难过、孤单",
-      "cues": ["缩成一团", "全身构图"],
-      "bestFor": ["明显委屈", "孤独感", "被游戏打击后的夸张反应"],
-      "avoid": ["真实心理危机", "正式道歉"],
-      "intensity": "strong"
     },
     "confused": {
       "action": "双手向两侧摊开",
       "expression": "困惑、无辜、没搞懂",
-      "cues": ["问号符号", "半身"],
-      "bestFor": ["没听懂", "信息不足", "询问对方解释"],
-      "avoid": ["确认收到", "表达赞同"],
+      "cues": [
+        "问号符号",
+        "半身"
+      ],
+      "bestFor": [
+        "没听懂",
+        "信息不足",
+        "询问对方解释"
+      ],
+      "avoid": [
+        "确认收到",
+        "表达赞同"
+      ],
       "intensity": "light"
     },
     "200bpm": {
       "action": "双手抱头、身体缩紧",
       "expression": "闭眼崩溃大哭",
-      "cues": ["眼泪", "夸张崩溃"],
-      "visibleText": [">200bpm"],
-      "bestFor": ["高 BPM", "速度跟不上", "osu 速度自嘲"],
-      "avoid": ["非 osu 话题", "认真评价玩家能力"],
+      "cues": [
+        "眼泪",
+        "夸张崩溃"
+      ],
+      "visibleText": [
+        ">200bpm"
+      ],
+      "bestFor": [
+        "高 BPM",
+        "速度跟不上",
+        "osu 速度自嘲"
+      ],
+      "avoid": [
+        "非 osu 话题",
+        "认真评价玩家能力"
+      ],
       "intensity": "strong"
     },
     "pp_minus_1000": {
       "action": "一手放在脑后挠头",
       "expression": "尴尬坏笑、脸红、冒汗",
-      "cues": ["蓝色汗滴", "无奈手势"],
-      "visibleText": ["不好意思，扣了你1000pp"],
-      "bestFor": ["pp 重算玩笑", "成绩被扣分的调侃", "轻度自嘲"],
-      "avoid": ["认真羞辱玩家", "非 osu 话题"],
+      "cues": [
+        "蓝色汗滴",
+        "无奈手势"
+      ],
+      "visibleText": [
+        "不好意思，扣了你1000pp"
+      ],
+      "bestFor": [
+        "pp 重算玩笑",
+        "成绩被扣分的调侃",
+        "轻度自嘲"
+      ],
+      "avoid": [
+        "认真羞辱玩家",
+        "非 osu 话题"
+      ],
       "intensity": "medium"
     },
     "30000pp": {
       "action": "手指向画面下方",
       "expression": "眯眼、带点得意的坏笑",
-      "cues": ["烟雾和闪光装饰", "强烈下指动作"],
-      "visibleText": ["不想和30000pp以下的说话"],
-      "bestFor": ["熟人之间的高 pp 吹嘘", "明显玩笑式门槛梗"],
-      "avoid": ["陌生人", "真实排名羞辱", "严肃讨论"],
+      "cues": [
+        "烟雾和闪光装饰",
+        "强烈下指动作"
+      ],
+      "visibleText": [
+        "不想和30000pp以下的说话"
+      ],
+      "bestFor": [
+        "熟人之间的高 pp 吹嘘",
+        "明显玩笑式门槛梗"
+      ],
+      "avoid": [
+        "陌生人",
+        "真实排名羞辱",
+        "严肃讨论"
+      ],
       "intensity": "strong"
     },
     "choke_above": {
       "action": "竖起食指指向上方",
       "expression": "睁大眼、张嘴强调",
-      "cues": ["粉色强调线", "指向上方"],
-      "visibleText": ["楼上刷pp必Choke"],
-      "bestFor": ["对上方消息或上一个成绩开玩笑", "预测 choke"],
-      "avoid": ["没有对应上下文时", "正式成绩分析"],
+      "cues": [
+        "粉色强调线",
+        "指向上方"
+      ],
+      "visibleText": [
+        "楼上刷pp必Choke"
+      ],
+      "bestFor": [
+        "对上方消息或上一个成绩开玩笑",
+        "预测 choke"
+      ],
+      "avoid": [
+        "没有对应上下文时",
+        "正式成绩分析"
+      ],
       "intensity": "medium"
     },
     "stream_smell": {
       "action": "抬手捂住鼻子",
       "expression": "半眯眼、嫌弃",
-      "cues": ["臭味弯线", "捂鼻动作"],
-      "visibleText": ["打串的一股味"],
-      "bestFor": ["stream/串相关 osu 话题的熟人调侃"],
-      "avoid": ["非 stream 话题", "陌生人", "认真批评"],
+      "cues": [
+        "臭味弯线",
+        "捂鼻动作"
+      ],
+      "visibleText": [
+        "打串的一股味"
+      ],
+      "bestFor": [
+        "stream/串相关 osu 话题的熟人调侃"
+      ],
+      "avoid": [
+        "非 stream 话题",
+        "陌生人",
+        "认真批评"
+      ],
       "intensity": "strong"
     },
     "jump_smell": {
       "action": "抬手捂住鼻子",
       "expression": "半眯眼、嫌弃",
-      "cues": ["臭味弯线", "捂鼻动作"],
-      "visibleText": ["打跳的一股味"],
-      "bestFor": ["jump/跳相关 osu 话题的熟人调侃"],
-      "avoid": ["非 jump 话题", "陌生人", "认真批评"],
+      "cues": [
+        "臭味弯线",
+        "捂鼻动作"
+      ],
+      "visibleText": [
+        "打跳的一股味"
+      ],
+      "bestFor": [
+        "jump/跳相关 osu 话题的熟人调侃"
+      ],
+      "avoid": [
+        "非 jump 话题",
+        "陌生人",
+        "认真批评"
+      ],
       "intensity": "strong"
     },
     "stream_mindset": {
       "action": "一只手向外摊开",
       "expression": "半睁眼、无语、带一滴蓝色汗",
-      "cues": ["摊手", "蓝色汗滴"],
-      "visibleText": ["无语，典型的串批思维"],
-      "bestFor": ["stream/串相关思路或行为的熟人吐槽"],
-      "avoid": ["非 stream 话题", "没有吐槽对象时", "真实争执"],
+      "cues": [
+        "摊手",
+        "蓝色汗滴"
+      ],
+      "visibleText": [
+        "无语，典型的串批思维"
+      ],
+      "bestFor": [
+        "stream/串相关思路或行为的熟人吐槽"
+      ],
+      "avoid": [
+        "非 stream 话题",
+        "没有吐槽对象时",
+        "真实争执"
+      ],
       "intensity": "medium"
     },
     "jump_mindset": {
       "action": "一只手向外摊开",
       "expression": "半睁眼、无语、带一滴蓝色汗",
-      "cues": ["摊手", "蓝色汗滴"],
-      "visibleText": ["无语，典型的跳批思维"],
-      "bestFor": ["jump/跳相关思路或行为的熟人吐槽"],
-      "avoid": ["非 jump 话题", "没有吐槽对象时", "真实争执"],
+      "cues": [
+        "摊手",
+        "蓝色汗滴"
+      ],
+      "visibleText": [
+        "无语，典型的跳批思维"
+      ],
+      "bestFor": [
+        "jump/跳相关思路或行为的熟人吐槽"
+      ],
+      "avoid": [
+        "非 jump 话题",
+        "没有吐槽对象时",
+        "真实争执"
+      ],
       "intensity": "medium"
     },
     "hr_muscle": {
       "action": "双臂弯曲展示肌肉",
       "expression": "自信、得意",
-      "cues": ["Hard Rock 模组徽章", "肌肉姿势"],
-      "visibleText": ["Hard Rock"],
-      "bestFor": ["HR 话题", "Hard Rock 玩笑", "夸张强调抗压"],
-      "avoid": ["非 osu Mod 话题"],
+      "cues": [
+        "Hard Rock 模组徽章",
+        "肌肉姿势"
+      ],
+      "visibleText": [
+        "Hard Rock"
+      ],
+      "bestFor": [
+        "HR 话题",
+        "Hard Rock 玩笑",
+        "夸张强调抗压"
+      ],
+      "avoid": [
+        "非 osu Mod 话题"
+      ],
       "intensity": "strong"
     },
     "hr_flip": {
       "action": "倒立并向两侧伸手",
       "expression": "惊慌、失去平衡",
-      "cues": ["Hard Rock 模组徽章", "上下颠倒"],
-      "visibleText": ["Hard Rock"],
-      "bestFor": ["HR 导致的失控或反重力玩笑"],
-      "avoid": ["非 HR 话题", "普通失败反应"],
+      "cues": [
+        "Hard Rock 模组徽章",
+        "上下颠倒"
+      ],
+      "visibleText": [
+        "Hard Rock"
+      ],
+      "bestFor": [
+        "HR 导致的失控或反重力玩笑"
+      ],
+      "avoid": [
+        "非 HR 话题",
+        "普通失败反应"
+      ],
       "intensity": "strong"
     },
     "hd_fade": {
       "action": "向前移动并从画面中渐隐",
       "expression": "惊慌、像正在消失",
-      "cues": ["半透明残影", "Hidden 模组徽章"],
-      "visibleText": ["Hidden"],
-      "bestFor": ["HD/Hidden 话题", "读图困难", "隐身玩笑"],
-      "avoid": ["非 HD 话题"],
+      "cues": [
+        "半透明残影",
+        "Hidden 模组徽章"
+      ],
+      "visibleText": [
+        "Hidden"
+      ],
+      "bestFor": [
+        "HD/Hidden 话题",
+        "读图困难",
+        "隐身玩笑"
+      ],
+      "avoid": [
+        "非 HD 话题"
+      ],
       "intensity": "strong"
     },
     "hdhr_combo": {
       "action": "倒立并带着残影渐隐",
       "expression": "惊慌、失控",
-      "cues": ["上下颠倒", "Hidden 与 Hard Rock 双徽章"],
-      "visibleText": ["Hidden", "Hard Rock"],
-      "bestFor": ["HD+HR 组合", "又看不见又失控的玩笑"],
-      "avoid": ["单独 HD", "单独 HR", "非 Mod 话题"],
+      "cues": [
+        "上下颠倒",
+        "Hidden 与 Hard Rock 双徽章"
+      ],
+      "visibleText": [
+        "Hidden",
+        "Hard Rock"
+      ],
+      "bestFor": [
+        "HD+HR 组合",
+        "又看不见又失控的玩笑"
+      ],
+      "avoid": [
+        "单独 HD",
+        "单独 HR",
+        "非 Mod 话题"
+      ],
       "intensity": "extreme"
-    },
-    "device_mouse": {
-      "action": "双手分别举着小键盘和鼠标",
-      "expression": "面无表情、呆滞",
-      "cues": ["左手 RGB 小键盘", "右手鼠标", "设备展示"],
-      "bestFor": ["鼠标玩家", "键鼠设备", "讨论外设"],
-      "avoid": ["泛化的收到或点赞", "数位板话题"],
-      "intensity": "light"
-    },
-    "device_tablet": {
-      "action": "双手分别举着小键盘和数位板",
-      "expression": "面无表情、呆滞",
-      "cues": ["左手 RGB 小键盘", "右手黑色数位板", "设备展示"],
-      "bestFor": ["数位板玩家", "键盘加板设备", "讨论外设"],
-      "avoid": ["鼠标话题", "泛化的收到或点赞"],
-      "intensity": "light"
     },
     "laugh_01": {
       "action": "俯身撑着桌面大笑",
       "expression": "闭眼、张嘴、笑得失控",
-      "cues": ["桌面横线", "笑到身体前倾"],
-      "bestFor": ["非常好笑", "笑到失去姿态", "强烈欢乐"],
-      "avoid": ["嘲笑他人不幸"],
+      "cues": [
+        "桌面横线",
+        "笑到身体前倾"
+      ],
+      "bestFor": [
+        "非常好笑",
+        "笑到失去姿态",
+        "强烈欢乐"
+      ],
+      "avoid": [
+        "嘲笑他人不幸"
+      ],
       "intensity": "strong"
     },
     "laugh_02": {
       "action": "一只手挡在嘴前",
       "expression": "闭眼大笑、张嘴",
-      "cues": ["近距离半身", "笑得明显但不失控"],
-      "bestFor": ["看到好笑内容", "笑到捂嘴", "熟人玩笑"],
-      "avoid": ["严肃悲剧", "含蓄偷笑"],
+      "cues": [
+        "近距离半身",
+        "笑得明显但不失控"
+      ],
+      "bestFor": [
+        "看到好笑内容",
+        "笑到捂嘴",
+        "熟人玩笑"
+      ],
+      "avoid": [
+        "严肃悲剧",
+        "含蓄偷笑"
+      ],
       "intensity": "medium"
     },
     "laugh_04": {
       "action": "一手扶着脸颊，身体向下歪",
       "expression": "闭眼、张嘴笑",
-      "cues": ["轻微晃动线", "笑到低头"],
-      "bestFor": ["温和大笑", "可爱地笑", "熟人整活"],
-      "avoid": ["嘲讽陌生人"],
+      "cues": [
+        "轻微晃动线",
+        "笑到低头"
+      ],
+      "bestFor": [
+        "温和大笑",
+        "可爱地笑",
+        "熟人整活"
+      ],
+      "avoid": [
+        "嘲讽陌生人"
+      ],
       "intensity": "medium"
     },
     "laugh_05": {
       "action": "一手抬起摆动，另一手扶脸",
       "expression": "闭眼、张嘴大笑",
-      "cues": ["双侧动作线", "笑到摆手"],
-      "bestFor": ["动态大笑", "笑到摆手", "强烈欢乐"],
-      "avoid": ["严肃语境", "嘲笑不幸"],
+      "cues": [
+        "双侧动作线",
+        "笑到摆手"
+      ],
+      "bestFor": [
+        "动态大笑",
+        "笑到摆手",
+        "强烈欢乐"
+      ],
+      "avoid": [
+        "严肃语境",
+        "嘲笑不幸"
+      ],
       "intensity": "strong"
     },
     "heart": {
       "action": "双手在胸前比心并眨眼",
       "expression": "温柔俏皮的微笑",
-      "cues": ["粉色爱心", "半身"],
-      "bestFor": ["表达喜欢", "友好支持", "感谢或赞同"],
-      "avoid": ["正式公告", "拒绝"],
+      "cues": [
+        "粉色爱心",
+        "半身"
+      ],
+      "bestFor": [
+        "表达喜欢",
+        "友好支持",
+        "感谢或赞同"
+      ],
+      "avoid": [
+        "正式公告",
+        "拒绝"
+      ],
       "intensity": "medium"
     },
     "thumbs_up": {
       "action": "竖起大拇指",
       "expression": "张嘴开心微笑",
-      "cues": ["粉色动作线", "清晰点赞手势"],
-      "bestFor": ["认可", "赞同", "做得好"],
-      "avoid": ["反讽", "表达不确定"],
+      "cues": [
+        "粉色动作线",
+        "清晰点赞手势"
+      ],
+      "bestFor": [
+        "认可",
+        "赞同",
+        "做得好"
+      ],
+      "avoid": [
+        "反讽",
+        "表达不确定"
+      ],
       "intensity": "light"
     },
     "applause": {
       "action": "双手鼓掌",
       "expression": "闭眼开心微笑",
-      "cues": ["金色星光", "庆祝动作"],
-      "bestFor": ["恭喜", "高光表现", "达成目标"],
-      "avoid": ["失败嘲讽", "真实坏消息"],
+      "cues": [
+        "金色星光",
+        "庆祝动作"
+      ],
+      "bestFor": [
+        "恭喜",
+        "高光表现",
+        "达成目标"
+      ],
+      "avoid": [
+        "失败嘲讽",
+        "真实坏消息"
+      ],
       "intensity": "strong"
     },
     "cheer": {
       "action": "双手握拳举到肩膀两侧",
       "expression": "闭眼大笑、充满活力",
-      "cues": ["黄色星星", "粉色动作线"],
-      "visibleText": ["加油！"],
-      "bestFor": ["鼓励", "打气", "面对挑战"],
-      "avoid": ["严肃劝慰", "需要安静回应的情况"],
+      "cues": [
+        "黄色星星",
+        "粉色动作线"
+      ],
+      "visibleText": [
+        "加油！"
+      ],
+      "bestFor": [
+        "鼓励",
+        "打气",
+        "面对挑战"
+      ],
+      "avoid": [
+        "严肃劝慰",
+        "需要安静回应的情况"
+      ],
       "intensity": "strong"
     },
     "popcorn": {
       "action": "双手捧着一桶爆米花",
       "expression": "带着看好戏意味的微笑",
-      "cues": ["红白条纹爆米花桶", "近距离半身"],
-      "bestFor": ["围观争论", "看热闹", "等待后续发展"],
-      "avoid": ["真实冲突", "严重事故", "需要安慰的场合"],
+      "cues": [
+        "红白条纹爆米花桶",
+        "近距离半身"
+      ],
+      "bestFor": [
+        "围观争论",
+        "看热闹",
+        "等待后续发展"
+      ],
+      "avoid": [
+        "真实冲突",
+        "严重事故",
+        "需要安慰的场合"
+      ],
       "intensity": "medium"
-    },
-    "lurking": {
-      "action": "双手扒住画面下缘，只探头观察",
-      "expression": "好奇、顽皮地偷看",
-      "cues": ["只露出上半张脸", "窥视构图"],
-      "bestFor": ["潜水", "默默围观", "悄悄关注"],
-      "avoid": ["表示已完成任务", "正式回复"],
-      "intensity": "light"
     },
     "flee": {
       "action": "背对画面跑走并回头看",
       "expression": "慌张、想逃离",
-      "cues": ["速度线", "全身动态构图"],
-      "bestFor": ["认怂跑路", "被追问后逃跑", "话题太危险"],
-      "avoid": ["真实求助", "认真回避问题"],
+      "cues": [
+        "速度线",
+        "全身动态构图"
+      ],
+      "bestFor": [
+        "认怂跑路",
+        "被追问后逃跑",
+        "话题太危险"
+      ],
+      "avoid": [
+        "真实求助",
+        "认真回避问题"
+      ],
       "intensity": "strong"
     },
     "dt_zoom": {
       "action": "朝镜头高速冲刺",
       "expression": "张嘴、冒汗、惊慌",
-      "cues": ["强烈横向残影", "Double 模组徽章"],
-      "visibleText": ["Double"],
-      "bestFor": ["DT/NC", "高速谱面", "速度快到失控"],
-      "avoid": ["非 DT 话题", "单独 HD 话题"],
+      "cues": [
+        "强烈横向残影",
+        "Double 模组徽章"
+      ],
+      "visibleText": [
+        "Double"
+      ],
+      "bestFor": [
+        "DT/NC",
+        "高速谱面",
+        "速度快到失控"
+      ],
+      "avoid": [
+        "非 DT 话题",
+        "单独 HD 话题"
+      ],
       "intensity": "strong"
     },
     "dthd_combo": {
       "action": "高速冲刺并带着半透明重影",
       "expression": "惊慌、失控",
-      "cues": ["Double 与 Hidden 双徽章", "残影"],
-      "visibleText": ["Double", "Hidden"],
-      "bestFor": ["DT+HD", "又快又难读", "DTHD 组合"],
-      "avoid": ["单独 DT", "单独 HD", "非 Mod 话题"],
+      "cues": [
+        "Double 与 Hidden 双徽章",
+        "残影"
+      ],
+      "visibleText": [
+        "Double",
+        "Hidden"
+      ],
+      "bestFor": [
+        "DT+HD",
+        "又快又难读",
+        "DTHD 组合"
+      ],
+      "avoid": [
+        "单独 DT",
+        "单独 HD",
+        "非 Mod 话题"
+      ],
       "intensity": "extreme"
     },
     "my_choke": {
       "action": "双手抱头抓头发",
       "expression": "闭眼崩溃、冒汗",
-      "cues": ["失败后的自责姿势", "大号字幕"],
-      "visibleText": ["1 miss!"],
-      "bestFor": ["自己 choke", "差一点 FC", "自己手滑失误"],
-      "avoid": ["嘲笑别人失误", "非 osu 话题"],
+      "cues": [
+        "失败后的自责姿势",
+        "大号字幕"
+      ],
+      "visibleText": [
+        "1 miss!"
+      ],
+      "bestFor": [
+        "自己 choke",
+        "差一点 FC",
+        "自己手滑失误"
+      ],
+      "avoid": [
+        "嘲笑别人失误",
+        "非 osu 话题"
+      ],
       "intensity": "strong"
     },
     "angry": {
       "action": "正面握拳、身体绷紧",
       "expression": "皱眉瞪眼、明显生气",
-      "cues": ["额头红色怒火符号", "近距离半身"],
-      "bestFor": ["明确不悦", "被轻微惹怒", "熟人式假生气"],
-      "avoid": ["真正人身攻击", "严重冲突", "陌生人"],
+      "cues": [
+        "额头红色怒火符号",
+        "近距离半身"
+      ],
+      "bestFor": [
+        "明确不悦",
+        "被轻微惹怒",
+        "熟人式假生气"
+      ],
+      "avoid": [
+        "真正人身攻击",
+        "严重冲突",
+        "陌生人"
+      ],
       "intensity": "strong"
     },
     "thinking_01": {
       "action": "食指托在下巴下方",
       "expression": "抬眼思考、略带困惑",
-      "cues": ["头部微倾", "近距离半身"],
-      "bestFor": ["正在思考", "需要一点时间", "分析中"],
-      "avoid": ["表示已完成", "确认收到"],
+      "cues": [
+        "头部微倾",
+        "近距离半身"
+      ],
+      "bestFor": [
+        "正在思考",
+        "需要一点时间",
+        "分析中"
+      ],
+      "avoid": [
+        "表示已完成",
+        "确认收到"
+      ],
       "intensity": "light"
     },
     "thinking_02": {
       "action": "手指抵着下巴，视线偏向一侧",
       "expression": "安静思索、略有疑问",
-      "cues": ["头部转向一侧", "近距离半身"],
-      "bestFor": ["比较选项", "思考答案", "需要核对"],
-      "avoid": ["直接给出结论", "表示拒绝"],
+      "cues": [
+        "头部转向一侧",
+        "近距离半身"
+      ],
+      "bestFor": [
+        "比较选项",
+        "思考答案",
+        "需要核对"
+      ],
+      "avoid": [
+        "直接给出结论",
+        "表示拒绝"
+      ],
       "intensity": "light"
     },
     "thinking_03": {
       "action": "食指抵着嘴唇，另一只手抱臂",
       "expression": "认真、谨慎地思考",
-      "cues": ["抱臂", "手指抵唇"],
-      "bestFor": ["复杂判断", "谨慎分析", "还没决定"],
-      "avoid": ["轻松打招呼", "确认完成"],
+      "cues": [
+        "抱臂",
+        "手指抵唇"
+      ],
+      "bestFor": [
+        "复杂判断",
+        "谨慎分析",
+        "还没决定"
+      ],
+      "avoid": [
+        "轻松打招呼",
+        "确认完成"
+      ],
       "intensity": "medium"
     },
     "thinking_04": {
       "action": "食指点着脸颊，另一只手抱臂",
       "expression": "温和、专注地思考",
-      "cues": ["抱臂", "点脸颊"],
-      "bestFor": ["分析中", "回忆信息", "等待判断"],
-      "avoid": ["直接承诺已完成"],
+      "cues": [
+        "抱臂",
+        "点脸颊"
+      ],
+      "bestFor": [
+        "分析中",
+        "回忆信息",
+        "等待判断"
+      ],
+      "avoid": [
+        "直接承诺已完成"
+      ],
       "intensity": "light"
     },
     "no_data": {
       "action": "一手举着空白卡片，另一手摊开",
       "expression": "无措、困惑、略委屈",
-      "cues": ["空白卡片", "问询式摊手"],
-      "bestFor": ["没有数据", "查无此人", "证据不足"],
-      "avoid": ["服务故障", "已经查到结果"],
+      "cues": [
+        "空白卡片",
+        "问询式摊手"
+      ],
+      "bestFor": [
+        "没有数据",
+        "查无此人",
+        "证据不足"
+      ],
+      "avoid": [
+        "服务故障",
+        "已经查到结果"
+      ],
       "intensity": "medium"
     },
     "no_permission": {
       "action": "双臂在胸前交叉成 X",
       "expression": "平静微笑、明确拒绝",
-      "cues": ["拒绝手势", "正面半身"],
-      "bestFor": ["权限不足", "功能不可用", "明确拒绝请求"],
-      "avoid": ["合理请求", "不确定时的搪塞"],
+      "cues": [
+        "拒绝手势",
+        "正面半身"
+      ],
+      "bestFor": [
+        "权限不足",
+        "功能不可用",
+        "明确拒绝请求"
+      ],
+      "avoid": [
+        "合理请求",
+        "不确定时的搪塞"
+      ],
       "intensity": "medium"
     },
     "service_down": {
       "action": "举着白旗",
       "expression": "无奈、认输",
-      "cues": ["白旗", "服务故障式投降"],
-      "bestFor": ["上游不可用", "超时", "服务真的失败"],
-      "avoid": ["用户做错了什么", "普通查询中"],
+      "cues": [
+        "白旗",
+        "服务故障式投降"
+      ],
+      "bestFor": [
+        "上游不可用",
+        "超时",
+        "服务真的失败"
+      ],
+      "avoid": [
+        "用户做错了什么",
+        "普通查询中"
+      ],
       "intensity": "strong"
     },
     "noted": {
       "action": "一手拿笔，一手拿着笔记本记录",
       "expression": "温和微笑、专注",
-      "cues": ["笔记本", "书写动作"],
-      "bestFor": ["记下信息", "记录偏好", "确认会保存"],
-      "avoid": ["表示已经执行了其他操作"],
+      "cues": [
+        "笔记本",
+        "书写动作"
+      ],
+      "bestFor": [
+        "记下信息",
+        "记录偏好",
+        "确认会保存"
+      ],
+      "avoid": [
+        "表示已经执行了其他操作"
+      ],
       "intensity": "light"
     },
     "called_out": {
       "action": "一只手指向自己，另一只手按在胸口",
       "expression": "睁大眼、张嘴、紧张冒汗",
-      "cues": ["指向自己", "汗滴", "被点名的姿势"],
-      "bestFor": ["被说中", "被戳穿习惯", "突然意识到对方说的是自己"],
-      "avoid": ["质问别人", "普通惊讶"],
+      "cues": [
+        "指向自己",
+        "汗滴",
+        "被点名的姿势"
+      ],
+      "bestFor": [
+        "被说中",
+        "被戳穿习惯",
+        "突然意识到对方说的是自己"
+      ],
+      "avoid": [
+        "质问别人",
+        "普通惊讶"
+      ],
       "intensity": "strong"
     },
     "wait_up": {
       "action": "一手举起文件，另一手竖起食指示意等一下",
       "expression": "焦急、冒汗但仍在处理",
-      "cues": ["一叠文件", "等待手势"],
-      "bestFor": ["长任务进行中", "需要用户稍等", "正在计算或处理"],
-      "avoid": ["拒绝执行", "任务已经完成"],
+      "cues": [
+        "一叠文件",
+        "等待手势"
+      ],
+      "bestFor": [
+        "长任务进行中",
+        "需要用户稍等",
+        "正在计算或处理"
+      ],
+      "avoid": [
+        "拒绝执行",
+        "任务已经完成"
+      ],
       "intensity": "medium"
     },
     "bound": {
       "action": "双手分别托着 QQ 和 osu! 徽章",
       "expression": "满意、友好微笑",
-      "cues": ["QQ 徽章", "osu! 徽章", "中间链环连接"],
-      "visibleText": ["QQ", "osu!"],
-      "bestFor": ["osu 账号绑定成功", "两个账号已连接", "确认关联完成"],
-      "avoid": ["绑定失败", "普通聊天"],
+      "cues": [
+        "QQ 徽章",
+        "osu! 徽章",
+        "中间链环连接"
+      ],
+      "visibleText": [
+        "QQ",
+        "osu!"
+      ],
+      "bestFor": [
+        "osu 账号绑定成功",
+        "两个账号已连接",
+        "确认关联完成"
+      ],
+      "avoid": [
+        "绑定失败",
+        "普通聊天"
+      ],
       "intensity": "medium"
     }
   }
