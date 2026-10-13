@@ -31,6 +31,9 @@ export interface RandomImageConfig {
  * 加上表情包后她在群友频率分布里排到前 23% / 前 11% —— 仍然是个正常活跃的
  * 群友，不是刷屏号。期望间隔 47.8 条（自然）/ 84.5 条（轻度），区分度 1.77 倍。
  */
+// 每群保留多少条发送流水。一个群一天最多几十张，20 条够回溯最近一轮。
+const RECENT_LIMIT = 20;
+
 const DEFAULTS: RandomImageConfig = {
   enabled: true,
   natural: { base: 0.005, step: 0.0005 },
@@ -147,9 +150,22 @@ export function rollRandomImage(groupId: string, mode: string | undefined): Rand
     };
     if (previous.lastHitAt) next.lastHitAt = previous.lastHitAt;
     if (previous.lastFile) next.lastFile = previous.lastFile;
+    // 最近若干次发送的流水。只留最后一张是不够用的：「发了几张、分别是什么」
+    // 是会被问的问题，而发出的图不进消息库、也没有发送日志可回溯。
+    // 注意必须赋一个**新数组**：store 在赋值那一刻对值做快照，原地 push 不会落盘。
+    const history = Array.isArray(previous.recent) ? previous.recent.slice(-(RECENT_LIMIT - 1)) : [];
+    // 累计已发集合：只增不减。流水会被截断、记录会按时间裁剪，只有这个是
+    // 「这张到底发出去过没有」的可靠依据 —— 而这正是会被人问的问题。
+    const everSent = Array.isArray(previous.everSent) ? previous.everSent : [];
     if (hit) {
       next.lastHitAt = new Date().toISOString();
       next.lastFile = picked;
+      next.recent = [...history, { at: next.lastHitAt, file: picked }];
+      const name = picked ? path.basename(picked) : '';
+      next.everSent = name && !everSent.includes(name) ? [...everSent, name] : everSent;
+    } else {
+      if (history.length) next.recent = history;
+      if (everSent.length) next.everSent = everSent;
     }
     // 必须整体赋值。store 在赋值那一刻对值做快照：先赋一个空对象、之后再往
     // 同一个对象上加属性，那些属性不会落盘（实测 db.x = {}; db.x.a = 1 得到 {}）。
