@@ -1066,7 +1066,9 @@ let waitUpTimer = null;
     // instead of falling through to the LLM with no tool access.
     if (osuDataIntent && !hasEnabledBots) {
       const errorText = '[系统] osu! 数据查询不可用：当前没有已启用的机器人，无法查询 osu! 数据。';
-      if (sendMessage) await sendMessage(event, errorText);
+      // 服务不可用 —— 附 service_down。图由代码触发，不经过 LLM，所以模型挂掉时也发得出。
+      // 记进库里的是纯文字：CQ 码进上下文只是噪音。
+      if (sendMessage) await sendMessage(event, withSticker(errorText, 'service_down'));
       updateDb((draft) => {
         draft.messages.push({
           id: crypto.randomUUID(), ...replyTargetMetadata(event), role: 'assistant', type: event.type,
@@ -1114,7 +1116,7 @@ let waitUpTimer = null;
             ? '内部 osu! 工具未启用'
             : `操作被安全策略拒绝: ${(opValid as any).reason || '未知原因'}`;
           const errorText = `[系统] osu! 数据查询不可用：${reason}`;
-          if (sendMessage) await sendMessage(event, errorText);
+          if (sendMessage) await sendMessage(event, withSticker(errorText, 'service_down'));
           updateDb((draft) => {
             draft.messages.push({
               id: crypto.randomUUID(), ...replyTargetMetadata(event), role: 'assistant', type: event.type,
@@ -1761,7 +1763,10 @@ let waitUpTimer = null;
     const directConversation = event.type === 'private';
     if (modelStageStarted && !deliveryStarted && sendMessage
       && (event.replyToCurrentMessage === true || directConversation)) {
-      await sendOptionalNotice(() => sendMessage(event, '[系统] 这次查询或回复未能完成，请稍后重试。'));
+      // 这是最该配图的一条：回复内容没生成出来，但「服务挂了、举白旗认输」这个意思
+      // 是确定的，而 service_down 正是 gate=code 的状态图 —— 走 withSticker 不经过 LLM，
+      // 所以 LLM 超时/挂掉时它照样发得出去。原先这条只发纯文字，是漏接线。
+      await sendOptionalNotice(() => sendMessage(event, withSticker('[系统] 这次查询或回复未能完成，请稍后重试。', 'service_down')));
     }
     recordDecisionError(`回复失败：${String(error?.message || error).slice(0, 500)}`);
     updateDb((draft) => {
