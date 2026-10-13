@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { ArrowDownLeft, ArrowUpRight, ChevronRight, Clock3, MessageCircle, RefreshCw, UsersRound, Zap } from 'lucide-react';
 import { usePollingResource } from '../../app/polling.js';
-import { api } from '../../lib/api.js';
+import { api, apiUrl } from '../../lib/api.js';
 import { Button, Card, ErrorState, LoadingState, NumberInput, SegmentedControl, SectionHeader, SettingGroup, SettingRow, StatusBadge, Switch } from '../../components/ui/index.jsx';
 import { formatNumber, periodLabels, quotaWindows, shortNumber, usagePeriods, usageSummary } from './usageView.js';
 
@@ -122,7 +122,7 @@ function RandomImageCard({ settings, saveSettings }) {
     <SettingGroup title='最近发送' description='各群流水合并，最新的在前；只保留每群最近 20 条。'>
       {recent.length ? <div className='osu-random-image__recent'>
         {recent.map(item => <figure key={item.groupId + item.at + item.file}>
-          <img src={'/api/random-image/file?name=' + encodeURIComponent(item.file)} alt={item.file} loading='lazy' />
+          <img src={apiUrl('/api/random-image/file?name=' + encodeURIComponent(item.file))} alt={item.file} loading='lazy' />
           <figcaption>{shortPoolName(item.file)}<small>{item.groupName || item.groupId} · {String(item.at).slice(5, 16).replace('T', ' ')}</small></figcaption>
         </figure>)}
       </div> : <p className='osu-muted'>{stats.loading ? '正在读取…' : '还没有发过图'}</p>}

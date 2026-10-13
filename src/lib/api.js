@@ -13,7 +13,12 @@ function abortError(message = '请求已取消') {
   return error;
 }
 
-function apiUrl(pathname) {
+/**
+ * 把接口路径拼成可请求的地址。桌面版走 bridge 时 window.desktop.apiBaseUrl 是
+ * http://127.0.0.1:<port>，页面自身可能来自 file://，所以任何直接给 <img src> 的
+ * 接口路径都必须过这里 —— 写相对路径会指到应用自身的源上，图加载不出来。
+ */
+export function apiUrl(pathname) {
   const desktop = typeof window !== 'undefined' ? window.desktop : null;
   const base = desktop?.apiTransport === 'bridge' ? String(desktop.apiBaseUrl || '') : '';
   if (!base || /^https?:\/\//i.test(String(pathname))) return pathname;
