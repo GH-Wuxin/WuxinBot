@@ -224,25 +224,6 @@ const FAMILY_TITLES: Record<string, string> = {
   administration: '群聊与系统管理',
 };
 
-// 「你能做什么」这一份是唯一会被 capability_summary 路由检索到的文档，
-// 而它原先只由命令目录拼成 —— 于是 pippi 被问到能力时只会念指令清单，
-// 对「我也发表情包」「我会看图」「我有知识库」一概不知。
-// 这段说明补在命令清单之前：kbPrompt 截断时会优先保留首行，后续内容也排在
-// 命令之前，所以它不会先被截掉。
-// 用词要贴群友的实际说法：检索是 BM25 词重叠，「图片」和「看图」、「记忆」和
-// 「记住」在 bigram 分词下不互相命中。写得太概括会导致有人问「你看得懂图片吗」
-// 直接掉进 no_lexical_overlap —— 明明写了看图却检索不到。
-const CAPABILITY_OVERVIEW = [
-  'pippi 是 osu! 群里的聊天机器人，同时也是 osu! 查询 bot。能做的事不止指令，分五类：',
-  '一、聊天。像群友一样参与闲聊，短句口语，不端着；被 @ 提问时会把话答清楚。',
-  '二、osu! 查询。查成绩、BP、玩家信息、技能雷达、推图等，走下面这些指令。',
-  '三、发表情包。有跟着对话发的表情和贴纸，也有群里聊着聊着随机甩一张图的 —— 后者只发图不带字，不是每条都发，平均几十分钟到一小时一张。',
-  '四、看图。群友发的图片她能看，也能 OCR 认出图里的文字。',
-  '五、联网搜索与长期记忆。需要时可以联网查资料、搜东西，查不到就说查不到；也会按用户和群记住长期信息，比如称呼和偏好。',
-  '她还有三套知识库：关于自己的、osu! 领域的、以及两万多条社群表达参考。',
-  '没有的能力如实说没有：不能语音、不能视频、不能唱歌、不能加好友、不能拉群，也不能替别人改账号设置。',
-].join('\n');
-
 /**
  * Build per-audience capability summaries (cumulative visibility). Each
  * audience gets its own docs; retrieval must pick exactly one audience via
@@ -280,16 +261,8 @@ export function buildCapabilitySummaryDocs(): Array<{
       docs.push({
         id: summaryDocumentId(family, audience),
         title: `${FAMILY_TITLES[family]}（${audience === 'owner' ? '所有者' : audience === 'group_admin' ? '管理员' : '普通用户'}视角）`,
-        // 「能力总览」这一份是按 id 精确检索的（summary:all:<audience>），但检索仍然
-        // 先看标签是否命中：标签不中就走 BM25，而两千多字的长文档分数会被稀释到
-        // 阈值以下。所以把群友实际会用的能力词都放进标签 —— 它们本就该描述这篇文档。
-        tags: family === 'all'
-          ? [family, '能力', '总览', '功能', '指令', '你能', '做什么', '干什么', '会什么', '有什么',
-              '表情包', '表情', '贴纸', '图片', '看图', '发图', '识图', 'OCR', '联网', '上网', '搜索', '搜图', '查资料', '记忆', '记住',
-              '知识库', '语音', '视频', '唱歌', '加好友', '拉群']
-          : [family, '能力', '总览', '功能', '指令', '你能', '做什么', '干什么', '会什么', '有什么'],
-        content: (family === 'all' ? CAPABILITY_OVERVIEW + '\n\n' : '')
-          + `你能做什么？有什么功能？以下是 pippi 的${FAMILY_TITLES[family]}：\n` + lines.join('\n'),
+        tags: [family, '能力', '总览', '功能', '指令', '你能', '做什么', '干什么', '会什么', '有什么'],
+        content: `你能做什么？有什么功能？以下是 pippi 的${FAMILY_TITLES[family]}：\n` + lines.join('\n'),
         visibility: audience === 'public' ? 'public' : audience === 'group_admin' ? 'group_admin' : 'owner',
         documentKind: 'capability_summary',
       });
