@@ -38,9 +38,12 @@ const traversal = validateStickerSelection({ stickerId: '../../secret.png', veri
 assert.equal(traversal.ok, false);
 assert.equal(traversal.reason, 'unknown_id');
 assert.equal(stickerPath('../../secret.png'), null);
-assert.equal(pickForModel('service_down'), null);
-assert.equal(explainModelStickerEligibility('service_down').reason, 'gate');
-assert.equal(validateStickerSelection({ stickerId: 'service_down', verifyHashes: false }).ok, false);
+// 不写死具体 id：这几条要保的是「code 档不进 LLM 通路」这个契约，不是某一张贴纸。
+// 原先写死 service_down，它拆成 8 张差分（service_down_01..08）之后这里就挂了。
+const codeGatedId = JSON.parse(fs.readFileSync(path.resolve('server/bot/stickers/manifest.json'), 'utf8')).stickers.find((entry) => entry.gate === 'code').id;
+assert.equal(pickForModel(codeGatedId), null);
+assert.equal(explainModelStickerEligibility(codeGatedId).reason, 'gate');
+assert.equal(validateStickerSelection({ stickerId: codeGatedId, verifyHashes: false }).ok, false);
 
 // A valid catalog can still produce an empty model candidate set when the
 // server-derived policy has no matching topic. The model-facing catalog and

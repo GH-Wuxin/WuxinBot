@@ -38,12 +38,16 @@ assert.equal(catalog.ok, true, JSON.stringify(catalog));
 assert.equal(catalog.manifestCount, catalog.annotationCount);
 assert.ok(catalog.manifestCount > 0, '贴纸清单不应为空');
 
+// 不写死具体 id：这几条要保的是「code 档不进 LLM 通路」这个契约，不是某一张贴纸。
+// 原先写死 service_down，它拆成 8 张差分（service_down_01..08）之后这里就挂了。
+const codeGatedId = JSON.parse(fs.readFileSync(path.resolve('server/bot/stickers/manifest.json'), 'utf8')).stickers.find((entry) => entry.gate === 'code').id;
+
 // The model path is an exact-ID contract. Group/emotion fallback belongs only
 // to the deterministic code path.
 assert.equal(pickForModel('laugh'), null);
 assert.equal(pickForModel('amused'), null);
-assert.equal(pickForModel('service_down', { allowedGates: ['code'] }), null);
-assert.equal(explainModelStickerEligibility('service_down', { allowedGates: ['code'] }).reason, 'gate');
+assert.equal(pickForModel(codeGatedId, { allowedGates: ['code'] }), null);
+assert.equal(explainModelStickerEligibility(codeGatedId, { allowedGates: ['code'] }).reason, 'gate');
 // 从这里起用的是清单里的真实条目，不写死具体 id —— 这个测试要保的是
 // 「精确 ID + 门禁 + 话题」这套契约，不是某一张贴纸。原先写死 dt_zoom，
 // 那张挪进随机池之后这里就挂了。
@@ -62,7 +66,7 @@ assert.ok(candidates.every((entry) => entry.gate === 'loose' && entry.mode === '
 const tool = buildStickerSelectionTool();
 const enumValues = tool.function.parameters.properties.sticker_id.enum;
 assert.ok(Array.isArray(enumValues));
-assert.ok(!enumValues.includes('service_down'));
+assert.ok(!enumValues.includes(codeGatedId));
 
 const registry = { bots: DEFAULT_BOTS, updatedAt: '' };
 for (const surface of ['legacy', 'v2']) {
@@ -273,7 +277,7 @@ assert.equal(
 const rejectedCodeSticker = await executeToolCall({
   id: 'offline-send-code-sticker',
   type: 'function',
-  function: { name: 'send_sticker', arguments: JSON.stringify({ sticker_id: 'service_down' }) },
+  function: { name: 'send_sticker', arguments: JSON.stringify({ sticker_id: codeGatedId }) },
 }, {
   db: { settings: {} },
   userId: 'tester',
