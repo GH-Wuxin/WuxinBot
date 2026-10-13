@@ -1,7 +1,7 @@
 {
   "version": 1,
   "generatedFrom": "Pippi_%E8%A1%A8%E6%83%85%E5%8C%85%E5%85%A8%E9%9B%86_2026-10-09",
-  "count": 63,
+  "count": 56,
   "stickers": [
     {
       "id": "hello",
@@ -145,21 +145,6 @@
       "size": "512x512"
     },
     {
-      "id": "guilty_shrug",
-      "name": "心虚·双手摊开",
-      "category": "情绪反应",
-      "emotion": "embarrassed",
-      "description": "双手在肩旁摊开，心虚不自在",
-      "risk": "low",
-      "caption": false,
-      "group": "guilty_shrug",
-      "mode": "random",
-      "gate": "loose",
-      "file": "pippi_guilty_shrug.png",
-      "sha256": "954831fb4b6c75a407d449c03c9c254826a52bbe3114150311b3c4d63d836cb0",
-      "size": "512x512"
-    },
-    {
       "id": "embarrassed_scratching",
       "name": "尴尬挠头",
       "category": "情绪反应",
@@ -172,21 +157,6 @@
       "gate": "loose",
       "file": "pippi_embarrassed_scratching.png",
       "sha256": "96b0185a27ba7d7a18b6916ffd2a80a52a11a5d7068c75130d8d2f1c4f0fcd5e",
-      "size": "512x512"
-    },
-    {
-      "id": "tired",
-      "name": "无力·不想说话",
-      "category": "情绪反应",
-      "emotion": "exhausted",
-      "description": "双眼半睁，肩膀下垂，叹气",
-      "risk": "low",
-      "caption": false,
-      "group": "tired",
-      "mode": "random",
-      "gate": "loose",
-      "file": "pippi_tired.png",
-      "sha256": "40d4158cef1ddc76f2e2053b8af400bec85e05a32023bfd0f273db3fa8be87b8",
       "size": "512x512"
     },
     {
@@ -295,21 +265,6 @@
       "size": "512x512"
     },
     {
-      "id": "cartoon_out",
-      "name": "卡通倒地·X眼",
-      "category": "情绪反应",
-      "emotion": "defeated",
-      "description": "地上躺平、X眼、吐舌头的夸张动漫搞笑状态",
-      "risk": "medium",
-      "caption": false,
-      "group": "cartoon_out",
-      "mode": "random",
-      "gate": "loose",
-      "file": "pippi_cartoon_out.png",
-      "sha256": "e3bee2238cdb87396bca61794e8a2b2e0b48ae6236864dabcf57fb2686cb4ba3",
-      "size": "512x512"
-    },
-    {
       "id": "teary",
       "name": "委屈·泪汪汪",
       "category": "情绪反应",
@@ -322,21 +277,6 @@
       "gate": "loose",
       "file": "pippi_teary.png",
       "sha256": "399c5289834de14f62a39f78a32f85f6cc8f98f4a37e53ef75e30176da178444",
-      "size": "512x512"
-    },
-    {
-      "id": "hug_knees",
-      "name": "抱膝委屈",
-      "category": "情绪反应",
-      "emotion": "sad",
-      "description": "蜷坐抱膝哭泣",
-      "risk": "low",
-      "caption": false,
-      "group": "hug_knees",
-      "mode": "random",
-      "gate": "loose",
-      "file": "pippi_hug_knees.png",
-      "sha256": "81da9699ca8867d7003f110e1c1c5cad98abd1daad6d336e5650e8c019385903",
       "size": "512x512"
     },
     {
@@ -571,36 +511,6 @@
       "size": "512x512"
     },
     {
-      "id": "device_mouse",
-      "name": "小键盘+鼠标·呆滞",
-      "category": "设备与特定动作",
-      "emotion": "blank",
-      "description": "抱着小键盘和鼠标，呆若木鸡",
-      "risk": "low",
-      "caption": false,
-      "group": "device",
-      "mode": "context",
-      "gate": "loose",
-      "file": "pippi_device_mouse.png",
-      "sha256": "18e2ff5eedb7542626f8640444a51fd5f0560510b44158e55304deb90190282b",
-      "size": "512x512"
-    },
-    {
-      "id": "device_tablet",
-      "name": "小键盘+数位板·呆滞",
-      "category": "设备与特定动作",
-      "emotion": "blank",
-      "description": "展示小键盘与数位板，发呆",
-      "risk": "low",
-      "caption": false,
-      "group": "device",
-      "mode": "context",
-      "gate": "loose",
-      "file": "pippi_device_tablet.png",
-      "sha256": "4b49f55dea55dae3f45f0a3652742959c3fed8204f2cf98d63e667481364e6ac",
-      "size": "512x512"
-    },
-    {
       "id": "laugh_01",
       "name": "大笑·撑桌",
       "category": "情绪反应",
@@ -733,21 +643,6 @@
       "gate": "loose",
       "file": "pippi_popcorn.png",
       "sha256": "98e55f08416405706ee36cfd56b5b0701daffba40660ebd0ac35b495cbc66e95",
-      "size": "512x512"
-    },
-    {
-      "id": "lurking",
-      "name": "暗中观察",
-      "category": "情绪反应",
-      "emotion": "playful",
-      "description": "双手扒着画面下缘，只探出上半张脸偷看",
-      "risk": "low",
-      "caption": true,
-      "group": "lurking",
-      "mode": "random",
-      "gate": "loose",
-      "file": "pippi_lurking.png",
-      "sha256": "937f59e78151b75f725909c50679fd2f28c47a8360c599f380c4d69e7cfec827",
       "size": "512x512"
     },
     {

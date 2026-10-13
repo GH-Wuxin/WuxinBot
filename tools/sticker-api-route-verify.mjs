@@ -72,7 +72,10 @@ try {
   assert.equal(debug.status, 200);
   const debugBody = await debug.json();
   assert.equal(debugBody.ok, true);
-  assert.equal(debugBody.catalog.manifestCount, 63);
+  // 断言「API 报的条数 = 清单的真实条数」，而不是写死一个数字。
+  // 写死会让每次增删表情包都误报，而这里真正要保的是两者一致。
+  const manifestStickers = JSON.parse(fs.readFileSync(path.resolve('server/bot/stickers/manifest.json'), 'utf8')).stickers;
+  assert.equal(debugBody.catalog.manifestCount, manifestStickers.length);
   assert.equal(debugBody.delivery.policy.mode, 'off');
 
   const policy = await request('/api/sticker-policy');
