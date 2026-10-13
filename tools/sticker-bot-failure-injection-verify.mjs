@@ -242,7 +242,9 @@ const FAILURE_NOTICE = '[系统] 这次查询或回复未能完成，请稍后�
 function assertFailureNotice(sends, label) {
   assert.equal(sends.length, 1, label + ' 应当只发一条');
   assert.ok(sends[0].startsWith(FAILURE_NOTICE), label + ' 首行应是失败提示，实际: ' + sends[0]);
-  assert.ok(sends[0].includes('pippi_service_down.png'), label + ' 应当附 service_down，实际: ' + sends[0]);
+  // 只断言「附的是 service_down 组里的图」，不断言具体文件名 ——
+  // 那一组现在有 8 张差分，写死 pippi_service_down.png 会在拆组时误报。
+  assert.ok(sends[0].includes('pippi_service_down'), label + ' 应当附 service_down 组的图，实际: ' + sends[0]);
 }
 
   const timeoutElapsedMs = Date.now() - timeoutStartedAt;

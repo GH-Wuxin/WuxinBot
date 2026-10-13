@@ -706,24 +706,6 @@
       ],
       "intensity": "medium"
     },
-    "service_down": {
-      "action": "举着白旗",
-      "expression": "无奈、认输",
-      "cues": [
-        "白旗",
-        "服务故障式投降"
-      ],
-      "bestFor": [
-        "上游不可用",
-        "超时",
-        "服务真的失败"
-      ],
-      "avoid": [
-        "用户做错了什么",
-        "普通查询中"
-      ],
-      "intensity": "strong"
-    },
     "noted": {
       "action": "一手拿笔，一手拿着笔记本记录",
       "expression": "温和微笑、专注",
@@ -800,6 +782,154 @@
         "普通聊天"
       ],
       "intensity": "medium"
+    },
+    "service_down_01": {
+      "action": "跪坐举白旗",
+      "expression": "无奈、认输",
+      "cues": [
+        "泪眼",
+        "WIFI 断开与警告三角",
+        "加载圈",
+        "服务故障式投降"
+      ],
+      "bestFor": [
+        "上游不可用",
+        "超时",
+        "服务真的失败"
+      ],
+      "avoid": [
+        "用户做错了什么",
+        "普通查询中"
+      ],
+      "intensity": "strong"
+    },
+    "service_down_02": {
+      "action": "站立举白旗",
+      "expression": "无奈、认输",
+      "cues": [
+        "汗滴与乱线",
+        "加载圈",
+        "服务故障式投降"
+      ],
+      "bestFor": [
+        "上游不可用",
+        "超时",
+        "服务真的失败"
+      ],
+      "avoid": [
+        "用户做错了什么",
+        "普通查询中"
+      ],
+      "intensity": "strong"
+    },
+    "service_down_03": {
+      "action": "双手摊开",
+      "expression": "无奈、认输",
+      "cues": [
+        "上方破裂文件气泡与加载圈",
+        "服务故障式投降"
+      ],
+      "bestFor": [
+        "上游不可用",
+        "超时",
+        "服务真的失败"
+      ],
+      "avoid": [
+        "用户做错了什么",
+        "普通查询中"
+      ],
+      "intensity": "strong"
+    },
+    "service_down_04": {
+      "action": "托腮趴在桌前",
+      "expression": "无奈、认输",
+      "cues": [
+        "显示器上破裂文件与警告",
+        "服务故障式投降"
+      ],
+      "bestFor": [
+        "上游不可用",
+        "超时",
+        "服务真的失败"
+      ],
+      "avoid": [
+        "用户做错了什么",
+        "普通查询中"
+      ],
+      "intensity": "strong"
+    },
+    "service_down_05": {
+      "action": "坐地举白旗",
+      "expression": "无奈、认输",
+      "cues": [
+        "警告三角、乱线与 WIFI 断开",
+        "服务故障式投降"
+      ],
+      "bestFor": [
+        "上游不可用",
+        "超时",
+        "服务真的失败"
+      ],
+      "avoid": [
+        "用户做错了什么",
+        "普通查询中"
+      ],
+      "intensity": "strong"
+    },
+    "service_down_06": {
+      "action": "低头站立",
+      "expression": "无奈、认输",
+      "cues": [
+        "皱眉哭脸文件、乱线与加载圈",
+        "服务故障式投降"
+      ],
+      "bestFor": [
+        "上游不可用",
+        "超时",
+        "服务真的失败"
+      ],
+      "avoid": [
+        "用户做错了什么",
+        "普通查询中"
+      ],
+      "intensity": "strong"
+    },
+    "service_down_07": {
+      "action": "双手摊开",
+      "expression": "无奈、认输",
+      "cues": [
+        "破裂文件叉号与拔出的插头",
+        "服务故障式投降"
+      ],
+      "bestFor": [
+        "上游不可用",
+        "超时",
+        "服务真的失败"
+      ],
+      "avoid": [
+        "用户做错了什么",
+        "普通查询中"
+      ],
+      "intensity": "strong"
+    },
+    "service_down_08": {
+      "action": "托腮趴桌",
+      "expression": "无奈、认输",
+      "cues": [
+        "显示器破裂文件",
+        "纸团与鼠标",
+        "服务故障式投降"
+      ],
+      "bestFor": [
+        "上游不可用",
+        "超时",
+        "服务真的失败"
+      ],
+      "avoid": [
+        "用户做错了什么",
+        "普通查询中"
+      ],
+      "intensity": "strong"
     }
   }
 }

@@ -1067,8 +1067,10 @@ let waitUpTimer = null;
     if (osuDataIntent && !hasEnabledBots) {
       const errorText = '[系统] osu! 数据查询不可用：当前没有已启用的机器人，无法查询 osu! 数据。';
       // 服务不可用 —— 附 service_down。图由代码触发，不经过 LLM，所以模型挂掉时也发得出。
-      // 记进库里的是纯文字：CQ 码进上下文只是噪音。
-      if (sendMessage) await sendMessage(event, withSticker(errorText, 'service_down'));
+      // service_down 是一组差分，用 pickCodeSticker 从组里随机取一张；取不到就退回纯文字，
+      // 不让「故障提示」本身因为贴纸问题发不出去。记进库里的是纯文字：CQ 码进上下文只是噪音。
+      const noticeSticker = pickCodeSticker('service_down');
+      if (sendMessage) await sendMessage(event, noticeSticker ? withSticker(errorText, noticeSticker.id) : errorText);
       updateDb((draft) => {
         draft.messages.push({
           id: crypto.randomUUID(), ...replyTargetMetadata(event), role: 'assistant', type: event.type,
@@ -1116,7 +1118,8 @@ let waitUpTimer = null;
             ? '内部 osu! 工具未启用'
             : `操作被安全策略拒绝: ${(opValid as any).reason || '未知原因'}`;
           const errorText = `[系统] osu! 数据查询不可用：${reason}`;
-          if (sendMessage) await sendMessage(event, withSticker(errorText, 'service_down'));
+          const noticeSticker = pickCodeSticker('service_down');
+          if (sendMessage) await sendMessage(event, noticeSticker ? withSticker(errorText, noticeSticker.id) : errorText);
           updateDb((draft) => {
             draft.messages.push({
               id: crypto.randomUUID(), ...replyTargetMetadata(event), role: 'assistant', type: event.type,
@@ -1765,8 +1768,13 @@ let waitUpTimer = null;
       && (event.replyToCurrentMessage === true || directConversation)) {
       // 这是最该配图的一条：回复内容没生成出来，但「服务挂了、举白旗认输」这个意思
       // 是确定的，而 service_down 正是 gate=code 的状态图 —— 走 withSticker 不经过 LLM，
-      // 所以 LLM 超时/挂掉时它照样发得出去。原先这条只发纯文字，是漏接线。
-      await sendOptionalNotice(() => sendMessage(event, withSticker('[系统] 这次查询或回复未能完成，请稍后重试。', 'service_down')));
+      // 所以 LLM 超时/挂掉时它照样发得出去。
+      // service_down 现在是一组 8 张差分（跪地举旗 / 站立举旗 / 摊手 / 趴桌 …），
+      // 由代码随机取一张。取不到时退回纯文字 —— 兜底提示本身不能因为贴纸发不出去。
+      const failureNotice = '[系统] 这次查询或回复未能完成，请稍后重试。';
+      const noticeSticker = pickCodeSticker('service_down');
+      await sendOptionalNotice(() => sendMessage(event,
+        noticeSticker ? withSticker(failureNotice, noticeSticker.id) : failureNotice));
     }
     recordDecisionError(`回复失败：${String(error?.message || error).slice(0, 500)}`);
     updateDb((draft) => {
