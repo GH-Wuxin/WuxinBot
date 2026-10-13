@@ -15,6 +15,7 @@ import { getBackgroundTaskStats, runBackgroundTask, waitForBackgroundTasks } fro
 import { getInboundAdmissionStats, stopInboundAdmission, waitForInboundTasks } from './bot/inboundGate.js';
 import { getLlmAdmissionStats } from './llmPolicy.js';
 import { getKbHealth } from './bot/knowledgeBase.js';
+import { randomImageDir, randomImageSnapshot } from './bot/randomImages.js';
 import { getGroupProfile, updateGroupProfile, clearGroupProfile } from './bot/groupProfile.js';
 import { getRelationshipProfile, updateRelationshipProfile, clearRelationshipProfile, isSubstantiveRelationshipProfile } from './bot/relationshipProfile.js';
 import { getMemoryProfileQueueStatus, maybeUpdateMemoryProfile } from './bot/memory.js';
@@ -413,6 +414,33 @@ app.get('/api/sticker-policy', (_req, res) => {
     policy: stickerDeliveryConfig(),
     delivery: getStickerDeliveryStats(),
   }));
+});
+
+// 随机甩图的观测接口：哪些群参与、各自掷了多少次、命中几次、当前概率、最近发的是哪几张。
+app.get('/api/random-image', (_req, res) => {
+  res.setHeader('Cache-Control', 'no-store');
+  res.json(ok(randomImageSnapshot(readDb())));
+});
+
+// 图池里的单张图，供控制台渲染缩略图。名字里出现路径分隔符或上级引用一律拒绝，
+// 只允许图池目录下的直接文件名（字面判断，不做模式匹配）。
+app.get('/api/random-image/file', (req, res) => {
+  const name = String(req.query.name || '');
+  const rejected = !name
+    || name.includes('/') || name.includes('\\') || name.includes('..')
+    || name.startsWith('.');
+  if (rejected) {
+    res.status(400).json({ ok: false, error: '文件名不合法' });
+    return;
+  }
+  const dir = randomImageDir(readDb());
+  const file = path.resolve(dir, name);
+  if (path.dirname(file) !== path.resolve(dir) || !fs.existsSync(file) || !fs.statSync(file).isFile()) {
+    res.status(404).json({ ok: false, error: '图不在图池里' });
+    return;
+  }
+  res.setHeader('Cache-Control', 'private, max-age=300');
+  res.sendFile(file);
 });
 
 app.post('/api/sticker-policy', (req, res) => {

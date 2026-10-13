@@ -69,6 +69,14 @@ function expectedInterval(base, step) {
   return Math.round(mean);
 }
 
+// 图池里的文件名一律是 pippi-NN.png，展示时去掉前缀和后缀。
+// 这里用字面比较而不是正则：只是一次去后缀，没必要引入模式匹配。
+function shortPoolName(file) {
+  const text = String(file || '');
+  const base = text.endsWith('.png') ? text.slice(0, -4) : text;
+  return base.startsWith('pippi-') ? base.slice(6) : base;
+}
+
 function RandomImageCard({ settings, saveSettings }) {
   const current = settings.randomImage || {};
   const light = current.light || { base: 0.001, step: 0.0002 };
@@ -87,12 +95,37 @@ function RandomImageCard({ settings, saveSettings }) {
     },
   });
   const pace = (base, step) => '约 ' + expectedInterval(base, step) + ' 条发言出一张';
-  return <Card>
+  // 各群的掷骰/命中/当前概率和最近发送不在 /api/state 里，单独拉一次并轮询。
+  const stats = usePollingResource(() => api('/api/random-image', { timeoutMs: 15000 }), 15000);
+  const snapshot = stats.data || {};
+  const groups = snapshot.groups || [];
+  const recent = snapshot.recent || [];
+  return <Card className='osu-random-image'>
     <SectionHeader title='群聊随机发图' />
     <SettingGroup title='概率' description='群里每有一条别人的发言就掷一次骰子，命中就单独发一张图、不带文字。只在「轻度参与」和「自然群友」两个档位生效。'>
       <SettingRow title='开启' description='关闭后完全不掷骰子。' control={<Switch checked={enabled} onChange={event => write({ enabled: event.target.checked })} />} />
       <SettingRow title='轻度参与' description={'基础概率；' + pace(lightBase, Number(light.step ?? 0.0002))} control={<NumberInput value={Number((lightBase * 100).toFixed(3))} min={0} max={100} step={0.01} suffix='%' onChange={value => write({ lightBase: value / 100 })} />} />
       <SettingRow title='自然群友' description={'基础概率；' + pace(naturalBase, Number(natural.step ?? 0.0005))} control={<NumberInput value={Number((naturalBase * 100).toFixed(3))} min={0} max={100} step={0.01} suffix='%' onChange={value => write({ naturalBase: value / 100 })} />} />
+    </SettingGroup>
+    <SettingGroup title='各群状态' description={snapshot.pool ? '图池 ' + snapshot.pool.count + ' 张；累计掷骰 ' + formatNumber(snapshot.totals?.rolls) + ' 次、命中 ' + formatNumber(snapshot.totals?.hits) + ' 次。' : '正在读取…'}>
+      <div className='osu-random-image__groups'>
+        {groups.map(group => <div key={group.groupId} className={'osu-random-image__group' + (group.participates ? '' : ' osu-random-image__group--idle')}>
+          <span className='osu-random-image__name'>{group.name || group.groupId}</span>
+          <span className='osu-random-image__mode'>{group.mode}</span>
+          {group.participates
+            ? <><span>掷骰 {formatNumber(group.rolls)}</span><span>命中 {formatNumber(group.hits)}</span><span className='osu-text-mint'>当前 {(group.chance * 100).toFixed(2)}%</span><span className='osu-random-image__last'>{group.lastFile || '还没发过'}</span></>
+            : <span className='osu-muted'>该档位不掷骰子</span>}
+        </div>)}
+        {!groups.length && <p className='osu-muted'>{stats.loading ? '正在读取…' : '没有群数据'}</p>}
+      </div>
+    </SettingGroup>
+    <SettingGroup title='最近发送' description='各群流水合并，最新的在前；只保留每群最近 20 条。'>
+      {recent.length ? <div className='osu-random-image__recent'>
+        {recent.map(item => <figure key={item.groupId + item.at + item.file}>
+          <img src={'/api/random-image/file?name=' + encodeURIComponent(item.file)} alt={item.file} loading='lazy' />
+          <figcaption>{shortPoolName(item.file)}<small>{item.groupName || item.groupId} · {String(item.at).slice(5, 16).replace('T', ' ')}</small></figcaption>
+        </figure>)}
+      </div> : <p className='osu-muted'>{stats.loading ? '正在读取…' : '还没有发过图'}</p>}
     </SettingGroup>
   </Card>;
 }

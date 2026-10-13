@@ -239,3 +239,68 @@ export function rollRandomImage(groupId: string, mode: string | undefined): Rand
 export function randomImageStats(db: any): Record<string, any> {
   return db?.randomImageState && typeof db.randomImageState === 'object' ? db.randomImageState : {};
 }
+
+/**
+ * 给控制台用的快照：哪些群参与、各自掷了多少次、命中几次、当前概率、最近发的是哪几张。
+ *
+ * 参与与否由群档位决定（只有 light / natural 会掷骰），所以这里把不参与的群也列出来
+ * 并标注 participates=false —— 「为什么这个群从来不发图」多数时候答案就是它的档位不对。
+ */
+export interface RandomImageSnapshot {
+  config: RandomImageConfig;
+  pool: { dir: string; count: number };
+  groups: Array<{
+    groupId: string; name: string; mode: string; participates: boolean;
+    rolls: number; hits: number; chance: number;
+    lastHitAt: string | null; lastFile: string | null; everSent: number;
+    recent: Array<{ at: string; file: string }>;
+  }>;
+  totals: { rolls: number; hits: number };
+  /** 各群流水合并后按时间倒序，供控制台直接渲染最近的发送。 */
+  recent: Array<{ at: string; file: string; groupId: string; groupName: string }>;
+}
+
+export function randomImageSnapshot(db: any): RandomImageSnapshot {
+  const state = randomImageStats(db);
+  const totals = { rolls: 0, hits: 0 };
+  const groups = (db?.groups || []).map((group: any) => {
+    const groupId = String(group.groupId);
+    const mode = String(group.mode || '');
+    const entry = state[groupId] || {};
+    const rolls = Number(entry.rolls || 0);
+    const hits = Number(entry.hits || 0);
+    totals.rolls += rolls;
+    totals.hits += hits;
+    return {
+      groupId,
+      name: String(group.name || ''),
+      mode,
+      participates: mode === 'light' || mode === 'natural',
+      rolls,
+      hits,
+      chance: Number.isFinite(entry.chance) ? Number(entry.chance) : 0,
+      lastHitAt: entry.lastHitAt ? String(entry.lastHitAt) : null,
+      lastFile: entry.lastFile ? path.basename(String(entry.lastFile)) : null,
+      everSent: Array.isArray(entry.everSent) ? entry.everSent.length : 0,
+      recent: (Array.isArray(entry.recent) ? entry.recent : []).map((item: any) => ({
+        at: String(item?.at || ''),
+        file: path.basename(String(item?.file || '')),
+      })),
+    };
+  });
+  // 最近发送：把各群的流水并起来按时间倒序，供控制台直接渲染缩略图。
+  const merged = groups.flatMap((group: any) => group.recent.map((item: any) => ({
+    at: String(item.at),
+    file: String(item.file),
+    groupId: String(group.groupId),
+    groupName: String(group.name || ''),
+  })));
+  merged.sort((a: any, b: any) => Date.parse(b.at) - Date.parse(a.at));
+  return {
+    config: randomImageConfig(db),
+    pool: { dir: randomImageDir(db), count: listRandomImages(db).length },
+    groups,
+    totals,
+    recent: merged.slice(0, 24),
+  };
+}
