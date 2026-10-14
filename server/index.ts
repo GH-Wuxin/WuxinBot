@@ -1156,18 +1156,29 @@ app.post('/api/groups', (req, res) => {
   if (!groupId) return;
   const mode = String(req.body?.mode || 'mention');
   if (!GROUP_MODES.has(mode)) return res.status(400).json({ ok: false, error: '无效的群回复模式' });
+  const hasRandomImageRate = Object.prototype.hasOwnProperty.call(req.body || {}, 'randomImageRate');
+  const randomImageRate = String(req.body?.randomImageRate || 'standard');
+  if (hasRandomImageRate && !['low', 'standard'].includes(randomImageRate)) {
+    return res.status(400).json({ ok: false, error: '无效的随机发图频率' });
+  }
+  const hasRandomImageEnabled = Object.prototype.hasOwnProperty.call(req.body || {}, 'randomImageEnabled');
   const maxPerHour = rangedInteger(req.body?.maxPerHour, 20, 1, 200, '每小时回复上限', res);
   if (maxPerHour === null) return;
   const cooldownSec = rangedInteger(req.body?.cooldownSec, 30, 0, 600, '冷却秒数', res);
   if (cooldownSec === null) return;
   updateDb((db) => {
+    const existing = db.groups.find((group) => String(group.groupId) === String(groupId));
+    const migratedEnabled = existing?.randomImageEnabled ?? (mode === 'natural' || mode === 'light');
+    const migratedRate = existing?.randomImageRate || (mode === 'light' ? 'low' : 'standard');
     upsertBy(db.groups, 'groupId', {
       groupId,
       name: limitedText(req.body?.name || groupId, 100),
       enabled: Boolean(req.body?.enabled),
       mode,
       maxPerHour,
-      cooldownSec
+      cooldownSec,
+      randomImageEnabled: hasRandomImageEnabled ? Boolean(req.body?.randomImageEnabled) : Boolean(migratedEnabled),
+      randomImageRate: hasRandomImageRate ? randomImageRate : migratedRate,
     });
   });
   res.json(ok(compactDbResponse()));

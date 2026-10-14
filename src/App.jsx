@@ -7,6 +7,7 @@ import './styles/runtime.css';
 import { AppShell } from './components/layout/AppShell.jsx';
 import { DashboardPage } from './pages/Dashboard/index.jsx';
 import { GroupsPage } from './pages/Groups/index.jsx';
+import { RandomImagesPage } from './pages/RandomImages/index.jsx';
 import { AgentPage } from './pages/Agent/index.jsx';
 import { OsuPage } from './pages/Osu/index.jsx';
 import { MembersPage } from './pages/Members/index.jsx';
@@ -116,6 +117,7 @@ export function App() {
     {loadError && <div className="osu-inline-warning" role="alert">连接刷新失败，正在显示上一次数据：{loadError}</div>}
     {tab === 'overview' && <DashboardPage db={db} oneBot={state.oneBot} saveSettings={saveSettings} refreshState={refresh} onNavigate={setTab} />}
     {tab === 'groups' && <GroupsPage db={db} refreshState={refresh} saveSettings={saveSettings} />}
+    {tab === 'randomImages' && <RandomImagesPage db={db} refreshState={refresh} saveSettings={saveSettings} />}
     {tab === 'agent' && <AgentPage db={db} />}
     {tab === 'osu' && <OsuPage db={db} refreshState={refresh} />}
     {tab === 'members' && <MembersPage db={db} refreshState={refresh} />}

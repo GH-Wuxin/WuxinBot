@@ -22,8 +22,8 @@ export interface RandomImageRates {
 
 export interface RandomImageConfig {
   enabled: boolean;
-  natural: RandomImageRates;
-  light: RandomImageRates;
+  low: RandomImageRates;
+  standard: RandomImageRates;
   /** 最近这么多次发送会被降权（软规则，不是排除：仍然可能抽中，只是不常见）。 */
   recentWindow: number;
   /** 每往前退一次，权重乘以多少。1 = 不降权，0 = 退化成硬排除。 */
@@ -40,8 +40,8 @@ const RECENT_LIMIT = 20;
 
 const DEFAULTS: RandomImageConfig = {
   enabled: true,
-  natural: { base: 0.005, step: 0.0005 },
-  light: { base: 0.001, step: 0.0002 },
+  standard: { base: 0.005, step: 0.0005 },
+  low: { base: 0.001, step: 0.0002 },
   // 软规则：最近 8 次发送过的图按 0.35^k 降权（k = 往前数第几次）。
   // 上一张的权重是 0.35，再上一张 0.12，更早的 0.04；窗口外一律 1。
   // 池子 27 张时，上一张被再抽中的概率约 1.2%（不降权是 3.7%）——
@@ -67,8 +67,10 @@ export function randomImageConfig(db: any): RandomImageConfig {
   const decay = Number(raw.recentDecay);
   return {
     enabled: raw.enabled !== false,
-    natural: pick(raw.natural, DEFAULTS.natural),
-    light: pick(raw.light, DEFAULTS.light),
+    // Read the old names for backwards compatibility. They are only a data
+    // migration alias; runtime selection comes from the group's own rate.
+    standard: pick(raw.standard || raw.natural, DEFAULTS.standard),
+    low: pick(raw.low || raw.light, DEFAULTS.low),
     recentWindow: Number.isFinite(window) && window >= 0 ? Math.floor(window) : DEFAULTS.recentWindow,
     recentDecay: Number.isFinite(decay) && decay >= 0 && decay <= 1 ? decay : DEFAULTS.recentDecay,
   };
@@ -183,15 +185,14 @@ const NO_ROLL: RandomImageRoll = { file: null, chance: 0, poolSize: 0, nextChanc
 /**
  * 掷一次骰子并把新概率写回 db。
  *
- * mode 只接受 natural / light —— mention 与 osu 档的群不参与，因为在
- * "只在 @ 时回复"的群里随手发图跟该约定直接冲突（实测有个 161 条/小时的群
- * 她从不说话，若也掷骰子就会每 18 分钟甩一张图）。
+ * rate 只接受 low / standard。群聊文字回复模式不参与这里的判断；一个群
+ * 可以只关闭文字回复，继续独立运行随机发图模块。
  */
-export function rollRandomImage(groupId: string, mode: string | undefined): RandomImageRoll {
+export function rollRandomImage(groupId: string, rate: string | undefined): RandomImageRoll {
   const result = { roll: NO_ROLL };
   updateDb((db) => {
     const config = randomImageConfig(db);
-    const rates = mode === 'natural' ? config.natural : mode === 'light' ? config.light : null;
+    const rates = rate === 'low' ? config.low : config.standard;
     if (!config.enabled || !rates) return;
     const files = listRandomImages(db);
     if (!files.length) return;
@@ -243,14 +244,14 @@ export function randomImageStats(db: any): Record<string, any> {
 /**
  * 给控制台用的快照：哪些群参与、各自掷了多少次、命中几次、当前概率、最近发的是哪几张。
  *
- * 参与与否由群档位决定（只有 light / natural 会掷骰），所以这里把不参与的群也列出来
- * 并标注 participates=false —— 「为什么这个群从来不发图」多数时候答案就是它的档位不对。
+ * 参与与否由每群自己的随机发图开关决定；群聊文字模式只作为展示信息保留。
  */
 export interface RandomImageSnapshot {
   config: RandomImageConfig;
   pool: { dir: string; count: number };
   groups: Array<{
-    groupId: string; name: string; mode: string; participates: boolean;
+    groupId: string; name: string; mode: string; randomImageEnabled: boolean;
+    randomImageRate: 'low' | 'standard'; participates: boolean;
     rolls: number; hits: number; chance: number;
     lastHitAt: string | null; lastFile: string | null; everSent: number;
     recent: Array<{ at: string; file: string }>;
@@ -266,6 +267,8 @@ export function randomImageSnapshot(db: any): RandomImageSnapshot {
   const groups = (db?.groups || []).map((group: any) => {
     const groupId = String(group.groupId);
     const mode = String(group.mode || '');
+    const randomImageEnabled = group.randomImageEnabled === true;
+    const randomImageRate = group.randomImageRate === 'low' ? 'low' : 'standard';
     const entry = state[groupId] || {};
     const rolls = Number(entry.rolls || 0);
     const hits = Number(entry.hits || 0);
@@ -275,7 +278,9 @@ export function randomImageSnapshot(db: any): RandomImageSnapshot {
       groupId,
       name: String(group.name || ''),
       mode,
-      participates: mode === 'light' || mode === 'natural',
+      randomImageEnabled,
+      randomImageRate,
+      participates: randomImageEnabled,
       rolls,
       hits,
       chance: Number.isFinite(entry.chance) ? Number(entry.chance) : 0,

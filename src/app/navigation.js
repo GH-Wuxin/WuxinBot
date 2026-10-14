@@ -1,4 +1,4 @@
-import { Activity, BookOpen, Bot, Cable, DatabaseBackup, FileText, GitBranch, KeyRound, MessageCircle, MonitorCog, Shield, SlidersHorizontal, Sparkles, UserCog, UsersRound } from 'lucide-react';
+import { Activity, BookOpen, Bot, Cable, DatabaseBackup, FileText, GitBranch, Image as ImageIcon, KeyRound, MessageCircle, MonitorCog, Shield, SlidersHorizontal, Sparkles, UserCog, UsersRound } from 'lucide-react';
 
 export const navigationGroups = [
   { label: '总览', items: [
@@ -6,6 +6,7 @@ export const navigationGroups = [
   ] },
   { label: '运行与群聊', items: [
     { id: 'groups', label: '群聊', description: '群配置、画像与 Bot 路由', icon: MessageCircle },
+    { id: 'randomImages', label: '随机发图', description: '独立的随机表情包模块', icon: ImageIcon },
     { id: 'agent', label: 'Agent', description: '决策沙盒与运行控制', icon: Bot },
     { id: 'osu', label: 'osu!', description: '绑定、查询与玩家分析', icon: Sparkles }
   ] },

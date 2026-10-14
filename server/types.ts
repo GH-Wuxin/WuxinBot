@@ -130,6 +130,10 @@ export interface Group {
   mode: 'silent' | 'mention' | 'light' | 'natural' | 'osu';
   maxPerHour: number;
   cooldownSec: number;
+  /** Random-image participation is independent from the text reply mode. */
+  randomImageEnabled?: boolean;
+  /** `low` keeps the old light rate; `standard` keeps the old natural rate. */
+  randomImageRate?: 'low' | 'standard';
   createdAt?: string;
   updatedAt?: string;
 }
