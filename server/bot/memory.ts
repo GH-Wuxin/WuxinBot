@@ -117,6 +117,44 @@ function isProfileAuthError(error) {
   return status === 401 || status === 403 || /(401|403|authentication|unauthorized|api key|invalid key|key.*invalid)/i.test(message);
 }
 
+// 上游明确表示「没空」时，重试和等待都没有意义 —— 这类失败要立刻放弃。
+// 用字面包含判断，不做模式匹配。
+const PROFILE_UNAVAILABLE_MARKERS = [
+  'at capacity', 'over capacity', 'overloaded', 'rate limit', 'rate-limit',
+  'too many requests', 'temporarily unavailable', 'service unavailable',
+];
+
+export function isProfileModelUnavailableError(error) {
+  const status = Number(error?.status || error?.code || 0);
+  if (status === 429 || status === 503 || status === 529) return true;
+  const message = String(error?.message || error || '').toLowerCase();
+  return PROFILE_UNAVAILABLE_MARKERS.some((marker) => message.includes(marker));
+}
+
+export function isProfileTimeoutError(error) {
+  const message = String(error?.message || error || '');
+  const lower = message.toLowerCase();
+  // 'timed out' 中间有空格，只查 'timeout' 会漏掉 —— 线上确实出现过这条
+  // （workspace routing discovery timed out）。
+  return error?.name === 'AbortError'
+    || message.includes('超时')
+    || lower.includes('timeout')
+    || lower.includes('timed out');
+}
+
+/*
+ * 哪些失败该打开熔断器。
+ *
+ * 原先只认 401/403，于是「容量不足」和「调用超时」不会熔断 —— 队列是串行的，
+ * 每个任务都要自己等满超时（画像那条是 240 秒起），13 个任务就是将近一小时，
+ * 看起来像卡死。上游不可用和超时同样说明当前配置用不了，应当和认证失败一视同仁。
+ */
+export function isProfileCircuitWorthyError(error) {
+  return isProfileAuthError(error)
+    || isProfileModelUnavailableError(error)
+    || isProfileTimeoutError(error);
+}
+
 function profileLlmCircuitReason(db) {
   if (Date.now() >= profileLlmCircuit.until) return '';
   if (profileLlmCircuit.fingerprint !== profileLlmFingerprint(db)) return '';
@@ -1342,7 +1380,7 @@ export function maybeUpdateMemoryProfile(event, options = {}) {
       });
       return { ...outcome, runId, usage: result.usage || {}, queuedMs };
     } catch (error) {
-      if (isProfileAuthError(error)) tripProfileLlmCircuit(db, error);
+      if (isProfileCircuitWorthyError(error)) tripProfileLlmCircuit(db, error);
       let retryAfter = '';
       let failureCount = 1;
       updateDb((draft) => {
@@ -1378,7 +1416,7 @@ export function maybeUpdateMemoryProfile(event, options = {}) {
           queuedMs,
           failureCount,
           retryAfter,
-          circuitUntil: isProfileAuthError(error) ? new Date(profileLlmCircuit.until).toISOString() : ''
+          circuitUntil: isProfileCircuitWorthyError(error) ? new Date(profileLlmCircuit.until).toISOString() : ''
         }
       });
       return { ok: false, error: error.message || String(error), reason: error.message || String(error), runId, queuedMs, retryAfter };
