@@ -27,7 +27,13 @@ const IMAGE_EXTENSIONS = ['.png', '.jpg', '.jpeg', '.gif', '.webp'];
 function parseArgs(argv) {
   // 源目录指向 pippi image 下的 pippi random 子目录：那里只放随机甩图的图。
   // 同级还有一个 pippi self 放贴纸，是另一套发送机制，不能混进随机池。
-  const args = { source: 'G:/My pack/pippi image/pippi random', pool: '', dryRun: false };
+  // 素材库的位置。它和 bot 实际读取的图池是两回事：bot 从不扫这个目录，
+  // 只有本工具在导入时读它。所以换盘、改名、搬到别处都只影响这里，
+  // 需要时用 WUXIN_PIPPI_IMAGE 环境变量或 --source 指定即可。
+  const defaultSource = process.env.WUXIN_PIPPI_IMAGE
+    ? path.join(String(process.env.WUXIN_PIPPI_IMAGE), 'pippi random')
+    : 'G:/My pack/pippi image/pippi random';
+  const args = { source: defaultSource, pool: '', dryRun: false };
   for (let index = 2; index < argv.length; index += 1) {
     const token = argv[index];
     if (token === '--dry-run') { args.dryRun = true; continue; }
@@ -119,7 +125,15 @@ if (fs.existsSync(SOURCE)) {
     process.exit(2);
   }
 }
-const extras = SOURCE === POOL || !fs.existsSync(SOURCE) ? [] : readImage(SOURCE);
+// 源目录不存在时直接报错。早先这里返回空数组，于是「素材库搬走了」和
+// 「素材库是空的」表现完全一样 —— 静默地什么都不做，很难发现是路径不对。
+if (!fs.existsSync(SOURCE) && SOURCE !== POOL) {
+  console.error('源目录不存在：' + SOURCE);
+  console.error('这不会影响 bot 发图 —— 它读的是自己的图池，从不扫素材库。');
+  console.error('素材库搬家后用 --source 指定，或设 WUXIN_PIPPI_IMAGE 指向它的父目录。');
+  process.exit(2);
+}
+const extras = SOURCE === POOL ? [] : readImage(SOURCE);
 
 // 去重必须按**摘掉 caBX 之后**的内容算，不能按原始字节。
 // 池里的文件是归一化过的、源文件还带着 caBX —— 按原始字节比，同一张图会被当成
