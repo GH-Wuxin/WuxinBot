@@ -25,7 +25,9 @@ import process from 'node:process';
 const IMAGE_EXTENSIONS = ['.png', '.jpg', '.jpeg', '.gif', '.webp'];
 
 function parseArgs(argv) {
-  const args = { source: 'G:/My pack/pippi image', pool: '', dryRun: false };
+  // 源目录指向 pippi image 下的 pippi random 子目录：那里只放随机甩图的图。
+  // 同级还有一个 pippi self 放贴纸，是另一套发送机制，不能混进随机池。
+  const args = { source: 'G:/My pack/pippi image/pippi random', pool: '', dryRun: false };
   for (let index = 2; index < argv.length; index += 1) {
     const token = argv[index];
     if (token === '--dry-run') { args.dryRun = true; continue; }
@@ -105,6 +107,18 @@ function takenNumbers(entries) {
 
 if (!fs.existsSync(POOL)) fs.mkdirSync(POOL, { recursive: true });
 const poolEntries = readImage(POOL);
+// 源目录里若有子目录却没有图片，多半是 --source 指到了上层目录。这里直接报错，
+// 免得静默地什么都不做（子目录不会被平铺扫描读到）。
+if (fs.existsSync(SOURCE)) {
+  const entries = fs.readdirSync(SOURCE, { withFileTypes: true });
+  const hasImage = entries.some((e) => e.isFile() && hasImageExtension(e.name));
+  const subdirs = entries.filter((e) => e.isDirectory()).map((e) => e.name);
+  if (!hasImage && subdirs.length) {
+    console.error('源目录 ' + SOURCE + ' 下没有图片，只有子目录：' + subdirs.join('、'));
+    console.error('请指向具体子目录，例如 ' + path.join(SOURCE, 'pippi random'));
+    process.exit(2);
+  }
+}
 const extras = SOURCE === POOL || !fs.existsSync(SOURCE) ? [] : readImage(SOURCE);
 
 // 去重必须按**摘掉 caBX 之后**的内容算，不能按原始字节。
