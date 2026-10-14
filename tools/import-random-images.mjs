@@ -7,7 +7,7 @@
  * 图片通常会重编码改名，但那是 QQ 的行为、不是保证。所以在文件层面先处理掉。
  *
  * 归一化做两件事：
- *   1. 重命名为 pippi-NN.png（编号稳定，已存在的号不动，新的往后接）
+ *   1. 重命名为 Pippi_Random_NNN.png（编号稳定，已存在的号不动，新的往后接）
  *   2. 摘掉 caBX 块 —— 只删一个 PNG 数据块，像素一字节不动，不重编码
  *
  * 按内容哈希去重，所以反复运行是安全的：新增几张就只处理那几张。
@@ -82,18 +82,23 @@ function stripC2pa(buffer, name) {
   return { buffer: Buffer.concat(parts), removed };
 }
 
+// 图池文件的命名前缀。与贴纸区分：贴纸是 Pippi_Self_NNN，随机甩图是 Pippi_Random_NNN。
+const NAME_PREFIX = 'Pippi_Random_';
+
 function pad(number) {
-  return String(number).padStart(2, '0');
+  return String(number).padStart(3, '0');
 }
 
-/** 已存在的 pippi-NN.png 占用哪些编号 */
+/** 已存在的 Pippi_Random_NNN.png 占用哪些编号。早期的 pippi-NN 也认，方便过渡。 */
 function takenNumbers(entries) {
   const taken = new Set();
+  const note = (digits) => {
+    if (digits.length && !Number.isNaN(Number(digits))) taken.add(Number(digits));
+  };
   for (const entry of entries) {
     const base = entry.name.slice(0, entry.name.lastIndexOf('.'));
-    if (!base.startsWith('pippi-')) continue;
-    const digits = base.slice('pippi-'.length);
-    if (digits.length && !Number.isNaN(Number(digits))) taken.add(Number(digits));
+    if (base.startsWith(NAME_PREFIX)) note(base.slice(NAME_PREFIX.length));
+    else if (base.startsWith('pippi-')) note(base.slice('pippi-'.length));
   }
   return taken;
 }
@@ -135,10 +140,10 @@ function nextNumber() {
   return next;
 }
 
-// 先把池里不符合 pippi-NN 命名的文件编号（一次性迁移），再收源目录里的新图。
+// 先把池里不符合命名的文件编号（一次性迁移），再收源目录里的新图。
 const toNumber = poolEntries.filter((entry) => {
   const base = entry.name.slice(0, entry.name.lastIndexOf('.'));
-  return !base.startsWith('pippi-');
+  return !base.startsWith(NAME_PREFIX);
 });
 
 const additions = [];
@@ -153,14 +158,14 @@ for (const entry of extras) {
 console.log('  图池   ' + POOL);
 console.log('  源目录 ' + SOURCE + (extras.length ? '' : '（不存在或与图池相同，跳过）'));
 console.log('');
-console.log('  图池现有      ' + poolEntries.length + ' 张（其中 ' + toNumber.length + ' 张需要改成 pippi-NN，' + duplicatePoolFiles.length + ' 张是同内容重复）');
+console.log('  图池现有      ' + poolEntries.length + ' 张（其中 ' + toNumber.length + ' 张需要改名，' + duplicatePoolFiles.length + ' 张是同内容重复）');
 console.log('  源目录        ' + extras.length + ' 张，按内容去重后新增 ' + additions.length + ' 张');
 console.log('  计划结果      ' + (poolEntries.length - duplicatePoolFiles.length + additions.length) + ' 张');
 console.log('');
 
 if (args.dryRun) {
-  for (const entry of toNumber) console.log('    改名 ' + entry.name + ' → pippi-' + pad(nextNumber()) + '.png');
-  for (const entry of additions) console.log('    新增 ' + entry.name + ' → pippi-' + pad(nextNumber()) + '.png');
+  for (const entry of toNumber) console.log('    改名 ' + entry.name + ' → ' + NAME_PREFIX + pad(nextNumber()) + '.png');
+  for (const entry of additions) console.log('    新增 ' + entry.name + ' → ' + NAME_PREFIX + pad(nextNumber()) + '.png');
   console.log('');
   console.log('  （--dry-run，未写入）');
   process.exit(0);
@@ -181,7 +186,7 @@ for (const entry of toNumber) {
   const raw = fs.readFileSync(entry.file);
   const { buffer, removed } = stripC2pa(raw, entry.name);
   stripped += removed;
-  const target = path.join(POOL, 'pippi-' + pad(nextNumber()) + '.png');
+  const target = path.join(POOL, NAME_PREFIX + pad(nextNumber()) + '.png');
   fs.writeFileSync(target, buffer);
   fs.rmSync(entry.file);
   renamed += 1;
@@ -199,7 +204,7 @@ for (const entry of poolEntries) {
 for (const entry of additions) {
   const { buffer, removed } = stripC2pa(entry.buffer, entry.name);
   stripped += removed;
-  fs.writeFileSync(path.join(POOL, 'pippi-' + pad(nextNumber()) + '.png'), buffer);
+  fs.writeFileSync(path.join(POOL, NAME_PREFIX + pad(nextNumber()) + '.png'), buffer);
   added += 1;
 }
 
@@ -211,7 +216,7 @@ for (const entry of additions) {
 let compacted = 0;
 {
   const remaining = readImage(POOL);
-  const wanted = remaining.map((entry, index) => 'pippi-' + pad(index + 1) + '.png');
+  const wanted = remaining.map((entry, index) => NAME_PREFIX + pad(index + 1) + '.png');
   const renames = [];
   remaining.forEach((entry, index) => {
     if (entry.name !== wanted[index]) renames.push({ from: entry.file, to: path.join(POOL, wanted[index]) });
