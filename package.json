@@ -112,13 +112,11 @@
     "asarUnpack": [
       "server/**/*",
       "dist/**/*",
-      "node_modules/**/*",
+    "node_modules/**/*",
       "portable-node/**/*"
     ],
     "win": {
-      "target": [
-        "nsis"
-      ]
+      "target": ["nsis"]
     },
     "nsis": {
       "oneClick": false,
