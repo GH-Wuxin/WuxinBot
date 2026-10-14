@@ -516,13 +516,12 @@ const initialDb = {
       userDailyLimit: 4,
       duplicateStickerCooldownSec: 7200,
     },
-    // 群聊随机甩图。数值必须与 server/bot/randomImages.ts 的 DEFAULTS 一致 ——
-    // 这里一旦存在该键，randomImageConfig 就会以这里的值为准。
-    // 默认值来自实测：轻度参与期望 84.5 条一命中、自然群友 47.8 条，区分度 1.77 倍。
+    // 随机甩图模块。数值必须与 server/bot/randomImages.ts 的 DEFAULTS 一致 ——
+    // low / standard 是模块自己的频率档位，不再引用群聊回复模式。
     randomImage: {
       enabled: true,
-      natural: { base: 0.005, step: 0.0005 },
-      light: { base: 0.001, step: 0.0002 },
+      standard: { base: 0.005, step: 0.0005 },
+      low: { base: 0.001, step: 0.0002 },
       recentWindow: 8,
       recentDecay: 0.35,
     },
@@ -659,6 +658,18 @@ export function normalizeDb(db) {
 
   db.groups ||= [];
   db.users ||= [];
+  // Random images have their own participation switch now. Existing records
+  // did not have that field, so migrate the old mode-derived behavior once in
+  // memory; the next group save persists the independent values.
+  for (const group of db.groups) {
+    if (!group || typeof group !== 'object') continue;
+    if (!Object.prototype.hasOwnProperty.call(group, 'randomImageEnabled')) {
+      group.randomImageEnabled = group.mode === 'natural' || group.mode === 'light';
+    }
+    if (!Object.prototype.hasOwnProperty.call(group, 'randomImageRate')) {
+      group.randomImageRate = group.mode === 'light' ? 'low' : 'standard';
+    }
+  }
   // Bot registry: merge saved bots with defaults (add new default bots, keep user changes)
   if (!db.settings.botRegistry) {
     db.settings.botRegistry = { bots: DEFAULT_BOTS, updatedAt: new Date().toISOString() };

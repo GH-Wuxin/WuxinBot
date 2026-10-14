@@ -322,3 +322,32 @@ body { font-family: 'Segoe UI', 'Microsoft YaHei', system-ui, sans-serif; }
 .osu-random-image__recent img { width: 100%; aspect-ratio: 1; object-fit: cover; border-radius: 8px; border: 1px solid var(--v2-border); background: #17121e; }
 .osu-random-image__recent figcaption { margin-top: 5px; font-size: 11px; color: var(--v2-text-soft); }
 .osu-random-image__recent figcaption small { display: block; font-size: 10px; color: var(--v2-text-muted); }
+
+.random-image-page { display: grid; gap: 16px; }
+.random-image-page__top-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(260px, .72fr); gap: 16px; }
+.random-image-page__pool-summary { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin: 2px 0 18px; }
+.random-image-page__pool-summary > div { display: flex; flex-direction: column; gap: 4px; padding: 13px 14px; border: 1px solid var(--v2-border); border-radius: 10px; background: #ffffff03; }
+.random-image-page__pool-summary strong { font-size: 21px; color: var(--v2-text); }
+.random-image-page__pool-summary span { color: var(--v2-text-muted); font-size: 11px; }
+.random-image-page__groups { display: grid; gap: 2px; }
+.random-image-page__group { padding: 14px 0; border-bottom: 1px solid #ffffff0b; }
+.random-image-page__group:last-child { border-bottom: 0; }
+.random-image-page__group.is-disabled { opacity: .62; }
+.random-image-page__group-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; }
+.random-image-page__group-head > div { display: flex; min-width: 0; flex-direction: column; gap: 5px; }
+.random-image-page__group-head strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.random-image-page__group-head small { color: var(--v2-text-muted); font-size: 11px; }
+.random-image-page__group-controls { display: flex; align-items: center; gap: 12px; margin-top: 12px; color: var(--v2-text-soft); font-size: 12px; }
+.random-image-page__group-controls .ui-segments { margin-left: auto; }
+.random-image-page__group-stats { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 10px; color: var(--v2-text-soft); font-size: 11px; }
+
+@media (max-width: 860px) {
+  .random-image-page__top-grid { grid-template-columns: 1fr; }
+}
+
+@media (max-width: 520px) {
+  .random-image-page__pool-summary { grid-template-columns: 1fr; }
+  .random-image-page__group-head { flex-direction: column; }
+  .random-image-page__group-controls { align-items: flex-start; flex-direction: column; }
+  .random-image-page__group-controls .ui-segments { margin-left: 0; }
+}

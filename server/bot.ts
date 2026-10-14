@@ -579,6 +579,18 @@ async function processIncomingInner(event, sendMessage = undefined, queuedDecisi
   const isWuxinCommandText = /^\/w(uxin)?(?:\s|$)/i.test(event.text);
   const group = event.type === 'group' ? getGroup(db, event.groupId) : null;
   const detectedQuickMatch = detectBpTypeAnalysisIntent(event.text) ? null : matchQuickCommand(event);
+
+  // Random images are an independent module. Run this before the osu-only
+  // text router can return, so a group may keep spontaneous images enabled
+  // while restricting Pippi's text replies to osu! commands.
+  if (event.type === 'group' && sendMessage && group?.randomImageEnabled === true) {
+    const roll = rollRandomImage(event.groupId, group.randomImageRate);
+    if (roll.file) {
+      // 不 await：发图失败不该影响正常回复，也不该拖慢这一轮。
+      Promise.resolve(sendMessage(event, cqImageFor(roll.file))).catch(() => undefined);
+    }
+  }
+
   if (event.type === 'group' && group?.mode === 'osu' && !allowedByOsuCommandOnlyMode(event, detectedQuickMatch)) {
     traceEvent('GATE', 'osu_command_only_ignored', {
       status: 'silent',
@@ -590,16 +602,6 @@ async function processIncomingInner(event, sendMessage = undefined, queuedDecisi
     return { replied: false, reason: '本群为仅 osu! 指令模式，忽略非 osu! 内容' };
   }
 
-  // 随机表情包：与「要不要回复」完全无关 —— 群里每来一条别人的消息就掷一次骰子，
-  // 命中就单独甩一张图。放在 osu 档早退之后，于是 mention / osu 档的群自然不参与；
-  // 自触发在上面 547 行就已经返回了。掷骰本身不花钱、不调模型。
-  if (event.type === 'group' && sendMessage && (group?.mode === 'natural' || group?.mode === 'light')) {
-    const roll = rollRandomImage(event.groupId, group.mode);
-    if (roll.file) {
-      // 不 await：发图失败不该影响正常回复，也不该拖慢这一轮。
-      Promise.resolve(sendMessage(event, cqImageFor(roll.file))).catch(() => undefined);
-    }
-  }
   if (event.type === 'group' && looksLikeExternalBotSender(event, settings) && !isGroupOwner) {
     const reason = '忽略疑似其他机器人账号的消息';
     updateDb((draft) => {
