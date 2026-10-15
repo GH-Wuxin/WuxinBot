@@ -172,6 +172,9 @@ import {
   stickerFailureFallback,
   stickerFailureNotice,
 } from './bot/stickers/replyDelivery.js';
+import { appendReplyFailure } from './bot/replyFailures.js';
+import { resolveMemberNames } from './bot/memberDirectory.js';
+import { classifyLlmFailure } from './bot/llmFailure.js';
 import { settlePendingQuickObservations } from './bot/quickContext.js';
 
 let stickerReplyCapabilityWarningLogged = false;
@@ -676,6 +679,16 @@ async function processIncomingInner(event, sendMessage = undefined, queuedDecisi
     atTargets: event?.atTargets || [],
   });
 
+  // @ 段只有 QQ 号，渲染出来就是「[CQ:at,qq=123] 你吃饭了吗」—— 她分不出那个号码
+  // 是自己还是别人，也就分不出这句话是不是冲她来的。按 AstrBot 的做法查一次名字
+  // （群名片优先，空则回退 QQ 昵称），随消息一起存下来：历史因此是准确的，
+  // 渲染时也不必再查。查不到就留空，退回原来的号码，不影响别的。
+  const mentionNames = event.type === 'group' && event.atTargets?.length
+    ? await resolveMemberNames(readDb(), event.groupId, event.atTargets)
+    : new Map();
+  // 同一份结果也给当前这一轮用，免得历史里有名字、当前消息却还是裸号码。
+  event.mentionNames = mentionNames;
+
   if (!isFromDrain) {
     let persistedDuplicate = false;
     updateDb((draft) => {
@@ -694,6 +707,7 @@ async function processIncomingInner(event, sendMessage = undefined, queuedDecisi
         nickname: event.nickname,
         content: event.text,
         media: event.images?.length ? { images: event.images } : undefined,
+        mentions: mentionNames.size ? [...mentionNames.values()] : undefined,
         inContext: decision.inContext !== false,
         createdAt: nowIso()
       });
@@ -1792,6 +1806,18 @@ let waitUpTimer = null;
       const noticeSticker = pickCodeSticker('service_down');
       await sendOptionalNotice(() => sendMessage(event,
         noticeSticker ? withSticker(failureNotice, noticeSticker.id) : failureNotice));
+    }
+    // 只记「回复根本没生成出来」这一种 —— 也就是她压根没开口的那种。发图失败、
+    // 权限拒绝、冷却拦截各有自己的结果记录，不进这里。分开是有意的：这样这行字
+    // 只能解释她的缺席，没法拿来解释她做过的事，也就堵住了「拿它当理由」。
+    if (!deliveryStarted) {
+      updateDb((draft) => {
+        draft.replyFailures = appendReplyFailure(draft.replyFailures, {
+          at: nowIso(),
+          groupId: String(event.groupId || ''),
+          kind: classifyLlmFailure(error),
+        });
+      });
     }
     recordDecisionError(`回复失败：${String(error?.message || error).slice(0, 500)}`);
     updateDb((draft) => {
