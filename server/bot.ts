@@ -170,6 +170,7 @@ import {
 import {
   ensureStickerReplyFallback,
   stickerFailureFallback,
+  stickerFailureNotice,
 } from './bot/stickers/replyDelivery.js';
 import { settlePendingQuickObservations } from './bot/quickContext.js';
 
@@ -1317,10 +1318,17 @@ let waitUpTimer = null;
 
     const stickerReply = stickerReplyEnabled
       ? parseStickerReply(ai.text)
-      : { reply: String(ai.text || ''), stickerId: null, mode: 'none' as const, structured: false };
+      : { reply: String(ai.text || ''), stickerCaption: '', stickerUse: 'none' as const, captionSplit: false, stickerId: null, mode: 'none' as const, structured: false };
     ai.text = stickerReply.reply;
     const stickerDecisionId = stickerReplyEnabled ? stickerReply.stickerId : null;
     const imageOnlySticker = stickerReplyEnabled && stickerReply.mode === 'image_only';
+    // 附文只跟图片一起出现，绝不进 ai.text / deliveredText —— 于是图片发送失败时，
+    // 回退路径天然重发不到它，宿主不需要去猜哪句话依赖图片。
+    const stickerCaption = stickerReplyEnabled && stickerReply.captionSplit
+      ? sanitizeReply(String(stickerReply.stickerCaption || ''), liveDb.settings)
+      : '';
+    // 模型自报：用户是否明确要求发图。只有这种才在失败时补一句说明。
+    const stickerExplicitRequest = stickerReplyEnabled && stickerReply.stickerUse === 'requested';
     let replyText = sanitizeReply(ai.text, liveDb.settings);
     const imageCqCodes = [...toolImages, ...toolDeliverImages].map(toolImageToCq).filter(Boolean);
     const hasDirectToolDelivery = Boolean(toolDirectContent || imageCqCodes.length > 0);
@@ -1629,8 +1637,8 @@ let waitUpTimer = null;
           // cause the long body to be sent a second time.
           segments = [deliveredText];
           try {
-            stickerResult = await sendMessage(event, modelStickerCqCode, replyToCurrentMessageOptions(event));
-            segments = [deliveredText, modelStickerCqCode];
+            stickerResult = await sendMessage(event, [stickerCaption, modelStickerCqCode].filter(Boolean).join('\n'), replyToCurrentMessageOptions(event));
+            segments = [deliveredText, [stickerCaption, modelStickerCqCode].filter(Boolean).join('\n')];
             const rawOutcome = stickerResult?.outcome;
             const stickerOutcome: StickerDeliveryOutcome = rawOutcome === 'confirmed_success'
               || rawOutcome === 'accepted_unknown'
@@ -1645,7 +1653,8 @@ let waitUpTimer = null;
             completeModelStickerOutcome(confirmedFailure ? 'confirmed_failure' : 'unknown', error);
           }
         } else {
-          const outboundText = [deliveredText, modelStickerCqCode].filter(Boolean).join('\n');
+          // 附文只在这一条里出现 —— 它跟图片同生共死，于是图片失败时天然不会被重发。
+          const outboundText = [deliveredText, stickerCaption, modelStickerCqCode].filter(Boolean).join('\n');
           stickerResult = await sendMessage(event, outboundText, replyToCurrentMessageOptions(event));
           segments = [outboundText];
           const rawOutcome = stickerResult?.outcome;
@@ -1668,11 +1677,17 @@ let waitUpTimer = null;
           confirmedFailure,
           isLongReply,
         });
-        if (fallbackText && sendMessage) {
+        // 明确要图却没送达时补一句实话。长正文已经单独发过，所以那种情况只说配图。
+        // 不确定结果（unknown）不补 —— 原请求可能已经落地，不能被说成失败。
+        const notice = confirmedFailure
+          ? stickerFailureNotice({ explicitRequest: stickerExplicitRequest, bodyDelivered: isLongReply })
+          : '';
+        const outboundFallback = [fallbackText, notice].filter(Boolean).join('\n');
+        if (outboundFallback && sendMessage) {
           try {
-            await sendMessage(event, fallbackText, replyToCurrentMessageOptions(event));
-            deliveredText = fallbackText;
-            segments = [fallbackText];
+            await sendMessage(event, outboundFallback, replyToCurrentMessageOptions(event));
+            deliveredText = outboundFallback;
+            segments = [outboundFallback];
             fallbackSent = true;
           } catch {
             // Keep the original confirmed failure if even the text fallback fails.

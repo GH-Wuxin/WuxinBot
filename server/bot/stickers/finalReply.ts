@@ -1,7 +1,17 @@
 import { listModelStickers } from './index.js';
 
 export interface ParsedStickerReply {
+  /** 独立正文：不依赖图片是否发得出去，图片失败时应当完整保留。 */
   reply: string;
+  /** 只跟图片一起出现的短句。图片没交付时宿主不会把它发给用户。 */
+  stickerCaption: string;
+  /** 模型自报的请求性质：requested = 用户明确要图；reaction = 自己想加一张。 */
+  stickerUse: 'requested' | 'reaction' | 'none';
+  /**
+   * 是否拿到了分栏格式。旧格式或畸形输出为 false —— 那种正文无法区分
+   * 哪部分依赖图片，所以不能算进「失败时不重发附文」的保障范围。
+   */
+  captionSplit: boolean;
   stickerId: string | null;
   mode: 'none' | 'text_image' | 'image_only';
   structured: boolean;
@@ -35,10 +45,13 @@ export function buildStickerReplyInstruction(): string {
     '你现在处于最终回答阶段。决定结束本轮时，只输出一个 JSON 对象，不要输出 Markdown 代码块或额外解释。',
     '如果仍需要工具取证，优先使用结构化 tool_calls；不要把工具调用写进 reply。工具结果返回后，再输出最终 JSON。',
     'reply 是真正要发给用户的自然语言回复，使用当前对话语言；选择 image_only 时填写空字符串。',
+    'reply 必须独立成立：不依赖图片有没有发出去。任何「发给你了」「图在下面」这类跟发送结果绑定的话，写进 sticker_caption，不要写进 reply。',
+    'sticker_caption 只在图片一起发出去时才跟着出现；图片没发出去时它不会发给用户。这里适合写「给你这张」这类配图短句，不要在这里声明发送结果。',
+    'sticker_use 表示这一步为什么要图：用户明确要你发图填 requested；你自己想在回复后附带一张反应图填 reaction；不要图填 none。',
     'mode 只能是 none、text_image 或 image_only：大多数回复用 none；文字仍有主要信息且表情只是辅助时用 text_image；图片本身即可完成轻松回应时才用 image_only。',
     'sticker_id 只能填写下面清单中的精确 ID，mode=none 时必须为 null。严肃查询、工具结果复述、错误说明和没有明显情绪时用 none。',
     '工具或系统状态确认（例如查询结果已返回、图片渲染完成/已发出、绑定成功、请求完成）默认用 none；只有当前语境明确需要庆祝、安慰或玩笑，且图片提供额外情绪价值时才用 text_image。尤其“图片渲染完成，结果已经发出”不得附加 received、hello 等确认贴纸。',
-    'JSON 结构：{"reply":"...","mode":"none|text_image|image_only","sticker_id":null或"清单中的ID"}',
+    'JSON 结构：{"reply":"...","sticker_caption":"...","sticker_use":"requested|reaction|none","mode":"none|text_image|image_only","sticker_id":null或"清单中的ID"}',
     '可选图片清单：',
     compactStickerCatalog(),
   ].join('\n');
@@ -137,7 +150,7 @@ function malformedStickerReplyFallback(raw: string): string | null {
  */
 export function parseStickerReply(value: unknown): ParsedStickerReply {
   const raw = String(value ?? '').trim();
-  if (!raw) return { reply: '', stickerId: null, mode: 'none', structured: false };
+  if (!raw) return { reply: '', stickerCaption: '', stickerUse: 'none', captionSplit: false, stickerId: null, mode: 'none', structured: false };
   for (const candidate of jsonCandidates(raw)) {
     try {
       const parsed = JSON.parse(candidate);
@@ -153,11 +166,27 @@ export function parseStickerReply(value: unknown): ParsedStickerReply {
           ? parsed.sticker_id.trim()
           : null;
       const mode = requestedMode || (stickerId ? (parsed.reply.trim() ? 'text_image' : 'image_only') : 'none');
+      // 分栏格式的判据是「信封声明了这两个字段」。旧格式没有它们，正文分不出
+      // 哪部分依赖图片，所以 captionSplit=false —— 那种输出仍然按老办法处理，
+      // 并且不能被算进「图片失败时不重发附文」的保障里。
+      const hasCaptionField = Object.prototype.hasOwnProperty.call(parsed, 'sticker_caption');
+      const hasUseField = Object.prototype.hasOwnProperty.call(parsed, 'sticker_use');
+      const captionSplit = hasCaptionField || hasUseField;
+      const stickerUse = parsed.sticker_use === 'requested' || parsed.sticker_use === 'reaction' || parsed.sticker_use === 'none'
+        ? parsed.sticker_use
+        : 'reaction';
+      // image_only 就是「只要图不要字」，此时忽略附文。
+      const stickerCaption = mode === 'image_only' || typeof parsed.sticker_caption !== 'string'
+        ? ''
+        : parsed.sticker_caption.trim();
       if (mode === 'none' || !stickerId) {
-        return { reply: parsed.reply.trim(), stickerId: null, mode: 'none', structured: true };
+        return { reply: parsed.reply.trim(), stickerCaption: '', stickerUse: 'none', captionSplit, stickerId: null, mode: 'none', structured: true };
       }
       return {
         reply: mode === 'image_only' ? '' : parsed.reply.trim(),
+        stickerCaption,
+        stickerUse,
+        captionSplit,
         stickerId,
         mode,
         structured: true,
@@ -168,6 +197,9 @@ export function parseStickerReply(value: unknown): ParsedStickerReply {
   }
   return {
     reply: malformedStickerReplyFallback(raw) ?? raw,
+    stickerCaption: '',
+    stickerUse: 'none',
+    captionSplit: false,
     stickerId: null,
     mode: 'none',
     structured: false,

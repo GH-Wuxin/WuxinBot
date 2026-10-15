@@ -210,6 +210,90 @@ try {
   assert.equal(getStickerDeliveryState().records.at(-1).outcome, 'unknown');
   assert.equal(getStickerDeliveryState().counters.unknown, 1);
 
+  // ── F1：附文不能被当成正文重发 ──
+  // 混合任务（正经正文 + 配图短句）在组合发送确认失败时：独立正文完整保留、
+  // 附文绝不能出现在回退里、明确索图要补一句实话。
+  // 附文之所以进不了回退，是因为它只被拼进带图那条消息，从不进 deliveredText。
+  llmReplyEnvelope = {
+    reply: '先检查文件路径，再确认读取权限',
+    sticker_caption: '给你这张',
+    sticker_use: 'requested',
+    mode: 'text_image',
+    sticker_id: 'hello',
+  };
+  configurePolicy(['sticker-send-group']);
+  const mixedSends = [];
+  const mixedResult = await processIncoming(
+    event('sticker-send-group', 'sticker-mixed-message'),
+    async (_event, text) => {
+      const value = String(text || '');
+      mixedSends.push(value);
+      if (value.includes('[CQ:image')) {
+        const error = new Error('fixture mixed send confirmed failure');
+        error.deliveryOutcome = 'confirmed_failure';
+        throw error;
+      }
+      return { outcome: 'confirmed_success', messageId: 31 };
+    },
+  );
+  assert.equal(mixedResult.replied, true);
+  assert.equal(mixedSends.length, 2, '应当只有一次带图尝试和一次文字回退');
+  assert.equal(mixedSends[0].includes('给你这张'), true, '成功路径上附文应随图出现');
+  assert.equal(mixedSends[0].includes('先检查文件路径'), true, '带图消息应含独立正文');
+  assert.equal(mixedSends[1].includes('给你这张'), false, '失败回退不得重发附文');
+  assert.equal(mixedSends[1].includes('先检查文件路径'), true, '独立正文必须完整保留');
+  assert.equal(mixedSends[1].includes('这张没发出去'), true, '明确索图失败要说清楚');
+
+  // 可选配图（reaction）失败：正文保留，但不该反过来打扰用户。
+  llmReplyEnvelope = {
+    reply: '这段是正经回答',
+    sticker_caption: '给你这张',
+    sticker_use: 'reaction',
+    mode: 'text_image',
+    sticker_id: 'hello',
+  };
+  configurePolicy(['sticker-send-group']);
+  const reactionSends = [];
+  await processIncoming(
+    event('sticker-send-group', 'sticker-reaction-message'),
+    async (_event, text) => {
+      const value = String(text || '');
+      reactionSends.push(value);
+      if (value.includes('[CQ:image')) {
+        const error = new Error('fixture reaction sticker failure');
+        error.deliveryOutcome = 'confirmed_failure';
+        throw error;
+      }
+      return { outcome: 'confirmed_success', messageId: 32 };
+    },
+  );
+  assert.equal(reactionSends.length, 2);
+  assert.equal(reactionSends[1].includes('给你这张'), false, '可选配图失败也不得重发附文');
+  assert.equal(reactionSends[1].includes('这段是正经回答'), true);
+  assert.equal(reactionSends[1].includes('没发出去'), false, '自己加的图失败不该打扰用户');
+
+  // 成功路径：附文必须跟着图片一起出现，否则它就成了永远发不出去的字段。
+  llmReplyEnvelope = {
+    reply: '好',
+    sticker_caption: '给你这张',
+    sticker_use: 'requested',
+    mode: 'text_image',
+    sticker_id: 'hello',
+  };
+  configurePolicy(['sticker-send-group']);
+  const okSends = [];
+  await processIncoming(
+    event('sticker-send-group', 'sticker-caption-success-message'),
+    async (_event, text) => {
+      okSends.push(String(text || ''));
+      return { outcome: 'confirmed_success', messageId: 33 };
+    },
+  );
+  assert.equal(okSends.length, 1);
+  assert.equal(okSends[0].includes('[CQ:image'), true);
+  assert.equal(okSends[0].includes('给你这张'), true, '成功时附文必须随图发出');
+  llmReplyEnvelope = { reply: '', mode: 'image_only', sticker_id: 'hello' };
+
   // Model timeout during generation: the normal system failure notice is the
   // only outbound message, and the sticker denominator/reservation path is
   // never entered because there is no final reply to evaluate.
@@ -290,6 +374,9 @@ function assertFailureNotice(sends, label) {
     llmRequests,
     gateRejection: 'text fallback delivered',
     disabledMode: 'text fallback delivered; no reservation',
+    captionDelivery: 'success send carries caption with the image',
+    captionOnFailure: 'independent reply kept; caption never resent; explicit request gets the notice',
+    captionOptionalFailure: 'own reaction failure stays silent',
     confirmedFailure: 'one image attempt + one text fallback; reservation released',
     unknownOutcome: 'one image attempt; no retry; budget retained',
     modelTimeout: `system fallback only; no sticker reservation (${timeoutElapsedMs}ms)`,
