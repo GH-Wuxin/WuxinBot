@@ -22,8 +22,29 @@ export function skillCardFontFace(): string {
 async function getBrowser():Promise<Browser>{
   if(!browserPromise){
     const executable=process.env.SKILL_CARD_BROWSER_PATH;
-    const launching=chromium.launch({headless:true,timeout:20_000,
-      ...(executable?{executablePath:executable}:{channel:'msedge'})});
+    const launchTimeout=process.env.CI==='true'?45_000:20_000;
+    const candidates:Array<{executablePath?:string;channel?:'msedge'}>=executable
+      ? [{executablePath:executable}]
+      : process.platform==='linux'&&process.env.CI==='true'
+        ? [
+            '/usr/bin/google-chrome',
+            '/usr/bin/google-chrome-stable',
+            '/opt/google/chrome/google-chrome',
+            '/usr/bin/chromium',
+            '/usr/bin/chromium-browser',
+            '/usr/bin/microsoft-edge',
+            '/opt/microsoft/msedge/msedge',
+          ].filter(file=>fs.existsSync(file)).map(executablePath=>({executablePath}))
+        : [];
+    if(candidates.length===0)candidates.push({channel:'msedge'});
+    const launching=(async()=>{
+      let lastError:unknown;
+      for(const candidate of candidates){
+        try{return await chromium.launch({headless:true,timeout:launchTimeout,...candidate});}
+        catch(error){lastError=error;}
+      }
+      throw lastError;
+    })();
     browserPromise=launching;
     launching.then(browser=>browser.on('disconnected',()=>{
       if(browserPromise===launching)browserPromise=null;
