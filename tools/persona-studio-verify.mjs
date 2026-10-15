@@ -82,4 +82,34 @@ for (let index = 0; index < 40; index += 1) beginPromptCall({ id: `bounded-${ind
 assert.equal(listPromptCalls(100).length, 32, 'prompt-call history must stay bounded');
 clearPromptCallsForTest();
 
+// ── F4：群聊形态由任务性质决定，不再按「有没有问号 / 有没有 @」二选一 ──
+// 判据是组装结果本身：群聊必须拿到允许完成任务的规则，且不再被硬性长度上限压住。
+const groupAmbient = buildPippiPrompt({ scene: 'casual', groupCasual: true });
+const groupTask = buildPippiPrompt({ scene: 'casual', groupCasual: true, addressedQuestion: true });
+assert.ok(groupAmbient.includes('【群聊形态】'), '群聊应注入条件式形态规则');
+assert.ok(groupAmbient.includes('先完成要求'), '群聊规则必须允许完成任务');
+assert.ok(groupAmbient.includes('长度由事情决定'), '长度应由任务性质决定');
+assert.ok(!groupAmbient.includes('多数在 10 个字以内'), '硬性长度上限不应再出现在群聊路径上');
+assert.ok(!groupAmbient.includes('多数十字以内'), '同上，兼容旧措辞');
+assert.ok(groupAmbient.includes('不要用句号结尾'), '标点风格与长度无关，必须保留');
+assert.ok(groupAmbient.includes('闲聊接话'), '闲聊的短回复默认仍要保留');
+assert.ok(groupAmbient.includes('社区短反应只用于闲聊'), '短反应不得替代答案或执行结果');
+assert.equal(groupAmbient, groupTask, '群聊形态不应再随 addressedQuestion 变化');
+
+// 未纳入本次修改的路径必须保持原样：不传 groupCasual 时仍是原来的二选一。
+const untouchedAmbient = buildPippiPrompt({ scene: 'casual' });
+const untouchedQuestion = buildPippiPrompt({ scene: 'casual', addressedQuestion: true });
+assert.ok(untouchedAmbient.includes('多数在 10 个字以内'), '未纳入修改的路径必须保持原样');
+assert.ok(untouchedQuestion.includes('【回答提问】'), '未纳入修改的路径仍用回答形态');
+// 注意不能用「【群聊形态】」区分：旧版 CASUAL_FORM_GUIDE 开头也是这四个字。
+assert.ok(!untouchedAmbient.includes('长度由事情决定'), '未纳入修改的路径不该拿到新的群聊规则');
+
+// 命令与严肃场景本来就只走 sceneRules，不该被形态规则渗透。
+const commandPrompt = buildPippiPrompt({ scene: 'command', groupCasual: true });
+assert.ok(!commandPrompt.includes('【群聊形态】'), '命令场景不该注入群聊形态规则');
+assert.ok(!commandPrompt.includes('【回答提问】'), '命令场景不该注入回答形态规则');
+const seriousPrompt = buildPippiPrompt({ scene: 'serious', groupCasual: true });
+assert.ok(!seriousPrompt.includes('【群聊形态】'), '严肃场景不该注入群聊形态规则');
+
+console.log('persona studio: F4 group-casual form rule verified (task-driven length, punctuation style kept, untouched paths unchanged)');
 console.log('persona studio: built-in default prompts unchanged; editable layers/modules, module routing, redacted snapshots, tool visibility, and bounded retention PASS');

@@ -544,9 +544,13 @@ export function buildPrompt(db, group, event, userPolicy, options = {}) {
   // into 21.  Un-addressed questions stay casual -- in a group, most of them
   // are not aimed at her.
   const addressedQuestion = looksLikeQuestion(event.text) && Boolean(atSelf);
+  // 群聊日常场景改用单段条件式形态规则：不再因为「没有问号 / 没有 @」就把用户的
+  // 任务当成闲聊压成短话。私聊、命令、严肃场景保持原路径。
+  const groupCasual = event.type === 'group' && scene === 'casual';
   const systemPrompt = buildPippiPrompt({
     scene,
     addressedQuestion,
+    groupCasual,
     userPersonality: userPersonality || '',
     promptSections: db.settings.personaPromptSections || {},
     relationshipContext: relBlocks || undefined,

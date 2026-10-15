@@ -236,6 +236,28 @@ const SCENE_CASUAL = [
 // group-member voice: punctuation jumped from 2% to 21% on casual cases
 // because the answers reverted to assistant prose.  So the addressed question
 // gets its own block instead of none -- complete, but still spoken.
+/**
+ * 群聊形态：闲聊与任务共用一段条件式规则。
+ *
+ * 早先按「是不是带 @ 的疑问句」二选一，于是群里喊「pippi 发张图」这种没有问号的
+ * 请求会被当成闲聊，套上「多数在 10 个字以内」的硬性长度限制。问号决定不了
+ * 「这句话是不是冲她来的、要不要办事」—— 请求被当成社交反应，正是这里漏掉的。
+ *
+ * 现在只留一条长度规则，由任务性质决定：闲聊能短就短，被要求做事则先完成。
+ * 标点、不复述、不追问、不主动建议这些风格约束与长度无关，全部保留。
+ * 私聊、命令与严肃场景不走这段，仍用原来的分支。
+ */
+const CASUAL_GROUP_GUIDE = [
+  '【群聊形态】像群友随手打字，不是写回复稿：',
+  '- 不要用句号结尾，短句直接连着说',
+  '- 不复述对方刚说过的话；不在句尾追问或反问；不主动给建议，不做安慰式收尾',
+  '- 梗听懂就接住，不把梗解释一遍',
+  '- 闲聊接话：通常只说一句，能短就短，一两个字、一个符号、一个表情都算完整回复，不补充背景也不总结',
+  '- 对方向你提问、要你做事或索取内容时：先完成要求，长度由事情决定，不要只回「收到」',
+  '- 只需图片就不要硬添文字；需要解释就把关键内容说清，不为了短而漏掉关键信息',
+  '- 社区短反应只用于闲聊，不拿来替代答案或执行结果',
+].join('\n');
+
 const CASUAL_ANSWER_GUIDE = [
   '【回答提问】对方是在问你，用群友的方式把问题答清楚：',
   '- 直接给答案，不铺垫、不复述问题、不写"总结一下"这类收尾',
@@ -308,6 +330,8 @@ interface PippiPromptInput {
   compactAnalysisPersona?: boolean;
   /** True when the turn is a question actually addressed to pippi. */
   addressedQuestion?: boolean;
+  /** True for group + casual: use the single conditional form rule. */
+  groupCasual?: boolean;
 }
 
 const PIPPI_PROMPT_SECTION_DEFINITIONS = [
@@ -320,6 +344,7 @@ const PIPPI_PROMPT_SECTION_DEFINITIONS = [
   { id: 'sceneCommand', title: '命令反馈场景', description: '命令响应的简洁与可操作性要求。', defaultContent: SCENE_COMMAND },
   { id: 'sceneSerious', title: '严肃对话场景', description: '用户处于困难或紧急情形时的表达要求。', defaultContent: SCENE_SERIOUS },
   { id: 'communityBanter', title: '社区语料语感', description: '仅注入日常聊天的脱敏社区短反应语料。', defaultContent: PIPPI_BANTER_BLOCK },
+  { id: 'casualGroupGuide', title: '群聊形态（闲聊与任务共用）', description: '群聊日常场景的形态规则；长度由任务性质决定，不再按问号二选一。', defaultContent: CASUAL_GROUP_GUIDE },
   { id: 'casualFormGuide', title: '群聊短回复形态', description: '普通群聊的短消息形态要求；被 @ 的提问改注入 casualAnswerGuide。', defaultContent: CASUAL_FORM_GUIDE },
   { id: 'casualAnswerGuide', title: '被 @ 提问的回答形态', description: '被直接提问时：答清楚，但仍用群友的口语短句。', defaultContent: CASUAL_ANSWER_GUIDE },
 ] as const;
@@ -386,11 +411,13 @@ export function buildPippiPrompt(input: PippiPromptInput): string {
   // The short-form guide is skipped when the turn is a question actually
   // addressed to pippi, so the answer keeps room to be an answer.
   if (input.scene === 'casual') {
-    // Three-way by design: ambient chatter gets the short form, an addressed
-    // question gets the answer form, and a non-casual scene gets neither.
-    parts.push(input.addressedQuestion
-      ? section('casualAnswerGuide', CASUAL_ANSWER_GUIDE)
-      : section('casualFormGuide', CASUAL_FORM_GUIDE));
+    // 群聊用一段条件式规则，闲聊与任务各按自己的性质决定长短；
+    // 私聊等未纳入本次修改的路径仍按原来的二选一。
+    parts.push(input.groupCasual
+      ? section('casualGroupGuide', CASUAL_GROUP_GUIDE)
+      : input.addressedQuestion
+        ? section('casualAnswerGuide', CASUAL_ANSWER_GUIDE)
+        : section('casualFormGuide', CASUAL_FORM_GUIDE));
     parts.push(section('communityBanter', PIPPI_BANTER_BLOCK));
   }
 
