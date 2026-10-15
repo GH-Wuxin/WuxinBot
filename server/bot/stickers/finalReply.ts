@@ -5,8 +5,15 @@ export interface ParsedStickerReply {
   reply: string;
   /** 只跟图片一起出现的短句。图片没交付时宿主不会把它发给用户。 */
   stickerCaption: string;
-  /** 模型自报的请求性质：requested = 用户明确要图；reaction = 自己想加一张。 */
-  stickerUse: 'requested' | 'reaction' | 'none';
+  /**
+   * 模型自报的**请求性质**：requested = 用户明确要图；reaction = 自己想加一张；
+   * none = 信封没声明。
+   *
+   * 这与「有没有真的选出图」是两件事，必须分开保存。以前两者合成一个字段，
+   * 没选出图时统一写成 none —— 恰好在那时候，宿主失去了判断「用户的图片请求
+   * 没有完成」的依据。「选出了哪张」看 stickerId。
+   */
+  stickerIntent: 'requested' | 'reaction' | 'none';
   /**
    * 是否拿到了分栏格式。旧格式或畸形输出为 false —— 那种正文无法区分
    * 哪部分依赖图片，所以不能算进「失败时不重发附文」的保障范围。
@@ -150,7 +157,7 @@ function malformedStickerReplyFallback(raw: string): string | null {
  */
 export function parseStickerReply(value: unknown): ParsedStickerReply {
   const raw = String(value ?? '').trim();
-  if (!raw) return { reply: '', stickerCaption: '', stickerUse: 'none', captionSplit: false, stickerId: null, mode: 'none', structured: false };
+  if (!raw) return { reply: '', stickerCaption: '', stickerIntent: 'none', captionSplit: false, stickerId: null, mode: 'none', structured: false };
   for (const candidate of jsonCandidates(raw)) {
     try {
       const parsed = JSON.parse(candidate);
@@ -166,26 +173,32 @@ export function parseStickerReply(value: unknown): ParsedStickerReply {
           ? parsed.sticker_id.trim()
           : null;
       const mode = requestedMode || (stickerId ? (parsed.reply.trim() ? 'text_image' : 'image_only') : 'none');
-      // 分栏格式的判据是「信封声明了这两个字段」。旧格式没有它们，正文分不出
-      // 哪部分依赖图片，所以 captionSplit=false —— 那种输出仍然按老办法处理，
-      // 并且不能被算进「图片失败时不重发附文」的保障里。
-      const hasCaptionField = Object.prototype.hasOwnProperty.call(parsed, 'sticker_caption');
-      const hasUseField = Object.prototype.hasOwnProperty.call(parsed, 'sticker_use');
+      // 分栏格式的判据是「信封以正确类型声明了其中任一字段」。旧格式没有它们，
+      // 正文分不出哪部分依赖图片，所以 captionSplit=false —— 那种输出仍按老办法
+      // 处理，且不能被算进「图片失败时不重发附文」的保障里。
+      // 声明了字段但类型不对不算数：否则一个笔误就能让整个格式保障失效。
+      const hasCaptionField = Object.prototype.hasOwnProperty.call(parsed, 'sticker_caption')
+        && typeof parsed.sticker_caption === 'string';
+      const hasUseField = Object.prototype.hasOwnProperty.call(parsed, 'sticker_use')
+        && (parsed.sticker_use === 'requested' || parsed.sticker_use === 'reaction' || parsed.sticker_use === 'none');
       const captionSplit = hasCaptionField || hasUseField;
-      const stickerUse = parsed.sticker_use === 'requested' || parsed.sticker_use === 'reaction' || parsed.sticker_use === 'none'
+      // 声明的意图优先于「有没有选出图」。没声明时才按老办法推断，这样旧格式
+      // 的行为不变，而「用户要了图但这次没选出」不再被抹成 none。
+      const declaredIntent = parsed.sticker_use === 'requested' || parsed.sticker_use === 'reaction'
         ? parsed.sticker_use
-        : 'reaction';
+        : null;
+      const stickerIntent = declaredIntent || (stickerId ? 'reaction' : 'none');
       // image_only 就是「只要图不要字」，此时忽略附文。
       const stickerCaption = mode === 'image_only' || typeof parsed.sticker_caption !== 'string'
         ? ''
         : parsed.sticker_caption.trim();
       if (mode === 'none' || !stickerId) {
-        return { reply: parsed.reply.trim(), stickerCaption: '', stickerUse: 'none', captionSplit, stickerId: null, mode: 'none', structured: true };
+        return { reply: parsed.reply.trim(), stickerCaption: '', stickerIntent, captionSplit, stickerId: null, mode: 'none', structured: true };
       }
       return {
         reply: mode === 'image_only' ? '' : parsed.reply.trim(),
         stickerCaption,
-        stickerUse,
+        stickerIntent,
         captionSplit,
         stickerId,
         mode,
@@ -198,7 +211,7 @@ export function parseStickerReply(value: unknown): ParsedStickerReply {
   return {
     reply: malformedStickerReplyFallback(raw) ?? raw,
     stickerCaption: '',
-    stickerUse: 'none',
+    stickerIntent: 'none',
     captionSplit: false,
     stickerId: null,
     mode: 'none',

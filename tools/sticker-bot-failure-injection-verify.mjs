@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import http from 'node:http';
+import { readFileSync } from 'node:fs';
 import { createTestDataDir, assertNotProduction, cleanupTestDir } from './test-isolation.mjs';
 
 const dataDir = createTestDataDir('wuxin-sticker-bot-failure');
@@ -8,6 +9,9 @@ process.env.PIPPI_AGENT_RUNTIME_MODE = 'legacy';
 assertNotProduction(dataDir);
 
 const { ensureStore, readDb, updateDb } = await import('../server/store.ts');
+const { stickerFailureNotice: stickerFailureNoticeForTest } = await import(
+  '../server/bot/stickers/replyDelivery.ts?sticker-bot-failure-verify'
+);
 const { processIncoming } = await import('../server/bot.ts?sticker-bot-failure-verify');
 const { getStickerDeliveryState, getStickerDeliveryStats } = await import(
   '../server/bot/stickers/delivery.ts?sticker-bot-failure-verify'
@@ -368,6 +372,62 @@ function assertFailureNotice(sends, label) {
   );
   assert.equal(naturalFailureResult.replied, false);
   assert.deepEqual(naturalFailureSends, []);
+
+  // ── F1 收尾：三条以前没被覆盖的路径 ──
+  // 上面把 apiBaseUrl 指向了故意失败的服务器，这里先指回能正常作答的那个。
+  updateDb((db) => { db.settings.apiBaseUrl = `http://127.0.0.1:${llmPort}/v1`; });
+
+  // 上面 gateRejection 那条用的是旧信封（没有 sticker_use），意图被推断成 reaction，
+  // 所以补「收到。」是对的。下面第一条是同一个位置、但信封明确写了 requested ——
+  // 那时占位句不该出现，该说的是实话。
+  llmReplyEnvelope = { reply: '', sticker_use: 'requested', mode: 'image_only', sticker_id: 'hello' };
+  configurePolicy([]);
+  const rejectedSends = [];
+  await processIncoming(
+    event('sticker-send-group', 'sticker-requested-rejected-message'),
+    async (_event, text) => { rejectedSends.push(String(text || '')); return { outcome: 'confirmed_success', messageId: 51 }; },
+  );
+  assert.equal(rejectedSends.length, 1, '明确要图但被策略拒绝：应当有且只有一条回退');
+  assert.equal(rejectedSends[0].includes('这张没发出去'), true,
+    '明确要图却没有可发的图时必须说清楚，实际: ' + rejectedSends[0]);
+  assert.equal(rejectedSends[0].includes('收到。'), false, '不该用一句「收到。」盖过没发出去这件事');
+  assert.equal(rejectedSends[0].includes('[CQ:image'), false, '被拒绝时不该有图');
+
+  // 有图待发但发送确认失败：只能说一次，不能「收到。」和「这张没发出去」各来一句。
+  llmReplyEnvelope = { reply: '', sticker_use: 'requested', mode: 'image_only', sticker_id: 'hello' };
+  configurePolicy(['sticker-send-group']);
+  const pureFailureSends = [];
+  await processIncoming(
+    event('sticker-send-group', 'sticker-pure-image-failure-message'),
+    async (_event, text) => {
+      pureFailureSends.push(String(text || ''));
+      const error = new Error('fixture confirmed failure');
+      error.deliveryOutcome = 'confirmed_failure';
+      throw error;
+    },
+  );
+  assert.equal(pureFailureSends.some((text) => text.includes('这张没发出去')), true,
+    '纯图请求发送失败必须说明，实际: ' + JSON.stringify(pureFailureSends));
+  assert.equal(pureFailureSends.some((text) => text.includes('收到。')), false,
+    '不能说两句：既有占位句又有实话');
+
+  // 长正文已交付、随后配图失败这一条路径，没有自动化用例。
+  //
+  // 原因是用例没法把 isLongReply 稳定置真：这条事件会走一次升级改写，改写结果会
+  // 覆盖掉注入的正文，于是始终落回「正文与图同一条」的分支。硬凑会把用例变成在
+  // 测改写通道，而不是在测收尾。
+  //
+  // 所以这里只锁住措辞契约（措辞定义了却没人调用，正是这个 bug 的形态），
+  // 分支本身靠代码审查：bot.ts 长正文分支的内层 catch 里已经补了这条通知。
+  assert.equal(stickerFailureNoticeForTest({ explicitRequest: true, bodyDelivered: true }), '表情那张没发出去',
+    '正文已交付时的措辞必须是这一句');
+  assert.equal(stickerFailureNoticeForTest({ explicitRequest: true, bodyDelivered: false }), '这张没发出去',
+    '正文未交付时说的是另一句');
+  assert.equal(stickerFailureNoticeForTest({ explicitRequest: false, bodyDelivered: false }), '',
+    '自己加的图失败不该打扰用户');
+  assert.ok(readFileSync(new URL('../server/bot.ts', import.meta.url), 'utf8')
+    .includes("explicitRequest: stickerExplicitRequest, bodyDelivered: true"),
+    'bot.ts 长正文分支必须调用这条通知 —— 缺了它这句文案就永远发不出去');
 
   console.log(JSON.stringify({
     ok: true,

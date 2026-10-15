@@ -169,6 +169,32 @@ function persistedPolicy(db: StickerDeliveryDbLike): Record<string, unknown> {
   return objectValue(objectValue(db.settings).stickerPolicy);
 }
 
+/**
+ * 本群此刻的表情可用状态。
+ *
+ * 这是**唯一**的判断入口：能力摘要和实际发送器都从这里取。以前摘要自己读
+ * db.settings.stickerPolicy、发送器读 stickerDeliveryConfig，两处给出互相矛盾的
+ * 结论 —— 尤其是 WUXIN_STICKER_* 环境变量会覆盖数据库设置，只看数据库会把
+ * 「已经被环境变量关掉」说成「本群可以发」。
+ *
+ * 它只说明配置层面的状态。配额、冷却、去重这些要等生成之后才知道，所以
+ * 「可以发」仍然不等于「这次一定发得出去」。
+ */
+export type StickerAvailability = 'off' | 'dry-run' | 'group-closed' | 'live';
+
+export function stickerAvailabilityForGroup(
+  db: StickerDeliveryDbLike,
+  groupId: string,
+): StickerAvailability {
+  const config = stickerDeliveryConfig(db);
+  if (config.mode === 'live') {
+    const allowed = config.allGroups === true
+      || config.groupIds.map(String).includes(String(groupId));
+    return allowed ? 'live' : 'group-closed';
+  }
+  return config.mode === 'dry-run' ? 'dry-run' : 'off';
+}
+
 export function stickerDeliveryConfig(db: StickerDeliveryDbLike = readDb()): StickerDeliveryPolicy {
   const saved = persistedPolicy(db);
   const mode = parseMode(envValue('WUXIN_STICKER_DELIVERY_MODE') ?? saved.mode, DEFAULT_POLICY.mode);
