@@ -11,6 +11,14 @@ const phaseLabels = {
   INGRESS: '入口', NORMALIZE: '规范化', GATE: '回复闸门', ROUTER: '路由', KB: '知识库', TOOL: '工具',
   PROMPT: '提示构建', MODEL: '模型', REVIEW: '审查', REWRITE: '改写', QUEUE: '队列', SEND: '发送', COMPLETE: '完成', ERROR: '错误',
 };
+// 「正在执行」显示的是最后一条事件的阶段。但阶段名会误导：提示词交给模型之后，
+// 阶段仍停留在 PROMPT，而那段时间其实全在等模型。这两个事件一旦成为最后一条，
+// 含义就是确定的「已经交出去，正在等回复」—— 所以按事件名覆盖阶段名。
+const waitingEventLabels = {
+  prompt_snapshot_created: '等待模型响应',
+  model_call_started: '等待模型响应',
+};
+
 const traceEventLabels = {
   agent_planner_decision: 'Agent 本轮决策',
   tool_call_started: '开始执行工具',
@@ -181,7 +189,8 @@ const entryStatusLabels = { active: '进行中', completed: '完成', failed: '�
 
 function TraceRow({ trace, now, expanded = false }) {
   const progress = requestProgressSnapshot(trace, now);
-  const phaseName = phaseLabels[progress.phase] || progress.phase;
+  const phaseName = waitingEventLabels[progress.eventName]
+    || phaseLabels[progress.phase] || progress.phase;
   return <details className="log-row trace-row" open={expanded || trace.status === 'active'}>
     <summary><span><strong>{trace.nickname || trace.userId || '请求'}</strong><small>{trace.groupId} · {new Date(trace.startedAt).toLocaleTimeString()}</small></span><span className="trace-row__status"><Pill tone={trace.status === 'failed' ? 'danger' : trace.status === 'completed' ? 'success' : 'warning'}>{entryStatusLabels[trace.status] || trace.status}</Pill>{progress.active && <b>{formatElapsed(progress.elapsedMs)}</b>}</span></summary>
     <code className="trace-id">{trace.id}</code>
