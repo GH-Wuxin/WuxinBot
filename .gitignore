@@ -21,8 +21,12 @@ portable-node/
 artifacts/
 .public-export/
 
-# �ط�/ʵ��ı��ز��source-data ���������������ƾ�ݣ��������ύ
+# �ط�/ʵ��ı��ز��source-data ���������������ƾ�ݣ��������ύ
 tmp/*-source.json
 tmp/_pyarrow/
 tmp/ds-arm-*.json
 tmp/arm-*.json
+
+# 公开导出用的禁用词表存的是真值（QQ、邮箱、本机路径），只留在本地。
+# 仓库里保留 .example 模板就够了 —— 这个文件曾经被提交进去过。
+.private/public-export-denylist.txt
