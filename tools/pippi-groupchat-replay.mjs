@@ -516,7 +516,12 @@ function evaluate(item, record) {
   if (actualReply && simpleQa && length < 8) warnings.push('too_terse');
   if (actualReply && shortChat && record.segments.length > 1) warnings.push('multi_message_spam');
   if (record.rewritten && item.category === 'rewrite_regression') warnings.push('rewrite_false_positive');
-  if (record.isWeird && !record.rewritten && actualReply && !record.error) warnings.push('unrepaired_weird_reply');
+  // Long-form tasks intentionally bypass the normal-chat rewrite guard. Their
+  // size is exactly what makes isWeirdReply report `tooLong`; counting that as
+  // an unrepaired casual failure would turn a deliberate long-form exception
+  // into a false regression.
+  if (record.isWeird && !record.rewritten && actualReply && !record.error
+    && !record.responseOptions?.longForm) warnings.push('unrepaired_weird_reply');
 
   // `requiredFacts` are NOT strings to look for.  They are semantic criteria
   // -- "DT改变实际接近时间", "保留pippi身份", "不能把别人的成绩归给当前发言者".
