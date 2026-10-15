@@ -18,6 +18,8 @@ import { toPromptBlocks } from './kbPrompt.js';
 import { selectAdaptiveGroupContext } from './contextSearch.js';
 import { traceEvent } from '../requestTrace.js';
 import { buildCapabilitySummary } from './capabilitySummary.js';
+import { replyFailureNotice } from './replyFailures.js';
+import { displayName } from './memberDirectory.js';
 
 export function describePolicy(policy) {
   const labels = {
@@ -104,10 +106,47 @@ function stickerHistoryNotice(message) {
   return `（附带表情 ${sticker.id}${semantic ? `：${semantic}` : ''}；${statusLabels[sticker.outcome] || sticker.outcome}${reason}）`;
 }
 
+/**
+ * 把 [CQ:at,qq=X] 渲染成 @名字(QQ)。她自己渲染成 @你。
+ *
+ * 名字来自入库时查好的 mentions；查不到就退回号码，保持原样。逐段扫，不用正则
+ * —— 这里只是替换固定前缀，模式匹配是多余的风险。
+ */
+function renderMentions(text, mentions, selfQq) {
+  const raw = String(text || '');
+  if (!raw.includes('[CQ:at,qq=')) return raw;
+  const byQq = new Map();
+  for (const item of Array.isArray(mentions) ? mentions : []) {
+    if (item && item.qq !== undefined) byQq.set(String(item.qq), item);
+  }
+  const prefix = '[CQ:at,qq=';
+  let out = '';
+  let index = 0;
+  for (;;) {
+    const start = raw.indexOf(prefix, index);
+    if (start < 0) { out += raw.slice(index); break; }
+    out += raw.slice(index, start);
+    const from = start + prefix.length;
+    const end = raw.indexOf(']', from);
+    if (end < 0) { out += raw.slice(start); break; }
+    const qq = raw.slice(from, end).split(',')[0].trim();
+    if (!qq || qq === 'all') out += '@全体成员';
+    else if (selfQq && qq === selfQq) out += '@你';
+    else {
+      const names = byQq.get(qq);
+      out += '@' + (names ? displayName(names, qq) : qq) + '(' + qq + ')';
+    }
+    index = end + 1;
+  }
+  // all 之外的 CQ 参数（比如 name=）会残留，清掉剩余的片段标记，避免泄漏给模型。
+  return out;
+}
+
 function groupHistoryLine(db, message) {
   const canSee = modelSupportsVision(db);
   const rawContent = canSee ? String(message.content || '') : stripMediaPlaceholders(message.content);
-  const content = `${rawContent}${stickerHistoryNotice(message)}`.replace(/\r?\n/g, '\n  ');
+  const rendered = renderMentions(rawContent, message.mentions, String(db?.settings?.selfQq || ''));
+  const content = `${rendered}${stickerHistoryNotice(message)}`.replace(/\r?\n/g, '\n  ');
   if (message.role === 'assistant') {
     const target = message.replyToUserId
       ? `，回复 ${message.replyToNickname || '群友'}（QQ:${message.replyToUserId}）`
@@ -464,12 +503,10 @@ export function buildPrompt(db, group, event, userPolicy, options = {}) {
     ...buildUserInfoLines(db, event),
     includeMemory && memoryBlock ? `关于当前发言者的长期记忆：${memoryBlock}\n自然使用，不要生硬复述；与当前消息冲突时以当前消息为准。` : '',
   ].filter(Boolean).join('\n');
-  // Replace @self CQ code with "@你" in the user message, keep other @s as-is
-  let displayText = event.text;
-  if (selfQq) {
-    const escapedSelfQq = selfQq.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    displayText = displayText.replace(new RegExp(`\\[CQ:at,qq=${escapedSelfQq}(?:,[^\\]]*)?\\]`, 'g'), '@你');
-  }
+  // 当前消息和历史用同一套 @ 渲染：@名字(QQ)，她自己渲染成 @你。名字在入库时已经
+  // 查好（见 bot.ts 的 resolveMemberNames），当前这条用同一份结果，两处写法一致。
+  // 原先这里用正则把 @自己 换成 @你，其余 @ 保持裸号码 —— 那正是她分不清谁是谁的原因。
+  let displayText = renderMentions(event.text, event.mentionNames, selfQq);
   if (event.quotedMessage) {
     const quotedSpeaker = event.quotedMessage.nickname || event.quotedMessage.userId || '未知发送者';
     const quotedText = String(event.quotedMessage.text || '').trim() ||
@@ -529,7 +566,12 @@ export function buildPrompt(db, group, event, userPolicy, options = {}) {
   const factualCtx = [
     `当前群：${group.name || group.groupId}`,
     buildCapabilitySummary({ stickerAvailable, searchAvailable: canSearch }),
+    // 「刚才为什么没开口」。只在本群近一小时真的失败过时才有一行，否则是空串。
+    replyFailureNotice(db.replyFailures, group.groupId),
     `系统 owner QQ：${db.settings.ownerQq || '未设置'}。`,
+    // 她得知道自己是谁：历史里 @她自己 和 @别人 只差一个号码，不告诉她号码是哪个，
+    // 她就没有依据把某条消息认成冲自己来的。
+    selfQq ? `你自己是 QQ ${selfQq}；群里 @ 到这个号就是在跟你说话。` : '',
     `当前发言者：${speakerIdentity}${isOwner ? '（是系统 owner）' : ''}`,
     groupSpeakerBoundary(event, speakerIdentity),
     visualCapabilityNotice(db, event),

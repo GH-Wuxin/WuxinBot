@@ -199,6 +199,30 @@ export function parseOneBotEcho(payload) {
   return echoResult('failed', 'unknown', 'OneBot 回执缺少 status/retcode，无法确认结果');
 }
 
+/**
+ * 调一个 OneBot 动作接口。
+ *
+ * 用途是补消息里没有的信息（比如 @ 的人叫什么）。这类调用是**可选增强**：
+ * 拿不到就返回 null，让调用方退回原来的表现，而不是把整轮回复拖垮。
+ * 发送消息不走这里 —— 那条路径有回执语义，不能和只读查询混在一起。
+ */
+export async function callOneBotAction(db, action, params = {}, timeoutMs = 8_000) {
+  const baseUrl = String(db?.settings?.oneBotHttpUrl || '').trim();
+  if (!baseUrl) return null;
+  try {
+    const response = await fetchWithTimeout(`${baseUrl.replace(/\/$/, '')}/${action}`, {
+      method: 'POST',
+      headers: oneBotHeaders(db),
+      body: JSON.stringify(params || {}),
+    }, timeoutMs);
+    const payload = await assertOneBotSuccess(response, `OneBot 动作 ${action}`);
+    return payload?.data ?? payload ?? null;
+  } catch (error) {
+    console.warn(`[onebot] 动作 ${action} 调用失败，按拿不到处理:`, String(error?.message || error).slice(0, 200));
+    return null;
+  }
+}
+
 async function assertOneBotSuccess(response, label) {
   const body = await response.text();
   if (!response.ok) {
