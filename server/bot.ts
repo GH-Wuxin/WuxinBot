@@ -1332,7 +1332,7 @@ let waitUpTimer = null;
 
     const stickerReply = stickerReplyEnabled
       ? parseStickerReply(ai.text)
-      : { reply: String(ai.text || ''), stickerCaption: '', stickerUse: 'none' as const, captionSplit: false, stickerId: null, mode: 'none' as const, structured: false };
+      : { reply: String(ai.text || ''), stickerCaption: '', stickerIntent: 'none' as const, captionSplit: false, stickerId: null, mode: 'none' as const, structured: false };
     ai.text = stickerReply.reply;
     const stickerDecisionId = stickerReplyEnabled ? stickerReply.stickerId : null;
     const imageOnlySticker = stickerReplyEnabled && stickerReply.mode === 'image_only';
@@ -1342,7 +1342,9 @@ let waitUpTimer = null;
       ? sanitizeReply(String(stickerReply.stickerCaption || ''), liveDb.settings)
       : '';
     // 模型自报：用户是否明确要求发图。只有这种才在失败时补一句说明。
-    const stickerExplicitRequest = stickerReplyEnabled && stickerReply.stickerUse === 'requested';
+    // 读意图，不读「有没有选出图」。用户明确要图而这次没选出时，意图仍然是 requested ——
+  // 那正是最需要它的时候。
+  const stickerExplicitRequest = stickerReplyEnabled && stickerReply.stickerIntent === 'requested';
     let replyText = sanitizeReply(ai.text, liveDb.settings);
     const imageCqCodes = [...toolImages, ...toolDeliverImages].map(toolImageToCq).filter(Boolean);
     const hasDirectToolDelivery = Boolean(toolDirectContent || imageCqCodes.length > 0);
@@ -1563,7 +1565,18 @@ let waitUpTimer = null;
     // An image-only decision is optional. If validation, policy, or delivery
     // prevents the image, retain a small text fallback instead of emitting an
     // empty QQ message.
-    replyText = ensureStickerReplyFallback(replyText, modelStickerCqCode);
+    //
+    // 分两种情形，别混在一起：
+    //   没选到图（校验或策略拒绝）—— 收尾的失败分支不会经过，现在就得说；
+    //   有图待发 —— 空正文留给收尾，那里才知道送没送到，说的也是实话。
+    if (stickerExplicitRequest && !modelStickerCqCode) {
+      replyText = [replyText, stickerFailureNotice({ explicitRequest: true, bodyDelivered: false })]
+        .filter(Boolean).join('\n');
+    } else {
+      replyText = ensureStickerReplyFallback(replyText, modelStickerCqCode, {
+        deferToNotice: stickerExplicitRequest,
+      });
+    }
 
     // Count the eligible natural reply before the actual image send. A
     // confirmed or unknown OneBot outcome must not erase the denominator used
@@ -1665,6 +1678,15 @@ let waitUpTimer = null;
             const confirmedFailure = error?.deliveryOutcome === 'confirmed_failure';
             deliveryStatus = 'partial';
             completeModelStickerOutcome(confirmedFailure ? 'confirmed_failure' : 'unknown', error);
+            // 正文已经单独发过了，这里补一句配图的情况。以前这条路径只记录不吭声
+            // —— 外层 catch 被这个内层吞掉，于是「表情那张没发出去」从来没有
+            // 在长正文这条路上发出过。结果未知时不补：原请求可能已经落地。
+            if (confirmedFailure) {
+              const notice = stickerFailureNotice({ explicitRequest: stickerExplicitRequest, bodyDelivered: true });
+              if (notice && sendMessage) {
+                await sendOptionalNotice(() => sendMessage(event, notice, replyToCurrentMessageOptions(event)));
+              }
+            }
           }
         } else {
           // 附文只在这一条里出现 —— 它跟图片同生共死，于是图片失败时天然不会被重发。
@@ -1696,7 +1718,9 @@ let waitUpTimer = null;
         const notice = confirmedFailure
           ? stickerFailureNotice({ explicitRequest: stickerExplicitRequest, bodyDelivered: isLongReply })
           : '';
-        const outboundFallback = [fallbackText, notice].filter(Boolean).join('\n');
+        // notice 已经是一句实话，别再叠一个「收到。」占位句；但正文非空时要保留它。
+        const placeholderOnly = fallbackText === '收到。';
+        const outboundFallback = [notice && placeholderOnly ? '' : fallbackText, notice].filter(Boolean).join('\n');
         if (outboundFallback && sendMessage) {
           try {
             await sendMessage(event, outboundFallback, replyToCurrentMessageOptions(event));

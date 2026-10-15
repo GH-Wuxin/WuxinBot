@@ -30,7 +30,13 @@ export function stickerFailureNotice(input: {
 export function ensureStickerReplyFallback(
   replyText: string,
   stickerCqCode: string,
+  options: { deferToNotice?: boolean } = {},
 ): string {
+  // 明确要图时，空正文留给收尾去说 —— 只有那里知道图片到底送没送到，
+  // 说的也是「这张没发出去」而不是一句「收到。」。在这里先占位的话，
+  // 图失败时会出现「收到。」和「这张没发出去」两句叠在一起。
+  // 调用方必须保证 defer 之后仍有内容可发（见 bot.ts 里没选到图的那一支）。
+  if (options.deferToNotice) return replyText;
   return !String(replyText || '').trim() && !String(stickerCqCode || '').trim()
     ? '收到。'
     : replyText;

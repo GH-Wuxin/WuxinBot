@@ -17,6 +17,15 @@
  */
 import { CAPABILITY_CATALOG } from '../bots/capabilityCatalog.js';
 import { QUICK_DEFS } from './commands/quick.meta.js';
+import type { StickerAvailability } from './stickers/delivery.js';
+
+/** 四种状态的说法。每一种都不宣称「一定发得出去」。 */
+const STICKER_STATE_TEXT: Record<StickerAvailability, string> = {
+  off: '表情：本群现在发不了（功能关闭），最终以发送校验为准。',
+  'dry-run': '表情：本群目前只演练、不会真的发出，最终以发送校验为准。',
+  'group-closed': '表情：本群不在开放范围内，发不了，最终以发送校验为准。',
+  live: '表情：本群现在可以发，最终以发送校验为准。',
+};
 
 export const CAPABILITY_SUMMARY_BUDGET = { maxLines: 6, maxPoints: 240 } as const;
 
@@ -26,8 +35,11 @@ export const CAPABILITY_SUMMARY_BOUNDARY = '未列出不等于不支持；未知
 const FAMILY_LABEL: Record<string, string> = { player: '玩家', beatmap: '谱面' };
 
 export interface CapabilitySummaryInput {
-  /** 当前群此刻是否允许发图片。发送前仍要过一遍校验，所以这里只说明可用性。 */
-  stickerAvailable: boolean;
+  /**
+   * 当前群此刻的表情可用状态。取自 stickerAvailabilityForGroup —— 与发送器同源。
+   * 二值表达不了「仅演练」，而那个中间态恰恰是最容易被说错的。
+   */
+  stickerState: StickerAvailability;
   /** 本轮是否挂了联网搜索工具。 */
   searchAvailable: boolean;
 }
@@ -71,7 +83,7 @@ function buildLines(input: CapabilitySummaryInput): SummaryLine[] {
   }
 
   lines.push({
-    text: '表情：本群现在' + (input.stickerAvailable ? '可以发' : '发不了') + '，最终以发送校验为准。',
+    text: STICKER_STATE_TEXT[input.stickerState] || STICKER_STATE_TEXT.off,
     protected: true,
   });
   lines.push({
@@ -89,6 +101,8 @@ function buildLines(input: CapabilitySummaryInput): SummaryLine[] {
 export function buildCapabilitySummary(input: CapabilitySummaryInput): string {
   const all = buildLines(input);
   const render = (lines: SummaryLine[]) => lines.map((line) => line.text).join('\n');
+  const fitsText = (text: string) => unicodeLength(text) <= CAPABILITY_SUMMARY_BUDGET.maxPoints
+    && text.split('\n').length <= CAPABILITY_SUMMARY_BUDGET.maxLines;
   if (unicodeLength(render(all)) <= CAPABILITY_SUMMARY_BUDGET.maxPoints
     && all.length <= CAPABILITY_SUMMARY_BUDGET.maxLines) {
     return render(all);
@@ -104,6 +118,21 @@ export function buildCapabilitySummary(input: CapabilitySummaryInput): string {
       return render(kept);
     }
   }
-  // 连限定词都放不下：保留它们，并明说这不是全量目录，而不是做尾部截断。
-  return render(kept) + '\n（受预算限制，此处不是全量目录。）';
+  // 连限定词都放不下：改用最精简的说法。
+  // 这里以前是 `render(kept) + '（受预算限制…）'` —— 那会把已经超限的内容再
+  // 加长，「无论如何都不超预算」这个契约就不成立了。要保住的是「不误导能力
+  // 状态」这条语义，不是要求每一句都完整常驻，所以压缩而不是截断。
+  const compact = '【本轮能力】' + compactSticker(input.stickerState)
+    + '；联网' + (input.searchAvailable ? '可用' : '不可用') + '。' + CAPABILITY_SUMMARY_BOUNDARY;
+  if (fitsText(compact)) return compact;
+  // 连边界句都放不下（预算被配得极小）—— 那就不输出，而不是输出一个超预算的东西。
+  return fitsText(CAPABILITY_SUMMARY_BOUNDARY) ? CAPABILITY_SUMMARY_BOUNDARY : '';
+}
+
+/** 状态的最短说法，用于预算放不下完整句时。仍然不宣称「一定发得出去」。 */
+function compactSticker(state: StickerAvailability): string {
+  if (state === 'live') return '表情可发';
+  if (state === 'dry-run') return '表情仅演练';
+  if (state === 'group-closed') return '表情本群未开';
+  return '表情关闭';
 }
