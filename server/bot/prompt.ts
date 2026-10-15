@@ -17,6 +17,7 @@ import { retrieveKnowledgeForPrompt } from './knowledgeBase.js';
 import { toPromptBlocks } from './kbPrompt.js';
 import { selectAdaptiveGroupContext } from './contextSearch.js';
 import { traceEvent } from '../requestTrace.js';
+import { buildCapabilitySummary } from './capabilitySummary.js';
 
 export function describePolicy(policy) {
   const labels = {
@@ -517,8 +518,17 @@ export function buildPrompt(db, group, event, userPolicy, options = {}) {
   ].filter(Boolean).join('\n\n');
 
   // Factual context: visual capability, model info, owner status, search
+  // 群级的表情可用性。真正的发送资格要等生成之后的预留校验才算得出来（F3：
+  // 目前的预检发生在生成之后），所以这里只说明本群开没开，不替执行器下结论。
+  const stickerPolicy = (db.settings.stickerPolicy || {}) as {
+    mode?: string; allGroups?: boolean; groupIds?: string[];
+  };
+  const stickerAvailable = String(stickerPolicy.mode || 'off') !== 'off'
+    && (stickerPolicy.allGroups === true
+      || (stickerPolicy.groupIds || []).map(String).includes(String(group.groupId)));
   const factualCtx = [
     `当前群：${group.name || group.groupId}`,
+    buildCapabilitySummary({ stickerAvailable, searchAvailable: canSearch }),
     `系统 owner QQ：${db.settings.ownerQq || '未设置'}。`,
     `当前发言者：${speakerIdentity}${isOwner ? '（是系统 owner）' : ''}`,
     groupSpeakerBoundary(event, speakerIdentity),
