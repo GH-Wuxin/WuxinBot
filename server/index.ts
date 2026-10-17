@@ -1299,6 +1299,7 @@ app.post('/api/memories/:userId/recalculate', async (req, res) => {
       messageId: `memory-manual-recalc:${userId}:${Date.now()}`
     }, {
       force: true,
+      bypassCircuit: true,
       kind: 'memory-manual-recalc',
     });
     if (!outcome.ok) return res.status(400).json({ ok: false, error: outcome.reason || outcome.error || '画像更新失败', ...compactDbResponse() });

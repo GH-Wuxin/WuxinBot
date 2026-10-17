@@ -10,6 +10,8 @@ export type ProfileLogEvent =
   | 'profile.threshold_check'
   | 'profile.queued'
   | 'profile.backoff'
+  | 'profile.circuit_skipped'
+  | 'profile.circuit_bypassed'
   | 'profile.run_started'
   | 'profile.llm_result'
   | 'profile.patch_applied'

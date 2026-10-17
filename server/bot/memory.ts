@@ -11,10 +11,10 @@ import { writeProfileLog, appendProfileLog, newRunId } from './profileLog.js';
 import { extractEvidenceFromSample, applyEvidenceToDraft } from './profileV3.js';
 import { activeModelName } from '../modelConfig.js';
 import { runBackgroundTask } from '../backgroundTasks.js';
+import { clearProfileCircuit, profileCircuitBlockReason, tripProfileCircuit } from './profileCircuit.js';
 
 const PROFILE_FIELDS = ['summary', 'traits', 'speechStyle', 'behavior', 'preferences'];
 const MEMORY_SWEEP_INTERVAL_MS = 90_000;
-const PROFILE_LLM_CIRCUIT_MS = 10 * 60_000;
 // Floor for a profile-update model call. The payload is large and, with a
 // high-reasoning Codex model, the old hardcoded 120s was routinely exceeded -
 // which set lastProfileStatus=error and made the console's "recalculate
@@ -31,7 +31,7 @@ let profileQueueTail = Promise.resolve();
 let profileQueueDepth = 0;
 let activeProfileUserId = '';
 let lastMemorySweepAt = 0;
-let profileLlmCircuit = { until: 0, fingerprint: '', reason: '' };
+let profileLlmCircuit = clearProfileCircuit();
 const IMAGE_SUMMARY_MAX_QUEUE = 16;
 let imageSummaryQueueTail = Promise.resolve();
 let imageSummaryQueueDepth = 0;
@@ -156,17 +156,18 @@ export function isProfileCircuitWorthyError(error) {
 }
 
 function profileLlmCircuitReason(db) {
-  if (Date.now() >= profileLlmCircuit.until) return '';
-  if (profileLlmCircuit.fingerprint !== profileLlmFingerprint(db)) return '';
-  return profileLlmCircuit.reason;
+  return profileCircuitBlockReason(profileLlmCircuit, {
+    now: Date.now(),
+    fingerprint: profileLlmFingerprint(db)
+  });
 }
 
 function tripProfileLlmCircuit(db, error) {
-  profileLlmCircuit = {
-    until: Date.now() + PROFILE_LLM_CIRCUIT_MS,
+  profileLlmCircuit = tripProfileCircuit(profileLlmCircuit, {
+    now: Date.now(),
     fingerprint: profileLlmFingerprint(db),
-    reason: String(error?.message || error || '').slice(0, 300)
-  };
+    reason: String(error?.message || error || '')
+  });
 }
 
 function thresholdsForMemory(db, memory) {
@@ -1363,7 +1364,24 @@ export function maybeUpdateMemoryProfile(event, options = {}) {
       return { ok: false, skipped: true, reason: '画像失败退避中', retryAfter: storedMemory.profileRetryAfter, runId, queuedMs };
     }
     const circuitReason = profileLlmCircuitReason(db);
-    if (circuitReason) {
+    // 熔断默认连手动入口一起挡，但单人「重新计算画像」允许绕过一次：那是用户在
+    // 主动排障，被自己的体检拦住只会让人以为功能坏了。批量重算不享受这个豁免 ——
+    // 上游真挂的时候，一百个用户挨个绕过去就是一百个 240 秒。
+    if (circuitReason && options.bypassCircuit === true) {
+      writeProfileLog({
+        runId, event: 'profile.circuit_bypassed', userId, nickname: storedMemory.nickname,
+        groupId: event.groupId, detail: `手动重算绕过画像熔断：${circuitReason}`,
+        meta: { circuitReason, queuedMs, failures: profileLlmCircuit.failures }
+      });
+    } else if (circuitReason) {
+      writeProfileLog({
+        runId, event: 'profile.circuit_skipped', userId, nickname: storedMemory.nickname,
+        groupId: event.groupId, detail: `画像模型熔断中，本次跳过：${circuitReason}`,
+        meta: {
+          circuitReason, queuedMs, kind: options.kind || 'memory',
+          failures: profileLlmCircuit.failures, until: profileLlmCircuit.until
+        }
+      });
       return { ok: false, skipped: true, reason: `画像模型熔断中：${circuitReason}`, runId, queuedMs };
     }
     const memory = options.profilingRule === undefined
@@ -1372,6 +1390,8 @@ export function maybeUpdateMemoryProfile(event, options = {}) {
     try {
       const result = await updateMemoryProfile(db, memory, { runId });
       if (!result) return { ok: false, skipped: true, reason: '画像模型未返回结果', runId, queuedMs };
+      // 成功一次就清零连续失败计数，下次再坏仍从 10 分钟起步。
+      profileLlmCircuit = clearProfileCircuit();
       const outcome = commitMemoryProfileResult(userId, result, {
         groupId: event.groupId,
         model: result.model || activeModelName(db.settings),
