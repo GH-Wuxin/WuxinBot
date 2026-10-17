@@ -135,6 +135,24 @@ export function listRandomImages(db: any): string[] {
  * decay^1（同名取最强的那次抑制），窗口外 = 1。decay=0 时等价于硬排除，
  * decay=1 时等价于不降权。
  */
+/**
+ * 每张图发过几次。
+ *
+ * 旧状态只有 everSent（去重集合，只知有没有发过、不知发过几次），按「1 次」播种。
+ * 历史里多出来的那些次数无从还原，但它们本来就集中在老图上，播种后仍是最少的一级，
+ * 所以新图依然会被优先补进来。
+ */
+function sentCountsOf(previous: any): Record<string, number> {
+  const raw = previous?.sentCounts;
+  if (raw && typeof raw === 'object') return raw as Record<string, number>;
+  const seeded: Record<string, number> = {};
+  for (const entry of Array.isArray(previous?.everSent) ? previous.everSent : []) {
+    const base = path.basename(String(entry || ''));
+    if (base) seeded[base] = 1;
+  }
+  return seeded;
+}
+
 export function pickWeighted(files: string[], previous: any, window: number, decay: number): string {
   const nameOf = (file: unknown) => path.basename(String(file || ''));
   const suppress = new Map<string, number>();
@@ -159,16 +177,24 @@ export function pickWeighted(files: string[], previous: any, window: number, dec
   // 流水是后来才加的：窗口内没有流水时用 lastFile 兜底，否则升级那一刻会漏掉一张。
   if (window > 0 && !recent.length) note(nameOf(previous?.lastFile), Math.pow(decay, 1));
 
-  // 第一阶段：池子里还有没发过的图时，只从没发过的里面选。
+  // 分层：只在「发得最少」的那一级里挑。
   //
   // 这一步是硬规则而不是加权：加权只是「偏向新的」，偏得不够仍会撞上 —— 实测
   // 4 倍权重下，73 次发送仍有 12 次重复，而池子有 77 张，本来不该重复。
   // 池子比发送次数还多的时候，「别重复」应当是保证，不是倾向。
   //
-  // 全部发过一遍之后回落到下面的加权抽取，此时重复才是正常的。
-  const everSent = new Set((Array.isArray(previous?.everSent) ? previous.everSent : []).map(nameOf));
-  const unused = files.filter((file) => !everSent.has(path.basename(file)));
-  const candidates = unused.length ? unused : files;
+  // 早先这里只做**一轮**：还有没发过的就只从没发过的里选，否则回落到全池加权。
+  // 那会退化成「第一轮结束就不管了」——实测出现过有的图发过五六次、有的只发过
+  // 两次。现在每一轮都遵循同一规则：先把最少的那一级补平，再一起升到下一级。
+  // 所以第二轮、第三轮同样是均匀的，不会越往后越歪。
+  const counts = sentCountsOf(previous);
+  const countOf = (file: string) => counts[path.basename(file)] || 0;
+  let lowest = Infinity;
+  for (const file of files) {
+    const seen = countOf(file);
+    if (seen < lowest) lowest = seen;
+  }
+  const candidates = files.filter((file) => countOf(file) === lowest);
 
   let total = 0;
   const weights = candidates.map((file) => {
@@ -241,9 +267,18 @@ export function rollRandomImage(groupId: string, rate: string | undefined): Rand
       next.recent = [...history, { at: next.lastHitAt, file: picked }];
       const name = picked ? path.basename(picked) : '';
       next.everSent = name && !everSent.includes(name) ? [...everSent, name] : everSent;
+      // 分层的依据：每张图发了多少次。只在命中时加一，未命中时整体继承。
+      if (name) {
+        const counts = { ...sentCountsOf(previous) };
+        counts[name] = (counts[name] || 0) + 1;
+        next.sentCounts = counts;
+      }
     } else {
       if (history.length) next.recent = history;
       if (everSent.length) next.everSent = everSent;
+      // 未命中也要继承，否则「发过几次」会随一次没命中就归零。
+      const inherited = previous?.sentCounts;
+      if (inherited && typeof inherited === 'object' && Object.keys(inherited).length) next.sentCounts = inherited;
     }
     // 必须整体赋值。store 在赋值那一刻对值做快照：先赋一个空对象、之后再往
     // 同一个对象上加属性，那些属性不会落盘（实测 db.x = {}; db.x.a = 1 得到 {}）。

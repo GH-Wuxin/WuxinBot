@@ -88,5 +88,57 @@ const check = (ok, label, detail) => {
   console.log('');
 }
 
+// ── 4. 多轮：第二轮、第三轮必须同样均匀 ──
+//
+// 这一条是新规则的核心。旧实现只做「一轮铺满」：全部发过之后回落到纯加权，于是
+// 后面几轮开始发散 —— 实测出现有的图发过五六次、有的只发过两次。
+// 现在是分层：永远只在发得最少的那一级里挑，所以每一轮都是一次完整的铺满。
+{
+  const ROUNDS = 3;
+  const picked = [];
+  let state = { recent: [], everSent: [], sentCounts: {} };
+  for (let i = 0; i < POOL * ROUNDS; i += 1) {
+    const file = pickWeighted(files, state, WINDOW, DECAY);
+    const name = file.split('/').pop();
+    picked.push(name);
+    // 复刻 rollRandomImage 的状态更新：命中就给这张加一，流水与去重集合同步。
+    const counts = { ...state.sentCounts };
+    counts[name] = (counts[name] || 0) + 1;
+    state = {
+      recent: [...state.recent.slice(-(WINDOW - 1)), { at: String(i), file }],
+      everSent: state.everSent.includes(file) ? state.everSent : [...state.everSent, file],
+      sentCounts: counts,
+    };
+  }
+  const perRound = [0, 1, 2].map((r) => picked.slice(r * POOL, (r + 1) * POOL));
+  const distinctPerRound = perRound.map((r) => new Set(r).size);
+  const totals = new Map();
+  for (const name of picked) totals.set(name, (totals.get(name) || 0) + 1);
+  const spread = [...totals.values()];
+  console.log('  多轮（池 ' + POOL + ' 张，连发 ' + (POOL * ROUNDS) + ' 次 = ' + ROUNDS + ' 轮）');
+  check(distinctPerRound.every((d) => d === POOL),
+    '每一轮内部零重复', '实际 ' + distinctPerRound.join('/') + ' 张');
+  check(spread.length === POOL, '池子里每张都被发到', '只发到 ' + spread.length + ' 张');
+  check(spread.every((value) => value === ROUNDS),
+    '三轮后每张恰好 ' + ROUNDS + ' 次', '实际 ' + Math.min(...spread) + '~' + Math.max(...spread) + ' 次');
+  console.log('');
+}
+
+// ── 5. 发过两次的区域里，第三轮仍然只补最少的 ──
+{
+  const sentCounts = {};
+  files.forEach((file, index) => {
+    const name = file.split('/').pop();
+    sentCounts[name] = index < POOL / 2 ? 2 : 1;
+  });
+  const previous = { recent: [], everSent: files, sentCounts };
+  const draws = new Set();
+  for (let i = 0; i < 5000; i += 1) draws.add(pickWeighted(files, previous, WINDOW, DECAY).split('/').pop());
+  const half = files.filter((_, index) => index < POOL / 2).map((f) => f.split('/').pop());
+  check([...draws].every((name) => !half.includes(name)),
+    '发过 2 次的那一半在补平之前不会出现', '出现了 ' + [...draws].filter((n) => half.includes(n)).length + ' 张');
+  console.log('');
+}
+
 if (failed) { console.log('失败 ' + failed + ' 项'); process.exit(1); }
 console.log('全部通过');
