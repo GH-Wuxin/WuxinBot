@@ -41,11 +41,17 @@ for (const tool of schemas) {
   assert.ok(!JSON.stringify(tool).includes('query_osu'), `${tool.function.name} schema does not name the hidden executor`);
 }
 
+const bestScore = schemas.find((tool) => tool.function.name === 'osu_get_best_score');
+assert.deepEqual(
+  Object.keys(bestScore.function.parameters.properties),
+  ['username', 'bp_rank'],
+  'single-BP tool exposes only bp_rank',
+);
 const bestScores = schemas.find((tool) => tool.function.name === 'osu_get_best_scores');
 assert.deepEqual(
   Object.keys(bestScores.function.parameters.properties),
-  ['username', 'bp_rank', 'bp_start', 'bp_end'],
-  'best-score tool exposes only relevant parameters',
+  ['username', 'bp_start', 'bp_end'],
+  'BP-range tool exposes only the range bounds',
 );
 
 const calculatePp = schemas.find((tool) => tool.function.name === 'osu_calculate_pp');
@@ -56,12 +62,10 @@ assert.deepEqual(
 );
 assert.deepEqual(calculatePp.function.parameters.required, ['beatmap_id'], 'pp tool requires beatmap id');
 
-const recent = schemas.find((tool) => tool.function.name === 'osu_get_recent_score');
-assert.deepEqual(
-  Object.keys(recent.function.parameters.properties),
-  ['username', 'bot'],
-  'recent tool alone exposes bot selector',
-);
+// recent / info / skill 三个工具已下线，工具面上不再出现。
+assert.ok(!schemas.some((tool) => tool.function.name === 'osu_get_recent_score'), 'recent tool removed');
+assert.ok(!schemas.some((tool) => tool.function.name === 'osu_get_player_card'), 'player card tool removed');
+assert.ok(!schemas.some((tool) => tool.function.name === 'osu_get_skill_radar'), 'skill radar tool removed');
 
 const original = {
   id: 'v2-call-1',
@@ -108,13 +112,13 @@ const chained = await runToolLoop(async (_db, options) => {
   modelRound += 1;
   const toolMessages = options.messages.filter((message) => message.role === 'tool');
   seenToolMessages.push(toolMessages.length);
-  assert.ok(options.tools?.some((tool) => tool.function.name === 'osu_get_recent_score'), 'V2 tools stay visible while planning');
+  assert.ok(options.tools?.some((tool) => tool.function.name === 'osu_get_best_score'), 'V2 tools stay visible while planning');
   if (modelRound === 1) {
     return {
       text: '', usage: {},
       raw: { choices: [{ message: { content: '', tool_calls: [{
         id: 'recent-1', type: 'function',
-        function: { name: 'osu_get_recent_score', arguments: '{}' },
+        function: { name: 'osu_get_best_score', arguments: '{}' },
       }] } }] },
     };
   }
@@ -125,7 +129,7 @@ const chained = await runToolLoop(async (_db, options) => {
       text: '', usage: {},
       raw: { choices: [{ message: { content: '', tool_calls: [{
         id: 'profile-1', type: 'function',
-        function: { name: 'osu_get_player_profile', arguments: '{}' },
+        function: { name: 'osu_get_player', arguments: '{}' },
       }] } }] },
     };
   }
@@ -167,14 +171,14 @@ assert.deepEqual(
     {
       version: 1,
       status: 'success',
-      tool: { name: 'osu_get_recent_score', capability: 'recent' },
+      tool: { name: 'osu_get_best_score', capability: 'bp' },
       imageCount: 1,
       imagesAttachedByHost: true,
     },
     {
       version: 1,
       status: 'success',
-      tool: { name: 'osu_get_player_profile', capability: 'profile' },
+      tool: { name: 'osu_get_player', capability: 'profile' },
       imageCount: 1,
       imagesAttachedByHost: true,
     },
@@ -183,7 +187,7 @@ assert.deepEqual(
 );
 assert.equal(
   seenEvidenceEnvelopes[0].evidence.text,
-  'osu_get_recent_score fixture result',
+  'osu_get_best_score fixture result',
   'the model receives sanitized evidence inside the envelope',
 );
 assert.match(chained.text, /最近成绩和玩家资料/, 'final synthesis is produced only after the model stops calling tools');
@@ -217,7 +221,7 @@ const recovered = await runToolLoop(async (_db, options) => {
       text: '', usage: {},
       raw: { choices: [{ message: { content: '', tool_calls: [{
         id: 'failed-recent', type: 'function',
-        function: { name: 'osu_get_recent_score', arguments: '{}' },
+        function: { name: 'osu_get_best_score', arguments: '{}' },
       }] } }] },
     };
   }
@@ -227,7 +231,7 @@ const recovered = await runToolLoop(async (_db, options) => {
       text: '', usage: {},
       raw: { choices: [{ message: { content: '', tool_calls: [{
         id: 'fallback-profile', type: 'function',
-        function: { name: 'osu_get_player_profile', arguments: '{}' },
+        function: { name: 'osu_get_player', arguments: '{}' },
       }] } }] },
     };
   }
@@ -243,15 +247,15 @@ const recovered = await runToolLoop(async (_db, options) => {
   maxIterations: 4,
   continueAfterDirectPayload: true,
   structuredToolResults: true,
-  executeToolCallFn: async (toolCall) => toolCall.function.name === 'osu_get_recent_score'
+  executeToolCallFn: async (toolCall) => toolCall.function.name === 'osu_get_best_score'
     ? { toolCallId: toolCall.id, ok: false, content: '', error: 'RECENT_UNAVAILABLE' }
     : { toolCallId: toolCall.id, ok: true, content: 'profile fallback evidence' },
 });
 assert.deepEqual(
   recoveryEnvelopes.map((envelope) => [envelope.status, envelope.tool.name, envelope.error]),
   [
-    ['error', 'osu_get_recent_score', 'RECENT_UNAVAILABLE'],
-    ['success', 'osu_get_player_profile', null],
+    ['error', 'osu_get_best_score', 'RECENT_UNAVAILABLE'],
+    ['success', 'osu_get_player', null],
   ],
   'a failed tool is explicit evidence and the model can choose a different tool',
 );
@@ -273,7 +277,7 @@ const deduplicated = await runToolLoop(async (_db, options) => {
       raw: { choices: [{ message: { content: '', tool_calls: [{
         id: `duplicate-${duplicateRound}`,
         type: 'function',
-        function: { name: 'osu_get_recent_score', arguments: JSON.stringify({ username: 'Alice' }) },
+        function: { name: 'osu_get_best_score', arguments: JSON.stringify({ username: 'Alice' }) },
       }] } }] },
     };
   }

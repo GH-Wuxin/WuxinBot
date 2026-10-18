@@ -86,11 +86,14 @@ function v2SchemaFragment(schema: Record<string, unknown>): Record<string, unkno
 }
 
 const CAPABILITY_TOOL_NAMES: Readonly<Record<CapabilityName, string>> = {
-  bp: 'osu_get_best_scores',
+  bp: 'osu_get_best_score',
+  bp_range: 'osu_get_best_scores',
   bp_type: 'osu_analyze_best_score_types',
+  // recent / info / skill 已下线：最近成绩与资料卡并进 osu_get_player，
+  // 技能雷达本来就和 pp_plus 是同一份数据。它们保留映射只为旧指令路径。
   recent: 'osu_get_recent_score',
   info: 'osu_get_player_card',
-  profile: 'osu_get_player_profile',
+  profile: 'osu_get_player',
   ppplus: 'osu_get_pp_plus',
   skill: 'osu_get_skill_radar',
   recommend: 'osu_recommend_beatmaps',

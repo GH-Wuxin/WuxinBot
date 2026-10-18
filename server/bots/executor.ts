@@ -2089,6 +2089,7 @@ export async function executeInternalBotCommand(
     }
 
     case 'bp':
+    case 'bp_range':
     case 'bplist': {
       const { getUserBestScores } = await import('../osu/api.js');
       const selection = bpSelection || resolveBpQuerySelection({});
@@ -2156,47 +2157,6 @@ export async function executeInternalBotCommand(
         })}${suffix}`);
       });
       const content = lines.join('\n');
-
-      if (getRenderServer().hasClients()) {
-        try {
-          if (rankedScores.length === 1) {
-            const { renderScoreCard } = await import('./render.js');
-            const enrichment = ssEnrichments?.[0] ?? null;
-            const rendered = await renderScoreCard(
-              scoreForRenderer(rankedScores[0].score),
-              user,
-              rankedScores[0].rank,
-              enrichment
-                ? {
-                    attributes: enrichment.attributes ?? null,
-                    density26: enrichment.density26 ?? null,
-                  }
-                : undefined,
-            );
-            if (rendered) {
-              return { content, images: [rendered.cqCode] };
-            }
-          } else {
-            // One panel for the whole range, like yumu-bot's BPService:
-            // !bs switches to the compact five-column layout at ≥10 scores.
-            const { renderBestScoresList } = await import('./render.js');
-            const rendered = await renderBestScoresList(
-              user,
-              rankedScores.map((entry) => scoreForRenderer(entry.score)),
-              buildBpListRenderOptions(
-                rankedScores.map((entry) => entry.rank),
-                bpSelection?.compact,
-              ),
-            );
-            if (rendered) {
-              return { content, images: [rendered.cqCode] };
-            }
-          }
-        } catch {
-          // Rendering is an enhancement. The complete deterministic BP text
-          // below remains available if yumu-image is offline or rejects data.
-        }
-      }
 
       return content;
     }

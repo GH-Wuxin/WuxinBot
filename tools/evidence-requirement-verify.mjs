@@ -16,7 +16,7 @@ const exposedTools = [
   {
     type: 'function',
     function: {
-      name: 'osu_get_best_scores',
+      name: 'osu_get_best_score',
       description: 'test',
       parameters: { type: 'object', properties: {} },
     },
@@ -24,7 +24,7 @@ const exposedTools = [
   {
     type: 'function',
     function: {
-      name: 'osu_get_recent_score',
+      name: 'osu_get_player',
       description: 'test',
       parameters: { type: 'object', properties: {} },
     },
@@ -151,7 +151,7 @@ await check('a matching model-selected V2 tool satisfies evidence without fallba
   const result = await runToolLoop(async () => {
     llmCalls += 1;
     if (llmCalls === 1) {
-      return completion('', [call('bp_1', 'osu_get_best_scores', {})]);
+      return completion('', [call('bp_1', 'osu_get_best_score', {})]);
     }
     return completion('BACKED_BY_MODEL');
   }, baseOptions({
@@ -174,7 +174,7 @@ await check('explicit target mismatch does not satisfy the requirement', async (
   const result = await runToolLoop(async (_db, options) => {
     llmCalls += 1;
     if (llmCalls === 1) {
-      return completion('', [call('wrong_target', 'osu_get_best_scores', { username: 'Beta' })]);
+      return completion('', [call('wrong_target', 'osu_get_best_score', { username: 'Beta' })]);
     }
     if (options.tools) return completion('FAKE_WRONG_TARGET');
     return completion('BACKED_CORRECT_TARGET');
@@ -197,7 +197,7 @@ await check('tool failures end explicitly instead of releasing hallucinated text
   let executorCalls = 0;
   const result = await runToolLoop(async () => {
     llmCalls += 1;
-    if (llmCalls === 1) return completion('', [call('failed_bp', 'osu_get_best_scores')]);
+    if (llmCalls === 1) return completion('', [call('failed_bp', 'osu_get_best_score')]);
     return completion('FAKE_AFTER_FAILURE');
   }, baseOptions({
     executeToolCallFn: async (toolCall) => {
@@ -262,8 +262,9 @@ await check('exhausted shared budget refuses fallback and never calls the execut
 await check('100-call malicious batch stays capped and still uses one bounded evidence fallback', async () => {
   let llmCalls = 0;
   let executorCalls = 0;
+  // 恶意批次用不会满足 bp 证据的工具，确保兜底调用必然发生。
   const spam = Array.from({ length: 100 }, (_, index) =>
-    call(`spam_${index}`, 'osu_get_recent_score', { nonce: index }));
+    call(`spam_${index}`, 'osu_get_player', { nonce: index }));
   const result = await runToolLoop(async (_db, options) => {
     llmCalls += 1;
     if (llmCalls === 1) return completion('', spam);
@@ -289,7 +290,7 @@ await check('two full malicious rounds consume the turn budget and cannot bypass
   const result = await runToolLoop(async () => {
     round += 1;
     return completion('', Array.from({ length: 4 }, (_, index) =>
-      call(`round_${round}_${index}`, 'osu_get_recent_score', { nonce: `${round}_${index}` })));
+      call(`round_${round}_${index}`, 'osu_get_player', { nonce: `${round}_${index}` })));
   }, baseOptions({
     maxIterations: 2,
     executeToolCallFn: async (toolCall) => {
@@ -313,16 +314,16 @@ await check('deterministic adversarial campaign preserves the invariant for 300 
     const result = await runToolLoop(async (_db, options) => {
       llmCalls += 1;
       if (mode === 1 && llmCalls === 1) {
-        return completion('', [call(`ok_${seed}`, 'osu_get_best_scores')]);
+        return completion('', [call(`ok_${seed}`, 'osu_get_best_score')]);
       }
       if (mode === 1 && options.messages.some((message) => message.role === 'tool')) {
         return completion(`BACKED_BY_MODEL_${seed}`);
       }
       if (mode === 2 && llmCalls === 1) {
-        return completion('', [call(`other_${seed}`, 'osu_get_recent_score')]);
+        return completion('', [call(`other_${seed}`, 'osu_get_player')]);
       }
       if (mode === 4 && llmCalls === 1) {
-        return completion('', [call(`wrong_${seed}`, 'osu_get_best_scores', { username: 'WrongTarget' })]);
+        return completion('', [call(`wrong_${seed}`, 'osu_get_best_score', { username: 'WrongTarget' })]);
       }
       return options.tools ? completion(`FAKE_${seed}`) : completion(`BACKED_${seed}`);
     }, baseOptions({

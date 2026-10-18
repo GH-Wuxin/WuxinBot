@@ -69,7 +69,7 @@ const server = http.createServer((req, res) => {
           tool_calls: [{
             id: 'profile-call',
             type: 'function',
-            function: { name: 'osu_get_player_profile', arguments: '{}' },
+            function: { name: 'osu_get_player', arguments: '{}' },
           }],
         };
       } else if (toolResults.length === 1) {
@@ -79,7 +79,7 @@ const server = http.createServer((req, res) => {
           tool_calls: [{
             id: 'profile-call-2',
             type: 'function',
-            function: { name: 'osu_get_player_profile', arguments: JSON.stringify({ username: 'AgentFixture' }) },
+            function: { name: 'osu_get_player', arguments: JSON.stringify({ username: 'AgentFixture' }) },
           }],
         };
       } else {
@@ -153,7 +153,7 @@ try {
   if (!result.replied) throw new Error(`processIncoming did not reply: ${JSON.stringify(result)}`);
   if (llmCalls !== 3) throw new Error(`expected three model decisions, got ${llmCalls}`);
   for (const inventory of requestToolInventories) {
-    if (!inventory.includes('osu_get_player_profile') || inventory.includes('get_player_skill')) {
+    if (!inventory.includes('osu_get_player') || inventory.includes('get_player_skill')) {
       throw new Error(`V2 precise tools missing from model inventory: ${JSON.stringify(inventory)}`);
     }
     if (inventory.includes('query_osu')) throw new Error('hidden query_osu mega-tool leaked to the model');
@@ -168,7 +168,7 @@ try {
   if (
     profileEnvelope.schemaVersion !== 1 ||
     profileEnvelope.status !== 'success' ||
-    profileEnvelope.tool?.name !== 'osu_get_player_profile' ||
+    profileEnvelope.tool?.name !== 'osu_get_player' ||
     profileEnvelope.tool?.capability !== 'profile' ||
     !String(profileEnvelope.evidence?.text || '').includes('AgentFixture')
   ) {
@@ -177,7 +177,7 @@ try {
   if (
     secondProfileEnvelope.schemaVersion !== 1 ||
     secondProfileEnvelope.status !== 'success' ||
-    secondProfileEnvelope.tool?.name !== 'osu_get_player_profile' ||
+    secondProfileEnvelope.tool?.name !== 'osu_get_player' ||
     secondProfileEnvelope.tool?.capability !== 'profile' ||
     !String(secondProfileEnvelope.evidence?.text || '').includes('AgentFixture')
   ) {
@@ -197,7 +197,7 @@ try {
   if (plannerEvents.map((event) => event.data?.decision).join(',') !== 'call_tools,call_tools,finish') {
     throw new Error(`planner decision trace is incomplete: ${JSON.stringify(plannerEvents)}`);
   }
-  if (evidenceEvents.map((event) => event.data?.toolName).join(',') !== 'osu_get_player_profile,osu_get_player_profile') {
+  if (evidenceEvents.map((event) => event.data?.toolName).join(',') !== 'osu_get_player,osu_get_player') {
     throw new Error(`evidence-return trace is incomplete: ${JSON.stringify(evidenceEvents)}`);
   }
   const eventNames = requestTrace.events.map((event) => event.name);
