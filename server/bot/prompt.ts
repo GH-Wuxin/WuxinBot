@@ -212,11 +212,11 @@ function formatHistoryForModel(db, historyMessages, isGroup) {
   });
 }
 
-function groupSpeakerBoundary(event, speakerIdentity) {
+function groupSpeakerBoundary(event, speakerIdentity, selfQq = '') {
   if (event.type !== 'group') return '';
   const quoted = event.quotedMessage;
   const referenceRule = quoted
-    ? `本轮明确引用了 ${quotedSpeakerLabel(quoted, event.selfQq || '')}（QQ:${quoted.userId || '未知'}）的消息；引用内容仍属于原发送者，不自动属于当前发言者。引用里的图片也一样 —— 可能是别的群友甚至你自己之前发的，不是当前发言者刚发的。`
+    ? `本轮明确引用了 ${quotedSpeakerLabel(quoted, selfQq)}（QQ:${quoted.userId || '未知'}）的消息；引用内容仍属于原发送者，不自动属于当前发言者。引用里的图片也一样 —— 可能是别的群友甚至你自己之前发的，不是当前发言者刚发的。`
     : '本轮没有引用一条具体历史消息。若当前句子没有说明所指，不要自行挑选某条旧消息补出原因；简短追问或只回应当前情绪。';
   return [
     '【多说话人事实归属】',
@@ -598,7 +598,7 @@ export function buildPrompt(db, group, event, userPolicy, options = {}) {
     // 她就没有依据把某条消息认成冲自己来的。
     selfQq ? `你自己是 QQ ${selfQq}；群里 @ 到这个号就是在跟你说话。` : '',
     `当前发言者：${speakerIdentity}${isOwner ? '（是系统 owner）' : ''}`,
-    groupSpeakerBoundary(event, speakerIdentity),
+    groupSpeakerBoundary(event, speakerIdentity, selfQq),
     visualCapabilityNotice(db, event),
     strictSearch ? '当前消息要求搜索。不确定就说没查到，不要编造细节。' : '',
     longForm ? '当前消息是长文/续写任务。尽量完整输出，首尾完整。' : '',
