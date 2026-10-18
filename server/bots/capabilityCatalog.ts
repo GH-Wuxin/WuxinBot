@@ -51,7 +51,7 @@ export interface CapabilityDescriptor {
 export const CAPABILITY_CATALOG: readonly CapabilityDescriptor[] = [
   {
     name: 'bp',
-    description: 'BP 单张成绩（#N；返回谱面名、BID、mods、acc、pp、rank，纯文本）',
+    description: '玩家第 N 张 BP 的完整成绩：谱面名、BID、mods、acc、combo、pp、名次。用户问“我的 BP3 多少 pp / 是什么图 / 什么 mod”时用；一次只查一张。要多张用 osu_get_best_scores，要看类型分布用 osu_analyze_best_score_types。',
     callable: true,
     sideEffects: 'readonly',
     rollout: 'all',
@@ -59,7 +59,7 @@ export const CAPABILITY_CATALOG: readonly CapabilityDescriptor[] = [
   },
   {
     name: 'bp_range',
-    description: 'BP 区间成绩（N-M，最多 100 张；每张返回名次、谱面名、BID、mods、acc、pp，纯文本）',
+    description: '玩家 BP 区间成绩（N-M，最多 100 张）：每张返回名次、谱面名、BID、mods、acc、pp。用户要“BP1-BP10 / 前 50 张 / 最近十张 BP”时用；只想看其中某一张的细节再用 osu_get_best_score。',
     callable: true,
     sideEffects: 'readonly',
     rollout: 'all',
@@ -91,7 +91,7 @@ export const CAPABILITY_CATALOG: readonly CapabilityDescriptor[] = [
   },
   {
     name: 'profile',
-    description: '玩家资料（PP、全球排名、准确率、游玩次数、时长、常用 mods；纯文本）',
+    description: '玩家账号资料：PP、全球/国家排名、准确率、游玩次数、总时长、常用 mods。问“这人什么水平 / 多少 pp / 排名多少”时用；不含 BP 明细，也不含技能画像（技能用 osu_player_skill）。',
     callable: true,
     sideEffects: 'readonly',
     rollout: 'all',
@@ -99,7 +99,7 @@ export const CAPABILITY_CATALOG: readonly CapabilityDescriptor[] = [
   },
   {
     name: 'ppplus',
-    description: 'PP+ 维度分析（15 = 基准线，返回各维度数值；技能雷达与它是同一份数据）',
+    description: 'PP+ 维度分析：各维度相对基准线 15 的数值。问“他偏什么类型 / 哪项强”时用；这是 PP+ 口径，BP50 加权的技能画像用 osu_player_skill，两者不能混着说。',
     callable: true,
     sideEffects: 'readonly',
     rollout: 'all',
@@ -249,7 +249,7 @@ export const CAPABILITY_CATALOG: readonly CapabilityDescriptor[] = [
   },
   {
     name: 'leaderboard',
-    description: '谱面全球榜单（玩家问“榜一多少/前几是谁”时调用；beatmap_id 必填，可选 mods/limit(1-50)）',
+    description: '谱面全球榜单：榜前玩家、acc、分数、mods。用户问“榜一多少 / 前几是谁”时用；beatmap_id 必填，可选 mods 和 limit(1-50)。它不返回国内榜，也不能替代玩家自己的成绩。',
     callable: true,
     sideEffects: 'readonly',
     rollout: 'all',
