@@ -10,6 +10,7 @@ import { connectOneBot, getOneBotStatus, handleOneBotEvent, sendOneBotMessage, s
 import { processIncoming } from './bot.js';
 import { runSandboxPreview } from './sandboxPreview.js';
 import { getReplyQueueStats } from './bot/queue.js';
+import { abortReplyProcess, listReplyProcesses } from './bot/replyProcesses.js';
 import { getHealth, getRecalcProgress, startRecalc, tickRecalc, stopRecalc, finishRecalc, setBotPaused } from './health.js';
 import { getBackgroundTaskStats, runBackgroundTask, waitForBackgroundTasks } from './backgroundTasks.js';
 import { getInboundAdmissionStats, stopInboundAdmission, waitForInboundTasks } from './bot/inboundGate.js';
@@ -1411,6 +1412,17 @@ app.post('/api/clear-context', (_req, res) => {
 });
 
 // Health
+// 正在进行的回复进程：控制台据此列出"她正在给谁回"，并可以掐断其中一轮。
+app.get('/api/reply-processes', (_req, res) => {
+  res.json(ok({ processes: listReplyProcesses() }));
+});
+
+app.post('/api/reply-processes/:id/abort', (req, res) => {
+  const result = abortReplyProcess(String(req.params.id || ''));
+  if (!result.ok) return res.status(404).json({ ok: false, error: result.reason });
+  res.json(ok({ id: result.id }));
+});
+
 app.get('/api/health', (_req, res) => {
   const health: any = getHealth();
   health.replyQueues = getReplyQueueStats();

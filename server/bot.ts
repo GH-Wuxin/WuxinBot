@@ -75,6 +75,7 @@ import { recordMemoryObservation, maybeUpdateMemoryProfile, maybeRecordImageMemo
 import { getGroupProfile, updateGroupProfile, clearGroupProfile, incrementGroupProfilePending, hasGroupProfileContent } from './bot/groupProfile.js';
 import { getRelationshipProfile, updateRelationshipProfile, clearRelationshipProfile, incrementPairPending } from './bot/relationshipProfile.js';
 import { processTrustSignal, evaluateTrustScores, trustInteractionBonus, isTrustedMember } from './bot/trust.js';
+import { abortReplyProcess, isReplyProcessAborted, runReplyProcess, updateReplyProcessStage } from './bot/replyProcesses.js';
 import { processXpGain, getExperience, getXpBonus, formatXpBar, getUnlockedFeatures, getLevelInfo, getNextLevelInfo, levelToPp, decayInactiveUsers } from './bot/experience.js';
 import {
   SEARCH_TOOL_NAME,
@@ -506,10 +507,24 @@ export async function processIncomingAdmitted(event, sendMessage = undefined, qu
       replayedFromQueue: Boolean(isFromDrain),
     });
     markActiveProcessing(1);
+    // 控制台要能看见并掐断正在跑的这一轮。发送统一走 guardedSend：
+    // 被掐断后正文、贴纸、失败提示一个都不发，流程照常走完并正常记账。
+    const guardedSend = typeof sendMessage === 'function'
+      ? (sendEvent, sendText, sendOptions) => {
+          if (isReplyProcessAborted()) {
+            traceEvent('REPLY', 'reply_aborted', { groupId: sendEvent?.groupId, userId: sendEvent?.userId });
+            return Promise.resolve(undefined);
+          }
+          return sendMessage(sendEvent, sendText, sendOptions);
+        }
+      : undefined;
     try {
-      const result = await withLlmTurnPolicy(
-        () => processIncomingInner(event, sendMessage, queuedDecision, isFromDrain, queueOwner),
-        llmTurnLimitsForEvent(event),
+      const result = await runReplyProcess(
+        { groupId: event?.groupId, userId: event?.userId, nickname: event?.nickname, messageId: event?.messageId },
+        () => withLlmTurnPolicy(
+          () => processIncomingInner(event, guardedSend, queuedDecision, isFromDrain, queueOwner),
+          llmTurnLimitsForEvent(event),
+        ),
       );
       finishRequestTrace(result?.error ? 'failed' : 'completed', {
         replied: Boolean(result?.replied),
@@ -1197,6 +1212,7 @@ let waitUpTimer = null;
       let toolLoopModel = '';
       let toolLoopProvider = '';
       const harnessChat = async (db: any, opts: any) => {
+        updateReplyProcessStage('生成中');
         const result = await completeChat(db, {
           ...opts,
           searchMode,

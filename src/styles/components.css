@@ -776,3 +776,13 @@
   .backup-row { display: flex; }
   .backup-row .console-actions, .backup-row .console-actions .ui-button { width: 100%; }
 }
+
+.reply-processes { margin: 12px 0; }
+.reply-processes__head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
+.reply-processes__head h2 { margin: 0; font-size: 15px; }
+.reply-processes__list { list-style: none; margin: 10px 0 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.reply-processes__row { display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr) auto; align-items: center; gap: 12px; padding: 8px 10px; border: 1px solid var(--line, #332b47); border-radius: 10px; }
+.reply-processes__who { display: flex; flex-direction: column; min-width: 0; }
+.reply-processes__who strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.reply-processes__stage { font-size: 13px; }
+
