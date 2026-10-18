@@ -153,14 +153,16 @@ export function findCommand(bot: BotDefinition, commandName: string): BotCommand
 
 export function buildBotToolSchemas(
   registry: BotRegistry,
-  options: { surface?: AgentToolSurface } = {},
+  options: { surface?: AgentToolSurface; phase?: 'text' | 'image' } = {},
 ): LlmTool[] {
   const hasInternal = enabledBots(registry).some((b) => b.channel === 'internal');
   const tools: LlmTool[] = [];
 
   if (hasInternal) {
     if (options.surface === 'v2') {
-      tools.push(...buildV2OsuAgentToolSchemas());
+      // phase=image 只暴露第二层的发图工具；第一层看不到它们。
+      tools.push(...buildV2OsuAgentToolSchemas({ phase: options.phase === 'image' ? 'image' : 'text' }));
+      if (options.phase === 'image') return tools;
     } else {
       tools.push({
         type: 'function',

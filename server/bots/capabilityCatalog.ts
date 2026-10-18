@@ -35,6 +35,11 @@ export interface CapabilityDescriptor {
   /** Capability family used for guard applicability rules. */
   family: 'player' | 'beatmap';
   /**
+   * 工具面阶段：text = 第一层（取数与分析，纯文本）；image = 第二层（发图）。
+   * 缺省按 text 处理，图片能力只会在第一阶段跑完之后才暴露。
+   */
+  phase?: 'text' | 'image';
+  /**
    * True only for capabilities that are real user-facing features available
    * solely through a command (e.g. match watching). Capabilities that were
    * simply retired from the tool surface are NOT command-only and must not be
@@ -172,6 +177,69 @@ export const CAPABILITY_CATALOG: readonly CapabilityDescriptor[] = [
     family: 'player',
   },
   {
+    name: 'score_image',
+    description: '把成绩画成卡片发给用户（第二层，只在取数完成后可用）。source=bp 画单张 BP；bp_range 画区间长图；recent_play 画最近一次游玩；recent_pass 画最近一次通过；beatmap_score 画某张谱面的成绩。什么时候用：用户想看图，或一张成绩卡比文字更有说服力。什么时候别用：这轮没查过对应数据、只是聊数据、用户没要图。返回一张图 + 一句摘要，图会直接进回复。',
+    callable: true,
+    sideEffects: 'readonly',
+    rollout: 'all',
+    family: 'player',
+    phase: 'image',
+  },
+  {
+    name: 'player_card_image',
+    description: '把玩家资料画成卡片（第二层）。什么时候用：用户说“来张资料卡/看看我的卡片”。什么时候别用：只想看数字，或这轮没查过资料。返回一张图 + 摘要。',
+    callable: true,
+    sideEffects: 'readonly',
+    rollout: 'all',
+    family: 'player',
+    phase: 'image',
+  },
+  {
+    name: 'beatmap_card_image',
+    description: '把谱面信息画成卡片（第二层）。需要 beatmap_id。什么时候用：用户想看这张图长什么样。什么时候别用：只问星数/长度，文字已经够了。返回一张图 + 摘要。',
+    callable: true,
+    sideEffects: 'readonly',
+    rollout: 'all',
+    family: 'beatmap',
+    phase: 'image',
+  },
+  {
+    name: 'beatmap_skill_image',
+    description: '把谱面九维技能分析画成卡片（第二层）。依赖第一层的 osu_beatmap_skill；没有可用缓存时会现算一次。什么时候用：用户想看技能雷达图。什么时候别用：只想知道数值。返回一张图 + 摘要。',
+    callable: true,
+    sideEffects: 'readonly',
+    rollout: 'all',
+    family: 'beatmap',
+    phase: 'image',
+  },
+  {
+    name: 'player_skill_image',
+    description: '把玩家 BP50 技能画像画成卡片（第二层）。依赖第一层的 osu_player_skill。什么时候用：用户想看技能画像图。什么时候别用：只想读结论。返回一张图 + 摘要。',
+    callable: true,
+    sideEffects: 'readonly',
+    rollout: 'all',
+    family: 'player',
+    phase: 'image',
+  },
+  {
+    name: 'skill_compare_image',
+    description: '把两人技能对比画成卡片（第二层）。需要 left/right，依赖第一层的 osu_compare_skill。什么时候用：用户想看对比图。什么时候别用：只想读结论。返回一张图 + 摘要。',
+    callable: true,
+    sideEffects: 'readonly',
+    rollout: 'all',
+    family: 'player',
+    phase: 'image',
+  },
+  {
+    name: 'recent_skill_image',
+    description: '把近期表现画成卡片（第二层）。依赖第一层的 osu_recent_skill。什么时候用：用户想看近期状态图。什么时候别用：只想读数值。返回一张图 + 摘要。',
+    callable: true,
+    sideEffects: 'readonly',
+    rollout: 'all',
+    family: 'player',
+    phase: 'image',
+  },
+  {
     name: 'compare_skill',
     description: '两个玩家的 BP50 技能对比：逐维差值 + 明显强弱项。用户问“A 和 B 谁强/对比一下”时调用；需要两个不同玩家。单个玩家的画像用 player_skill。',
     callable: true,
@@ -220,9 +288,14 @@ export function normalizeCapabilityName(name: string): string {
   return ALIAS_TO_CAPABILITY.get(name)?.name || name;
 }
 
-/** Canonical names in catalog order. This is the exact LLM enum order. */
-export function callableCapabilityNames(): CapabilityName[] {
-  return CAPABILITY_CATALOG.filter((capability) => capability.callable).map((capability) => capability.name);
+/**
+ * Canonical names in catalog order. This is the exact LLM enum order.
+ * phase 默认 text：第二层（发图）能力不会混进第一层的工具面。
+ */
+export function callableCapabilityNames(phase: 'text' | 'image' = 'text'): CapabilityName[] {
+  return CAPABILITY_CATALOG
+    .filter((capability) => capability.callable && (capability.phase === 'image') === (phase === 'image'))
+    .map((capability) => capability.name);
 }
 
 export function capabilityNames(): CapabilityName[] {
@@ -280,8 +353,10 @@ export const QUERY_OSU_PARAMS: readonly CapabilityParamSpec[] = [
     schemaDescription: 'osu! 用户名。不填则用提问玩家的绑定账号。',
     exposed: true,
     maxLength: 128,
-    // compare_skill 用 left/right 指定玩家，不接受 username；beatmap_skill 允许按玩家 BP 名次定位。
-    allowedFor: [...PLAYER_CAPABILITY_NAMES].filter((name) => name !== 'compare_skill').concat(['beatmap_skill']) as readonly CapabilityName[],
+    // compare_skill / skill_compare_image 用 left/right 指定玩家；beatmap_skill 允许按玩家 BP 名次定位。
+    allowedFor: [...PLAYER_CAPABILITY_NAMES]
+      .filter((name) => name !== 'compare_skill' && name !== 'skill_compare_image')
+      .concat(['beatmap_skill']) as readonly CapabilityName[],
   },
   {
     name: 'bot',
@@ -298,25 +373,25 @@ export const QUERY_OSU_PARAMS: readonly CapabilityParamSpec[] = [
     exposed: true,
     minimum: 1,
     maximum: 100,
-    allowedFor: ['bp', 'beatmap_skill'] as readonly CapabilityName[],
+    allowedFor: ['bp', 'beatmap_skill', 'score_image'] as readonly CapabilityName[],
   },
   {
     name: 'bp_start',
     schemaType: 'integer',
-    schemaDescription: 'BP 范围起始（含），与 bp_end 同时填，最多 100 张。仅 capability=bp_range 使用。',
+    schemaDescription: 'BP 范围起始（含），与 bp_end 同时填，最多 100 张。仅 capability=bp_range / score_image 使用。',
     exposed: true,
     minimum: 1,
     maximum: 100,
-    allowedFor: ['bp_range'] as readonly CapabilityName[],
+    allowedFor: ['bp_range', 'score_image'] as readonly CapabilityName[],
   },
   {
     name: 'bp_end',
     schemaType: 'integer',
-    schemaDescription: 'BP 范围结束（含）。仅 capability=bp_range 使用。',
+    schemaDescription: 'BP 范围结束（含）。仅 capability=bp_range / score_image 使用。',
     exposed: true,
     minimum: 1,
     maximum: 100,
-    allowedFor: ['bp_range'] as readonly CapabilityName[],
+    allowedFor: ['bp_range', 'score_image'] as readonly CapabilityName[],
   },
   {
     name: 'beatmap_id',
@@ -324,8 +399,8 @@ export const QUERY_OSU_PARAMS: readonly CapabilityParamSpec[] = [
     schemaDescription: '谱面 ID（beatmap_lookup / pp_calc / leaderboard 必填）。',
     exposed: true,
     minimum: 1,
-    allowedFor: [...BEATMAP_CAPABILITY_NAMES] as readonly CapabilityName[],
-    requiredFor: ['beatmap_lookup', 'pp_calc', 'leaderboard'] as readonly CapabilityName[],
+    allowedFor: [...BEATMAP_CAPABILITY_NAMES, 'score_image'] as readonly CapabilityName[],
+    requiredFor: ['beatmap_lookup', 'pp_calc', 'leaderboard', 'beatmap_card_image', 'beatmap_skill_image'] as readonly CapabilityName[],
     missingMessage: '需要有效的 beatmap_id',
   },
   {
@@ -335,7 +410,7 @@ export const QUERY_OSU_PARAMS: readonly CapabilityParamSpec[] = [
     exposed: true,
     maxLength: 16,
     pattern: '^([A-Za-z]{2})*$',
-    allowedFor: [...BEATMAP_CAPABILITY_NAMES] as readonly CapabilityName[],
+    allowedFor: [...BEATMAP_CAPABILITY_NAMES, 'score_image'] as readonly CapabilityName[],
   },
   {
     name: 'accuracy',
@@ -364,14 +439,24 @@ export const QUERY_OSU_PARAMS: readonly CapabilityParamSpec[] = [
     allowedFor: [PP_CALC_CAPABILITY],
   },
   {
+    name: 'source',
+    schemaType: 'string',
+    schemaDescription: '要画哪一种成绩：bp（单张 BP）、bp_range（BP 区间）、recent_play（最近游玩）、recent_pass（最近通过）、beatmap_score（某谱面成绩）。仅 score_image 使用。',
+    exposed: true,
+    schemaEnum: ['bp', 'bp_range', 'recent_play', 'recent_pass', 'beatmap_score'],
+    allowedFor: ['score_image'] as readonly CapabilityName[],
+    requiredFor: ['score_image'] as readonly CapabilityName[],
+    missingMessage: 'score_image 需要 source',
+  },
+  {
     name: 'left',
     schemaType: 'string',
     schemaDescription: '对比的左方玩家（compare_skill 必填，osu! 用户名）。',
     exposed: true,
     maxLength: 128,
-    allowedFor: ['compare_skill'] as readonly CapabilityName[],
-    requiredFor: ['compare_skill'] as readonly CapabilityName[],
-    missingMessage: 'compare_skill 需要 left 玩家名',
+    allowedFor: ['compare_skill', 'skill_compare_image'] as readonly CapabilityName[],
+    requiredFor: ['compare_skill', 'skill_compare_image'] as readonly CapabilityName[],
+    missingMessage: '对比需要 left 玩家名',
   },
   {
     name: 'right',
@@ -379,9 +464,9 @@ export const QUERY_OSU_PARAMS: readonly CapabilityParamSpec[] = [
     schemaDescription: '对比的右方玩家（compare_skill 必填，osu! 用户名）。',
     exposed: true,
     maxLength: 128,
-    allowedFor: ['compare_skill'] as readonly CapabilityName[],
-    requiredFor: ['compare_skill'] as readonly CapabilityName[],
-    missingMessage: 'compare_skill 需要 right 玩家名',
+    allowedFor: ['compare_skill', 'skill_compare_image'] as readonly CapabilityName[],
+    requiredFor: ['compare_skill', 'skill_compare_image'] as readonly CapabilityName[],
+    missingMessage: '对比需要 right 玩家名',
   },
   {
     name: 'limit',

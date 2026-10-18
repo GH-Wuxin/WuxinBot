@@ -1021,6 +1021,10 @@ let waitUpTimer = null;
     // Clear osu! data intents keep their deterministic domain tool. Other
     // conversational turns receive search_web and let the LLM decide whether,
     // what and how to search.
+    // 第二层：发图工具。只在 V2 运行时提供，第一层整批结束后由执行器切换。
+    const imageTools = modelFirstRuntime && hasEnabledBots
+      ? buildBotToolSchemas(registryForTurn, { surface: 'v2', phase: 'image' })
+      : [];
     const searchToolEnabled = isSearchAvailable(liveDb) && (modelFirstRuntime || !osuDataIntent);
     const toolsForTurn = [
       ...botTools,
@@ -1225,6 +1229,7 @@ let waitUpTimer = null;
         db: liveDb,
         messages,
         tools,
+        imageTools,
         userId: event.userId,
         groupId: event.groupId,
         sendMessage,

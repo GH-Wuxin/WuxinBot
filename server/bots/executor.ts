@@ -2068,6 +2068,162 @@ export async function executeInternalBotCommand(
       return await runSkillCompareText(leftUser.id, rightUser.id);
     }
 
+    case 'score_image': {
+      const toolArgs = (context.toolArgs || {}) as Record<string, any>;
+      const source = String(toolArgs.source || 'bp');
+      const bridgeScore = async (commands: string[]) => {
+        const { hasLocalEndpoint, callLocalBot } = await import('./localBridge.js');
+        if (!hasLocalEndpoint('kanon')) return null;
+        for (const command of commands) {
+          try {
+            const reply = await callLocalBot('kanon', command, {
+              groupId: context.groupId || '770099',
+              userId: String(userId),
+              nickname: 'WuxinBridge',
+              atTargets: [],
+            }, 60_000);
+            if (reply && Array.isArray(reply.images) && reply.images.length > 0) return reply;
+          } catch { /* try next spelling */ }
+        }
+        return null;
+      };
+
+      if (source === 'recent_play' || source === 'recent_pass' || source === 'beatmap_score') {
+        const beatmapId = Number(toolArgs.beatmap_id || context.beatmapId || 0);
+        if (source === 'beatmap_score' && !beatmapId) throw new Error('画某谱面成绩需要 beatmap_id');
+        const commands = source === 'beatmap_score'
+          ? [`!score ${user.username} ${beatmapId}`, `!s ${user.username} ${beatmapId}`]
+          : source === 'recent_pass'
+            ? [`!pr ${user.username}`, `!re ${user.username}`]
+            : [`!r ${user.username}`, `!re ${user.username}`];
+        const bridged = await bridgeScore(commands);
+        if (bridged) {
+          return {
+            content: `已出图：${user.username} 的${source === 'beatmap_score' ? '谱面成绩' : source === 'recent_pass' ? '最近通过' : '最近游玩'}卡片`,
+            images: bridged.images,
+          };
+        }
+        // 降级：内部渲染最近一次成绩卡
+        const { getUserRecentScores } = await import('../osu/api.js');
+        const { renderScoreCard } = await import('./render.js');
+        const scores = await getUserRecentScores(user.id, 'osu', 1);
+        if (!Array.isArray(scores) || scores.length === 0) {
+          return { content: `${user.username} 最近没有可画的成绩。`, images: [] };
+        }
+        const [score] = (await enrichScoreStarRatings(scores, 'osu')).scores;
+        const rendered = await renderScoreCard(scoreForRenderer(score), user, null);
+        if (!rendered) return { content: '成绩图没画出来（渲染服务未连接）。', images: [] };
+        return { content: `已出图：${user.username} 的最近成绩卡（kanon 不可用，用内部渲染）`, images: [rendered.cqCode] };
+      }
+
+      if (source === 'bp_range') {
+        const { getUserBestScores } = await import('../osu/api.js');
+        const { renderBestScoresList } = await import('./render.js');
+        const start = Math.max(1, Number(toolArgs.bp_start || 1));
+        const end = Math.max(start, Number(toolArgs.bp_end || 10));
+        const raw = await getUserBestScores(user.id, 'osu', end);
+        const picked = (Array.isArray(raw) ? raw : []).slice(start - 1, end);
+        if (!picked.length) return { content: `${user.username} 没有 BP${start}-${end} 的成绩。`, images: [] };
+        const enriched = (await enrichScoreStarRatings(picked, 'osu')).scores;
+        const rendered = await renderBestScoresList(
+          user,
+          enriched,
+          buildBpListRenderOptions(enriched.map((_, index) => start + index), Boolean(toolArgs.compact)),
+        );
+        if (!rendered) return { content: 'BP 列表图没画出来（渲染服务未连接）。', images: [] };
+        return { content: `已出图：${user.username} 的 BP${start}-${end} 列表`, images: [rendered.cqCode] };
+      }
+
+      const { getUserBestScores } = await import('../osu/api.js');
+      const { renderScoreCard } = await import('./render.js');
+      const rank = Math.max(1, Number(toolArgs.bp_rank || 1));
+      const raw = await getUserBestScores(user.id, 'osu', rank);
+      const picked = Array.isArray(raw) ? raw[rank - 1] : null;
+      if (!picked) return { content: `${user.username} 没有 BP${rank} 的成绩。`, images: [] };
+      const [score] = (await enrichScoreStarRatings([picked], 'osu')).scores;
+      const rendered = await renderScoreCard(scoreForRenderer(score), user, rank);
+      if (!rendered) return { content: '成绩卡没画出来（渲染服务未连接）。', images: [] };
+      return { content: `已出图：${user.username} 的 BP${rank} 成绩卡`, images: [rendered.cqCode] };
+    }
+
+    case 'player_card_image': {
+      const { renderPlayerInfo, renderCompactInfoCard } = await import('./render.js');
+      const recent = await (async () => {
+        try { const { getUserRecentScores } = await import('../osu/api.js'); return await getUserRecentScores(user.id, 'osu', 5); } catch { return []; }
+      })();
+      const rendered = (await renderPlayerInfo(user, Array.isArray(recent) ? recent : [])) || (await renderCompactInfoCard(user));
+      if (!rendered) return { content: '资料卡没画出来（渲染服务未连接）。', images: [] };
+      return { content: `已出图：${user.username} 的资料卡`, images: [rendered.cqCode] };
+    }
+
+    case 'beatmap_card_image': {
+      const toolArgs = (context.toolArgs || {}) as Record<string, any>;
+      const beatmapId = Number(toolArgs.beatmap_id || context.beatmapId || 0);
+      if (!beatmapId) throw new Error('画谱面卡需要 beatmap_id');
+      const { getBeatmap } = await import('../osu/api.js');
+      const { renderBeatmapCard } = await import('./render.js');
+      const beatmap = await getBeatmap(beatmapId);
+      const covers: any = beatmap?.beatmapset?.covers || {};
+      const coverUrl = String(covers.cover || covers.list || '');
+      const rendered = await renderBeatmapCard({ coverUrl });
+      if (!rendered) return { content: '谱面卡没画出来（渲染服务未连接，或该谱面没有封面）。', images: [] };
+      return { content: `已出图：BID ${beatmapId} 的谱面卡`, images: [rendered.cqCode] };
+    }
+
+    case 'beatmap_skill_image': {
+      const toolArgs = (context.toolArgs || {}) as Record<string, any>;
+      const { requestSkillProfilerAnalysisWithFetch } = await import('./skillProfiler.js');
+      const { renderSkillProfilerCard } = await import('./skillProfilerCard.js');
+      const beatmapId = Number(toolArgs.beatmap_id || context.beatmapId || 0);
+      if (!beatmapId) throw new Error('画技能卡需要 beatmap_id');
+      const mods = Array.isArray(toolArgs.mods) ? toolArgs.mods : (typeof toolArgs.mods === 'string' ? [toolArgs.mods] : []);
+      const analysis = await requestSkillProfilerAnalysisWithFetch(beatmapId, mods.map((mod: string) => String(mod).toUpperCase()));
+      const rendered = await renderSkillProfilerCard(analysis);
+      if (!rendered) return { content: '技能卡没画出来（渲染服务未连接）。', images: [] };
+      return { content: `已出图：BID ${beatmapId} 的九维技能卡`, images: [rendered.cqCode] };
+    }
+
+    case 'player_skill_image': {
+      const { renderPlayerSkillProfile } = await import('./playerSkillProfile.js');
+      const rendered = await renderPlayerSkillProfile(user.id);
+      if (!rendered) return { content: '技能画像卡没画出来（渲染服务未连接）。', images: [] };
+      return { content: `已出图：${user.username} 的技能画像卡`, images: [rendered.cqCode] };
+    }
+
+    case 'skill_compare_image': {
+      const toolArgs = (context.toolArgs || {}) as Record<string, any>;
+      const leftName = String(toolArgs.left || '').trim();
+      const rightName = String(toolArgs.right || '').trim();
+      if (!leftName || !rightName) throw new Error('对比图需要 left 和 right 两个玩家名');
+      const extra = {
+        nickname: String(context.event?.nickname || ''),
+        atTargets: context.event?.atTargets,
+        groupId: context.groupId,
+      };
+      const leftTarget = resolveInternalPlayerTarget(db, String(userId), leftName, extra);
+      const rightTarget = resolveInternalPlayerTarget(db, String(userId), rightName, extra);
+      if (!leftTarget || !rightTarget) throw new Error('无法解析要对比的两个玩家');
+      const [leftUser, rightUser] = await Promise.all([loadInternalOsuUser(leftTarget), loadInternalOsuUser(rightTarget)]);
+      const { renderPlayerSkillComparison } = await import('./playerSkillProfile.js');
+      const rendered = await renderPlayerSkillComparison(leftUser.id, rightUser.id, 50);
+      if (!rendered) return { content: '对比图没画出来（渲染服务未连接）。', images: [] };
+      return { content: `已出图：${leftUser.username} vs ${rightUser.username} 的技能对比卡`, images: [rendered.cqCode] };
+    }
+
+    case 'recent_skill_image': {
+      const { renderPlayerRecentSkillProfile } = await import('./playerRecentSkillProfile.js');
+      try {
+        const rendered = await renderPlayerRecentSkillProfile(user.id);
+        if (!rendered) return { content: '近期表现卡没画出来（渲染服务未连接）。', images: [] };
+        return { content: `已出图：${user.username} 的近期表现卡`, images: [rendered.cqCode] };
+      } catch (error: any) {
+        const message = String(error?.message || error);
+        const insufficient = /RECENT_SKILL_(?:INSUFFICIENT(?:_AFTER_FILTER)?):(\d+)/.exec(message);
+        if (insufficient) return { content: `近期样本不足（完成 ${insufficient[1]} 张图），画不出近期表现卡。`, images: [] };
+        throw error;
+      }
+    }
+
     case 'recommend': {
       // Real-time collaborative filtering recommendation (osu!helper style).
       // Shares cooldown / anti-repeat / candidate cache with the quick routes.
@@ -2313,6 +2469,11 @@ export interface ToolLoopOptions {
   db: any;
   messages: Array<{ role: string; content: string; tool_calls?: any[]; tool_call_id?: string }>;
   tools: LlmTool[];
+  /**
+   * 第二层（发图）工具。第一层整批执行完后，如果提供了这个列表，
+   * 后续规划轮会切换成它；不提供就保持单层行为。
+   */
+  imageTools?: LlmTool[];
   userId: string;
   groupId?: string;
   sendMessage?: (event: any, text: string, extra?: any) => Promise<any>;
@@ -2500,7 +2661,7 @@ export async function runToolLoop(
   options: ToolLoopOptions
 ): Promise<ToolLoopResult> {
   const {
-    db, messages, tools, userId, groupId,
+    db, messages, tools, imageTools, userId, groupId,
     sendMessage, event, selfQq,
     maxIterations = 5, temperature, maxTokens, model, label,
     requiredTool, evidenceRequirement, deliverDirectContent = false,
@@ -2510,6 +2671,9 @@ export async function runToolLoop(
     finalResponseInstruction,
   } = options;
   const executeToolCallFn = options.executeToolCallFn || executeToolCall;
+  // 阶段切换：第一层（文本）→ 第二层（图片）。模型看到的工具面在两轮之间变化。
+  let activeTools = tools;
+  let imagePhaseActive = false;
   const executeTracedToolCall = async (toolCall: any, toolContext: any) => {
     const startedAt = Date.now();
     const toolName = String(toolCall?.function?.name || 'unknown');
@@ -3029,7 +3193,7 @@ export async function runToolLoop(
         // A direct payload is already the requested product. The next model
         // turn is only a cosmetic lead, so tools must be disabled or some
         // providers will issue the same query_bot call again.
-        tools: directPayloadIsTerminal ? undefined : tools,
+        tools: directPayloadIsTerminal ? undefined : activeTools,
         // Contract A: with tools present, auto is already the default, so
         // omit tool_choice on thinking calls; keep explicit auto on fast calls.
         tool_choice: directPayloadIsTerminal || thinkingOn ? undefined : 'auto',
@@ -3114,7 +3278,7 @@ export async function runToolLoop(
         // text markup. Unknown names are dropped: a model cannot summon a tool
         // that was never offered in this loop.
         const exposedNames = new Set(
-          (tools || []).map((tool: LlmTool) => tool?.function?.name).filter((name: unknown): name is string => Boolean(name)),
+          (activeTools || []).map((tool: LlmTool) => tool?.function?.name).filter((name: unknown): name is string => Boolean(name)),
         );
         const allowed = parsed.filter((call) => exposedNames.has(call.name));
         toolCalls = allowed.map((call, index) => ({
@@ -3190,6 +3354,29 @@ export async function runToolLoop(
       );
     }
 
+    // 只读的 osu 工具在一批里互不依赖，先并发发出去，循环里按顺序消费。
+    // 记账、去重、证据判定、final 短路仍然只发生在下面这一个单点上。
+    const prefetchedResults = new Map<string, Promise<any>>();
+    {
+      const candidates = toolCalls
+        .slice(0, executableThisResponse)
+        .filter((call) => {
+          const capability = String(osuCapabilityForToolCall(call) || '');
+          // 发图工具必须串行：渲染服务是单客户端管道，并发只会互相排队。
+          const isImageCapability = capability === 'score_image' || capability.endsWith('_image');
+          return capability !== 'recommend' && capability !== 'match' && !isImageCapability;
+        });
+      if (candidates.length > 1) {
+        for (const call of candidates) {
+          prefetchedResults.set(
+            call.id,
+            executeTracedToolCall(call, { db, userId, groupId, sendMessage, event, selfQq }),
+          );
+        }
+        traceEvent('TOOL', 'tool_batch_parallel', { status: 'running', count: candidates.length });
+      }
+    }
+
     // Execute each tool call
     for (let callIndex = 0; callIndex < toolCalls.length; callIndex++) {
       const tc = toolCalls[callIndex];
@@ -3225,9 +3412,10 @@ export async function runToolLoop(
         continue;
       }
 
-      const result = await executeTracedToolCall(tc, {
-        db, userId, groupId, sendMessage, event, selfQq
-      });
+      const prefetched = prefetchedResults.get(tc.id);
+      const result = prefetched
+        ? await prefetched
+        : await executeTracedToolCall(tc, { db, userId, groupId, sendMessage, event, selfQq });
       collectDeliverOnlyImages(result);
       // Accounting is tied to the executor boundary, not to whether its
       // returned content is safe enough to expose to the LLM. Reaching this
@@ -3348,6 +3536,18 @@ export async function runToolLoop(
           modelWillDecideAgain: true,
         });
       }
+    }
+
+    // 第一层整批执行完后切到第二层：模型下一轮只会看到发图工具；
+    // 它不调用就正常结束，不会为了出图而出图。
+    if (!imagePhaseActive && imageTools && imageTools.length > 0) {
+      imagePhaseActive = true;
+      activeTools = imageTools;
+      traceEvent('TOOL', 'tool_phase_switched', {
+        status: 'ok',
+        phase: 'image',
+        toolCount: imageTools.length,
+      });
     }
 
     // A2 — once either hard cap has been tripped, stop accepting model

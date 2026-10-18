@@ -93,6 +93,13 @@ const CAPABILITY_TOOL_NAMES: Readonly<Record<CapabilityName, string>> = {
   player_skill: 'osu_player_skill',
   recent_skill: 'osu_recent_skill',
   compare_skill: 'osu_compare_skill',
+  score_image: 'osu_send_score_card',
+  player_card_image: 'osu_send_player_card',
+  beatmap_card_image: 'osu_send_beatmap_card',
+  beatmap_skill_image: 'osu_send_beatmap_skill_card',
+  player_skill_image: 'osu_send_player_skill_card',
+  skill_compare_image: 'osu_send_skill_compare_card',
+  recent_skill_image: 'osu_send_recent_skill_card',
   // recent / info / skill 已下线：最近成绩与资料卡并进 osu_get_player，
   // 技能雷达本来就和 pp_plus 是同一份数据。它们保留映射只为旧指令路径。
   recent: 'osu_get_recent_score',
@@ -131,9 +138,10 @@ export function isV2OsuAgentToolName(toolName: string): boolean {
  * for that capability are exposed; the model no longer has to select a
  * `capability` enum inside a mega-tool or reason over unrelated parameters.
  */
-export function buildV2OsuAgentToolSchemas(): LlmTool[] {
+export function buildV2OsuAgentToolSchemas(options: { phase?: 'text' | 'image' } = {}): LlmTool[] {
+  const phase = options.phase === 'image' ? 'image' : 'text';
   return CAPABILITY_CATALOG
-    .filter((capability) => capability.callable)
+    .filter((capability) => capability.callable && (capability.phase === 'image') === (phase === 'image'))
     .map((capability) => {
       const applicableParams = QUERY_OSU_PARAMS.filter(
         (param) => param.exposed && queryOsuParamAllowed(param, capability.name),
