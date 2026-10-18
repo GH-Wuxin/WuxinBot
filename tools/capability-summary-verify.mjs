@@ -82,7 +82,8 @@ for (const alias of disabledOnlyAliases) {
 }
 
 // 只能经命令调用的能力必须标注「仅命令」，并带上来自命令目录的入口
-const commandOnly = CAPABILITY_CATALOG.filter((item) => !item.callable);
+// 只统计「本来就要靠命令开启」的能力；工具面退役的条目不算命令功能。
+const commandOnly = CAPABILITY_CATALOG.filter((item) => !item.callable && item.commandOnly);
 assert.ok(commandOnly.length > 0, '目录里应当有只能经命令调用的能力');
 for (const item of commandOnly) {
   const command = QUICK_DEFS.find((def) => def.capability === item.name && def.status === 'active');

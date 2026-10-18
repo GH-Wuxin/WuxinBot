@@ -34,6 +34,13 @@ export interface CapabilityDescriptor {
   aliases?: readonly string[];
   /** Capability family used for guard applicability rules. */
   family: 'player' | 'beatmap';
+  /**
+   * True only for capabilities that are real user-facing features available
+   * solely through a command (e.g. match watching). Capabilities that were
+   * simply retired from the tool surface are NOT command-only and must not be
+   * advertised in the per-turn capability summary.
+   */
+  commandOnly?: boolean;
 }
 
 export const CAPABILITY_CATALOG: readonly CapabilityDescriptor[] = [
@@ -112,6 +119,7 @@ export const CAPABILITY_CATALOG: readonly CapabilityDescriptor[] = [
   },
   {
     name: 'match',
+    commandOnly: true,
     description: 'osu! 多人比赛观战（!ml <matchID> 开始监听对局并推送开局/回合成绩；玩家说“观战/比赛直播/!ml”时引导使用快捷指令）',
     // Command-side only. matchManager writes osuMatchListeners, creates a
     // MatchListener and starts continuous polling that later pushes messages

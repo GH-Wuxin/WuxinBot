@@ -71,7 +71,9 @@ function buildLines(input: CapabilitySummaryInput): SummaryLine[] {
     lines.push({ text: callableFamilies.join('与') + '查询、推图：按本轮已列工具调用。', protected: false });
   }
 
-  for (const item of CAPABILITY_CATALOG.filter((entry) => !entry.callable)) {
+  // 只列「本来就要靠命令开启」的能力。工具面退役的那些（recent/info/skill）
+  // 不是命令功能，列出来会让她误以为自己还有这些入口，也会把预算挤爆。
+  for (const item of CAPABILITY_CATALOG.filter((entry) => !entry.callable && entry.commandOnly)) {
     const hint = commandOnlyHint(item.name);
     // 取描述的第一个语块，不在句子中间截断 —— 截出来的半个括号比不写更糟。
     // 全角括号后面通常是参数写法，那部分由命令提示承担。
