@@ -841,7 +841,7 @@ async function executeToolCallInner(
             internalBotId,
             capability,
             oUsername || '',
-            context,
+            { ...context, toolArgs: args },
             oBpSelection,
             capability === 'recommend'
               ? { translateRecommendFilters: true }
@@ -1712,7 +1712,11 @@ export async function executeInternalBotCommand(
   botId: string,
   commandName: string,
   username: string,
-  context: { db: any; userId: string; groupId?: string; event?: any; isOwner?: boolean; beatmapId?: number },
+  context: {
+    db: any; userId: string; groupId?: string; event?: any; isOwner?: boolean; beatmapId?: number;
+    /** 原始工具参数：compare_skill 的 left/right、beatmap_skill 的 mods 从这里取。 */
+    toolArgs?: Record<string, any>;
+  },
   bpSelection?: BpQuerySelection,
   options?: {
     translateRecommendFilters?: boolean;
@@ -2004,6 +2008,64 @@ export async function executeInternalBotCommand(
         groupId: context.groupId,
       });
       return { content: text };
+    }
+
+    case 'beatmap_skill': {
+      const { runBeatmapSkillAnalysis } = await import('./skillToolText.js');
+      const toolArgs = (context.toolArgs || {}) as Record<string, any>;
+      const mods = Array.isArray(toolArgs.mods)
+        ? toolArgs.mods
+        : (typeof toolArgs.mods === 'string' ? [toolArgs.mods] : []);
+      const result = await runBeatmapSkillAnalysis({
+        beatmapId: Number(toolArgs.beatmap_id || context.beatmapId || 0) || undefined,
+        bpRank: Number(toolArgs.bp_rank || bpSelection?.startRank || 0) || undefined,
+        playerOsuId: user.id,
+        playerUsername: user.username,
+        mods,
+      });
+      if (!result.ok) throw new Error(String(result.error || '谱面技能分析失败'));
+      return String(result.text || '');
+    }
+
+    case 'player_skill': {
+      const { runPlayerSkillText } = await import('./skillToolText.js');
+      return await runPlayerSkillText(user.id);
+    }
+
+    case 'recent_skill': {
+      const { runRecentSkillText } = await import('./skillToolText.js');
+      try {
+        return await runRecentSkillText(user.id);
+      } catch (error: any) {
+        const message = String(error?.message || error);
+        const insufficient = /RECENT_SKILL_(?:INSUFFICIENT(?:_AFTER_FILTER)?):(\d+)/.exec(message);
+        if (insufficient) {
+          return '近期样本不足：只完成 ' + insufficient[1] + ' 张图的分析，画不出可靠的近期画像。';
+        }
+        throw error;
+      }
+    }
+
+    case 'compare_skill': {
+      const { runSkillCompareText } = await import('./skillToolText.js');
+      const toolArgs = (context.toolArgs || {}) as Record<string, any>;
+      const leftName = String(toolArgs.left || '').trim();
+      const rightName = String(toolArgs.right || '').trim();
+      if (!leftName || !rightName) throw new Error('compare_skill 需要 left 和 right 两个玩家名。');
+      const extra = {
+        nickname: String(context.event?.nickname || ''),
+        atTargets: context.event?.atTargets,
+        groupId: context.groupId,
+      };
+      const leftTarget = resolveInternalPlayerTarget(db, String(userId), leftName, extra);
+      const rightTarget = resolveInternalPlayerTarget(db, String(userId), rightName, extra);
+      if (!leftTarget || !rightTarget) throw new Error('无法解析要对比的两个玩家：' + leftName + ' / ' + rightName);
+      const [leftUser, rightUser] = await Promise.all([
+        loadInternalOsuUser(leftTarget),
+        loadInternalOsuUser(rightTarget),
+      ]);
+      if (leftUser.id === rightUser.id) throw new Error('请选择两个不同的玩家再对比。');
+      return await runSkillCompareText(leftUser.id, rightUser.id);
     }
 
     case 'recommend': {

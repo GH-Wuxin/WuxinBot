@@ -36,7 +36,9 @@ assert.ok(!names.includes('osu_watch_match'), 'stateful match capability must re
 for (const tool of schemas) {
   assert.ok(capabilityForAgentToolName(tool.function.name), `${tool.function.name} maps to a capability`);
   assert.ok(!Object.hasOwn(tool.function.parameters.properties, 'capability'), `${tool.function.name} has no mega-tool selector`);
-  assert.match(tool.function.description, /失败/, `${tool.function.name} describes failure behavior`);
+    // 描述来自能力目录，不再由模板追加“失败时返回…”。只要求足够具体、且没有退回旧模板。
+    assert.ok(String(tool.function.description).length > 30, tool.function.name + ' has a substantive description');
+    assert.ok(!String(tool.function.description).includes('只读工具；需要实时或精确数据时调用'), tool.function.name + ' does not use the retired template');
   assert.ok(!JSON.stringify(tool).includes('capability='), `${tool.function.name} schema hides legacy multiplexing`);
   assert.ok(!JSON.stringify(tool).includes('query_osu'), `${tool.function.name} schema does not name the hidden executor`);
 }

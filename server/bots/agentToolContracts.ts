@@ -89,6 +89,10 @@ const CAPABILITY_TOOL_NAMES: Readonly<Record<CapabilityName, string>> = {
   bp: 'osu_get_best_score',
   bp_range: 'osu_get_best_scores',
   bp_type: 'osu_analyze_best_score_types',
+  beatmap_skill: 'osu_beatmap_skill',
+  player_skill: 'osu_player_skill',
+  recent_skill: 'osu_recent_skill',
+  compare_skill: 'osu_compare_skill',
   // recent / info / skill 已下线：最近成绩与资料卡并进 osu_get_player，
   // 技能雷达本来就和 pp_plus 是同一份数据。它们保留映射只为旧指令路径。
   recent: 'osu_get_recent_score',
@@ -142,9 +146,9 @@ export function buildV2OsuAgentToolSchemas(): LlmTool[] {
         type: 'function' as const,
         function: {
           name: agentToolNameForCapability(capability.name),
-          description:
-            `${rewriteLegacyToolReferencesForV2(capability.description)}。只读工具；需要实时或精确数据时调用。` +
-            '成功时返回带明确对象归属的真实查询结果，失败时返回可供你重试、改换工具或向用户说明的错误。',
+          // 描述完全来自能力目录：每条都写清什么时候用、返回什么、有什么限制。
+          // 不再追加模板句，因为它不提供任何决策信息。
+          description: rewriteLegacyToolReferencesForV2(capability.description),
           parameters: {
             type: 'object' as const,
             properties: Object.fromEntries(
