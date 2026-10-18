@@ -59,7 +59,8 @@ export const OWNER_PERMISSION_POLICY: Record<string, OwnerPermissionPolicy> = {
   mode: { defaultPermissionRole: 'admin', permission: 'group_admin', visibility: 'public', discoverability: 'direct_only' },
   modelShow: { defaultPermissionRole: 'admin', permission: 'group_admin', visibility: 'public', discoverability: 'direct_only' },
   modelSet: { defaultPermissionRole: 'admin', permission: 'group_admin', visibility: 'public', discoverability: 'direct_only' },
-  pause: { defaultPermissionRole: 'admin', permission: 'group_admin', visibility: 'public', discoverability: 'direct_only' },
+  // 全局开关：停的是所有群和私聊，不能按"群管理员"授权。群内静音用 /w mode。
+  pause: { defaultPermissionRole: 'owner', permission: 'owner', visibility: 'owner', discoverability: 'direct_only' },
   search: { defaultPermissionRole: 'admin', permission: 'group_admin', visibility: 'public', discoverability: 'direct_only' },
   thinking: { defaultPermissionRole: 'admin', permission: 'group_admin', visibility: 'public', discoverability: 'direct_only' },
   promptShow: { defaultPermissionRole: 'admin', permission: 'group_admin', visibility: 'public', discoverability: 'direct_only' },
@@ -70,7 +71,8 @@ export const OWNER_PERMISSION_POLICY: Record<string, OwnerPermissionPolicy> = {
   groupProfileEdit: { defaultPermissionRole: 'admin', permission: 'group_admin', visibility: 'public', discoverability: 'direct_only' },
   relationshipShow: { defaultPermissionRole: 'admin', permission: 'group_admin', visibility: 'public', discoverability: 'direct_only' },
   relationshipEdit: { defaultPermissionRole: 'admin', permission: 'group_admin', visibility: 'public', discoverability: 'direct_only' },
-  preset: { defaultPermissionRole: 'admin', permission: 'group_admin', visibility: 'public', discoverability: 'direct_only' },
+  // 预设会改 globalPaused / onlyMentionMode / groupProfileAutoUpdate，都是全局开关。
+  preset: { defaultPermissionRole: 'owner', permission: 'owner', visibility: 'owner', discoverability: 'direct_only' },
   profileRetry: { defaultPermissionRole: 'admin', permission: 'group_admin', visibility: 'public', discoverability: 'direct_only' },
   recalc: { defaultPermissionRole: 'guest', permission: 'all', visibility: 'public', discoverability: 'listed' },
   groupAdd: { defaultPermissionRole: 'owner', permission: 'owner', visibility: 'owner', discoverability: 'direct_only' },

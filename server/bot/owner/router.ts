@@ -77,7 +77,9 @@ export function resolveOwnerRoute(ctx: OwnerHandlerContext): OwnerRouteResolutio
     return directRoute('memberPolicy', 'memberPolicy');
   }
 
-  if (command === '/preset') return directRoute('preset', 'preset', 'mode');
+  // preset 改由 owner 授权后，拒绝文案必须按 preset 报「所有者」；
+  // 之前沿用 mode 的文案会让群管理员以为「需要管理员」，以为自己本该有权。
+  if (command === '/preset') return directRoute('preset', 'preset');
   if (command === '/why') return directRoute('why', 'why');
   if (command === '/pause') return directRoute('pause', 'pause');
   if (command === '/resume') return directRoute('resume', 'pause');
