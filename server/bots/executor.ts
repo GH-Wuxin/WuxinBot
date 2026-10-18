@@ -3542,7 +3542,9 @@ export async function runToolLoop(
     // 它不调用就正常结束，不会为了出图而出图。
     if (!imagePhaseActive && imageTools && imageTools.length > 0) {
       imagePhaseActive = true;
-      activeTools = imageTools;
+      // 图片工具排在前面，但保留文本工具：像"先查 BP1、再查这张图星数"
+      // 这种链式查询需要第二轮还能取数，否则能力会倒退。
+      activeTools = [...imageTools, ...tools];
       traceEvent('TOOL', 'tool_phase_switched', {
         status: 'ok',
         phase: 'image',

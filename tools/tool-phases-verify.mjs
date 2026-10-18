@@ -90,7 +90,9 @@ const result = await runToolLoop(async (_db, options) => {
 assert.equal(peak, 2, '两个只读调用应当并发执行');
 assert.deepEqual(order.slice(0, 2).sort(), ['osu_get_best_score', 'osu_get_player']);
 assert.ok(roundTools[0].includes('osu_get_best_score'), '第一轮是文本工具面');
-assert.ok(roundTools[1].every((name) => name.startsWith('osu_send_')), '第二批之前已切换到图片工具面');
+assert.ok(!roundTools[0].some((name) => name.startsWith('osu_send_')), '第一轮看不到图片工具');
+assert.ok(roundTools[1].some((name) => name.startsWith('osu_send_')), '第二批之前图片工具已进入工具面');
+assert.ok(roundTools[1].includes('osu_get_beatmap'), '文本工具仍可用来做链式补查');
 assert.deepEqual(result.images, ['[CQ:image,file=file:///bp1.png]'], '图片进入交付集合');
 
 console.log('tool phases: text batch parallel + image phase PASS');
