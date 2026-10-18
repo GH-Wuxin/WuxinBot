@@ -1,4 +1,3 @@
-import type { LlmTool, ToolResult } from './types.js';
 import { createHash, randomUUID } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -54,12 +53,6 @@ export interface SkillProfilerIdentity {
 }
 
 const AXIS_LABELS = PLAYER_SKILL_AXIS_LABELS;
-const AXIS_DESCRIPTION = PLAYER_SKILL_AXIS_ORDER.map((axis) =>
-  axis === 'spatial_precision'
-    ? `${AXIS_LABELS[axis]}（小目标容错、落点稳定与微修正）`
-    : AXIS_LABELS[axis],
-).join('、');
-
 function profilerBaseUrl(): URL {
   const configured = String(process.env.SKILL_PROFILER_URL || DEFAULT_SKILL_PROFILER_URL).trim();
   const url = new URL(configured);
@@ -819,68 +812,4 @@ export async function requestSkillProfilerAnalysisWithFetch(
     return requestSkillProfilerAnalysis(beatmapId, mods);
   }
 }
-
-export function buildSkillProfilerToolSchema(): LlmTool {
-  return {
-    type: 'function',
-    function: {
-      name: SKILL_PROFILER_TOOL_NAME,
-      description: `使用正式 v0.40 分析一张本地已有的 osu!standard 谱面在 ${AXIS_DESCRIPTION} 九个维度上的谱面需求，并返回 SliderPressure 与实验性谱面类型。用户问“这图难在哪/是什么类型/某维度多难”时调用；结果不是玩家能力分析，也不是官方星数。`,
-      parameters: {
-        type: 'object',
-        properties: {
-          beatmap_id: { type: 'integer', minimum: 1, description: 'osu! beatmap ID（BID），不是 beatmapset ID' },
-          mods: {
-            type: 'array',
-            items: { type: 'string', enum: ['NM', 'NF', 'EZ', 'HD', 'HR', 'SD', 'HT', 'DT', 'NC', 'PF', 'DC'] },
-            maxItems: 4,
-            uniqueItems: true,
-            description: '要分析的 Mod 列表；不填表示 NM。PF/SD/NF 会保留但不改变谱面需求分值；FL 暂不支持。只传用户明确指定的 Mod。',
-          },
-        },
-        required: ['beatmap_id'],
-      },
-    },
-  };
-}
-
-export async function executeSkillProfilerAnalysis(
-  toolCallId: string,
-  args: Record<string, unknown>,
-): Promise<ToolResult> {
-  try {
-    const analysis = await requestSkillProfilerAnalysis(
-      Number(args.beatmap_id),
-      Array.isArray(args.mods) ? args.mods.map((mod) => String(mod)) : [],
-    );
-    return {
-      toolCallId,
-      ok: true,
-      content: formatSkillProfilerAnalysis(analysis),
-      metadata: {
-        requestedCapability: 'beatmap_skill_profile',
-        actualExecutor: 'osu_skill_profiler_v040',
-        dataSource: 'local_osu_manifest',
-        renderer: 'none',
-        command: SKILL_PROFILER_TOOL_NAME,
-        success: true,
-      },
-    };
-  } catch (error: any) {
-    const message = String(error?.message || error).slice(0, 500);
-    return {
-      toolCallId,
-      ok: false,
-      content: `Skill Profiler 分析失败：${message}`,
-      error: message,
-      metadata: {
-        requestedCapability: 'beatmap_skill_profile',
-        actualExecutor: 'osu_skill_profiler_v040',
-        dataSource: 'local_osu_manifest',
-        renderer: 'none',
-        command: SKILL_PROFILER_TOOL_NAME,
-        success: false,
-      },
-    };
-  }
-}
+

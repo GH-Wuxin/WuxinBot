@@ -23,7 +23,6 @@ import { stickerPath } from '../bot/stickers/index.js';
 import { runStickerDryRun } from '../bot/stickers/debug.js';
 import { withStickerReplyInstruction } from '../bot/stickers/finalReply.js';
 import { traceEvent } from '../requestTrace.js';
-import { lookupSkill, lookupSkillByQQ } from './skills.js';
 import { getRenderServer } from './renderServer.js';
 import { scoreStarRating } from '../osu/scoreMetrics.js';
 import { enrichScoreStarRatings } from '../osu/starRating.js';
@@ -42,7 +41,6 @@ import type {
   ReasoningShadowSink,
   ReasoningTurnState,
 } from '../bot/reasoningRouter.js';
-import { executeSkillProfilerAnalysis } from './skillProfiler.js';
 
 // ── Pending bot responses (correlationId → resolver) ──
 
@@ -690,53 +688,6 @@ async function executeToolCallInner(
         ok: true,
         content: bots.length > 0 ? `可用的机器人：\n${list}` : '当前没有已启用的机器人。'
       };
-    }
-
-    case 'get_player_skill': {
-      const player = String(args.player || '').trim();
-      if (!player) {
-        return { toolCallId: toolCall.id, ok: false, content: '未指定玩家', error: '缺少玩家标识' };
-      }
-
-      // Resolve through QQ binding if the player identifier looks like a QQ or nickname
-      let record = lookupSkill(player);
-      if (!record) {
-        const target = resolveInternalPlayerTarget(context.db, context.userId, player, {
-          nickname: String(context.event?.nickname || ''),
-          atTargets: context.event?.atTargets,
-          groupId: context.groupId,
-        });
-        if (target) {
-          try {
-            const user = await loadInternalOsuUser(target);
-            if (user?.username) {
-              record = lookupSkill(user.username);
-            }
-          } catch { /* binding resolved but user fetch failed — fall through */ }
-        }
-      }
-      // Also try direct QQ lookup
-      if (!record && /^\d{5,}$/.test(player)) {
-        record = lookupSkillByQQ(player);
-      }
-
-      if (!record) {
-        return {
-          toolCallId: toolCall.id,
-          ok: true,
-          content: `没有找到玩家 "${player}" 的技能记录。可能还没有被分析过，或者需要先用 /w osu bind 绑定账号。`
-        };
-      }
-
-      return {
-        toolCallId: toolCall.id,
-        ok: true,
-        content: formatSkillResult(record)
-      };
-    }
-
-    case 'osu_analyze_beatmap_skills': {
-      return executeSkillProfilerAnalysis(toolCall.id, args);
     }
 
     case 'get_recent_score': {
@@ -2292,32 +2243,6 @@ export async function executeInternalBotCommand(
 }
 
 // ── Format skill record for LLM consumption ──
-
-function formatSkillResult(record: any): string {
-  const ppPlus = record.ppPlus
-    ? Object.entries(record.ppPlus as Record<string, number>)
-        .filter(([, v]) => v > 0)
-        .sort(([, a], [, b]) => b - a)
-        .map(([k, v]) => `${k} ${v.toFixed(1)}`)
-        .join('、')
-    : '暂无';
-
-  const mods = record.topMods?.length ? record.topMods.join('、') : '暂无';
-
-  return [
-    `玩家 ${record.osuUsername}（QQ:${record.userId}）的 osu! 技能记录：`,
-    `- PP: ${(record.pp || 0).toLocaleString()}，全球排名 #${(record.rank || 0).toLocaleString()}（${record.mode} 模式）`,
-    `- 准确率: ${(record.accuracy || 0).toFixed(1)}%`,
-    `- 游玩次数: ${(record.playCount || 0).toLocaleString()}，游戏时间: ${(record.hoursPlayed || 0).toFixed(0)} 小时`,
-    `- PP+ 维度: ${ppPlus}`,
-    `- 常用 Mods: ${mods}`,
-    record.summary ? `- 分析摘要: ${record.summary}` : '',
-    record.recentSummary
-      ? `- 最近表现: ${record.recentSummary}（快照，最后更新: ${record.lastRecentAnalyzed || record.lastAnalyzed}）`
-      : '- 快照中无最近表现数据（不代表玩家最近没有成绩；实时最近成绩请调用最近成绩工具）',
-    `- 最后分析: ${record.lastAnalyzed}`,
-  ].filter(Boolean).join('\n');
-}
 
 // ── Tool loop: keep calling LLM until text response ──
 

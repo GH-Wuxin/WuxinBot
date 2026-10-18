@@ -77,9 +77,9 @@ const server = http.createServer((req, res) => {
           role: 'assistant',
           content: '',
           tool_calls: [{
-            id: 'skill-call',
+            id: 'profile-call-2',
             type: 'function',
-            function: { name: 'get_player_skill', arguments: JSON.stringify({ player: 'AgentFixture' }) },
+            function: { name: 'osu_get_player_profile', arguments: JSON.stringify({ username: 'AgentFixture' }) },
           }],
         };
       } else {
@@ -153,7 +153,7 @@ try {
   if (!result.replied) throw new Error(`processIncoming did not reply: ${JSON.stringify(result)}`);
   if (llmCalls !== 3) throw new Error(`expected three model decisions, got ${llmCalls}`);
   for (const inventory of requestToolInventories) {
-    if (!inventory.includes('osu_get_player_profile') || !inventory.includes('get_player_skill')) {
+    if (!inventory.includes('osu_get_player_profile') || inventory.includes('get_player_skill')) {
       throw new Error(`V2 precise tools missing from model inventory: ${JSON.stringify(inventory)}`);
     }
     if (inventory.includes('query_osu')) throw new Error('hidden query_osu mega-tool leaked to the model');
@@ -164,7 +164,7 @@ try {
   if (observedToolEnvelopes.length !== 2) {
     throw new Error(`expected two structured evidence envelopes, got ${observedToolEnvelopes.length}`);
   }
-  const [profileEnvelope, skillEnvelope] = observedToolEnvelopes;
+  const [profileEnvelope, secondProfileEnvelope] = observedToolEnvelopes;
   if (
     profileEnvelope.schemaVersion !== 1 ||
     profileEnvelope.status !== 'success' ||
@@ -175,19 +175,19 @@ try {
     throw new Error(`invalid profile evidence envelope: ${JSON.stringify(profileEnvelope)}`);
   }
   if (
-    skillEnvelope.schemaVersion !== 1 ||
-    skillEnvelope.status !== 'success' ||
-    skillEnvelope.tool?.name !== 'get_player_skill' ||
-    skillEnvelope.tool?.capability !== null ||
-    !String(skillEnvelope.evidence?.text || '').includes('技能画像偏综合')
+    secondProfileEnvelope.schemaVersion !== 1 ||
+    secondProfileEnvelope.status !== 'success' ||
+    secondProfileEnvelope.tool?.name !== 'osu_get_player_profile' ||
+    secondProfileEnvelope.tool?.capability !== 'profile' ||
+    !String(secondProfileEnvelope.evidence?.text || '').includes('AgentFixture')
   ) {
-    throw new Error(`invalid skill evidence envelope: ${JSON.stringify(skillEnvelope)}`);
+    throw new Error(`invalid second profile evidence envelope: ${JSON.stringify(secondProfileEnvelope)}`);
   }
 
   const db = readDb();
   const profileAudits = (db.toolCallLogs || []).filter((entry) => entry.capability === 'profile');
-  if (profileAudits.length !== 1 || profileAudits[0].ok !== true) {
-    throw new Error(`V2 call did not pass through canonical query_osu audit: ${JSON.stringify(profileAudits)}`);
+  if (profileAudits.length !== 2 || profileAudits.some((audit) => audit.ok !== true)) {
+    throw new Error(`V2 calls did not pass through canonical query_osu audit: ${JSON.stringify(profileAudits)}`);
   }
 
   const requestTrace = listRequestTraces(10).find((trace) => trace.messageId === 'agent-v2-process');
@@ -197,7 +197,7 @@ try {
   if (plannerEvents.map((event) => event.data?.decision).join(',') !== 'call_tools,call_tools,finish') {
     throw new Error(`planner decision trace is incomplete: ${JSON.stringify(plannerEvents)}`);
   }
-  if (evidenceEvents.map((event) => event.data?.toolName).join(',') !== 'osu_get_player_profile,get_player_skill') {
+  if (evidenceEvents.map((event) => event.data?.toolName).join(',') !== 'osu_get_player_profile,osu_get_player_profile') {
     throw new Error(`evidence-return trace is incomplete: ${JSON.stringify(evidenceEvents)}`);
   }
   const eventNames = requestTrace.events.map((event) => event.name);

@@ -7,7 +7,6 @@ import {
   QUERY_OSU_PARAMS,
 } from './capabilityCatalog.js';
 import { buildV2OsuAgentToolSchemas, type AgentToolSurface } from './agentToolContracts.js';
-import { buildSkillProfilerToolSchema } from './skillProfiler.js';
 
 function bpQueryParams(): BotCommandParam[] {
   return [
@@ -162,7 +161,6 @@ export function buildBotToolSchemas(
   if (hasInternal) {
     if (options.surface === 'v2') {
       tools.push(...buildV2OsuAgentToolSchemas());
-      tools.push(buildSkillProfilerToolSchema());
     } else {
       tools.push({
         type: 'function',
@@ -198,21 +196,6 @@ export function buildBotToolSchemas(
   // The legacy query_bot / list_bots / get_recent_score tools are also
   // deliberately not LLM-visible here; their executor implementations stay
   // dormant until a future explicit exposure decision.
-
-  tools.push({
-    type: 'function',
-    function: {
-      name: 'get_player_skill',
-      description: options.surface === 'v2'
-        ? '获取已记录的玩家 osu! 技能水平快照（PP、排名、领域强弱、常用 Mods、分析摘要）。注意：这是之前分析时保存的快照，可能过时，且不含最近成绩；实时状态必须调用当前可见的实时玩家数据工具。'
-        : '获取已记录的玩家 osu! 技能水平快照（PP、排名、领域强弱、常用 Mods、分析摘要）。注意：这是之前分析时保存的快照，可能过时，且不含最近成绩。查询实时数据（最近成绩、最新 PP、当前状态）必须用 query_osu。',
-      parameters: {
-        type: 'object',
-        properties: { player: { type: 'string', description: 'osu! 用户名或 QQ 号' } },
-        required: ['player']
-      }
-    }
-  });
 
   return tools;
 }

@@ -158,8 +158,6 @@ export type AllowedOperationType =
   | 'send_sticker'
   | 'query_external_bot'
   | 'query_bot'
-  | 'get_player_skill'
-  | 'osu_analyze_beatmap_skills'
   | 'list_bots'
   | 'get_recent_score';
 
