@@ -2103,17 +2103,29 @@ export async function executeInternalBotCommand(
             images: bridged.images,
           };
         }
-        // 降级：内部渲染最近一次成绩卡
-        const { getUserRecentScores } = await import('../osu/api.js');
+        // 降级也必须画对"哪一条成绩"：最近通过不能画成失败记录，
+        // 某谱面成绩更不能画成另一张图。
+        const { getUserRecentScores, getUserBeatmapScore } = await import('../osu/api.js');
         const { renderScoreCard } = await import('./render.js');
-        const scores = await getUserRecentScores(user.id, 'osu', 1);
-        if (!Array.isArray(scores) || scores.length === 0) {
-          return { content: `${user.username} 最近没有可画的成绩。`, images: [] };
+        let picked: any = null;
+        if (source === 'beatmap_score') {
+          try {
+            picked = await getUserBeatmapScore(user.id, beatmapId, 'osu');
+          } catch {
+            return { content: `${user.username} 没有 BID ${beatmapId} 的成绩记录，画不出来。`, images: [] };
+          }
+        } else {
+          const { pickFallbackScore } = await import('./scoreFallback.js');
+          const scores = await getUserRecentScores(user.id, 'osu', source === 'recent_pass' ? 50 : 1);
+          picked = pickFallbackScore(source as 'recent_play' | 'recent_pass', scores);
+          if (!picked) {
+            return { content: `${user.username} 最近没有${source === 'recent_pass' ? '通过的' : ''}成绩可画。`, images: [] };
+          }
         }
-        const [score] = (await enrichScoreStarRatings(scores, 'osu')).scores;
+        const [score] = (await enrichScoreStarRatings([picked], 'osu')).scores;
         const rendered = await renderScoreCard(scoreForRenderer(score), user, null);
         if (!rendered) return { content: '成绩图没画出来（渲染服务未连接）。', images: [] };
-        return { content: `已出图：${user.username} 的最近成绩卡（kanon 不可用，用内部渲染）`, images: [rendered.cqCode] };
+        return { content: `已出图：${user.username} 的${source === 'recent_pass' ? '最近通过' : source === 'beatmap_score' ? '谱面成绩' : '最近成绩'}卡（kanon 不可用，用内部渲染）`, images: [rendered.cqCode] };
       }
 
       if (source === 'bp_range') {
