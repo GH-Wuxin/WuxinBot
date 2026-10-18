@@ -63,18 +63,48 @@ export function modelSupportsVision(db) {
   return /(mimo|vision|visual|multimodal|multi-modal|omni|gpt-4o|qwen[-_\s]?.*vl|glm[-_\s]?.*4v|yi[-_\s]?.*vision|(?:^|[-_\s])vl(?:$|[-_\s]))/i.test(probe);
 }
 
+/** 引用消息的说话人：bot 自己发过的（userId 是 bot 或 selfQq）要认成"你自己"。 */
+export function quotedSpeakerLabel(quoted, selfQq = '') {
+  const id = String(quoted?.userId || '');
+  if (id === 'bot' || (selfQq && id === String(selfQq))) return '你自己';
+  return quoted?.nickname || (id ? `QQ ${id}` : '未知发送者');
+}
+
+/** 把被引用的那条消息写成一行，带上说话人和图片张数 —— 模型靠这一行区分"谁发的"。 */
+export function describeQuotedMessage(quoted, selfQq = '') {
+  if (!quoted) return '';
+  const speaker = quotedSpeakerLabel(quoted, selfQq);
+  const id = String(quoted.userId || '');
+  const idSuffix = speaker === '你自己' || !id ? '' : `（QQ:${id}）`;
+  const imageCount = Array.isArray(quoted.images) ? quoted.images.length : 0;
+  const text = String(quoted.text || '').trim();
+  const body = text
+    ? (imageCount ? `${text} [图片 ×${imageCount}]` : text)
+    : (imageCount ? `[图片 ×${imageCount}]` : '（引用内容不可用）');
+  return `【所回复的 QQ 消息｜${speaker}${idSuffix}】${body}`;
+}
+
 export function visualCapabilityNotice(db, event = {}) {
   const hasVisual = hasVisualPlaceholder(event.text || '');
-  const hasActualImages = (Array.isArray(event.images) && event.images.length > 0) ||
-    (Array.isArray(event.quotedMessage?.images) && event.quotedMessage.images.length > 0);
+  const ownImages = Array.isArray(event.images) ? event.images.length : 0;
+  const quotedImages = Array.isArray(event.quotedMessage?.images) ? event.quotedMessage.images.length : 0;
   if (modelSupportsVision(db)) {
-    if (hasActualImages) return '本轮已附带图片给你。请基于实际图片回答；图片不可读时诚实说明。';
+    if (ownImages > 0) return '本轮已附带图片给你。请基于实际图片回答；图片不可读时诚实说明。';
+    // 图片只来自引用：那是原发送者发的，不是当前发言者刚发的。
+    // 这两句原先共用一句"本轮已附带图片"，模型就把引用里的图算到了说话人头上。
+    if (quotedImages > 0) {
+      const speaker = quotedSpeakerLabel(event.quotedMessage, db?.settings?.selfQq || '');
+      const who = speaker === '你自己' ? '你自己（机器人）' : speaker;
+      return `本轮附带的图片来自被引用的那条消息，原发送者是${who}，不是当前发言者刚发的图。`
+        + '描述这张图时不要说成"你发的"，也不要把图里的内容算到当前发言者名下。';
+    }
     if (hasVisual) return '本轮消息包含图片占位符但未拿到实际图像。说明无法确认内容即可，不要编造。';
     return '当前没有图片内容。按普通文字聊天，不要主动提视觉能力。';
   }
   // Text-only model: only warn when an image is actually present (or a
   // placeholder was seen), so it does not fabricate visual content. When there
   // is no image, no vision instruction is needed at all.
+  if (quotedImages > 0) return '你是纯文字模型，看不了图片。被引用的那条消息里带有图片，但你看不到内容，不要描述它，也不要说成是当前发言者发的。';
   if (hasVisual) return '你是纯文字模型，无法识别图片。被要求看图时诚实说明"我是文字模式，看不了图片"。不要编造画面内容。';
   return '';
 }
@@ -186,7 +216,7 @@ function groupSpeakerBoundary(event, speakerIdentity) {
   if (event.type !== 'group') return '';
   const quoted = event.quotedMessage;
   const referenceRule = quoted
-    ? `本轮明确引用了 ${quoted.nickname || quoted.userId || '另一位群友'}（QQ:${quoted.userId || '未知'}）的消息；引用内容仍属于原发送者，不自动属于当前发言者。`
+    ? `本轮明确引用了 ${quotedSpeakerLabel(quoted, event.selfQq || '')}（QQ:${quoted.userId || '未知'}）的消息；引用内容仍属于原发送者，不自动属于当前发言者。引用里的图片也一样 —— 可能是别的群友甚至你自己之前发的，不是当前发言者刚发的。`
     : '本轮没有引用一条具体历史消息。若当前句子没有说明所指，不要自行挑选某条旧消息补出原因；简短追问或只回应当前情绪。';
   return [
     '【多说话人事实归属】',
@@ -509,10 +539,7 @@ export function buildPrompt(db, group, event, userPolicy, options = {}) {
   // 原先这里用正则把 @自己 换成 @你，其余 @ 保持裸号码 —— 那正是她分不清谁是谁的原因。
   let displayText = renderMentions(event.text, event.mentionNames, selfQq);
   if (event.quotedMessage) {
-    const quotedSpeaker = event.quotedMessage.nickname || event.quotedMessage.userId || '未知发送者';
-    const quotedText = String(event.quotedMessage.text || '').trim() ||
-      (event.quotedMessage.images?.length ? '[图片]' : '（引用内容不可用）');
-    displayText = `【所回复的 QQ 消息｜${quotedSpeaker}】${quotedText}\n【当前消息】${displayText}`;
+    displayText = `${describeQuotedMessage(event.quotedMessage, selfQq)}\n【当前消息】${displayText}`;
   }
 
   const selfNegationBan = '【注意】一旦进入回复阶段就表示你应该回复。禁止说"没有回应/不该回应/at的不是自己/at的是别人"等自我否定的话。';
