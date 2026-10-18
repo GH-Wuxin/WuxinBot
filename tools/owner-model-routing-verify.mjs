@@ -48,7 +48,7 @@ check(visualOptions.overrideModel === 'deepseek-v4-flash', '带图的一轮仍�
 // 接线：源码里不该再出现给 owner 写死模型的代码
 const promptSource = fs.readFileSync(path.join(import.meta.dirname, '..', 'server', 'bot', 'prompt.ts'), 'utf8');
 check(!promptSource.includes("if (isOwner) {\n    const provider = llmProvider(db);"), 'owner 特判代码已移除');
-check(promptSource.includes('deepseek-v4-pro'), '复杂度路由本身仍然保留');
+check(!promptSource.includes('autoModelForTask') && !promptSource.includes('taskComplexityScore'), '复杂度路由代码已移除');
 
 console.log('');
 if (failed) {

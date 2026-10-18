@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { activeModelName, activateModelProfile, DEEPSEEK_BASE_URL, looksLikeMimoEndpoint, MIMO_BASE_URL, recoverProviderProfiles } from './modelConfig.js';
+import { activeModelName, activateModelProfile, DEEPSEEK_BASE_URL, recoverProviderProfiles } from './modelConfig.js';
 import { DEFAULT_BOTS } from './bots/registry.js';
 import { DEFAULT_KB_SETTINGS } from './bot/knowledgeTypes.js';
 import { cacheUsageSummary, usageEventHasCacheDetails, eventMeasuredPromptTokens } from './usage.js';
@@ -466,8 +466,6 @@ const initialDb = {
     apiBaseUrl: process.env.LLM_API_BASE_URL || DEEPSEEK_BASE_URL,
     deepseekApiKey: process.env.DEEPSEEK_API_KEY || '',
     deepseekApiBaseUrl: DEEPSEEK_BASE_URL,
-    mimoApiKey: process.env.MIMO_API_KEY || '',
-    mimoApiBaseUrl: process.env.MIMO_API_BASE_URL || MIMO_BASE_URL,
     codexExecutable: process.env.CODEX_EXECUTABLE || 'codex',
     codexModel: process.env.CODEX_MODEL || 'gpt-5.6-luna',
     codexReasoningEffort: process.env.CODEX_REASONING_EFFORT || 'low',
@@ -475,11 +473,7 @@ const initialDb = {
     codexFallbackEnabled: true,
     codexFallbackProvider: 'deepseek',
     codexFallbackModel: 'deepseek-v4-flash',
-    model: process.env.LLM_MODEL || (
-      looksLikeMimoEndpoint(process.env.LLM_API_BASE_URL) || process.env.LLM_PROVIDER === 'openai-compatible'
-        ? 'mimo-v2.5'
-        : 'deepseek-v4-flash'
-    ),
+    model: process.env.LLM_MODEL || 'deepseek-v4-flash',
     visionMode: 'auto',
     visionImageTransport: 'auto',
     visionMaxImages: 3,
@@ -1533,7 +1527,6 @@ export function publicDb(db = readDb(), options: { includeMemorySamples?: boolea
       // placeholders to show that a secret is present without exposing it.
       apiKey: db.settings.apiKey ? '已填写' : '',
       deepseekApiKey: db.settings.deepseekApiKey ? '已填写' : '',
-      mimoApiKey: db.settings.mimoApiKey ? '已填写' : '',
       oneBotAccessToken: db.settings.oneBotAccessToken ? '已填写' : '',
       adminPassword: db.settings.adminPassword ? '已设置' : '',
       osuClientSecret: db.settings.osuClientSecret ? '已填写' : '',

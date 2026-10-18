@@ -23,12 +23,8 @@ import {
   activateModelProfile,
   DEEPSEEK_BASE_URL,
   isDeepSeekVisionModel,
-  looksLikeMimoApiKey,
-  looksLikeMimoEndpoint,
   resolveDeepSeekWireModel
 } from '../modelConfig.js';
-
-export { looksLikeMimoApiKey, looksLikeMimoEndpoint } from '../modelConfig.js';
 
 export interface LlmCompletionMeta {
   finishReason: string | null;
@@ -176,10 +172,7 @@ export async function collectChatCompletionStream(stream, fallbackModel = '', on
 }
 
 export function llmProvider(db) {
-  const provider = String(db.settings.llmProvider || 'deepseek').trim() || 'deepseek';
-  const baseUrl = String(db.settings.apiBaseUrl || '').trim();
-  if (provider === 'deepseek' && looksLikeMimoEndpoint(baseUrl)) return 'openai-compatible';
-  return provider;
+  return String(db.settings.llmProvider || 'deepseek').trim() || 'deepseek';
 }
 
 export function defaultBaseUrlForProvider(provider) {
@@ -209,26 +202,17 @@ function rawLlmProvider(db) {
 }
 
 function assertLlmConfigCompatible(db, provider, baseURL, apiKey) {
-  const rawProvider = rawLlmProvider(db);
-  const base = String(baseURL || '').trim();
-  const key = String(apiKey || '').trim();
-  if (rawProvider === 'deepseek' && !looksLikeMimoEndpoint(base) && looksLikeMimoApiKey(key)) {
-    throw new Error('LLM 配置错配：当前供应商/地址是 DeepSeek，但 API Key 看起来是 Mimo 的 tp- 开头密钥。请在模型设置里把供应商切到 OpenAI 兼容接口，并填写 Mimo API 地址。');
-  }
-  if (provider === 'deepseek' && looksLikeMimoEndpoint(base)) {
-    throw new Error('LLM 配置错配：API 地址是 Mimo，但供应商仍是 DeepSeek。请保存为 OpenAI 兼容接口。');
-  }
+  // Mimo 已下线；供应商与地址是否匹配由模型设置页保证。
+  void db;
+  void provider;
+  void baseURL;
+  void apiKey;
 }
 
 function requestModelForProvider(db, provider, baseURL, options = {}) {
-  const fallback = provider === 'deepseek' ? 'deepseek-chat' : 'mimo-v2.5';
+  void baseURL;
+  const fallback = 'deepseek-chat';
   const model = String(options.model || options.overrideModel || db.settings.model || fallback).trim() || fallback;
-  if (provider === 'openai-compatible' && looksLikeMimoEndpoint(baseURL) && /^deepseek-/i.test(model)) {
-    throw new Error(`LLM 配置错配：Mimo API 地址不能使用 DeepSeek 模型名 ${model}。请把模型切到 mimo-v2.5 或 mimo-v2.5-pro。`);
-  }
-  if (provider === 'deepseek' && /^mimo-/i.test(model)) {
-    throw new Error(`LLM 配置错配：DeepSeek 供应商不能使用 Mimo 模型名 ${model}。请切换供应商或模型。`);
-  }
   return provider === 'deepseek' ? resolveDeepSeekWireModel(model) : model;
 }
 

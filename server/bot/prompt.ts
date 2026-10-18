@@ -284,20 +284,6 @@ export function isLongFormRequest(text) {
   return /作文|文章|长文|写一篇|写个|续写|继续|补上|结尾|三百字|300字|[0-9０-９]{3,}\s*字|不少于|大约.*字|高考作文|议论文|小说|故事/.test(String(text || ''));
 }
 
-export function taskComplexityScore(event, userPolicy) {
-  const text = String(event.text || '');
-  let score = 0;
-  if (asksForExplicitSearch(text)) score += 30;
-  if (isLongFormRequest(text)) score += 25;
-  if (/分析|比较|区别|优缺点|为什么|原因|原理|论证|探讨|评估|判断|推理/.test(text)) score += 20;
-  if (/代码|编程|写一个|实现|算法|bug|debug|函数|API|接口|架构|设计模式|优化/.test(text)) score += 25;
-  if (/计算|算一下|数学|公式|多少[钱费用]|等于|换算|统计/.test(text)) score += 20;
-  if (/写.*[故事诗歌词剧本小说文章文案]|[故事诗歌词剧本小说文章文案].*写/.test(text)) score += 15;
-  score += Math.min(15, Math.floor(text.length / 30));
-  if (userPolicy?.policy === 'owner') score += 10;
-  return score;
-}
-
 function hasConfiguredSearch(db) {
   const settings = db?.settings || {};
   return Boolean(
@@ -308,56 +294,30 @@ function hasConfiguredSearch(db) {
   );
 }
 
-export function autoModelForTask(score, db) {
-  const provider = llmProvider(db);
-  const canSearch = supportsProviderSearch(provider) || hasConfiguredSearch(db);
-  const fallbackSearchMode = canSearch ? (db.settings.webSearchMode || 'balanced') : null;
-  if (!db.settings.enableAutoModel) {
-    return { model: null, searchMode: fallbackSearchMode, maxTokens: null };
-  }
-  if (provider !== 'deepseek') {
-    return {
-      model: null,
-      searchMode: fallbackSearchMode,
-      maxTokens: score >= 60
-        ? Math.max(db.settings.maxTokens || 300, 1200)
-        : (score >= 35 ? Math.max(db.settings.maxTokens || 300, 800) : null)
-    };
-  }
-  if (score >= 60) {
-    return { model: 'deepseek-v4-pro', searchMode: 'deep', maxTokens: Math.max(db.settings.maxTokens || 300, 1200) };
-  }
-  if (score >= 35) {
-    return { model: 'deepseek-v4-flash', searchMode: 'balanced', maxTokens: Math.max(db.settings.maxTokens || 300, 800) };
-  }
-  return { model: null, searchMode: 'fast', maxTokens: null };
-}
-
 export function responseOptionsFor(event, db, userPolicy) {
-  const score = taskComplexityScore(event, userPolicy);
-  let auto = autoModelForTask(score, db);
+  // 不再按"任务复杂度"换模型：评分、自动路由、owner 特判都删了。
+  // 现在只有一条规则 —— 带图的一轮必须锁在视觉模型上，其余一律跟着 settings.model。
   const longForm = isLongFormRequest(event.text);
   const canSearch = supportsProviderSearch(llmProvider(db)) || hasConfiguredSearch(db);
   const strictSearch = canSearch && asksForExplicitSearch(event.text);
-  // Owner 曾经在这里被无条件升到 V4 Pro。现在 Pro 不比 Flash 强，这条只让
-  // owner 自己说的话变慢变贵，还让控制台显示的"当前模型"和实际不符，所以删掉：
-  // owner 和其它人一样走 settings.model（除非开了 enableAutoModel 的复杂度路由）。
-  // A visual turn must stay on the selected image-capable model. Otherwise
-  // complexity auto-routing can silently replace Flash Vision with the
-  // text-only Pro endpoint after the prompt has already promised image access.
   const visualTurn = modelSupportsVision(db) && (
     (Array.isArray(event.images) && event.images.length > 0) ||
     (Array.isArray(event.quotedMessage?.images) && event.quotedMessage.images.length > 0) ||
     hasVisualPlaceholder(event.text || '') ||
     asksToInspectVisual(event.text || '')
   );
-  if (visualTurn) auto = { ...auto, model: activeModelName(db.settings) };
   const baseMax = Number(db.settings.maxTokens || 300);
-  const adaptiveMax = auto.maxTokens || Math.max(baseMax, 760);
-  const searchMode = strictSearch
-    ? (auto.searchMode || db.settings.webSearchMode || 'balanced')
-    : (canSearch && db.settings.enableWebSearch ? (auto.searchMode || db.settings.webSearchMode || 'balanced') : null);
-  return { longForm, strictSearch, score, overrideModel: auto.model, maxTokens: adaptiveMax, searchMode };
+  const maxTokens = Math.max(baseMax, 760);
+  const searchMode = strictSearch || (canSearch && db.settings.enableWebSearch)
+    ? (db.settings.webSearchMode || 'balanced')
+    : null;
+  return {
+    longForm,
+    strictSearch,
+    overrideModel: visualTurn ? activeModelName(db.settings) : null,
+    maxTokens,
+    searchMode
+  };
 }
 
 function ownerPrivateMessages(db) {

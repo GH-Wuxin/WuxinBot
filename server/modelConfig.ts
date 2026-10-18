@@ -1,9 +1,7 @@
 export const DEEPSEEK_BASE_URL = 'https://api.deepseek.com';
 export const DEEPSEEK_FLASH_MODEL = 'deepseek-v4-flash';
 export const DEEPSEEK_FLASH_VISION_MODEL = 'deepseek-v4-flash-vision-exp';
-export const MIMO_BASE_URL = 'https://token-plan-cn.xiaomimimo.com/v1';
-
-export type ModelFamily = 'deepseek' | 'mimo' | null;
+export type ModelFamily = 'deepseek' | null;
 
 /**
  * Keep the stable Wuxin-facing Flash id while routing it to DeepSeek's
@@ -18,23 +16,13 @@ export function isDeepSeekVisionModel(value: unknown) {
   return resolveDeepSeekWireModel(value) === DEEPSEEK_FLASH_VISION_MODEL;
 }
 
-export function looksLikeMimoEndpoint(value: unknown) {
-  return /(mimo|xiaomimimo|token-plan-cn)/i.test(String(value || ''));
-}
-
-export function looksLikeMimoApiKey(value: unknown) {
-  return /^tp-/i.test(String(value || '').trim());
-}
-
 export function modelFamily(value: unknown): ModelFamily {
   const model = String(value || '').trim();
   if (/^deepseek-/i.test(model)) return 'deepseek';
-  if (/^mimo-/i.test(model)) return 'mimo';
   return null;
 }
 
 export function providerFamily(settings: Record<string, any>): ModelFamily {
-  if (looksLikeMimoEndpoint(settings.apiBaseUrl)) return 'mimo';
   if (String(settings.llmProvider || '') === 'deepseek') return 'deepseek';
   return modelFamily(settings.model);
 }
@@ -69,20 +57,12 @@ export function ensureProviderProfiles(settings: Record<string, any>) {
   const activeBase = clean(next.apiBaseUrl);
 
   next.deepseekApiKey = isPlaceholder(next.deepseekApiKey) ? '' : clean(next.deepseekApiKey);
-  next.mimoApiKey = isPlaceholder(next.mimoApiKey) ? '' : clean(next.mimoApiKey);
   next.apiKey = isPlaceholder(next.apiKey) ? '' : clean(next.apiKey);
   next.deepseekApiBaseUrl = clean(next.deepseekApiBaseUrl) ||
-    (activeFamily === 'deepseek' && activeBase && !looksLikeMimoEndpoint(activeBase) ? activeBase : DEEPSEEK_BASE_URL);
-  next.mimoApiBaseUrl = clean(next.mimoApiBaseUrl) ||
-    (looksLikeMimoEndpoint(activeBase) ? activeBase : MIMO_BASE_URL);
+    (activeFamily === 'deepseek' && activeBase ? activeBase : DEEPSEEK_BASE_URL);
 
-  // Migrate the legacy single active key into one provider profile. A tp- key
-  // is unambiguously Mimo; otherwise the active endpoint/provider owns it.
-  if (activeKey) {
-    if (looksLikeMimoApiKey(activeKey) && !next.mimoApiKey) next.mimoApiKey = activeKey;
-    else if (activeFamily === 'mimo' && !next.mimoApiKey) next.mimoApiKey = activeKey;
-    else if (activeFamily === 'deepseek' && !next.deepseekApiKey) next.deepseekApiKey = activeKey;
-  }
+  // 把旧的单一 key 迁移到 DeepSeek 档案里（Mimo 已移除，不再有第二个档案）。
+  if (activeKey && activeFamily === 'deepseek' && !next.deepseekApiKey) next.deepseekApiKey = activeKey;
   return next;
 }
 
@@ -94,14 +74,10 @@ export function activateModelProfile(settings: Record<string, any>, requestedMod
 
   // Codex App Server has its own `codexModel`. Keep the existing API model and
   // credentials untouched as a rollback/fallback profile instead of letting a
-  // deepseek-/mimo- model name silently switch this provider back off.
+  // deepseek- model name silently switch this provider back off.
   if (clean(next.llmProvider) === 'codex-app-server') return next;
 
-  if (family === 'mimo') {
-    next.llmProvider = 'openai-compatible';
-    next.apiBaseUrl = next.mimoApiBaseUrl || MIMO_BASE_URL;
-    next.apiKey = next.mimoApiKey || '';
-  } else if (family === 'deepseek') {
+  if (family === 'deepseek') {
     next.llmProvider = 'deepseek';
     next.apiBaseUrl = next.deepseekApiBaseUrl || DEEPSEEK_BASE_URL;
     next.apiKey = next.deepseekApiKey || '';
@@ -115,24 +91,12 @@ export function recoverProviderProfiles(settings: Record<string, any>, snapshots
     const candidate = snapshot?.settings || snapshot || {};
     const key = clean(candidate.apiKey);
     if (!key || isPlaceholder(key)) continue;
-    const family = looksLikeMimoApiKey(key)
-      ? 'mimo'
-      : (looksLikeMimoEndpoint(candidate.apiBaseUrl) || modelFamily(candidate.model) === 'mimo')
-        ? 'mimo'
-        : (candidate.llmProvider === 'deepseek' || modelFamily(candidate.model) === 'deepseek')
-          ? 'deepseek'
-          : null;
-    if (family === 'mimo' && !next.mimoApiKey) {
-      next.mimoApiKey = key;
-      if (looksLikeMimoEndpoint(candidate.apiBaseUrl)) next.mimoApiBaseUrl = clean(candidate.apiBaseUrl);
-    }
-    if (family === 'deepseek' && !looksLikeMimoApiKey(key) && !next.deepseekApiKey) {
+    const isDeepSeek = candidate.llmProvider === 'deepseek' || modelFamily(candidate.model) === 'deepseek';
+    if (isDeepSeek && !next.deepseekApiKey) {
       next.deepseekApiKey = key;
-      if (candidate.apiBaseUrl && !looksLikeMimoEndpoint(candidate.apiBaseUrl)) {
-        next.deepseekApiBaseUrl = clean(candidate.apiBaseUrl);
-      }
+      if (candidate.apiBaseUrl) next.deepseekApiBaseUrl = clean(candidate.apiBaseUrl);
     }
-    if (next.mimoApiKey && next.deepseekApiKey) break;
+    if (next.deepseekApiKey) break;
   }
   return activateModelProfile(next, settings.model);
 }
@@ -142,7 +106,6 @@ export function updateProviderSettings(current: Record<string, any>, incoming: R
   const next = { ...saved, ...incoming };
   const keepSecret = (value: unknown) => !clean(value) || isPlaceholder(value);
   if (keepSecret(incoming.deepseekApiKey)) next.deepseekApiKey = saved.deepseekApiKey;
-  if (keepSecret(incoming.mimoApiKey)) next.mimoApiKey = saved.mimoApiKey;
 
   if (clean(incoming.llmProvider) === 'codex-app-server') {
     if (clean(saved.llmProvider) !== 'codex-app-server') {
@@ -160,19 +123,15 @@ export function updateProviderSettings(current: Record<string, any>, incoming: R
 
   const requestedModel = clean(incoming.model === undefined ? saved.model : incoming.model);
   const requestedFamily = modelFamily(requestedModel) ||
-    (looksLikeMimoEndpoint(incoming.apiBaseUrl) ? 'mimo' : null) ||
     (incoming.llmProvider === 'deepseek' ? 'deepseek' : null) ||
     providerFamily(saved);
   const suppliedKey = clean(incoming.apiKey);
   const hasNewKey = !keepSecret(incoming.apiKey);
   const suppliedBase = clean(incoming.apiBaseUrl);
 
-  if (requestedFamily === 'mimo') {
-    if (hasNewKey) next.mimoApiKey = suppliedKey;
-    if (suppliedBase && looksLikeMimoEndpoint(suppliedBase)) next.mimoApiBaseUrl = suppliedBase;
-  } else if (requestedFamily === 'deepseek') {
+  if (requestedFamily === 'deepseek') {
     if (hasNewKey) next.deepseekApiKey = suppliedKey;
-    if (suppliedBase && !looksLikeMimoEndpoint(suppliedBase)) next.deepseekApiBaseUrl = suppliedBase;
+    if (suppliedBase) next.deepseekApiBaseUrl = suppliedBase;
   }
 
   // Unknown custom models keep the explicitly selected provider. Known model
@@ -185,5 +144,5 @@ export function updateProviderSettings(current: Record<string, any>, incoming: R
 export function activeProviderLabel(settings: Record<string, any>) {
   if (clean(settings.llmProvider) === 'codex-app-server') return 'ChatGPT / Codex App Server';
   const family = modelFamily(settings.model) || providerFamily(settings);
-  return family === 'mimo' ? 'Mimo / OpenAI 兼容接口' : 'DeepSeek';
+  return family === 'deepseek' ? 'DeepSeek' : 'OpenAI 兼容接口';
 }

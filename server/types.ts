@@ -48,8 +48,6 @@ export interface DbSettings {
   apiBaseUrl: string;
   deepseekApiKey?: string;
   deepseekApiBaseUrl?: string;
-  mimoApiKey?: string;
-  mimoApiBaseUrl?: string;
   codexExecutable?: string;
   codexModel?: string;
   codexReasoningEffort?: 'low' | 'medium' | 'high' | 'xhigh' | 'max';

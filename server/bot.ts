@@ -40,8 +40,6 @@ import {
   calcCost,
   asksForExplicitSearch,
   isLongFormRequest,
-  taskComplexityScore,
-  autoModelForTask,
   responseOptionsFor,
   ownerPrivateContextStats,
   promptContextMessages,

@@ -35,10 +35,6 @@ const baseModelOptions = [
   { value: 'deepseek-reasoner', label: 'DeepSeek Reasoner（更慢更会想）' },
   { value: 'deepseek-v4-flash', label: 'DeepSeek V4 Flash（视觉）' },
   { value: 'deepseek-v4-pro', label: 'DeepSeek V4 Pro' },
-  { value: 'mimo-v2.5-pro', label: 'MiMo-V2.5-Pro（多模态）' },
-  { value: 'mimo-v2.5', label: 'MiMo-V2.5' },
-  { value: 'mimo-v2-omni', label: 'MiMo-V2-Omni（视觉理解）' },
-  { value: 'mimo-v2-pro', label: 'MiMo-V2-Pro' },
 ];
 
 export function ModelsPage({ db, saveSettings }) {
@@ -49,6 +45,8 @@ export function ModelsPage({ db, saveSettings }) {
   const [codexStatus, setCodexStatus] = useState(null);
   const [codexModels, setCodexModels] = useState([]);
   const [codexLimits, setCodexLimits] = useState(null);
+  const [apiModels, setApiModels] = useState([]);
+  const [apiModelsNote, setApiModelsNote] = useState('');
   const [codexBusy, setCodexBusy] = useState(false);
   const [codexMessage, setCodexMessage] = useState('');
   const [section, setSection] = useState('account');
@@ -59,14 +57,33 @@ export function ModelsPage({ db, saveSettings }) {
     if (!dirty) setDraft(db.settings);
   }, [db.settings, dirty]);
 
+  // 模型清单来自上游：切供应商/改地址时重新拉一次，失败就退回内置清单。
+  useEffect(() => {
+    let cancelled = false;
+    const query = new URLSearchParams({
+      provider: String(draft.llmProvider || 'deepseek'),
+      apiBaseUrl: String(draft.apiBaseUrl || ''),
+    });
+    api('/api/models?' + query.toString(), { timeoutMs: 15000 })
+      .then((result) => {
+        if (cancelled) return;
+        setApiModels(Array.isArray(result?.models) ? result.models : []);
+        setApiModelsNote(result?.error || '');
+      })
+      .catch((cause) => {
+        if (cancelled) return;
+        setApiModels([]);
+        setApiModelsNote(cause?.message || String(cause));
+      });
+    return () => { cancelled = true; };
+  }, [draft.llmProvider, draft.apiBaseUrl]);
+
   const updateDraft = (next) => {
     setDirty(true);
     setDraft((current) => typeof next === 'function' ? next(current) : { ...current, ...next });
   };
 
-  const looksLikeMimoEndpoint = (value) => /(mimo|xiaomimimo|token-plan-cn)/i.test(String(value || ''));
   const isDeepSeekModel = (value) => /^deepseek-/i.test(String(value || ''));
-  const isMimoModel = (value) => /^mimo-/i.test(String(value || ''));
   const withProviderDefaults = (patch) => {
     const next = { ...draft, ...patch };
     if (patch.llmProvider === 'codex-app-server') {
@@ -76,21 +93,11 @@ export function ModelsPage({ db, saveSettings }) {
       }
       next.codexModel ||= 'gpt-5.6-luna';
       next.codexReasoningEffort ||= 'low';
-    } else if (patch.model !== undefined && isMimoModel(next.model)) {
-      next.llmProvider = 'openai-compatible';
-      if (!looksLikeMimoEndpoint(next.apiBaseUrl)) next.apiBaseUrl = 'https://token-plan-cn.xiaomimimo.com/v1';
     } else if (patch.model !== undefined && isDeepSeekModel(next.model)) {
       next.llmProvider = 'deepseek';
       next.apiBaseUrl = 'https://api.deepseek.com';
     } else if (patch.llmProvider === 'deepseek') {
       next.apiBaseUrl = 'https://api.deepseek.com';
-      if (isMimoModel(next.model)) next.model = 'deepseek-v4-flash';
-    } else if (patch.llmProvider === 'openai-compatible') {
-      if (!looksLikeMimoEndpoint(next.apiBaseUrl)) next.apiBaseUrl = 'https://token-plan-cn.xiaomimimo.com/v1';
-      if (isDeepSeekModel(next.model)) next.model = 'mimo-v2.5';
-    } else if (patch.apiBaseUrl !== undefined && looksLikeMimoEndpoint(next.apiBaseUrl)) {
-      next.llmProvider = 'openai-compatible';
-      if (isDeepSeekModel(next.model)) next.model = 'mimo-v2.5';
     }
     return next;
   };
@@ -186,9 +193,12 @@ export function ModelsPage({ db, saveSettings }) {
   };
 
   const currentModel = draft.model || 'deepseek-v4-flash';
-  const modelOptions = baseModelOptions.some((option) => option.value === currentModel)
-    ? baseModelOptions
-    : [...baseModelOptions, { value: currentModel, label: `当前自定义：${currentModel}` }];
+  // 模型清单以上游为准；拉不到时才退回内置的几条（并保留当前值，别把选择弄丢）。
+  const upstreamOptions = apiModels.map((model) => ({ value: model.id, label: model.label || model.id }));
+  const sourceOptions = upstreamOptions.length ? upstreamOptions : baseModelOptions;
+  const modelOptions = sourceOptions.some((option) => option.value === currentModel)
+    ? sourceOptions
+    : [...sourceOptions, { value: currentModel, label: `当前：${currentModel}` }];
 
   const codexModelOptions = (codexModels.length ? codexModels.map((model) => ({
     value: model.model || model.id,
@@ -254,7 +264,6 @@ export function ModelsPage({ db, saveSettings }) {
             <Slider label="旧历史补入预算" min={2000} max={40000} step={1000} value={draft.groupContextSearchCharBudget || 12000} onChange={(groupContextSearchCharBudget) => updateDraft({ groupContextSearchCharBudget })} hint="字符" />
           </>}
           <Slider label="Owner 私聊上下文软上限" min={4000} max={60000} step={1000} value={draft.ownerPrivateContextCharBudget || 24000} onChange={(ownerPrivateContextCharBudget) => updateDraft({ ownerPrivateContextCharBudget })} hint="字符" />
-          <SettingRow title="自动选择模型" description="复杂任务允许升级到更强模型" control={<Switch checked={draft.enableAutoModel !== false} onChange={(event) => updateDraft({ enableAutoModel: event.target.checked })} />} />
           <SettingRow title="启用模型思考" description="允许复杂调用开启 DeepSeek thinking；会增加延迟与 Token，供应商 raw CoT 将实时显示在日志页" control={<Switch checked={draft.reasoningEnabled === true} onChange={(event) => updateDraft({ reasoningEnabled: event.target.checked })} />} />
           <SettingRow title="纯人设模式" description="忽略系统事实注入" control={<Switch checked={draft.ignoreSystemFacts === true} onChange={(event) => updateDraft({ ignoreSystemFacts: event.target.checked })} />} />
           <SettingRow title="画像 V2 防近因" description="长期画像与近期动态分层（实验性）" control={<Switch checked={draft.profileAntiRecencyV2 === true} onChange={(event) => updateDraft({ profileAntiRecencyV2: event.target.checked })} />} />

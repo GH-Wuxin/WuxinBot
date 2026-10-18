@@ -358,6 +358,48 @@ app.get('/api/codex/status', async (_req, res) => {
   res.json(ok({ status }));
 });
 
+// 模型列表从上游拿：Codex 走它自己的账号接口，其余走 OpenAI 兼容的 /models。
+// 前端不再维护硬编码的模型清单 —— 上游加模型、下架模型都自动反映。
+app.get('/api/models', async (req, res) => {
+  const db = readDb();
+  const provider = String(req.query.provider || db.settings.llmProvider || 'deepseek');
+  const overrideBase = String(req.query.apiBaseUrl || '').trim();
+  try {
+    if (provider === 'codex-app-server') {
+      const models = await listCodexModels(db.settings);
+      return res.json(ok({
+        provider,
+        models: (models || []).map((model) => ({
+          id: String(model.model || model.id || ''),
+          label: String(model.displayName || model.model || model.id || ''),
+        })).filter((model) => model.id),
+      }));
+    }
+    const base = (overrideBase || String(db.settings.apiBaseUrl || '')
+      || (provider === 'deepseek' ? 'https://api.deepseek.com' : '')).replace(/\/$/, '');
+    if (!base) return res.json(ok({ provider, models: [], error: '没有可用的接口地址' }));
+    const key = provider === 'deepseek'
+      ? String(db.settings.deepseekApiKey || db.settings.apiKey || '')
+      : String(db.settings.apiKey || '');
+    const response = await fetch(base + '/models', {
+      headers: key ? { authorization: 'Bearer ' + key } : {},
+      signal: AbortSignal.timeout(10_000),
+    });
+    if (!response.ok) return res.json(ok({ provider, models: [], error: '上游返回 ' + response.status }));
+    const data = await response.json();
+    const list = Array.isArray(data?.data) ? data.data : (Array.isArray(data?.models) ? data.models : []);
+    res.json(ok({
+      provider,
+      models: list.map((item) => ({
+        id: String(item.id || item.model || ''),
+        label: String(item.displayName || item.id || item.model || ''),
+      })).filter((model) => model.id),
+    }));
+  } catch (error) {
+    res.json(ok({ provider, models: [], error: (error && error.message) || String(error) }));
+  }
+});
+
 app.get('/api/codex/models', async (_req, res) => {
   try {
     res.json(ok({ models: await listCodexModels(readDb().settings) }));
