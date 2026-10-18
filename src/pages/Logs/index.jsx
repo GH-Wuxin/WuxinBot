@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Activity, BrainCircuit, ChevronLeft, ChevronRight, Download, Search, Trash2 } from 'lucide-react';
 import { Button, Card, EmptyState, Pill, SectionHeader, SegmentedControl, Select, StatusBadge } from '../../components/ui/index.jsx';
+import { ReplyProcesses } from '../../components/ReplyProcesses.jsx';
 import { usePollingResource } from '../../app/polling.js';
 import { api, subscribeRequestTraceStream } from '../../lib/api.js';
 import { correlateChatRecords, requestProgressSnapshot } from './correlation.js';
@@ -145,6 +146,7 @@ export function LogsPage({ db }) {
 
   return <div className="console-page logs-page">
     <SectionHeader title="运行日志" actions={<><Button icon={Download} loading={exporting} onClick={exportDiagnostics}>导出诊断</Button><details className="osu-shell-operations"><summary>更多操作</summary><div><Button variant="danger-ghost" icon={Trash2} onClick={clearAllContext}>清空全部上下文</Button></div></details></>} />
+    <ReplyProcesses />
     <div className="osu-log-tabs"><SegmentedControl label="日志分类" value={channel} onChange={selectChannel} options={[{ value: 'requests', label: '会话与请求' }, { value: 'commands', label: '指令与错误' }]} /><StatusBadge tone={streamState === 'connected' ? 'success' : 'warning'}>{streamState === 'connected' ? '实时连接' : '连接恢复中'}</StatusBadge></div>
     <div className="osu-log-toolbar"><span className="console-search"><Search size={15} /><input aria-label="搜索日志" placeholder="搜索消息、群号、模型或事件…" value={logSearch} onChange={event => { setLogSearch(event.target.value); setListPage(0); setSelectedId(null); }} /></span><Select aria-label="筛选日志" value={filter} onChange={event => selectFilter(event.target.value)} options={[{ value: 'all', label: '全部记录' }, { value: 'failed', label: '失败 / 拒绝' }, { value: 'slow', label: '慢请求 ≥ 30秒' }, ...(channel === 'requests' ? [{ value: 'active', label: '进行中' }, { value: 'silent', label: '未回复' }, { value: 'costly', label: '已记录用量 ≥ 5万' }] : [])]} /></div>
     {(streamError || traceResource.error || exportError) && <p className="osu-inline-warning">{exportError ? `诊断导出失败：${exportError}` : `实时追踪暂不可用，使用轮询重试：${streamError || traceResource.error}`}</p>}

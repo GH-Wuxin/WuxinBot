@@ -4,7 +4,6 @@ import { usePollingResource } from '../../app/polling.js';
 import { api } from '../../lib/api.js';
 import { Button, Card, ErrorState, LoadingState, SegmentedControl, SectionHeader, StatusBadge, Switch } from '../../components/ui/index.jsx';
 import { formatNumber, periodLabels, quotaWindows, shortNumber, usagePeriods, usageSummary } from './usageView.js';
-import { ReplyProcesses } from './ReplyProcesses.jsx';
 
 const apiModels = { 'deepseek-v4-flash': 'V4 Flash', 'deepseek-v4-pro': 'V4 Pro', 'deepseek-chat': 'Chat', 'deepseek-reasoner': 'Reasoner' };
 const codexModels = { 'gpt-5.6-luna': 'Luna', 'gpt-5.6-terra': 'Terra', 'gpt-5.6-sol': 'Sol' };
@@ -76,7 +75,6 @@ export function DashboardPage({ db, oneBot, saveSettings, refreshState, onNaviga
   return <div className="dashboard-page osu-dashboard">
     <div className="osu-session-bar"><StatusBadge tone={statusTone}>{statusText}</StatusBadge><span><span className="osu-muted">当前模型</span> {effectiveModel}</span><span><UsersRound size={14} />{enabledGroups} 个群已启用</span><Button variant="ghost" size="sm" icon={RefreshCw} onClick={() => { refreshState(); health.refresh(); }}>刷新状态</Button></div>
     {health.error && <p className="osu-inline-warning" role="status">无法获取最新运行状态：{health.error}。请检查服务连接。</p>}
-    <ReplyProcesses />
     <div className="osu-dashboard__stage"><UsageChart summary={summary} period={period} onPeriodChange={setPeriod} /><aside className="osu-dashboard__rail"><QuotaPanel enabled={codexActive} onNavigate={onNavigate} /><Card className="osu-health"><SectionHeader title="运行状态" />
       <div className="osu-health__row"><span>QQ / OneBot</span><StatusBadge tone={online ? 'success' : 'neutral'}>{!health.data || health.error ? '未知' : health.data.onebot?.accountOnline === false ? '账号离线' : online ? '已连接' : '未连接'}</StatusBadge></div>
       <div className="osu-health__row"><span><Clock3 size={14} />模型平均延迟</span><strong>{health.error ? '—' : health.data?.llm?.avgLatencyMs ? (health.data.llm.avgLatencyMs / 1000).toFixed(1) + ' 秒' : '暂无'}</strong></div>

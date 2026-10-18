@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Square } from 'lucide-react';
-import { api } from '../../lib/api.js';
-import { Button, Card } from '../../components/ui/index.jsx';
+import { api } from '../lib/api.js';
+import { Button, Card } from './ui/index.jsx';
 
 function elapsedText(ms) {
   const seconds = Math.max(0, Math.round(Number(ms || 0) / 1000));
