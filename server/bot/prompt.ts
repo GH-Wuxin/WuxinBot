@@ -334,24 +334,16 @@ export function autoModelForTask(score, db) {
 }
 
 export function responseOptionsFor(event, db, userPolicy) {
-  const isOwner = userPolicy?.policy === 'owner';
   const score = taskComplexityScore(event, userPolicy);
   let auto = autoModelForTask(score, db);
   const longForm = isLongFormRequest(event.text);
   const canSearch = supportsProviderSearch(llmProvider(db)) || hasConfiguredSearch(db);
   const strictSearch = canSearch && asksForExplicitSearch(event.text);
-  // Owner always gets upgraded handling, but the specific model/search
-  // choices only apply under DeepSeek provider.
-  if (isOwner) {
-    const provider = llmProvider(db);
-    if (provider === 'deepseek') {
-      auto = { model: 'deepseek-v4-pro', searchMode: 'deep', maxTokens: Math.max(db.settings.maxTokens || 300, 1200) };
-    } else {
-      auto = { model: null, searchMode: null, maxTokens: Math.max(db.settings.maxTokens || 300, 1200) };
-    }
-  }
+  // Owner 曾经在这里被无条件升到 V4 Pro。现在 Pro 不比 Flash 强，这条只让
+  // owner 自己说的话变慢变贵，还让控制台显示的"当前模型"和实际不符，所以删掉：
+  // owner 和其它人一样走 settings.model（除非开了 enableAutoModel 的复杂度路由）。
   // A visual turn must stay on the selected image-capable model. Otherwise
-  // owner/complexity auto-routing can silently replace Flash Vision with the
+  // complexity auto-routing can silently replace Flash Vision with the
   // text-only Pro endpoint after the prompt has already promised image access.
   const visualTurn = modelSupportsVision(db) && (
     (Array.isArray(event.images) && event.images.length > 0) ||
