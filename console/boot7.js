@@ -18,7 +18,7 @@ PAGES.randomImages = function () {
         + '<select data-random-rate="' + group.groupId + '" style="background:#202024;color:#f3f3f5;border:1px solid #3b3b42;border-radius:8px;padding:5px 8px;margin-right:10px">'
         + '<option value="standard"' + ((group.randomImageRate || 'standard') === 'standard' ? ' selected' : '') + '>standard</option>'
         + '<option value="low"' + (group.randomImageRate === 'low' ? ' selected' : '') + '>low</option></select>'
-        + '<button class="switch ' + (on ? 'is-on' : '') + '" data-random-group="' + group.groupId + '" data-row="' + esc(JSON.stringify({ name: row.name || group.name, mode: row.modeKey || group.mode || 'mention', maxPerHour: row.maxPerHour, cooldown: row.cooldown })) + '"></button></div>';
+        + '<button class="switch ' + (on ? 'is-on' : '') + '" onclick="toggleRandomGroup(&#39;' + group.groupId + '&#39;,this)"></button></div>';
     }).join('')
     + '</div></div>'
     + '<div class="grid grid-2">' + card('最近发送', '<div class="rows">' + ((info.recent || []).slice(0, 8).map((item) => listRow('', esc(item.file || item.name || '—'), esc(item.groupId || ''), '<span class="row-value" style="color:var(--muted)">' + fmtClock(item.at) + '</span>')).join('') || '<div class="empty">暂无</div>') + '</div>') + '</div>';
@@ -29,7 +29,8 @@ document.addEventListener('click', async function (event) {
   if (toggle) {
     event.preventDefault();
     const groupId = toggle.dataset.randomGroup;
-    const meta = JSON.parse(toggle.dataset.row || '{}');
+    const rowData = (DATA.groupRows || []).find((item) => String(item.id) === String(groupId)) || {};
+    const meta = { name: rowData.name, mode: rowData.modeKey || 'mention', maxPerHour: rowData.maxPerHour, cooldown: rowData.cooldown };
     const next = !toggle.classList.contains('is-on');
     const rateSelect = document.querySelector('[data-random-rate="' + groupId + '"]');
     const rate = rateSelect ? rateSelect.value : 'standard';
@@ -52,3 +53,20 @@ document.addEventListener('click', async function (event) {
     // 只在下一次切换时随保存一起写入
   }
 }, true);
+
+window.toggleRandomGroup = async function (groupId, button) {
+  const row = (DATA.groupRows || []).find((item) => String(item.id) === String(groupId)) || {};
+  const rateSelect = document.querySelector('[data-random-rate="' + groupId + '"]');
+  const next = !button.classList.contains('is-on');
+  button.classList.toggle('is-on', next);
+  try {
+    await callApi('/api/groups', { method: 'POST', body: JSON.stringify({ groupId, name: row.name || groupId, enabled: row.enabled !== false, mode: row.modeKey || 'mention', maxPerHour: row.maxPerHour, cooldownSec: row.cooldown, randomImageEnabled: next, randomImageRate: (rateSelect && rateSelect.value) || row.randomImageRate || 'standard' }) });
+    if (row) { row.randomImageEnabled = next; }
+    const group = (LIVE.randomImage.groups || []).find((item) => String(item.groupId) === String(groupId));
+    if (group) { group.randomImageEnabled = next; group.participates = next; }
+    flash(next ? '已开启这个群的随机发图' : '已关闭这个群的随机发图');
+  } catch (error) {
+    button.classList.toggle('is-on', !next);
+    flash('保存失败：' + error.message, 'danger');
+  }
+};
