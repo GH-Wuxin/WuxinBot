@@ -778,6 +778,8 @@ document.addEventListener('click', function (event) {
   var button = event.target.closest('#view button, .osu-shell-operations button');
   if (!button) return;
   if (button.dataset.mockBound) return;
+  // wired buttons own their handlers
+  if (button.dataset && Object.keys(button.dataset).length) return;
   var text = button.textContent.trim();
   if (!text) return;
   var destructive = DESTRUCTIVE.some(function (verb) { return text.indexOf(verb) >= 0; });
