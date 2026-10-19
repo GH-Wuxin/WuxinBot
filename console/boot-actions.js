@@ -69,9 +69,12 @@ document.addEventListener('click', async function (event) {
     const row = DATA.groupRows.find((item) => String(item.id) === String(id));
     const max = Number((document.getElementById('groupMax') || {}).value || 0);
     const cooldown = Number((document.getElementById('groupCooldown') || {}).value || 0);
+    const mode = (document.getElementById('groupMode') || {}).value || (row && row.modeKey) || 'mention';
+    const randomOn = document.getElementById('groupRandom') ? document.getElementById('groupRandom').classList.contains('is-on') : Boolean(row && row.randomImageEnabled);
+    const rate = (document.getElementById('groupRate') || {}).value || (row && row.randomImageRate) || 'standard';
     try {
-      await callApi('/api/groups', { method: 'POST', body: JSON.stringify({ groupId: id, name: row ? row.name : '', enabled: row ? row.enabled : true, mode: (row && row.modeKey) || 'mention', maxPerHour: max, cooldownSec: cooldown }) });
-      if (row) { row.maxPerHour = max; row.cooldown = cooldown; }
+      await callApi('/api/groups', { method: 'POST', body: JSON.stringify({ groupId: id, name: row ? row.name : '', enabled: row ? row.enabled : true, mode, maxPerHour: max, cooldownSec: cooldown, randomImageEnabled: randomOn, randomImageRate: rate }) });
+      if (row) { row.maxPerHour = max; row.cooldown = cooldown; row.modeKey = mode; row.randomImageEnabled = randomOn; row.randomImageRate = rate; }
       render('groups');
       flash('群设置已保存');
     } catch (error) { flash('保存失败：' + error.message, 'danger'); }
