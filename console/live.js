@@ -1,5 +1,18 @@
 // 真实数据适配层：把 /api/* 的结果灌进原型的数据结构。
 // 请求失败时保留演示数据，界面不白屏。
+function fmtClock(value) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return String(value || '').slice(11, 19);
+  return date.toLocaleTimeString('zh-CN', { hour12: false });
+}
+
+function fmtStamp(value) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return String(value || '').slice(0, 16).replace('T', ' ');
+  const pad = (n) => String(n).padStart(2, '0');
+  return (date.getMonth() + 1) + '/' + pad(date.getDate()) + ' ' + pad(date.getHours()) + ':' + pad(date.getMinutes());
+}
+
 const LIVE = { ready: false, error: '', source: 'mock', hourly: [], painted: false };
 
 async function api(path) {
@@ -14,7 +27,9 @@ function modeLabel(mode) {
 
 function stampFromName(name) {
   const match = String(name || '').match(/(\d{4})-(\d{2})-(\d{2})T(\d{2})-(\d{2})-(\d{2})/);
-  return match ? match[2] + '/' + match[3] + ' ' + match[4] + ':' + match[5] : '';
+  if (!match) return '';
+  const iso = match[1] + '-' + match[2] + '-' + match[3] + 'T' + match[4] + ':' + match[5] + ':' + match[6] + 'Z';
+  return fmtStamp(iso);
 }
 
 function sizeLabel(bytes) {

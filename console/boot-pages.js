@@ -90,7 +90,7 @@ PAGES.relationships = function () {
 PAGES.profileLogs = function () {
   const logs = (LIVE.profileLogs || []).slice(0, 60);
   if (!logs.length) return pageHead('画像日志', '还没有画像流水。', '') + card('空', '<div class="note">当前 profile-logs 为空。</div>');
-  const rows = logs.map((log) => '<tr><td class="muted">' + esc(String(log.createdAt || log.at || '').slice(5, 16).replace('T', ' ')) + '</td>'
+  const rows = logs.map((log) => '<tr><td class="muted">' + esc(fmtStamp(log.createdAt || log.at)) + '</td>'
     + '<td><b>' + esc(log.nickname || log.userId) + '</b></td><td>' + chip(log.event || '事件') + '</td>'
     + '<td>' + esc(String(log.detail || '').slice(0, 80)) + '</td></tr>').join('');
   return pageHead('画像日志', '来自 /api/profile-logs，最近 60 条。', '')

@@ -52,7 +52,7 @@ PAGES.randomImages = function () {
     + '<div class="card" style="margin-bottom:16px"><div class="card-head"><span class="card-title">图池预览</span><span class="muted" style="font-size:12px">' + esc((info.pool && info.pool.dir) || '') + '</span></div><div class="grid-tiles">'
     + (LIVE.randomFiles || []).slice(0, 24).map((file) => '<div class="tile" style="padding:0;overflow:hidden"><img src="' + (location.protocol === 'file:' ? 'http://127.0.0.1:8787' : '') + '/api/random-image/file?name=' + encodeURIComponent(file) + '" style="width:100%;height:100%;object-fit:cover" alt="" /></div>').join('')
     + '</div></div>'
-    + '<div class="grid grid-2">' + card('最近发送', '<div class="rows">' + ((info.recent || []).slice(0, 8).map((item) => listRow('', esc(item.file || item.name || '—'), esc(item.groupId || ''), '<span class="row-value" style="color:var(--muted)">' + esc(String(item.at || '').slice(11, 19)) + '</span>')).join('') || '<div class="empty">暂无</div>') + '</div>')
+    + '<div class="grid grid-2">' + card('最近发送', '<div class="rows">' + ((info.recent || []).slice(0, 8).map((item) => listRow('', esc(item.file || item.name || '—'), esc(item.groupId || ''), '<span class="row-value" style="color:var(--muted)">' + esc(fmtClock(item.at)) + '</span>')).join('') || '<div class="empty">暂无</div>') + '</div>')
     + card('参与群', '<div class="rows">' + ((info.groups || []).map((group) => listRow('', esc(group.name || group.groupId), '概率 ' + (group.probability || '—'), chip(group.enabled === false ? '停用' : '启用', group.enabled === false ? 'chip--amber' : 'chip--mint'))).join('') || '<div class="empty">暂无</div>') + '</div>') + '</div>';
 };
 
@@ -70,7 +70,7 @@ PAGES.persona = function () {
     + '</div></div>'
     + '<div class="card"><div class="card-head"><span class="card-title">最近 Prompt 调用</span><span class="muted" style="font-size:12px">' + calls.length + ' 条</span></div><div class="rows">'
     + (calls.slice(0, 12).map((call) => '<div class="row"><div class="row-main"><div class="row-title">' + esc(call.moduleName || call.moduleId) + '</div>'
-      + '<div class="row-sub">' + esc(String(call.at || '').slice(11, 19)) + ' · ' + esc(call.model || '') + ' · ' + esc(call.purpose || '') + '</div></div></div>').join('') || '<div class="empty">暂无</div>')
+      + '<div class="row-sub">' + esc(fmtClock(call.at)) + ' · ' + esc(call.model || '') + ' · ' + esc(call.purpose || '') + '</div></div></div>').join('') || '<div class="empty">暂无</div>')
     + '</div></div></div>';
 };
 

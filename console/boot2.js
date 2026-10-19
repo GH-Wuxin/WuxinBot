@@ -32,7 +32,7 @@ PAGES.runtime = function () {
 PAGES.logs = function () {
   const traces = LIVE.traces || [];
   const items = traces.slice(0, 40).map(function (trace, index) {
-    const time = String(trace.startedAt || '').slice(11, 19);
+    const time = fmtClock(trace.startedAt);
     return '<div class="log-item ' + (index === 0 ? 'is-active' : '') + '" data-trace="' + index + '">'
       + '<div style="display:flex;justify-content:space-between"><span class="log-user">' + esc(trace.nickname || trace.userId) + '</span>' + chip(trace.status || '—', trace.status === 'replied' ? 'chip--mint' : 'chip--amber') + '</div>'
       + '<div class="log-text">' + esc(trace.messageId || '') + ' · ' + esc(trace.id) + '</div>'
@@ -55,7 +55,7 @@ function renderTrace(index) {
     const data = event.data ? JSON.stringify(event.data) : '';
     return '<div class="tl ' + (event.status === 'error' ? 'is-warn' : 'is-ok') + '"><span class="tl-dot"></span><div>'
       + '<div class="tl-title">' + esc(event.name) + ' <span class="muted" style="font-size:11px">' + esc(event.phase) + '</span></div>'
-      + '<div class="tl-sub">' + esc(String(event.at || '').slice(11, 19)) + (event.status ? ' · ' + esc(event.status) : '') + '</div>'
+      + '<div class="tl-sub">' + esc(fmtClock(event.at)) + (event.status ? ' · ' + esc(event.status) : '') + '</div>'
       + (data ? '<div class="tl-sub" style="opacity:.75">' + esc(data.slice(0, 160)) + '</div>' : '')
       + '</div></div>';
   }).join('') + '</div>';

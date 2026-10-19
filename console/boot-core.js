@@ -85,7 +85,7 @@ PAGES.groups = function () {
 PAGES.logs = function () {
   const traces = LIVE.traces || [];
   const items = traces.slice(0, 30).map(function (trace, index) {
-    const time = String(trace.startedAt || '').slice(11, 19);
+    const time = fmtClock(trace.startedAt);
     const who = trace.nickname || trace.userId || '未知';
     const text = (trace.content || trace.text || '').slice(0, 60) || trace.messageId || '';
     return '<div class="log-item ' + (index === 0 ? 'is-active' : '') + '" data-trace="' + index + '">'
