@@ -59,9 +59,9 @@
 }
 
 .ui-pill--success {
-  color: #bfd95c;
-  background: rgba(179, 217, 68, 0.08);
-  border-color: rgba(179, 217, 68, 0.22);
+  color: #7de8cd;
+  background: rgba(92, 214, 180, 0.1);
+  border-color: rgba(92, 214, 180, 0.24);
 }
 
 .ui-pill--accent {
