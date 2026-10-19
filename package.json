@@ -120,7 +120,8 @@
       "!.private/**/*",
       "!artifacts/**/*",
       "!logs/**/*",
-      "!tmp/**/*"
+      "!tmp/**/*",
+      "console/**/*"
     ],
     "asarUnpack": [
       "server/**/*",

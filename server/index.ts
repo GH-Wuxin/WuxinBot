@@ -3,6 +3,7 @@ import crypto from 'node:crypto';
 import net from 'node:net';
 import fs from 'node:fs';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import express from 'express';
 import { openStore, currentStorageRevision, getStoreLockStats, getStoreWriteStats, publicDb, publicMemory, readDb, updateDb, upsertBy, nowIso, saveConfigSnapshot, listConfigSnapshots, restoreConfigSnapshot } from './store.js';
 import { createBackup, listBackups, restoreBackup, deleteBackup, pruneAutoBackups } from './backup.js';
@@ -1768,6 +1769,22 @@ app.post('/api/config-snapshots/:index/restore', (req, res) => {
   refreshCachedAdminPassword(updatedDb);
   res.json(ok({ restored: true }));
 });
+
+// 新版控制台（console/）：Electron 直接打开 http://127.0.0.1:8787，
+// 与 API 同源，省掉 file:// 跨域那一堆问题。
+{
+  const serverDir = path.dirname(fileURLToPath(import.meta.url));
+  const consoleDirs = [
+    path.join(process.cwd(), 'console'),
+    path.join(serverDir, '..', 'console'),
+  ];
+  const consoleDir = consoleDirs.find((dir) => fs.existsSync(path.join(dir, 'index.html')));
+  if (consoleDir) {
+    app.use(express.static(consoleDir, { index: 'index.html', extensions: ['html'], maxAge: 0 }));
+    app.get('/', (_req, res) => res.sendFile(path.join(consoleDir, 'index.html')));
+    console.log('[console] serving', consoleDir);
+  }
+}
 
 // JSON error handler — never return HTML error pages to the GUI
 app.use((err, _req, res, _next) => {
