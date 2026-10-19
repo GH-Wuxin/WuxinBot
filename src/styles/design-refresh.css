@@ -164,3 +164,144 @@
   .app-shell__workspace > * { animation: none; }
   * { transition-duration: 1ms !important; }
 }
+/* ---------- 第二层：分段 / 指标卡 / 表格 / 表单 / 标签 ---------- */
+.ui-segments {
+  display: inline-flex;
+  padding: 3px;
+  gap: 2px;
+  background: var(--v2-surface-2);
+  border: 1px solid var(--v2-border);
+  border-radius: var(--v2-radius-pill);
+}
+
+.ui-segments button {
+  height: 30px;
+  padding: 0 14px;
+  border: 0;
+  border-radius: var(--v2-radius-pill);
+  background: transparent;
+  color: var(--v2-text-muted);
+  font-size: 12.5px;
+  font-weight: 600;
+  transition: background var(--v2-fast) var(--v2-ease), color var(--v2-fast) var(--v2-ease);
+}
+
+.ui-segments button:hover { color: var(--v2-text); }
+
+.ui-segments button.is-active,
+.ui-segments button[aria-selected="true"] {
+  background: var(--v2-accent);
+  color: #1a0a12;
+}
+
+.metric-card {
+  background: var(--v2-surface-1);
+  border: 1px solid var(--v2-border);
+  border-radius: var(--v2-radius);
+  padding: 16px 18px;
+}
+
+.metric-card__label { font-size: 12px; color: var(--v2-text-muted); }
+
+.metric-card strong,
+.metric-card__value {
+  font-size: 30px;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums;
+}
+
+.section-header h2,
+.section-header h1 { font-size: 20px; font-weight: 800; letter-spacing: -0.01em; }
+
+.section-header p,
+.section-header__description { color: var(--v2-text-muted); font-size: 13px; }
+
+.ui-setting-group { border-radius: var(--v2-radius); }
+
+.ui-setting-row {
+  padding: 12px 0;
+  border-top: 1px solid var(--v2-border);
+}
+
+.ui-setting-row:first-child { border-top: 0; }
+
+.ui-list-row {
+  padding: 11px 4px;
+  border-top: 1px solid var(--v2-border);
+  transition: background var(--v2-fast) var(--v2-ease);
+}
+
+.ui-list-row:first-child { border-top: 0; }
+.ui-list-row:hover { background: var(--v2-surface-2); }
+
+.ui-pill {
+  height: 24px;
+  padding: 0 10px;
+  border-radius: var(--v2-radius-pill);
+  background: var(--v2-surface-3);
+  border: 1px solid var(--v2-border);
+  color: var(--v2-text-soft);
+  font-size: 11.5px;
+  font-weight: 600;
+}
+
+.ui-pill--accent { background: var(--v2-accent-soft); border-color: rgba(255, 102, 170, 0.35); color: #ffb3d4; }
+.ui-pill--success { background: rgba(92, 214, 180, 0.12); border-color: rgba(92, 214, 180, 0.35); color: #8fe6cf; }
+.ui-pill--warning { background: rgba(255, 204, 34, 0.12); border-color: rgba(255, 204, 34, 0.35); color: #ffdf7a; }
+.ui-pill--danger { background: rgba(255, 92, 92, 0.12); border-color: rgba(255, 92, 92, 0.35); color: #ff9b9b; }
+
+.status-badge { border-radius: var(--v2-radius-pill); font-size: 11.5px; }
+
+.ui-input,
+.ui-select,
+.app-shell input[type="text"],
+.app-shell input[type="number"],
+.app-shell select,
+.app-shell textarea {
+  background: var(--v2-surface-2);
+  border: 1px solid var(--v2-border);
+  border-radius: var(--v2-radius-sm);
+  color: var(--v2-text);
+  min-height: 36px;
+  padding: 0 12px;
+  font-size: 13px;
+  transition: border-color var(--v2-fast) var(--v2-ease), background var(--v2-fast) var(--v2-ease);
+}
+
+.ui-input:focus,
+.app-shell input:focus,
+.app-shell select:focus,
+.app-shell textarea:focus {
+  outline: none;
+  border-color: var(--v2-accent);
+  background: var(--v2-surface-3);
+}
+
+.ui-card table { width: 100%; border-collapse: collapse; }
+
+.ui-card table th {
+  text-align: left;
+  font-size: 11.5px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  color: var(--v2-text-muted);
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--v2-border);
+}
+
+.ui-card table td {
+  padding: 12px;
+  font-size: 13px;
+  border-bottom: 1px solid var(--v2-border);
+}
+
+.ui-card table tr:last-child td { border-bottom: 0; }
+.ui-card table tbody tr { transition: background var(--v2-fast) var(--v2-ease); }
+.ui-card table tbody tr:hover { background: var(--v2-surface-2); }
+
+.ui-state { padding: 28px 16px; color: var(--v2-text-muted); font-size: 13px; }
+
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-thumb { background: var(--v2-surface-3); border-radius: 10px; border: 2px solid var(--v2-bg); }
+::-webkit-scrollbar-track { background: transparent; }
