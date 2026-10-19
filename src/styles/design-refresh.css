@@ -632,3 +632,87 @@ button.ui-button--primary {
 .app-shell__topbar-actions { flex: none; display: flex; align-items: center; gap: 8px; }
 
 .app-shell__main { padding-top: 4px; }
+/* ---------- 第八层：总览页按原型版式 ---------- */
+.osu-dashboard {
+  display: grid;
+  gap: 18px;
+}
+
+.osu-session-bar {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  height: 52px;
+  padding: 0 20px;
+  background: var(--v2-surface-1);
+  border: 1px solid var(--v2-border);
+  border-radius: var(--v2-radius);
+  font-size: 13px;
+  color: var(--v2-text-soft);
+}
+
+.osu-dashboard__stage {
+  display: grid;
+  grid-template-columns: minmax(0, 1.75fr) minmax(300px, 1fr);
+  gap: 18px;
+  align-items: start;
+}
+
+.osu-usage {
+  position: relative;
+  padding: 26px 28px 20px;
+  border-radius: var(--v2-radius-lg);
+  border: 1px solid var(--v2-border);
+  background:
+    radial-gradient(120% 90% at 85% 0%, rgba(255, 102, 170, 0.12), transparent 60%),
+    var(--v2-surface-1);
+  overflow: hidden;
+}
+
+.osu-usage__heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 13px;
+  color: var(--v2-text-muted);
+}
+
+.osu-usage__score {
+  margin: 10px 0 4px;
+  font-size: 46px;
+  font-weight: 800;
+  letter-spacing: -0.03em;
+  line-height: 1.05;
+  font-variant-numeric: tabular-nums;
+}
+
+.osu-usage__breakdown {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 14px;
+  padding-top: 16px;
+  margin-top: 16px;
+  border-top: 1px solid var(--v2-border);
+}
+
+.osu-quota {
+  background: var(--v2-surface-1);
+  border: 1px solid var(--v2-border);
+  border-radius: var(--v2-radius);
+  padding: 16px 18px;
+}
+
+.osu-today {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 18px;
+  padding: 16px 20px;
+  background: var(--v2-surface-1);
+  border: 1px solid var(--v2-border);
+  border-radius: var(--v2-radius);
+}
+
+@media (max-width: 1180px) {
+  .osu-dashboard__stage { grid-template-columns: minmax(0, 1fr); }
+}
