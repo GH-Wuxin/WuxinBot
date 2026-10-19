@@ -1,21 +1,21 @@
 /* osu!-inspired console: hit circles, song-select accents, restrained playfield.
    Kept separate from legacy page layouts so the visual refresh is reversible. */
 :root {
-  --v2-bg: #17131e;
-  --v2-sidebar: #1d1725;
-  --v2-surface-1: #241d2d;
-  --v2-surface-2: #2a2235;
-  --v2-surface-3: #352b42;
-  --v2-surface-hover: #44324c;
-  --v2-surface-selected: #4b2d44;
-  --v2-border: #3a2e45;
-  --v2-border-strong: #584360;
-  --v2-text: #faf4fa;
-  --v2-text-soft: #d2c6d9;
-  --v2-text-muted: #ac9cb7;
-  --v2-accent: #ff66a6;
-  --v2-accent-hover: #ff8cbd;
-  --v2-accent-soft: #ff66a618;
+  --v2-bg: #151515;
+  --v2-sidebar: #1a1a1a;
+  --v2-surface-1: #232323;
+  --v2-surface-2: #282828;
+  --v2-surface-3: #323232;
+  --v2-surface-hover: #3b3b3b;
+  --v2-surface-selected: #3d383a;
+  --v2-border: #353535;
+  --v2-border-strong: #4a4a4a;
+  --v2-text: #fafafa;
+  --v2-text-soft: #d2d2d2;
+  --v2-text-muted: #acacac;
+  --v2-accent: #ff66aa;
+  --v2-accent-hover: #ff85bc;
+  --v2-accent-soft: #ff66aa18;
   --v2-success: #8bdfc1;
   --v2-radius-sm: 8px;
   --v2-radius: 14px;
@@ -27,10 +27,10 @@ body { font-family: 'Segoe UI', 'Microsoft YaHei', system-ui, sans-serif; }
 .app-shell { grid-template-columns: 224px minmax(0,1fr); background: transparent; }
 .app-shell__sidebar { gap: 22px; padding: 26px 16px 18px; background: var(--v2-sidebar); border-right: 1px solid #ffffff05; overflow: visible; }
 .app-shell__brand { gap: 13px; padding: 0 8px; }
-.app-shell__brand-mark { width: 43px; height: 43px; font: italic 900 24px/1 'Segoe UI', sans-serif; border: 3px solid #ffe9f4; box-shadow: 0 0 0 5px #ff66a61a, 0 4px 20px #ff66a626; }
+.app-shell__brand-mark { width: 43px; height: 43px; font: italic 900 24px/1 'Segoe UI', sans-serif; border: 3px solid #ffe3f1; box-shadow: 0 0 0 5px #ff66aa1a, 0 4px 20px #ff66aa26; }
 .app-shell__brand strong { font-size: 17px; letter-spacing: -.6px; }
 .app-shell__brand .app-shell__nav-close { display: none; }
-.osu-mobile-mark { display: grid; place-items: center; width: 24px; height: 24px; border: 2px solid #ffe9f4; border-radius: 50%; background: #ff66a6; color: white; font-size: 13px; font-weight: 900; font-style: italic; }
+.osu-mobile-mark { display: grid; place-items: center; width: 24px; height: 24px; border: 2px solid #ffe3f1; border-radius: 50%; background: #ff66aa; color: white; font-size: 13px; font-weight: 900; font-style: italic; }
 .shell-search { min-height: 36px; background: #17121c; border-color: transparent; border-radius: 9px; }
 .shell-search input { font-size: 11px; }
 .app-shell__nav { min-height: 0; overflow-y: auto; margin-inline: -5px; padding-inline: 5px; gap: 19px; }
@@ -39,13 +39,13 @@ body { font-family: 'Segoe UI', 'Microsoft YaHei', system-ui, sans-serif; }
 .app-shell__nav-group h2 > span { color: #826c90; font-size: 9px; font-weight: 800; }
 .app-shell__nav-group button { min-height: 34px; padding: 6px 10px; border: 0; border-radius: 7px 17px 7px 7px; font-size: 13px; }
 .app-shell__nav-group button svg { color: #a491b1; width: 16px; }
-.app-shell__nav-group button.is-active { color: #fff; background: linear-gradient(100deg,#ff66a630,#ff66a60c); box-shadow: inset 3px 0 #ff66a6; }
+.app-shell__nav-group button.is-active { color: #fff; background: linear-gradient(100deg,#ff66aa30,#ff66aa0c); box-shadow: inset 3px 0 #ff66aa; }
 .app-shell__nav-group button.is-active::before { display: none; }
 .app-shell__nav-group button.is-active svg { color: #ff99c3; }
-.nav-selected-dot { margin-left: auto; width: 5px; height: 5px; border-radius: 50%; background: #ff8cbd; box-shadow: 0 0 8px #ff66a680; }
+.nav-selected-dot { margin-left: auto; width: 5px; height: 5px; border-radius: 50%; background: #ff85bc; box-shadow: 0 0 8px #ff66aa80; }
 .app-shell__status { gap: 6px; padding-top: 16px; flex-shrink: 0; }
 .app-shell__status small { font-size: 10px; color: var(--v2-text-muted); }
-.app-shell__topbar { min-height: 68px; padding: 12px 32px; background: #17131ee8; border-bottom-color: #ffffff08; }
+.app-shell__topbar { min-height: 68px; padding: 12px 32px; background: #151515e8; border-bottom-color: #ffffff08; }
 .osu-breadcrumb { display: flex; gap: 13px; align-items: center; }
 .app-shell__topbar .osu-breadcrumb h1 { font-size: 15px; font-weight: 600; margin: 0; }
 .app-shell__topbar-actions { align-items: center; }
@@ -55,19 +55,19 @@ body { font-family: 'Segoe UI', 'Microsoft YaHei', system-ui, sans-serif; }
 .osu-shell-operations > summary { cursor: pointer; padding: 8px; list-style: none; }
 .osu-shell-operations > div { position: absolute; z-index: 22; right: 0; top: 100%; width: 170px; padding: 8px; background: var(--v2-surface-2); border: 1px solid var(--v2-border); border-radius: 12px; box-shadow: 0 12px 30px #0007; }
 .app-shell__main { max-width: 1550px; padding: 30px 32px; }
-.app-shell__workspace { background: radial-gradient(ellipse 850px 420px at 94% -100px,#ff66a60a,transparent); }
+.app-shell__workspace { background: radial-gradient(ellipse 850px 420px at 94% -100px,#ff66aa0a,transparent); }
 .ui-card { border-color: #ffffff06; padding: 22px; box-shadow: 0 3px 14px #08050c16; }
 .ui-button { border-radius: 9px; min-height: 36px; border-color: #ffffff0b; font-size: 12px; font-weight: 600; }
-.ui-button--primary { color: #301021; background: #ff80b4; border-color: transparent; box-shadow: 0 4px 0 #a33465; }
+.ui-button--primary { color: #301021; background: #ff80b4; border-color: transparent; box-shadow: 0 4px 0 #ad4a72; }
 .ui-button--primary:hover:not(:disabled) { background: #ff9ac4; }
-.ui-button--primary:active:not(:disabled) { transform: translateY(2px); box-shadow: 0 2px 0 #a33465; }
+.ui-button--primary:active:not(:disabled) { transform: translateY(2px); box-shadow: 0 2px 0 #ad4a72; }
 .ui-button--ghost { border-color: transparent; }
 .section-header__eyebrow { display: block; color: #c98bae; font-size: 10px; font-weight: 700; letter-spacing: 1.4px; }
 .section-header h2 { font-size: 18px; letter-spacing: -.3px; }
 .section-header p { font-size: 12px; line-height: 1.7; }
 .ui-segments { gap: 4px; padding: 4px; border-color: #ffffff08; background: #201926; flex-wrap: wrap; }
 .ui-segments button { min-height: 30px; padding: 5px 15px; font-size: 12px; font-weight: 600; }
-.ui-segments button.is-selected { background: #ff7bb1; color: #391325; box-shadow: 0 2px 8px #ff66a623; }
+.ui-segments button.is-selected { background: #ff7bb1; color: #391325; box-shadow: 0 2px 8px #ff66aa23; }
 .ui-setting-group { background: var(--v2-surface-1); border-color: #ffffff08; }
 .ui-setting-group > header { background: transparent; padding: 20px 24px; border-bottom-color: #ffffff09; }
 .ui-setting-group h3 { font-size: 16px; }
@@ -83,12 +83,12 @@ body { font-family: 'Segoe UI', 'Microsoft YaHei', system-ui, sans-serif; }
 
 /* Overview — score panel and playfield. */
 .osu-dashboard { gap: 20px; }
-.osu-session-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 12px 22px; padding: 11px 16px; background: #211a29; border: 1px solid #ffffff05; border-radius: 10px; }
+.osu-session-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 12px 22px; padding: 11px 16px; background: #1f1f1f; border: 1px solid #ffffff05; border-radius: 10px; }
 .osu-session-bar > span { display: inline-flex; align-items: center; gap: 8px; font-size: 12px; }
 .osu-session-bar > .ui-button { margin-left: auto; padding-block: 0; min-height: 26px; }
 .osu-dashboard__stage { display: grid; grid-template-columns: minmax(0,1fr) 300px; align-items: start; gap: 20px; }
 .osu-dashboard__rail { min-width: 0; display: grid; gap: 16px; }
-.osu-usage { overflow: hidden; position: relative; background: linear-gradient(135deg,#342336 0%,#281e30 42%,#231d2b 100%); border-top: 2px solid #ff66a6; padding: 25px 26px 18px; }
+.osu-usage { overflow: hidden; position: relative; background: linear-gradient(135deg,#342336 0%,#281e30 42%,#231d2b 100%); border-top: 2px solid #ff66aa; padding: 25px 26px 18px; }
 .osu-usage::before { content: ''; position: absolute; width: 260px; height: 260px; border: 1px solid #ff9bca10; border-radius: 50%; right: -86px; top: -145px; box-shadow: 0 0 0 24px #ff9bca04, 0 0 0 25px #ff9bca08, 0 0 0 50px #ff9bca03; pointer-events: none; }
 .osu-usage__heading { position: relative; display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; }
 .osu-usage__heading h2 { font-size: 16px; font-weight: 600; margin: 0; color: var(--v2-text); }
@@ -102,8 +102,8 @@ body { font-family: 'Segoe UI', 'Microsoft YaHei', system-ui, sans-serif; }
 .osu-chart__bars { min-width: 0; display: grid; grid-template-columns: repeat(var(--bar-count),minmax(0,1fr)); gap: 5px; background: repeating-linear-gradient(to top,transparent 0,transparent 53px,#cba9ca10 54px,transparent 55px); }
 .osu-chart__column { display: flex; flex-direction: column; justify-content: end; padding: 0; min-width: 0; background: none; border: 0; color: var(--v2-text-muted); cursor: pointer; }
 .osu-chart__plot { height: 100%; width: 100%; display: flex; align-items: end; }
-.osu-chart__bar { width: 100%; max-width: 54px; margin-inline: auto; border-radius: 5px 5px 1px 1px; background: linear-gradient(to top,#b33f76,#ff76af); transition: height 180ms,filter 120ms; box-shadow: 0 -2px 12px #ff66a615; }
-.osu-chart__column.is-focused .osu-chart__bar { filter: brightness(1.35); background: linear-gradient(to top,#ff66a6,#ffd6e8); }
+.osu-chart__bar { width: 100%; max-width: 54px; margin-inline: auto; border-radius: 5px 5px 1px 1px; background: linear-gradient(to top,#b33f76,#ff76af); transition: height 180ms,filter 120ms; box-shadow: 0 -2px 12px #ff66aa15; }
+.osu-chart__column.is-focused .osu-chart__bar { filter: brightness(1.35); background: linear-gradient(to top,#ff66aa,#ffd6e8); }
 .osu-chart__label { display: block; width: 100%; height: 23px; padding-top: 8px; flex-shrink: 0; font-size: 9px; white-space: nowrap; overflow: visible; text-align: center; }
 .osu-chart__caption { min-height: 28px; margin: 9px 0 0; font-size: 10px; color: var(--v2-text-muted); }
 .osu-chart__empty { grid-column: 1/-1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; color: var(--v2-text-muted); background: #ffffff02; border-radius: 12px; }
@@ -128,8 +128,8 @@ body { font-family: 'Segoe UI', 'Microsoft YaHei', system-ui, sans-serif; }
 .osu-quota__window strong { font-size: 13px; }
 .osu-quota__window span { font-size: 12px; font-weight: 600; color: #9be8ce; }
 .osu-quota__window p { margin: 5px 0; color: var(--v2-text-muted); font-size: 10px; }
-.osu-meter { height: 8px; margin-top: 10px; border-radius: 4px; background: #17121e; overflow: hidden; }
-.osu-meter > span { display: block; height: 100%; border-radius: inherit; background: repeating-linear-gradient(to right,#83d9bd 0px,#83d9bd 10px,#5cab9220 11px,#5cab9220 13px); }
+.osu-meter { height: 8px; margin-top: 10px; border-radius: 4px; background: #151515; overflow: hidden; }
+.osu-meter > span { display: block; height: 100%; border-radius: inherit; background: repeating-linear-gradient(to right,#8fd9b6 0px,#8fd9b6 10px,#5cab9220 11px,#5cab9220 13px); }
 .osu-meter--warning > span { background: var(--v2-warning); }
 .osu-quota footer { border-top: 1px solid #ffffff08; margin-top: 10px; padding-top: 10px; font-size: 10px; color: var(--v2-text-muted); }
 .osu-health { padding: 20px; }
@@ -137,7 +137,7 @@ body { font-family: 'Segoe UI', 'Microsoft YaHei', system-ui, sans-serif; }
 .osu-health__row > span { display: flex; align-items: center; gap: 6px; color: var(--v2-text-muted); font-size: 12px; }
 .osu-health__row > strong { font-size: 12px; }
 .osu-health > .ui-button { margin-top: 10px; padding-left: 0; min-height: 24px; }
-.osu-today { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); padding: 16px 20px; border: 1px solid #ffffff07; border-radius: 12px; background: #211a29; gap: 22px; }
+.osu-today { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); padding: 16px 20px; border: 1px solid #ffffff07; border-radius: 12px; background: #1f1f1f; gap: 22px; }
 .osu-today > div { display: flex; align-items: center; gap: 12px; min-width: 0; }
 .osu-today svg { color: #cba6c1; flex-shrink: 0; }
 .osu-today span { font-size: 12px; }
@@ -150,8 +150,8 @@ body { font-family: 'Segoe UI', 'Microsoft YaHei', system-ui, sans-serif; }
 .models-page { max-width: 1060px; margin-inline: auto; gap: 20px; }
 .models-page > .section-header h2, .logs-page > .section-header h2 { font-size: 21px; font-weight: 750; }
 .models-page > .section-header, .logs-page > .section-header { margin-bottom: 0; }
-.osu-model-summary { display: flex; align-items: center; gap: 16px; padding: 20px 24px; border-radius: 14px; background: linear-gradient(105deg,#462539,#2a2033); border-left: 3px solid #ff66a6; }
-.osu-model-summary__icon { display: grid; place-items: center; width: 46px; height: 46px; color: #ff9bc6; border: 1px solid #ff88b842; border-radius: 50%; box-shadow: 0 0 0 5px #ff66a608; }
+.osu-model-summary { display: flex; align-items: center; gap: 16px; padding: 20px 24px; border-radius: 14px; background: linear-gradient(105deg,#462539,#2a2033); border-left: 3px solid #ff66aa; }
+.osu-model-summary__icon { display: grid; place-items: center; width: 46px; height: 46px; color: #ff9bc6; border: 1px solid #ff88b842; border-radius: 50%; box-shadow: 0 0 0 5px #ff66aa08; }
 .osu-model-summary > div { display: grid; gap: 4px; }
 .osu-model-summary small { color: #d8aec8; font-size: 11px; }
 .osu-model-summary strong { font-size: 19px; }
@@ -181,7 +181,7 @@ body { font-family: 'Segoe UI', 'Microsoft YaHei', system-ui, sans-serif; }
 .logs-page { gap: 18px; }
 .osu-log-tabs, .osu-log-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
 .osu-log-tabs > .status-badge { flex-shrink: 0; }
-.osu-log-toolbar > .console-search { flex: 1; max-width: none; min-width: 0; background: #211a29; border-color: #ffffff08; }
+.osu-log-toolbar > .console-search { flex: 1; max-width: none; min-width: 0; background: #1f1f1f; border-color: #ffffff08; }
 .osu-log-toolbar > .ui-field { width: 190px; flex-shrink: 0; }
 .osu-log-workspace { display: grid; grid-template-columns: minmax(270px,.65fr) minmax(0,1fr); gap: 20px; align-items: start; }
 .osu-request-list { display: grid; gap: 7px; min-width: 0; }
@@ -189,8 +189,8 @@ body { font-family: 'Segoe UI', 'Microsoft YaHei', system-ui, sans-serif; }
 .osu-request-list > header > small { font-size: 10px; }
 .osu-request-list > footer { padding-top: 8px; }
 .osu-request-item { display: grid; gap: 8px; padding: 14px 16px; min-width: 0; text-align: left; color: var(--v2-text); background: #221b2a; border: 1px solid #ffffff05; border-radius: 9px 17px 9px 9px; cursor: pointer; transition: background 120ms; }
-.osu-request-item:hover { background: #302235; }
-.osu-request-item.is-selected { background: linear-gradient(100deg,#512c44,#302235); border-color: #ff66a62b; box-shadow: inset 3px 0 #ff66a6; }
+.osu-request-item:hover { background: #2b2b2b; }
+.osu-request-item.is-selected { background: linear-gradient(100deg,#512c44,#2b2b2b); border-color: #ff66aa2b; box-shadow: inset 3px 0 #ff66aa; }
 .osu-request-item__top { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 .osu-request-item__top > strong { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; }
 .osu-request-item__top .ui-pill { flex-shrink: 0; font-size: 10px; }
@@ -203,7 +203,7 @@ body { font-family: 'Segoe UI', 'Microsoft YaHei', system-ui, sans-serif; }
 .osu-request-detail > .log-row { margin-top: 12px; background: #1b152222; border: 0; padding: 14px; border-radius: 9px; }
 .osu-request-detail .log-row p { font-size: 13px; line-height: 1.8; }
 .osu-request-detail .trace-id { overflow-wrap: anywhere; }
-.osu-request-detail .trace-timeline { border-left: 1px solid #ff66a637; margin: 18px 0 0 4px; padding-left: 14px; }
+.osu-request-detail .trace-timeline { border-left: 1px solid #ff66aa37; margin: 18px 0 0 4px; padding-left: 14px; }
 .osu-request-detail .trace-event { position: relative; padding: 14px 0; border: 0; border-bottom: 1px solid #ffffff08; border-radius: 0; background: transparent; }
 .osu-request-detail .trace-event::before { content: ''; position: absolute; left: -18px; top: 23px; width: 6px; height: 6px; border-radius: 50%; background: #cb82ae; box-shadow: 0 0 0 3px #2a2032; }
 .osu-request-detail .trace-event--error::before { background: var(--v2-danger); }
@@ -319,7 +319,7 @@ body { font-family: 'Segoe UI', 'Microsoft YaHei', system-ui, sans-serif; }
 .osu-random-image__last { margin-left: auto; color: var(--v2-text-soft); }
 .osu-random-image__recent { display: grid; grid-template-columns: repeat(auto-fill,minmax(92px,1fr)); gap: 10px; }
 .osu-random-image__recent figure { margin: 0; }
-.osu-random-image__recent img { width: 100%; aspect-ratio: 1; object-fit: cover; border-radius: 8px; border: 1px solid var(--v2-border); background: #17121e; }
+.osu-random-image__recent img { width: 100%; aspect-ratio: 1; object-fit: cover; border-radius: 8px; border: 1px solid var(--v2-border); background: #151515; }
 .osu-random-image__recent figcaption { margin-top: 5px; font-size: 11px; color: var(--v2-text-soft); }
 .osu-random-image__recent figcaption small { display: block; font-size: 10px; color: var(--v2-text-muted); }
 

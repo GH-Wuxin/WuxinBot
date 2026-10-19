@@ -5,8 +5,6 @@ import { api } from '../../lib/api.js';
 import { Button, Card, ErrorState, LoadingState, SegmentedControl, SectionHeader, StatusBadge, Switch } from '../../components/ui/index.jsx';
 import { formatNumber, periodLabels, quotaWindows, shortNumber, usagePeriods, usageSummary } from './usageView.js';
 
-const apiModels = { 'deepseek-v4-flash': 'V4 Flash', 'deepseek-v4-pro': 'V4 Pro', 'deepseek-chat': 'Chat', 'deepseek-reasoner': 'Reasoner' };
-const codexModels = { 'gpt-5.6-luna': 'Luna', 'gpt-5.6-terra': 'Terra', 'gpt-5.6-sol': 'Sol' };
 const percent = value => value == null ? '—' : value.toLocaleString('zh-CN', { maximumFractionDigits: 1 }) + '%';
 const localTime = value => value && Number.isFinite(new Date(value).getTime()) ? new Date(value).toLocaleString('zh-CN', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false }) : '暂无';
 
@@ -68,8 +66,6 @@ export function DashboardPage({ db, oneBot, saveSettings, refreshState, onNaviga
   const enabledGroups = (db.groups || []).filter(group => group.enabled).length;
   const experienceEntries = Object.values(db.experience || {});
   const highestPp = experienceEntries.reduce((max, entry) => Math.max(max, Math.floor(Number(entry.xp || 0) / 100) * 100), 0);
-  const modelOptions = Object.entries(codexActive ? codexModels : apiModels).map(([value, label]) => ({ value, label }));
-  if (!modelOptions.some(option => option.value === effectiveModel)) modelOptions.push({ value: effectiveModel, label: effectiveModel });
   const statusText = health.error ? '状态刷新失败' : !health.data ? '正在连接' : paused ? '已暂停' : health.data.status?.text || '未知';
   const statusTone = health.error ? 'danger' : paused ? 'warning' : health.data?.status?.level === 'ok' ? 'success' : health.data?.status?.level === 'error' ? 'danger' : 'warning';
   return <div className="dashboard-page osu-dashboard">
@@ -83,6 +79,6 @@ export function DashboardPage({ db, oneBot, saveSettings, refreshState, onNaviga
       <Button variant="ghost" size="sm" onClick={() => onNavigate('logs')}>查看运行日志<ChevronRight size={14} /></Button>
     </Card></aside></div>
     <section className="osu-today" aria-label="自然日与累计指标"><div><MessageCircle size={18} /><span>今日消息<small>今日 00:00 至今</small></span><strong>{formatNumber(db.stateStats?.todayMessages ?? db.messages?.length)}</strong></div><div><Zap size={18} /><span>今日 Token<small>与滚动 24 小时不同</small></span><strong>{shortNumber(db.usageStats?.today?.totalTokens).value}{shortNumber(db.usageStats?.today?.totalTokens).unit}</strong></div><div><UsersRound size={18} /><span>经验成员<small>累计 {formatNumber(db.usage?.replies)} 次回复</small></span><strong>{Object.keys(db.experience || {}).length}</strong></div></section>
-    <section className="dashboard-controls"><Card><SectionHeader title="参与方式" /><Switch checked={Boolean(db.settings.onlyMentionMode)} onChange={event => saveSettings({ onlyMentionMode: event.target.checked })} label="临时只在 @ 时回复" description="立即生效；关闭后恢复各群自己的参与模式。" /></Card><Card><SectionHeader title="快速切换模型" actions={<Button variant="ghost" size="sm" onClick={() => onNavigate('model')}>设置<ChevronRight size={14} /></Button>} /><SegmentedControl value={effectiveModel} onChange={model => saveSettings(codexActive ? { codexModel: model } : { model })} label="快速切换模型" options={modelOptions} /></Card></section>
+    <section className="dashboard-controls"><Card><SectionHeader title="参与方式" /><Switch checked={Boolean(db.settings.onlyMentionMode)} onChange={event => saveSettings({ onlyMentionMode: event.target.checked })} label="临时只在 @ 时回复" description="立即生效；关闭后恢复各群自己的参与模式。" /></Card><Card><SectionHeader title="快捷入口" /><div className="dashboard-shortcuts"><Button variant="ghost" size="sm" onClick={() => onNavigate('logs')}>查看日志</Button><Button variant="ghost" size="sm" onClick={() => onNavigate('model')}>模型设置</Button><Button variant="ghost" size="sm" onClick={() => onNavigate('integrations')}>集成与 OneBot</Button></div></Card></section>
   </div>;
 }

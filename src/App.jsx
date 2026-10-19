@@ -4,6 +4,7 @@ import './styles/globals.css';
 import './styles/components.css';
 import './styles/osu-console.css';
 import './styles/runtime.css';
+import './styles/osu-refresh.css';
 import { AppShell } from './components/layout/AppShell.jsx';
 import { DashboardPage } from './pages/Dashboard/index.jsx';
 import { GroupsPage } from './pages/Groups/index.jsx';
