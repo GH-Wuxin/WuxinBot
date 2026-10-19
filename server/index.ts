@@ -487,6 +487,19 @@ app.get('/api/random-image/file', (req, res) => {
   res.sendFile(file);
 });
 
+// 图池文件名列表：控制台用来渲染缩略图网格。
+app.get('/api/random-image/list', (_req, res) => {
+  try {
+    const dir = randomImageDir(readDb());
+    const files = fs.existsSync(dir)
+      ? fs.readdirSync(dir).filter((name) => /\.(png|jpe?g|gif|webp|bmp)$/i.test(name)).slice(0, 120)
+      : [];
+    res.json(ok({ dir, files, count: files.length }));
+  } catch (error) {
+    res.status(500).json({ ok: false, error: String((error && error.message) || error) });
+  }
+});
+
 app.post('/api/sticker-policy', (req, res) => {
   const incoming = req.body && typeof req.body === 'object' ? req.body : {};
   const mode = String(incoming.mode || '').trim();
