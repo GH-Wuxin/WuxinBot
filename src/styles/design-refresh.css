@@ -716,3 +716,25 @@ button.ui-button--primary {
 @media (max-width: 1180px) {
   .osu-dashboard__stage { grid-template-columns: minmax(0, 1fr); }
 }
+/* 今日数字行拆成四张独立卡片（原型那种一格一卡） */
+.osu-today {
+  background: transparent;
+  border: 0;
+  padding: 0;
+  gap: 16px;
+}
+
+.osu-today > * {
+  background: var(--v2-surface-1);
+  border: 1px solid var(--v2-border);
+  border-radius: var(--v2-radius);
+  padding: 16px 18px;
+}
+
+.osu-today strong,
+.osu-today .osu-today__value {
+  font-size: 26px;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums;
+}
