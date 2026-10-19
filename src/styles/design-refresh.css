@@ -422,3 +422,43 @@
 /* 侧栏滚动条会和外框线条打架，直接藏掉（导航可滚，视觉干净） */
 .app-shell__sidebar { scrollbar-width: none; }
 .app-shell__sidebar::-webkit-scrollbar { width: 0; height: 0; display: none; }
+/* ---------- 第四层：页头、焦点环、禁用态、选择色 ---------- */
+.app-shell__workspace {
+  padding: 26px 30px 48px;
+  max-width: 1560px;
+  margin: 0 auto;
+}
+
+::selection { background: rgba(255, 102, 170, 0.35); color: #fff; }
+
+.app-shell :focus-visible {
+  outline: 2px solid var(--v2-accent);
+  outline-offset: 2px;
+  border-radius: 8px;
+}
+
+.ui-button:disabled,
+.ui-switch--disabled,
+.app-shell button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+/* 页头小标题（全大写那种） */
+.section-header__eyebrow,
+.osu-eyebrow {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--v2-text-muted);
+}
+
+/* 卡片内的小标题与说明 */
+.ui-card h3 { font-size: 15px; font-weight: 700; }
+.ui-card p { color: var(--v2-text-soft); line-height: 1.65; }
+.osu-muted { color: var(--v2-text-muted); font-size: 12.5px; }
+
+/* 链接色 */
+.app-shell a { color: #ffb3d4; }
+.app-shell a:hover { color: #fff; }
