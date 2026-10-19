@@ -13,10 +13,9 @@ PAGES.randomImages = function () {
     + (recent.length
       ? '<div class="grid-tiles">' + recent.map(function (item) {
           const file = item.file || item.name || '';
-          return '<div class="tile" style="padding:0;overflow:hidden;position:relative" title="' + esc(file) + '">'
+          return '<div class="tile" style="padding:0;overflow:hidden;position:relative" title="' + esc(file) + ' · ' + esc(item.groupId || '') + ' · ' + fmtClock(item.at) + '">'
             + '<img src="' + origin + '/api/random-image/file?name=' + encodeURIComponent(file) + '" style="width:100%;height:100%;object-fit:cover" alt="" />'
-            + '<span style="position:absolute;left:8px;bottom:6px;font-size:11px;color:#fff;text-shadow:0 1px 3px #000">' + fmtClock(item.at) + '</span>'
-            + '<span style="position:absolute;right:8px;bottom:6px;font-size:11px;color:#ffd0e4;text-shadow:0 1px 3px #000">' + esc(item.groupId || '') + '</span></div>';
+            + '</div>';
         }).join('') + '</div>'
       : '<div class="empty">还没有发送记录</div>')
     + '</div>'

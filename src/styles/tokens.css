@@ -1,23 +1,22 @@
 :root {
   color-scheme: dark;
 
-  /* osu! 的底色是中性黑灰，不带紫相；粉是唯一的强调色。 */
-  --v2-bg: #1a1a1a;
-  --v2-sidebar: #161616;
-  --v2-surface-1: #232323;
-  --v2-surface-2: #2a2a2a;
-  --v2-surface-3: #333333;
-  --v2-surface-hover: #3d3d3d;
-  --v2-surface-selected: #3f2b36;
+  /* 新视觉：更深的底、粉薄荷双强调，功能层不动 */
+  --v2-bg: #0e0e10;
+  --v2-sidebar: #141416;
+  --v2-surface-1: #18181a;
+  --v2-surface-2: #202024;
+  --v2-surface-3: #2a2a2e;
+  --v2-surface-hover: #2f2f34;
+  --v2-surface-selected: #3a2430;
 
-  --v2-border: #3a3a3a;
-  --v2-border-strong: #4f4f4f;
+  --v2-border: #2c2c31;
+  --v2-border-strong: #3d3d44;
 
-  --v2-text: #f7f7f7;
-  --v2-text-soft: #cfcfcf;
-  --v2-text-muted: #9c9c9c;
+  --v2-text: #f3f3f5;
+  --v2-text-soft: #c9c9cf;
+  --v2-text-muted: #8e8e96;
 
-  /* osu! pink */
   --v2-accent: #ff66aa;
   --v2-accent-hover: #ff85bc;
   --v2-accent-soft: rgba(255, 102, 170, 0.14);
@@ -27,17 +26,17 @@
   --v2-danger: #ff5c5c;
   --v2-info: #66ccff;
 
-  --v2-radius-sm: 8px;
-  --v2-radius: 14px;
-  --v2-radius-lg: 20px;
+  --v2-radius-sm: 10px;
+  --v2-radius: 16px;
+  --v2-radius-lg: 22px;
   --v2-radius-pill: 999px;
 
   --v2-fast: 120ms;
-  --v2-motion: 200ms;
+  --v2-motion: 220ms;
   --v2-ease: cubic-bezier(0.22, 1, 0.36, 1);
 
-  --v2-shadow-1: 0 2px 10px rgba(0, 0, 0, 0.28);
-  --v2-shadow-2: 0 16px 40px rgba(0, 0, 0, 0.42);
+  --v2-shadow-1: 0 2px 10px rgba(0, 0, 0, 0.35);
+  --v2-shadow-2: 0 18px 44px rgba(0, 0, 0, 0.5);
 
   --v2-font: "Inter", "Torus", "Segoe UI", "Microsoft YaHei UI", "PingFang SC", system-ui, sans-serif;
   --v2-font-num: "Inter", "Segoe UI", "Microsoft YaHei UI", "PingFang SC", system-ui, sans-serif;

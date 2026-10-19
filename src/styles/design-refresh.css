@@ -1,0 +1,166 @@
+/* 新视觉层：只做样式，不改任何结构与交互。加载在最后。 */
+
+.console-v2,
+.app-shell {
+  background: var(--v2-bg);
+  color: var(--v2-text);
+  font-family: var(--v2-font);
+}
+
+/* ---------- 侧栏 ---------- */
+.app-shell__sidebar {
+  background: var(--v2-sidebar);
+  border-right: 1px solid var(--v2-border);
+  padding: 18px 12px;
+}
+
+.app-shell__brand {
+  padding: 6px 10px 20px;
+  gap: 10px;
+}
+
+.app-shell__brand-mark {
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  box-shadow: 0 0 0 1px rgba(255, 102, 170, 0.35), 0 6px 18px rgba(255, 102, 170, 0.22);
+}
+
+.app-shell__nav-group {
+  margin: 14px 0 6px;
+  padding: 0 10px;
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  color: var(--v2-text-muted);
+  text-transform: uppercase;
+}
+
+.app-shell__nav a,
+.app-shell__nav button {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  height: 38px;
+  padding: 0 12px;
+  margin: 2px 0;
+  border-radius: var(--v2-radius-sm);
+  color: var(--v2-text-soft);
+  font-size: 13.5px;
+  text-decoration: none;
+  transition: background var(--v2-fast) var(--v2-ease), color var(--v2-fast) var(--v2-ease);
+}
+
+.app-shell__nav a:hover,
+.app-shell__nav button:hover {
+  background: var(--v2-surface-2);
+  color: var(--v2-text);
+}
+
+.app-shell__nav a.is-active,
+.app-shell__nav button.is-active,
+.app-shell__nav .is-active {
+  background: var(--v2-accent-soft);
+  color: #fff;
+  box-shadow: inset 2px 0 0 var(--v2-accent);
+}
+
+.app-shell__status {
+  border-top: 1px solid var(--v2-border);
+  padding: 12px 10px;
+  font-size: 12px;
+  color: var(--v2-text-muted);
+}
+
+/* ---------- 顶栏 ---------- */
+.app-shell__topbar {
+  height: 60px;
+  padding: 0 24px;
+  background: color-mix(in srgb, var(--v2-bg) 86%, transparent);
+  backdrop-filter: blur(14px);
+  border-bottom: 1px solid var(--v2-border);
+  position: sticky;
+  top: 0;
+  z-index: 30;
+}
+
+.app-shell__topbar-actions {
+  gap: 10px;
+}
+
+/* ---------- 搜索 ---------- */
+.shell-search {
+  height: 36px;
+  padding: 0 14px;
+  border-radius: var(--v2-radius-pill);
+  background: var(--v2-surface-2);
+  border: 1px solid var(--v2-border);
+  color: var(--v2-text-muted);
+  transition: border-color var(--v2-fast) var(--v2-ease), background var(--v2-fast) var(--v2-ease);
+}
+
+.shell-search:focus-within {
+  border-color: var(--v2-accent);
+  background: var(--v2-surface-3);
+}
+
+/* ---------- 卡片 ---------- */
+.ui-card {
+  background: var(--v2-surface-1);
+  border: 1px solid var(--v2-border);
+  border-radius: var(--v2-radius);
+  padding: 18px 20px;
+  box-shadow: none;
+  transition: border-color var(--v2-fast) var(--v2-ease);
+}
+
+.ui-card:hover {
+  border-color: var(--v2-border-strong);
+}
+
+/* ---------- 按钮 ---------- */
+.ui-button {
+  border-radius: var(--v2-radius-pill);
+  min-height: 38px;
+  padding: 0 16px;
+  font-size: 13px;
+  font-weight: 600;
+  transition: background var(--v2-fast) var(--v2-ease), border-color var(--v2-fast) var(--v2-ease), transform 90ms var(--v2-ease);
+}
+
+.ui-button:active:not(:disabled) {
+  transform: translateY(1px);
+}
+
+.ui-icon-button {
+  width: 38px;
+  height: 38px;
+  border-radius: 50%;
+}
+
+/* ---------- 标题 ---------- */
+.app-shell__workspace h1,
+.app-shell__workspace .page-header h1 {
+  font-size: 26px;
+  font-weight: 800;
+  letter-spacing: -0.01em;
+}
+
+.app-shell__workspace h2 {
+  font-size: 16px;
+  font-weight: 700;
+}
+
+/* ---------- 动效 ---------- */
+@keyframes v2-rise {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: none; }
+}
+
+.app-shell__workspace > * {
+  animation: v2-rise 320ms var(--v2-ease) both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .app-shell__workspace > * { animation: none; }
+  * { transition-duration: 1ms !important; }
+}
