@@ -83,7 +83,7 @@ async function render(html:string):Promise<Buffer>{
       const name=document.querySelector<HTMLElement>('.identity h1');
       if(name){
         let size=parseFloat(getComputedStyle(name).fontSize);
-        while(name.scrollWidth>name.clientWidth+1&&size>24){size-=1;name.style.fontSize=size+'px';}
+        while(name.scrollWidth>name.clientWidth+1&&size>20){size-=1;name.style.fontSize=size+'px';}
       }
     });
     const box=await page.locator('.sheet').boundingBox();

@@ -5,7 +5,7 @@ const keys=['flow_aim','jump_aim','aim_control','spatial_precision','raw_speed',
 const axes=keys.map((key,i)=>({key,ceiling:8-i*.3,median:7-i*.3}));
 const rows=[1,2,3].map(rank=>({rank,beatmapId:rank,weight:1,mods:['HD'],accuracy:99.5,pp:400,title:'Track <script>bad()</script>',version:'A & B',axes:Object.fromEntries(keys.map((key,i)=>[key,8-i*.3]))}));
 const profile={profileStatus:'RATED',profileTier:'EXPERT',profileArchetype:'FLOW',profileType:'Flow Aim',axes};
-const payload={player:{username:'Fixture <&>',countryCode:'HK',globalRank:1,countryRank:1,pp:10000},profile,rows,sample:{valid:3,requested:50,failed:47,modCounts:[{mods:'HD',count:3}]}};
+const payload={player:{username:'Fixture <&>',countryCode:'HK',globalRank:1,countryRank:1,pp:10000,accuracy:99.5},profile,rows,sample:{valid:3,requested:50,failed:47,modCounts:[{mods:'HD',count:3}]}};
 const html=buildPlayerSkillCardHtml(payload);
 assert.match(html,/lang="en"/);assert.match(html,/OSU! STANDARD · HK/);
 assert.match(html,/Fixture &lt;&amp;&gt;/);assert.doesNotMatch(html,/<script>/);
@@ -16,7 +16,7 @@ assert.equal((html.match(/class="skill-radar"/g)||[]).length,1);
 assert.match(html,/WEIGHTED P80/);assert.match(html,/WEIGHTED P50/);
 assert.match(html,/--paper:#/);assert.match(html,/--rule-soft:#/);
 assert.doesNotMatch(html,/class="activity-note"/,'active/ranked cards do not gain an inactivity label');
-const inactiveHtml=buildPlayerSkillCardHtml({...payload,player:{...payload.player,isActive:false,isRanked:false,lastVisit:'2026-02-17T14:00:44+00:00',globalRank:null,countryRank:null,pp:0}});
+const inactiveHtml=buildPlayerSkillCardHtml({...payload,player:{...payload.player,isActive:false,isRanked:false,lastVisit:'2026-02-17T14:00:44+00:00',globalRank:null,countryRank:null,pp:0,accuracy:null}});
 assert.match(inactiveHtml,/UNRANKED · 0 pp · —%/);
 assert.match(inactiveHtml,/class="activity-note"><b>INACTIVE<\/b><span>LAST VISIT · FEB 2026<\/span><\/div>/);
 const deletedHtml=buildPlayerSkillCardHtml({...payload,player:{...payload.player,isActive:false,isRanked:false,isDeleted:true}});

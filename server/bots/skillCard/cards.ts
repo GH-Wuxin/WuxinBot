@@ -72,7 +72,7 @@ function pplusRadarSvg(source:any,accent:string,level=5):string{
   const values=dimensions.map(([,key])=>axisValue(source,key,'value') ?? numeric(source?.[key]));
   const valid=values.filter((value):value is number=>value!==null);
   const max=Math.max(15,Math.ceil(Math.max(0,...valid)*1.08*2)/2);
-  const cx=310,cy=220,radius=156,labelRadius=201,count=dimensions.length;
+  const cx=310,cy=150,radius=104,labelRadius=132,count=dimensions.length;
   const energy=tierEnergy(level);
   const grid='var(--rule)',muted='var(--muted)',panel='var(--panel)',textColor='#e7e4dc';
   const rings=[0.25,0.5,0.75,1].map(ratio=>`<polygon points="${radarPolygon(Array.from({length:count},()=>max*ratio),Array.from({length:count},()=>max),cx,cy,radius,count)}" fill="none" stroke="${grid}" stroke-opacity="${ratio===1?.62:.25}" stroke-width="${ratio===1?1.4:1}"/>`).join('');
@@ -100,7 +100,7 @@ function pplusRadarSvg(source:any,accent:string,level=5):string{
     return `${text(Number(x.toFixed(1)),Number((y+yOffset).toFixed(1)),label,18,textColor,600,anchor)}${text(Number(x.toFixed(1)),Number((y+yOffset+23).toFixed(1)),value===null?'—':Number(value).toFixed(2),17,accent,650,anchor)}`;
   }).join('');
   const description='PP+ display radar. 15 is the ExpertPlus benchmark; values are comparable inside PP+ only. Polygon area is not an overall rating.';
-  return `<svg class="skill-radar pplus-radar" data-ppplus-max="${max}" viewBox="0 0 620 456" role="img" aria-label="PP+ six dimension radar"><desc>${description}</desc><g>${rings}${spokes}${baseline}${polygon}${dots}${labels}</g></svg>`;
+  return `<svg class="skill-radar pplus-radar" data-ppplus-max="${max}" viewBox="0 0 620 300" role="img" aria-label="PP+ six dimension radar"><desc>${description}</desc><g>${rings}${spokes}${baseline}${polygon}${dots}${labels}</g></svg>`;
 }
 
 function radarSvg(source:any,mode:'player'|'map',accent:string,level=5,unified=false,valueAccent=accent,labelSource:any=source):string{
@@ -112,7 +112,7 @@ function radarSvg(source:any,mode:'player'|'map',accent:string,level=5,unified=f
   // These are display frames, not a common validated difficulty scale. The two
   // bounded indices keep their own 0–10 frame even when core values exceed 10.
   const maxima=allKeys.map(key=>unified?max:defs[key].unit==='independent'?10:max);
-  const width=620,height=456,cx=310,cy=224,radius=157,labelRadius=202;
+  const width=620,height=mode==='player'?300:456,cx=310,cy=mode==='player'?150:224,radius=mode==='player'?104:157,labelRadius=mode==='player'?132:202;
   const muted='var(--muted)',grid='var(--rule)',panel='var(--panel)',textColor='#e7e4dc';
   const rings=[0.25,0.5,0.75,1].map(ratio=>`<polygon points="${radarPolygon(maxima.map(value=>value*ratio),maxima,cx,cy,radius)}" fill="none" stroke="${grid}" stroke-opacity="${ratio===1?.62:.25}" stroke-width="${ratio===1?1.4:1}"/>`).join('');
   const spokes=allKeys.map((_,index)=>{
@@ -285,19 +285,6 @@ function tierBackground(level:number,tierColor:string,mode:'normal'|'inverse'|'h
 
 
 
-function playerBpEvidence(rows:any[],top:any,sampleLabel:string):string{
-  const items=[...(rows||[])]
-    .filter((row:any)=>numeric(row?.rank)!==null)
-    .sort((left:any,right:any)=>finite(left.rank)-finite(right.rank))
-    .slice(0,3);
-  const cards=items.map((row:any)=>`<div class="bp-evidence-card" data-beatmap-id="${esc(row.beatmapId)}">
-    <div class="bp-card-top"><b>#${fmt(row.rank)}</b><span>${esc(row.mods?.join('')||'NM')}</span><strong>${fmt(numeric(row.pp)===null?null:Math.round(row.pp))} pp</strong></div>
-    <div class="bp-card-title" title="${esc(row.title||'')}">${esc(row.title||`BID ${row.beatmapId||'—'}`)}</div>
-    <div class="bp-card-meta"><span>${n(row.accuracy,2)}%</span><span>${n(row.axes?.[top.key])} ${esc(top.abbr)}</span><em>${esc(top.label)}</em></div>
-  </div>`).join('');
-  return `<section class="bp-evidence"><div class="bp-evidence-label"><b>BP EVIDENCE</b><span>${esc(sampleLabel)}</span></div>${cards||'<div class="bp-evidence-empty">NO VALID BP EVIDENCE</div>'}</section>`;
-}
-
 function playerPage(payload:any,avatar:string){
   const user=payload.player||{};
   const profile=payload.profile||{};
@@ -348,21 +335,27 @@ function playerPage(payload:any,avatar:string){
     : `GLOBAL ${rank(user.globalRank)} · COUNTRY ${rank(user.countryRank)} · ${pp} pp · ${n(user.accuracy,2)}%`;
   const activityNote=inactive?`<div class="activity-note"><b>INACTIVE</b>${lastVisit?`<span>LAST VISIT · ${esc(lastVisit)}</span>`:''}</div>`:'';
   return {top:top.key,rating:view.rated?view.value:null,tier:view.rated?view.tier?.level||0:0,specialty:mark?.label||null,reps:(payload.rows||[]).slice(0,2).map((row:any)=>row.beatmapId),html:`<main class="sheet radar-sheet player-sheet" style="--paper:${background.paper};--panel:${background.panel};--rule:${background.rule};--rule-soft:${background.ruleSoft};--rank-color:${radarColor};--radar-color:${radarColor};--accent:${topDef.color};--tier-energy:${tierEnergyValue.toFixed(3)};--tier-rule-width:${(1+tierEnergyValue*2.2).toFixed(2)}px;--tier-score-size:${(30+tierEnergyValue*5).toFixed(1)}px" data-rating-policy="${esc(view.ratingPolicy)}" data-tier="${view.rated?view.tier?.level||0:0}" data-tier-material="${esc(tierMaterial)}">
-    <header class="page-header">
-      ${brand('PLAYER PROFILE')}
-      <div class="identity-row">
-        ${avatar?`<img class="avatar" src="${esc(avatar)}" alt="${esc(user.username)} avatar">`:`<div class="avatar avatar-placeholder">${esc(String(user.username||'SP').slice(0,2).toUpperCase())}</div>`}
-        <div class="identity-copy"><div class="eyebrow">OSU! STANDARD · ${esc(String(user.countryCode||'—').toUpperCase())}</div><h1>${esc(user.username||'Unknown')}</h1><div class="identity-meta">${identityMeta}</div>${view.rated&&title&&title!=='PROFILE'?`<div class="profile-title identity-profile-title">${esc(title)}</div>`:''}${activityNote}</div>
-        <div class="identity-stat rating-stat"><span>SKILL RATING</span><b>${view.rated?fmt(view.value):'—'}</b><small>${esc(view.rated?tierLabel:'INSUFFICIENT EVIDENCE')}</small>${tierEmblem}</div>
-        <div class="identity-stat rank-stat"><span>PROFILE SAMPLE</span><b>${esc(sampleLabel)}</b><small>${esc(view.honor?.label||'BP50')}</small></div>
+    <div class="who">
+      ${avatar?`<img class="avatar" src="${esc(avatar)}" alt="${esc(user.username)} avatar">`:`<div class="avatar avatar-placeholder">${esc(String(user.username||'SP').slice(0,2).toUpperCase())}</div>`}
+      <div class="identity">
+        <div class="eyebrow">OSU! STANDARD · ${esc(String(user.countryCode||'—').toUpperCase())}</div>
+        <div class="nrow"><h1>${esc(user.username||'Unknown')}</h1>${tierEmblem}</div>
+        ${view.rated&&title&&title!=='PROFILE'?`<div class="profile-title identity-profile-title">${esc(title)}</div>`:''}
+        ${inactive?`<div class="identity-meta">${identityMeta}</div>`:''}${activityNote}
       </div>
-    </header>
-    <div class="page-grid dual-radar-grid">
-      <section class="radar-panel"><div class="panel-head"><b>SKILL PROFILER</b><span>9 DIMENSIONS</span></div>${radar}<div class="radar-key"><span><i class="key-solid"></i>WEIGHTED P80</span><span><i class="key-dashed"></i>WEIGHTED P50</span></div><div class="unit-note">Experimental equivalent ★ · Stamina / Endurance: independent /10.<br>Display-only radar. Different units; area is not an overall rating.</div></section>
-      <section class="radar-panel ppplus-panel"><div class="panel-head"><b>PP+ PROFILE</b><span>6 DIMENSIONS</span></div>${ppPlusRadar}<div class="radar-key"><span><i class="key-solid"></i>PP+ DISPLAY</span><span><i class="key-dashed"></i>15 EXPERTPLUS</span></div><div class="unit-note">PP+ display bars · 15 = ExpertPlus benchmark.<br>Relative shape inside PP+ only; polygon area is not an overall rating.</div></section>
+      <div class="rate"><b>${view.rated?fmt(view.value):'—'}</b><div class="rate-meta"><span>SKILL RATING</span><small>${esc(view.rated?tierLabel:'UNRATED · INSUFFICIENT EVIDENCE')}</small></div></div>
+      <div class="stats">
+        <div class="st"><span>GLOBAL</span><b>${esc(rank(user.globalRank))}</b></div>
+        <div class="st"><span>COUNTRY</span><b>${esc(rank(user.countryRank))}</b></div>
+        <div class="st"><span>PERFORMANCE</span><b>${esc(pp)} pp</b></div>
+        <div class="st"><span>ACCURACY</span><b>${n(user.accuracy,2)}%</b></div>
+      </div>
+      <div class="sample">PROFILE SAMPLE ${esc(sampleLabel)} · ${esc(view.honor?.label||'BP50')}</div>
     </div>
-    ${playerBpEvidence(payload.rows,topDef,sampleLabel)}
-    ${foot('PLAYER PROFILE · '+(profile.profilerIdentity?.mapDemandVersion||'RATING PROFILE'),`${String(user.username||'PLAYER')} · ${tierLabel}`)}
+    <div class="col">
+      <section class="radar-panel"><div class="panel-head"><b>SKILL PROFILER</b><span>9 DIMENSIONS</span></div><div class="radar-box">${radar}</div><div class="radar-key"><span><i class="key-solid"></i>WEIGHTED P80</span><span><i class="key-dashed"></i>WEIGHTED P50</span><span class="key-note">STAMINA / ENDURANCE: /10</span></div></section>
+      <section class="radar-panel ppplus-panel"><div class="panel-head"><b>PP+ PROFILE</b><span>6 DIMENSIONS</span></div><div class="radar-box">${ppPlusRadar}</div><div class="radar-key"><span><i class="key-solid"></i>PP+ DISPLAY</span><span><i class="key-dashed"></i>15 EXPERTPLUS</span></div><span class="src">PP+ ALGORITHM · ALOIC</span></section>
+    </div>
   </main>`};
 }
 
