@@ -102,27 +102,58 @@ export function deleteBackup(name) {
   return { ok: true };
 }
 
-export function pruneAutoBackups() {
+export const DEFAULT_BACKUP_RETENTION = { auto: 10, preRestore: 5, manual: 0 };
+
+/** 保留份数：0 表示不限。存在 settings.backupRetention，超出范围自动收口。 */
+export function backupRetention(db = readDb()) {
+  const saved = (db?.settings && db.settings.backupRetention) || {};
+  const clamp = (value, fallback, max) => {
+    const parsed = Number(value);
+    if (!Number.isFinite(parsed)) return fallback;
+    return Math.max(0, Math.min(max, Math.floor(parsed)));
+  };
+  return {
+    auto: clamp(saved.auto, DEFAULT_BACKUP_RETENTION.auto, 200),
+    preRestore: clamp(saved.preRestore, DEFAULT_BACKUP_RETENTION.preRestore, 200),
+    manual: clamp(saved.manual, DEFAULT_BACKUP_RETENTION.manual, 500),
+  };
+}
+
+function dropBackup(name) {
+  try { fs.unlinkSync(path.join(backupDir(), name)); } catch { /* ignore */ }
+  try { fs.unlinkSync(path.join(backupDir(), name + '.meta.json')); } catch { /* ignore */ }
+}
+
+/**
+ * 批量清理：先按保留份数裁掉超出的最旧几份，再按天数删过期备份。
+ * olderThanDays 只对自动/恢复前备份生效，手动备份不会被时间淘汰。
+ */
+export function pruneBackups(options: { olderThanDays?: number } = {}) {
   ensureBackupDir();
+  const retention = backupRetention();
+  const olderThanDays = Number(options.olderThanDays);
+  const cutoff = Number.isFinite(olderThanDays) && olderThanDays > 0
+    ? Date.now() - olderThanDays * 24 * 60 * 60_000
+    : 0;
   const all = listBackups();
-  let pruned = 0;
-  // Auto backups: keep latest 10
-  const auto = all.filter((b) => b.type === 'auto');
-  if (auto.length > 10) {
-    for (const b of auto.slice(10)) {
-      try { fs.unlinkSync(path.join(backupDir(), b.name)); } catch { /* ignore */ }
-      try { fs.unlinkSync(path.join(backupDir(), b.name + '.meta.json')); } catch { /* ignore */ }
-      pruned++;
-    }
+  const keepOf = { auto: retention.auto, 'pre-restore': retention.preRestore, manual: retention.manual };
+  const removed = [];
+  for (const type of ['auto', 'pre-restore', 'manual']) {
+    const group = all
+      .filter((backup) => backup.type === type || (!backup.type && type === 'manual'))
+      .sort((left, right) => new Date(right.createdAt || 0).getTime() - new Date(left.createdAt || 0).getTime());
+    const keep = keepOf[type];
+    group.forEach((backup, index) => {
+      const overLimit = keep > 0 && index >= keep;
+      const expired = cutoff > 0 && type !== 'manual' && new Date(backup.createdAt || 0).getTime() < cutoff;
+      if (!overLimit && !expired) return;
+      dropBackup(backup.name);
+      removed.push(backup.name);
+    });
   }
-  // Pre-restore backups: keep latest 5
-  const preRestore = all.filter((b) => b.type === 'pre-restore');
-  if (preRestore.length > 5) {
-    for (const b of preRestore.slice(5)) {
-      try { fs.unlinkSync(path.join(backupDir(), b.name)); } catch { /* ignore */ }
-      try { fs.unlinkSync(path.join(backupDir(), b.name + '.meta.json')); } catch { /* ignore */ }
-      pruned++;
-    }
-  }
-  return { pruned };
+  return { removed: removed.length, names: removed.slice(0, 50) };
+}
+
+export function pruneAutoBackups() {
+  return { pruned: pruneBackups().removed };
 }

@@ -1,10 +1,7 @@
-/* 原型样式，作用域限定在 .proto-shell 内 */
 :root{--bg:#0e0e10;--panel:#18181a;--panel-2:#202024;--raise:#26262b;--line:#2b2b30;--line-strong:#3b3b42;--text:#f3f3f5;--soft:#c9c9cf;--muted:#8d8d96;--pink:#ff66aa;--pink-2:#ff4f9b;--pink-soft:rgba(255,102,170,.14);--mint:#5cd6b4;--amber:#ffcc22;--red:#ff5c5c;--r-sm:10px;--r-md:16px;--r-lg:22px;--ease:cubic-bezier(.22,1,.36,1);--num:"Inter","Segoe UI",system-ui,sans-serif}
-.proto-shell {
-
 *{box-sizing:border-box}
-html,.proto-shell {margin:0;height:100%}
-.proto-shell {background:radial-gradient(1100px 620px at 8% -12%,rgba(255,102,170,.13),transparent 62%),radial-gradient(900px 520px at 96% -6%,rgba(102,204,255,.06),transparent 58%),radial-gradient(700px 500px at 50% 120%,rgba(255,102,170,.05),transparent 60%),var(--bg);background-attachment:fixed;color:var(--text);font:14px/1.5 system-ui,"Segoe UI","Microsoft YaHei UI",sans-serif;-webkit-font-smoothing:antialiased}
+html,body{margin:0;height:100%}
+body{background:radial-gradient(1100px 620px at 8% -12%,rgba(255,102,170,.13),transparent 62%),radial-gradient(900px 520px at 96% -6%,rgba(102,204,255,.06),transparent 58%),radial-gradient(700px 500px at 50% 120%,rgba(255,102,170,.05),transparent 60%),var(--bg);background-attachment:fixed;color:var(--text);font:14px/1.5 system-ui,"Segoe UI","Microsoft YaHei UI",sans-serif;-webkit-font-smoothing:antialiased}
 .topbar{position:sticky;top:0;z-index:20;display:flex;align-items:center;gap:22px;height:64px;padding:0 28px;background:rgba(14,14,16,.8);border-bottom:1px solid rgba(255,255,255,.06);backdrop-filter:blur(14px)}
 .topbar::after{content:"";position:absolute;left:0;right:0;bottom:-1px;height:1px;background:linear-gradient(90deg,transparent,rgba(255,102,170,.55) 18%,rgba(255,102,170,.12) 55%,transparent 90%)}
 .brand{display:flex;align-items:center;gap:10px}
@@ -171,7 +168,7 @@ html,.proto-shell {margin:0;height:100%}
 ::selection{background:rgba(255,102,170,.35);color:#fff}
 @media(max-width:980px){.grid-4{grid-template-columns:repeat(2,minmax(0,1fr))}.grid-main,.grid-2,.logs{grid-template-columns:minmax(0,1fr)}.tabs{display:none}.hero{flex-direction:column;align-items:flex-start}.hero-side{margin-left:0;padding-left:0;border-left:0}}
 /* ===== 动效版：去掉发光，改用位移 / 缩放 / 渐显 ===== */
-.proto-shell {
+body {
   background:
     radial-gradient(1200px 700px at 10% -14%, rgba(255, 102, 170, 0.07), transparent 62%),
     radial-gradient(900px 520px at 96% -8%, rgba(102, 204, 255, 0.03), transparent 58%),
@@ -355,7 +352,7 @@ html,.proto-shell {margin:0;height:100%}
 .drawer-tabs { display: flex; gap: 4px; padding: 10px 16px; border-bottom: 1px solid #232327; overflow: auto; }
 .drawer-tabs button { border: 0; background: transparent; color: var(--muted); font: inherit; font-size: 12px; font-weight: 600; padding: 6px 12px; border-radius: 999px; cursor: pointer; white-space: nowrap; }
 .drawer-tabs button.is-active { background: var(--pink-soft); color: #fff; }
-.drawer-.proto-shell { overflow: auto; padding: 18px 20px 28px; }
+.drawer-body { overflow: auto; padding: 18px 20px 28px; }
 @keyframes slide-in { from { transform: translateX(24px); opacity: 0; } to { transform: none; opacity: 1; } }
 @keyframes fade { from { opacity: 0; } to { opacity: 1; } }
 
@@ -458,8 +455,3 @@ body.is-paused .status-dot { background: var(--amber); box-shadow: 0 0 0 4px rgb
 }
 .btn-primary { background: linear-gradient(135deg, color-mix(in srgb, var(--pink) 72%, #ffffff), var(--pink-2)); }
 .btn-primary:hover { background: linear-gradient(135deg, color-mix(in srgb, var(--pink) 60%, #ffffff), color-mix(in srgb, var(--pink-2) 85%, #ffffff)); }
-
-}
-
-/* hidden 属性在原型类上也要生效 */
-[hidden] { display: none !important; }

@@ -169,6 +169,7 @@ import {
 import {
   ensureStickerReplyFallback,
   stickerFailureFallback,
+  stickerFailureInstruction,
   stickerFailureNotice,
 } from './bot/stickers/replyDelivery.js';
 import { appendReplyFailure } from './bot/replyFailures.js';
@@ -1523,6 +1524,7 @@ let waitUpTimer = null;
                 userId: event.userId,
                 messageId: event.messageId,
                 stickerId: stickerDecisionId,
+                explicitRequest: stickerExplicitRequest,
               })
             : { ok: false, reason: 'mode' as const };
           modelStickerDebugSession?.record('selection_validated', 'ok', validation.selected || {});
@@ -1589,7 +1591,26 @@ let waitUpTimer = null;
     //   没选到图（校验或策略拒绝）—— 收尾的失败分支不会经过，现在就得说；
     //   有图待发 —— 空正文留给收尾，那里才知道送没送到，说的也是实话。
     if (stickerExplicitRequest && !modelStickerCqCode) {
-      replyText = [replyText, stickerFailureNotice({ explicitRequest: true, bodyDelivered: false })]
+      // 图没发出去时，把「为什么没发出去」交给模型自己重写这句话；
+      // 只有模型调用不可用时才退回固定话术。
+      const failureReason = String(modelStickerHistory?.reason || '');
+      let softened = '';
+      try {
+        const instruction = stickerFailureInstruction(replyText, failureReason);
+        const rewritten = await completeChat(readDb(), {
+          messages: [
+            { role: 'system', content: instruction.system },
+            { role: 'user', content: instruction.user },
+          ],
+          temperature: 0.6,
+          maxTokens: 80,
+          label: '表情包失败改写',
+        });
+        softened = String(rewritten?.text || '').trim();
+      } catch {
+        softened = '';
+      }
+      replyText = softened || [replyText, stickerFailureNotice({ explicitRequest: true, bodyDelivered: false })]
         .filter(Boolean).join('\n');
     } else {
       replyText = ensureStickerReplyFallback(replyText, modelStickerCqCode, {

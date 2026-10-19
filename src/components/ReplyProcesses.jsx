@@ -1,7 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { Square } from 'lucide-react';
 import { api } from '../lib/api.js';
-import { Button, Card } from './ui/index.jsx';
 
 function elapsedText(ms) {
   const seconds = Math.max(0, Math.round(Number(ms || 0) / 1000));
@@ -13,6 +11,7 @@ function elapsedText(ms) {
 /**
  * 正在生成中的回复列表。每两秒拉一次，可以掐断其中任意一轮 ——
  * 掐断后这一轮不会再发任何东西（正文、贴纸、失败提示都不发）。
+ * 空闲时不占版面（原型里没有这一块）。
  */
 export function ReplyProcesses() {
   const [rows, setRows] = useState([]);
@@ -58,26 +57,22 @@ export function ReplyProcesses() {
   };
 
   const active = rows.filter((row) => !row.aborted);
-  if (!active.length && !error) {
-    return <Card className="reply-processes"><header className="reply-processes__head"><h2>正在回复</h2><span className="osu-muted">空闲</span></header></Card>;
-  }
+  if (!active.length) return null;
 
-  return <Card className="reply-processes">
-    <header className="reply-processes__head">
-      <h2>正在回复</h2>
-      <span className="osu-muted">{active.length ? active.length + ' 轮进行中' : '空闲'}</span>
-    </header>
-    {error && <p className="osu-inline-warning" role="status">读取失败：{error}</p>}
-    {!active.length && <p className="osu-muted">现在没有正在生成的回复。</p>}
-    {active.length > 0 && <ul className="reply-processes__list">
-      {active.map((row) => <li key={row.id} className="reply-processes__row">
-        <div className="reply-processes__who">
-          <strong>{row.nickname || row.userId || '未知'}</strong>
-          <span className="osu-muted">群 {row.groupId || '私聊'}{row.userId ? ' · QQ ' + row.userId : ''}</span>
+  return <div className="card" style={{ marginBottom: 16 }}>
+    <div className="card-head">
+      <span className="card-title">正在回复</span>
+      <span className="muted" style={{ fontSize: 12 }}>{active.length} 轮进行中</span>
+    </div>
+    {error && <div className="note" style={{ color: 'var(--red)' }}>读取失败：{error}</div>}
+    <div className="rows">
+      {active.map((row) => <div className="row" key={row.id}>
+        <div className="row-main">
+          <div className="row-title">{row.nickname || row.userId || '未知'}</div>
+          <div className="row-sub">群 {row.groupId || '私聊'} · {row.stage} · {elapsedText(Number(row.elapsedMs) + (tick % 2) * 2000)}</div>
         </div>
-        <div className="reply-processes__stage">{row.stage}<span className="osu-muted"> · {elapsedText(Number(row.elapsedMs) + (tick % 2) * 2000)}</span></div>
-        <Button variant="secondary" size="sm" icon={Square} loading={busy === row.id} onClick={() => abort(row)}>掐断</Button>
-      </li>)}
-    </ul>}
-  </Card>;
+        <button type="button" className="btn btn-sm" disabled={busy === row.id} onClick={() => abort(row)}>掐断</button>
+      </div>)}
+    </div>
+  </div>;
 }

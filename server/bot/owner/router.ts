@@ -136,7 +136,6 @@ export function resolveOwnerRoute(ctx: OwnerHandlerContext): OwnerRouteResolutio
   if (command === '/skill') return directRoute('skill', 'skill');
   if (command === '/cd') return directRoute('skillFeedback', 'skillFeedback');
   if (command === '/ping') return directRoute('ping', 'ping');
-  if (command === '/usage') return directRoute('usage', 'usage');
 
   if (command === '/model') {
     const arg = String(parts[2] || '').trim();

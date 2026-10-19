@@ -6,7 +6,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import express from 'express';
 import { openStore, currentStorageRevision, getStoreLockStats, getStoreWriteStats, publicDb, publicMemory, readDb, updateDb, upsertBy, nowIso, saveConfigSnapshot, listConfigSnapshots, restoreConfigSnapshot } from './store.js';
-import { createBackup, listBackups, restoreBackup, deleteBackup, pruneAutoBackups } from './backup.js';
+import { backupRetention, createBackup, listBackups, restoreBackup, deleteBackup, pruneAutoBackups, pruneBackups } from './backup.js';
 import { connectOneBot, getOneBotStatus, handleOneBotEvent, sendOneBotMessage, shutdownOneBot } from './onebot.js';
 import { processIncoming } from './bot.js';
 import { runSandboxPreview } from './sandboxPreview.js';
@@ -1664,7 +1664,7 @@ app.get('/api/profile-logs', (req, res) => {
 
 // Backup routes
 app.get('/api/backups', (_req, res) => {
-  res.json(ok({ backups: listBackups() }));
+  res.json(ok({ backups: listBackups(), retention: backupRetention(readDb()) }));
 });
 
 app.post('/api/backups', (req, res) => {
@@ -1687,6 +1687,35 @@ app.delete('/api/backups/:name', (req, res) => {
   const result = deleteBackup(req.params.name);
   if (!result.ok) return res.status(404).json({ ok: false, error: result.error });
   res.json(ok({ deleted: req.params.name }));
+});
+
+app.post('/api/backups/prune', (req, res) => {
+  const olderThanDays = Number(req.body?.olderThanDays);
+  const result = pruneBackups({ olderThanDays });
+  res.json(ok({ removed: result.removed, names: result.names }));
+});
+
+app.post('/api/backups/retention', (req, res) => {
+  const body = req.body || {};
+  const read = (value, fallback, max) => {
+    if (value === undefined || value === null || value === '') return fallback;
+    const parsed = Number(value);
+    if (!Number.isInteger(parsed) || parsed < 0 || parsed > max) return null;
+    return parsed;
+  };
+  const current = backupRetention(readDb());
+  const auto = read(body.auto, current.auto, 200);
+  const preRestore = read(body.preRestore, current.preRestore, 200);
+  const manual = read(body.manual, current.manual, 500);
+  if ([auto, preRestore, manual].some((value) => value === null)) {
+    res.status(400).json({ ok: false, error: '保留份数必须是 0-500 的整数（0 表示不限）' });
+    return;
+  }
+  updateDb((db) => {
+    db.settings.backupRetention = { auto, preRestore, manual };
+  });
+  const pruned = pruneBackups();
+  res.json(ok({ retention: { auto, preRestore, manual }, removed: pruned.removed }));
 });
 
 // Auto-prune on startup, then auto-backup every 8 hours

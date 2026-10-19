@@ -122,6 +122,7 @@ function createWindow() {
     minWidth: 1080,
     minHeight: 680,
     title: 'WuxinBot · Desktop',
+    icon: path.join(projectRoot, 'dist', 'icon.png'),
     backgroundColor: '#0e0e10',
     autoHideMenuBar: true,
     webPreferences: {

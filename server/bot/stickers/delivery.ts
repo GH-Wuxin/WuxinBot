@@ -23,6 +23,8 @@ export type StickerDeliveryRejectReason =
   | 'duplicate_turn';
 
 export interface StickerDeliveryRequest {
+  /** 用户在本轮明确点名要图：跳过冷却与重复限制，只保留总量上限。 */
+  explicitRequest?: boolean;
   eventType?: unknown;
   groupId?: unknown;
   userId?: unknown;
@@ -103,12 +105,12 @@ export interface StickerDeliveryOptions {
   nowMs?: number;
 }
 
-const DEFAULT_GROUP_COOLDOWN_MS = 10 * 60_000;
-const DEFAULT_USER_COOLDOWN_MS = 20 * 60_000;
-const DEFAULT_HOURLY_LIMIT = 3;
-const DEFAULT_DAILY_LIMIT = 16;
-const DEFAULT_USER_DAILY_LIMIT = 4;
-const DEFAULT_DUPLICATE_STICKER_COOLDOWN_MS = 2 * 60 * 60_000;
+const DEFAULT_GROUP_COOLDOWN_MS = 60_000;
+const DEFAULT_USER_COOLDOWN_MS = 2 * 60_000;
+const DEFAULT_HOURLY_LIMIT = 8;
+const DEFAULT_DAILY_LIMIT = 50;
+const DEFAULT_USER_DAILY_LIMIT = 12;
+const DEFAULT_DUPLICATE_STICKER_COOLDOWN_MS = 30 * 60_000;
 const MAX_RECORD_AGE_MS = 8 * 24 * 60 * 60_000;
 const MAX_RECORDS = 2_048;
 const MAX_GROUP_DECISION_ENTRIES = 256;
@@ -452,17 +454,20 @@ function reserveInDb(
     && isBudgetRecord(record)
     && record.stickerId === picked.id
     && isWithinWindow(record.at, nowMs, config.duplicateStickerCooldownMs));
-  if (repeatedStickerInWindow) {
-    return reject(db, state, 'duplicate');
-  }
-  if (latestGroup && isWithinWindow(latestGroup.at, nowMs, config.groupCooldownMs)) {
-    return reject(db, state, 'cooldown');
+  // 用户明确要图时，别用「刚发过」「这张重复了」去拒绝他；总量上限仍然生效。
+  if (!input.explicitRequest) {
+    if (repeatedStickerInWindow) {
+      return reject(db, state, 'duplicate');
+    }
+    if (latestGroup && isWithinWindow(latestGroup.at, nowMs, config.groupCooldownMs)) {
+      return reject(db, state, 'cooldown');
+    }
   }
 
   const latestUser = state.records
     .filter((record) => sameUser(record, groupId, userId) && isBudgetRecord(record))
     .sort((a, b) => b.at - a.at)[0];
-  if (latestUser && isWithinWindow(latestUser.at, nowMs, config.userCooldownMs)) {
+  if (!input.explicitRequest && latestUser && isWithinWindow(latestUser.at, nowMs, config.userCooldownMs)) {
     return reject(db, state, 'user_cooldown');
   }
 

@@ -2,6 +2,8 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { ChevronLeft, ChevronRight, ExternalLink, RefreshCw, Search, Sparkles, Trash2, UserRound, X } from 'lucide-react';
 import { api } from '../../lib/api.js';
 import { Button, Card, ConfirmDialog, EmptyState, ErrorState, IconButton, InlineHelp, Input, MetricCard, Pill, SectionHeader, SegmentedControl, StatusBadge } from '../../components/ui/index.jsx';
+import { Avatar, userAvatarUrl } from '../../components/Avatar.jsx';
+import { RefreshButton } from '../../components/ui/RefreshButton.jsx';
 
 const botLabels = { yumu: 'Yumu / 雨沐', kanon: 'Kanon / 猫猫', hydrant: 'Hydrant / 消防栓', lazybot: 'LazyBot' };
 const playerTabs = [
@@ -66,23 +68,130 @@ export function OsuPage({ db, refreshState }) {
     await api('/api/osu/bindings', { method: 'POST', body: { action: 'remove', qq: unbind.qq }, timeoutMs: 15000 });
     setUnbind(null); await Promise.all([load(), refreshState()]);
   });
-  return <div className="osu-page">
-    <SectionHeader title="osu! 工作流" actions={<Button icon={RefreshCw} onClick={load}>刷新</Button>} />
-    {loadError && <ErrorState title="osu! 状态读取失败" message={loadError} onRetry={load} />}
-    {operationError && <ErrorState title="操作失败" message={operationError} />}
-    <div className="osu-metrics"><MetricCard label="绑定账号" value={status?.bindings?.length ?? '…'} detail="QQ ↔ osu!" icon={UserRound} /><MetricCard label="玩家分析" value={status?.stats?.analyzeCount ?? '…'} detail="/w osu analyze" icon={Sparkles} /><MetricCard label="绑定指令" value={status?.stats?.bindCount ?? '…'} detail="/w osu bind" icon={ExternalLink} /><MetricCard label="API 429" value={status?.health?.api429Count ?? '…'} detail="运行期记录" /><MetricCard label="渲染失败" value={status?.health?.renderFailures ?? '…'} detail="运行期记录" /></div>
+  const bindings = status?.bindings || [];
+  const bots = status?.bots || [];
+  const toolRows = [...(db.commandLogs || [])]
+    .filter((log) => /osu/i.test(String(log.command || '') + ' ' + String(log.subCommand || '')))
+    .slice(-8)
+    .reverse();
+  const stamp = (value) => {
+    const date = new Date(value || '');
+    return Number.isFinite(date.getTime()) ? date.toLocaleString('zh-CN', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false }) : '—';
+  };
+  const elapsed = (ms) => (Number.isFinite(Number(ms)) && ms != null ? (Number(ms) / 1000).toFixed(1) + 's' : '—');
 
-    <Card className="osu-player-search"><Search size={18} /><div><strong>检查玩家档案</strong><small>输入用户名或用户 ID，打开完整资料抽屉。</small></div><Input aria-label="osu! 用户名或 ID" value={searchText} onChange={(event) => setSearchText(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') doSearch(); }} placeholder="用户名或 ID" /><Button variant="primary" loading={pending === 'search'} disabled={!searchText.trim()} onClick={doSearch}>查询</Button></Card>
+  return <>
+    <div className="page-head">
+      <div><h1>osu!</h1><p>能力、数据源和调用情况；查谁不是这一页的重点。</p></div>
+      <div style={{ display: 'flex', gap: 8 }}><RefreshButton onClick={load} label="刷新状态" /></div>
+    </div>
 
-    <Card className="osu-services"><SectionHeader title="外部 osu! 服务" description="Agent 工具调用依赖的本地服务状态。" /><div className="osu-services__list">{(status?.bots || []).map((bot) => <div key={bot.id}><StatusBadge tone={bot.up ? 'success' : 'danger'}>{bot.up ? 'Available' : 'Unavailable'}</StatusBadge><strong>{botLabels[bot.id] || bot.id}</strong><code>127.0.0.1:{bot.port}</code></div>)}{status && (status.bots || []).length === 0 && <EmptyState title="没有服务状态" />}</div></Card>
+    {loadError && <div className="note" style={{ color: 'var(--red)', marginBottom: 12 }}>osu! 状态读取失败：{loadError}</div>}
+    {operationError && <div className="note" style={{ color: 'var(--red)', marginBottom: 12 }}>操作失败：{operationError}</div>}
 
-    <Card><SectionHeader title="绑定管理" description="点击玩家名查看档案。" />
-        <div className="osu-binding-form"><Input label="QQ 号" value={qq} onChange={(event) => setQq(event.target.value)} /><Input label="osu! 用户名" value={name} onChange={(event) => setName(event.target.value)} /><Button variant="primary" loading={pending === 'binding-add'} disabled={!qq.trim() || !name.trim()} onClick={addBinding}>添加绑定</Button></div>
-        <div className="osu-binding-list">{(status?.bindings || []).map((binding) => <div key={binding.qq}><button type="button" className="osu-binding-list__player" onClick={() => openPlayer(binding.id, binding.username)}><span>{binding.username || '未解析用户名'}</span><small>QQ {binding.qq} · osu! {binding.id || '-'}</small></button><IconButton label={`解除 ${binding.qq} 的绑定`} icon={Trash2} variant="danger-ghost" onClick={() => setUnbind(binding)} /></div>)}{status && (status.bindings || []).length === 0 && <EmptyState title="还没有绑定" description="添加绑定后可以直接打开玩家资料。" />}</div>
-    </Card>
+    <div className="grid grid-4" style={{ marginBottom: 16 }}>
+      <div className="card stat"><div className="stat-label">绑定账号</div><div className="stat-value">{number(bindings.length)}</div><div className="stat-note">QQ ↔ osu!</div></div>
+      <div className="card stat"><div className="stat-label">玩家分析</div><div className="stat-value">{number(status?.stats?.analyzeCount)}</div><div className="stat-note">/w osu analyze</div></div>
+      <div className="card stat"><div className="stat-label">绑定指令</div><div className="stat-value">{number(status?.stats?.bindCount)}</div><div className="stat-note">/w osu bind</div></div>
+      <div className="card stat"><div className="stat-label">API 429</div><div className="stat-value">{number(status?.health?.api429Count)}</div><div className="stat-note">运行期记录</div></div>
+    </div>
+
+    <div className="card" style={{ marginBottom: 16 }}>
+      <div className="card-head"><span className="card-title">查人</span><span className="muted" style={{ fontSize: 12 }}>输入用户名、ID 或主页链接</span></div>
+      <div className="searchbar">
+        <span className="muted">@</span>
+        <input
+          aria-label="osu! 用户名或 ID"
+          value={searchText}
+          onChange={(event) => setSearchText(event.target.value)}
+          onKeyDown={(event) => { if (event.key === 'Enter') doSearch(); }}
+          placeholder="输入 osu! 用户名、ID 或主页链接"
+        />
+        <button type="button" className="btn btn-primary" disabled={!searchText.trim() || pending === 'search'} onClick={doSearch}>{pending === 'search' ? '查询中…' : '查询'}</button>
+      </div>
+    </div>
+
+    <div className="grid grid-main">
+      <div className="card">
+        <div className="card-head"><span className="card-title">工具调用</span><span className="muted" style={{ fontSize: 12 }}>最近 osu! 指令 · {toolRows.length} 条</span></div>
+        <table className="table">
+          <thead><tr><th>时间</th><th>工具</th><th>目标</th><th>耗时</th><th>结果</th></tr></thead>
+          <tbody>
+            {toolRows.map((log) => <tr key={log.id}>
+              <td className="muted">{stamp(log.createdAt)}</td>
+              <td><b>{[log.command, log.subCommand].filter(Boolean).join(' ') || 'osu'}</b></td>
+              <td className="muted">{log.nickname || log.userId || '—'}</td>
+              <td>{elapsed(log.latencyMs)}</td>
+              <td><span className={'chip' + (log.status === 'ok' ? ' chip--mint' : log.status === 'error' || log.status === 'denied' ? ' chip--amber' : '')}>{log.status === 'ok' ? '成功' : log.status || '—'}</span></td>
+            </tr>)}
+            {!toolRows.length && <tr><td colSpan="5" className="muted">最近还没有 osu! 指令记录。</td></tr>}
+          </tbody>
+        </table>
+        <div className="note" style={{ marginTop: 12 }}>结果来自指令日志；失败与降级都会如实标出。</div>
+      </div>
+
+      <div className="stack">
+        <div className="card">
+          <div className="card-head"><span className="card-title">外部 osu! 服务</span><span className="muted" style={{ fontSize: 12 }}>{bots.filter((bot) => bot.up).length} 在线</span></div>
+          <div className="rows">
+            {bots.map((bot) => <div className="row" key={bot.id}>
+              <span className="status-dot" style={{ background: bot.up ? 'var(--mint)' : 'var(--red)' }} />
+              <div className="row-main">
+                <div className="row-title">{botLabels[bot.id] || bot.id}</div>
+                <div className="row-sub">127.0.0.1:{bot.port}</div>
+              </div>
+              <span className={'chip' + (bot.up ? ' chip--mint' : '')}>{bot.up ? '可用' : '离线'}</span>
+            </div>)}
+            {!bots.length && <div className="note">没有服务状态。</div>}
+          </div>
+        </div>
+        <div className="card">
+          <div className="card-head"><span className="card-title">本地能力</span></div>
+          <div className="kv"><span>渲染失败</span><b>{number(status?.health?.renderFailures)}</b></div>
+          <div className="kv"><span>玩家分析</span><b>{number(status?.stats?.analyzeCount)}</b></div>
+          <div className="kv"><span>绑定指令</span><b>{number(status?.stats?.bindCount)}</b></div>
+          <div className="kv"><span>API 429</span><b>{number(status?.health?.api429Count)}</b></div>
+        </div>
+      </div>
+    </div>
+
+    <div className="grid grid-2" style={{ marginTop: 16, alignItems: 'start' }}>
+      <div className="card">
+        <div className="card-head"><span className="card-title">当前工具面</span><span className="muted" style={{ fontSize: 12 }}>osu! 相关</span></div>
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+          {['best_score', 'best_scores', 'player', 'pp_plus', 'bp_type', 'recommend', 'beatmap', 'pp_calc', 'leaderboard', 'beatmap_skill', 'player_skill', 'recent_skill', 'compare_skill'].map((name) => <span className="chip" key={name}>{name}</span>)}
+        </div>
+        <div className="note" style={{ marginTop: 10 }}>发图工具在第一层数据回来后才会出现。</div>
+      </div>
+      <div className="card">
+        <div className="card-head"><span className="card-title">绑定</span><span className="muted" style={{ fontSize: 12 }}>{bindings.length} 个</span></div>
+        <div className="rows" style={{ maxHeight: 360, overflowY: 'auto' }}>
+          {bindings.map((binding) => <div className="row" key={binding.qq}>
+            <Avatar name={binding.username || binding.qq} src={userAvatarUrl(binding.qq)} size={26} />
+            <div className="row-main">
+              <button
+                type="button"
+                className="row-title"
+                style={{ background: 'none', border: 0, padding: 0, color: 'inherit', textAlign: 'left', cursor: 'pointer' }}
+                onClick={() => openPlayer(binding.id, binding.username)}
+              >{binding.username || '未解析用户名'}</button>
+              <div className="row-sub">QQ {binding.qq} · osu! {binding.id || '-'}</div>
+            </div>
+            <button type="button" className="btn btn-ghost btn-sm" onClick={() => setUnbind(binding)}>解绑</button>
+          </div>)}
+          {!bindings.length && <div className="note">还没有绑定。</div>}
+        </div>
+        <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
+          <input className="osu-inline-input" aria-label="QQ 号" placeholder="QQ 号" value={qq} onChange={(event) => setQq(event.target.value)} style={{ flex: 1, minWidth: 0, background: 'var(--panel-2)', border: '1px solid var(--line-strong)', borderRadius: 10, color: 'var(--text)', padding: '8px 12px' }} />
+          <input aria-label="osu! 用户名" placeholder="osu! 用户名" value={name} onChange={(event) => setName(event.target.value)} style={{ flex: 1, minWidth: 0, background: 'var(--panel-2)', border: '1px solid var(--line-strong)', borderRadius: 10, color: 'var(--text)', padding: '8px 12px' }} />
+          <button type="button" className="btn btn-primary" disabled={!qq.trim() || !name.trim() || pending === 'binding-add'} onClick={addBinding}>{pending === 'binding-add' ? '绑定中…' : '绑定'}</button>
+        </div>
+      </div>
+    </div>
+
     {drawer && <PlayerDrawer key={drawer.osuId} osuId={drawer.osuId} username={drawer.username} onClose={() => setDrawer(null)} />}
     <ConfirmDialog open={Boolean(unbind)} title="解除 osu! 绑定？" description={unbind ? `QQ ${unbind.qq} 将不再绑定 ${unbind.username || unbind.id}。玩家公开档案不会被删除。` : ''} confirmLabel="解除绑定" busy={pending === 'binding-remove'} onCancel={() => setUnbind(null)} onConfirm={removeBinding} />
-  </div>;
+  </>;
 }
 
 function PlayerDrawer({ osuId, username, onClose }) {
@@ -155,65 +264,157 @@ function PlayerDrawer({ osuId, username, onClose }) {
   const bpResult = data.bp;
   const bpPages = Math.max(1, Math.ceil(Number(bpResult?.total || 0) / 20));
 
-  return <div className="osu-player-overlay" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}><aside className="osu-player-drawer" role="dialog" aria-modal="true" aria-label={`${player?.username || username || osuId} 玩家档案`}>
-    <header className="osu-player-drawer__header">{player?.avatar_url ? <img src={player.avatar_url} alt="" width="58" height="58" /> : <span className="osu-player-drawer__avatar"><UserRound size={24} /></span>}<div><h2>{countryEmoji(player?.country_code)} {player?.username || username || `玩家 ${osuId}`}{player?.is_supporter && <span title="osu!supporter"> ◆</span>}</h2><p>ID {osuId}{player ? ` · ${player.country_name || ''} · ${number(player.pp)}pp · 全球 #${number(player.global_rank)} · 国内 #${number(player.country_rank)}` : ''}</p></div><IconButton label="关闭玩家档案" icon={X} onClick={onClose} /></header>
-    <div className="osu-player-drawer__meta"><Pill>档案时间 {fmtDate(profile?.fetchedAt)}</Pill>{profile && !profile.stored && <Pill tone="warning">实时抓取</Pill>}<Button size="sm" icon={RefreshCw} loading={refreshing} onClick={forceRefresh}>更新档案</Button></div>
-    {profileError && <ErrorState title="玩家档案加载失败" message={profileError} onRetry={() => loadProfile()} />}
-    <div className="osu-player-drawer__tabs"><SegmentedControl value={tab} onChange={setTab} label="玩家资料分栏" options={playerTabs} /></div>
-    <div className="osu-player-drawer__body">
-      {tab === 'overview' && <OverviewTab player={player} />}
-      {tab === 'bp' && <ScoreTab data={bpResult} loading={loading.bp} rows={bpResult?.bp} pages={bpPages} page={bpPage} onPage={(next) => { setBpPage(next); setData((current) => ({ ...current, bp: undefined })); }} />}
-      {tab === 'recent' && <ScoreTab data={data.recent} loading={loading.recent} rows={data.recent?.recent} />}
-      {tab === 'pplus' && <PPlusTab data={data.pplus} loading={loading.pplus} />}
-      {tab === 'bptype' && <TextTab data={data.bptype} loading={loading.bptype} title="BP 类型分布（osu!oracle）" />}
-      {tab === 'badges' && <BadgesTab data={data.badges} loading={loading.badges} />}
-      {tab === 'analysis' && <AnalysisTab analysis={analysis} analyzing={analyzing} onStart={startAnalysis} />}
-    </div>
-  </aside></div>;
+  return <div className="drawer-root is-open">
+    <div className="drawer-backdrop" onClick={onClose} />
+    <aside className="drawer" role="dialog" aria-modal="true" aria-label={`${player?.username || username || osuId} 玩家档案`}>
+      <div className="drawer-head">
+        <div>
+          <h3>{countryEmoji(player?.country_code)} {player?.username || username || `玩家 ${osuId}`}</h3>
+          <p>
+            {player
+              ? `osu! #${number(player.global_rank)} · ${number(player.pp)}pp · ${Number(player.accuracy || 0).toFixed(2)}%`
+              : `ID ${osuId} · 档案读取中`}
+          </p>
+        </div>
+        <button type="button" className="drawer-close" onClick={onClose} aria-label="关闭玩家档案">×</button>
+      </div>
+
+      <div className="drawer-tabs">
+        {playerTabs.map((item) => <button key={item.value} type="button" className={tab === item.value ? 'is-active' : ''} onClick={() => setTab(item.value)}>{item.label}</button>)}
+      </div>
+
+      <div className="drawer-body">
+        {profileError && <div className="note" style={{ color: 'var(--red)', marginBottom: 10 }}>玩家档案加载失败：{profileError}</div>}
+        <div style={{ display: 'flex', gap: 8, marginBottom: 12, alignItems: 'center' }}>
+          <span className="chip">档案时间 {fmtDate(profile?.fetchedAt)}</span>
+          {profile && !profile.stored && <span className="chip chip--amber">实时抓取</span>}
+          <button type="button" className="btn btn-sm" disabled={refreshing} onClick={forceRefresh} style={{ marginLeft: 'auto' }}>{refreshing ? '更新中…' : '更新档案'}</button>
+        </div>
+
+        {tab === 'overview' && <OverviewTab player={player} />}
+        {tab === 'bp' && <ScoreTab data={bpResult} loading={loading.bp} rows={bpResult?.bp} pages={bpPages} page={bpPage} onPage={(next) => { setBpPage(next); setData((current) => ({ ...current, bp: undefined })); }} />}
+        {tab === 'recent' && <ScoreTab data={data.recent} loading={loading.recent} rows={data.recent?.recent} />}
+        {tab === 'pplus' && <PPlusTab data={data.pplus} loading={loading.pplus} />}
+        {tab === 'bptype' && <TextTab data={data.bptype} loading={loading.bptype} title="BP 类型分布（osu!oracle）" />}
+        {tab === 'badges' && <BadgesTab data={data.badges} loading={loading.badges} />}
+        {tab === 'analysis' && <AnalysisTab analysis={analysis} analyzing={analyzing} onStart={startAnalysis} />}
+      </div>
+    </aside>
+  </div>;
 }
 
 function ScoreTab({ data, loading, rows, pages = 1, page = 1, onPage }) {
-  if (loading) return <div className="osu-tab-state">加载中…</div>;
-  if (data?.error) return <ErrorState title="成绩加载失败" message={data.error} />;
-  return <div>{onPage && pages > 1 && <div className="osu-pagination"><IconButton label="上一页" icon={ChevronLeft} disabled={page <= 1} onClick={() => onPage(page - 1)} /><span>{page} / {pages}</span><IconButton label="下一页" icon={ChevronRight} disabled={page >= pages} onClick={() => onPage(page + 1)} /></div>}<div className="osu-score-list">{(rows || []).map((row, index) => <article key={row.id || `${row.bid}-${row.bpRank || index}`}><strong>{row.bpRank ? `#${row.bpRank}` : `#${index + 1}`}</strong><span>{scoreLine(row)}</span></article>)}{data && (rows || []).length === 0 && <EmptyState title="暂无成绩" />}</div></div>;
+  if (loading) return <div className="note">加载中…</div>;
+  if (data?.error) return <div className="note" style={{ color: 'var(--red)' }}>成绩加载失败：{data.error}</div>;
+  return <div>
+    {onPage && pages > 1 && <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 10 }}>
+      <button type="button" className="btn btn-sm" disabled={page <= 1} onClick={() => onPage(page - 1)}>上一页</button>
+      <span className="muted" style={{ fontSize: 12 }}>{page} / {pages}</span>
+      <button type="button" className="btn btn-sm" disabled={page >= pages} onClick={() => onPage(page + 1)}>下一页</button>
+    </div>}
+    <div className="rows">
+      {(rows || []).map((row, index) => <div className="row" key={row.id || `${row.bid}-${row.bpRank || index}`}>
+        <div className="row-main">
+          <div className="row-title">#{row.bpRank || index + 1}</div>
+          <div className="row-sub" style={{ whiteSpace: 'normal' }}>{scoreLine(row)}</div>
+        </div>
+      </div>)}
+      {data && (rows || []).length === 0 && <div className="note">暂无成绩。</div>}
+    </div>
+  </div>;
 }
 
 function OverviewTab({ player }) {
-  if (!player) return <div className="osu-tab-state">加载中…</div>;
+  if (!player) return <div className="note">加载中…</div>;
   const grades = player.grade_counts || {};
   const history = player.rank_history || [];
-  const min = Math.min(...history), max = Math.max(...history);
-  return <div className="osu-overview"><div className="osu-overview__metrics"><MetricCard label="等级" value={`${player.level} · ${player.level_progress}%`} /><MetricCard label="准确率" value={`${Number(player.accuracy || 0).toFixed(2)}%`} /><MetricCard label="游玩次数" value={number(player.play_count)} /><MetricCard label="游戏时长" value={fmtDuration(player.play_time)} /><MetricCard label="最大连击" value={number(player.max_combo)} /><MetricCard label="总命中" value={number(player.total_hits)} /></div><SettingGroup title="账号档案"><SettingRow title="注册时间" control={<strong>{fmtDate(player.join_date)}</strong>} /><SettingRow title="评级分布" control={<strong>SSH {grades.ssh || 0} · SS {grades.ss || 0} · SH {grades.sh || 0} · S {grades.s || 0} · A {grades.a || 0}</strong>} /></SettingGroup>{history.length > 1 && <Card className="osu-rank-chart"><strong>全球排名走势 · 近 90 天</strong><svg width="100%" height="110" viewBox={`0 0 ${history.length * 2} 100`} preserveAspectRatio="none"><polyline fill="none" stroke="var(--v2-accent)" strokeWidth="2" points={history.map((rank, index) => `${index * 2},${Math.max(2, Math.min(98, 8 + (rank - min) / Math.max(1, max - min) * 84))}`).join(' ')} /></svg></Card>}{player.badges?.length > 0 && <div className="osu-badges osu-badges--compact">{player.badges.map((badge, index) => <img key={index} src={badge.image_url} alt={badge.description} title={badge.description} />)}</div>}</div>;
+  const min = Math.min(...history);
+  const max = Math.max(...history);
+  return <div>
+    <div className="kv"><span>全球排名</span><b>#{number(player.global_rank)}</b></div>
+    <div className="kv"><span>国内排名</span><b>#{number(player.country_rank)}</b></div>
+    <div className="kv"><span>PP</span><b>{number(player.pp)}</b></div>
+    <div className="kv"><span>准确率</span><b>{Number(player.accuracy || 0).toFixed(2)}%</b></div>
+    <div className="kv"><span>游玩次数</span><b>{number(player.play_count)}</b></div>
+    <div className="kv"><span>游戏时长</span><b>{fmtDuration(player.play_time)}</b></div>
+    <div className="kv"><span>最大连击</span><b>{number(player.max_combo)}</b></div>
+    <div className="kv"><span>总命中</span><b>{number(player.total_hits)}</b></div>
+    <div className="kv"><span>注册时间</span><b>{fmtDate(player.join_date)}</b></div>
+    <div className="kv"><span>评级分布</span><b>SSH {grades.ssh || 0} · SS {grades.ss || 0} · SH {grades.sh || 0} · S {grades.s || 0} · A {grades.a || 0}</b></div>
+
+    {history.length > 1 && <div style={{ marginTop: 14 }}>
+      <div className="card-title" style={{ marginBottom: 8 }}>全球排名走势 · 近 90 天</div>
+      <svg width="100%" height="110" viewBox={`0 0 ${history.length * 2} 100`} preserveAspectRatio="none">
+        <polyline fill="none" stroke="var(--pink)" strokeWidth="2" points={history.map((rank, index) => `${index * 2},${Math.max(2, Math.min(98, 8 + (rank - min) / Math.max(1, max - min) * 84))}`).join(' ')} />
+      </svg>
+    </div>}
+
+    {player.badges?.length > 0 && <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 12 }}>
+      {player.badges.map((badge, index) => <img key={index} src={badge.image_url} alt={badge.description} title={badge.description} style={{ width: 40, height: 40, borderRadius: 8 }} />)}
+    </div>}
+  </div>;
 }
 
 function PPlusTab({ data, loading }) {
-  if (loading) return <div className="osu-tab-state">加载中…</div>;
-  if (data?.error) return <ErrorState title="PP+ 加载失败" message={data.error} />;
+  if (loading) return <div className="note">加载中…</div>;
+  if (data?.error) return <div className="note" style={{ color: 'var(--red)' }}>PP+ 加载失败：{data.error}</div>;
   const bars = data?.bars;
-  if (!bars) return <EmptyState title="PP+ 数据暂不可用" description="服务可能未启动，或该玩家尚未被分析。" />;
-  const dims = ['jump', 'flow', 'speed', 'stamina', 'precision', 'accuracy'];
-  const labels = { jump: 'Jump', flow: 'Flow', speed: 'Speed', stamina: 'Stamina', precision: 'Precision', accuracy: 'Accuracy' };
-  const center = 80, radius = 60, values = dims.map((dim) => Number(bars[dim]) || 0), maxScale = Math.max(15, ...values);
-  const angle = (index) => Math.PI * 2 * index / dims.length - Math.PI / 2;
-  const point = (index, value) => { const r = Math.max(0, Number(value) || 0) / maxScale * radius; return `${center + r * Math.cos(angle(index))},${center + r * Math.sin(angle(index))}`; };
-  const ring = (fraction) => dims.map((_, index) => `${center + fraction * radius * Math.cos(angle(index))},${center + fraction * radius * Math.sin(angle(index))}`).join(' ');
-  return <div className="osu-pplus"><svg viewBox="0 0 160 160" aria-label="PP+ 六维雷达图">{[.25, .5, .75, 1].map((fraction) => <polygon key={fraction} points={ring(fraction)} />)}<polygon className="osu-pplus__baseline" points={ring(15 / maxScale)} /><polygon className="osu-pplus__value" points={dims.map((dim, index) => point(index, bars[dim])).join(' ')} /></svg><InlineHelp>虚线为 15 基准线（LazyBot expertPlus 上限）。</InlineHelp><div>{dims.map((dim) => <MetricCard key={dim} label={labels[dim]} value={Number(bars[dim] || 0).toFixed(2)} />)}<MetricCard label="Total PP+" value={number(bars.ppTotal)} /></div></div>;
+  if (!bars) return <div className="note">PP+ 数据暂不可用：服务可能未启动，或该玩家尚未被分析。</div>;
+  const dims = [['jump', '跳跃'], ['flow', '读图'], ['speed', '速度'], ['stamina', '耐力'], ['precision', '准确'], ['accuracy', '稳定']];
+  return <div>
+    <div className="card-title" style={{ marginBottom: 10 }}>PP+ 维度</div>
+    {dims.map(([key, label]) => {
+      const value = Number(bars[key] || 0);
+      const percent = Math.max(0, Math.min(100, (value / 20) * 100));
+      return <div className="bar-row" key={key}>
+        <span>{label}</span>
+        <div className="bar"><i style={{ width: percent + '%' }} /></div>
+        <b>{value.toFixed(2)}</b>
+      </div>;
+    })}
+    <div className="kv" style={{ marginTop: 10 }}><span>Total PP+</span><b>{number(bars.ppTotal)}</b></div>
+    <div className="note" style={{ marginTop: 8 }}>条形按 20 为满刻度显示；数值来自 LazyBot PP+ 分析。</div>
+  </div>;
 }
 
 function TextTab({ data, loading, title }) {
-  if (loading) return <div className="osu-tab-state">加载中…</div>;
-  if (data?.error) return <ErrorState title="数据加载失败" message={data.error} />;
-  if (!data?.text) return <EmptyState title="暂无数据" />;
-  return <div><InlineHelp>{title}</InlineHelp><pre className="osu-analysis-text">{data.text}</pre></div>;
+  if (loading) return <div className="note">加载中…</div>;
+  if (data?.error) return <div className="note" style={{ color: 'var(--red)' }}>数据加载失败：{data.error}</div>;
+  if (!data?.text) return <div className="note">暂无数据。</div>;
+  return <div>
+    <div className="note" style={{ marginBottom: 8 }}>{title}</div>
+    <pre style={{ maxHeight: 460, overflow: 'auto', fontSize: 11, whiteSpace: 'pre-wrap', color: 'var(--soft)' }}>{data.text}</pre>
+  </div>;
 }
 
 function BadgesTab({ data, loading }) {
-  if (loading) return <div className="osu-tab-state">加载中…</div>;
+  if (loading) return <div className="note">加载中…</div>;
   const badges = data?.badges || [];
-  if (badges.length === 0) return <EmptyState title="该玩家没有官方徽章" />;
-  return <div className="osu-badges">{badges.map((badge, index) => <article key={index}><img src={badge.image_url} alt={badge.description} /><strong>{badge.description}</strong><small>{fmtDate(badge.awarded_at)}</small></article>)}</div>;
+  if (badges.length === 0) return <div className="note">该玩家没有官方徽章。</div>;
+  return <div className="rows">
+    {badges.map((badge, index) => <div className="row" key={index}>
+      <img src={badge.image_url} alt={badge.description} style={{ width: 40, height: 40, borderRadius: 8 }} />
+      <div className="row-main">
+        <div className="row-title" style={{ whiteSpace: 'normal' }}>{badge.description}</div>
+        <div className="row-sub">{fmtDate(badge.awarded_at)}</div>
+      </div>
+    </div>)}
+  </div>;
 }
 
 function AnalysisTab({ analysis, analyzing, onStart }) {
-  return <div className="osu-analysis"><div className="osu-analysis__actions"><Button variant="primary" icon={Sparkles} onClick={onStart} loading={analyzing} disabled={analysis?.status === 'running'}>{analysis?.status === 'running' ? '分析中' : '生成 Analyze 报告'}</Button><InlineHelp>控制台触发不经过 QQ 侧冷却；同一玩家同时只运行一个任务。</InlineHelp></div>{analysis?.status === 'running' && <div className="osu-tab-state">分析生成中，完成后会自动显示…</div>}{analysis?.status === 'error' && <ErrorState title="分析失败" message={analysis.error} />}{analysis?.status === 'done' && <><p className="osu-analysis__time">完成于 {fmtDate(analysis.finishedAt)} · 开始于 {fmtDate(analysis.at)}</p>{analysis.source === 'fallback' && <InlineHelp>本次 LLM 输出未通过事实校验，已显示确定性安全报告。</InlineHelp>}<pre className="osu-analysis-text">{analysis.text}</pre></>}{!analysis && <EmptyState title="还没有分析记录" description="触发后会在这里展示当前玩家的完整报告。" />}</div>;
+  return <div>
+    <div style={{ display: 'flex', gap: 8, marginBottom: 10, alignItems: 'center' }}>
+      <button type="button" className="btn btn-primary btn-sm" disabled={analyzing || analysis?.status === 'running'} onClick={onStart}>{analysis?.status === 'running' ? '分析中…' : '生成 Analyze 报告'}</button>
+      <span className="note" style={{ margin: 0 }}>控制台触发不经过 QQ 侧冷却；同一玩家同时只运行一个任务。</span>
+    </div>
+    {analysis?.status === 'running' && <div className="note">分析生成中，完成后会自动显示…</div>}
+    {analysis?.status === 'error' && <div className="note" style={{ color: 'var(--red)' }}>分析失败：{analysis.error}</div>}
+    {analysis?.status === 'done' && <>
+      <div className="note">完成于 {fmtDate(analysis.finishedAt)} · 开始于 {fmtDate(analysis.at)}</div>
+      {analysis.source === 'fallback' && <div className="note" style={{ color: 'var(--amber)' }}>本次 LLM 输出未通过事实校验，已显示确定性安全报告。</div>}
+      <pre style={{ maxHeight: 460, overflow: 'auto', fontSize: 11, whiteSpace: 'pre-wrap', color: 'var(--soft)' }}>{analysis.text}</pre>
+    </>}
+    {!analysis && <div className="note">还没有分析记录，触发后会在这里展示当前玩家的完整报告。</div>}
+  </div>;
 }

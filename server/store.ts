@@ -419,7 +419,6 @@ export const defaultCommandPermissions = {
   profile: 'admin',
   summarize: 'guest',
   summarizeLarge: 'admin',
-  usage: 'admin',
   status: 'admin',
   rate: 'admin',
   cooldown: 'admin',

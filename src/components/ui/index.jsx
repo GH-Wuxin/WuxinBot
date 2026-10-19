@@ -122,5 +122,15 @@ export function ConfirmDialog({ open, title, description, confirmLabel = '确认
     return () => window.removeEventListener('keydown', onKeyDown);
   }, [open, busy, onCancel]);
   if (!open) return null;
-  return <div className="ui-dialog-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget && !busy) onCancel(); }}><section className="ui-dialog" role="dialog" aria-modal="true" aria-labelledby="confirm-dialog-title"><div className="ui-dialog__icon"><AlertTriangle size={20} /></div><div className="ui-dialog__body"><div className="ui-dialog__heading"><h2 id="confirm-dialog-title">{title}</h2><IconButton label="关闭" icon={X} onClick={onCancel} disabled={busy} /></div><p>{description}</p><div className="ui-dialog__actions"><Button onClick={onCancel} disabled={busy}>取消</Button><Button variant={tone} loading={busy} onClick={onConfirm}>{confirmLabel}</Button></div></div></section></div>;
+  return <div className="modal-root" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget && !busy) onCancel(); }}>
+    <div className="modal-back" onClick={() => { if (!busy) onCancel(); }} />
+    <div className="modal" role="dialog" aria-modal="true" aria-labelledby="confirm-dialog-title">
+      <h3 id="confirm-dialog-title">{title}</h3>
+      <p>{description}</p>
+      <div className="modal-actions">
+        <button type="button" className="btn" onClick={onCancel} disabled={busy}>取消</button>
+        <button type="button" className="btn btn-primary" onClick={onConfirm} disabled={busy}>{busy ? '处理中…' : confirmLabel}</button>
+      </div>
+    </div>
+  </div>;
 }

@@ -1,8 +1,10 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { ChevronDown, ChevronUp, Edit3, RefreshCw, Save, Sparkles, Trash2, Users } from 'lucide-react';
-import { Button, Card, EmptyState, ErrorState, Input, LoadingState, Pill, SectionHeader, Select, Textarea } from '../../components/ui/index.jsx';
 import { api } from '../../lib/api.js';
+import { ConfirmDialog } from '../../components/ui/index.jsx';
+import { Avatar, userAvatarUrl } from '../../components/Avatar.jsx';
+import { RefreshButton } from '../../components/ui/RefreshButton.jsx';
 
+// 版式对齐原型 PAGES.relationships：左侧关系强度条 + 右侧画像口径；下方保留完整管理列表。
 const profileFields = [
   ['interactionStyle', '互动方式'], ['commonTopics', '共同话题'], ['tone', '语气'], ['botStrategy', 'Bot 插话策略'], ['boundaries', '边界'],
 ];
@@ -13,6 +15,8 @@ export function RelationshipsPage({ db, refreshState }) {
   const [search, setSearch] = useState('');
   const [groupFilter, setGroupFilter] = useState('all');
   const [form, setForm] = useState({ groupId: db.groups?.[0]?.groupId || '', userA: '', userB: '' });
+  const [showAll, setShowAll] = useState(false);
+  const [deleteTarget, setDeleteTarget] = useState(null);
   const [expanded, setExpanded] = useState({});
   const [editing, setEditing] = useState({});
   const [drafts, setDrafts] = useState({});
@@ -45,14 +49,11 @@ export function RelationshipsPage({ db, refreshState }) {
     return request;
   }, []);
 
-  useEffect(() => {
-    void loadRelationships();
-  }, [rawProfileStamp, pendingStamp, loadRelationships]);
-
+  useEffect(() => { void loadRelationships(); }, [rawProfileStamp, pendingStamp, loadRelationships]);
   useEffect(() => () => relationshipAbortRef.current?.abort(), []);
 
   const userName = (userId, groupId) => {
-    const user = db.users?.find((entry) => String(entry.userId) === String(userId) && String(entry.groupId) === String(groupId));
+    const user = db.users?.find((entry) => String(entry.userId) === String(userId) && String(entry.groupId) === groupId);
     if (user?.customName) return user.customName;
     if (user?.nickname) return user.nickname;
     const memory = db.memories?.find((entry) => String(entry.userId) === String(userId));
@@ -62,6 +63,7 @@ export function RelationshipsPage({ db, refreshState }) {
 
   const profiles = relationshipData.profiles || [];
   const candidates = (relationshipData.candidates || []).filter((candidate) => groupFilter === 'all' || String(candidate.groupId) === groupFilter);
+  const pairLabel = (profile) => `${profile.userAName || userName(profile.userA, profile.groupId)} ↔ ${profile.userBName || userName(profile.userB, profile.groupId)}`;
   const filtered = profiles.filter((profile) => {
     if (groupFilter !== 'all' && String(profile.groupId) !== groupFilter) return false;
     if (!search.trim()) return true;
@@ -90,8 +92,6 @@ export function RelationshipsPage({ db, refreshState }) {
   };
 
   const doDelete = async (profile) => {
-    const label = `${profile.userAName || userName(profile.userA, profile.groupId)} ↔ ${profile.userBName || userName(profile.userB, profile.groupId)}`;
-    if (!window.confirm(`删除 ${label} 的关系画像？`)) return;
     await api(`/api/relationship-profiles/${profile.groupId}/${profile.userA}/${profile.userB}`, { method: 'DELETE', timeoutMs: 15000 });
     await refreshState();
   };
@@ -109,46 +109,141 @@ export function RelationshipsPage({ db, refreshState }) {
     setEditing({ ...editing, [key]: false });
   };
 
-  return <div className="console-page relationships-page">
-    <SectionHeader title="关系画像" actions={<Button icon={RefreshCw} onClick={loadRelationships}>刷新</Button>} />
-    <div className="relationship-metrics">
-      <Card><span>已生成</span><strong>{profiles.length}</strong></Card>
-      <Card><span>候选关系对</span><strong>{candidates.length}</strong></Card>
-      <Card><span>当前群筛选</span><strong>{groupFilter === 'all' ? '全部群' : groupMap[groupFilter] || groupFilter}</strong></Card>
+  return <>
+    <div className="page-head">
+      <div><h1>关系</h1><p>谁和谁熟，靠一起出现和互动的证据说话。</p></div>
+      <div style={{ display: 'flex', gap: 8 }}><RefreshButton onClick={loadRelationships} /></div>
     </div>
-    {relationshipData.loading && <LoadingState label="正在读取关系画像…" />}
-    {relationshipData.error && <ErrorState title="关系画像读取失败" message={relationshipData.error} onRetry={loadRelationships} />}
-    {!relationshipData.loading && !relationshipData.error && <div className="relationships-workspace">
-      <div className="console-setting-stack">
-        <Card className="console-section relationship-generator">
-          <div className="console-section__title"><Sparkles size={18} /><div><h3>生成 / 更新</h3></div></div>
-          <Select label="群" value={form.groupId} onChange={(event) => setForm({ ...form, groupId: event.target.value })} options={groupOptions} />
-          <div className="console-form-grid"><Input label="用户 A QQ" value={form.userA} onChange={(event) => setForm({ ...form, userA: event.target.value })} /><Input label="用户 B QQ" value={form.userB} onChange={(event) => setForm({ ...form, userB: event.target.value })} /></div>
-          <Button variant="primary" icon={Sparkles} loading={Boolean(loadingKey)} disabled={!form.groupId || !form.userA || !form.userB} onClick={() => doUpdate(form.groupId, form.userA, form.userB)}>LLM 更新</Button>
-        </Card>
-        <Card className="console-section">
-          <div className="console-section__title"><Users size={18} /><div><h3>候选关系对 · {candidates.length}</h3><p>最多显示 20 对。</p></div></div>
-          <div className="console-list relationship-candidates">{candidates.slice(0, 20).map((candidate) => {
-            const key = `${candidate.groupId}:${candidate.userA}:${candidate.userB}`;
-            return <article className="console-list-item relationship-candidate" key={candidate.pairKey + candidate.groupId}><div><strong>{candidate.userAName || userName(candidate.userA, candidate.groupId)} ↔ {candidate.userBName || userName(candidate.userB, candidate.groupId)}</strong><span>{candidate.groupName || groupMap[candidate.groupId] || candidate.groupId} · 互动 {candidate.count} 次</span></div><Button size="sm" loading={loadingKey === key} disabled={Boolean(loadingKey)} onClick={() => doUpdate(candidate.groupId, candidate.userA, candidate.userB)}>生成</Button></article>;
-          })}{!candidates.length && <EmptyState title="暂无候选关系对" description="等待更多真实互动样本积累。" />}</div>
-        </Card>
+
+    <div className="searchbar" style={{ marginBottom: 16 }}>
+      <span className="muted">搜索</span>
+      <input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="昵称、QQ 或话题" aria-label="搜索关系画像" />
+      <select
+        value={groupFilter}
+        onChange={(event) => setGroupFilter(event.target.value)}
+        aria-label="按群筛选"
+        style={{ background: 'var(--panel-2)', border: '1px solid var(--line-strong)', borderRadius: 999, color: 'var(--text)', padding: '6px 12px', fontSize: 12 }}
+      >
+        <option value="all">全部群</option>
+        {groupOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+      </select>
+      <span className="chip">{filtered.length} 对</span>
+    </div>
+
+    {relationshipData.error && <div className="note" style={{ color: 'var(--red)', marginBottom: 12 }}>关系画像读取失败：{relationshipData.error}</div>}
+
+    <div className="grid grid-main" style={{ alignItems: 'start' }}>
+      <div className="card">
+        <div className="card-head"><span className="card-title">关系强度</span><span className="muted" style={{ fontSize: 12 }}>共 {filtered.length} 对 · 按置信度</span></div>
+        {filtered.slice(0, 12).map((profile) => {
+          const confidence = Math.round(Number(profile.confidence || 0) * 100);
+          return <div className="bar-row" key={profile.pairKey + profile.groupId}>
+            <span title={pairLabel(profile)}>{pairLabel(profile)}</span>
+            <div className="bar"><i style={{ width: confidence + '%' }} /></div>
+            <b>{confidence}%</b>
+          </div>;
+        })}
+        {!filtered.length && <div className="note">{relationshipData.loading ? '正在读取关系画像…' : '还没有关系画像。'}</div>}
       </div>
 
-      <Card className="console-section relationships-list-panel">
-        <div className="console-section__title"><Users size={18} /><div><h3>已生成 · {filtered.length}</h3></div></div>
-        <div className="console-toolbar"><Input aria-label="搜索关系画像" placeholder="搜索昵称、QQ 或话题" value={search} onChange={(event) => setSearch(event.target.value)} /><Select value={groupFilter} onChange={(event) => setGroupFilter(event.target.value)} options={[{ value: 'all', label: '全部群' }, ...groupOptions]} /></div>
-        <div className="console-list relationships-list">{filtered.map((profile) => {
+      <div className="stack">
+        <div className="card">
+          <div className="card-head"><span className="card-title">画像口径</span></div>
+          <div className="note">关系强度由共同出现次数、互相 @、连续对话轮次加权得到；不包含私聊内容。条上的百分比是画像置信度。</div>
+        </div>
+
+        <div className="card">
+          <div className="card-head"><span className="card-title">生成 / 更新</span></div>
+          <div className="field" style={{ marginBottom: 10 }}>
+            <label>群</label>
+            <select value={form.groupId} onChange={(event) => setForm({ ...form, groupId: event.target.value })}>
+              {groupOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+            </select>
+          </div>
+          <div className="field"><label>用户 A QQ</label><input value={form.userA} onChange={(event) => setForm({ ...form, userA: event.target.value })} /></div>
+          <div className="field"><label>用户 B QQ</label><input value={form.userB} onChange={(event) => setForm({ ...form, userB: event.target.value })} /></div>
+          <button
+            type="button"
+            className="btn btn-primary"
+            style={{ width: '100%', marginTop: 6 }}
+            disabled={!form.groupId || !form.userA || !form.userB || Boolean(loadingKey)}
+            onClick={() => doUpdate(form.groupId, form.userA, form.userB)}
+          >{loadingKey === `${form.groupId}:${form.userA}:${form.userB}` ? '更新中…' : 'LLM 更新'}</button>
+        </div>
+
+        <div className="card">
+          <div className="card-head"><span className="card-title">候选关系对</span><span className="muted" style={{ fontSize: 12 }}>{candidates.length} 对 · 最多 20</span></div>
+          <div className="rows" style={{ maxHeight: 340, overflowY: 'auto' }}>
+            {candidates.slice(0, 20).map((candidate) => {
+              const key = `${candidate.groupId}:${candidate.userA}:${candidate.userB}`;
+              return <div className="row" key={candidate.pairKey + candidate.groupId}>
+                <div className="row-main">
+                  <div className="row-title">{candidate.userAName || userName(candidate.userA, candidate.groupId)} ↔ {candidate.userBName || userName(candidate.userB, candidate.groupId)}</div>
+                  <div className="row-sub">{candidate.groupName || groupMap[candidate.groupId] || candidate.groupId} · 互动 {candidate.count} 次</div>
+                </div>
+                <button type="button" className="btn btn-sm" disabled={Boolean(loadingKey)} onClick={() => doUpdate(candidate.groupId, candidate.userA, candidate.userB)}>{loadingKey === key ? '生成中…' : '生成'}</button>
+              </div>;
+            })}
+            {!candidates.length && <div className="note">暂无候选关系对，等待更多真实互动样本。</div>}
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div className="card" style={{ marginTop: 16 }}>
+      <div className="card-head"><span className="card-title">全部关系画像</span><span className="muted" style={{ fontSize: 12 }}>{filtered.length} 条</span></div>
+      <div className="rows">
+        {(showAll ? filtered : filtered.slice(0, 20)).map((profile) => {
           const key = profile.pairKey + profile.groupId;
           const isExpanded = expanded[key];
           const isEditing = editing[key];
           const draft = drafts[key] || profile;
-          return <article className="console-list-item relationship-row" key={key}>
-            <header><div><strong>{profile.userAName || userName(profile.userA, profile.groupId)} ↔ {profile.userBName || userName(profile.userB, profile.groupId)}</strong><span>{groupMap[profile.groupId] || profile.groupId} · {profile.updatedAt ? new Date(profile.updatedAt).toLocaleString('zh-CN') : '未知时间'}</span><div className="console-pills"><Pill tone={profile.enabled !== false ? 'success' : 'neutral'}>{profile.enabled !== false ? '启用' : '停用'}</Pill><Pill>证据 {profile.evidenceCount || 0}</Pill><Pill tone="accent">置信 {Math.round((profile.confidence || 0) * 100)}%</Pill></div></div><div className="console-actions"><Button size="sm" icon={isExpanded ? ChevronUp : ChevronDown} onClick={() => setExpanded({ ...expanded, [key]: !isExpanded })}>{isExpanded ? '收起' : '展开'}</Button><Button size="sm" loading={loadingKey === `${profile.groupId}:${profile.userA}:${profile.userB}`} disabled={Boolean(loadingKey)} onClick={() => doUpdate(profile.groupId, profile.userA, profile.userB)}>LLM 更新</Button><Button size="sm" onClick={() => doPatch(profile, { enabled: profile.enabled === false })}>{profile.enabled !== false ? '停用' : '启用'}</Button><Button size="sm" variant="danger-ghost" icon={Trash2} onClick={() => doDelete(profile)}>删除</Button></div></header>
-            {isExpanded && (isEditing ? <div className="relationship-row__edit">{profileFields.map(([field, label]) => <Textarea key={field} label={label} rows={2} value={draft[field] || ''} onChange={(event) => setDrafts({ ...drafts, [key]: { ...draft, [field]: event.target.value } })} />)}<div className="console-actions console-actions--end"><Button onClick={() => setEditing({ ...editing, [key]: false })}>取消</Button><Button variant="primary" icon={Save} onClick={() => saveEdit(profile)}>保存</Button></div></div> : <div className="relationship-row__details">{profileFields.map(([field, label]) => profile[field] && <div key={field}><span>{label}</span><p>{profile[field]}</p></div>)}<Button size="sm" icon={Edit3} onClick={() => startEdit(profile)}>手动编辑</Button></div>)}
-          </article>;
-        })}{!filtered.length && <EmptyState title="没有匹配的关系画像" description="调整筛选条件，或在左侧生成新的画像。" />}</div>
-      </Card>
-    </div>}
-  </div>;
+          return <div key={key} style={{ borderTop: '1px solid var(--line)', paddingTop: 10, marginTop: 4 }}>
+            <div className="row" style={{ alignItems: 'flex-start' }}>
+              <span style={{ display: 'inline-flex', alignItems: 'center', flex: '0 0 auto' }}>
+                <Avatar name={profile.userAName || userName(profile.userA, profile.groupId)} src={userAvatarUrl(profile.userA)} size={24} />
+                <span style={{ marginLeft: -8, borderRadius: '50%', boxShadow: '0 0 0 2px var(--panel)' }}>
+                  <Avatar name={profile.userBName || userName(profile.userB, profile.groupId)} src={userAvatarUrl(profile.userB)} size={24} />
+                </span>
+              </span>
+              <div className="row-main">
+                <div className="row-title">{pairLabel(profile)}</div>
+                <div className="row-sub">{groupMap[profile.groupId] || profile.groupId} · {profile.updatedAt ? new Date(profile.updatedAt).toLocaleString('zh-CN') : '未知时间'} · {profile.enabled !== false ? '启用' : '停用'} · 证据 {profile.evidenceCount || 0}</div>
+              </div>
+              <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+                <button type="button" className="btn btn-sm btn-ghost" onClick={() => setExpanded({ ...expanded, [key]: !isExpanded })}>{isExpanded ? '收起' : '展开'}</button>
+                <button type="button" className="btn btn-sm" disabled={Boolean(loadingKey)} onClick={() => doUpdate(profile.groupId, profile.userA, profile.userB)}>LLM 更新</button>
+                <button type="button" className="btn btn-sm" onClick={() => doPatch(profile, { enabled: profile.enabled === false })}>{profile.enabled !== false ? '停用' : '启用'}</button>
+                <button type="button" className="btn btn-sm btn-ghost" onClick={() => setDeleteTarget(profile)}>删除</button>
+              </div>
+            </div>
+            {isExpanded && (isEditing
+              ? <div style={{ padding: '8px 10px 4px' }}>
+                {profileFields.map(([field, label]) => <div className="field" key={field}><label>{label}</label><textarea rows="2" value={draft[field] || ''} onChange={(event) => setDrafts({ ...drafts, [key]: { ...draft, [field]: event.target.value } })} /></div>)}
+                <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+                  <button type="button" className="btn btn-sm" onClick={() => setEditing({ ...editing, [key]: false })}>取消</button>
+                  <button type="button" className="btn btn-sm btn-primary" onClick={() => saveEdit(profile)}>保存</button>
+                </div>
+              </div>
+              : <div style={{ padding: '4px 10px 8px' }}>
+                {profileFields.map(([field, label]) => profile[field] ? <div className="kv" key={field} style={{ display: 'block' }}><span>{label}</span><br /><b style={{ fontWeight: 500 }}>{profile[field]}</b></div> : null)}
+                <button type="button" className="btn btn-sm" style={{ marginTop: 8 }} onClick={() => startEdit(profile)}>手动编辑</button>
+              </div>)}
+          </div>;
+        })}
+        {!filtered.length && <div className="note">没有匹配的关系画像。</div>}
+        {!showAll && filtered.length > 20 && <div style={{ textAlign: 'center', marginTop: 12 }}>
+          <button type="button" className="btn btn-sm" onClick={() => setShowAll(true)}>显示全部 {filtered.length} 条</button>
+        </div>}
+      </div>
+    </div>
+    <ConfirmDialog
+      open={Boolean(deleteTarget)}
+      title="删除关系画像？"
+      description={deleteTarget ? `将删除 ${pairLabel(deleteTarget)} 的关系画像；原始聊天记录与成员策略不受影响。` : ""}
+      confirmLabel="删除画像"
+      onCancel={() => setDeleteTarget(null)}
+      onConfirm={() => { const target = deleteTarget; setDeleteTarget(null); return target ? doDelete(target) : undefined; }}
+    />
+  </>;
 }

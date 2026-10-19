@@ -4,6 +4,8 @@ import './styles/globals.css';
 import './styles/components.css';
 import './styles/osu-console.css';
 import './styles/runtime.css';
+import './styles/prototype.css';
+import './styles/overrides.css';
 import { AppShell } from './components/layout/AppShell.jsx';
 import { DashboardPage } from './pages/Dashboard/index.jsx';
 import { GroupsPage } from './pages/Groups/index.jsx';
@@ -26,7 +28,7 @@ import { api, rememberAdminPassword, resetAdminAuthPrompt } from './lib/api.js';
 export function App() {
   const [tab, setTab] = useState('overview');
   const [state, setState] = useState(null);
-  const [toast, setToast] = useState('');
+
   const [loadError, setLoadError] = useState('');
   const refreshInFlight = useRef(null);
   const refreshAbort = useRef(null);
@@ -95,8 +97,6 @@ export function App() {
     rememberAdminPassword(patch.adminPassword);
     if (data.revision) stateRevision.current = data.revision;
     setState((current) => ({ ...current, db: data.db }));
-    setToast('已保存设置');
-    setTimeout(() => setToast(''), 1800);
   };
 
   if (!state && desktop) return <RuntimePage standalone onServerReady={refresh} loadError={loadError} />;
@@ -113,7 +113,6 @@ export function App() {
     onStopAll={async () => { await api('/api/stop-all', { method: 'POST', timeoutMs: 10000 }); refresh(); }}
     onPauseToggle={() => saveSettings({ globalPaused: !db.settings.globalPaused })}
   >
-    {toast && <div className="toast">{toast}</div>}
     {loadError && <div className="osu-inline-warning" role="alert">连接刷新失败，正在显示上一次数据：{loadError}</div>}
     {tab === 'overview' && <DashboardPage db={db} oneBot={state.oneBot} saveSettings={saveSettings} refreshState={refresh} onNavigate={setTab} />}
     {tab === 'groups' && <GroupsPage db={db} refreshState={refresh} saveSettings={saveSettings} />}

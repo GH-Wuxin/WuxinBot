@@ -1,38 +1,15 @@
 import React, { useEffect, useState } from 'react';
-import { Bot, Braces, MessageSquareText, Play, UserRound } from 'lucide-react';
-import {
-  Button,
-  Card,
-  EmptyState,
-  InlineHelp,
-  Input,
-  Pill,
-  SectionHeader,
-  Select,
-  Switch,
-  Textarea,
-} from '../../components/ui/index.jsx';
 import { api } from '../../lib/api.js';
 
+// 版式对齐原型 PAGES.agent：左侧沙盒、右侧运行配置 + 本轮工具面。
 const policyOptions = [
-  { value: '', label: '按真实配置' },
-  { value: 'normal', label: '正常' },
-  { value: 'whitelist', label: '优先回应' },
-  { value: 'priority', label: '重点关注' },
-  { value: 'muted', label: '少回应' },
-  { value: 'blocked', label: '不回应' },
-  { value: 'admin', label: '管理员' },
-  { value: 'owner', label: '所有者' },
+  ['', '按真实配置'], ['normal', '正常'], ['whitelist', '优先回应'], ['priority', '重点关注'],
+  ['muted', '少回应'], ['blocked', '不回应'], ['admin', '管理员'], ['owner', '所有者'],
 ];
-
 const modeOptions = [
-  { value: '', label: '按真实配置' },
-  { value: 'silent', label: '静默' },
-  { value: 'mention', label: '只在 @ 时回复' },
-  { value: 'light', label: '轻度参与' },
-  { value: 'natural', label: '自然群友' },
-  { value: 'osu', label: '仅 osu! 指令' },
+  ['', '按真实配置'], ['silent', '静默'], ['mention', '只在 @ 时回复'], ['light', '轻度参与'], ['natural', '自然群友'], ['osu', '仅 osu! 指令'],
 ];
+const TOOL_SURFACE = ['best_score', 'best_scores', 'player', 'pp_plus', 'bp_type', 'recommend', 'beatmap', 'pp_calc', 'leaderboard', 'search_web', 'memory', 'group_profile'];
 
 export function AgentPage({ db }) {
   const groups = db.groups || [];
@@ -70,13 +47,6 @@ export function AgentPage({ db }) {
     }
   }
   const groupUsers = Object.values(groupUserMap);
-  const displayUserLabel = (user) => {
-    if (user.nickname && user.nickname !== String(user.userId)) return `${user.nickname} (${user.userId})`;
-    const messages = (db.messages || []).filter((message) => String(message.userId) === String(user.userId) && message.nickname && message.nickname !== String(user.userId));
-    if (messages.length) return `${messages[messages.length - 1].nickname} (${user.userId})`;
-    const memory = (db.memories || []).find((entry) => String(entry.userId) === String(user.userId) && entry.nickname && entry.nickname !== String(user.userId));
-    return memory ? `${memory.nickname} (${user.userId})` : `QQ ${user.userId}`;
-  };
 
   const run = async () => {
     setRunning(true);
@@ -108,51 +78,124 @@ export function AgentPage({ db }) {
     }
   };
 
-  return <div className="console-page agent-page">
-    <SectionHeader title="决策沙盒" />
-    <div className="console-split console-split--agent">
-      <Card className="console-section">
-        <div className="console-section__title"><MessageSquareText size={18} /><div><h3>模拟消息</h3></div></div>
-        <div className="console-form-grid">
-          <Select label="群聊" value={groupId} onChange={(event) => setGroupId(event.target.value)} options={groups.length ? groups.map((group) => ({ value: String(group.groupId), label: group.name || String(group.groupId) })) : [{ value: '', label: '无群' }]} />
-          <Select label="发言人" value={userId} onChange={(event) => { setNicknameDirty(false); setUserId(event.target.value); }} options={[{ value: '', label: '自定义…' }, ...groupUsers.map((user) => ({ value: String(user.userId), label: displayUserLabel(user) }))]} />
-          <Input label="昵称" placeholder="可手动填写" value={nickname} onChange={(event) => { setNicknameDirty(true); setNickname(event.target.value); }} />
-          <Input label="QQ 号" placeholder="可手动填写" value={userId} onChange={(event) => setUserId(event.target.value)} />
-        </div>
-        <Textarea label="消息内容" rows={4} value={text} onChange={(event) => setText(event.target.value)} />
-        <div className="agent-context-grid">
-          <Switch label="@ 机器人" checked={atBot} onChange={(event) => setAtBot(event.target.checked)} />
-          <Switch label="个人画像" checked={useMemory} onChange={(event) => setUseMemory(event.target.checked)} />
-          <Switch label="群画像" checked={useGroupProfile} onChange={(event) => setUseGroupProfile(event.target.checked)} />
-          <Switch label="关系画像" checked={useRelationship} onChange={(event) => setUseRelationship(event.target.checked)} />
-          <Switch label="生成回复" description="会调用当前模型" checked={callLlm} onChange={(event) => setCallLlm(event.target.checked)} />
-        </div>
-        <div className="console-form-grid">
-          <Select label="临时成员策略" value={memberPolicy} onChange={(event) => setMemberPolicy(event.target.value)} options={policyOptions} />
-          <Select label="临时群模式" value={groupMode} onChange={(event) => setGroupMode(event.target.value)} options={modeOptions} />
-        </div>
-        {error && <InlineHelp tone="danger">运行失败：{error}</InlineHelp>}
-        <div className="console-actions console-actions--end"><Button variant="primary" icon={Play} loading={running} onClick={run}>{running ? '分析中…' : '运行沙盒分析'}</Button></div>
-      </Card>
+  const clearAll = () => {
+    setResult(null);
+    setError('');
+    setText('');
+    setShowPrompt(false);
+  };
 
-      <Card className="console-section agent-result">
-        <div className="console-section__title"><Bot size={18} /><div><h3>运行结果</h3></div></div>
-        {!result ? <EmptyState title="暂无运行结果" /> : <div className="agent-result__body">
-          <div className="agent-result__decision">
-            <Pill tone={result.decision?.shouldReply ? 'success' : 'warning'}>{result.decision?.shouldReply ? '会回复' : '不回复'}</Pill>
-            <strong>{result.decision?.reason || '未返回原因'}</strong>
-          </div>
-          {result.context && <div className="console-kv-list">
-            <div><span>群 / 策略</span><strong>{result.context.group} · {result.context.userPolicy}</strong></div>
-            {result.context.memoryProfile && <div><span>个人画像</span><strong>{result.context.memoryProfile.summary || '已注入'}</strong></div>}
-            {result.context.groupProfile && <div><span>群画像</span><strong>{result.context.groupProfile.atmosphere || '已注入'} · {Math.round((result.context.groupProfile.confidence || 0) * 100)}%</strong></div>}
-            {result.context.relationshipProfiles?.length > 0 && <div><span>关系画像</span><strong>{result.context.relationshipProfiles.map((entry) => `${entry.pair} ${entry.style}`).join(' · ')}</strong></div>}
-          </div>}
-          {result.replyPreview && <section className="agent-result__reply"><span>回复预览</span><p>{result.replyPreview}</p></section>}
-          {result.usage && <InlineHelp>Token {result.usage.total_tokens || 0}（输入 {result.usage.prompt_tokens || 0} / 输出 {result.usage.completion_tokens || 0}）</InlineHelp>}
-          {result.promptPreview && <div className="agent-result__prompt"><Button size="sm" icon={Braces} onClick={() => setShowPrompt((value) => !value)}>{showPrompt ? '收起 Prompt' : '查看 Prompt'}</Button>{showPrompt && <pre>{result.promptPreview}</pre>}</div>}
-        </div>}
-      </Card>
+  return <>
+    <div className="page-head">
+      <div><h1>Agent</h1><p>在沙盒里看它怎么想、怎么调工具，再决定要不要上线。</p></div>
+      <div style={{ display: 'flex', gap: 8 }}>
+        <button type="button" className="btn btn-ghost" onClick={clearAll}>清空</button>
+        <button type="button" className="btn btn-primary" disabled={running || !text.trim()} onClick={run}>{running ? '分析中…' : '运行沙盒分析'}</button>
+      </div>
     </div>
-  </div>;
+
+    {error && <div className="note" style={{ color: 'var(--red)', marginBottom: 12 }}>运行失败：{error}</div>}
+
+    <div className="grid grid-main" style={{ alignItems: 'start' }}>
+      <div className="stack">
+        <div className="card">
+          <div className="card-head"><span className="card-title">模拟消息</span><span className="muted" style={{ fontSize: 12 }}>不会真的发到群里</span></div>
+          <div className="field"><label>群聊</label>
+            <select value={groupId} onChange={(event) => setGroupId(event.target.value)}>
+              {groups.length ? groups.map((group) => <option key={group.groupId} value={String(group.groupId)}>{group.name || String(group.groupId)}</option>) : <option value="">无群</option>}
+            </select>
+          </div>
+          <div className="field"><label>发言人</label>
+            <select value={userId} onChange={(event) => { setNicknameDirty(false); setUserId(event.target.value); }}>
+              <option value="">自定义…</option>
+              {groupUsers.map((user) => <option key={user.userId} value={String(user.userId)}>{user.nickname && user.nickname !== String(user.userId) ? `${user.nickname} (${user.userId})` : `QQ ${user.userId}`}</option>)}
+            </select>
+          </div>
+          <div style={{ display: 'flex', gap: 10 }}>
+            <div className="field" style={{ flex: 1 }}><label>昵称</label><input value={nickname} onChange={(event) => { setNicknameDirty(true); setNickname(event.target.value); }} placeholder="可手动填写" /></div>
+            <div className="field" style={{ flex: 1 }}><label>QQ 号</label><input value={userId} onChange={(event) => setUserId(event.target.value)} placeholder="可手动填写" /></div>
+          </div>
+          <div className="field"><label>消息内容</label><textarea rows="4" value={text} onChange={(event) => setText(event.target.value)} /></div>
+
+          <div className="rows" style={{ marginTop: 4 }}>
+            {[[atBot, '@ 机器人', false], [useMemory, '个人画像', false], [useGroupProfile, '群画像', false], [useRelationship, '关系画像', false], [callLlm, '生成回复', true]].map(([value, label, isLlm]) => <div className="row" key={label}>
+              <div className="row-main"><div className="row-title">{label}</div>{isLlm && <div className="row-sub">会调用当前模型</div>}</div>
+              <button
+                type="button"
+                className={'switch' + (value ? ' is-on' : '')}
+                aria-label={label}
+                onClick={() => {
+                  if (label === '@ 机器人') setAtBot(!atBot);
+                  else if (label === '个人画像') setUseMemory(!useMemory);
+                  else if (label === '群画像') setUseGroupProfile(!useGroupProfile);
+                  else if (label === '关系画像') setUseRelationship(!useRelationship);
+                  else setCallLlm(!callLlm);
+                }}
+              />
+            </div>)}
+          </div>
+
+          <div style={{ display: 'flex', gap: 10, marginTop: 8 }}>
+            <div className="field" style={{ flex: 1 }}><label>临时成员策略</label>
+              <select value={memberPolicy} onChange={(event) => setMemberPolicy(event.target.value)}>
+                {policyOptions.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+              </select>
+            </div>
+            <div className="field" style={{ flex: 1 }}><label>临时群模式</label>
+              <select value={groupMode} onChange={(event) => setGroupMode(event.target.value)}>
+                {modeOptions.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+              </select>
+            </div>
+          </div>
+        </div>
+
+        <div className="card">
+          <div className="card-head"><span className="card-title">运行结果</span>{result?.decision && <span className={'chip ' + (result.decision.shouldReply ? 'chip--mint' : 'chip--amber')}>{result.decision.shouldReply ? '会回复' : '不回复'}</span>}</div>
+          {!result ? <div className="note">还没有运行结果。填好消息后点右上角「运行沙盒分析」。</div> : <>
+            <div className="kv"><span>决策原因</span><b style={{ fontWeight: 500 }}>{result.decision?.reason || '未返回原因'}</b></div>
+            {result.context && <>
+              <div className="kv"><span>群 / 策略</span><b>{result.context.group} · {result.context.userPolicy}</b></div>
+              {result.context.memoryProfile && <div className="kv"><span>个人画像</span><b style={{ fontWeight: 500 }}>{result.context.memoryProfile.summary || '已注入'}</b></div>}
+              {result.context.groupProfile && <div className="kv"><span>群画像</span><b style={{ fontWeight: 500 }}>{result.context.groupProfile.atmosphere || '已注入'} · {Math.round((result.context.groupProfile.confidence || 0) * 100)}%</b></div>}
+              {result.context.relationshipProfiles?.length > 0 && <div className="kv"><span>关系画像</span><b style={{ fontWeight: 500 }}>{result.context.relationshipProfiles.map((entry) => `${entry.pair} ${entry.style}`).join(' · ')}</b></div>}
+            </>}
+            {result.replyPreview && <div className="log-text" style={{ marginTop: 12 }}>
+              <div className="muted" style={{ fontSize: 11 }}>回复预览</div>
+              {result.replyPreview}
+            </div>}
+            {result.usage && <div className="note" style={{ marginTop: 8 }}>Token {result.usage.total_tokens || 0}（输入 {result.usage.prompt_tokens || 0} / 输出 {result.usage.completion_tokens || 0}）</div>}
+            {result.promptPreview && <div style={{ marginTop: 10 }}>
+              <button type="button" className="btn btn-sm" onClick={() => setShowPrompt((value) => !value)}>{showPrompt ? '收起 Prompt' : '查看 Prompt'}</button>
+              {showPrompt && <pre style={{ marginTop: 8, maxHeight: 320, overflow: 'auto', fontSize: 11, whiteSpace: 'pre-wrap', color: 'var(--muted)' }}>{result.promptPreview}</pre>}
+            </div>}
+          </>}
+        </div>
+      </div>
+
+      <div className="stack">
+        <div className="card">
+          <div className="card-head"><span className="card-title">运行配置</span></div>
+          <div className="kv"><span>群聊</span><b>{groups.find((group) => String(group.groupId) === String(groupId))?.name || groupId || '—'}</b></div>
+          <div className="kv"><span>发言人</span><b>{nickname || userId || '自定义'}</b></div>
+          <div className="kv"><span>成员策略</span><b>{memberPolicy || '按真实配置'}</b></div>
+          <div className="kv"><span>群模式</span><b>{groupMode || '按真实配置'}</b></div>
+          <div className="kv"><span>上下文</span><b>{[useMemory && '个人', useGroupProfile && '群', useRelationship && '关系'].filter(Boolean).join(' + ') || '不注入'}</b></div>
+          <div className="kv"><span>生成回复</span><b>{callLlm ? '开启（调用模型）' : '关闭（只看决策）'}</b></div>
+        </div>
+
+        <div className="card">
+          <div className="card-head"><span className="card-title">本轮工具面</span><span className="muted" style={{ fontSize: 12 }}>沙盒可见</span></div>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+            {TOOL_SURFACE.map((name) => <span className="chip" key={name}>{name}</span>)}
+          </div>
+          <div className="note" style={{ marginTop: 10 }}>发图工具在第一层数据回来后才会出现。</div>
+        </div>
+
+        <div className="card">
+          <div className="card-head"><span className="card-title">说明</span></div>
+          <div className="note">沙盒只做决策与注入检查，不写库、不发消息。开启「生成回复」才会真正调用当前模型，耗时更长。</div>
+        </div>
+      </div>
+    </div>
+  </>;
 }

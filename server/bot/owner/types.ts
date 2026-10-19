@@ -59,7 +59,6 @@ export type OwnerHandlerKey =
   | 'sysfacts'
   | 'summarize'
   | 'preset'
-  | 'usage'
   | 'pause'
   | 'resume'
   | 'why'

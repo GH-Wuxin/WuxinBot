@@ -1,13 +1,14 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import {
-  Activity, Bot, Braces, ChevronRight, Clock3, Eye, Layers3,
-  MessageSquareText, RefreshCw, RotateCcw, Save, ShieldCheck, Sparkles, Wrench,
-} from 'lucide-react';
 import { api } from '../../lib/api.js';
-import { Button, Card, Input, InlineHelp, Pill, SectionHeader, Textarea } from '../../components/ui/index.jsx';
-import './persona.css';
 
+// 版式对齐原型 PAGES.persona：左「人格层」列表 + 右编辑区 + 实际调用记录。
 const cloneMap = (value) => value && typeof value === 'object' && !Array.isArray(value) ? { ...value } : {};
+const navRowStyle = (active) => ({
+  cursor: 'pointer',
+  borderRadius: 10,
+  background: active ? 'var(--pink-soft)' : undefined,
+  padding: '9px 10px',
+});
 
 export function PersonaPage({ db, saveSettings }) {
   const settings = db?.settings || {};
@@ -114,165 +115,159 @@ export function PersonaPage({ db, saveSettings }) {
   };
 
   const activeTitle = activeSection?.title || activeModule?.name || (selected.type === 'global' ? '全局设置' : '人格注入');
+  const eyebrow = activeSection ? 'PERSONA LAYER' : activeModule ? 'LLM MODULE' : 'GLOBAL CONFIGURATION';
+  const sectionOverridden = activeSection && Object.prototype.hasOwnProperty.call(draft.personaPromptSections, activeSection.id);
 
-  return <div className="console-page persona-studio">
-    <SectionHeader
-      title="人格注入工作台"
-      description="按实际调用模块查看注入方式、编辑人格层，并核对模型收到的提示词与工具。"
-      actions={<div className="persona-studio__header-actions">
-        <Button icon={RefreshCw} onClick={() => void refreshStudio()} loading={loading}>刷新调用记录</Button>
-        <Button variant="primary" icon={Save} onClick={save} loading={saving} disabled={!dirty}>保存更改</Button>
-      </div>}
-    />
+  return <>
+    <div className="page-head">
+      <div><h1>人设</h1><p>按实际调用模块查看人格是如何注入的。</p></div>
+      <div style={{ display: 'flex', gap: 8 }}>
+        <button type="button" className="btn btn-ghost" disabled={loading} onClick={() => void refreshStudio()}>{loading ? '刷新中…' : '刷新调用记录'}</button>
+        <button type="button" className="btn btn-primary" disabled={!dirty || saving} onClick={save}>{saving ? '保存中…' : '保存更改'}</button>
+      </div>
+    </div>
 
-    {error && <div className="persona-studio__error" role="alert">{error}</div>}
+    {error && <div className="note" style={{ color: 'var(--red)', marginBottom: 12 }}>{error}</div>}
 
-    <div className="persona-studio__layout">
-      <Card as="nav" className="persona-studio__nav" aria-label="人格注入模块">
-        <div className="persona-studio__nav-label"><Layers3 size={14} />PIPPI 人格层</div>
-        {sectionItems.map((item) => <button
-          type="button"
-          key={item.id}
-          className={`persona-studio__nav-item ${selected.type === 'section' && selected.id === item.id ? 'is-active' : ''}`}
-          onClick={() => setSelected({ type: 'section', id: item.id })}
-        >
-          <span>{item.title}</span>
-          {Object.prototype.hasOwnProperty.call(draft.personaPromptSections, item.id) && <i aria-label="有自定义修改" />}
-        </button>)}
-
-        <div className="persona-studio__nav-label persona-studio__nav-label--spaced"><Sparkles size={14} />全局设置</div>
-        <button type="button" className={`persona-studio__nav-item ${selected.type === 'global' ? 'is-active' : ''}`} onClick={() => setSelected({ type: 'global', id: 'global' })}>
-          <span>全局补充与名称</span><ChevronRight size={14} />
-        </button>
-
-        <div className="persona-studio__nav-label persona-studio__nav-label--spaced"><Bot size={14} />LLM 模块</div>
-        {moduleItems.map((item) => <button
-          type="button"
-          key={item.id}
-          className={`persona-studio__nav-item ${selected.type === 'module' && selected.id === item.id ? 'is-active' : ''}`}
-          onClick={() => setSelected({ type: 'module', id: item.id })}
-        >
-          <span>{item.name}</span>
-          {String(draft.personaModulePrompts[item.id] || '').trim() && <i aria-label="有自定义补充" />}
-        </button>)}
-      </Card>
-
-      <main className="persona-studio__main">
-        <Card className="persona-studio__detail-head">
-          <div className="persona-studio__title-row">
-            <div>
-              <span className="persona-studio__eyebrow">{activeSection ? 'PERSONA LAYER' : activeModule ? 'LLM MODULE' : 'GLOBAL CONFIGURATION'}</span>
-              <h3>{activeTitle}</h3>
-            </div>
-            {activeModule && <div className="persona-studio__badges">
-              <Pill tone={activeModule.usesPippi ? 'success' : 'neutral'}>{activeModule.usesPippi ? '注入 Pippi 人格' : '独立任务提示'}</Pill>
-              {activeModule.toolsPossible && <Pill tone="warning">可能使用工具</Pill>}
-              {String(draft.personaModulePrompts[activeModule.id] || '').trim() && <Pill tone="accent">已自定义</Pill>}
-            </div>}
-            {activeSection && Object.prototype.hasOwnProperty.call(draft.personaPromptSections, activeSection.id) && <Pill tone="accent">已覆盖内置文本</Pill>}
+    <div className="grid" style={{ gridTemplateColumns: '260px minmax(0,1fr)', gap: 16, alignItems: 'start' }}>
+      <div className="card" style={{ maxHeight: 'calc(100vh - 150px)', overflowY: 'auto' }}>
+        <div className="card-head"><span className="card-title">人格层</span><span className="muted" style={{ fontSize: 12 }}>{sectionItems.length} 层 · {moduleItems.length} 模块</span></div>
+        <div className="rows">
+          {sectionItems.map((item) => {
+            const active = selected.type === 'section' && selected.id === item.id;
+            return <div key={item.id} role="button" tabIndex={0} style={navRowStyle(active)} onClick={() => setSelected({ type: 'section', id: item.id })} onKeyDown={(event) => { if (event.key === 'Enter') setSelected({ type: 'section', id: item.id }); }}>
+              <div className="row-title" style={{ fontSize: 13 }}>{item.title}</div>
+              {Object.prototype.hasOwnProperty.call(draft.personaPromptSections, item.id) && <div className="row-sub">已自定义</div>}
+            </div>;
+          })}
+          <div style={{ margin: '12px 0 6px', color: 'var(--muted)', fontSize: 11, letterSpacing: '.08em' }}>全局设置</div>
+          <div role="button" tabIndex={0} style={navRowStyle(selected.type === 'global')} onClick={() => setSelected({ type: 'global', id: 'global' })}>
+            <div className="row-title" style={{ fontSize: 13 }}>全局补充与名称</div>
           </div>
-          <p>{activeSection?.description || activeModule?.description || '机器人名称与跨模块人格补充。'}</p>
-          {activeModule && <div className="persona-studio__injection"><span>注入方式</span><p>{activeModule.injectionMethod}</p></div>}
-          {activeSection && <div className="persona-studio__injection"><span>生效范围</span><p>{activeSection.id === 'communityBanter' ? '仅在日常聊天场景中注入。' : activeSection.id.startsWith('scene') ? '仅在对应场景被选择时注入。' : '作为 Pippi 人格链路的共享层；未自定义时使用代码内置版本。'}</p></div>}
-        </Card>
+          <div style={{ margin: '12px 0 6px', color: 'var(--muted)', fontSize: 11, letterSpacing: '.08em' }}>LLM 模块</div>
+          {moduleItems.map((item) => {
+            const active = selected.type === 'module' && selected.id === item.id;
+            return <div key={item.id} role="button" tabIndex={0} style={navRowStyle(active)} onClick={() => setSelected({ type: 'module', id: item.id })}>
+              <div className="row-title" style={{ fontSize: 13 }}>{item.name}</div>
+              {String(draft.personaModulePrompts[item.id] || '').trim() && <div className="row-sub">已自定义</div>}
+            </div>;
+          })}
+        </div>
+      </div>
 
-        {activeSection && <Card className="persona-studio__editor">
-          <div className="persona-studio__panel-heading">
-            <div><h4>人格层内容</h4><p>这里编辑的是实际人格注入层；任务格式、数据契约和程序校验仍由对应模块负责。</p></div>
-            {Object.prototype.hasOwnProperty.call(draft.personaPromptSections, activeSection.id) && <Button icon={RotateCcw} onClick={() => resetSection(activeSection.id)}>恢复内置版本</Button>}
+      <div className="stack">
+        <div className="card">
+          <div className="card-head"><span className="card-title">{activeTitle}</span><span className="chip">{eyebrow}</span></div>
+          <div className="note">{activeSection?.description || activeModule?.description || '机器人名称与跨模块人格补充。'}</div>
+          {activeModule && <div className="kv"><span>注入方式</span><b style={{ fontWeight: 500, textAlign: 'right' }}>{activeModule.injectionMethod}</b></div>}
+          {activeModule && <div className="kv"><span>人格注入</span><b>{activeModule.usesPippi ? '注入 Pippi 人格' : '独立任务提示'}</b></div>}
+          {activeModule?.toolsPossible && <div className="kv"><span>工具</span><b>可能使用工具</b></div>}
+          {activeSection && <div className="kv"><span>生效范围</span><b style={{ fontWeight: 500, textAlign: 'right' }}>{activeSection.id === 'communityBanter' ? '仅在日常聊天场景中注入' : activeSection.id.startsWith('scene') ? '仅在对应场景被选择时注入' : 'Pippi 人格链路的共享层；未自定义时使用代码内置版本'}</b></div>}
+        </div>
+
+        {activeSection && <div className="card">
+          <div className="card-head"><span className="card-title">人格层内容</span>{sectionOverridden && <button type="button" className="btn btn-sm btn-ghost" onClick={() => resetSection(activeSection.id)}>恢复内置版本</button>}</div>
+          <div className="field">
+            <label>Prompt 内容</label>
+            <textarea
+              rows="16"
+              spellCheck={false}
+              value={sectionOverridden ? draft.personaPromptSections[activeSection.id] : activeSection.defaultContent}
+              onChange={(event) => editSection(activeSection.id, event.target.value)}
+            />
           </div>
-          <Textarea
-            label="Prompt 内容"
-            rows={19}
-            spellCheck={false}
-            value={Object.prototype.hasOwnProperty.call(draft.personaPromptSections, activeSection.id)
-              ? draft.personaPromptSections[activeSection.id]
-              : activeSection.defaultContent}
-            onChange={(event) => editSection(activeSection.id, event.target.value)}
-          />
-          <InlineHelp>没有覆盖的层会直接使用代码内置文本。保存后新发起的模型请求生效，已开始的请求不变。</InlineHelp>
-        </Card>}
+          <div className="note">没有覆盖的层会直接使用代码内置文本。保存后新发起的模型请求生效，已开始的请求不变。</div>
+        </div>}
 
-        {activeModule && <Card className="persona-studio__editor">
-          <div className="persona-studio__panel-heading">
-            <div><h4>{activeModule.editableLabel}</h4><p>作为一段独立 system 补充追加到该模块，不会替换下方显示的完整任务提示词。</p></div>
-            {String(draft.personaModulePrompts[activeModule.id] || '').trim() && <Button icon={RotateCcw} onClick={() => resetModule(activeModule.id)}>清除补充</Button>}
+        {activeModule && <div className="card">
+          <div className="card-head"><span className="card-title">{activeModule.editableLabel}</span>{String(draft.personaModulePrompts[activeModule.id] || '').trim() && <button type="button" className="btn btn-sm btn-ghost" onClick={() => resetModule(activeModule.id)}>清除补充</button>}</div>
+          <div className="field">
+            <label>模块人格补充</label>
+            <textarea
+              rows="7"
+              spellCheck={false}
+              placeholder="留空表示不增加模块专属人格补充。"
+              value={draft.personaModulePrompts[activeModule.id] || ''}
+              onChange={(event) => editModule(activeModule.id, event.target.value)}
+            />
           </div>
-          <Textarea
-            label="模块人格补充"
-            rows={7}
-            spellCheck={false}
-            placeholder="留空表示不增加模块专属人格补充。"
-            value={draft.personaModulePrompts[activeModule.id] || ''}
-            onChange={(event) => editModule(activeModule.id, event.target.value)}
-          />
-          <InlineHelp>只追加到此模块。严格 JSON、事实边界和输出结构仍有代码侧校验；但自定义文本仍可能影响模型行为，请谨慎修改。</InlineHelp>
-        </Card>}
+          <div className="note">只追加到此模块。严格 JSON、事实边界和输出结构仍有代码侧校验；但自定义文本仍可能影响模型行为，请谨慎修改。</div>
+        </div>}
 
-        {selected.type === 'global' && <Card className="persona-studio__editor">
-          <div className="persona-studio__panel-heading"><div><h4>全局人格补充</h4><p>保留旧设置语义：它是用户自定义补充，不会覆盖 Pippi 的内置身份核心。</p></div></div>
-          <Input label="机器人名称" hint="多个名称用英文逗号分隔。" value={draft.botNames} onChange={(event) => updateDraft({ botNames: event.target.value })} />
-          <Textarea label="跨场景人格补充" rows={12} spellCheck={false} value={draft.personalityPrompt} onChange={(event) => updateDraft({ personalityPrompt: event.target.value })} />
-          <InlineHelp>此补充目前随主要对话与 osu! 分析人格链路注入。独立画像、审核等模块使用各自的模块补充设置。</InlineHelp>
-        </Card>}
+        {selected.type === 'global' && <div className="card">
+          <div className="card-head"><span className="card-title">全局人格补充</span></div>
+          <div className="note">保留旧设置语义：它是用户自定义补充，不会覆盖 Pippi 的内置身份核心。</div>
+          <div className="field"><label>机器人名称</label><input value={draft.botNames} onChange={(event) => updateDraft({ botNames: event.target.value })} placeholder="多个名称用英文逗号分隔" /></div>
+          <div className="field"><label>跨场景人格补充</label><textarea rows="10" spellCheck={false} value={draft.personalityPrompt} onChange={(event) => updateDraft({ personalityPrompt: event.target.value })} /></div>
+          <div className="note">此补充目前随主要对话与 osu! 分析人格链路注入。独立画像、审核等模块使用各自的模块补充设置。</div>
+        </div>}
 
-        <Card className="persona-studio__calls">
-          <div className="persona-studio__panel-heading">
-            <div><h4><Eye size={16} />实际模型调用</h4><p>短期内存留存，重启后清空；文本可能包含用户消息上下文，限管理控制台查看。</p></div>
-            <span className="persona-studio__count"><Activity size={13} />{visibleCalls.length} 条</span>
-          </div>
-          {visibleCalls.length === 0 ? <div className="persona-studio__empty">
-            <MessageSquareText size={18} />
-            <span>{loading ? '正在读取调用记录…' : activeModule ? '这个模块还没有捕获到调用。触发一次对应功能后刷新即可查看。' : '暂无模型调用快照。'}</span>
+        <div className="card">
+          <div className="card-head"><span className="card-title">实际整理调用</span><span className="muted" style={{ fontSize: 12 }}>{visibleCalls.length} 条 · 重启后清空</span></div>
+          {visibleCalls.length === 0 ? <div className="note">
+            {loading ? '正在读取调用记录…' : activeModule ? '这个模块还没有捕获到调用。触发一次对应功能后刷新即可查看。' : '暂无模型调用快照。'}
           </div> : <>
-            <div className="persona-studio__run-list" role="list" aria-label="近期模型调用">
-              {visibleCalls.map((call) => <button type="button" key={call.id} className={`persona-studio__run ${selectedCall?.id === call.id ? 'is-active' : ''}`} onClick={() => setSelectedCallId(call.id)}>
-                <span><strong>{call.purpose || call.moduleName}</strong><small><Clock3 size={11} />{new Date(call.at).toLocaleString()}</small></span>
-                <Pill tone={call.status === 'ok' ? 'success' : call.status === 'running' ? 'warning' : 'danger'}>{call.status === 'ok' ? '完成' : call.status === 'running' ? '运行中' : '失败'}</Pill>
-              </button>)}
+            <div className="rows" style={{ maxHeight: 220, overflowY: 'auto' }}>
+              {visibleCalls.map((call) => <div
+                key={call.id}
+                role="button"
+                tabIndex={0}
+                style={navRowStyle(selectedCall?.id === call.id)}
+                onClick={() => setSelectedCallId(call.id)}
+              >
+                <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, alignItems: 'center' }}>
+                  <div className="row-title" style={{ fontSize: 13 }}>{call.purpose || call.moduleName}</div>
+                  <span className={'chip' + (call.status === 'ok' ? ' chip--mint' : call.status === 'running' ? ' chip--amber' : '')}>{call.status === 'ok' ? '完成' : call.status === 'running' ? '运行中' : '失败'}</span>
+                </div>
+                <div className="row-sub">{new Date(call.at).toLocaleString('zh-CN')}</div>
+              </div>)}
             </div>
-            {selectedCall && <div className="persona-studio__snapshot">
-              <div className="persona-studio__snapshot-meta">
-                <Pill>{selectedCall.provider || 'provider 未知'} / {selectedCall.model || 'model 未知'}</Pill>
-                <Pill>{selectedCall.durationMs ? `${selectedCall.durationMs} ms` : selectedCall.status}</Pill>
-                {selectedCall.truncated && <Pill tone="warning">快照已截断</Pill>}
+
+            {selectedCall && <div style={{ marginTop: 14, borderTop: '1px solid var(--line)', paddingTop: 12 }}>
+              <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 8 }}>
+                <span className="chip">{selectedCall.provider || 'provider 未知'} / {selectedCall.model || 'model 未知'}</span>
+                <span className="chip">{selectedCall.durationMs ? `${selectedCall.durationMs} ms` : selectedCall.status}</span>
+                {selectedCall.truncated && <span className="chip chip--amber">快照已截断</span>}
               </div>
-              {(selectedCall.messages || []).map((message, index) => <details key={`${selectedCall.id}-${index}`} className="persona-studio__message" open={message.role === 'system' && index === 0}>
-                <summary><span>{message.role}</span><small>{message.truncated ? '内容已截断' : `${String(message.content || '').length.toLocaleString()} 字符`}</small></summary>
-                <pre>{message.content || '（空内容）'}</pre>
+              {(selectedCall.messages || []).map((message, index) => <details key={`${selectedCall.id}-${index}`} open={message.role === 'system' && index === 0} style={{ marginBottom: 8 }}>
+                <summary style={{ cursor: 'pointer', color: 'var(--muted)', fontSize: 12 }}>{message.role} · {message.truncated ? '内容已截断' : `${String(message.content || '').length.toLocaleString()} 字符`}</summary>
+                <pre style={{ maxHeight: 240, overflow: 'auto', fontSize: 11, whiteSpace: 'pre-wrap', color: 'var(--soft)' }}>{message.content || '（空内容）'}</pre>
               </details>)}
-              {selectedCall.tools && selectedCall.tools !== '[]' && <details className="persona-studio__message">
-                <summary><span><Wrench size={13} />可用工具 schema</span><small>本次请求</small></summary>
-                <pre>{selectedCall.tools}</pre>
+              {selectedCall.tools && selectedCall.tools !== '[]' && <details style={{ marginBottom: 8 }}>
+                <summary style={{ cursor: 'pointer', color: 'var(--muted)', fontSize: 12 }}>可用工具 schema</summary>
+                <pre style={{ maxHeight: 240, overflow: 'auto', fontSize: 11, whiteSpace: 'pre-wrap' }}>{selectedCall.tools}</pre>
               </details>}
-              {selectedCall.response?.toolCalls && selectedCall.response.toolCalls !== '[]' && <details className="persona-studio__message" open>
-                <summary><span><Braces size={13} />模型返回的工具调用</span><small>调用参数</small></summary>
-                <pre>{selectedCall.response.toolCalls}</pre>
+              {selectedCall.response?.toolCalls && selectedCall.response.toolCalls !== '[]' && <details open style={{ marginBottom: 8 }}>
+                <summary style={{ cursor: 'pointer', color: 'var(--muted)', fontSize: 12 }}>模型返回的工具调用</summary>
+                <pre style={{ maxHeight: 240, overflow: 'auto', fontSize: 11, whiteSpace: 'pre-wrap' }}>{selectedCall.response.toolCalls}</pre>
               </details>}
-              {selectedCall.response?.content && <details className="persona-studio__message">
-                <summary><span>模型输出</span><small>{String(selectedCall.response.content).length.toLocaleString()} 字符</small></summary>
-                <pre>{selectedCall.response.content}</pre>
+              {selectedCall.response?.content && <details style={{ marginBottom: 8 }}>
+                <summary style={{ cursor: 'pointer', color: 'var(--muted)', fontSize: 12 }}>模型输出 · {String(selectedCall.response.content).length.toLocaleString()} 字符</summary>
+                <pre style={{ maxHeight: 240, overflow: 'auto', fontSize: 11, whiteSpace: 'pre-wrap' }}>{selectedCall.response.content}</pre>
               </details>}
-              <details className="persona-studio__message">
-                <summary><span>请求参数与用量</span><small>格式 / 工具策略 / Token</small></summary>
-                <pre>{JSON.stringify({
+              <details style={{ marginBottom: 8 }}>
+                <summary style={{ cursor: 'pointer', color: 'var(--muted)', fontSize: 12 }}>请求参数与用量</summary>
+                <pre style={{ fontSize: 11, whiteSpace: 'pre-wrap' }}>{JSON.stringify({
                   toolChoice: selectedCall.toolChoice,
                   responseFormat: selectedCall.responseFormat,
                   finishReason: selectedCall.response?.finishReason,
                   usage: selectedCall.response?.usage,
                 }, null, 2)}</pre>
               </details>
-              {selectedCall.error && <pre className="persona-studio__call-error">{selectedCall.error}</pre>}
-              {relatedTrace && <details className="persona-studio__tool-events">
-                <summary><span><ShieldCheck size={14} />工具执行时间线</span><small>{toolEvents.length} 个事件 · request trace 已关联</small></summary>
-                {toolEvents.length ? toolEvents.map((event) => <div key={event.id} className="persona-studio__tool-event"><strong>{event.name}</strong><pre>{JSON.stringify(event.data || {}, null, 2)}</pre></div>) : <p>该请求追踪中没有工具执行事件。</p>}
+              {selectedCall.error && <pre style={{ color: 'var(--red)', fontSize: 11, whiteSpace: 'pre-wrap' }}>{selectedCall.error}</pre>}
+              {relatedTrace && <details style={{ marginBottom: 8 }}>
+                <summary style={{ cursor: 'pointer', color: 'var(--muted)', fontSize: 12 }}>工具执行时间线 · {toolEvents.length} 个事件</summary>
+                {toolEvents.length ? toolEvents.map((event) => <div key={event.id} style={{ marginTop: 8 }}>
+                  <b style={{ fontSize: 12 }}>{event.name}</b>
+                  <pre style={{ fontSize: 11, whiteSpace: 'pre-wrap', color: 'var(--muted)' }}>{JSON.stringify(event.data || {}, null, 2)}</pre>
+                </div>) : <div className="note">该请求追踪中没有工具执行事件。</div>}
               </details>}
-              {!selectedCall.requestId && <p className="persona-studio__trace-note">该调用不属于 QQ 请求追踪；可查看模型返回的工具调用，但没有独立工具执行时间线。</p>}
+              {!selectedCall.requestId && <div className="note">该调用不属于 QQ 请求追踪；可查看模型返回的工具调用，但没有独立工具执行时间线。</div>}
             </div>}
           </>}
-          <div className="persona-studio__privacy"><ShieldCheck size={13} />请求快照最多保留最近 32 次、只在当前进程内存中；图片/音频载荷与推理过程不记录，提示词文本会做密钥脱敏。</div>
-        </Card>
-      </main>
+          <div className="note" style={{ marginTop: 12 }}>请求快照最多保留最近 32 次、只在当前进程内存中；图片/音频载荷与推理过程不记录，提示词文本会做密钥脱敏。</div>
+        </div>
+      </div>
     </div>
-  </div>;
+  </>;
 }

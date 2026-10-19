@@ -16,6 +16,7 @@ import {
 import { api } from '../../lib/api.js';
 import { codexLoginView } from './codexStatus.js';
 import { quotaWindows } from '../Dashboard/usageView.js';
+import { RefreshButton } from '../../components/ui/RefreshButton.jsx';
 
 const providerOptions = [
   { value: 'deepseek', label: 'DeepSeek（默认）' },
@@ -222,81 +223,214 @@ export function ModelsPage({ db, saveSettings }) {
     finally { setSaving(false); }
   };
 
-  return <div className="console-page models-page" data-section={section}>
-    <SectionHeader title="模型设置" actions={<Button variant="primary" icon={Save} loading={saving} onClick={save}>{dirty ? '保存更改' : '保存模型设置'}</Button>} />
-    <div className="osu-model-summary"><span className="osu-model-summary__icon"><BrainCircuit size={23} /></span><div><small>当前运行模型</small><strong>{db.settings.effectiveModel || (db.settings.llmProvider === 'codex-app-server' ? db.settings.codexModel : db.settings.model) || '未设置'}</strong></div><span>{dirty ? '有未保存的更改' : '设置已同步'}</span></div>
-    {saveError && <InlineHelp tone="danger">{saveError}</InlineHelp>}
-    <SegmentedControl value={section} onChange={setSection} label="模型设置分类" options={[{ value: 'account', label: '账号与模型' }, { value: 'conversation', label: '对话与上下文' }, { value: 'capabilities', label: '视觉与搜索' }, { value: 'participation', label: '主动参与' }]} />
-    <div className="models-layout">
-      <div className="console-setting-stack">
-        <SettingGroup className="model-panel model-panel--account" title="供应商与模型" description="切换已配置过的模型系列时会复用对应接口与密钥。">
-          <SettingRow title="接口供应商" description="API Key 通道或个人 ChatGPT 的 Codex 配额" control={<Select value={draft.llmProvider || 'deepseek'} onChange={(event) => updateDraft(withProviderDefaults({ llmProvider: event.target.value }))} options={providerOptions} />} />
-          {draft.llmProvider === 'codex-app-server' ? <>
-            <SettingRow title="ChatGPT 登录" description={codexLoginView(codexStatus).description} control={<div className="console-actions">
-                {codexLoginView(codexStatus).canLogin && <Button icon={LogIn} loading={codexBusy} onClick={loginCodex}>登录 ChatGPT</Button>}
-                <Button icon={RefreshCw} loading={codexBusy} onClick={refreshCodex}>刷新状态</Button>
-                {codexStatus?.authenticated && <Button icon={LogOut} onClick={logoutCodex}>退出</Button>}
-              </div>} />
-            {codexStatus?.error && <InlineHelp tone="warning">{codexStatus.error}{codexStatus.diagnostic ? `；${codexStatus.diagnostic}` : ''}</InlineHelp>}
-            {codexMessage && <InlineHelp tone={codexStatus?.authenticated ? 'normal' : 'warning'}>{codexMessage}</InlineHelp>}
-            <SettingRow title="Codex 模型" description="高频群聊推荐 Luna；复杂任务可用 Terra/Sol" control={<Select value={selectedCodexModel} onChange={(event) => updateDraft({ codexModel: event.target.value })} options={codexModelOptions} />} />
-            <SettingRow title="推理强度" control={<Select value={draft.codexReasoningEffort || 'low'} onChange={(event) => updateDraft({ codexReasoningEffort: event.target.value })} options={[{ value: 'low', label: 'Low（推荐聊天）' }, { value: 'medium', label: 'Medium' }, { value: 'high', label: 'High' }, { value: 'xhigh', label: 'XHigh' }, { value: 'max', label: 'Max' }]} />} />
-            <details className="osu-advanced"><summary>高级连接设置<span>程序路径与自动发现</span></summary><SettingRow title="Codex 可执行文件" description="官方版本路径失效时自动发现新版本；自定义路径保持不变。" control={<Input aria-label="Codex 可执行文件" value={draft.codexExecutable || 'codex'} onChange={(event) => updateDraft({ codexExecutable: event.target.value })} />} />{codexStatus?.command && <p className="osu-path-note">当前解析路径：<code>{codexStatus.command}</code></p>}</details>
-            <SettingRow title="自动降级" description={`Codex 未登录、超时或额度不可用时回到 ${draft.codexFallbackModel || draft.model || '旧模型'}`} control={<Switch checked={draft.codexFallbackEnabled !== false} onChange={(event) => updateDraft({ codexFallbackEnabled: event.target.checked })} />} />
-            {quotaWindows(codexLimits).map(window => <InlineHelp key={window.key}>{window.bucket} · {window.label}：{window.used == null ? '用量未知' : `已用 ${Math.round(window.used)}%`} · 重置 {window.resetsAt ? new Date(window.resetsAt * 1000).toLocaleString() : '未知'}</InlineHelp>)}
-          </> : <>
-            <SettingRow title="API Key" description={draft.apiKey === '已填写' ? '已配置；留空不会覆盖' : '当前供应商的访问密钥'} control={<Input type="password" placeholder={draft.apiKey === '已填写' ? '已填写，留空不改' : ''} value={draft.apiKey === '已填写' ? '' : draft.apiKey || ''} onChange={(event) => updateDraft({ apiKey: event.target.value })} />} />
-            <SettingRow title="API 地址" description="OpenAI-compatible base URL" control={<Input value={draft.apiBaseUrl || ''} onChange={(event) => updateDraft(withProviderDefaults({ apiBaseUrl: event.target.value }))} />} />
-            <SettingRow title="模型" control={<Select value={currentModel} onChange={(event) => updateDraft(withProviderDefaults({ model: event.target.value }))} options={modelOptions} />} />
-            <SettingRow title="自定义模型名" description="留空则使用上面的选择" control={<Input value={draft.customModel || ''} onChange={(event) => updateDraft({ customModel: event.target.value })} />} />
-          </>}
-        </SettingGroup>
+  const runningModel = db.settings.effectiveModel || (db.settings.llmProvider === 'codex-app-server' ? db.settings.codexModel : db.settings.model) || '未设置';
+  const usage = db.usage || {};
+  const today = db.usageStats?.today || {};
+  const loginView = codexLoginView(codexStatus);
+  const windows = quotaWindows(codexLimits);
+  const setNumber = (field) => (event) => updateDraft({ [field]: Number(event.target.value) });
 
-        <SettingGroup className="model-panel model-panel--conversation" title="生成参数与上下文">
-          {draft.llmProvider === 'codex-app-server' && <InlineHelp>当前 Codex 适配器不提供创造性和最大输出 Token 的硬控制；下面这两项保留用于 API 模型通道。</InlineHelp>}
-          <Slider label="创造性" min={0} max={1.5} step={0.05} value={draft.temperature} onChange={(temperature) => updateDraft({ temperature })} />
-          <Slider label="单次回复长度" min={80} max={1200} step={20} value={draft.maxTokens} onChange={(maxTokens) => updateDraft({ maxTokens })} />
-          <Slider label="基础最近消息数" min={5} max={80} value={draft.contextLimit} onChange={(contextLimit) => updateDraft({ contextLimit })} />
-          <SettingRow title="按需扩展群聊历史" description="发现引用旧话题时，从更早记录中检索相关片段" control={<Switch checked={draft.groupContextSearchEnabled !== false} onChange={(event) => updateDraft({ groupContextSearchEnabled: event.target.checked })} />} />
-          {draft.groupContextSearchEnabled !== false && <>
-            <Slider label="旧历史搜索范围" min={50} max={2000} step={50} value={draft.groupContextSearchPoolSize || 400} onChange={(groupContextSearchPoolSize) => updateDraft({ groupContextSearchPoolSize })} hint="条" />
-            <Slider label="最多补入旧消息" min={3} max={80} value={draft.groupContextSearchMaxExtra || 24} onChange={(groupContextSearchMaxExtra) => updateDraft({ groupContextSearchMaxExtra })} hint="条" />
-            <Slider label="旧历史补入预算" min={2000} max={40000} step={1000} value={draft.groupContextSearchCharBudget || 12000} onChange={(groupContextSearchCharBudget) => updateDraft({ groupContextSearchCharBudget })} hint="字符" />
-          </>}
-          <Slider label="Owner 私聊上下文软上限" min={4000} max={60000} step={1000} value={draft.ownerPrivateContextCharBudget || 24000} onChange={(ownerPrivateContextCharBudget) => updateDraft({ ownerPrivateContextCharBudget })} hint="字符" />
-          <SettingRow title="启用模型思考" description="允许复杂调用开启 DeepSeek thinking；会增加延迟与 Token，供应商 raw CoT 将实时显示在日志页" control={<Switch checked={draft.reasoningEnabled === true} onChange={(event) => updateDraft({ reasoningEnabled: event.target.checked })} />} />
-          <SettingRow title="纯人设模式" description="忽略系统事实注入" control={<Switch checked={draft.ignoreSystemFacts === true} onChange={(event) => updateDraft({ ignoreSystemFacts: event.target.checked })} />} />
-          <SettingRow title="画像 V2 防近因" description="长期画像与近期动态分层（实验性）" control={<Switch checked={draft.profileAntiRecencyV2 === true} onChange={(event) => updateDraft({ profileAntiRecencyV2: event.target.checked })} />} />
-          <SettingRow title="升级恭喜通知" description="群内自动祝贺" control={<Switch checked={draft.levelUpNotifyEnabled !== false} onChange={(event) => updateDraft({ levelUpNotifyEnabled: event.target.checked })} />} />
-        </SettingGroup>
-      </div>
-
-      <div className="console-setting-stack">
-        <SettingGroup className="model-panel model-panel--capabilities" title="视觉输入" description="图片理解需要实际多模态模型支持。">
-          <SettingRow title="视觉能力" control={<Select value={draft.visionMode || 'auto'} onChange={(event) => updateDraft({ visionMode: event.target.value })} options={[{ value: 'auto', label: '自动识别（推荐）' }, { value: 'on', label: '按多模态模型处理' }, { value: 'off', label: '按纯文字模型处理' }]} />} />
-          <SettingRow title="图片传输方式" description="本地/内网图片可转换为 data URL" control={<Select value={draft.visionImageTransport || 'auto'} onChange={(event) => updateDraft({ visionImageTransport: event.target.value })} options={[{ value: 'auto', label: '自动' }, { value: 'url', label: '只传 URL' }, { value: 'data', label: '转成 data URL' }]} />} />
-          <Slider label="单次最多传入图片数" min={1} max={6} value={draft.visionMaxImages || 3} onChange={(visionMaxImages) => updateDraft({ visionMaxImages })} />
-        </SettingGroup>
-
-        <SettingGroup className="model-panel model-panel--capabilities" title="联网搜索" description="Pippi 会根据问题的时效性和不确定性自行决定是否搜索；用户明确要求时则保证执行。">
-          <SettingRow title="启用联网搜索" description="只把模型改写后的检索词发送给搜索服务，不发送整段群聊历史" control={<Switch checked={draft.enableWebSearch === true} onChange={(event) => updateDraft({ enableWebSearch: event.target.checked })} />} />
-          {draft.enableWebSearch === true && <>
-            <SettingRow title="搜索模式" description="限制单轮最多搜索次数：快速 1 次、平衡 2 次、深度 3 次；模型可少搜或不搜" control={<Select value={draft.webSearchMode || 'balanced'} onChange={(event) => updateDraft({ webSearchMode: event.target.value })} options={[{ value: 'fast', label: '快速' }, { value: 'balanced', label: '平衡（推荐）' }, { value: 'deep', label: '深度' }]} />} />
-            <SettingRow title="真实搜索源" control={<Select value={draft.searchProvider || 'disabled'} onChange={(event) => updateDraft({ searchProvider: event.target.value })} options={[{ value: 'disabled', label: '未接入（关闭）' }, { value: 'searxng', label: 'SearXNG' }]} />} />
-            {draft.searchProvider === 'disabled' && <InlineHelp tone="warning">联网开关已打开，但真实搜索源仍未接入；显式搜索会被拒绝。</InlineHelp>}
-            {draft.searchProvider === 'searxng' && <SettingRow title="SearXNG 地址" control={<Input value={draft.searchBaseUrl || ''} onChange={(event) => updateDraft({ searchBaseUrl: event.target.value })} />} />}
-            <div className="console-actions"><Button icon={Globe2} loading={testingLocal} onClick={testLocalSearch}>{testingLocal ? '检测中…' : '检测本地搜索服务'}</Button>{localSearchStatus && <InlineHelp tone={localSearchStatus.ok ? 'normal' : 'warning'}>{localSearchStatus.message}</InlineHelp>}</div>
-          </>}
-        </SettingGroup>
-
-        <SettingGroup className="model-panel model-panel--participation" title="主动参与" description="自然/轻度模式先用本地规则判断是否值得接话，不会额外调用一次 LLM。">
-          <SettingRow title="自然群友阈值" description="本地接话评分达到此值才进入主模型" control={<NumberInput min={0} max={100} value={draft.replyGateNaturalThreshold ?? 45} onChange={(replyGateNaturalThreshold) => updateDraft({ replyGateNaturalThreshold })} />} />
-          <SettingRow title="轻度参与阈值" description="比自然群友模式更克制" control={<NumberInput min={0} max={100} value={draft.replyGateLightThreshold ?? 70} onChange={(replyGateLightThreshold) => updateDraft({ replyGateLightThreshold })} />} />
-          <SettingRow title="思考状态提示" control={<Select value={draft.thinkingNoticeMode || 'slow'} onChange={(event) => updateDraft({ thinkingNoticeMode: event.target.value })} options={[{ value: 'off', label: '关闭' }, { value: 'simple', label: '简短' }, { value: 'detail', label: '详细' }, { value: 'slow', label: '仅慢请求显示' }]} />} />
-          {draft.thinkingNoticeMode === 'slow' && <SettingRow title="慢请求延迟" description="至少 500ms" control={<NumberInput min={500} value={draft.thinkingNoticeDelayMs || 3000} onChange={(thinkingNoticeDelayMs) => updateDraft({ thinkingNoticeDelayMs })} suffix="ms" />} />}
-        </SettingGroup>
-
+  return <>
+    <div className="page-head">
+      <div><h1>模型</h1><p>换模型只影响之后的请求，已经在跑的不受影响。</p></div>
+      <div style={{ display: 'flex', gap: 8 }}>
+        <button type="button" className="btn btn-ghost" disabled={codexBusy} onClick={refreshCodex}>{codexBusy ? '检测中…' : '测试连接'}</button>
+        <button type="button" className="btn btn-primary" disabled={saving} onClick={save}>{saving ? '保存中…' : '保存模型设置'}</button>
       </div>
     </div>
-  </div>;
+
+    {saveError && <div className="note" style={{ color: 'var(--red)', marginBottom: 12 }}>{saveError}</div>}
+
+    <div className="card" style={{ marginBottom: 16 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
+        <span className="brand-puck" style={{ boxShadow: 'none' }}>AI</span>
+        <div>
+          <div className="muted" style={{ fontSize: 12 }}>当前运行模型</div>
+          <div style={{ fontSize: 20, fontWeight: 800, letterSpacing: '-.02em' }}>{runningModel}</div>
+        </div>
+        <span style={{ marginLeft: 'auto' }} className={dirty ? 'chip chip--amber' : 'chip chip--mint'}>{dirty ? '有未保存的更改' : '设置已同步'}</span>
+      </div>
+    </div>
+
+    <div className="seg" style={{ marginBottom: 16 }}>
+      {[['account', '账号与模型'], ['conversation', '对话与上下文'], ['capabilities', '视觉与搜索'], ['participation', '主动参与']].map(([id, label]) => <button key={id} type="button" className={section === id ? 'is-active' : ''} onClick={() => setSection(id)}>{label}</button>)}
+    </div>
+
+    <div className="grid" style={{ gridTemplateColumns: 'minmax(0,1.6fr) minmax(0,1fr)', gap: 16, alignItems: 'start' }}>
+      <div className="stack">
+        {section === 'account' && <div className="card">
+          <div className="card-head"><span className="card-title">供应商与模型</span><span className="muted" style={{ fontSize: 12 }}>切换系列会复用对应接口与密钥</span></div>
+          <div className="field"><label>接口供应商</label>
+            <select value={draft.llmProvider || 'deepseek'} onChange={(event) => updateDraft(withProviderDefaults({ llmProvider: event.target.value }))}>
+              {providerOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+            </select>
+          </div>
+
+          {draft.llmProvider === 'codex-app-server' ? <>
+            <div className="kv"><span>ChatGPT 登录</span><b>{loginView.description}</b></div>
+            {codexStatus?.error && <div className="note" style={{ color: 'var(--amber)' }}>{codexStatus.error}{codexStatus.diagnostic ? `；${codexStatus.diagnostic}` : ''}</div>}
+            {codexMessage && <div className="note" style={{ color: 'var(--mint)' }}>{codexMessage}</div>}
+            <div style={{ display: 'flex', gap: 8, margin: '10px 0' }}>
+              {loginView.canLogin && <button type="button" className="btn btn-sm" disabled={codexBusy} onClick={loginCodex}>登录 ChatGPT</button>}
+              <RefreshButton className="btn btn-sm" label="刷新状态" disabled={codexBusy} onClick={refreshCodex} />
+              {codexStatus?.authenticated && <button type="button" className="btn btn-sm btn-ghost" onClick={logoutCodex}>退出</button>}
+            </div>
+            <div className="field"><label>Codex 模型</label>
+              <select value={selectedCodexModel} onChange={(event) => updateDraft({ codexModel: event.target.value })}>
+                {codexModelOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+              </select>
+            </div>
+            <div className="field"><label>推理强度</label>
+              <select value={draft.codexReasoningEffort || 'low'} onChange={(event) => updateDraft({ codexReasoningEffort: event.target.value })}>
+                <option value="low">Low（推荐聊天）</option>
+                <option value="medium">Medium</option>
+                <option value="high">High</option>
+                <option value="xhigh">XHigh</option>
+                <option value="max">Max</option>
+              </select>
+            </div>
+            <div className="field"><label>Codex 可执行文件</label><input value={draft.codexExecutable || 'codex'} onChange={(event) => updateDraft({ codexExecutable: event.target.value })} /></div>
+            {codexStatus?.command && <div className="note">当前解析路径：{codexStatus.command}</div>}
+            <div className="row">
+              <div className="row-main"><div className="row-title">自动降级</div><div className="row-sub">未登录、超时或额度不可用时回到 {draft.codexFallbackModel || draft.model || '旧模型'}</div></div>
+              <button type="button" className={'switch' + (draft.codexFallbackEnabled !== false ? ' is-on' : '')} aria-label="自动降级" onClick={() => updateDraft({ codexFallbackEnabled: draft.codexFallbackEnabled === false })} />
+            </div>
+          </> : <>
+            <div className="field"><label>API Key</label><input type="password" placeholder={draft.apiKey === '已填写' ? '已填写，留空不改' : ''} value={draft.apiKey === '已填写' ? '' : draft.apiKey || ''} onChange={(event) => updateDraft({ apiKey: event.target.value })} /></div>
+            <div className="field"><label>API 地址</label><input value={draft.apiBaseUrl || ''} onChange={(event) => updateDraft(withProviderDefaults({ apiBaseUrl: event.target.value }))} /></div>
+            <div className="field"><label>模型</label>
+              <select value={currentModel} onChange={(event) => updateDraft(withProviderDefaults({ model: event.target.value }))}>
+                {modelOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+              </select>
+            </div>
+            <div className="field"><label>自定义模型名</label><input value={draft.customModel || ''} onChange={(event) => updateDraft({ customModel: event.target.value })} placeholder="留空则使用上面的选择" /></div>
+            {apiModelsNote && <div className="note">上游模型清单不可用：{apiModelsNote}</div>}
+          </>}
+        </div>}
+
+        {section === 'conversation' && <div className="card">
+          <div className="card-head"><span className="card-title">生成参数与上下文</span></div>
+          {draft.llmProvider === 'codex-app-server' && <div className="note">当前 Codex 适配器不提供创造性和最大输出 Token 的硬控制；这两项保留用于 API 模型通道。</div>}
+          <div style={{ display: 'flex', gap: 10 }}>
+            <div className="field" style={{ flex: 1 }}><label>创造性（0–1.5）</label><input type="number" min="0" max="1.5" step="0.05" value={draft.temperature ?? 0.8} onChange={setNumber('temperature')} /></div>
+            <div className="field" style={{ flex: 1 }}><label>单次回复长度</label><input type="number" min="80" max="1200" step="20" value={draft.maxTokens ?? 600} onChange={setNumber('maxTokens')} /></div>
+          </div>
+          <div className="field"><label>基础最近消息数</label><input type="number" min="5" max="80" value={draft.contextLimit ?? 30} onChange={setNumber('contextLimit')} /></div>
+          <div className="row">
+            <div className="row-main"><div className="row-title">按需扩展群聊历史</div><div className="row-sub">发现引用旧话题时，从更早记录中检索相关片段</div></div>
+            <button type="button" className={'switch' + (draft.groupContextSearchEnabled !== false ? ' is-on' : '')} aria-label="按需扩展群聊历史" onClick={() => updateDraft({ groupContextSearchEnabled: draft.groupContextSearchEnabled === false })} />
+          </div>
+          {draft.groupContextSearchEnabled !== false && <div style={{ display: 'flex', gap: 10 }}>
+            <div className="field" style={{ flex: 1 }}><label>搜索范围（条）</label><input type="number" min="50" max="2000" step="50" value={draft.groupContextSearchPoolSize || 400} onChange={setNumber('groupContextSearchPoolSize')} /></div>
+            <div className="field" style={{ flex: 1 }}><label>最多补入（条）</label><input type="number" min="3" max="80" value={draft.groupContextSearchMaxExtra || 24} onChange={setNumber('groupContextSearchMaxExtra')} /></div>
+            <div className="field" style={{ flex: 1 }}><label>补入预算（字符）</label><input type="number" min="2000" max="40000" step="1000" value={draft.groupContextSearchCharBudget || 12000} onChange={setNumber('groupContextSearchCharBudget')} /></div>
+          </div>}
+          <div className="field"><label>Owner 私聊上下文软上限（字符）</label><input type="number" min="4000" max="60000" step="1000" value={draft.ownerPrivateContextCharBudget || 24000} onChange={setNumber('ownerPrivateContextCharBudget')} /></div>
+          {[['reasoningEnabled', '启用模型思考', '允许复杂调用开启 DeepSeek thinking；会增加延迟与 Token'], ['ignoreSystemFacts', '纯人设模式', '忽略系统事实注入'], ['profileAntiRecencyV2', '画像 V2 防近因', '长期画像与近期动态分层（实验性）'], ['levelUpNotifyEnabled', '升级恭喜通知', '群内自动祝贺']].map(([field, title, sub]) => <div className="row" key={field}>
+            <div className="row-main"><div className="row-title">{title}</div><div className="row-sub">{sub}</div></div>
+            <button type="button" className={'switch' + ((field === 'levelUpNotifyEnabled' ? draft[field] !== false : draft[field] === true) ? ' is-on' : '')} aria-label={title} onClick={() => updateDraft({ [field]: field === 'levelUpNotifyEnabled' ? draft[field] === false : draft[field] !== true })} />
+          </div>)}
+        </div>}
+
+        {section === 'capabilities' && <>
+          <div className="card">
+            <div className="card-head"><span className="card-title">视觉输入</span><span className="muted" style={{ fontSize: 12 }}>需要多模态模型</span></div>
+            <div className="field"><label>视觉能力</label>
+              <select value={draft.visionMode || 'auto'} onChange={(event) => updateDraft({ visionMode: event.target.value })}>
+                <option value="auto">自动识别（推荐）</option>
+                <option value="on">按多模态模型处理</option>
+                <option value="off">按纯文字模型处理</option>
+              </select>
+            </div>
+            <div className="field"><label>图片传输方式</label>
+              <select value={draft.visionImageTransport || 'auto'} onChange={(event) => updateDraft({ visionImageTransport: event.target.value })}>
+                <option value="auto">自动</option>
+                <option value="url">只传 URL</option>
+                <option value="data">转成 data URL</option>
+              </select>
+            </div>
+            <div className="field"><label>单次最多传入图片数</label><input type="number" min="1" max="6" value={draft.visionMaxImages || 3} onChange={setNumber('visionMaxImages')} /></div>
+          </div>
+
+          <div className="card">
+            <div className="card-head"><span className="card-title">联网搜索</span><span className="muted" style={{ fontSize: 12 }}>只发送检索词，不发送整段群聊</span></div>
+            <div className="row">
+              <div className="row-main"><div className="row-title">启用联网搜索</div><div className="row-sub">模型按问题时效性自行决定是否搜索</div></div>
+              <button type="button" className={'switch' + (draft.enableWebSearch === true ? ' is-on' : '')} aria-label="启用联网搜索" onClick={() => updateDraft({ enableWebSearch: draft.enableWebSearch !== true })} />
+            </div>
+            {draft.enableWebSearch === true && <>
+              <div className="field"><label>搜索模式</label>
+                <select value={draft.webSearchMode || 'balanced'} onChange={(event) => updateDraft({ webSearchMode: event.target.value })}>
+                  <option value="fast">快速（1 次）</option>
+                  <option value="balanced">平衡（2 次，推荐）</option>
+                  <option value="deep">深度（3 次）</option>
+                </select>
+              </div>
+              <div className="field"><label>真实搜索源</label>
+                <select value={draft.searchProvider || 'disabled'} onChange={(event) => updateDraft({ searchProvider: event.target.value })}>
+                  <option value="disabled">未接入（关闭）</option>
+                  <option value="searxng">SearXNG</option>
+                </select>
+              </div>
+              {draft.searchProvider === 'disabled' && <div className="note" style={{ color: 'var(--amber)' }}>联网开关已打开，但真实搜索源仍未接入；显式搜索会被拒绝。</div>}
+              {draft.searchProvider === 'searxng' && <div className="field"><label>SearXNG 地址</label><input value={draft.searchBaseUrl || ''} onChange={(event) => updateDraft({ searchBaseUrl: event.target.value })} /></div>}
+              <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                <button type="button" className="btn btn-sm" disabled={testingLocal} onClick={testLocalSearch}>{testingLocal ? '检测中…' : '检测本地搜索服务'}</button>
+                {localSearchStatus && <span className="note" style={{ color: localSearchStatus.ok ? 'var(--mint)' : 'var(--amber)' }}>{localSearchStatus.message}</span>}
+              </div>
+            </>}
+          </div>
+        </>}
+
+        {section === 'participation' && <div className="card">
+          <div className="card-head"><span className="card-title">主动参与</span><span className="muted" style={{ fontSize: 12 }}>本地规则先判断，不额外调用 LLM</span></div>
+          <div style={{ display: 'flex', gap: 10 }}>
+            <div className="field" style={{ flex: 1 }}><label>自然群友阈值</label><input type="number" min="0" max="100" value={draft.replyGateNaturalThreshold ?? 45} onChange={setNumber('replyGateNaturalThreshold')} /></div>
+            <div className="field" style={{ flex: 1 }}><label>轻度参与阈值</label><input type="number" min="0" max="100" value={draft.replyGateLightThreshold ?? 70} onChange={setNumber('replyGateLightThreshold')} /></div>
+          </div>
+          <div className="field"><label>思考状态提示</label>
+            <select value={draft.thinkingNoticeMode || 'slow'} onChange={(event) => updateDraft({ thinkingNoticeMode: event.target.value })}>
+              <option value="off">关闭</option>
+              <option value="simple">简短</option>
+              <option value="detail">详细</option>
+              <option value="slow">仅慢请求显示</option>
+            </select>
+          </div>
+          {draft.thinkingNoticeMode === 'slow' && <div className="field"><label>慢请求延迟（ms，至少 500）</label><input type="number" min="500" value={draft.thinkingNoticeDelayMs || 3000} onChange={setNumber('thinkingNoticeDelayMs')} /></div>}
+        </div>}
+      </div>
+
+      <div className="stack">
+        <div className="card">
+          <div className="card-head"><span className="card-title">用量与限额</span></div>
+          <div className="kv"><span>累计请求</span><b>{Number(usage.requests || 0).toLocaleString()}</b></div>
+          <div className="kv"><span>累计 Token</span><b>{Number(usage.totalTokens || 0).toLocaleString()}</b></div>
+          <div className="kv"><span>今日请求</span><b>{Number(today.requests || 0).toLocaleString()}</b></div>
+          <div className="kv"><span>今日 Token</span><b>{Number(today.totalTokens || 0).toLocaleString()}</b></div>
+          <div className="meter" style={{ marginTop: 12 }}><i style={{ width: (today.cacheMeasuredPromptTokens ? Math.round((today.cachedTokens / today.cacheMeasuredPromptTokens) * 100) : 0) + '%' }} /></div>
+          <div className="note" style={{ marginTop: 8 }}>今日缓存命中率 {today.cacheMeasuredPromptTokens ? ((today.cachedTokens / today.cacheMeasuredPromptTokens) * 100).toFixed(1) + '%' : '—'}（本地统计，非账单）</div>
+        </div>
+
+        <div className="card">
+          <div className="card-head"><span className="card-title">Codex 通道</span><span className={'chip' + (codexStatus?.authenticated ? ' chip--mint' : '')}>{codexStatus?.authenticated ? '已登录' : draft.llmProvider === 'codex-app-server' ? '未登录' : '未启用'}</span></div>
+          <div className="kv"><span>登录状态</span><b>{loginView.description}</b></div>
+          {windows.length ? windows.map((window) => <div className="kv" key={window.key}>
+            <span>{window.bucket} · {window.label}</span>
+            <b>{window.used == null ? '未知' : Math.round(100 - window.used) + '% 剩余'}</b>
+          </div>) : <div className="kv"><span>配额窗口</span><b>{codexLimits ? '无数据' : '未读取'}</b></div>}
+          <div className="kv"><span>推理强度</span><b>{draft.codexReasoningEffort || 'low'}</b></div>
+          <div className="kv"><span>自动降级</span><b>{draft.codexFallbackEnabled !== false ? '开启' : '关闭'}</b></div>
+          <div className="note" style={{ marginTop: 8 }}>账号额度与本地 Token 用量是两个口径，这里不做换算。</div>
+        </div>
+
+        <div className="card">
+          <div className="card-head"><span className="card-title">当前生效</span></div>
+          <div className="kv"><span>供应商</span><b>{draft.llmProvider === 'codex-app-server' ? 'Codex 配额' : draft.llmProvider === 'openai-compatible' ? 'OpenAI 兼容' : 'DeepSeek'}</b></div>
+          <div className="kv"><span>模型</span><b>{draft.llmProvider === 'codex-app-server' ? selectedCodexModel : (draft.customModel?.trim() || currentModel)}</b></div>
+          <div className="kv"><span>联网搜索</span><b>{draft.enableWebSearch ? draft.webSearchMode || 'balanced' : '关闭'}</b></div>
+          <div className="kv"><span>视觉</span><b>{draft.visionMode || 'auto'}</b></div>
+        </div>
+      </div>
+    </div>
+  </>;
 }

@@ -1,23 +1,13 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { Cable, PlugZap, RefreshCw, Save, Server, Wifi } from 'lucide-react';
 import { api } from '../../lib/api.js';
-import { Button, Card, ErrorState, InlineHelp, Input, SectionHeader, SettingGroup, SettingRow, StatusBadge } from '../../components/ui/index.jsx';
 
-const botLabels = { yumu: 'Yumu', kanon: 'Kanon', hydrant: 'Hydrant', lazybot: 'LazyBot' };
-const statusTone = (status) => status === 'available' || status === 'configured' ? 'success' : status === 'degraded' ? 'warning' : 'danger';
-const statusLabel = (status) => ({ available: 'Available', configured: 'Configured', degraded: 'Degraded', unavailable: 'Unavailable' }[status] || status);
-
-function ServiceCard({ icon: Icon, name, kind, status, endpoint, detail, error, actions }) {
-  return <Card className={`integration-service integration-service--${status}`}>
-    <div className="integration-service__heading"><span className="integration-service__icon"><Icon size={19} /></span><div><strong>{name}</strong><small>{kind}</small></div><StatusBadge tone={statusTone(status)}>{statusLabel(status)}</StatusBadge></div>
-    <div className="integration-service__meta"><span>Endpoint</span><code title={endpoint}>{endpoint || '未配置'}</code></div>
-    <p>{detail}</p>{error && <InlineHelp tone="danger">{error}</InlineHelp>}{actions && <div className="integration-service__actions">{actions}</div>}
-  </Card>;
-}
+// 版式对齐原型 PAGES.integrations：OneBot / 外部 bot / 联网搜索 / 回调，断了直接标红。
+const botLabels = { yumu: 'Yumu / 雨沐', kanon: 'Kanon / 猫猫', hydrant: 'Hydrant / 消防栓', lazybot: 'LazyBot' };
 
 export function IntegrationsPage({ db, oneBot, saveSettings, refreshState }) {
   const [draft, setDraft] = useState(() => ({ ...db.settings, oneBotAccessToken: '' }));
   const [dirty, setDirty] = useState(false);
+  const [editing, setEditing] = useState(false);
   const [detecting, setDetecting] = useState(false);
   const [connecting, setConnecting] = useState(false);
   const [detectResult, setDetectResult] = useState(null);
@@ -68,34 +58,111 @@ export function IntegrationsPage({ db, oneBot, saveSettings, refreshState }) {
     } finally { setConnecting(false); }
   };
 
-  const oneBotStatus = oneBot.accountOnline === false ? 'unavailable' : oneBot.transportConnected && oneBot.apiReachable !== false ? 'available' : (draft.oneBotHttpUrl || draft.oneBotWsUrl) ? 'degraded' : 'unavailable';
+  const online = oneBot.accountOnline === false ? false : Boolean(oneBot.transportConnected && oneBot.apiReachable !== false);
   const friendlyError = oneBot.lastError?.includes('ECONNREFUSED') ? 'OneBot WebSocket 拒绝连接，请检查 NapCat 是否运行以及端口是否一致。' : oneBot.lastError || '';
-  const rendererStatus = status?.renderer?.hasClients ? 'available' : status?.renderer?.listeningPort ? 'degraded' : 'unavailable';
   const externalBots = useMemo(() => status?.bots || [], [status]);
+  const renderer = status?.renderer;
 
-  return <div className="integrations-page">
-    <SectionHeader title="服务拓扑" actions={<Button icon={RefreshCw} onClick={async () => { await Promise.all([loadStatus(), refreshState()]); }}>刷新状态</Button>} />
-    {statusError && <ErrorState title="集成状态读取失败" message={statusError} onRetry={loadStatus} />}
-    <div className="integrations-core-grid">
-      <ServiceCard icon={Wifi} name="OneBot / NapCat" kind="Core dependency" status={oneBotStatus} endpoint={draft.oneBotWsUrl || draft.oneBotHttpUrl} detail={oneBot.transportConnected ? '消息传输通道已连接。' : 'Console 可以保存配置，但 QQ 消息收发依赖该连接。'} error={friendlyError} actions={<><Button size="sm" icon={RefreshCw} loading={detecting} onClick={autoDetect}>自动检测</Button><Button size="sm" variant="primary" icon={PlugZap} loading={connecting} onClick={connect}>保存并连接</Button></>} />
-      <ServiceCard icon={Server} name="yumu-image renderer" kind="Optional renderer" status={rendererStatus} endpoint={status?.renderer?.listeningPort ? `ws://127.0.0.1:${status.renderer.listeningPort}` : ''} detail={status?.renderer?.hasClients ? '已有经过认证的渲染客户端连接。' : status?.renderer?.listeningPort ? '渲染服务正在监听，但当前没有渲染客户端。' : '运行时尚未报告监听端口。'} />
+  return <>
+    <div className="page-head">
+      <div><h1>集成</h1><p>OneBot 和外部服务都在这一页，断了会直接标红。</p></div>
+      <div style={{ display: 'flex', gap: 8 }}>
+        <button type="button" className="btn btn-ghost" disabled={detecting} onClick={autoDetect}>{detecting ? '检测中…' : '自动检测'}</button>
+        <button type="button" className="btn btn-primary" disabled={connecting} onClick={connect}>{connecting ? '连接中…' : '保存并连接'}</button>
+      </div>
     </div>
-    <Card className="integrations-config"><SectionHeader title="OneBot 连接" />
-      <SettingGroup title="Transport" description="HTTP 用于动作调用，WebSocket 用于事件流。">
-        <SettingRow title="HTTP endpoint" description="OneBot HTTP API 地址" control={<Input aria-label="OneBot HTTP 地址" value={draft.oneBotHttpUrl || ''} onChange={(event) => update('oneBotHttpUrl', event.target.value)} />} />
-        <SettingRow title="WebSocket endpoint" description="OneBot 正向 WebSocket 地址" control={<Input aria-label="OneBot WebSocket 地址" value={draft.oneBotWsUrl || ''} onChange={(event) => update('oneBotWsUrl', event.target.value)} />} />
-        <SettingRow title="Access token" description={db.settings.oneBotAccessToken === '已填写' ? '已配置；留空会保留当前 token。' : '服务未设置 token 时可以留空。'} control={<Input aria-label="OneBot Access Token" type="password" placeholder={db.settings.oneBotAccessToken === '已填写' ? '已填写，留空不改' : ''} value={draft.oneBotAccessToken || ''} onChange={(event) => update('oneBotAccessToken', event.target.value)} />} />
-      </SettingGroup>
-      <SettingGroup title="Identity" description="用于运行时识别机器人、Owner 与其他 Bot 消息。">
-        <SettingRow title="Bot QQ" description="机器人自己的 QQ 号" control={<Input aria-label="机器人 QQ" value={draft.selfQq || ''} onChange={(event) => update('selfQq', event.target.value)} />} />
-        <SettingRow title="Owner QQ" description="拥有控制台与管理指令权限的 QQ 号" control={<Input aria-label="Owner QQ" value={draft.ownerQq || ''} onChange={(event) => update('ownerQq', event.target.value)} />} />
-        <SettingRow title="External Bot QQ" description="逗号分隔；用于避免 Bot 之间互相触发。" control={<Input aria-label="其他 Bot QQ" value={draft.externalBotQqs || ''} onChange={(event) => update('externalBotQqs', event.target.value)} />} />
-      </SettingGroup>
-      {detectResult?.detected && <InlineHelp tone="success">检测到端口 {detectResult.detected.bestPort}，地址已写入草稿，保存后才会生效。</InlineHelp>}
-      {detectResult && !detectResult.detected && <InlineHelp tone="danger">{detectResult.error || '没有检测到可用的本地 OneBot HTTP 服务。'}</InlineHelp>}
-      <div className="integrations-config__actions"><span>{dirty ? '有未保存改动' : '配置已与最近一次状态同步'}</span><Button variant="primary" icon={Save} loading={connecting} disabled={!dirty && oneBot.transportConnected} onClick={connect}>保存并连接</Button></div>
-    </Card>
-    <Card><SectionHeader title="osu! 外部服务" description="状态仅表示端口连通性。" /><div className="integrations-service-grid">{externalBots.map((bot) => <ServiceCard key={bot.id} icon={Cable} name={botLabels[bot.id] || bot.id} kind="Optional integration" status={bot.up ? 'available' : 'unavailable'} endpoint={`127.0.0.1:${bot.port}`} detail={bot.up ? '本地桥接端口可达。' : '当前探针无法连接该端口。'} />)}{status && externalBots.length === 0 && <p className="integrations-empty">运行时没有返回外部服务记录。</p>}</div></Card>
-    <Card className="integrations-runtime"><SectionHeader title="OneBot 状态明细" /><div className="integrations-runtime__grid"><div><span>Transport</span><strong>{oneBot.transportConnected ? 'Connected' : 'Disconnected'}</strong></div><div><span>API</span><strong>{oneBot.apiReachable === true ? 'Reachable' : oneBot.apiReachable === false ? 'Unavailable' : 'Probing'}</strong></div><div><span>QQ Session</span><strong>{oneBot.accountOnline === true ? 'Online' : oneBot.accountOnline === false ? 'Offline' : 'Unknown'}</strong></div><div><span>Heartbeat</span><strong>{oneBot.heartbeatFresh ? 'Fresh' : oneBot.lastHeartbeatAt ? 'Stale' : 'No data'}</strong></div><div><span>Reconnects</span><strong>{oneBot.reconnectCount ?? 0}</strong></div><div><span>Last event</span><strong title={oneBot.lastEventAt || ''}>{oneBot.lastEventAt || '暂无'}</strong></div></div></Card>
-  </div>;
+
+    {statusError && <div className="note" style={{ color: 'var(--red)', marginBottom: 12 }}>集成状态读取失败：{statusError}</div>}
+    {friendlyError && <div className="note" style={{ color: 'var(--red)', marginBottom: 12 }}>{friendlyError}</div>}
+    {detectResult?.detected && <div className="note" style={{ color: 'var(--mint)', marginBottom: 12 }}>检测到端口 {detectResult.detected.bestPort}，地址已写入草稿，保存后才会生效。</div>}
+    {detectResult && !detectResult.detected && <div className="note" style={{ color: 'var(--red)', marginBottom: 12 }}>{detectResult.error || '没有检测到可用的本地 OneBot HTTP 服务。'}</div>}
+
+    <div className="grid grid-2" style={{ alignItems: 'start' }}>
+      <div className="stack">
+        <div className="card">
+          <div className="card-head">
+            <span className="card-title">OneBot v11</span>
+            <span className={'chip ' + (online ? 'chip--mint' : '')}>{online ? '已连接' : '未连接'}</span>
+          </div>
+          {editing ? <>
+            <div className="field"><label>HTTP endpoint</label><input value={draft.oneBotHttpUrl || ''} onChange={(event) => update('oneBotHttpUrl', event.target.value)} placeholder="http://127.0.0.1:3000" /></div>
+            <div className="field"><label>WebSocket endpoint</label><input value={draft.oneBotWsUrl || ''} onChange={(event) => update('oneBotWsUrl', event.target.value)} placeholder="ws://127.0.0.1:3001" /></div>
+            <div className="field"><label>Access token</label><input type="password" value={draft.oneBotAccessToken || ''} onChange={(event) => update('oneBotAccessToken', event.target.value)} placeholder={db.settings.oneBotAccessToken === '已填写' ? '已填写，留空不改' : ''} /></div>
+            <div style={{ display: 'flex', gap: 8 }}>
+              <button type="button" className="btn" style={{ flex: 1 }} onClick={() => { setEditing(false); setDraft({ ...db.settings, oneBotAccessToken: '' }); setDirty(false); }}>取消</button>
+              <button type="button" className="btn btn-primary" style={{ flex: 1 }} disabled={connecting} onClick={connect}>保存并连接</button>
+            </div>
+          </> : <>
+            <div className="kv"><span>传输</span><b>{draft.oneBotWsUrl || draft.oneBotHttpUrl || '未配置'}</b></div>
+            <div className="kv"><span>上报</span><b>{draft.oneBotHttpUrl || '未配置'}</b></div>
+            <div className="kv"><span>状态</span><b className={online ? 'mint' : undefined}>{online ? '已连接' : '未连接'}</b></div>
+            <div className="kv"><span>账号</span><b>{draft.selfQq || '未设置'}</b></div>
+            <div style={{ display: 'flex', gap: 8, marginTop: 16 }}>
+              <button type="button" className="btn" style={{ flex: 1 }} onClick={() => setEditing(true)}>编辑连接</button>
+            </div>
+          </>}
+        </div>
+
+        <div className="card">
+          <div className="card-head"><span className="card-title">外部 osu! bot</span><span className="muted" style={{ fontSize: 12 }}>{externalBots.filter((bot) => bot.up).length} 在线</span></div>
+          <div className="rows">
+            {externalBots.map((bot) => <div className="row" key={bot.id}>
+              <span className="status-dot" style={{ background: bot.up ? 'var(--mint)' : 'var(--red)' }} />
+              <div className="row-main">
+                <div className="row-title">{botLabels[bot.id] || bot.id}</div>
+                <div className="row-sub">ws://127.0.0.1:{bot.port}</div>
+              </div>
+              <span className={'chip' + (bot.up ? ' chip--mint' : '')}>{bot.up ? '已连接' : '离线'}</span>
+            </div>)}
+            {!externalBots.length && <div className="note">运行时没有返回外部服务记录。</div>}
+          </div>
+        </div>
+
+        <div className="card">
+          <div className="card-head"><span className="card-title">yumu-image 渲染器</span><span className="muted" style={{ fontSize: 12 }}>可选</span></div>
+          <div className="kv"><span>监听端口</span><b>{renderer?.listeningPort || '未报告'}</b></div>
+          <div className="kv"><span>客户端</span><b>{renderer?.hasClients ? '已连接' : '无'}</b></div>
+          <div className="note" style={{ marginTop: 8 }}>{renderer?.hasClients ? '已有经过认证的渲染客户端连接。' : renderer?.listeningPort ? '渲染服务正在监听，但当前没有渲染客户端。' : '运行时尚未报告监听端口。'}</div>
+        </div>
+      </div>
+
+      <div className="stack">
+        <div className="card">
+          <div className="card-head"><span className="card-title">联网搜索</span></div>
+          <div className="kv"><span>开关</span><b>{draft.enableWebSearch ? '开启' : '关闭'}</b></div>
+          <div className="kv"><span>模式</span><b>{draft.webSearchMode || '—'}</b></div>
+          <div className="kv"><span>供应商</span><b>{draft.searchProvider || '—'}</b></div>
+          <div className="kv"><span>单轮上限</span><b>{draft.searchMaxResults || '—'} 条</b></div>
+        </div>
+
+        <div className="card">
+          <div className="card-head"><span className="card-title">身份</span><span className="muted" style={{ fontSize: 12 }}>改完点右上角保存</span></div>
+          <div className="field"><label>Bot QQ</label><input value={draft.selfQq || ''} onChange={(event) => update('selfQq', event.target.value)} /></div>
+          <div className="field"><label>Owner QQ</label><input value={draft.ownerQq || ''} onChange={(event) => update('ownerQq', event.target.value)} /></div>
+          <div className="field"><label>外部 Bot QQ（逗号分隔）</label><input value={draft.externalBotQqs || ''} onChange={(event) => update('externalBotQqs', event.target.value)} /></div>
+        </div>
+
+        <div className="card">
+          <div className="card-head"><span className="card-title">OneBot 状态明细</span><span className="muted" style={{ fontSize: 12 }}>{dirty ? '有未保存改动' : '已同步'}</span></div>
+          <div className="kv"><span>Transport</span><b>{oneBot.transportConnected ? 'Connected' : 'Disconnected'}</b></div>
+          <div className="kv"><span>API</span><b>{oneBot.apiReachable === true ? 'Reachable' : oneBot.apiReachable === false ? 'Unavailable' : 'Probing'}</b></div>
+          <div className="kv"><span>QQ Session</span><b>{oneBot.accountOnline === true ? 'Online' : oneBot.accountOnline === false ? 'Offline' : 'Unknown'}</b></div>
+          <div className="kv"><span>Heartbeat</span><b>{oneBot.heartbeatFresh ? 'Fresh' : oneBot.lastHeartbeatAt ? 'Stale' : 'No data'}</b></div>
+          <div className="kv"><span>重连次数</span><b>{oneBot.reconnectCount ?? 0}</b></div>
+          <div className="kv"><span>最近事件</span><b>{oneBot.lastEventAt || '暂无'}</b></div>
+        </div>
+      </div>
+    </div>
+
+    <div className="card" style={{ marginTop: 16 }}>
+      <div className="card-head"><span className="card-title">Webhook / 回调</span></div>
+      <div className="grid grid-2" style={{ alignItems: 'start' }}>
+        <div>
+          <div className="kv"><span>控制台地址</span><b>http://127.0.0.1:8787</b></div>
+          <div className="kv"><span>回调鉴权</span><b>{db.settings.oneBotAccessToken === '已填写' ? '已开启' : '未设置 token'}</b></div>
+        </div>
+        <div className="note">回调只接受来自 OneBot 的签名请求；控制台与 API 同源，避免跨域。</div>
+      </div>
+    </div>
+  </>;
 }

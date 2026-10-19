@@ -1,137 +1,257 @@
-import React, { useState } from 'react';
-import { Save, Search, ShieldCheck, Trash2, UserRoundCog } from 'lucide-react';
-import { Button, Card, EmptyState, Input, Pill, SectionHeader, Select, Slider, Switch, Textarea } from '../../components/ui/index.jsx';
+import React, { useEffect, useMemo, useState } from 'react';
 import { api } from '../../lib/api.js';
+import { ConfirmDialog } from '../../components/ui/index.jsx';
+import { Avatar, groupAvatarUrl, userAvatarUrl } from '../../components/Avatar.jsx';
 
+// 版式对齐原型 PAGES.members：成员表 + 右侧档案卡；成员来源是消息与成员策略的并集。
 const policyLabels = {
   normal: '正常', whitelist: '优先回应', priority: '重点关注', muted: '少回应', blocked: '不回应', admin: '管理员', owner: '所有者',
 };
-const policyOptions = Object.entries(policyLabels).map(([value, label]) => ({ value, label }));
+const policyOptions = Object.entries(policyLabels);
 const levelPpLabel = (experience) => `${Math.floor(Number(experience?.xp || 0) / 100) * 100}pp`;
 
 export function MembersPage({ db, refreshState }) {
-  const firstGroup = db.groups?.[0]?.groupId || '';
-  const groupMap = Object.fromEntries((db.groups || []).map((group) => [String(group.groupId), group.name || group.groupId]));
-  const memories = db.memories || [];
+  const [search, setSearch] = useState('');
+  const [selectedKey, setSelectedKey] = useState('');
+  const [editing, setEditing] = useState(false);
+  const [policyConfirm, setPolicyConfirm] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [bindings, setBindings] = useState([]);
+  const [form, setForm] = useState(null);
+
+  const groups = db.groups || [];
+  const groupMap = Object.fromEntries(groups.map((group) => [String(group.groupId), group.name || group.groupId]));
+  const policies = db.users || [];
   const messages = db.messages || [];
   const experience = db.experience || {};
-  const [form, setForm] = useState({ groupId: firstGroup, userId: '', nickname: '', policy: 'normal', attentionLevel: 3, allowCommands: false, commandRoleId: '', note: '', customPrompt: '' });
-  const [search, setSearch] = useState('');
-  const [filterPolicy, setFilterPolicy] = useState('all');
-  const [filterGroup, setFilterGroup] = useState('all');
-  const [sortBy, setSortBy] = useState('recent');
-  const [saving, setSaving] = useState(false);
 
-  const displayName = (user) => {
-    if (user.nickname && user.nickname !== user.userId) return user.nickname;
-    const matchingMessages = messages.filter((message) => String(message.userId) === String(user.userId) && message.nickname && message.nickname !== String(user.userId));
-    if (matchingMessages.length) return matchingMessages[matchingMessages.length - 1].nickname;
-    return memories.find((memory) => String(memory.userId) === String(user.userId) && memory.nickname && memory.nickname !== String(user.userId))?.nickname || user.userId;
-  };
+  useEffect(() => {
+    let alive = true;
+    api('/api/osu/status', { timeoutMs: 10000 })
+      .then((data) => { if (alive) setBindings(Array.isArray(data?.bindings) ? data.bindings : []); })
+      .catch(() => { if (alive) setBindings([]); });
+    return () => { alive = false; };
+  }, []);
 
-  const recentSignal = (user) => {
-    const latest = messages.filter((message) => String(message.userId) === String(user.userId)).slice(-1)[0];
-    const memory = memories.find((entry) => String(entry.userId) === String(user.userId));
-    const parts = [];
-    if (latest) parts.push(`最后活跃：${groupMap[String(latest.groupId)]} ${new Date(latest.createdAt).toLocaleDateString('zh-CN')}`);
-    else if (memory?.lastProfiledAt) parts.push(`最后画像：${new Date(memory.lastProfiledAt).toLocaleDateString('zh-CN')}`);
-    if (memory?.summary) parts.push(`记忆：${memory.summary.slice(0, 38)}`);
-    return parts.join(' · ');
-  };
+  const bindingMap = useMemo(() => Object.fromEntries(bindings.map((binding) => [String(binding.qq), binding])), [bindings]);
 
-  const badges = (user) => {
-    const values = [];
-    if (user.policy === 'admin') values.push({ label: '管理', tone: 'warning' });
-    if (user.policy === 'blocked') values.push({ label: '黑名单', tone: 'danger' });
-    if (user.policy === 'priority') values.push({ label: '重点关注', tone: 'accent' });
-    if (user.allowCommands) values.push({ label: '指令', tone: 'success' });
-    if (user.note) values.push({ label: '备注', tone: 'neutral' });
-    if (user.customPrompt) values.push({ label: '定制', tone: 'accent' });
-    if (memories.some((memory) => String(memory.userId) === String(user.userId) && memory.enabled !== false && (memory.summary || memory.traits))) values.push({ label: '记忆', tone: 'success' });
-    const exp = experience[String(user.userId)];
-    if (exp) values.push({ label: levelPpLabel(exp), tone: Number(exp.xp || 0) >= 300 ? 'accent' : 'neutral' });
-    return values;
-  };
+  const rows = useMemo(() => {
+    const map = new Map();
+    const ensure = (groupId, userId) => {
+      const key = `${groupId}:${userId}`;
+      if (!map.has(key)) map.set(key, { key, groupId, userId, nickname: '', count: 0, lastAt: 0, policy: null });
+      return map.get(key);
+    };
+    for (const message of messages) {
+      if (!message.userId || message.role === 'assistant') continue;
+      const row = ensure(String(message.groupId || ''), String(message.userId));
+      row.count += 1;
+      const at = new Date(message.createdAt || 0).getTime();
+      if (at > row.lastAt) { row.lastAt = at; row.nickname = message.nickname || row.nickname; }
+    }
+    for (const policy of policies) {
+      const row = ensure(String(policy.groupId), String(policy.userId));
+      row.policy = policy;
+      row.nickname = policy.nickname || row.nickname;
+    }
+    return [...map.values()].map((row) => {
+      const binding = bindingMap[row.userId];
+      return {
+        ...row,
+        name: row.nickname || row.policy?.nickname || row.userId,
+        groupName: groupMap[row.groupId] || row.groupId || '—',
+        policyLabel: policyLabels[row.policy?.policy] || (row.policy ? row.policy.policy : '群员'),
+        osu: binding ? (binding.username || binding.id || '已绑定') : '—',
+        level: levelPpLabel(experience[row.userId]),
+        lastText: new Date(row.lastAt || 0).toLocaleString('zh-CN', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false }),
+      };
+    }).filter((row) => {
+      if (!search.trim()) return true;
+      const needle = search.trim().toLowerCase();
+      return row.name.toLowerCase().includes(needle) || row.userId.includes(needle) || row.groupName.toLowerCase().includes(needle);
+    }).sort((left, right) => right.lastAt - left.lastAt);
+  }, [messages, policies, bindingMap, experience, groupMap, search]);
 
-  let users = (db.users || []).filter((user) => {
-    if (filterGroup !== 'all' && String(user.groupId) !== filterGroup) return false;
-    if (filterPolicy !== 'all' && user.policy !== filterPolicy) return false;
-    if (!search.trim()) return true;
-    const query = search.trim().toLowerCase();
-    return displayName(user).toLowerCase().includes(query) || String(user.userId).includes(query) || (user.note || '').toLowerCase().includes(query);
-  });
-  if (sortBy === 'recent') {
-    users = [...users].sort((left, right) => {
-      const last = (user) => messages.filter((message) => String(message.userId) === String(user.userId)).slice(-1)[0];
-      return new Date(last(right)?.createdAt || 0).getTime() - new Date(last(left)?.createdAt || 0).getTime();
+  const selected = rows.find((row) => row.key === selectedKey) || rows[0] || null;
+  const selectedPolicy = selected?.policy || null;
+  const recentMessages = useMemo(() => {
+    if (!selected) return [];
+    return messages
+      .filter((message) => String(message.userId) === selected.userId && String(message.groupId || '') === selected.groupId)
+      .slice(-4)
+      .reverse();
+  }, [messages, selected]);
+
+  useEffect(() => {
+    setEditing(false);
+    setForm(selected ? {
+      groupId: selected.groupId,
+      userId: selected.userId,
+      nickname: selected.policy?.nickname || selected.nickname || '',
+      policy: selected.policy?.policy || 'normal',
+      attentionLevel: selected.policy?.attentionLevel || 3,
+      allowCommands: Boolean(selected.policy?.allowCommands),
+      commandRoleId: selected.policy?.commandRoleId || '',
+      note: selected.policy?.note || '',
+      customPrompt: selected.policy?.customPrompt || '',
+    } : null);
+  }, [selectedKey]);
+
+  const startEdit = () => {
+    if (!selected) return;
+    setForm({
+      groupId: selected.groupId,
+      userId: selected.userId,
+      nickname: selected.policy?.nickname || selected.nickname || '',
+      policy: selected.policy?.policy || 'normal',
+      attentionLevel: selected.policy?.attentionLevel || 3,
+      allowCommands: Boolean(selected.policy?.allowCommands),
+      commandRoleId: selected.policy?.commandRoleId || '',
+      note: selected.policy?.note || '',
+      customPrompt: selected.policy?.customPrompt || '',
     });
-  } else if (sortBy === 'policy') {
-    const order = { blocked: 0, muted: 1, normal: 2, whitelist: 3, priority: 4, admin: 5, owner: 6 };
-    users = [...users].sort((left, right) => (order[right.policy] || 0) - (order[left.policy] || 0));
-  } else {
-    users = [...users].sort((left, right) => (right.attentionLevel || 3) - (left.attentionLevel || 3));
-  }
+    setEditing(true);
+  };
 
   const save = async () => {
+    if (!form) return;
     setSaving(true);
     try {
       await api('/api/users', { method: 'POST', body: form, timeoutMs: 15000 });
-      setForm({ ...form, userId: '', nickname: '', policy: 'normal', attentionLevel: 3, allowCommands: false, commandRoleId: '', note: '', customPrompt: '' });
+      setEditing(false);
       await refreshState();
     } finally {
       setSaving(false);
     }
   };
 
-  const removePolicy = async (user) => {
-    if (!window.confirm(`删除 ${user.nickname || user.userId} 的成员策略？删除后会按普通用户处理。`)) return;
-    await api(`/api/users/${user.groupId}/${user.userId}`, { method: 'DELETE', timeoutMs: 15000 });
+  const removePolicy = async () => {
+    if (!selected?.policy) return;
+    await api(`/api/users/${selected.groupId}/${selected.userId}`, { method: 'DELETE', timeoutMs: 15000 });
+    setEditing(false);
     await refreshState();
   };
 
-  const groupOptions = [{ value: 'all', label: '全部群' }, ...(db.groups || []).map((group) => ({ value: String(group.groupId), label: group.name || String(group.groupId) }))];
-  const commandRoleOptions = [{ value: '', label: '自动（按成员策略）' }, ...(db.settings.commandRoles || []).map((role) => ({ value: role.id, label: `${role.name} Lv.${role.level}` }))];
+  const exportRows = () => {
+    const header = ['昵称', 'QQ', '群', '身份', 'osu!', '等级', '消息数', '最后活跃'];
+    const lines = [header, ...rows.map((row) => [row.name, row.userId, row.groupName, row.policyLabel, row.osu, row.level, row.count, row.lastText])]
+      .map((cells) => cells.map((cell) => `"${String(cell).replace(/"/g, '""')}"`).join(','));
+    const blob = new Blob(['\ufeff' + lines.join('\n')], { type: 'text/csv;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement('a');
+    anchor.href = url;
+    anchor.download = `wuxin-members-${new Date().toISOString().slice(0, 10)}.csv`;
+    document.body.appendChild(anchor);
+    anchor.click();
+    anchor.remove();
+    window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+  };
 
-  return <div className="console-page members-page">
-    <SectionHeader title="成员策略" description="未设置的成员沿用群默认策略。" />
-    <div className="members-workspace">
-      <Card className="console-section members-editor">
-        <div className="console-section__title"><UserRoundCog size={18} /><div><h3>{form.userId ? '编辑成员策略' : '添加成员策略'}</h3></div></div>
-        <div className="console-form-grid">
-          <Input label="群号" value={form.groupId || ''} onChange={(event) => setForm({ ...form, groupId: event.target.value })} />
-          <Input label="用户 QQ 号" value={form.userId || ''} onChange={(event) => setForm({ ...form, userId: event.target.value })} />
-          <Input label="备注昵称" value={form.nickname || ''} onChange={(event) => setForm({ ...form, nickname: event.target.value })} />
-          <Select label="回应策略" value={form.policy || 'normal'} onChange={(event) => setForm({ ...form, policy: event.target.value })} options={policyOptions} />
-        </div>
-        <Slider label="注意力等级" min={1} max={5} value={form.attentionLevel || 3} onChange={(attentionLevel) => setForm({ ...form, attentionLevel })} />
-        <Switch label="允许管理指令" description="仍受指令用户组限制" checked={form.allowCommands === true} onChange={(event) => setForm({ ...form, allowCommands: event.target.checked })} />
-        <Select label="指令用户组" value={form.commandRoleId || ''} onChange={(event) => setForm({ ...form, commandRoleId: event.target.value })} options={commandRoleOptions} />
-        <Input label="备注" value={form.note || ''} onChange={(event) => setForm({ ...form, note: event.target.value })} />
-        <Textarea label="定制提示词" hint="可选；描述机器人对这位成员的特别态度。" rows={4} placeholder="例如：对这个群友可以更随意一些，偶尔开开玩笑。" value={form.customPrompt || ''} onChange={(event) => setForm({ ...form, customPrompt: event.target.value })} />
-        <div className="console-actions console-actions--end"><Button variant="primary" icon={Save} loading={saving} disabled={!String(form.groupId).trim() || !String(form.userId).trim()} onClick={save}>保存成员策略</Button></div>
-      </Card>
-
-      <Card className="console-section members-list-panel">
-        <div className="console-section__title"><ShieldCheck size={18} /><div><h3>已设置成员 · {users.length}</h3></div></div>
-        <div className="console-toolbar members-toolbar">
-          <span className="console-search"><Search size={15} /><input aria-label="搜索成员" placeholder="搜索昵称、QQ 或备注" value={search} onChange={(event) => setSearch(event.target.value)} /></span>
-          <Select value={filterGroup} onChange={(event) => setFilterGroup(event.target.value)} options={groupOptions} />
-          <Select value={filterPolicy} onChange={(event) => setFilterPolicy(event.target.value)} options={[{ value: 'all', label: '全部策略' }, ...policyOptions]} />
-          <Select value={sortBy} onChange={(event) => setSortBy(event.target.value)} options={[{ value: 'recent', label: '最近活跃' }, { value: 'policy', label: '策略优先级' }, { value: 'level', label: '注意力等级' }]} />
-        </div>
-        <div className="console-list members-list">
-          {users.map((user) => {
-            const name = displayName(user);
-            const role = user.commandRoleId && (db.settings.commandRoles || []).find((entry) => entry.id === user.commandRoleId);
-            return <article className="console-list-item member-row" key={`${user.groupId}-${user.userId}`}>
-              <div className="member-row__identity"><strong>{name}</strong><span>{name !== String(user.userId) ? `QQ ${user.userId} · ` : ''}{groupMap[String(user.groupId)] || user.groupId}</span></div>
-              <div className="member-row__body"><div className="console-pills">{badges(user).map((badge) => <Pill key={badge.label} tone={badge.tone}>{badge.label}</Pill>)}</div><p>{policyLabels[user.policy] || user.policy}{role ? ` · ${role.name}` : ''} · 注意力 {user.attentionLevel || 3}{user.note ? ` · ${user.note}` : ''}</p>{recentSignal(user) && <small>{recentSignal(user)}</small>}</div>
-              <div className="console-actions"><Button size="sm" onClick={() => setForm({ ...user })}>编辑</Button><Button size="sm" variant="danger-ghost" icon={Trash2} onClick={() => removePolicy(user)}>删除</Button></div>
-            </article>;
-          })}
-          {!users.length && <EmptyState title="没有匹配的成员策略" description={db.users?.length ? '调整筛选条件后再试。' : '普通群友会按群默认模式处理。'} />}
-        </div>
-      </Card>
+  return <>
+    <div className="page-head">
+      <div><h1>成员</h1><p>谁在这个群里、什么身份、绑没绑 osu!。</p></div>
+      <div style={{ display: 'flex', gap: 8 }}><button type="button" className="btn" onClick={exportRows}>导出</button></div>
     </div>
-  </div>;
+
+    <div className="searchbar" style={{ marginBottom: 16 }}>
+      <span className="muted">搜索</span>
+      <input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="昵称、QQ 号或群名" aria-label="搜索成员" />
+      <span className="chip">{rows.length} 位成员</span>
+    </div>
+
+    <div className="grid grid-main">
+      <div className="card">
+        <div className="card-head"><span className="card-title">成员表</span><span className="muted" style={{ fontSize: 12 }}>按最近活跃排序</span></div>
+        <div style={{ maxHeight: 620, overflowY: 'auto' }}>
+          <table className="table" style={{ whiteSpace: 'nowrap' }}>
+            <thead><tr><th>昵称</th><th>QQ</th><th>群</th><th>身份</th><th>osu!</th><th>消息</th></tr></thead>
+            <tbody>
+              {rows.map((row) => <tr
+                key={row.key}
+                onClick={() => setSelectedKey(row.key)}
+                style={{ cursor: 'pointer', background: selected?.key === row.key ? 'var(--pink-soft)' : undefined }}
+              >
+                <td style={{ maxWidth: 280, overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+                    <Avatar name={row.name} src={userAvatarUrl(row.userId)} size={24} />
+                    <b>{row.name}</b>
+                  </span>
+                </td>
+                <td className="muted">{row.userId}</td>
+                <td>{row.groupName}</td>
+                <td><span className={'chip' + (row.policy?.policy === 'admin' || row.policy?.policy === 'owner' ? ' chip--pink' : '')}>{row.policyLabel}</span></td>
+                <td className="muted">{row.osu}</td>
+                <td>{row.count.toLocaleString()}</td>
+              </tr>)}
+              {!rows.length && <tr><td colSpan="6" className="muted">没有匹配的成员。</td></tr>}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div className="stack">
+        {selected ? <div className="card">
+          <div className="card-head">
+            <span className="card-title" style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+              <Avatar name={selected.name} src={userAvatarUrl(selected.userId)} size={26} />
+              {selected.name}
+            </span>
+            <span className={'chip' + (selected.policy ? ' chip--mint' : '')}>{selected.policyLabel}</span>
+          </div>
+          {editing && form ? <>
+            <div className="field"><label>备注昵称</label><input value={form.nickname} onChange={(event) => setForm({ ...form, nickname: event.target.value })} /></div>
+            <div className="field"><label>回应策略</label>
+              <select value={form.policy} onChange={(event) => setForm({ ...form, policy: event.target.value })}>
+                {policyOptions.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+              </select>
+            </div>
+            <div className="field"><label>注意力等级（1–5）</label><input type="number" min="1" max="5" value={form.attentionLevel} onChange={(event) => setForm({ ...form, attentionLevel: Number(event.target.value) })} /></div>
+            <div className="row">
+              <div className="row-main"><div className="row-title">允许管理指令</div><div className="row-sub">仍受指令用户组限制</div></div>
+              <button type="button" className={'switch' + (form.allowCommands ? ' is-on' : '')} aria-label="允许管理指令" onClick={() => setForm({ ...form, allowCommands: !form.allowCommands })} />
+            </div>
+            <div className="field" style={{ marginTop: 12 }}><label>备注</label><input value={form.note} onChange={(event) => setForm({ ...form, note: event.target.value })} /></div>
+            <div className="field"><label>定制提示词</label><textarea rows="3" value={form.customPrompt} onChange={(event) => setForm({ ...form, customPrompt: event.target.value })} placeholder="可选；描述机器人对这位成员的特别态度" /></div>
+            <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
+              <button type="button" className="btn" style={{ flex: 1 }} onClick={() => setEditing(false)}>取消</button>
+              <button type="button" className="btn btn-primary" style={{ flex: 1 }} disabled={saving} onClick={save}>{saving ? '保存中…' : '保存策略'}</button>
+            </div>
+          </> : <>
+            <div className="kv"><span>QQ</span><b>{selected.userId}</b></div>
+            <div className="kv"><span>群</span><b>{selected.groupName}</b></div>
+            <div className="kv"><span>身份</span><b>{selected.policyLabel}</b></div>
+            <div className="kv"><span>osu!</span><b>{selected.osu}</b></div>
+            <div className="kv"><span>等级</span><b>{selected.level}</b></div>
+            <div className="kv"><span>消息</span><b>{selected.count.toLocaleString()}</b></div>
+            <div className="kv"><span>最后活跃</span><b>{selected.lastText}</b></div>
+            <div style={{ display: 'flex', gap: 8, marginTop: 16 }}>
+              <button type="button" className="btn" style={{ flex: 1 }} onClick={startEdit}>编辑策略</button>
+              {selected.policy && <button type="button" className="btn" onClick={() => setPolicyConfirm(true)}>删除策略</button>}
+            </div>
+          </>}
+        </div> : <div className="card"><div className="note">还没有成员数据。</div></div>}
+
+        <div className="card">
+          <div className="card-head"><span className="card-title">最近动态</span><span className="muted" style={{ fontSize: 12 }}>最近 4 条</span></div>
+          <div className="rows">
+            {recentMessages.map((message) => <div className="row" key={message.id}>
+              <div className="row-main">
+                <div className="row-title" style={{ fontWeight: 500 }}>{String(message.content || '').slice(0, 60)}</div>
+                <div className="row-sub">{new Date(message.createdAt).toLocaleString('zh-CN', { hour12: false })}</div>
+              </div>
+            </div>)}
+            {!recentMessages.length && <div className="note">没有可显示的消息。</div>}
+          </div>
+        </div>
+      </div>
+    </div>
+    <ConfirmDialog
+      open={policyConfirm}
+      title="删除成员策略？"
+      description={selected ? `删除 ${selected.name} 的策略后，该成员会按所在群的默认策略处理；聊天记录与画像不受影响。` : ""}
+      confirmLabel="删除策略"
+      onCancel={() => setPolicyConfirm(false)}
+      onConfirm={() => { setPolicyConfirm(false); return removePolicy(); }}
+    />
+  </>;
 }

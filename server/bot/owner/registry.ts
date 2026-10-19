@@ -35,7 +35,6 @@ import {
   ownerSummarizeHandler,
   ownerSysfactsHandler,
   ownerThinkingHandler,
-  ownerUsageHandler,
   ownerWhyHandler,
 } from './system.js';
 import { ownerOsuHandler } from './osu.js';
@@ -69,7 +68,6 @@ export const OWNER_HANDLER_REGISTRY: Record<OwnerHandlerKey, OwnerHandler> = {
   sysfacts: ownerSysfactsHandler,
   summarize: ownerSummarizeHandler,
   preset: ownerPresetHandler,
-  usage: ownerUsageHandler,
   pause: ownerPauseHandler,
   resume: ownerPauseHandler,
   why: ownerWhyHandler,

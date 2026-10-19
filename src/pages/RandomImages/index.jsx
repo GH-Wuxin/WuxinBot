@@ -1,17 +1,12 @@
 import React, { useState } from 'react';
-import { Image as ImageIcon, RefreshCw } from 'lucide-react';
 import { usePollingResource } from '../../app/polling.js';
 import { api, apiUrl } from '../../lib/api.js';
-import { Button, Card, EmptyState, ErrorState, NumberInput, SectionHeader, SegmentedControl, SettingGroup, SettingRow, Switch } from '../../components/ui/index.jsx';
-import { formatNumber } from '../Dashboard/usageView.js';
+import { RefreshButton } from '../../components/ui/RefreshButton.jsx';
 
+// 版式对齐原型 PAGES.randomImages：数字卡 + 图池 + 发送设置 + 最近发送。
 const modeLabels = { silent: '静默', mention: '@ 回复', light: '轻度参与', natural: '自然群友', osu: '仅 osu! 指令' };
-const rateOptions = [
-  { value: 'low', label: '低频' },
-  { value: 'standard', label: '标准' },
-];
 
-function expectedInterval(base, step) {
+const expectedInterval = (base, step) => {
   let survival = 1;
   let mean = 0;
   for (let n = 1; n <= 20000; n += 1) {
@@ -20,25 +15,12 @@ function expectedInterval(base, step) {
     if (survival < 1e-12) break;
   }
   return Math.round(mean);
-}
-
-function shortLocalTime(value) {
-  const date = new Date(value);
-  if (!Number.isFinite(date.getTime())) return '';
-  const pad = (number) => String(number).padStart(2, '0');
-  return `${date.getMonth() + 1}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}`;
-}
-
-function shortPoolName(file) {
-  const text = String(file || '');
-  const base = text.endsWith('.png') ? text.slice(0, -4) : text;
-  return base.startsWith('pippi-') ? base.slice(6) : base;
-}
-
-function displayGroupName(group) {
+};
+const displayGroupName = (group) => {
   const name = String(group?.name || '').trim();
   return name && name !== String(group?.groupId || '') ? name : `群 ${group?.groupId || ''}`;
-}
+};
+const num = (value) => Number(value || 0).toLocaleString('en-US');
 
 export function RandomImagesPage({ db, refreshState, saveSettings }) {
   const current = db.settings.randomImage || {};
@@ -50,11 +32,40 @@ export function RandomImagesPage({ db, refreshState, saveSettings }) {
   const standardStep = Number(standard.step ?? 0.0005);
   const lowStep = Number(low.step ?? 0.0002);
   const [pending, setPending] = useState('');
+  const [groupQuery, setGroupQuery] = useState('');
+  const [bulkPending, setBulkPending] = useState(false);
   const [operationError, setOperationError] = useState('');
   const stats = usePollingResource(() => api('/api/random-image', { timeoutMs: 15000 }), 15000);
   const snapshot = stats.data || {};
   const statByGroup = new Map((snapshot.groups || []).map((group) => [String(group.groupId), group]));
   const recent = snapshot.recent || [];
+  const participating = (db.groups || []).filter((group) => group.randomImageEnabled === true);
+  const allGroups = db.groups || [];
+  const normalizedQuery = groupQuery.trim().toLowerCase();
+  const visibleGroups = normalizedQuery
+    ? allGroups.filter((group) => String(group.groupId).includes(normalizedQuery)
+      || String(group.name || '').toLowerCase().includes(normalizedQuery))
+    : allGroups;
+  const toggleAll = async (next) => {
+    setBulkPending(true);
+    try {
+      for (const group of visibleGroups) {
+        if ((group.randomImageEnabled === true) === next) continue;
+        await api('/api/groups', { method: 'POST', body: { groupId: group.groupId, randomImageEnabled: next } });
+      }
+      await refreshState();
+    } finally {
+      setBulkPending(false);
+    }
+  };
+  // 最近发送要标群名，不是群号：优先用群配置里的名字，取不到再退回服务端返回的名字。
+  const groupNames = Object.fromEntries((db.groups || []).map((group) => [String(group.groupId), String(group.name || '').trim()]));
+  const groupNameOf = (item) => {
+    const byConfig = groupNames[String(item?.groupId)] || '';
+    if (byConfig && byConfig !== String(item?.groupId)) return byConfig;
+    const fromServer = String(item?.groupName || '').trim();
+    return fromServer || '未知群聊';
+  };
   const legacyRuntime = (db.groups || []).some((group) => !Object.prototype.hasOwnProperty.call(group, 'randomImageEnabled'));
 
   const writeSettings = async (patch) => {
@@ -108,65 +119,113 @@ export function RandomImagesPage({ db, refreshState, saveSettings }) {
     }
   };
 
-  return <div className="random-image-page">
-    <SectionHeader eyebrow="运行与群聊" title="随机发图" description="偶尔向已启用的群单独发送一张表情包，与文字回复模式、模型和群聊门控相互独立。" actions={<Button icon={RefreshCw} onClick={() => { refreshState(); stats.refresh(); }}>刷新</Button>} />
-    {operationError && <ErrorState title="保存失败" message={operationError} />}
-    {legacyRuntime && <ErrorState title="服务需要重启" message="当前 WuxinBot 还没有加载独立随机发图模块。请手动重启 WuxinBot 服务，不要重启全部组件。" />}
-    <div className="random-image-page__top-grid">
-      <Card>
-        <SettingGroup title="模块设置" description="群里每有一条消息就掷一次骰子，命中后只发送图片，不附带文字。">
-          <SettingRow title="启用模块" description="关闭后所有群都停止随机发图。" control={<Switch checked={enabled} disabled={pending === 'module'} onChange={(event) => writeSettings({ enabled: event.target.checked })} />} />
-          <SettingRow title="低频" description={`基础概率；约 ${expectedInterval(lowBase, lowStep)} 条发言出一张。`} control={<NumberInput value={Number((lowBase * 100).toFixed(3))} min={0} max={100} step={0.01} suffix="%" onChange={(value) => writeSettings({ lowBase: value / 100 })} />} />
-          <SettingRow title="标准" description={`基础概率；约 ${expectedInterval(standardBase, standardStep)} 条发言出一张。`} control={<NumberInput value={Number((standardBase * 100).toFixed(3))} min={0} max={100} step={0.01} suffix="%" onChange={(value) => writeSettings({ standardBase: value / 100 })} />} />
-        </SettingGroup>
-      </Card>
-      <Card>
-        <SectionHeader title="图池状态" />
-        <div className="random-image-page__pool-summary">
-          <div><strong>{formatNumber(snapshot.pool?.count || 0)}</strong><span>张图片</span></div>
-          <div><strong>{formatNumber(snapshot.totals?.rolls || 0)}</strong><span>次掷骰</span></div>
-          <div><strong>{formatNumber(snapshot.totals?.hits || 0)}</strong><span>次命中</span></div>
-        </div>
-        <p className="osu-muted">图池目录会自动扫描。加入或移除图片后，最多约 30 秒内生效。</p>
-      </Card>
+  return <>
+    <div className="page-head">
+      <div><h1>随机发图</h1><p>独立的随机表情包模块，和聊天回复互不影响。</p></div>
+      <div style={{ display: 'flex', gap: 8 }}>
+        <RefreshButton onClick={() => Promise.all([refreshState(), stats.refresh()])} />
+      </div>
     </div>
 
-    <Card>
-      <SettingGroup title="参与群" description="每个群单独控制是否发图和发图频率；这里的设置不会改变该群的文字回复模式。">
-        <div className="random-image-page__groups">
-          {(db.groups || []).map((group) => {
-            const groupId = String(group.groupId);
-            const stat = statByGroup.get(groupId);
-            const groupEnabled = group.randomImageEnabled === true;
-            const rate = group.randomImageRate === 'low' ? 'low' : 'standard';
-            return <div className={'random-image-page__group' + (groupEnabled ? '' : ' is-disabled')} key={groupId}>
-              <div className="random-image-page__group-head">
-                <div><strong>{displayGroupName(group)}</strong><small>{groupId} · 文字模式：{modeLabels[group.mode] || group.mode || '未知'}</small></div>
-                <Switch checked={groupEnabled} disabled={pending === groupId || !enabled} onChange={(event) => saveGroup(group, { randomImageEnabled: event.target.checked })} label="参与随机发图" description={groupEnabled ? '已开启' : '已关闭'} />
-              </div>
-              <div className="random-image-page__group-controls">
-                <span>发图频率</span>
-                <SegmentedControl value={rate} onChange={(value) => saveGroup(group, { randomImageRate: value })} label={`${displayGroupName(group)}发图频率`} options={rateOptions} />
-              </div>
-              <div className="random-image-page__group-stats">
-                {stat?.participates ? <><span>掷骰 {formatNumber(stat.rolls)}</span><span>命中 {formatNumber(stat.hits)}</span><span className="osu-text-mint">当前 {(stat.chance * 100).toFixed(2)}%</span><span>{stat.lastFile || '还没发过'}</span></> : <span className="osu-muted">{enabled && groupEnabled ? '等待第一条消息' : '模块或本群未开启'}</span>}
-              </div>
-            </div>;
-          })}
-          {!(db.groups || []).length && <EmptyState title="还没有配置群" description="先在“群聊”页添加一个群，再回来开启随机发图。" />}
-        </div>
-      </SettingGroup>
-    </Card>
+    {operationError && <div className="note" style={{ color: 'var(--red)', marginBottom: 12 }}>{operationError}</div>}
+    {legacyRuntime && <div className="note" style={{ color: 'var(--amber)', marginBottom: 12 }}>当前 WuxinBot 还没有加载独立随机发图模块。请手动重启 WuxinBot 服务，不要重启全部组件。</div>}
 
-    <Card>
-      <SettingGroup title="最近发送" description="各群流水合并，最新的在前；只保留每群最近 20 条。">
-        {recent.length ? <div className="osu-random-image__recent">
-          {recent.map((item) => <figure key={item.groupId + item.at + item.file}>
-            <img src={apiUrl('/api/random-image/file?name=' + encodeURIComponent(item.file))} alt={item.file} loading="lazy" />
-            <figcaption>{shortPoolName(item.file)}<small>{item.groupName || item.groupId} · {shortLocalTime(item.at)}</small></figcaption>
+    <div className="grid grid-4" style={{ marginBottom: 16 }}>
+      <div className="card stat"><div className="stat-label">图池</div><div className="stat-value">{num(snapshot.pool?.count)}</div><div className="stat-note">张图片 · 自动扫描</div></div>
+      <div className="card stat"><div className="stat-label">掷骰</div><div className="stat-value">{num(snapshot.totals?.rolls)}</div><div className="stat-note">每有一条消息掷一次</div></div>
+      <div className="card stat"><div className="stat-label">命中</div><div className="stat-value">{num(snapshot.totals?.hits)}</div><div className="stat-note">累计发出图片</div></div>
+      <div className="card stat"><div className="stat-label">参与群</div><div className="stat-value">{participating.length}</div><div className="stat-note">{enabled ? '模块已开启' : '模块已关闭'}</div></div>
+    </div>
+
+    <div className="grid grid-main" style={{ alignItems: 'start' }}>
+      <div className="card">
+        <div className="card-head"><span className="card-title">最近发送</span><span className="muted" style={{ fontSize: 12 }}>最多 20 张 · 按发送时间倒序</span></div>
+        {recent.length ? <div className="grid-tiles">
+          {recent.slice(0, 20).map((item) => <figure key={item.groupId + item.at + item.file} className="tile" style={{ margin: 0, overflow: 'hidden', position: 'relative' }}>
+            <img
+              src={apiUrl('/api/random-image/file?name=' + encodeURIComponent(item.file))}
+              alt={item.file}
+              loading="lazy"
+              style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+            />
+            <figcaption
+              title={groupNameOf(item)}
+              style={{
+                position: 'absolute', left: 0, right: 0, bottom: 0, padding: '16px 8px 6px',
+                color: '#fff', fontSize: 11, fontWeight: 600, letterSpacing: '.01em',
+                background: 'linear-gradient(transparent, rgba(0, 0, 0, .78))',
+                whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+              }}
+            >{groupNameOf(item)}</figcaption>
           </figure>)}
-        </div> : <p className="osu-muted">{stats.loading ? '正在读取…' : '还没有发过图'}</p>}
-      </SettingGroup>
-    </Card>
-  </div>;
+        </div> : <div className="note">{stats.loading ? '正在读取…' : '还没有发过图。'}</div>}
+      </div>
+
+      <div className="stack">
+        <div className="card">
+          <div className="card-head"><span className="card-title">发送设置</span><span className={'chip' + (enabled ? ' chip--mint' : '')}>{enabled ? '已开启' : '已关闭'}</span></div>
+          <div className="row">
+            <div className="row-main"><div className="row-title">总开关</div><div className="row-sub">关闭后所有群都停止随机发图</div></div>
+            <button type="button" className={'switch' + (enabled ? ' is-on' : '')} aria-label="随机发图总开关" disabled={pending === 'module'} onClick={() => writeSettings({ enabled: !enabled })} />
+          </div>
+          <div className="kv"><span>低频基准</span><b>{(lowBase * 100).toFixed(3)}% · 约 {expectedInterval(lowBase, lowStep)} 条出一张</b></div>
+          <div className="kv"><span>标准基准</span><b>{(standardBase * 100).toFixed(3)}% · 约 {expectedInterval(standardBase, standardStep)} 条出一张</b></div>
+          <div className="field" style={{ marginTop: 12 }}>
+            <label>低频基础概率（%）</label>
+            <input type="number" min="0" max="100" step="0.01" value={Number((lowBase * 100).toFixed(3))} onChange={(event) => writeSettings({ lowBase: Number(event.target.value) / 100 })} />
+          </div>
+          <div className="field">
+            <label>标准基础概率（%）</label>
+            <input type="number" min="0" max="100" step="0.01" value={Number((standardBase * 100).toFixed(3))} onChange={(event) => writeSettings({ standardBase: Number(event.target.value) / 100 })} />
+          </div>
+          <div className="note">群里每有一条消息就掷一次骰子，命中后只发送图片，不附带文字。</div>
+        </div>
+
+      </div>
+    </div>
+
+    <div className="card" style={{ marginTop: 16 }}>
+      <div className="card-head">
+        <span className="card-title">参与群</span>
+        <span className="muted" style={{ fontSize: 12 }}>
+          共 {allGroups.length} 群 · 已启用 {participating.length} 群 · 不影响文字回复模式
+        </span>
+      </div>
+      <div style={{ display: 'flex', gap: 8, marginBottom: 10, flexWrap: 'wrap' }}>
+        <input
+          className="input"
+          style={{ flex: '1 1 220px', minWidth: 0 }}
+          placeholder="按群名或群号筛选"
+          value={groupQuery}
+          onChange={(event) => setGroupQuery(event.target.value)}
+        />
+        <button type="button" className="btn btn-sm" disabled={bulkPending || !enabled || !visibleGroups.length} onClick={() => toggleAll(true)}>全部启用</button>
+        <button type="button" className="btn btn-sm btn-ghost" disabled={bulkPending || !enabled || !visibleGroups.length} onClick={() => toggleAll(false)}>全部关闭</button>
+      </div>
+      <div className="rows" style={{ maxHeight: 420, overflowY: 'auto' }}>
+        {visibleGroups.map((group) => {
+          const groupId = String(group.groupId);
+          const stat = statByGroup.get(groupId);
+          const groupEnabled = group.randomImageEnabled === true;
+          const rate = group.randomImageRate === 'low' ? 'low' : 'standard';
+          return <div className="row" key={groupId}>
+            <div className="row-main" style={{ minWidth: 0 }}>
+              <div className="row-title" style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={displayGroupName(group)}>{displayGroupName(group)}</div>
+              <div className="row-sub" style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                {groupId} · 文字模式 {modeLabels[group.mode] || group.mode || '未知'}
+                {stat?.participates ? ` · 掷骰 ${num(stat.rolls)} · 命中 ${num(stat.hits)} · 当前 ${(stat.chance * 100).toFixed(2)}%` : ''}
+              </div>
+            </div>
+            <div className="seg" style={{ marginRight: 8, flex: '0 0 auto' }}>
+              <button type="button" className={rate === 'low' ? 'is-active' : ''} disabled={pending === groupId} onClick={() => saveGroup(group, { randomImageRate: 'low' })}>低频</button>
+              <button type="button" className={rate === 'standard' ? 'is-active' : ''} disabled={pending === groupId} onClick={() => saveGroup(group, { randomImageRate: 'standard' })}>标准</button>
+            </div>
+            <button type="button" className={'switch' + (groupEnabled ? ' is-on' : '')} aria-label={displayGroupName(group) + ' 参与随机发图'} disabled={pending === groupId || !enabled} onClick={() => saveGroup(group, { randomImageEnabled: !groupEnabled })} />
+          </div>;
+        })}
+        {!allGroups.length && <div className="note">还没有配置群，先去「群聊」添加一个。</div>}
+        {allGroups.length > 0 && !visibleGroups.length && <div className="note">没有匹配「{groupQuery}」的群。</div>}
+      </div>
+    </div>
+  </>;
 }

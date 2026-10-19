@@ -72,7 +72,6 @@ export const OWNER_FALLBACK_HELP = `Wuxin 指令 · 都可以简写为 /w
 
 【系统】
 /w preset class|away|sleep|active|silent|debug · 场景预设
-/w usage · 今日用量
 /w pause · 暂停
 /w resume · 恢复
 /w why · 最近为什么回/没回

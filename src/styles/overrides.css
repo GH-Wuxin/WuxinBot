@@ -1,0 +1,134 @@
+/* 对原型样式的最小修正，不改原型本体。 */
+
+/* 原型用字体字符 "⌕" 做放大镜，字形基线和 34px 输入框对不齐；
+   换成居中的 SVG，位置和尺寸保持一致。 */
+.shell-search::before { content: none; }
+.shell-search__icon {
+  position: absolute;
+  left: 11px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 13px;
+  height: 13px;
+  color: var(--muted);
+  pointer-events: none;
+}
+
+/* toast 是纯提示，不该挡住点击。 */
+.toast { pointer-events: none; }
+
+/* 暂停态：去掉右下角那个「已暂停 · 不会回复任何消息」胶囊。 */
+body.is-paused::after { content: none; display: none; }
+
+/* 暂停态换色做彻底：原型只把 --pink 变量换成琥珀，但按钮、hero、
+   数字、条形这些地方写死了粉色，变量换不到，这里一起补齐。 */
+body.is-paused .btn-primary {
+  background: linear-gradient(135deg, #ffd964, #f2b600);
+  color: #2a1d0b;
+  box-shadow: 0 8px 22px rgba(255, 204, 34, 0.32);
+}
+body.is-paused .btn-primary:hover {
+  background: linear-gradient(135deg, #ffe38a, #ffc400);
+  box-shadow: 0 10px 28px rgba(255, 204, 34, 0.45);
+}
+body.is-paused .btn:hover { border-color: var(--pink); }
+
+body.is-paused .hero {
+  border-color: rgba(255, 204, 34, 0.26);
+  background:
+    radial-gradient(600px 240px at 88% -20%, rgba(255, 204, 34, 0.22), transparent 70%),
+    linear-gradient(120deg, #201d14 0%, #17171a 48%, #1c1910 100%);
+}
+body.is-paused .hero::after {
+  border-color: rgba(255, 204, 34, 0.22);
+  box-shadow: 0 0 0 28px rgba(255, 204, 34, 0.05), 0 0 0 60px rgba(255, 204, 34, 0.035), 0 0 0 96px rgba(255, 204, 34, 0.02);
+}
+body.is-paused .hero-eyebrow { color: #ffdb70; }
+body.is-paused .hero-eyebrow::before { background: var(--amber); box-shadow: 0 0 0 4px rgba(255, 204, 34, 0.18); }
+body.is-paused .hero h2 em { background: linear-gradient(135deg, #ffe08a, #ffc400); -webkit-background-clip: text; background-clip: text; color: transparent; }
+
+body.is-paused .stat-value { background: linear-gradient(180deg, #ffffff 30%, #ffe08a 100%); -webkit-background-clip: text; background-clip: text; color: transparent; }
+body.is-paused .stat::after {
+  background-image: linear-gradient(180deg, rgba(255, 204, 34, 0.55), rgba(255, 204, 34, 0.05));
+}
+
+body.is-paused .card:hover { border-color: rgba(255, 204, 34, 0.34); }
+body.is-paused .chip--pink { color: #ffe08a; border-color: rgba(255, 204, 34, 0.34); background: rgba(255, 204, 34, 0.14); }
+body.is-paused .meter i,
+body.is-paused .bar i { background: linear-gradient(90deg, #ffdb70, var(--amber)); box-shadow: 0 0 10px rgba(255, 204, 34, 0.4); }
+body.is-paused .chart-tip b { color: #ffdb70; }
+
+/* ===== 日志时间线 ===== */
+
+/* 阶段之间的连接线改成流动虚线。 */
+.timeline .tl::before {
+  background: repeating-linear-gradient(to bottom, rgba(255, 255, 255, 0.32) 0 4px, transparent 4px 9px);
+  background-size: 1px 9px;
+  animation: tl-flow 900ms linear infinite;
+}
+@keyframes tl-flow {
+  from { background-position: 0 0; }
+  to { background-position: 0 9px; }
+}
+
+/* 正在执行的那一步：圆点呼吸。 */
+.tl.is-live .tl-dot { animation: tl-breathe 1.8s ease-in-out infinite; }
+@keyframes tl-breathe {
+  0%, 100% { box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.06); }
+  50% { box-shadow: 0 0 0 8px rgba(255, 102, 170, 0.16); }
+}
+
+/* 每一行轻微悬浮反馈。 */
+.tl {
+  padding: 4px 8px 4px 0;
+  border-radius: 10px;
+  transition: background 160ms var(--ease);
+}
+.tl:hover { background: rgba(255, 255, 255, 0.025); }
+
+/* ===== 运行控制：启动中动效 ===== */
+@keyframes proc-spin { to { transform: rotate(360deg); } }
+.proc-spin { animation: proc-spin 0.9s linear infinite; }
+
+@keyframes proc-shimmer {
+  0% { background-position: -180% 0; }
+  100% { background-position: 180% 0; }
+}
+.proc.is-starting {
+  border-color: rgba(255, 102, 170, 0.55);
+  background-image: linear-gradient(100deg, transparent 35%, rgba(255, 102, 170, 0.10) 50%, transparent 65%);
+  background-size: 200% 100%;
+  animation: proc-shimmer 1.4s linear infinite;
+}
+
+/* 时间线里的长文本：必须换行，不能撑破卡片。 */
+.trace-pre {
+  margin: 6px 0 0;
+  padding: 8px 10px;
+  max-height: 340px;
+  overflow: auto;
+  font-size: 12px;
+  line-height: 1.65;
+  color: var(--soft);
+  white-space: pre-wrap;
+  word-break: break-word;
+  overflow-wrap: anywhere;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  font-family: var(--num), "Segoe UI", sans-serif;
+}
+.timeline details > summary { cursor: pointer; color: var(--muted); font-size: 12px; margin-top: 6px; }
+.timeline details[open] > summary { color: var(--soft); }
+
+/* 刷新按钮：转圈 + 完成打勾 */
+@keyframes refresh-spin { to { transform: rotate(360deg); } }
+.refresh-spin { animation: refresh-spin 0.75s linear infinite; }
+.btn.is-refreshed {
+  color: var(--mint);
+  border-color: rgba(92, 214, 180, 0.55);
+}
+.btn.is-refreshed svg { color: var(--mint); }
+
+/* 局部波纹：不再整页铺开，只在按钮上扩散 */
+.ripple.is-local { inset: auto; z-index: 75; }

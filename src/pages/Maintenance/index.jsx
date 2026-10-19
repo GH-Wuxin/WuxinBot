@@ -1,14 +1,38 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { ArchiveRestore, DatabaseBackup, Play, RotateCcw, Square, Trash2 } from 'lucide-react';
-import { Button, Card, EmptyState, InlineHelp, SectionHeader } from '../../components/ui/index.jsx';
 import { api } from '../../lib/api.js';
+import { ConfirmDialog } from '../../components/ui/index.jsx';
+
+// 版式对齐原型 PAGES.maintenance：左「备份」表 + 右「重算任务」。
+const typeLabels = { manual: '手动', auto: '自动', 'pre-restore': '恢复前' };
+const backupTime = (backup) => {
+  if (backup?.createdAt) return new Date(backup.createdAt).toLocaleString('zh-CN', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false });
+  const match = /(\d{4})-(\d{2})-(\d{2})T(\d{2})-(\d{2})-(\d{2})/.exec(String(backup?.name || ''));
+  if (!match) return '—';
+  const [, year, month, day, hour, minute] = match;
+  return `${Number(month)}/${Number(day)} ${hour}:${minute}`;
+};
+const backupKind = (backup) => {
+  const known = typeLabels[backup?.type];
+  if (known) return known;
+  const name = String(backup?.name || '');
+  if (/^auto/i.test(name)) return '自动';
+  if (/^manual/i.test(name)) return '手动';
+  if (/pre-restore/i.test(name)) return '恢复前';
+  if (/pre-config/i.test(name)) return '改配置前';
+  return '备份';
+};
 
 export function MaintenancePage() {
-  return <div className="console-page maintenance-page">
-    <SectionHeader title="维护与恢复" />
-    <RecalcPanel />
-    <BackupsPanel />
-  </div>;
+  return <>
+    <div className="page-head">
+      <div><h1>维护</h1><p>备份、恢复、重算，都在这里，谨慎操作。</p></div>
+      <div />
+    </div>
+    <div className="grid grid-2" style={{ alignItems: 'start' }}>
+      <BackupsPanel />
+      <RecalcPanel />
+    </div>
+  </>;
 }
 
 function RecalcPanel() {
@@ -27,38 +51,169 @@ function RecalcPanel() {
     return () => clearInterval(timer);
   }, []);
   const percent = state.total > 0 ? Math.round(state.done / state.total * 100) : 0;
-  return <Card className="console-section maintenance-recalc">
-    <div className="console-section__title"><RotateCcw size={18} /><div><h3>全局画像重算</h3><p>后台重算个人、群聊与关系画像，不阻塞聊天。</p></div></div>
-    {state.running ? <div className="recalc-progress"><div><strong>{state.label || '正在重算'} · {percent}%</strong><span>{state.done}/{state.total}</span></div><span className="recalc-progress__track"><i style={{ width: `${percent}%` }} /></span><Button size="sm" variant="warning" icon={Square} onClick={() => api('/api/recalc/stop', { method: 'POST' })}>停止重算</Button></div> : <div className="maintenance-action-row"><div><strong>当前没有重算任务</strong><span>QQ 端可使用 /w recalc 查看进度。</span></div><Button variant="primary" icon={Play} onClick={() => api('/api/recalc', { method: 'POST' })}>开始全局重算</Button></div>}
-  </Card>;
+
+  return <div className="stack">
+    <div className="card">
+      <div className="card-head">
+        <span className="card-title">重算任务</span>
+        <span className={'chip' + (state.running ? ' chip--amber' : ' chip--mint')}>{state.running ? '进行中' : '空闲'}</span>
+      </div>
+      <div className="kv"><span>当前任务</span><b>{state.running ? (state.label || '正在重算') : '无'}</b></div>
+      <div className="kv"><span>进度</span><b>{state.running ? `${state.done} / ${state.total}` : '—'}</b></div>
+      <div className="kv"><span>结果</span><b>{state.stopped ? '已停止' : state.running ? `${percent}%` : '待启动'}</b></div>
+      <div className="meter" style={{ marginTop: 14 }}><i style={{ width: percent + '%' }} /></div>
+      <div className="note" style={{ marginTop: 8 }}>后台重算个人、群聊与关系画像，不阻塞聊天；QQ 端可用 /w recalc 查看进度。</div>
+      <div style={{ display: 'flex', gap: 8, marginTop: 14 }}>
+        {state.running
+          ? <button type="button" className="btn" style={{ flex: 1 }} onClick={() => api('/api/recalc/stop', { method: 'POST' })}>停止重算</button>
+          : <button type="button" className="btn btn-primary" style={{ flex: 1 }} onClick={() => api('/api/recalc', { method: 'POST' })}>全部重算</button>}
+      </div>
+    </div>
+
+    <div className="card">
+      <div className="card-head"><span className="card-title">备份规则</span></div>
+      <div className="note">自动备份每 8 小时一次；保留份数取上方设置（0 = 不限），超出的按时间从旧到新清理。恢复前会自动再备份当前状态。手动备份默认不参与自动清理，只有设了上限或手动点「清理超限」才会被裁掉。</div>
+    </div>
+  </div>;
 }
 
 function BackupsPanel() {
   const [backups, setBackups] = useState([]);
   const [working, setWorking] = useState(false);
   const [error, setError] = useState('');
+  const [confirm, setConfirm] = useState(null);
+  const [retention, setRetention] = useState({ auto: 10, preRestore: 5, manual: 0 });
+  const [retentionDraft, setRetentionDraft] = useState({ auto: '10', preRestore: '5', manual: '0' });
   const load = async () => {
-    try { const data = await api('/api/backups'); setBackups(data.backups || []); setError(''); }
+    try {
+      const data = await api('/api/backups');
+      setBackups(data.backups || []);
+      if (data.retention) {
+        setRetention(data.retention);
+        setRetentionDraft({ auto: String(data.retention.auto), preRestore: String(data.retention.preRestore), manual: String(data.retention.manual) });
+      }
+      setError('');
+    }
     catch (cause) { setError(cause.message || String(cause)); }
   };
   useEffect(() => { load(); }, []);
-  const create = async () => { setWorking(true); try { await api('/api/backups', { method: 'POST', body: { type: 'manual' } }); await load(); } finally { setWorking(false); } };
+  const create = async () => {
+    setWorking(true);
+    try { await api('/api/backups', { method: 'POST', body: { type: 'manual' } }); await load(); }
+    finally { setWorking(false); }
+  };
   const restore = async (name) => {
-    if (!window.confirm('恢复将覆盖当前运行数据，恢复前会自动备份当前状态。确定恢复？')) return;
     setWorking(true);
     await api(`/api/backups/${name}/restore`, { method: 'POST' });
     window.location.reload();
   };
   const remove = async (name) => {
-    if (!window.confirm(`确定删除备份 ${name}？`)) return;
     setWorking(true);
-    try { await api(`/api/backups/${name}`, { method: 'DELETE' }); await load(); } finally { setWorking(false); }
+    try { await api(`/api/backups/${name}`, { method: 'DELETE' }); await load(); }
+    finally { setWorking(false); }
   };
-  const manual = backups.filter((backup) => backup.type === 'manual');
-  const automatic = backups.filter((backup) => backup.type === 'auto' || backup.type === 'pre-restore');
-  const renderBackup = (backup, removable) => <article className="console-list-item backup-row" key={backup.name}><DatabaseBackup size={17} /><div><strong>{backup.name}</strong><span>{(backup.size / 1024).toFixed(1)} KB · {backup.createdAt ? new Date(backup.createdAt).toLocaleString('zh-CN') : ''}</span></div><div className="console-actions"><Button size="sm" icon={ArchiveRestore} disabled={working} onClick={() => restore(backup.name)}>恢复</Button>{removable && <Button size="sm" variant="danger-ghost" icon={Trash2} disabled={working} onClick={() => remove(backup.name)}>删除</Button>}</div></article>;
-  return <div className="maintenance-backups">
-    <Card className="console-section"><div className="console-section__title"><DatabaseBackup size={18} /><div><h3>手动备份 · {manual.length}</h3><p>手动备份不会自动删除。</p></div></div><Button variant="primary" icon={DatabaseBackup} loading={working} onClick={create}>立即手动备份</Button>{error && <InlineHelp tone="danger">{error}</InlineHelp>}<div className="console-list backup-list">{manual.map((backup) => renderBackup(backup, true))}{!manual.length && <EmptyState title="暂无手动备份" />}</div></Card>
-    <Card className="console-section"><div className="console-section__title"><ArchiveRestore size={18} /><div><h3>自动备份 · {automatic.length}</h3><p>自动备份最多保留 10 份，恢复前备份最多保留 5 份。</p></div></div><div className="console-list backup-list">{automatic.slice(0, 10).map((backup) => renderBackup(backup, false))}{!automatic.length && <EmptyState title="暂无自动备份" description="启动后每 8 小时自动创建一份。" />}</div></Card>
+  const saveRetention = async () => {
+    setWorking(true);
+    try {
+      await api('/api/backups/retention', {
+        method: 'POST',
+        body: {
+          auto: Number(retentionDraft.auto),
+          preRestore: Number(retentionDraft.preRestore),
+          manual: Number(retentionDraft.manual),
+        },
+      });
+      await load();
+    } catch (cause) {
+      setError(cause?.message || String(cause));
+    } finally {
+      setWorking(false);
+    }
+  };
+  const prune = async (olderThanDays) => {
+    setWorking(true);
+    try {
+      await api('/api/backups/prune', { method: 'POST', body: olderThanDays ? { olderThanDays } : {} });
+      await load();
+    } finally {
+      setWorking(false);
+    }
+  };
+  const totalSize = backups.reduce((sum, backup) => sum + Number(backup.size || 0), 0);
+
+    const sorted = [...backups].sort((left, right) => new Date(right.createdAt || 0) - new Date(left.createdAt || 0));
+
+  return <div className="card">
+    <div className="card-head">
+      <span className="card-title">备份</span>
+      <button type="button" className="btn btn-sm" disabled={working} onClick={create}>{working ? '处理中…' : '立即备份'}</button>
+    </div>
+    {error && <div className="note" style={{ color: 'var(--red)' }}>{error}</div>}
+    <div className="note" style={{ display: 'flex', flexWrap: 'wrap', gap: 10, alignItems: 'center', marginBottom: 10 }}>
+      <span className="muted">保留份数（0 = 不限）</span>
+      {[['auto', '自动'], ['preRestore', '恢复前'], ['manual', '手动']].map(([key, label]) => (
+        <label key={key} style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+          <span className="muted" style={{ fontSize: 12 }}>{label}</span>
+          <input
+            className="input"
+            style={{ width: 64, padding: '4px 8px' }}
+            inputMode="numeric"
+            value={retentionDraft[key]}
+            onChange={(event) => setRetentionDraft((current) => ({ ...current, [key]: event.target.value.replace(/[^0-9]/g, '') }))}
+          />
+        </label>
+      ))}
+      <button type="button" className="btn btn-sm" disabled={working} onClick={saveRetention}>保存</button>
+      <button type="button" className="btn btn-sm btn-ghost" disabled={working} onClick={() => setConfirm({ kind: 'prune' })}>清理超限</button>
+      <button type="button" className="btn btn-sm btn-ghost" disabled={working} onClick={() => setConfirm({ kind: 'prune-old' })}>清理 30 天前</button>
+      <span className="muted" style={{ fontSize: 12, marginLeft: 'auto' }}>
+        共 {backups.length} 份 · {(totalSize / 1024 / 1024).toFixed(1)} MB
+      </span>
+    </div>
+    <div style={{ maxHeight: 520, overflowY: 'auto' }}>
+      <table className="table" style={{ whiteSpace: 'nowrap' }}>
+        <thead><tr><th>时间</th><th>大小</th><th>类型</th><th style={{ textAlign: 'right', width: 150 }}>操作</th></tr></thead>
+        <tbody>
+          {sorted.map((backup) => <tr key={backup.name}>
+            <td className="muted" title={backup.name}>{backupTime(backup)}</td>
+            <td>{(Number(backup.size || 0) / 1024).toFixed(1)} KB</td>
+            <td><span className="chip">{backupKind(backup)}</span></td>
+            <td style={{ textAlign: 'right' }}>
+              <button type="button" className="btn btn-sm" disabled={working} onClick={() => setConfirm({ kind: 'restore', name: backup.name })}>恢复</button>
+              <button type="button" className="btn btn-sm btn-ghost" disabled={working} style={{ marginLeft: 6 }} onClick={() => setConfirm({ kind: 'delete', name: backup.name })}>删除</button>
+            </td>
+          </tr>)}
+          {!sorted.length && <tr><td colSpan="4" className="muted">暂无备份。</td></tr>}
+        </tbody>
+      </table>
+    </div>
+    <ConfirmDialog
+      open={Boolean(confirm)}
+      title={confirm?.kind === 'delete'
+        ? `删除备份 ${confirm.name}？`
+        : confirm?.kind === 'prune'
+          ? '按保留份数清理？'
+          : confirm?.kind === 'prune-old'
+            ? '删除 30 天前的自动备份？'
+            : '恢复这份备份？'}
+      description={confirm?.kind === 'delete'
+        ? '删除后无法找回。删掉自动备份不会影响当前运行数据，下次按计划会再生成新的。'
+        : confirm?.kind === 'prune'
+          ? '超过保留份数的旧备份会被删除；手动备份只在设置了上限时才会被裁掉。'
+          : confirm?.kind === 'prune-old'
+            ? '只会删除 30 天前的自动/恢复前备份，手动备份保留。'
+            : '恢复将覆盖当前运行数据，恢复前会自动备份当前状态。'}
+      confirmLabel={confirm?.kind === 'delete' ? '删除' : confirm?.kind === 'prune' || confirm?.kind === 'prune-old' ? '清理' : '恢复'}
+      busy={working}
+      onCancel={() => setConfirm(null)}
+      onConfirm={() => {
+        const target = confirm;
+        setConfirm(null);
+        if (!target) return;
+        if (target.kind === 'prune') return prune();
+        if (target.kind === 'prune-old') return prune(30);
+        return target.kind === 'delete' ? remove(target.name) : restore(target.name);
+      }}
+    />
   </div>;
 }

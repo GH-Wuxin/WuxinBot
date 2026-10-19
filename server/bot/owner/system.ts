@@ -1,5 +1,5 @@
 // Owner command handlers for /w system commands (why/pause/prompt/refresh/recalc/
-// ping/usage/model/search/thinking/sysfacts/summarize). Decomposed from
+// ping/model/search/thinking/sysfacts/summarize). Decomposed from
 // server/bot/ownerCommands.ts; permission preambles are handled by dispatch.
 import { defaultPrompt, readDb, updateDb, nowIso } from '../../store.js';
 import { applyUsageTotals, usageEventFields } from '../../usage.js';
@@ -14,12 +14,6 @@ import { maybeUpdateMemoryProfile } from '../memory.js';
 import { updateGroupProfile } from '../groupProfile.js';
 import { updateRelationshipProfile } from '../relationshipProfile.js';
 import { completeChat } from '../llm.js';
-import {
-  sumUsageSince,
-  startOfLocalDayTime,
-  getPricing,
-  calcCost,
-} from '../prompt.js';
 import { activeModelName, activateModelProfile, activeProviderLabel, updateProviderSettings } from '../../modelConfig.js';
 import { isSearchAvailable, getLastSearchStatus } from '../search.js';
 import { sendForwardText } from '../reply.js';
@@ -210,45 +204,6 @@ export async function ownerPingHandler(ctx: OwnerHandlerContext): Promise<OwnerC
   const reply = 'pong，我在。';
   if (ctx.sendMessage) await ctx.sendMessage(ctx.event, reply);
   return { replied: Boolean(ctx.sendMessage), reason: reply };
-}
-
-export async function ownerUsageHandler(ctx: OwnerHandlerContext): Promise<OwnerCommandResult> {
-  const db = readDb();
-  const today = sumUsageSince(db, startOfLocalDayTime());
-
-  // Calculate today's cost from usageEvents (per-model accurate)
-  const todayStart = startOfLocalDayTime();
-  const todayByModel: Record<string, { prompt: number; completion: number; requests: number }> = {};
-  for (const e of (db.usageEvents || [])) {
-    if (e.accountingExcluded || e.kind === 'rewrite-reply') continue;
-    if (new Date(e.createdAt).getTime() < todayStart) continue;
-    const m = e.model || 'unknown';
-    if (!todayByModel[m]) todayByModel[m] = { prompt: 0, completion: 0, requests: 0 };
-    todayByModel[m].prompt += e.promptTokens || 0;
-    todayByModel[m].completion += e.completionTokens || 0;
-    todayByModel[m].requests += 1;
-  }
-  const costLines = [];
-  let totalCost = 0;
-  for (const [m, data] of Object.entries(todayByModel)) {
-    const p = getPricing(m);
-    const cost = calcCost(data.prompt, data.completion, p);
-    totalCost += cost;
-    costLines.push(`${p.label}：¥${cost.toFixed(4)}（${data.requests}次）`);
-  }
-
-  const allTimeP = getPricing(activeModelName(db.settings));
-  const allTimeCost = calcCost(db.usage.promptTokens || 0, db.usage.completionTokens || 0, allTimeP);
-
-  const reply = `今日用量：
-请求：${today.requests} 次 | Token：${today.totalTokens}
-输入：${today.promptTokens} | 输出：${today.completionTokens}
-${costLines.length > 0 ? `费用明细：\n${costLines.join('\n')}\n今日合计：¥${totalCost.toFixed(4)}` : '今日暂无费用明细'}
----
-累计：${db.usage.totalTokens || 0} Token（约 ¥${allTimeCost.toFixed(2)}）
-累计请求：${db.usage.requests || 0} 次`;
-  if (ctx.sendMessage) await ctx.sendMessage(ctx.event, reply);
-  return { replied: Boolean(ctx.sendMessage), reason: '显示今日 token 用量' };
 }
 
 export async function ownerModelHandler(ctx: OwnerHandlerContext): Promise<OwnerCommandResult> {

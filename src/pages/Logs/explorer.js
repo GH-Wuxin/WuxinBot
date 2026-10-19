@@ -14,11 +14,21 @@ export function buildRequestEntries(rows, traces) {
     if (trace) seen.add(trace.id);
     const item = row.message || row.decision;
     const status = trace?.status === 'active' || trace?.status === 'failed' ? trace.status : row.decision?.shouldReply === false ? 'silent' : trace?.status || (row.decision?.shouldReply ? 'reply' : 'unknown');
+    // blocked：闸门明确判了「不回复」并给了原因，和「没有决策记录」的沉默要分开。
+    const blocked = row.decision?.shouldReply === false;
     return { id: 'chat:' + row.kind + ':' + item.id, row, trace, status,
       title: row.message?.nickname || item.userId || '未关联的决策', groupId: item.groupId,
+      // userId 要往下传，头像才能按 QQ 号取；trace 里也带着 userId。
+      userId: row.message?.userId || row.decision?.userId || trace?.userId || '',
+      blocked, blockReason: blocked ? String(row.decision?.reason || '') : '',
       preview: row.message?.content || row.decision?.reason || '无消息正文', at: item.createdAt, ...traceMetrics(trace) };
   });
-  for (const trace of traces) if (!seen.has(trace.id)) entries.push({ id: 'trace:' + trace.id, trace, status: trace.status, title: trace.nickname || trace.userId || '请求', groupId: trace.groupId, preview: '请求追踪 · 无关联消息', at: trace.startedAt, ...traceMetrics(trace) });
+  for (const trace of traces) if (!seen.has(trace.id)) entries.push({
+    id: 'trace:' + trace.id, trace, status: trace.status,
+    title: trace.nickname || trace.userId || '请求', groupId: trace.groupId,
+    userId: trace.userId || '',
+    preview: '请求追踪 · 无关联消息', at: trace.startedAt, ...traceMetrics(trace),
+  });
   return entries.sort((a, b) => Number(b.status === 'active') - Number(a.status === 'active') || millis(b.at) - millis(a.at));
 }
 export function filterLogEntries(entries, filter, query = '') {
@@ -26,6 +36,7 @@ export function filterLogEntries(entries, filter, query = '') {
   return entries.filter(entry => (!needle || JSON.stringify(entry).toLowerCase().includes(needle)) && (
     filter === 'all' || (filter === 'failed' && ['failed', 'error', 'denied', 'invalid'].includes(entry.status)) ||
     (filter === 'active' && entry.status === 'active') || (filter === 'silent' && entry.status === 'silent') ||
+    (filter === 'blocked' && entry.blocked === true) ||
     (filter === 'slow' && entry.duration != null && entry.duration >= 30000) ||
     (filter === 'costly' && entry.tokens != null && entry.tokens >= 50000)
   ));

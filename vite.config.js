@@ -8,6 +8,8 @@ export default defineConfig({
   // working in the packaged Electron app.
   base: './',
   server: {
+    // 原子写会留下短暂的 .tmp 目录，Windows 上 chokidar 会 EBUSY；轮询更稳。
+    watch: { usePolling: true, interval: 200 },
     proxy: {
       '/api': 'http://127.0.0.1:8787'
     }
