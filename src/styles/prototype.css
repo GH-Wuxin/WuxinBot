@@ -460,3 +460,6 @@ body.is-paused .status-dot { background: var(--amber); box-shadow: 0 0 0 4px rgb
 .btn-primary:hover { background: linear-gradient(135deg, color-mix(in srgb, var(--pink) 60%, #ffffff), color-mix(in srgb, var(--pink-2) 85%, #ffffff)); }
 
 }
+
+/* hidden 属性在原型类上也要生效 */
+[hidden] { display: none !important; }

@@ -4,6 +4,7 @@ import { usePollingResource } from '../../app/polling.js';
 import { api } from '../../lib/api.js';
 import { Button, Card, ErrorState, LoadingState, SegmentedControl, SectionHeader, StatusBadge, Switch } from '../../components/ui/index.jsx';
 import { formatNumber, periodLabels, quotaWindows, shortNumber, usagePeriods, usageSummary } from './usageView.js';
+import { ProtoOverview } from './ProtoOverview.jsx';
 
 const percent = value => value == null ? '—' : value.toLocaleString('zh-CN', { maximumFractionDigits: 1 }) + '%';
 const localTime = value => value && Number.isFinite(new Date(value).getTime()) ? new Date(value).toLocaleString('zh-CN', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false }) : '暂无';
@@ -68,8 +69,22 @@ export function DashboardPage({ db, oneBot, saveSettings, refreshState, onNaviga
   const highestPp = experienceEntries.reduce((max, entry) => Math.max(max, Math.floor(Number(entry.xp || 0) / 100) * 100), 0);
   const statusText = health.error ? '状态刷新失败' : !health.data ? '正在连接' : paused ? '已暂停' : health.data.status?.text || '未知';
   const statusTone = health.error ? 'danger' : paused ? 'warning' : health.data?.status?.level === 'ok' ? 'success' : health.data?.status?.level === 'error' ? 'danger' : 'warning';
+  const todayTokens = shortNumber(db.usageStats?.today?.totalTokens);
+  const cacheHitRate = db.usage?.promptTokens ? (Number(db.usage.cachedTokens || 0) / Number(db.usage.promptTokens) * 100).toFixed(1) : '—';
   return <div className="dashboard-page osu-dashboard">
-    <div className="osu-session-bar"><StatusBadge tone={statusTone}>{statusText}</StatusBadge><span><span className="osu-muted">当前模型</span> {effectiveModel}</span><span><UsersRound size={14} />{enabledGroups} 个群已启用</span><Button variant="ghost" size="sm" icon={RefreshCw} onClick={() => { refreshState(); health.refresh(); }}>刷新状态</Button></div>
+    <ProtoOverview
+      repliesToday={formatNumber(db.stateStats?.todayMessages ?? (db.messages || []).length)}
+      groupsRunning={enabledGroups}
+      latency={health.data?.llm?.avgLatencyMs ? (health.data.llm.avgLatencyMs / 1000).toFixed(1) : '—'}
+      cacheHit={cacheHitRate}
+      tokensWan={todayTokens.value + todayTokens.unit}
+      members={Object.keys(db.experience || {}).length}
+      model={effectiveModel}
+      online={online}
+      statusText={statusText}
+      onRefresh={() => { refreshState(); health.refresh(); }}
+    />
+    <div className="osu-session-bar" hidden><StatusBadge tone={statusTone}>{statusText}</StatusBadge><span><span className="osu-muted">当前模型</span> {effectiveModel}</span><span><UsersRound size={14} />{enabledGroups} 个群已启用</span><Button variant="ghost" size="sm" icon={RefreshCw} onClick={() => { refreshState(); health.refresh(); }}>刷新状态</Button></div>
     {health.error && <p className="osu-inline-warning" role="status">无法获取最新运行状态：{health.error}。请检查服务连接。</p>}
     <div className="osu-dashboard__stage"><UsageChart summary={summary} period={period} onPeriodChange={setPeriod} /><aside className="osu-dashboard__rail"><QuotaPanel enabled={codexActive} onNavigate={onNavigate} /><Card className="osu-health"><SectionHeader title="运行状态" />
       <div className="osu-health__row"><span>QQ / OneBot</span><StatusBadge tone={online ? 'success' : 'neutral'}>{!health.data || health.error ? '未知' : health.data.onebot?.accountOnline === false ? '账号离线' : online ? '已连接' : '未连接'}</StatusBadge></div>
