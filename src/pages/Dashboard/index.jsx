@@ -141,7 +141,7 @@ export function DashboardPage({ db, oneBot, refreshState, onNavigate }) {
               <div className="row-sub">{group.groupId} · {modeLabel(group.mode)}</div>
             </div>
             <span className={'chip' + (group.enabled ? ' chip--mint' : '')}>{group.enabled ? '启用' : '停用'}</span>
-            <button type="button" className={'switch' + (group.enabled ? ' is-on' : '')} aria-label={(group.name || group.groupId) + ' 启用状态'} />
+            <button type="button" className={'switch' + (group.enabled ? ' is-on' : '')} aria-label={(group.name || group.groupId) + ' 启用状态'} onClick={() => api('/api/groups', { method: 'POST', body: { groupId: group.groupId, enabled: !group.enabled } }).then(refreshState).catch(() => {})} />
           </div>)}
           {!groups.length && <div className="note">还没有配置群聊。</div>}
         </div>

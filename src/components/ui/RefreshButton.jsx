@@ -1,5 +1,6 @@
 import React, { useRef, useState } from 'react';
 import { Check, RefreshCw } from 'lucide-react';
+import { pulseButton } from '../../lib/ripple.js';
 
 // 统一的刷新按钮：转圈 → 打勾 → 失败复位，配一次薄荷色波纹。
 // 页面自己的 onClick 返回 Promise 时会等它完成；同步的也至少转 450ms，避免闪一下看不出来。
@@ -15,6 +16,8 @@ export function RefreshButton({ onClick, label = '刷新', className = 'btn', ic
 
   const run = async (event) => {
     if (state === 'busy' || disabled) return;
+    // React 在回调同步阶段结束后会把 currentTarget 置空，必须现在就抓住。
+    const target = event?.currentTarget || null;
     setState('busy');
     const started = Date.now();
     let ok = true;
@@ -29,9 +32,7 @@ export function RefreshButton({ onClick, label = '刷新', className = 'btn', ic
       if (!ok) { setState('idle'); return; }
       setState('done');
       // 成功后放一次薄荷色波纹；失败就不放，避免误导。
-      import('../../lib/ripple.js')
-        .then(({ rippleFrom }) => rippleFrom(event?.currentTarget, 'mint'))
-        .catch(() => {});
+      pulseButton(target, 'mint');
       timer.current = setTimeout(() => { if (mounted.current) setState('idle'); }, 1300);
     }, wait);
   };

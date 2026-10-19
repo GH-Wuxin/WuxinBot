@@ -32,6 +32,9 @@ export function rippleFrom(target, palette = 'amber') {
   element.style.height = `${height}px`;
   element.style.inset = 'auto';
   element.style.borderRadius = '999px';
+element.style.zIndex = '9999';
+element.style.pointerEvents = 'none';
+element.style.overflow = 'hidden';
   document.body.appendChild(element);
 
   const cx = width / 2;
@@ -49,5 +52,26 @@ export function rippleFrom(target, palette = 'amber') {
 export function paletteForButton(text) {
   if (text === '全部停止') return 'danger';
   if (text === '一键启动' || text === '启动') return 'mint';
+  if (text === '重启' || text === '重启中…') return 'amber';
   return null;
+}
+
+// 比 rippleFrom 稳：不往 body 插节点、不用 WAAPI、不依赖 clip-path，
+// 直接给按钮加一个 class，由 CSS 伪元素画扩散环。
+const PULSE_COLORS = {
+  pink: 'var(--pink)',
+  amber: 'var(--amber)',
+  mint: 'var(--mint)',
+  danger: 'var(--red)',
+};
+
+export function pulseButton(target, palette = 'amber') {
+  if (!target || typeof target.classList === 'undefined') return;
+  const color = PULSE_COLORS[palette] || PULSE_COLORS.amber;
+  target.style.setProperty('--ripple-color', color);
+  target.classList.remove('is-rippling');
+  // 强制重排，保证连续点击也能重新播放
+  void target.offsetWidth;
+  target.classList.add('is-rippling');
+  window.setTimeout(() => target.classList.remove('is-rippling'), 900);
 }

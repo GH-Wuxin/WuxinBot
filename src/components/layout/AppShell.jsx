@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { paletteForButton, rippleFrom } from '../../lib/ripple.js';
+import { paletteForButton, pulseButton } from '../../lib/ripple.js';
 import { Avatar, userAvatarUrl } from '../Avatar.jsx';
 
 // 结构与 class 名严格对齐原型 index.html 的 .topbar，不做重设计。
@@ -109,7 +109,7 @@ export function AppShell({ page, onNavigate, db, oneBot, onPauseToggle, children
     if (!ripplePending.current) return;
     window.clearTimeout(ripplePending.current);
     ripplePending.current = null;
-    rippleFrom(pauseRef.current, paused ? 'amber' : 'pink');
+    pulseButton(pauseRef.current, paused ? 'amber' : 'pink');
   }, [paused]);
 
   // 原型里「全部停止 / 一键启动 / 启动」这些按钮点击时也有波纹。
@@ -118,7 +118,7 @@ export function AppShell({ page, onNavigate, db, oneBot, onPauseToggle, children
       const button = event.target instanceof Element ? event.target.closest('#view button') : null;
       if (!button) return;
       const palette = paletteForButton(button.textContent.trim());
-      if (palette) rippleFrom(button, palette);
+      if (palette) pulseButton(button, palette);
     };
     document.addEventListener('click', onClick);
     return () => document.removeEventListener('click', onClick);

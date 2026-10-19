@@ -132,3 +132,19 @@ body.is-paused .chart-tip b { color: #ffdb70; }
 
 /* 局部波纹：不再整页铺开，只在按钮上扩散 */
 .ripple.is-local { inset: auto; z-index: 75; }
+
+/* 按钮脉冲：不依赖 body 节点，直接用伪元素 */
+.btn.is-rippling { position: relative; overflow: visible; }
+.btn.is-rippling::after {
+  content: '';
+  position: absolute;
+  inset: -2px;
+  border-radius: inherit;
+  border: 2px solid var(--ripple-color, var(--mint));
+  animation: btn-ripple 0.9s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  pointer-events: none;
+}
+@keyframes btn-ripple {
+  from { transform: scale(0.92); opacity: 0.9; }
+  to { transform: scale(1.45); opacity: 0; }
+}

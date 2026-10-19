@@ -9,7 +9,12 @@ export type ModelFamily = 'deepseek' | null;
  */
 export function resolveDeepSeekWireModel(value: unknown) {
   const model = String(value || '').trim();
-  return model === DEEPSEEK_FLASH_MODEL ? DEEPSEEK_FLASH_VISION_MODEL : model;
+  // 线上设置里同时存在 deepseek-flash 和 deepseek-v4-flash 两种写法，
+  // 只要指向同一档 Flash 就都映射到视觉端点，否则能力判断会一半真一半假。
+  const isFlashAlias = model === DEEPSEEK_FLASH_MODEL
+    || model === 'deepseek-flash'
+    || model === 'deepseek_flash';
+  return isFlashAlias ? DEEPSEEK_FLASH_VISION_MODEL : model;
 }
 
 export function isDeepSeekVisionModel(value: unknown) {
