@@ -91,10 +91,13 @@ async function loadUrlWithRetry(url, attempts = 16) {
 
 async function loadConsole() {
   const localIndex = packagedIndex;
-  // The browser entry is intentionally removed from the server. Packaged
-  // Desktop therefore loads its bundled renderer directly and talks to the
-  // loopback API through preload's apiBaseUrl. Dev mode still uses Vite so
-  // hot reload remains available.
+  // 新版控制台由服务端托管（console/），与 API 同源；优先加载它，
+  // 服务没起来时再退回打包进来的旧渲染层。
+  if (!devUrl) {
+    const served = await loadUrlWithRetry(productionApi, 20);
+    if (served) { log('控制台已加载（服务端 console）'); return; }
+    log('服务端控制台不可用，回退本地渲染层');
+  }
   if (!devUrl && fs.existsSync(localIndex)) {
     log(`加载本地控制台：${localIndex}`);
     try {
@@ -119,7 +122,7 @@ function createWindow() {
     minWidth: 1080,
     minHeight: 680,
     title: 'WuxinBot · Desktop',
-    backgroundColor: '#17141f',
+    backgroundColor: '#0e0e10',
     autoHideMenuBar: true,
     webPreferences: {
       preload: path.join(__dirname, 'preload.cjs'),

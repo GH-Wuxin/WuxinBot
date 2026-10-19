@@ -36,11 +36,11 @@ document.addEventListener('click', async function (event) {
     event.preventDefault();
     try {
       if (!RUNTIME.available) { flash('需要桌面端才能控制进程', 'pink'); return; }
-      if (proc.dataset.proc === 'start-all') await window.desktop.startAll();
-      else if (proc.dataset.proc === 'stop-all') await window.desktop.stopAll();
-      else if (proc.dataset.proc === 'start') await window.desktop.start(proc.dataset.id);
-      else if (proc.dataset.proc === 'stop') await window.desktop.stop(proc.dataset.id);
-      else if (proc.dataset.proc === 'restart') await window.desktop.restart(proc.dataset.id);
+      if (proc.dataset.proc === 'start-all') await window.desktop.runtime.startAll();
+      else if (proc.dataset.proc === 'stop-all') await window.desktop.runtime.stopAll();
+      else if (proc.dataset.proc === 'start') await window.desktop.runtime.start(proc.dataset.id);
+      else if (proc.dataset.proc === 'stop') await window.desktop.runtime.stop(proc.dataset.id);
+      else if (proc.dataset.proc === 'restart') await window.desktop.runtime.restart(proc.dataset.id);
       await refreshRuntime();
       render('runtime');
       flash('已执行：' + proc.dataset.proc, 'pink');

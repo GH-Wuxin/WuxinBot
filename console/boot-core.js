@@ -2,12 +2,12 @@
 const RUNTIME = { available: false, groups: [], settings: null, error: '' };
 
 async function refreshRuntime() {
-  if (!window.desktop || typeof window.desktop.getState !== 'function') {
+  if (!window.desktop || !window.desktop.runtime || typeof window.desktop.runtime.getState !== 'function') {
     RUNTIME.available = false;
     return;
   }
   try {
-    const state = await window.desktop.getState();
+    const state = await window.desktop.runtime.getState();
     RUNTIME.available = true;
     RUNTIME.settings = state.settings || state;
     RUNTIME.groups = state.groups || state.processGroups || [];

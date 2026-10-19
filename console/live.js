@@ -3,7 +3,7 @@
 const LIVE = { ready: false, error: '', source: 'mock', hourly: [], painted: false };
 
 async function api(path) {
-  const response = await fetch(path, { headers: { accept: 'application/json' } });
+  const response = await __apiFetch(path, { headers: { accept: 'application/json' } });
   if (!response.ok) throw new Error(path + ' -> ' + response.status);
   return response.json();
 }

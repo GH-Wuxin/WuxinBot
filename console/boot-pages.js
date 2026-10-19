@@ -2,7 +2,7 @@
 const DATA2 = { snapshots: [], profiles: [], logs: [], codex: null, diagnostics: null, groupProfile: null };
 
 async function callApi(path, options) {
-  const response = await fetch(path, Object.assign({ headers: { 'content-type': 'application/json' } }, options || {}));
+  const response = await __apiFetch(path, Object.assign({ headers: { 'content-type': 'application/json' } }, options || {}));
   const payload = await response.json().catch(() => ({}));
   if (!response.ok || payload.ok === false) throw new Error(payload.error || (path + ' -> ' + response.status));
   return payload;
