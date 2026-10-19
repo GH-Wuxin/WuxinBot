@@ -419,3 +419,6 @@
 }
 .app-shell__sidebar::-webkit-scrollbar-track { background: transparent; }
 .app-shell__sidebar::-webkit-scrollbar-button { display: none; height: 0; width: 0; }
+/* 侧栏滚动条会和外框线条打架，直接藏掉（导航可滚，视觉干净） */
+.app-shell__sidebar { scrollbar-width: none; }
+.app-shell__sidebar::-webkit-scrollbar { width: 0; height: 0; display: none; }
