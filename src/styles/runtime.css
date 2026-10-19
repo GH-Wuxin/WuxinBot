@@ -137,7 +137,7 @@
   border-radius: 50%;
 }
 
-.runtime-process-card__icon--success { color: var(--v2-success); background: rgba(92, 214, 180, 0.12); }
+.runtime-process-card__icon--success { color: var(--v2-success); background: rgba(116, 217, 159, 0.12); }
 .runtime-process-card__icon--danger { color: var(--v2-danger); background: rgba(255, 113, 130, 0.12); }
 .runtime-process-card__icon--warning { color: var(--v2-warning); background: rgba(242, 201, 109, 0.12); }
 

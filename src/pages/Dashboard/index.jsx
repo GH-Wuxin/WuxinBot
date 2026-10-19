@@ -4,8 +4,9 @@ import { usePollingResource } from '../../app/polling.js';
 import { api } from '../../lib/api.js';
 import { Button, Card, ErrorState, LoadingState, SegmentedControl, SectionHeader, StatusBadge, Switch } from '../../components/ui/index.jsx';
 import { formatNumber, periodLabels, quotaWindows, shortNumber, usagePeriods, usageSummary } from './usageView.js';
-import { ProtoOverview } from './ProtoOverview.jsx';
 
+const apiModels = { 'deepseek-v4-flash': 'V4 Flash', 'deepseek-v4-pro': 'V4 Pro', 'deepseek-chat': 'Chat', 'deepseek-reasoner': 'Reasoner' };
+const codexModels = { 'gpt-5.6-luna': 'Luna', 'gpt-5.6-terra': 'Terra', 'gpt-5.6-sol': 'Sol' };
 const percent = value => value == null ? '—' : value.toLocaleString('zh-CN', { maximumFractionDigits: 1 }) + '%';
 const localTime = value => value && Number.isFinite(new Date(value).getTime()) ? new Date(value).toLocaleString('zh-CN', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false }) : '暂无';
 
@@ -67,24 +68,12 @@ export function DashboardPage({ db, oneBot, saveSettings, refreshState, onNaviga
   const enabledGroups = (db.groups || []).filter(group => group.enabled).length;
   const experienceEntries = Object.values(db.experience || {});
   const highestPp = experienceEntries.reduce((max, entry) => Math.max(max, Math.floor(Number(entry.xp || 0) / 100) * 100), 0);
+  const modelOptions = Object.entries(codexActive ? codexModels : apiModels).map(([value, label]) => ({ value, label }));
+  if (!modelOptions.some(option => option.value === effectiveModel)) modelOptions.push({ value: effectiveModel, label: effectiveModel });
   const statusText = health.error ? '状态刷新失败' : !health.data ? '正在连接' : paused ? '已暂停' : health.data.status?.text || '未知';
   const statusTone = health.error ? 'danger' : paused ? 'warning' : health.data?.status?.level === 'ok' ? 'success' : health.data?.status?.level === 'error' ? 'danger' : 'warning';
-  const todayTokens = shortNumber(db.usageStats?.today?.totalTokens);
-  const cacheHitRate = db.usage?.promptTokens ? (Number(db.usage.cachedTokens || 0) / Number(db.usage.promptTokens) * 100).toFixed(1) : '—';
   return <div className="dashboard-page osu-dashboard">
-    <ProtoOverview
-      repliesToday={formatNumber(db.stateStats?.todayMessages ?? (db.messages || []).length)}
-      groupsRunning={enabledGroups}
-      latency={health.data?.llm?.avgLatencyMs ? (health.data.llm.avgLatencyMs / 1000).toFixed(1) : '—'}
-      cacheHit={cacheHitRate}
-      tokensWan={todayTokens.value + todayTokens.unit}
-      members={Object.keys(db.experience || {}).length}
-      model={effectiveModel}
-      online={online}
-      statusText={statusText}
-      onRefresh={() => { refreshState(); health.refresh(); }}
-    />
-    <div className="osu-session-bar" hidden><StatusBadge tone={statusTone}>{statusText}</StatusBadge><span><span className="osu-muted">当前模型</span> {effectiveModel}</span><span><UsersRound size={14} />{enabledGroups} 个群已启用</span><Button variant="ghost" size="sm" icon={RefreshCw} onClick={() => { refreshState(); health.refresh(); }}>刷新状态</Button></div>
+    <div className="osu-session-bar"><StatusBadge tone={statusTone}>{statusText}</StatusBadge><span><span className="osu-muted">当前模型</span> {effectiveModel}</span><span><UsersRound size={14} />{enabledGroups} 个群已启用</span><Button variant="ghost" size="sm" icon={RefreshCw} onClick={() => { refreshState(); health.refresh(); }}>刷新状态</Button></div>
     {health.error && <p className="osu-inline-warning" role="status">无法获取最新运行状态：{health.error}。请检查服务连接。</p>}
     <div className="osu-dashboard__stage"><UsageChart summary={summary} period={period} onPeriodChange={setPeriod} /><aside className="osu-dashboard__rail"><QuotaPanel enabled={codexActive} onNavigate={onNavigate} /><Card className="osu-health"><SectionHeader title="运行状态" />
       <div className="osu-health__row"><span>QQ / OneBot</span><StatusBadge tone={online ? 'success' : 'neutral'}>{!health.data || health.error ? '未知' : health.data.onebot?.accountOnline === false ? '账号离线' : online ? '已连接' : '未连接'}</StatusBadge></div>
@@ -94,6 +83,6 @@ export function DashboardPage({ db, oneBot, saveSettings, refreshState, onNaviga
       <Button variant="ghost" size="sm" onClick={() => onNavigate('logs')}>查看运行日志<ChevronRight size={14} /></Button>
     </Card></aside></div>
     <section className="osu-today" aria-label="自然日与累计指标"><div><MessageCircle size={18} /><span>今日消息<small>今日 00:00 至今</small></span><strong>{formatNumber(db.stateStats?.todayMessages ?? db.messages?.length)}</strong></div><div><Zap size={18} /><span>今日 Token<small>与滚动 24 小时不同</small></span><strong>{shortNumber(db.usageStats?.today?.totalTokens).value}{shortNumber(db.usageStats?.today?.totalTokens).unit}</strong></div><div><UsersRound size={18} /><span>经验成员<small>累计 {formatNumber(db.usage?.replies)} 次回复</small></span><strong>{Object.keys(db.experience || {}).length}</strong></div></section>
-    <section className="dashboard-controls"><Card><SectionHeader title="参与方式" /><Switch checked={Boolean(db.settings.onlyMentionMode)} onChange={event => saveSettings({ onlyMentionMode: event.target.checked })} label="临时只在 @ 时回复" description="立即生效；关闭后恢复各群自己的参与模式。" /></Card><Card><SectionHeader title="快捷入口" /><div className="dashboard-shortcuts"><Button variant="ghost" size="sm" onClick={() => onNavigate('logs')}>查看日志</Button><Button variant="ghost" size="sm" onClick={() => onNavigate('model')}>模型设置</Button><Button variant="ghost" size="sm" onClick={() => onNavigate('integrations')}>集成与 OneBot</Button></div></Card></section>
+    <section className="dashboard-controls"><Card><SectionHeader title="参与方式" /><Switch checked={Boolean(db.settings.onlyMentionMode)} onChange={event => saveSettings({ onlyMentionMode: event.target.checked })} label="临时只在 @ 时回复" description="立即生效；关闭后恢复各群自己的参与模式。" /></Card><Card><SectionHeader title="快速切换模型" actions={<Button variant="ghost" size="sm" onClick={() => onNavigate('model')}>设置<ChevronRight size={14} /></Button>} /><SegmentedControl value={effectiveModel} onChange={model => saveSettings(codexActive ? { codexModel: model } : { model })} label="快速切换模型" options={modelOptions} /></Card></section>
   </div>;
 }

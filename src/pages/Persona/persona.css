@@ -7,7 +7,7 @@
 .persona-studio__nav-label--spaced { margin-top: 20px; }
 .persona-studio__nav-item { display: flex; width: 100%; align-items: center; justify-content: space-between; gap: 8px; min-height: 34px; padding: 7px 9px; border: 1px solid transparent; border-radius: 8px; color: var(--v2-text-soft); background: transparent; text-align: left; font: inherit; font-size: 12px; cursor: pointer; }
 .persona-studio__nav-item:hover { background: #ffffff08; color: var(--v2-text); }
-.persona-studio__nav-item.is-active { color: var(--v2-text); background: linear-gradient(90deg,#ff66aa1a,#ff66aa08); border-color: #ff66aa26; box-shadow: inset 2px 0 #ff86b8; }
+.persona-studio__nav-item.is-active { color: var(--v2-text); background: linear-gradient(90deg,#ff66a61a,#ff66a608); border-color: #ff66a626; box-shadow: inset 2px 0 #ff86b8; }
 .persona-studio__nav-item > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .persona-studio__nav-item > i { flex: 0 0 auto; width: 6px; height: 6px; border-radius: 50%; background: #94dfbd; box-shadow: 0 0 0 3px #94dfbd17; }
 .persona-studio__main { display: grid; min-width: 0; gap: 14px; }
@@ -33,21 +33,21 @@
 .persona-studio__count { display: inline-flex; align-items: center; gap: 5px; color: var(--v2-text-muted); font-size: 10px; white-space: nowrap; }
 .persona-studio__run-list { display: flex; flex-wrap: wrap; gap: 7px; margin: 10px 0 14px; }
 .persona-studio__run { display: flex; min-width: 180px; max-width: 320px; flex: 1 1 220px; align-items: center; justify-content: space-between; gap: 10px; padding: 9px 10px; border: 1px solid #ffffff0b; border-radius: 9px; color: var(--v2-text-soft); background: #1b1621; text-align: left; cursor: pointer; }
-.persona-studio__run:hover { border-color: #ffffff20; background: #1f1f1f; }
-.persona-studio__run.is-active { border-color: #ff78ae70; background: #ff66aa0e; }
+.persona-studio__run:hover { border-color: #ffffff20; background: #211a29; }
+.persona-studio__run.is-active { border-color: #ff78ae70; background: #ff66a60e; }
 .persona-studio__run > span { min-width: 0; display: grid; gap: 4px; }
 .persona-studio__run strong { overflow: hidden; color: var(--v2-text); font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
 .persona-studio__run small { display: flex; align-items: center; gap: 4px; color: var(--v2-text-muted); font-size: 9px; }
 .persona-studio__run > .ui-pill { flex: 0 0 auto; }
 .persona-studio__snapshot { display: grid; gap: 8px; min-width: 0; }
 .persona-studio__snapshot-meta { display: flex; flex-wrap: wrap; gap: 5px; }
-.persona-studio__message { min-width: 0; overflow: hidden; border: 1px solid #ffffff0a; border-radius: 8px; background: #171717; }
+.persona-studio__message { min-width: 0; overflow: hidden; border: 1px solid #ffffff0a; border-radius: 8px; background: #19151f; }
 .persona-studio__message > summary, .persona-studio__tool-events > summary { display: flex; align-items: center; justify-content: space-between; gap: 10px; min-height: 35px; padding: 7px 10px; color: var(--v2-text-soft); cursor: pointer; list-style: none; }
 .persona-studio__message > summary::-webkit-details-marker, .persona-studio__tool-events > summary::-webkit-details-marker { display: none; }
 .persona-studio__message > summary > span, .persona-studio__tool-events > summary > span { display: inline-flex; align-items: center; gap: 7px; color: var(--v2-text); font-size: 10px; font-weight: 700; }
 .persona-studio__message > summary > small, .persona-studio__tool-events > summary > small { color: var(--v2-text-muted); font-size: 9px; text-align: right; }
 .persona-studio__message pre, .persona-studio__tool-event pre { max-height: 360px; overflow: auto; margin: 0; padding: 10px; border-top: 1px solid #ffffff09; color: #d8ccdb; font: 10px/1.6 ui-monospace, SFMono-Regular, Consolas, monospace; white-space: pre-wrap; overflow-wrap: anywhere; }
-.persona-studio__tool-events { border: 1px solid #ffffff0a; border-radius: 8px; background: #171717; }
+.persona-studio__tool-events { border: 1px solid #ffffff0a; border-radius: 8px; background: #19151f; }
 .persona-studio__tool-event { border-top: 1px solid #ffffff09; }
 .persona-studio__tool-event > strong { display: block; padding: 8px 10px 0; color: #efb1cf; font-size: 10px; }
 .persona-studio__tool-events > p { padding: 0 10px; color: var(--v2-text-muted); font-size: 10px; }

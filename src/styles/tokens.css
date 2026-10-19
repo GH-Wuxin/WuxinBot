@@ -1,43 +1,27 @@
 :root {
   color-scheme: dark;
-
-  /* 新视觉：更深的底、粉薄荷双强调，功能层不动 */
-  --v2-bg: #0e0e10;
-  --v2-sidebar: #141416;
-  --v2-surface-1: #18181a;
-  --v2-surface-2: #202024;
-  --v2-surface-3: #2a2a2e;
-  --v2-surface-hover: #2f2f34;
-  --v2-surface-selected: #3a2430;
-
-  --v2-border: #2c2c31;
-  --v2-border-strong: #3d3d44;
-
-  --v2-text: #f3f3f5;
-  --v2-text-soft: #c9c9cf;
-  --v2-text-muted: #8e8e96;
-
-  --v2-accent: #ff66aa;
-  --v2-accent-hover: #ff85bc;
-  --v2-accent-soft: rgba(255, 102, 170, 0.14);
-
-  --v2-success: #5cd6b4;
-  --v2-warning: #ffcc22;
-  --v2-danger: #ff5c5c;
-  --v2-info: #66ccff;
-
-  --v2-radius-sm: 10px;
-  --v2-radius: 16px;
-  --v2-radius-lg: 22px;
-  --v2-radius-pill: 999px;
-
-  --v2-fast: 120ms;
-  --v2-motion: 220ms;
-  --v2-ease: cubic-bezier(0.22, 1, 0.36, 1);
-
-  --v2-shadow-1: 0 2px 10px rgba(0, 0, 0, 0.35);
-  --v2-shadow-2: 0 18px 44px rgba(0, 0, 0, 0.5);
-
-  --v2-font: "Inter", "Torus", "Segoe UI", "Microsoft YaHei UI", "PingFang SC", system-ui, sans-serif;
-  --v2-font-num: "Inter", "Segoe UI", "Microsoft YaHei UI", "PingFang SC", system-ui, sans-serif;
+  --v2-bg: #17141f;
+  --v2-sidebar: #1d1927;
+  --v2-surface-1: #221e2c;
+  --v2-surface-2: #2a2535;
+  --v2-surface-3: #332d40;
+  --v2-surface-hover: #3b3449;
+  --v2-surface-selected: #463247;
+  --v2-border: #40384d;
+  --v2-border-strong: #5a4e69;
+  --v2-text: #f4f0f7;
+  --v2-text-soft: #c8bfce;
+  --v2-text-muted: #918699;
+  --v2-accent: #f0649a;
+  --v2-accent-hover: #ff79ad;
+  --v2-accent-soft: rgba(240, 100, 154, 0.14);
+  --v2-success: #74d99f;
+  --v2-warning: #f2c96d;
+  --v2-danger: #ff7182;
+  --v2-info: #78b8ff;
+  --v2-radius-sm: 6px;
+  --v2-radius: 10px;
+  --v2-radius-lg: 14px;
+  --v2-fast: 140ms;
+  --v2-motion: 180ms;
 }
