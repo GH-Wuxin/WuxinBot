@@ -65,7 +65,7 @@ PAGES.overview = () => {
   + '<div class="stack">' + card('运行状态', kv('QQ / OneBot', '<span class="mint">已连接</span>') + kv('模型平均延迟', '1.2 秒') + kv('近期模型错误', '无') + kv('当前模型', 'deepseek-flash'), '详情 →')
   + card('模型通道', '<div class="note">API 通道计费与本地 Token 是两个口径，这里不做换算。</div><div class="meter" style="margin-top:14px"><i style="width:62%"></i></div><div class="card-more" style="margin-top:8px">本月额度 62%</div>', '管理 →') + '</div></div>'
   + '<div class="grid grid-2">'
-  + card('群聊', '<div class="rows">' + DATA.groupRows.slice(0, 5).map((g) => listRow(avatar(g.name.slice(0, 1)), g.name, g.members + ' 位成员 · ' + g.mode, chip(g.enabled ? '启用' : '停用', g.enabled ? 'chip--mint' : '') + switchEl(g.enabled))).join('') + '</div>', '全部 →')
+  + card('群聊', '<div class="rows">' + DATA.groupRows.slice(0, 5).map((g) => listRow(avatar(g.name.slice(0, 1)), g.name, g.members + ' 位成员 · ' + g.mode, chip(g.enabled ? '启用' : '停用', g.enabled ? 'chip--mint' : ''))).join('') + '</div>', '全部 →')
   + card('最近回复', '<div class="rows">' + DATA.logs.map((l) => listRow(avatar(l.user.slice(0, 1)), l.user, l.text, '<span class="row-value" style="color:var(--muted);font-weight:500">' + l.time.split(' ')[1] + '</span>')).join('') + '</div>', '日志 →')
   + '</div>';
 };

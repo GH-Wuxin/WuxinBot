@@ -17,13 +17,12 @@ PAGES.runtime = function () {
         return '<div class="proc"><div class="proc-head"><span class="status-dot" style="background:' + (runningProc ? 'var(--mint)' : 'var(--muted)') + '"></span><b>' + esc(proc.label) + '</b>'
           + chip(runningProc ? '运行中' : '已停止', runningProc ? 'chip--mint' : '') + '</div>'
           + '<div class="proc-meta">' + (proc.managed ? '本窗口启动' : '外部运行') + ' · PID ' + pidsText + ' · 端口 ' + (proc.port || '—') + '</div>'
-          + '<div class="proc-toggles"><span class="proc-toggle">进程启用' + switchEl(proc.enabled !== false) + '</span>'
-          + '<span class="proc-toggle">自动启动' + switchEl(proc.autoStart === true) + '</span></div>'
+          + '<div class="proc-toggles"><span class="proc-toggle">进程启用<button class="switch ' + (proc.enabled !== false ? 'is-on' : '') + '" data-rt-enable="' + esc(proc.id) + '"></button></span>'
+          + '<span class="proc-toggle">自动启动<button class="switch ' + (proc.autoStart === true ? 'is-on' : '') + '" data-rt-auto="' + esc(proc.id) + '"></button></span></div>'
           + '<div class="proc-actions"><button class="btn btn-sm" data-rt="start" data-id="' + esc(proc.id) + '">启动</button>'
           + '<button class="btn btn-sm" data-rt="stop" data-id="' + esc(proc.id) + '">停止</button>'
           + '<button class="btn btn-sm" data-rt="restart" data-id="' + esc(proc.id) + '">重启</button>'
-          + '<button class="btn btn-sm btn-ghost" data-rt-auto="' + esc(proc.id) + '">自动启动</button>'
-          + '<button class="btn btn-sm btn-ghost" data-rt-enable="' + esc(proc.id) + '">启用开关</button></div></div>';
+          + '</div></div>';
       }).join('') + '</section>';
   }).join('');
   return pageHead('运行控制', '进程状态直接来自桌面端。', '<button class="btn btn-primary" data-rt="start-all">一键启动</button><button class="btn" data-rt="stop-all">全部停止</button>')
