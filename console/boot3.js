@@ -53,7 +53,7 @@ PAGES.randomImages = function () {
     + (LIVE.randomFiles || []).slice(0, 24).map((file) => '<div class="tile" style="padding:0;overflow:hidden"><img src="' + (location.protocol === 'file:' ? 'http://127.0.0.1:8787' : '') + '/api/random-image/file?name=' + encodeURIComponent(file) + '" style="width:100%;height:100%;object-fit:cover" alt="" /></div>').join('')
     + '</div></div>'
     + '<div class="grid grid-2">' + card('最近发送', '<div class="rows">' + ((info.recent || []).slice(0, 8).map((item) => listRow('', esc(item.file || item.name || '—'), esc(item.groupId || ''), '<span class="row-value" style="color:var(--muted)">' + esc(fmtClock(item.at)) + '</span>')).join('') || '<div class="empty">暂无</div>') + '</div>')
-    + card('参与群', '<div class="rows">' + ((info.groups || []).map((group) => listRow('', esc(group.name || group.groupId), '概率 ' + (group.probability || '—'), chip(group.enabled === false ? '停用' : '启用', group.enabled === false ? 'chip--amber' : 'chip--mint'))).join('') || '<div class="empty">暂无</div>') + '</div>') + '</div>';
+    + card('参与群', '<div class="rows">' + ((info.groups || []).map((group) => listRow('', esc(group.name || group.groupId), (group.chance != null ? (Number(group.chance) * 100).toFixed(1) + '%' : '—') + ' · 命中 ' + (group.hits || 0) + '/' + (group.rolls || 0), chip(group.participates ? '发图中' : '未开启', group.participates ? 'chip--mint' : 'chip--amber'))).join('') || '<div class="empty">暂无</div>') + '</div>') + '</div>';
 };
 
 /* ---------- 人设 ---------- */

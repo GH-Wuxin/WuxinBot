@@ -65,6 +65,9 @@ async function hydrate() {
       enabled: group.enabled !== false,
       members: Number(group.memberCount || 0),
       active: false,
+      randomImageEnabled: group.randomImageEnabled === true,
+      randomImageRate: group.randomImageRate || 'standard',
+      createdAt: group.createdAt || '',
       maxPerHour: group.maxPerHour,
       cooldown: group.cooldownSec
     }));
