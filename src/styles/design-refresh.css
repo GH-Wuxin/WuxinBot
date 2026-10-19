@@ -462,3 +462,25 @@
 /* 链接色 */
 .app-shell a { color: #ffb3d4; }
 .app-shell a:hover { color: #fff; }
+/* ---------- 第五层：主按钮对比度、侧栏滚动条彻底隐藏 ---------- */
+.ui-button--primary,
+.ui-button[data-variant="primary"],
+button.ui-button--primary {
+  color: #17070f;
+  font-weight: 700;
+}
+
+.ui-button--primary:hover:not(:disabled) { color: #17070f; }
+
+.app-shell__sidebar,
+.app-shell__nav {
+  scrollbar-width: none !important;
+  -ms-overflow-style: none;
+}
+
+.app-shell__sidebar::-webkit-scrollbar,
+.app-shell__nav::-webkit-scrollbar {
+  width: 0 !important;
+  height: 0 !important;
+  display: none !important;
+}
