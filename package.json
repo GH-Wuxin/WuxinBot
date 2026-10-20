@@ -73,7 +73,8 @@
     "mention:render:verify": "node --import tsx tools/mention-render-verify.mjs",
     "skill:text:verify": "node --import tsx tools/skill-text-tools-verify.mjs",
     "tool:phases:verify": "node --import tsx tools/tool-phases-verify.mjs",
-    "score:fallback:verify": "node --import tsx tools/score-fallback-verify.mjs"
+    "score:fallback:verify": "node --import tsx tools/score-fallback-verify.mjs",
+    "score:command:verify": "node --import tsx tools/score-command-verify.mjs"
   },
   "keywords": [],
   "author": "",

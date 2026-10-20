@@ -1714,6 +1714,8 @@ export async function executeInternalBotCommand(
   username: string,
   context: {
     db: any; userId: string; groupId?: string; event?: any; isOwner?: boolean; beatmapId?: number;
+    /** Score-command filter; undefined queries the best score across all mods. */
+    scoreMods?: string[];
     /** 原始工具参数：compare_skill 的 left/right、beatmap_skill 的 mods 从这里取。 */
     toolArgs?: Record<string, any>;
   },
@@ -1896,9 +1898,10 @@ export async function executeInternalBotCommand(
       const { getUserBeatmapScore } = await import('../osu/api.js');
       let score: OsuScore;
       try {
-        score = await getUserBeatmapScore(user.id, beatmapId, 'osu');
+        score = await getUserBeatmapScore(user.id, beatmapId, 'osu', context.scoreMods);
       } catch (error) {
-        return `${user.username} 在 BID ${beatmapId} 上没有查到成绩（${String(error?.message || error)}）。`;
+        const modLabel = context.scoreMods?.length ? `（+${context.scoreMods.join('')}）` : '';
+        return `${user.username} 在 BID ${beatmapId}${modLabel} 上没有查到成绩（${String(error?.message || error)}）。`;
       }
       // The beatmap-scoped score endpoint often omits beatmapset metadata;
       // fetch it so text and the E5 panel show the real title/artist.

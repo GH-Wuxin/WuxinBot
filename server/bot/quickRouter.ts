@@ -31,6 +31,7 @@ import {
   type RawQuickCommandDef,
 } from './commands/quick.meta.js';
 import { normalizeAlias } from './commands/alias.js';
+import { parseScoreArgs, buildKanonScoreCommand, type ParsedScoreArgs } from './commands/scoreArgs.js';
 import {
   beginLatencyTrace,
   finishLatencyTrace,
@@ -156,11 +157,8 @@ export function matchQuickCommand(event: { text: string; atTargets?: string[] })
 
 // ── BP argument parsing ──
 
-interface ParsedOsuArgs {
-  username: string;
+interface ParsedOsuArgs extends ParsedScoreArgs {
   bpSelection?: BpQuerySelection;
-  scoreBeatmapId?: number;
-  error?: string;
 }
 
 export function parseBpArgs(args: string, compactDefault: boolean): ParsedOsuArgs {
@@ -210,20 +208,7 @@ export function parseBpArgs(args: string, compactDefault: boolean): ParsedOsuArg
 
 export function parseOsuArgs(def: RawQuickCommandDef, args: string): ParsedOsuArgs {
   if (def.capability === 'score') {
-    // `!s <bid> [玩家名]` / `/score <bid> [玩家名]` — BID comes first, an
-    // optional trailing username overrides the sender's binding.
-    const tokens = String(args || '').trim().split(/\s+/).filter(Boolean);
-    if (tokens.length === 0) {
-      return { username: '', error: '用法：!s <谱面BID> [玩家名]，例如 !s 4270382' };
-    }
-    const bid = Number(tokens[0]);
-    if (!Number.isInteger(bid) || bid <= 0) {
-      return { username: '', error: `谱面 BID 无效：${tokens[0]}（示例：!s 4270382）` };
-    }
-    return {
-      username: tokens.slice(1).join(' '),
-      scoreBeatmapId: bid,
-    };
+    return parseScoreArgs(args);
   }
   if (def.bpArgs || def.capability === 'bp' || def.capability === 'bplist') {
     // Reuse the executor parser for canonical "bp 1-100" / "bs 10" forms.
@@ -620,6 +605,11 @@ async function handleQuickCommandInner(
     } else if (def.capability || def.injectBinding) {
       parsedArgs = parseOsuArgs(def, args);
       const parsed = parsedArgs;
+      if (parsed.error) {
+        if (sendMessage) await sendMessage(event, parsed.error);
+        record(`参数错误：${parsed.error}`);
+        return { handled: true, replied: true, reason: '参数错误' };
+      }
       if (!parsed.username) {
         const usesAt = atTargets.length > 0;
         const target = usesAt ? String(atTargets[0]) : String(event.userId);
@@ -639,6 +629,12 @@ async function handleQuickCommandInner(
         bridgeCommand = `${match.prefix}${match.alias} ${user}${args ? ' ' + args : ''}`;
       } else {
         bridgeUser = parsed.username;
+      }
+      if (def.source === 'kanon' && def.capability === 'score') {
+        bridgeCommand = buildKanonScoreCommand(parsed, bridgeUser);
+        // The resolved target is already in the command; an @ segment would
+        // let Kanon's own account binding override Wuxin's selected player.
+        bridgeContext.atTargets = [];
       }
     }
     if (traceId) markLatencySpan(traceId, 'subject_resolution_done', { resolved: Boolean(bridgeUser) });
@@ -855,7 +851,7 @@ async function handleQuickCommandInner(
         botId,
         def.capability,
         username,
-        { db, userId: String(event.userId), groupId: event.groupId, event, isOwner: permissions.isOwner, beatmapId: parsed.scoreBeatmapId },
+        { db, userId: String(event.userId), groupId: event.groupId, event, isOwner: permissions.isOwner, beatmapId: parsed.scoreBeatmapId, scoreMods: parsed.scoreMods },
         parsed.bpSelection,
         bridgeAlreadyAttemptedFor ? { bridgeAlreadyAttemptedFor } : undefined,
         traceId,

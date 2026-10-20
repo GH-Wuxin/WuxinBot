@@ -108,7 +108,7 @@ export const KANON_DEFS: RawQuickCommandDef[] = [
   { id: 'recentlist', source: 'kanon', aliases: ['res', 'recentlist', 'prs'], kind: 'osu' },
   { id: 'bp', source: 'kanon', aliases: ['bp'], kind: 'osu', capability: 'bp', bpArgs: true, bridge: true },
   { id: 'bplist', source: 'kanon', aliases: ['bplist', 'get bplist'], kind: 'osu', capability: 'bplist', bpArgs: true, bridge: true },
-  { id: 'score', source: 'kanon', aliases: ['score'], kind: 'osu', capability: 'score' },
+  { id: 'score', source: 'kanon', aliases: ['score'], kind: 'osu', capability: 'score', bridge: true },
   { id: 'info', source: 'kanon', aliases: ['info'], kind: 'osu', capability: 'info', bridge: true },
   { id: 'todaybp', source: 'kanon', aliases: ['todaybp', 'get todaybp'], kind: 'osu' },
   { id: 'search', source: 'kanon', aliases: ['search'], kind: 'osu' },

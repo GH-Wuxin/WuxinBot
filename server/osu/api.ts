@@ -222,8 +222,11 @@ export async function getUserBeatmapScore(
   userId: number,
   beatmapId: number,
   mode: OsuMode = 'osu',
+  mods?: string[],
 ): Promise<OsuScore> {
-  const cacheKey = `user-score:${userId}:${beatmapId}:${mode}`;
+  const normalizedMods = [...new Set((mods || []).map((mod) => String(mod).trim().toUpperCase()).filter(Boolean))].sort();
+  const modKey = normalizedMods.length ? normalizedMods.join(',') : '*';
+  const cacheKey = `user-score:${userId}:${beatmapId}:${mode}:${modKey}`;
   const cached = cacheGet<OsuScore>(cacheKey);
   if (cached) return cached;
   // Same endpoint family as the original yumu `!s`: beatmap-scoped user score.
@@ -231,9 +234,11 @@ export async function getUserBeatmapScore(
   // modern variant.
   let body: { score?: OsuScore } | undefined;
   for (const legacyOnly of ['0', '1']) {
+    const query = new URLSearchParams({ mode, legacy_only: legacyOnly });
+    for (const mod of normalizedMods) query.append('mods[]', mod);
     try {
       body = await osuFetch<{ score?: OsuScore }>(
-        `/beatmaps/${beatmapId}/scores/users/${userId}?mode=${mode}&legacy_only=${legacyOnly}`,
+        `/beatmaps/${beatmapId}/scores/users/${userId}?${query.toString()}`,
       );
       break;
     } catch (error) {
