@@ -1,0 +1,82 @@
+{
+  "main_size": [
+    257,
+    77
+  ],
+  "square_sizes": [
+    60,
+    118
+  ],
+  "font": "work/fonts/Torus-SemiBold.ttf",
+  "text_height": 43,
+  "text_left": 127,
+  "text_top": 18,
+  "badge_path": "M29 0 H228 Q234 0 238 7 L253 33 Q256.5 38.5 253 44 L238 70 Q234 77 228 77 H29 Q23 77 19 70 L4 44 Q0.5 38.5 4 33 L19 7 Q23 0 29 0 Z",
+  "mods": {
+    "DC": {
+      "color": "#333333",
+      "symbol": "mod-daycore.png",
+      "bbox": [
+        29,
+        10,
+        93,
+        74
+      ],
+      "label": "Daycore",
+      "palette_reference": "HT",
+      "symbol_box": [
+        58,
+        12,
+        53,
+        53
+      ]
+    },
+    "DA": {
+      "color": "#33a9df",
+      "symbol": "mod-difficulty-adjust.png",
+      "bbox": [
+        27,
+        18,
+        92,
+        66
+      ],
+      "label": "Difficulty Adjust",
+      "palette_reference": "RX / AP",
+      "symbol_box": [
+        55,
+        17,
+        60,
+        44
+      ]
+    },
+    "CL": {
+      "color": "#1a1a1a",
+      "symbol": "mod-classic.png",
+      "bbox": [
+        28,
+        11,
+        90,
+        73
+      ],
+      "label": "Classic",
+      "palette_reference": "V2 (main badge)",
+      "symbol_box": [
+        59,
+        13,
+        51,
+        51
+      ]
+    }
+  },
+  "fallback": {
+    "size": [
+      257,
+      77
+    ],
+    "color": "#343434",
+    "symbol": "?",
+    "acronym": "dynamic renderer overlay"
+  },
+  "official_source": "https://github.com/ppy/osu-resources/tree/master/osu.Game.Resources/Textures/Icons/Mods",
+  "deployment_record": "mod-icons-deployment.json"
+}
