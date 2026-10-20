@@ -1,0 +1,508 @@
+--- a/src/main/java/me/aloic/lazybotppplus/controller/PlayerController.java
++++ b/src/main/java/me/aloic/lazybotppplus/controller/PlayerController.java
+@@ -4,6 +4,7 @@
+ import me.aloic.lazybotppplus.entity.WebResult;
+ import me.aloic.lazybotppplus.enums.PerformanceDimension;
+ import me.aloic.lazybotppplus.service.PlayerService;
++import me.aloic.lazybotppplus.service.PlayerJobService;
+ import me.aloic.lazybotppplus.util.ResultUtil;
+ import org.slf4j.Logger;
+ import org.slf4j.LoggerFactory;
+@@ -18,8 +19,22 @@
+ {
+     @Resource
+     private PlayerService playerService;
++    @Resource
++    private PlayerJobService playerJobs;
+     private static final Logger logger = LoggerFactory.getLogger(PlayerController.class);
+ 
++
++    @PostMapping("/jobs")
++    public WebResult startPlayerJob(@RequestParam Long id,
++            @RequestParam(defaultValue = "false") boolean refresh) {
++        return ResultUtil.success(playerJobs.start(id, refresh));
++    }
++
++    @GetMapping("/jobs/status")
++    public WebResult playerJobStatus(@RequestParam Long id) {
++        var job = playerJobs.status(id);
++        return job == null ? ResultUtil.notFound("Player job not found") : ResultUtil.success(job);
++    }
+ 
+     @GetMapping("/info")
+     public WebResult getPlayerInfo(@RequestParam(value = "id", required = true) Long id)
+--- a/src/main/java/me/aloic/lazybotppplus/service/impl/PlayerServiceImpl.java
++++ b/src/main/java/me/aloic/lazybotppplus/service/impl/PlayerServiceImpl.java
+@@ -23,11 +23,16 @@
+ import org.slf4j.LoggerFactory;
+ import org.springframework.stereotype.Service;
+ import org.springframework.transaction.annotation.Transactional;
++import org.springframework.transaction.PlatformTransactionManager;
++import org.springframework.transaction.support.TransactionTemplate;
+ 
+ import java.time.LocalDateTime;
+ import java.util.*;
+ import java.util.concurrent.CompletableFuture;
++import java.util.concurrent.Semaphore;
++import java.util.concurrent.locks.ReentrantLock;
+ import java.util.function.Function;
++import java.util.function.Supplier;
+ import java.util.stream.Collectors;
+ import java.util.stream.IntStream;
+ 
+@@ -51,20 +56,35 @@
+     @Resource
+     private ApiRequestExecutor apiRequestExecutor;
+ 
++    @Resource
++    private PlatformTransactionManager transactionManager;
++
++    // Waiting/downloads must not hold a JDBC connection. Serialize each player
++    // across HTTP jobs, legacy endpoints and the scheduled updater.
++    private final ReentrantLock[] playerLocks = IntStream.range(0, 256)
++            .mapToObj(i -> new ReentrantLock()).toArray(ReentrantLock[]::new);
++    private final Semaphore initializations = new Semaphore(2, true);
++
++    private <T> T withPlayerLock(Long id, Supplier<T> action) {
++        ReentrantLock lock = playerLocks[Math.floorMod(id.hashCode(), playerLocks.length)];
++        lock.lock();
++        try { return action.get(); } finally { lock.unlock(); }
++    }
++
+     private static final Logger logger = LoggerFactory.getLogger(PlayerServiceImpl.class);
+     private static final int INITIALIZE_THREAD_LIMIT = 10;
+ 
+-    @Transactional
+     @Override
+     public PlayerStats getPlayerStats(Long id) {
++        return withPlayerLock(id, () -> {
+         PlayerStats playerResult=checkInitializationStatus(id);
+         if (playerResult != null) return playerResult;
+ 
+         logger.info("[INFO] Player {} existing, calculating...", id);
+         return calcPlayerStats(id);
+-    }
+-
+-    @Transactional
++        });
++    }
++
+     protected List<ScorePO> initializePlayerStats(Long id) {
+ 
+ //        List<ScoreLazerDTO> scoreLazerDTOS = new ApiRequestStarter(
+@@ -125,18 +145,23 @@
+                 }, VirtualThreadExecutorHolder.VIRTUAL_EXECUTOR))
+                 .toList();
+         CompletableFuture.allOf(futures.toArray(new CompletableFuture[0])).join();
+-        if (!allBeatmaps.isEmpty()) beatmapMapper.insertBatchIgnoreDuplicate(allBeatmaps);
+-        if (!allScores.isEmpty()) scoresMapper.insertBatch(allScores);
+-        if (!allMods.isEmpty()) scoreModMapper.insertBatch(allMods);
+-        if (!allStatistics.isEmpty()) scoreStatisticsMapper.insertBatch(allStatistics);
++        if (allScores.isEmpty()) throw new LazybotRuntimeException("No scores could be calculated");
++        new TransactionTemplate(transactionManager).executeWithoutResult(status -> {
++            // Publish the initialization marker atomically with the score rows.
++            playerSummaryMapper.insert(new PlayerSummaryPO(id, LocalDateTime.now()));
++            if (!allBeatmaps.isEmpty()) beatmapMapper.insertBatchIgnoreDuplicate(allBeatmaps);
++            scoresMapper.insertBatch(allScores);
++            if (!allMods.isEmpty()) scoreModMapper.insertBatch(allMods);
++            if (!allStatistics.isEmpty()) scoreStatisticsMapper.insertBatch(allStatistics);
++        });
+         logger.info("Player {} initialization completed", id);
+         return allScores;
+     }
+ 
+ 
+     @Override
+-    @Transactional
+     public PlayerStats updatePlayerStats(Long id) {
++        return withPlayerLock(id, () -> {
+         PlayerStats playerResult=checkInitializationStatus(id);
+         if (playerResult != null) return playerResult;
+ 
+@@ -152,6 +177,7 @@
+         }
+         doUpdatesToDatabase(id, recentScores);
+         return calcPlayerStats(id);
++        });
+     }
+ 
+     @Transactional
+@@ -168,9 +194,9 @@
+     }
+ 
+ 
+-    @Transactional
+     @Override
+     public void updatePlayerStatsNoResult(Long id) {
++        withPlayerLock(id, () -> {
+         PlayerStats playerResult=checkInitializationStatus(id);
+         if (playerResult != null) {
+             logger.warn("[UPDATE] Player {} not existing, skipping",id);
+@@ -191,6 +217,8 @@
+         doUpdatesToDatabase(id, recentScores);
+         playerSummaryMapper.updateTimestamp(id, LocalDateTime.now());
+         logger.info("[UPDATE] Successfully updated player {}",id);
++        return null;
++        });
+     }
+ 
+ 
+@@ -218,6 +246,7 @@
+         List<ScoreModPO> insertMods = new ArrayList<>();
+         List<ScoreStatisticsPO> insertStats = new ArrayList<>();
+         List<BeatmapPO> insertBeatmaps = new ArrayList<>();
++        Set<Long> replacedScores = new HashSet<>();
+         for (ScoreLazerDTO dto : recentScores) {
+             try{
+                 Long beatmapId = Long.valueOf(dto.getBeatmap_id());
+@@ -227,9 +256,7 @@
+                 ScorePO existing = existingScores.get(beatmapId);
+                 if (existing == null || newScore.getPp() > existing.getPp()) {
+                     if (existing != null) {
+-                        scoreModMapper.deleteByScoreId(existing.getId());
+-                        scoreStatisticsMapper.deleteByScoreId(existing.getId());
+-                        scoresMapper.deleteById(existing.getId());
++                        replacedScores.add(existing.getId());
+                     }
+                     insertBeatmaps.add(new BeatmapPO(dto.getBeatmap(),dto.getBeatmapset()));
+                     insertList.add(newScore);
+@@ -249,10 +276,17 @@
+                 logger.error("[UPDATE] pp plus calculation failed, skipping", e);
+             }
+         }
+-        if (!insertStats.isEmpty()) beatmapMapper.insertBatchIgnoreDuplicate(insertBeatmaps);
+-        if (!insertList.isEmpty()) scoresMapper.insertBatch(insertList);
+-        if (!insertMods.isEmpty()) scoreModMapper.insertBatch(insertMods);
+-        if (!insertStats.isEmpty()) scoreStatisticsMapper.insertBatch(insertStats);
++        new TransactionTemplate(transactionManager).executeWithoutResult(status -> {
++            for (Long scoreId : replacedScores) {
++                scoreModMapper.deleteByScoreId(scoreId);
++                scoreStatisticsMapper.deleteByScoreId(scoreId);
++                scoresMapper.deleteById(scoreId);
++            }
++            if (!insertBeatmaps.isEmpty()) beatmapMapper.insertBatchIgnoreDuplicate(insertBeatmaps);
++            if (!insertList.isEmpty()) scoresMapper.insertBatch(insertList);
++            if (!insertMods.isEmpty()) scoreModMapper.insertBatch(insertMods);
++            if (!insertStats.isEmpty()) scoreStatisticsMapper.insertBatch(insertStats);
++        });
+     }
+ 
+     @Transactional
+@@ -400,15 +434,23 @@
+                 .toList();
+     }
+ 
+-    @Transactional
+     protected PlayerStats checkInitializationStatus(Long id)
+     {
+         PlayerSummaryPO player = playerSummaryMapper.selectById(id);
+         if (player == null) {
+             logger.info("[CHECKINIT] cannot find target scores for {}, initializing...", id);
+-            playerSummaryMapper.insert(new PlayerSummaryPO(id, LocalDateTime.now()));
+-            List<ScorePO> scores = initializePlayerStats(id);
+-            return new PlayerStats(id, calculatePerformanceFromScores(scores));
++            boolean acquired = false;
++            try {
++                initializations.acquire();
++                acquired = true;
++                List<ScorePO> scores = initializePlayerStats(id);
++                return new PlayerStats(id, calculatePerformanceFromScores(scores));
++            } catch (InterruptedException error) {
++                Thread.currentThread().interrupt();
++                throw new LazybotRuntimeException("Player initialization interrupted");
++            } finally {
++                if (acquired) initializations.release();
++            }
+         }
+         return null;
+     }
+--- /dev/null
++++ b/src/main/java/me/aloic/lazybotppplus/service/PlayerJobService.java
+@@ -0,0 +1,86 @@
++package me.aloic.lazybotppplus.service;
++
++import jakarta.annotation.PreDestroy;
++import me.aloic.lazybotppplus.entity.vo.PlayerStats;
++import me.aloic.lazybotppplus.exception.InvalidScoreException;
++import org.slf4j.Logger;
++import org.slf4j.LoggerFactory;
++import org.springframework.stereotype.Service;
++
++import java.util.HashMap;
++import java.util.Map;
++import java.util.concurrent.ArrayBlockingQueue;
++import java.util.concurrent.ThreadPoolExecutor;
++import java.util.concurrent.TimeUnit;
++
++/** Short HTTP requests observe a single, bounded calculation per player. */
++@Service
++public class PlayerJobService {
++    private static final Logger logger = LoggerFactory.getLogger(PlayerJobService.class);
++    private static final long SUCCESS_TTL_MS = 30 * 60_000L;
++    private static final long FAILURE_TTL_MS = 15_000L;
++    private static final int MAX_JOBS = 256;
++    private final PlayerService players;
++    private final Map<Long, Job> jobs = new HashMap<>();
++    private final ThreadPoolExecutor executor = new ThreadPoolExecutor(
++            2, 2, 0, TimeUnit.MILLISECONDS, new ArrayBlockingQueue<>(64),
++            Thread.ofPlatform().name("ppplus-player-job-", 0).daemon().factory());
++
++    public PlayerJobService(PlayerService players) { this.players = players; }
++
++    public record Snapshot(Long id, String status, PlayerStats result, String errorCode) {}
++    private static class Job {
++        final Long id;
++        volatile Snapshot snapshot;
++        volatile long finishedAt;
++        Job(Long id) { this.id = id; snapshot = new Snapshot(id, "queued", null, null); }
++        boolean expired(long now) {
++            return finishedAt > 0 && now - finishedAt >
++                    ("completed".equals(snapshot.status()) ? SUCCESS_TTL_MS : FAILURE_TTL_MS);
++        }
++    }
++
++    public synchronized Snapshot start(Long id, boolean refresh) {
++        if (id == null || id <= 0) throw new IllegalArgumentException("Invalid player id");
++        long now = System.currentTimeMillis();
++        jobs.values().removeIf(job -> job.expired(now));
++        Job existing = jobs.get(id);
++        if (existing != null && (!refresh || existing.finishedAt == 0)) return existing.snapshot;
++        if (existing == null && jobs.size() >= MAX_JOBS) {
++            // Evict only finished results; never lose ownership of active work.
++            jobs.values().stream().filter(job -> job.finishedAt > 0)
++                    .min(java.util.Comparator.comparingLong(job -> job.finishedAt))
++                    .ifPresent(job -> jobs.remove(job.id));
++            if (jobs.size() >= MAX_JOBS) return new Snapshot(id, "failed", null, "QUEUE_FULL");
++        }
++        Job job = new Job(id);
++        jobs.put(id, job);
++        try {
++            executor.execute(() -> {
++                job.snapshot = new Snapshot(id, "running", null, null);
++                try {
++                    PlayerStats result = refresh ? players.updatePlayerStats(id) : players.getPlayerStats(id);
++                    job.snapshot = new Snapshot(id, "completed", result, null);
++                } catch (Exception error) {
++                    logger.error("PP+ player job {} failed", id, error);
++                    job.snapshot = new Snapshot(id, "failed", null,
++                            error instanceof InvalidScoreException ? "NO_SCORES" : "CALCULATION_FAILED");
++                } finally {
++                    job.finishedAt = System.currentTimeMillis();
++                }
++            });
++        } catch (java.util.concurrent.RejectedExecutionException error) {
++            jobs.remove(id, job);
++            return new Snapshot(id, "failed", null, "QUEUE_FULL");
++        }
++        return job.snapshot;
++    }
++
++    public synchronized Snapshot status(Long id) {
++        Job job = jobs.get(id);
++        return job == null ? null : job.snapshot;
++    }
++
++    @PreDestroy
++    public void close() { executor.shutdownNow(); }
++}
+--- a/src/main/java/me/aloic/lazybotppplus/service/PlayerService.java
++++ b/src/main/java/me/aloic/lazybotppplus/service/PlayerService.java
+@@ -9,16 +9,13 @@
+ 
+ public interface PlayerService
+ {
+-    @Transactional
+     PlayerStats getPlayerStats(Long id);
+ 
+-    @Transactional
+     PlayerStats updatePlayerStats(Long id);
+ 
+     @Transactional
+     void deleteScore(Long id);
+ 
+-    @Transactional
+     void updatePlayerStatsNoResult(Long id);
+ 
+     ScorePerformanceDTO addScore(Long id, Integer beatmapId);
+--- a/src/main/java/me/aloic/lazybotppplus/util/AssertDownloadUtil.java
++++ b/src/main/java/me/aloic/lazybotppplus/util/AssertDownloadUtil.java
+@@ -12,6 +12,8 @@
+ import java.net.http.HttpResponse;
+ import java.nio.file.Path;
+ import java.nio.file.Paths;
++import java.nio.file.Files;
++import java.nio.file.StandardCopyOption;
+ import java.time.Duration;
+ import java.util.concurrent.*;
+ 
+@@ -47,10 +49,12 @@
+     public static void downloadResourceQueue(String targetUrl, String desiredLocalPath) throws InterruptedException, ExecutionException {
+         Future<Void> downloadFuture = executor.submit(() -> {
+             try {
+-                delayQueue.take();
+-                fileDownloadJavaHttpClient(targetUrl, desiredLocalPath);
+-                delayQueue.offer(new DownloadTask(ONE_MINUTE_IN_MS));
++                withDownloadPermit(() -> {
++                    fileDownloadJavaHttpClient(targetUrl, desiredLocalPath);
++                    return null;
++                });
+             } catch (InterruptedException e) {
++                Thread.currentThread().interrupt();
+                 logger.error(e.getMessage());
+                 throw new LazybotRuntimeException("Download thread was interrupted: " +e.getMessage());
+             }
+@@ -60,18 +64,17 @@
+         logger.info("(QUEUE) Download completed for: {}", targetUrl);
+     }
+     private static void downloadResourceSmallQueue(String targetUrl, String desiredLocalPath) throws InterruptedException, ExecutionException {
+-        Future<Void> downloadFuture = executor.submit(() -> {
+-            try {
+-                delayQueue.take();
+-                fileDownloadJavaHttpClient(targetUrl, desiredLocalPath);
+-                delayQueue.offer(new DownloadTask(ONE_MINUTE_IN_MS));
+-            } catch (InterruptedException e) {
+-                logger.error("{} : {}",e.getClass(), e.getMessage());
+-            }
+-            return null;
+-        });
+-        downloadFuture.get();
+-        logger.info("Download completed for: {}", targetUrl);
++        downloadResourceQueue(targetUrl, desiredLocalPath);
++    }
++
++    static void withDownloadPermit(Callable<Void> download) throws Exception {
++        delayQueue.take();
++        try {
++            download.call();
++        } finally {
++            // Failed attempts still consume rate budget, but never destroy it.
++            delayQueue.offer(new DownloadTask(ONE_MINUTE_IN_MS));
++        }
+     }
+     public static boolean beatmapDownload(Integer bid,Boolean override)
+     {
+@@ -114,12 +117,19 @@
+                         .GET()
+                         .build();
+                 Path path = Path.of(desiredLocalPath);
+-                HttpResponse<Path> response = httpClient.send(request, HttpResponse.BodyHandlers.ofFile(path));
++                Path temporary = Files.createTempFile(path.toAbsolutePath().getParent(), "ppplus-", ".part");
++                try {
++                HttpResponse<Path> response = httpClient.send(request, HttpResponse.BodyHandlers.ofFile(temporary));
+                 if (response.statusCode() == 200) {
++                    if (Files.size(temporary) == 0) throw new IOException("Empty resource response");
++                    Files.move(temporary, path, StandardCopyOption.REPLACE_EXISTING);
+                     logger.info("File download successful，save path：{}", desiredLocalPath);
+                     return;
+                 } else {
+                     throw new LazybotRuntimeException("HTTP status code：" + response.statusCode());
++                }
++                } finally {
++                    Files.deleteIfExists(temporary);
+                 }
+             } catch (Exception e) {
+                 logger.warn("File download failed ({} times): {}", attempt, e.getMessage());
+--- /dev/null
++++ b/src/test/java/me/aloic/lazybotppplus/service/PlayerJobServiceTest.java
+@@ -0,0 +1,75 @@
++package me.aloic.lazybotppplus.service;
++
++import me.aloic.lazybotppplus.entity.vo.PlayerStats;
++import me.aloic.lazybotppplus.entity.vo.PPPlusPerformance;
++import me.aloic.lazybotppplus.exception.InvalidScoreException;
++import org.junit.jupiter.api.Test;
++import java.util.concurrent.CountDownLatch;
++import java.util.concurrent.TimeUnit;
++import java.util.concurrent.atomic.AtomicInteger;
++import static org.junit.jupiter.api.Assertions.*;
++import static org.mockito.Mockito.*;
++
++class PlayerJobServiceTest {
++    private static PlayerJobService.Snapshot finished(PlayerJobService jobs, long id) throws Exception {
++        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5);
++        while (System.nanoTime() < deadline) {
++            var state = jobs.status(id);
++            if (state != null && (state.status().equals("completed") || state.status().equals("failed"))) return state;
++            Thread.sleep(5);
++        }
++        fail("job did not finish");
++        return null;
++    }
++
++    @Test void pollingDoesNotStartWorkAndRepeatedStartsShareSlowJob() throws Exception {
++        PlayerService players = mock(PlayerService.class);
++        CountDownLatch release = new CountDownLatch(1);
++        when(players.getPlayerStats(1L)).thenAnswer(call -> {
++            assertTrue(release.await(3, TimeUnit.SECONDS));
++            return new PlayerStats(1L, new PPPlusPerformance());
++        });
++        PlayerJobService jobs = new PlayerJobService(players);
++        try {
++            assertNull(jobs.status(1L));
++            verifyNoInteractions(players);
++            for (int i = 0; i < 20; i++) assertNotEquals("completed", jobs.start(1L, false).status());
++            release.countDown();
++            assertNotNull(finished(jobs, 1L).result());
++            assertEquals("completed", jobs.start(1L, false).status());
++            verify(players, times(1)).getPlayerStats(1L);
++        } finally { release.countDown(); jobs.close(); }
++    }
++
++    @Test void limitsWorkAndDistinguishesNoScoresFromCalculationFailure() throws Exception {
++        PlayerService players = mock(PlayerService.class);
++        AtomicInteger active = new AtomicInteger();
++        AtomicInteger maximum = new AtomicInteger();
++        CountDownLatch entered = new CountDownLatch(2);
++        CountDownLatch release = new CountDownLatch(1);
++        when(players.getPlayerStats(anyLong())).thenAnswer(call -> {
++            int current = active.incrementAndGet();
++            maximum.accumulateAndGet(current, Math::max);
++            entered.countDown();
++            try {
++                assertTrue(release.await(3, TimeUnit.SECONDS));
++                long id = call.getArgument(0);
++                if (id == 3) throw new InvalidScoreException("no scores");
++                if (id == 4) throw new IllegalStateException("private internal detail");
++                return new PlayerStats(id, new PPPlusPerformance());
++            } finally { active.decrementAndGet(); }
++        });
++        PlayerJobService jobs = new PlayerJobService(players);
++        try {
++            for (long i = 1; i <= 10; i++) jobs.start(i, false);
++            assertTrue(entered.await(2, TimeUnit.SECONDS));
++            assertEquals(2, maximum.get());
++            assertEquals("queued", jobs.status(10L).status());
++            release.countDown();
++            assertEquals("NO_SCORES", finished(jobs, 3L).errorCode());
++            assertEquals("CALCULATION_FAILED", finished(jobs, 4L).errorCode());
++            assertEquals("completed", finished(jobs, 10L).status());
++            assertEquals(2, maximum.get());
++        } finally { release.countDown(); jobs.close(); }
++    }
++}
+--- /dev/null
++++ b/src/test/java/me/aloic/lazybotppplus/util/AssertDownloadUtilTest.java
+@@ -0,0 +1,23 @@
++package me.aloic.lazybotppplus.util;
++
++import org.junit.jupiter.api.Test;
++import java.io.IOException;
++import java.util.concurrent.DelayQueue;
++import static org.junit.jupiter.api.Assertions.*;
++
++class AssertDownloadUtilTest {
++    @Test void failedDownloadsKeepTheirRateLimitPermits() throws Exception {
++        var field = AssertDownloadUtil.class.getDeclaredField("delayQueue");
++        field.setAccessible(true);
++        var queue = (DelayQueue<?>) field.get(null);
++        int permits = queue.size();
++        for (int i = 0; i < 8; i++) {
++            assertThrows(IOException.class, () -> AssertDownloadUtil.withDownloadPermit(() -> {
++                throw new IOException("simulated download failure");
++            }));
++            assertEquals(permits, queue.size(), "failures must not permanently consume permits");
++        }
++        AssertDownloadUtil.withDownloadPermit(() -> null);
++        assertEquals(permits, queue.size());
++    }
++}

@@ -1013,9 +1013,9 @@ app.get(['/api/osu/player/:id/pplus', '/api/osu/player/:id/ppplus'], async (req,
   try {
     const { getPlayerBars } = await import('./osu/pplus.js');
     const bars = await getPlayerBars(osuId);
-    res.json(ok({ bars: bars || null }));
-  } catch {
-    res.json(ok({ bars: null }));
+    res.json(ok({ bars: bars || null, status: bars ? 'completed' : 'no_scores' }));
+  } catch (error) {
+    res.status(502).json({ ok: false, code: error?.code || 'UNAVAILABLE', error: String(error?.message || 'PP+ 获取失败') });
   }
 });
 
@@ -1142,7 +1142,25 @@ app.get('/api/diagnostics', (_req, res) => {
   res.send(JSON.stringify(report, null, 2));
 });
 
-app.post('/api/settings', (req, res) => {
+app.post('/api/settings', async (req, res) => {
+  const settingsBefore = readDb().settings;
+  const requested = req.body || {};
+  const preservePplusSecret = requested.pplusClientSecret === undefined ||
+    ['', '已填写', '已设置'].includes(requested.pplusClientSecret);
+  const pplusPatch = {
+    pplusClientId: requested.pplusClientId ?? settingsBefore.pplusClientId,
+    pplusClientSecret: preservePplusSecret ? settingsBefore.pplusClientSecret : requested.pplusClientSecret,
+    pplusBaseUrl: requested.pplusBaseUrl ?? settingsBefore.pplusBaseUrl,
+  };
+  const pplusChanged = Object.entries(pplusPatch).some(([key, value]) => value !== settingsBefore[key]);
+  if (pplusChanged && pplusPatch.pplusClientId) {
+    try {
+      const { validatePPlusCredentials } = await import('./osu/pplus.js');
+      await validatePPlusCredentials(pplusPatch);
+    } catch (error) {
+      return res.status(400).json({ ok: false, error: String(error?.message || 'PP+ 凭据验证失败'), code: error?.code || 'UNAVAILABLE' });
+    }
+  }
   const updatedDb = updateDb((db) => {
     saveConfigSnapshot(db);
     const incoming = Object.fromEntries(
@@ -1164,6 +1182,7 @@ app.post('/api/settings', (req, res) => {
     db.settings.adminPassword = keepSecret('adminPassword') ? previousAdminPassword : incoming.adminPassword;
     db.settings.osuClientSecret = keepSecret('osuClientSecret') ? previousOsuSecret : incoming.osuClientSecret;
     db.settings.pplusClientSecret = keepSecret('pplusClientSecret') ? previousPplusSecret : incoming.pplusClientSecret;
+    if (pplusChanged) Object.assign(db.settings, pplusPatch);
     if (Array.isArray(db.settings.commandRoles)) {
       const validRoleIds = new Set(db.settings.commandRoles.map((role) => String(role.id)));
       db.settings.commandPermissions = Object.fromEntries(

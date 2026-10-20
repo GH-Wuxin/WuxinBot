@@ -10,6 +10,7 @@ process.env.NODE_ENV = 'test';
 process.env.OSU_CLIENT_ID = 'fixture';
 process.env.OSU_CLIENT_SECRET = 'fixture';
 process.env.OSU_API_MIN_INTERVAL_MS = '0';
+process.env.PPLUS_POLL_INTERVAL_MS = '10';
 const axes = ['aim_control', 'jump_aim', 'spatial_precision', 'flow_aim', 'raw_speed', 'finger_control', 'stamina', 'endurance', 'reading'];
 const requests = new Map();
 const server = http.createServer((req, res) => {
@@ -18,6 +19,11 @@ const server = http.createServer((req, res) => {
   req.on('end', () => {
     res.setHeader('content-type', 'application/json');
     if (req.url === '/oauth/token') return res.end(JSON.stringify({ access_token: 'fixture', expires_in: 3600 }));
+    if (req.url.startsWith('/auth/token?')) return res.end(JSON.stringify({ code: 200, data: 'fixture-pplus' }));
+    if (req.url.startsWith('/player/jobs?')) return res.end(JSON.stringify({ code: 200, data: { id: 1, status: 'running' } }));
+    if (req.url.startsWith('/player/jobs/status?')) return res.end(JSON.stringify({ code: 200, data: {
+      id: 1, status: 'completed', result: { performances: { pp: 1000, ppJumpAim: 900, ppFlowAim: 800, ppSpeed: 700, ppStamina: 600, ppPrecision: 500, ppAcc: 400 } },
+    } }));
     if (req.url === '/api/state') return res.end(JSON.stringify({ algorithm_id: 'BATCH_TEST', map_demand_version: 'test' }));
     if (req.url === '/api/v2/users/1/osu') return res.end(JSON.stringify({ id: 1, username: 'Fixture', statistics: {} }));
     if (req.url.startsWith('/api/v2/users/1/scores/best?')) {
@@ -48,11 +54,14 @@ process.env.OSU_API_BASE_URL = base + '/api/v2';
 process.env.OSU_TOKEN_URL = base + '/oauth/token';
 process.env.SKILL_PROFILER_URL = base;
 try {
+  const { updateDb } = await import('../server/store.ts');
+  updateDb(db => Object.assign(db.settings, { pplusBaseUrl: base, pplusClientId: 1, pplusClientSecret: 'fixture' }));
   const { buildPlayerSkillProfilePayload } = await import('../server/bots/playerSkillProfile.ts');
   const { startRequestTrace, withRequestTrace, listRequestTraces } = await import('../server/requestTrace.ts');
   const id = startRequestTrace({ messageId: 'batch-fixture', groupId: 'fixture', userId: 'fixture' });
   const partial = await withRequestTrace(id, () => buildPlayerSkillProfilePayload(1, 3));
   assert.equal(partial.sample.valid, 2);
+  assert.equal(partial.ppPlus.ppTotal, 1000, 'first profile includes the awaited PP+ result');
   assert.equal(partial.sample.failed, 1);
   assert.ok(listRequestTraces(1)[0].events.some(event => event.data?.completed === 3 && event.data?.failed === 1));
   const complete = await buildPlayerSkillProfilePayload(1, 3);
@@ -62,7 +71,15 @@ try {
   const cached = await buildPlayerSkillProfilePayload(1, 3);
   assert.deepEqual(cached, complete);
   assert.equal([...requests.values()].reduce((a, b) => a + b), 4);
-  console.log('PASS: BP progress counts, transient failure retry, successful-map reuse, complete-profile caching');
+  const rejectedAuth = http.createServer((_req, res) => res.end(JSON.stringify({ code: 401, data: null })));
+  await new Promise(resolve => rejectedAuth.listen(0, '127.0.0.1', resolve));
+  try {
+    updateDb(db => { db.settings.pplusBaseUrl = `http://127.0.0.1:${rejectedAuth.address().port}`; });
+    await assert.rejects(buildPlayerSkillProfilePayload(1, 3), { code: 'AUTH' }, 'cached BP must not hide a current PP+ authentication failure');
+  } finally {
+    await new Promise(resolve => rejectedAuth.close(resolve));
+  }
+  console.log('PASS: first PP+ payload, auth failure propagation, BP retries and profile caching');
 } finally {
   await new Promise(resolve => server.close(resolve));
   assert.equal(path.dirname(path.resolve(dataDir)), path.resolve(os.tmpdir()));

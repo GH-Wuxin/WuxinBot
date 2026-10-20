@@ -2,45 +2,84 @@
 // Normalizes raw dimension values into display bars matching LazyBot's panel.
 
 import { readDb, updateDb } from '../store.js';
+import { createHash } from 'node:crypto';
 
 // ── Auth (with in-memory caching + timeout) ──
 
-function fetchPP(url: string, opts: RequestInit = {}, timeoutMs: number = 10000): Promise<Response> {
-  const ctrl = new AbortController();
-  const timer = setTimeout(() => ctrl.abort(), timeoutMs);
-  return fetch(url, { ...opts, signal: ctrl.signal }).finally(() => clearTimeout(timer));
+export type PPlusErrorCode = 'AUTH' | 'TIMEOUT' | 'UNAVAILABLE' | 'INVALID_RESPONSE' | 'NO_SCORES' | 'QUEUE_FULL';
+export class PPlusError extends Error {
+  constructor(public readonly code: PPlusErrorCode, message: string) {
+    super(message);
+    this.name = 'PPlusError';
+  }
 }
 
-// A cache hit returns almost instantly, but the aggregate service initializes a
-// previously unseen player inside GET /player/info. That first request may need
-// to download and calculate up to 200 best scores, so the ordinary 10 second
-// service timeout is far too short. Aborting the client request does not stop
-// the Java-side calculation and used to make Analyze incorrectly report that
-// PP+ was unavailable while initialization continued in the background.
-// Measured 2026-10-19 under 20-way parallel player/update: successful calls
-// reached 282s and the four heaviest were still running at 306s when the
-// connection dropped. 360s is the ceiling with headroom over that observation.
-const PLAYER_INFO_TIMEOUT_MS = 360_000;
+function duration(name: string, fallback: number): number {
+  const value = Number(process.env[name]);
+  return Number.isFinite(value) && value > 0 ? value : fallback;
+}
+const REQUEST_TIMEOUT_MS = duration('PPLUS_REQUEST_TIMEOUT_MS', 15_000);
+const JOB_TIMEOUT_MS = duration('PPLUS_JOB_TIMEOUT_MS', 30 * 60_000);
+const POLL_INTERVAL_MS = duration('PPLUS_POLL_INTERVAL_MS', 1_500);
+type Configuration = { baseUrl: string; clientId: string; clientSecret: string; key: string };
 
-let ppTokenCache: { token: string; expiresAt: number } | null = null;
-
-async function getPPlusToken(): Promise<string> {
-  if (ppTokenCache && Date.now() < ppTokenCache.expiresAt) return ppTokenCache.token;
-
-  const db = readDb();
-  const settings = db.settings as Record<string, unknown>;
+function configuration(settings = readDb().settings as Record<string, unknown>): Configuration {
+  const baseUrl = String(settings.pplusBaseUrl || 'http://127.0.0.1:9001').replace(/\/+$/, '');
   const clientId = String(settings.pplusClientId || '');
   const clientSecret = String(settings.pplusClientSecret || '');
-  const baseUrl = String(settings.pplusBaseUrl || 'http://127.0.0.1:9001');
-  if (!clientId || !clientSecret) throw new Error('PP+ 凭据未配置。');
-  const resp = await fetchPP(`${baseUrl}/auth/token?clientId=${encodeURIComponent(clientId)}&clientSecret=${encodeURIComponent(clientSecret)}`, { method: 'POST' });
-  if (!resp.ok) throw new Error(`PP+ 认证 HTTP ${resp.status}`);
-  let json: any;
-  try { json = await resp.json(); } catch { throw new Error('PP+ 认证返回了无效 JSON'); }
-  if (json.code !== 200) throw new Error(`PP+ 认证失败：${json.msg || ''}`);
-  const token = json.data as string;
-  ppTokenCache = { token, expiresAt: Date.now() + 23 * 3600 * 1000 };
-  return token;
+  const key = createHash('sha256').update(JSON.stringify([baseUrl, clientId, clientSecret])).digest('hex');
+  return { baseUrl, clientId, clientSecret, key };
+}
+
+async function requestJson(url: string, opts: RequestInit = {}): Promise<{ status: number; json: any }> {
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), REQUEST_TIMEOUT_MS);
+  try {
+    const response = await fetch(url, { ...opts, signal: ctrl.signal });
+    const json = await response.json(); // The deadline also covers the body.
+    if (!json || typeof json !== 'object' || Array.isArray(json)) throw new SyntaxError('Invalid envelope');
+    return { status: response.status, json };
+  } catch (error) {
+    if (ctrl.signal.aborted) throw new PPlusError('TIMEOUT', 'PP+ 服务响应超时，请稍后重试。');
+    if (error instanceof SyntaxError) throw new PPlusError('INVALID_RESPONSE', 'PP+ 服务返回了无效数据。');
+    throw new PPlusError('UNAVAILABLE', 'PP+ 服务连接失败，请检查聚合服务。');
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+let ppTokenCache: { key: string; token: string; expiresAt: number } | null = null;
+let tokenInflight: { key: string; promise: Promise<string> } | null = null;
+async function getPPlusToken(config: Configuration): Promise<string> {
+  if (ppTokenCache?.key === config.key && Date.now() < ppTokenCache.expiresAt) return ppTokenCache.token;
+  if (tokenInflight?.key === config.key) return tokenInflight.promise;
+  const promise = (async () => {
+    const { baseUrl, clientId, clientSecret } = config;
+    if (!clientId || !clientSecret) throw new PPlusError('AUTH', 'PP+ 凭据未配置，请联系管理员。');
+    const { status, json } = await requestJson(`${baseUrl}/auth/token?clientId=${encodeURIComponent(clientId)}&clientSecret=${encodeURIComponent(clientSecret)}`, { method: 'POST' });
+    if (status >= 400 || json.code !== 200 || typeof json.data !== 'string' || !json.data) {
+      throw new PPlusError('AUTH', 'PP+ 认证失败，请管理员检查客户端 ID 和密钥。');
+    }
+    ppTokenCache = { key: config.key, token: json.data, expiresAt: Date.now() + 23 * 3600 * 1000 };
+    return json.data as string;
+  })();
+  tokenInflight = { key: config.key, promise };
+  try { return await promise; }
+  finally { if (tokenInflight?.promise === promise) tokenInflight = null; }
+}
+
+async function authorizedRequest(config: Configuration, route: string, method = 'GET') {
+  for (let attempt = 0; attempt < 2; attempt++) {
+    const token = await getPPlusToken(config);
+    const result = await requestJson(config.baseUrl + route, { method, headers: { Authorization: `Bearer ${token}` } });
+    if (result.status !== 401 && result.json.code !== 401) return result;
+    if (ppTokenCache?.token === token) ppTokenCache = null;
+  }
+  throw new PPlusError('AUTH', 'PP+ 认证失效，请管理员检查客户端 ID 和密钥。');
+}
+
+export async function validatePPlusCredentials(settings: Record<string, unknown>): Promise<void> {
+  await getPPlusToken(configuration(settings));
 }
 
 // ── API ──
@@ -67,36 +106,53 @@ export interface PPlusBars {
 }
 
 export async function getPlayerPPlus(osuUserId: string | number): Promise<PPlusPerformance | null> {
-  const db = readDb();
-  const settings = db.settings as Record<string, unknown>;
-  const baseUrl = String(settings.pplusBaseUrl || 'http://127.0.0.1:9001');
-  let token = await getPPlusToken();
-  let resp: Response;
-  const infoUrl = `${baseUrl}/player/info?id=${encodeURIComponent(String(osuUserId))}`;
-  try {
-    resp = await fetchPP(infoUrl, { headers: { Authorization: `Bearer ${token}` } }, PLAYER_INFO_TIMEOUT_MS);
-    // The PP+ token is cached in Wuxin for 23 hours, but the aggregate service
-    // can restart sooner. Re-authenticate once instead of silently losing PP+.
-    if (resp.status === 401) {
-      ppTokenCache = null;
-      token = await getPPlusToken();
-      resp = await fetchPP(infoUrl, { headers: { Authorization: `Bearer ${token}` } }, PLAYER_INFO_TIMEOUT_MS);
+  return waitForPlayerJob(configuration(), osuUserId);
+}
+
+async function waitForPlayerJob(config: Configuration, osuUserId: string | number, refresh = false): Promise<PPlusPerformance | null> {
+  const id = encodeURIComponent(String(osuUserId));
+  const startRoute = `/player/jobs?id=${id}${refresh ? '&refresh=true' : ''}`;
+  const deadline = Date.now() + JOB_TIMEOUT_MS;
+  let start = true;
+  let failures = 0;
+  while (Date.now() < deadline) {
+    let response: Awaited<ReturnType<typeof authorizedRequest>>;
+    try {
+      response = await authorizedRequest(config, start ? startRoute : `/player/jobs/status?id=${id}`, start ? 'POST' : 'GET');
+      failures = 0;
+    } catch (error) {
+      if (!(error instanceof PPlusError) || !['TIMEOUT', 'UNAVAILABLE'].includes(error.code) || ++failures >= 3) throw error;
+      await new Promise(resolve => setTimeout(resolve, POLL_INTERVAL_MS));
+      continue;
     }
-  } catch (error: any) {
-    console.error(`[PP+] player/info ${String(osuUserId)} request failed: ${error?.name || 'Error'}: ${error?.message || error}`);
-    return null;
+    if (!start && (response.status === 404 || response.json.code === 404)) {
+      // The aggregate restarted. Starting again is idempotent per player.
+      start = true;
+    } else {
+      if (response.status >= 400 || response.json.code !== 200) {
+        throw new PPlusError('UNAVAILABLE', 'PP+ 任务接口不可用，请检查聚合服务版本与运行状态。');
+      }
+      const job = response.json.data;
+      if (String(job?.id) !== String(osuUserId)) throw new PPlusError('INVALID_RESPONSE', 'PP+ 返回的玩家任务不匹配。');
+      if (job.status === 'completed') {
+        const perf = job.result?.performances;
+        const fields = ['pp', 'ppJumpAim', 'ppFlowAim', 'ppSpeed', 'ppStamina', 'ppPrecision', 'ppAcc'];
+        if (!perf || fields.some(key => typeof perf[key] !== 'number' || !Number.isFinite(perf[key]) || perf[key] < 0)) {
+          throw new PPlusError('INVALID_RESPONSE', 'PP+ 任务完成但六维数据不完整。');
+        }
+        return perf as PPlusPerformance;
+      }
+      if (job.status === 'failed') {
+        if (job.errorCode === 'NO_SCORES') return null;
+        if (job.errorCode === 'QUEUE_FULL') throw new PPlusError('QUEUE_FULL', 'PP+ 当前排队人数较多，请稍后重试。');
+        throw new PPlusError('UNAVAILABLE', 'PP+ 玩家计算失败，请稍后重试。');
+      }
+      if (job.status !== 'queued' && job.status !== 'running') throw new PPlusError('INVALID_RESPONSE', 'PP+ 返回了未知任务状态。');
+      start = false;
+    }
+    await new Promise(resolve => setTimeout(resolve, POLL_INTERVAL_MS));
   }
-  let json: any;
-  try { json = await resp.json(); }
-  catch {
-    console.error(`[PP+] player/info ${String(osuUserId)} returned invalid JSON (HTTP ${resp.status})`);
-    return null;
-  }
-  if (!resp.ok || json.code !== 200) {
-    console.error(`[PP+] player/info ${String(osuUserId)} failed (HTTP ${resp.status}, code ${String(json.code ?? 'unknown')}): ${String(json.msg || '').slice(0, 160)}`);
-    return null;
-  }
-  return json.data?.performances || null;
+  throw new PPlusError('TIMEOUT', 'PP+ 仍在排队或计算，请稍后再次查询；已启动的任务会继续运行。');
 }
 
 // ── Normalization (matches LazyBot PerformanceDimensionLimit + getScaledRatio) ──
@@ -131,41 +187,36 @@ export function ppToBars(perf: PPlusPerformance): PPlusBars {
 }
 
 export async function refreshPlayerPPlus(osuUserId: string | number): Promise<void> {
-  const db = readDb();
-  const settings = db.settings as Record<string, unknown>;
-  const baseUrl = String(settings.pplusBaseUrl || 'http://127.0.0.1:9001');
-  const token = await getPPlusToken();
-  const resp = await fetchPP(`${baseUrl}/player/update?id=${encodeURIComponent(String(osuUserId))}`, {
-    method: 'POST',
-    headers: { Authorization: `Bearer ${token}` }
-  }, 360_000); // player update fetches every score; measured ceiling 306s at 20-way parallelism
-  if (!resp.ok) {
-    const text = await resp.text().catch(() => '');
-    throw new Error(`PP+ refresh failed HTTP ${resp.status}: ${text.slice(0, 100)}`);
-  }
+  const config = configuration();
+  const perf = await waitForPlayerJob(config, osuUserId, true);
+  if (!perf) throw new PPlusError('NO_SCORES', 'PP+ 暂无可计算的标准模式成绩。');
+  writePPlusCache(osuUserId, ppToBars(perf), config.baseUrl);
 }
 
 // ── 24 小时缓存 ──
 // 内存 + settings.pplusBarsCache 双层：进程重启后仍能命中，避免每条 info 都打 aggregate。
 const PPLUS_CACHE_TTL_MS = 24 * 60 * 60 * 1000;
-const pplusMemCache = new Map<string, { bars: PPlusBars; at: number }>();
+const pplusMemCache = new Map<string, { bars: PPlusBars; at: number; baseUrl: string }>();
+const playerInflight = new Map<string, Promise<PPlusBars | null>>();
 
-function readPPlusCache(osuUserId: string | number): { bars: PPlusBars; at: number } | null {
+function readPPlusCache(osuUserId: string | number, baseUrl: string): { bars: PPlusBars; at: number } | null {
   const key = String(osuUserId);
   const memory = pplusMemCache.get(key);
-  if (memory) return memory;
+  if (memory?.baseUrl === baseUrl) return memory;
   const stored = (readDb().settings as Record<string, any>)?.pplusBarsCache?.[key];
-  if (stored && stored.bars && Number.isFinite(Number(stored.at))) {
-    const entry = { bars: stored.bars as PPlusBars, at: Number(stored.at) };
+  if (stored?.baseUrl === baseUrl && stored.bars && Number.isFinite(Number(stored.at)) &&
+      ['ppTotal', 'jump', 'flow', 'speed', 'stamina', 'precision', 'accuracy'].every(key =>
+        typeof stored.bars[key] === 'number' && Number.isFinite(stored.bars[key]) && stored.bars[key] >= 0)) {
+    const entry = { bars: stored.bars as PPlusBars, at: Number(stored.at), baseUrl };
     pplusMemCache.set(key, entry);
     return entry;
   }
   return null;
 }
 
-function writePPlusCache(osuUserId: string | number, bars: PPlusBars): void {
+function writePPlusCache(osuUserId: string | number, bars: PPlusBars, baseUrl: string): void {
   const key = String(osuUserId);
-  const entry = { bars, at: Date.now() };
+  const entry = { bars, at: Date.now(), baseUrl };
   pplusMemCache.set(key, entry);
   try {
     updateDb((db: any) => {
@@ -182,29 +233,22 @@ function writePPlusCache(osuUserId: string | number, bars: PPlusBars): void {
 }
 
 export async function getPlayerBars(osuUserId: string | number): Promise<PPlusBars | null> {
-  const cached = readPPlusCache(osuUserId);
+  const config = configuration();
+  const cached = readPPlusCache(osuUserId, config.baseUrl);
   if (cached && Date.now() - cached.at < PPLUS_CACHE_TTL_MS) return cached.bars;
-
-  const perf = await getPlayerPPlus(osuUserId);
-  if (perf) {
+  const key = `${config.key}:${osuUserId}`;
+  const existing = playerInflight.get(key);
+  if (existing) return existing;
+  const pending = (async () => {
+    const perf = await waitForPlayerJob(config, osuUserId);
+    if (!perf) return null;
     const bars = ppToBars(perf);
-    writePPlusCache(osuUserId, bars);
+    writePPlusCache(osuUserId, bars, config.baseUrl);
     return bars;
-  }
-
-  // 第一次查某个玩家时 aggregate 里还没有记录，/player/info 会直接报错。
-  // 主动触发一次初始化再取一次，让「第一次查询」也有 PP+（这条回复会慢一些）。
-  try {
-    await refreshPlayerPPlus(osuUserId);
-  } catch (error) {
-    console.error(`[PP+] player/update ${String(osuUserId)} failed: ${(error as Error)?.message || error}`);
-    return cached ? cached.bars : null;
-  }
-  const retried = await getPlayerPPlus(osuUserId);
-  if (!retried) return cached ? cached.bars : null;
-  const bars = ppToBars(retried);
-  writePPlusCache(osuUserId, bars);
-  return bars;
+  })();
+  playerInflight.set(key, pending);
+  try { return await pending; }
+  finally { if (playerInflight.get(key) === pending) playerInflight.delete(key); }
 }
 
 export function formatBarsForPrompt(bars: PPlusBars, label: string): string {

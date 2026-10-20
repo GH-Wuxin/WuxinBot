@@ -16,7 +16,7 @@ import { reservePlayerAnalysis } from './playerAnalysisQueue.js';
 import { saveAndGetCqCode } from './render.js';
 import { renderPlayerSkillComparisonCard, renderPlayerSkillProfileCard } from './playerSkillComparisonCard.js';
 import { lookupSkillByOsuId } from './skills.js';
-import { getPlayerBars } from '../osu/pplus.js';
+import { getPlayerBars, PPlusError } from '../osu/pplus.js';
 import type { PPlusBars } from '../osu/pplus.js';
 import { PLAYER_SKILL_TITLE_POLICY_ID, PLAYER_SKILL_TITLES } from './playerSkillTitles.js';
 export { PLAYER_SKILL_TITLE_POLICY_ID, PLAYER_SKILL_TITLES } from './playerSkillTitles.js';
@@ -110,8 +110,8 @@ const BP_RANK_DECAY = 0.95;
 const PROFILE_ANALYSIS_CONCURRENCY = skillProfilerConcurrency();
 const PLAYER_PROFILE_CACHE_TTL_MS = 30 * 60_000;
 const playerProfileCache = new Map<string, { at: number; payload: Record<string, unknown> }>();
-const playerPPlusCache = new Map<number, { at: number; bars: PPlusBars }>();
-const playerPPlusInflight = new Map<number, Promise<PPlusBars | null>>();
+type PlayerPPlusResult = { bars: PPlusBars | null; error?: Error };
+const playerPPlusInflight = new Map<number, Promise<PlayerPPlusResult>>();
 const STAR_EQUIVALENT_PLAYER_AXES = new Set<PlayerSkillAxis>([
   'aim_control',
   'jump_aim',
@@ -127,12 +127,7 @@ const STAR_EQUIVALENT_PLAYER_AXES = new Set<PlayerSkillAxis>([
  * Keep it as a separate per-player lane so `/w info` can overlap both jobs,
  * while concurrent requests for the same player share one aggregate call.
  */
-function getCachedPlayerPPlus(osuId: number): Promise<PPlusBars | null> {
-  const cached = playerPPlusCache.get(osuId);
-  if (cached && Date.now() - cached.at < PLAYER_PROFILE_CACHE_TTL_MS) {
-    traceEvent('TOOL', 'PP+：读取玩家维度缓存', { status: 'completed', osuId });
-    return Promise.resolve(cached.bars);
-  }
+function getCachedPlayerPPlus(osuId: number): Promise<PlayerPPlusResult> {
   const existing = playerPPlusInflight.get(osuId);
   if (existing) {
     traceEvent('TOOL', 'PP+：合并同一玩家的进行中计算', { status: 'running', osuId });
@@ -141,12 +136,11 @@ function getCachedPlayerPPlus(osuId: number): Promise<PPlusBars | null> {
   traceEvent('TOOL', 'PP+：开始计算玩家六维', { status: 'running', osuId });
   const pending = getPlayerBars(osuId)
     .then((bars) => {
-      if (bars) playerPPlusCache.set(osuId, { at: Date.now(), bars });
       traceEvent('TOOL', 'PP+：玩家六维计算完成', {
         status: bars ? 'completed' : 'error',
         osuId,
       });
-      return bars;
+      return { bars };
     })
     .catch((error) => {
       traceEvent('TOOL', 'PP+：玩家六维不可用', {
@@ -154,7 +148,9 @@ function getCachedPlayerPPlus(osuId: number): Promise<PPlusBars | null> {
         osuId,
         error: String(error?.message || error).slice(0, 160),
       });
-      return null;
+      // Settle the parallel lane without an unhandled rejection while BP50
+      // runs, then propagate the failure when assembling the final result.
+      return { bars: null, error: error instanceof Error ? error : new Error(String(error)) };
     })
     .finally(() => {
       if (playerPPlusInflight.get(osuId) === pending) playerPPlusInflight.delete(osuId);
@@ -166,10 +162,11 @@ function getCachedPlayerPPlus(osuId: number): Promise<PPlusBars | null> {
 async function attachCurrentPlayerPPlus(
   payload: Record<string, unknown>,
   cacheKey: string,
-  pplusPromise: Promise<PPlusBars | null>,
+  pplusPromise: Promise<PlayerPPlusResult>,
 ): Promise<Record<string, unknown>> {
-  const bars = await pplusPromise;
-  if (!bars) return payload;
+  const { bars, error } = await pplusPromise;
+  if (error) throw error;
+  if (!bars) throw new PPlusError('NO_SCORES', 'PP+ 暂无可计算的标准模式成绩，无法生成完整画像。');
   const enriched = { ...payload, ppPlus: bars };
   const sample = (payload as { sample?: { failed?: unknown } }).sample;
   if (!sample || Number(sample.failed || 0) === 0) {
