@@ -28,10 +28,18 @@ import {
   SLASH_DEFS,
   HYDRANT_DEFS,
   finalizeQuickDef,
+  canonicalQuickTrigger,
+  canonicalQuickSyntax,
   type RawQuickCommandDef,
 } from './commands/quick.meta.js';
 import { normalizeAlias } from './commands/alias.js';
-import { parseScoreArgs, buildKanonScoreCommand, type ParsedScoreArgs } from './commands/scoreArgs.js';
+import {
+  parseScoreArgs,
+  buildKanonScoreCommand,
+  scoreCommandExample,
+  SCORE_ARGUMENT_HELP,
+  type ParsedScoreArgs,
+} from './commands/scoreArgs.js';
 import {
   beginLatencyTrace,
   finishLatencyTrace,
@@ -206,9 +214,9 @@ export function parseBpArgs(args: string, compactDefault: boolean): ParsedOsuArg
   return { username: value };
 }
 
-export function parseOsuArgs(def: RawQuickCommandDef, args: string): ParsedOsuArgs {
+export function parseOsuArgs(def: RawQuickCommandDef, args: string, command?: string): ParsedOsuArgs {
   if (def.capability === 'score') {
-    return parseScoreArgs(args);
+    return parseScoreArgs(args, command || canonicalQuickTrigger(def));
   }
   if (def.bpArgs || def.capability === 'bp' || def.capability === 'bplist') {
     // Reuse the executor parser for canonical "bp 1-100" / "bs 10" forms.
@@ -257,6 +265,8 @@ function buildBridgeCommand(match: QuickMatch): string {
 const HELP_TEXT = [
   '快捷指令（迁移中，陆续接入）：',
   '成绩：!p / !r / !pr / !re（最近）、!bp / !b / !bs（BP）、!i / !info（玩家信息）、!pp / !plus（PP+）、!pl（旧版 PP−）、!etx（ETX）、!k（技能）',
+  `指定谱面成绩：${[...EXCLAMATION_DEFS, ...SLASH_DEFS].filter((def) => def.capability === 'score').map(canonicalQuickSyntax).join('；')}`,
+  `查分示例：${scoreCommandExample()}。${SCORE_ARGUMENT_HELP}`,
   'LazyBot 风格：/plus /ppp（PP+）、/bp /bplist、/pr /recent、/profile /info',
   '消防栓风格：~（自己信息卡）、查+@（查他人）、where 名字、+ 玩家名（PP+）',
   '绑定（唯一入口）：/w osu bind <osu用户名>；解绑：/w osu clear bind',
@@ -603,7 +613,7 @@ async function handleQuickCommandInner(
         bridgeCommand = `where ${user}`;
       }
     } else if (def.capability || def.injectBinding) {
-      parsedArgs = parseOsuArgs(def, args);
+      parsedArgs = parseOsuArgs(def, args, `${match.prefix}${match.alias}`);
       const parsed = parsedArgs;
       if (parsed.error) {
         if (sendMessage) await sendMessage(event, parsed.error);
@@ -797,7 +807,7 @@ async function handleQuickCommandInner(
   }
   // ── Internal engine capabilities ──
   if (def.capability) {
-    const parsed = parseOsuArgs(def, args);
+    const parsed = parseOsuArgs(def, args, `${match.prefix}${match.alias}`);
     if (parsed.error) {
       if (sendMessage) await sendMessage(event, parsed.error);
       record(`参数错误：${parsed.error}`);

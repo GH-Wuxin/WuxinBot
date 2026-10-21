@@ -13,6 +13,7 @@ import type {
 } from './types.js';
 import { normalizeAlias, type QuickParseDomain } from './alias.js';
 import { RECOMMEND_COOLDOWN } from './commandConstants.js';
+import { scoreCommandSyntax } from './scoreArgs.js';
 
 export type QuickSource = 'common' | 'yumu' | 'kanon' | 'hydrant' | 'lazybot';
 
@@ -194,7 +195,7 @@ export const QUICK_DESCRIPTIONS: Record<string, string> = {
   bind: '提示绑定 osu! 账号的入口（绑定统一走 /w osu bind）',
   unbind: '提示解绑入口（解绑统一走 /w osu clear bind）',
   recent: '查询最近成绩',
-  score: '查询指定谱面 BID 的成绩',
+  score: '查询指定谱面 BID 的成绩，支持 +Mods 筛选',
   bp: '查询最佳成绩（BP），支持名次/范围',
   bs: '查询最佳成绩（雨沐风格），支持名次/范围',
   pm: '查询旧版 PP− 表现分',
@@ -216,6 +217,11 @@ export const QUICK_DESCRIPTIONS: Record<string, string> = {
   where: '按 osu! 用户名查询玩家',
 };
 
+export function canonicalQuickTrigger(def: RawQuickCommandDef): string {
+  const prefix = def.source === 'lazybot' ? '/' : def.source === 'hydrant' ? '' : '!';
+  return prefix + (def.aliases[0] || def.id);
+}
+
 export function canonicalQuickSyntax(def: RawQuickCommandDef): string {
   if (def.handler === 'self_profile') return '~';
   if (def.handler === 'at_profile') return '查 @某人';
@@ -227,15 +233,14 @@ export function canonicalQuickSyntax(def: RawQuickCommandDef): string {
   if (def.handler === 'dice') return '!dice <面数>';
   if (def.source === 'hydrant' && def.id === 'pplus') return '+ <osu用户名>';
   if (def.source === 'hydrant' && def.id === 'recommend') return '荐图';
+  if (def.capability === 'score') return scoreCommandSyntax(canonicalQuickTrigger(def));
   if (def.source === 'lazybot') return '/' + (def.aliases[0] || def.id) + (def.bpArgs ? ' <名次/范围>' : '');
-  if (def.source === 'kanon' && def.capability === 'score') return '!score <谱面BID> [玩家名]';
   if (def.source === 'kanon' && def.capability === 'info') return '!info <玩家名>';
   if ((def.id === 'bp' || def.id === 'bs' || def.capability === 'bp' || def.capability === 'bplist') && def.bpArgs) {
     return `!${def.aliases[0] || def.id} <名次/范围>`;
   }
   if (def.id === 'bs') return '!bs <名次/范围>';
   if (def.id === 'bp') return '!bp <名次/范围>';
-  if (def.capability === 'score') return '!s <谱面BID> [玩家名]';
   if (def.capability === 'recent') return '!' + (def.aliases[0] || 'p');
   return '!' + (def.aliases[0] || def.id);
 }

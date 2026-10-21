@@ -2,7 +2,8 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { pathToFileURL } from 'node:url';
+import { spawnSync } from 'node:child_process';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { WebSocketServer } from 'ws';
 
 // Exercise the real router, bridge and API client without QQ or upstream traffic.
@@ -58,6 +59,9 @@ const source = (relative) => process.env.SCORE_VERIFY_ROOT
 try {
   const { ensureStore, readDb, writeDb } = await import(source('server/store.ts'));
   const { matchQuickCommand, parseOsuArgs, handleQuickCommand } = await import(source('server/bot/quickRouter.ts'));
+  const { QUICK_DEFS, canonicalQuickTrigger, canonicalQuickSyntax, resolveQuickCommand } = await import(source('server/bot/commands/quick.meta.ts'));
+  const { scoreCommandExample } = await import(source('server/bot/commands/scoreArgs.ts'));
+  const { getAllCommandHelpEntries, commandDocumentId, entryAddress } = await import(source('server/bot/commands/index.ts'));
   const { getUserBeatmapScore } = await import(source('server/osu/api.ts'));
   ensureStore();
   const db = structuredClone(readDb());
@@ -72,8 +76,42 @@ try {
   const parse = (text) => {
     const match = matchQuickCommand({ text, atTargets: [] });
     assert(match);
-    return { match, parsed: parseOsuArgs(match.def, match.args) };
+    return { match, parsed: parseOsuArgs(match.def, match.args, `${match.prefix}${match.alias}`) };
   };
+  const scoreDefs = QUICK_DEFS.filter((def) => def.capability === 'score');
+  const scoreHelpEntries = getAllCommandHelpEntries().filter((entry) => entry.namespace === 'quick' && entry.id === 'score');
+  for (const def of scoreDefs) {
+    const command = canonicalQuickTrigger(def);
+    check(`catalog and working example ${command}`, () => {
+      const entry = scoreHelpEntries.find((entry) => entry.source === def.source);
+      assert(entry);
+      assert.equal(entry.canonicalSyntax, `${command} <谱面BID> [玩家名] [+Mods]`);
+      const { match, parsed } = parse(scoreCommandExample(command));
+      assert.equal(match.def.source, def.source);
+      assert.deepEqual(parsed, { username: '', scoreBeatmapId: 3648544, scoreMods: ['HD', 'DA'] });
+      assert(parseOsuArgs(def, '').error.includes(entry.canonicalSyntax));
+    });
+    for (const alias of def.aliases) {
+      const prefixes = def.source === 'lazybot' ? ['/'] : ['!', '！'];
+      for (const prefix of prefixes) {
+        const trigger = `${prefix}${alias}`;
+        check(`shared argument contract ${trigger}`, () => {
+          for (const [args, expected] of [
+            ['3648544 +hdda', { username: '', scoreBeatmapId: 3648544, scoreMods: ['HD', 'DA'] }],
+            ['"Player 123" #3648544 ＋dc', { username: 'Player 123', scoreBeatmapId: 3648544, scoreMods: ['DC'] }],
+            ['3648544 "12345" +NM', { username: '12345', scoreBeatmapId: 3648544, scoreMods: ['NM'] }],
+            ['3648544', { username: '', scoreBeatmapId: 3648544 }],
+          ]) {
+            const text = `${trigger} ${args}`;
+            const { match, parsed } = parse(text);
+            assert.equal(match.def.capability, 'score');
+            assert.equal(resolveQuickCommand(text)?.def.source, match.def.source);
+            assert.deepEqual(parsed, expected, text);
+          }
+        });
+      }
+    }
+  }
   for (const text of ['！score 3648544 +hdda', '!score 3648544+hdda', '!s 3648544 +HDDA', '/score 3648544 +hdda']) {
     check(`parse ${text}`, () => {
       const { parsed } = parse(text);
@@ -109,6 +147,30 @@ try {
     const result = await handleQuickCommand(event, async (_event, content) => sent.push(content), db, matchQuickCommand(event), { isOwner: false, isAdmin: false });
     return { result, sent };
   };
+  for (const text of ['!help', '/help', '帮助']) {
+    const output = await invoke(text);
+    check(`public help ${text} documents working score syntax`, () => {
+      assert.equal(output.result.reason, 'help');
+      for (const def of scoreDefs) assert(output.sent[0].includes(canonicalQuickSyntax(def)));
+      assert.match(output.sent[0], /省略时不限 Mod，\+NM 仅查无 Mod/);
+      assert.match(output.sent[0], /显式玩家名优先/);
+      const example = /查分示例：([^。]+)/.exec(output.sent[0])?.[1];
+      assert(example);
+      assert.deepEqual(parse(example).parsed, { username: '', scoreBeatmapId: 3648544, scoreMods: ['HD', 'DA'] });
+    });
+  }
+  for (const command of ['!score', '!s', '/score', '/s', '/pscore', '!show score']) {
+    const output = await invoke(command);
+    check(`usage error preserves ${command}`, () => {
+      assert.equal(output.result.reason, '参数错误');
+      assert(output.sent[0].includes(`用法：${command} <谱面BID> [玩家名] [+Mods]`));
+      const example = /例如 ([^。]+)/.exec(output.sent[0])?.[1];
+      assert(example);
+      assert.deepEqual(parse(example).parsed, { username: '', scoreBeatmapId: 3648544, scoreMods: ['HD', 'DA'] });
+      assert.equal(requests.length, 0);
+      assert.equal(bridgeEvents.length, 0);
+    });
+  }
   for (const [text, userId, atTargets, expected] of [
     ['！score 3648544 +hdda', '10001', [], '!score Bound Player #3648544 +HDDA'],
     ['!score 3648544', '10001', [], '!score Bound Player #3648544'],
@@ -170,6 +232,31 @@ try {
       assert(scoreRequests.every((url) => url.searchParams.getAll('mods[]').join(',') === 'DA,HD'));
       assert(requests.slice(before).every((url) => !decodeURIComponent(url.pathname).includes('+hdda')));
       assert.match(output.sent[0], /\+HDDA.*没有查到成绩/);
+    });
+  }
+  const kbBuild = spawnSync(process.execPath, [
+    '--import', 'tsx', 'tools/kb-build.mjs', '--data-dir', dataDir, '--skip-community',
+  ], { cwd: fileURLToPath(new URL('..', import.meta.url)), encoding: 'utf8', timeout: 120_000 });
+  assert.equal(kbBuild.status, 0, kbBuild.error?.message || kbBuild.stderr || kbBuild.stdout);
+  const knowledgeRoot = path.join(dataDir, 'knowledge');
+  const contentSha = fs.readFileSync(path.join(knowledgeRoot, 'CURRENT'), 'utf8').trim();
+  const docs = JSON.parse(fs.readFileSync(path.join(knowledgeRoot, 'builds', contentSha, 'wuxin_self.json'), 'utf8'));
+  const scoreDocIds = new Set(scoreHelpEntries.map((entry) => commandDocumentId(entryAddress(entry))));
+  const scoreDocs = docs.filter((doc) => scoreDocIds.has(doc.id) || doc.id === 'quick_score_commands');
+  check('KB includes every score command and the quick-score guide', () => assert.equal(scoreDocs.length, scoreDefs.length + 1));
+  for (const doc of scoreDocs) {
+    check(`KB ${doc.id} has executable score examples`, () => {
+      assert(doc.content.includes('[+Mods]'));
+      assert.match(doc.content, /省略时不限 Mod，\+NM 仅查无 Mod/);
+      assert.match(doc.content, /显式玩家名优先/);
+      let examples = 0;
+      for (const example of doc.commandExamples || []) {
+        const match = matchQuickCommand({ text: example.command, atTargets: [] });
+        if (match?.def.capability !== 'score') continue;
+        examples++;
+        assert.deepEqual(parse(example.command).parsed, { username: '', scoreBeatmapId: 3648544, scoreMods: ['HD', 'DA'] });
+      }
+      assert(examples > 0, `${doc.id} has no score example`);
     });
   }
   if (process.env.SCORE_VERIFY_REPORT) fs.writeFileSync(process.env.SCORE_VERIFY_REPORT, JSON.stringify({

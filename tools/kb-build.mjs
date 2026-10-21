@@ -14,6 +14,7 @@
 // Usage:
 //   npx tsx tools/kb-build.mjs                # production data dir (DATA_DIR or %APPDATA%\Wuxin)
 //   npx tsx tools/kb-build.mjs --data-dir D  # explicit data dir (tests)
+//   npx tsx tools/kb-build.mjs --data-dir D --skip-community  # offline command checks, no local style corpus
 import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
@@ -23,7 +24,9 @@ import { assertSafeBaseDir, assertSafeDeleteTarget } from '../server/fsSafe.ts';
 
 // Pure quick resolver used to pick unambiguous, verifiable examples. Imported
 // before any collection builder runs so concreteQuickExample can reference it.
-const { resolveQuickCommand } = await import('../server/bot/commands/quick.meta.ts');
+const { resolveQuickCommand, QUICK_DEFS, canonicalQuickTrigger, canonicalQuickSyntax } = await import('../server/bot/commands/quick.meta.ts');
+const { scoreCommandExample, SCORE_ARGUMENT_HELP } = await import('../server/bot/commands/scoreArgs.ts');
+const scoreCommands = QUICK_DEFS.filter((def) => def.capability === 'score');
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -132,13 +135,14 @@ const WUXIN_SELF = [
   {
     id: 'quick_score_commands',
     title: '快捷查分指令',
-    tags: ['!p', '!bp', '!s', '!i', '!pp', '!k', '快捷指令'],
+    tags: ['!p', '!bp', '!s', '!score', '/score', 'Mods', '!i', '!pp', '!k', '快捷指令'],
     content: [
       'PP+ 怎么用：发 /ppp（或 !pp）查看 PP+ 维度。',
       '常用快捷指令：',
       '!p / !pr / !r — 最近成绩（雨沐/猫猫）',
       '!bp / !bs 1-100 或 #5 — 最佳成绩',
-      '!s <BID> [玩家名] — 指定谱面成绩',
+      ...scoreCommands.map((def) => `${canonicalQuickSyntax(def)} — 指定谱面成绩`),
+      SCORE_ARGUMENT_HELP,
       '!i / !info — 玩家信息',
       '!pp / /ppp — PP+ 维度',
       '!k — 技能雷达',
@@ -149,7 +153,7 @@ const WUXIN_SELF = [
     commandExamples: [
       { command: '!p', verifier: 'quick' },
       { command: '!bp 1-100', verifier: 'quick' },
-      { command: '!s 4270382', verifier: 'quick' },
+      ...scoreCommands.map((def) => ({ command: scoreCommandExample(canonicalQuickTrigger(def)), verifier: 'quick' })),
       { command: '!pp', verifier: 'quick' },
       { command: '/ppp', verifier: 'quick' },
       { command: '荐图', verifier: 'quick' },
@@ -408,8 +412,9 @@ function concreteQuickExample(entry) {
   // Pick the first candidate that resolves back to this exact descriptor, so
   // cross-bot alias collisions can never silently verify the wrong command.
   for (const candidate of candidates) {
-    const resolved = resolveQuickCommand(candidate);
-    if (resolved && resolved.def.id === entry.id && resolved.def.source === entry.source) return candidate;
+    const command = entry.id === 'score' ? scoreCommandExample(candidate) : candidate;
+    const resolved = resolveQuickCommand(command);
+    if (resolved && resolved.def.id === entry.id && resolved.def.source === entry.source) return command;
   }
   return null;
 }
@@ -633,7 +638,7 @@ function pruneOldBuilds(keepSha) {
 
 async function main() {
   const osuDomain = await buildOsuDomain();
-  const community = buildCommunityStyle();
+  const community = args['skip-community'] ? { entries: [], skipped: [] } : buildCommunityStyle();
   const wuxinSelfGenerated = await buildWuxinSelfGenerated();
   const wuxinSelf = [...WUXIN_SELF_MANUAL, ...wuxinSelfGenerated].sort((a, b) => a.id.localeCompare(b.id));
 

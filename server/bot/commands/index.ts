@@ -26,6 +26,7 @@ import {
   type CommandPermission,
 } from './types.js';
 import { normalizeAlias } from './alias.js';
+import { SCORE_ARGUMENT_HELP } from './scoreArgs.js';
 
 export { canViewCommand, canListCommand, resolveSummaryAudience, permissionSentence, cooldownSentence };
 export type { CommandAddress, CommandHelpEntry, CommandPermissions, CommandVisibility, CommandPermission, KnowledgeDocumentKind };
@@ -198,6 +199,9 @@ export function commandKnowledgeText(entry: CommandHelpEntry): string {
   ];
   const cooldown = cooldownSentence(entry.cooldown);
   if (cooldown) lines.push(`【冷却】${cooldown}`);
+  if (entry.namespace === 'quick' && entry.id === 'score') {
+    lines.push(`【参数】${SCORE_ARGUMENT_HELP}`);
+  }
   if (entry.availability?.requiresBinding) {
     lines.push('【使用限制】查询目标需要已绑定 osu! 账号，或在指令后直接给出 osu! 用户名。');
   }

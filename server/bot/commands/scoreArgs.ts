@@ -6,13 +6,23 @@ export interface ParsedScoreArgs {
   error?: string;
 }
 
-const USAGE = '用法：!score <谱面BID> [玩家名] [+Mods]，例如 !score 3648544 +HDDA；玩家名也可放在 BID 前。';
+/** Shared by parser errors, quick help, the command catalog and KB examples. */
+export const SCORE_ARGUMENT_HELP = '玩家名可放在 BID 前；含空格或纯数字时请加双引号。省略玩家名时使用 @ 目标或自己的绑定，显式玩家名优先。+Mods 放在末尾；省略时不限 Mod，+NM 仅查无 Mod。';
+
+export function scoreCommandSyntax(command = '!score'): string {
+  return `${command} <谱面BID> [玩家名] [+Mods]`;
+}
+
+export function scoreCommandExample(command = '!score'): string {
+  return `${command} 3648544 +HDDA`;
+}
 
 /** Parse the score forms shared by !score, !s and /score before resolving a player. */
-export function parseScoreArgs(args: string): ParsedScoreArgs {
+export function parseScoreArgs(args: string, command = '!score'): ParsedScoreArgs {
+  const usage = `用法：${scoreCommandSyntax(command)}，例如 ${scoreCommandExample(command)}。${SCORE_ARGUMENT_HELP}`;
   let value = String(args || '').trim().replace(/＋/g, '+').replace(/＃/g, '#');
   const result: ParsedScoreArgs = { username: '' };
-  if (!value) return { ...result, error: USAGE };
+  if (!value) return { ...result, error: usage };
 
   const plus = value.indexOf('+');
   if (plus >= 0) {
@@ -37,17 +47,17 @@ export function parseScoreArgs(args: string): ParsedScoreArgs {
   if (explicit.length === 1) bidIndex = explicit[0];
   else if (explicit.length === 0 && /^\d+$/.test(tokens[0] || '')) bidIndex = 0;
   else if (explicit.length === 0 && /^\d+$/.test(tokens.at(-1) || '')) bidIndex = tokens.length - 1;
-  if (bidIndex < 0) return { ...result, error: `请提供有效的谱面 BID。${USAGE}` };
+  if (bidIndex < 0) return { ...result, error: `请提供有效的谱面 BID。${usage}` };
 
   const rawBid = tokens.splice(bidIndex, 1)[0].replace(/^#/, '');
   const bid = Number(rawBid);
   if (!/^\d+$/.test(rawBid) || !Number.isSafeInteger(bid) || bid <= 0 || bid > 2_147_483_647) {
-    return { ...result, error: `谱面 BID 无效：${rawBid}。${USAGE}` };
+    return { ...result, error: `谱面 BID 无效：${rawBid}。${usage}` };
   }
   let username = tokens.join(' ').trim();
   if (/^"[^"]*"$|^'[^']*'$/.test(username)) username = username.slice(1, -1).trim();
   // Do not silently treat unsupported selectors or incomplete quotes as names.
-  if (/["':#&]/.test(username)) return { ...result, error: `玩家名或参数格式无效。${USAGE}` };
+  if (/["':#&]/.test(username)) return { ...result, error: `玩家名或参数格式无效。${usage}` };
   return { ...result, username, scoreBeatmapId: bid };
 }
 
