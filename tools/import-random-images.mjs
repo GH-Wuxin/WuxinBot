@@ -97,6 +97,13 @@ function pad(number) {
   return String(number).padStart(3, '0');
 }
 
+/** 保留源文件的扩展名：GIF 不能改名成 .png（字节还是 GIF，只是名字骗人）。 */
+function extensionOf(name) {
+  const lower = String(name).toLowerCase();
+  const hit = IMAGE_EXTENSIONS.find((extension) => lower.endsWith(extension));
+  return hit || '.png';
+}
+
 /** 已存在的 Pippi_Random_NNN.png 占用哪些编号。早期的 pippi-NN 也认，方便过渡。 */
 function takenNumbers(entries) {
   const taken = new Set();
@@ -192,8 +199,8 @@ console.log('  计划结果      ' + (poolEntries.length - duplicatePoolFiles.le
 console.log('');
 
 if (args.dryRun) {
-  for (const entry of toNumber) console.log('    改名 ' + entry.name + ' → ' + NAME_PREFIX + pad(nextNumber()) + '.png');
-  for (const entry of additions) console.log('    新增 ' + entry.name + ' → ' + NAME_PREFIX + pad(nextNumber()) + '.png');
+  for (const entry of toNumber) console.log('    改名 ' + entry.name + ' → ' + NAME_PREFIX + pad(nextNumber()) + extensionOf(entry.name));
+  for (const entry of additions) console.log('    新增 ' + entry.name + ' → ' + NAME_PREFIX + pad(nextNumber()) + extensionOf(entry.name));
   console.log('');
   console.log('  （--dry-run，未写入）');
   process.exit(0);
@@ -214,7 +221,7 @@ for (const entry of toNumber) {
   const raw = fs.readFileSync(entry.file);
   const { buffer, removed } = stripC2pa(raw, entry.name);
   stripped += removed;
-  const target = path.join(POOL, NAME_PREFIX + pad(nextNumber()) + '.png');
+  const target = path.join(POOL, NAME_PREFIX + pad(nextNumber()) + extensionOf(entry.name));
   fs.writeFileSync(target, buffer);
   fs.rmSync(entry.file);
   renamed += 1;
@@ -232,7 +239,7 @@ for (const entry of poolEntries) {
 for (const entry of additions) {
   const { buffer, removed } = stripC2pa(entry.buffer, entry.name);
   stripped += removed;
-  fs.writeFileSync(path.join(POOL, NAME_PREFIX + pad(nextNumber()) + '.png'), buffer);
+  fs.writeFileSync(path.join(POOL, NAME_PREFIX + pad(nextNumber()) + extensionOf(entry.name)), buffer);
   added += 1;
 }
 
@@ -244,7 +251,7 @@ for (const entry of additions) {
 let compacted = 0;
 {
   const remaining = readImage(POOL);
-  const wanted = remaining.map((entry, index) => NAME_PREFIX + pad(index + 1) + '.png');
+  const wanted = remaining.map((entry, index) => NAME_PREFIX + pad(index + 1) + extensionOf(entry.name));
   const renames = [];
   remaining.forEach((entry, index) => {
     if (entry.name !== wanted[index]) renames.push({ from: entry.file, to: path.join(POOL, wanted[index]) });
