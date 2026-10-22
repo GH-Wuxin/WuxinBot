@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AlertTriangle, Check, Circle, Loader2 } from 'lucide-react';
 import { ConfirmDialog } from '../../components/ui/index.jsx';
 
@@ -26,7 +26,7 @@ function statusLabel(status) {
 
 function processSummary(process) {
   if (['running', 'starting', 'unready'].includes(process.status)) {
-    const source = process.source === 'external' ? '外部运行' : '本窗口启动';
+    const source = process.source === 'external' ? '检测到已有进程' : '本窗口启动';
     return process.pids?.length ? `${source} · PID ${process.pids.join(', ')}` : source;
   }
   if (process.status === 'conflict') return process.lastError || `端口 ${process.port} 已被其他程序占用`;
@@ -47,6 +47,10 @@ export function RuntimePage({ standalone = false, onServerReady, loadError = '' 
   const [snapshot, setSnapshot] = useState(null);
   const [busy, setBusy] = useState('');
   const [error, setError] = useState('');
+  const [inspectionError, setInspectionError] = useState('');
+  const [detecting, setDetecting] = useState(false);
+  const refreshInFlight = useRef(null);
+  const mounted = useRef(false);
   const [editing, setEditing] = useState('');
   const [draft, setDraft] = useState(null);
   const [logs, setLogs] = useState([]);
@@ -61,28 +65,40 @@ export function RuntimePage({ standalone = false, onServerReady, loadError = '' 
     return () => window.clearInterval(timer);
   }, [startup]);
 
-  const refresh = useCallback(async () => {
-    if (!desktop) return;
-    try {
-      const [next, autoLaunch] = await Promise.all([
-        window.desktop.runtime.getState(),
-        window.desktop.runtime.getAutoLaunch(),
-      ]);
-      setSnapshot({ ...next, settings: { ...next.settings, autoLaunch } });
-      setError('');
-      if (standalone) onServerReady?.();
-    } catch (cause) {
-      setError(cause?.message || String(cause));
-    }
-  }, [desktop, onServerReady]);
+  const refresh = useCallback(() => {
+    if (!desktop) return Promise.resolve();
+    if (refreshInFlight.current) return refreshInFlight.current;
+    setDetecting(true);
+    const pending = (async () => {
+      try {
+        const [next, autoLaunch] = await Promise.all([
+          window.desktop.runtime.getState(),
+          window.desktop.runtime.getAutoLaunch(),
+        ]);
+        if (!mounted.current) return;
+        setSnapshot({ ...next, settings: { ...next.settings, autoLaunch } });
+        setInspectionError('');
+        if (standalone) onServerReady?.();
+      } catch (cause) {
+        if (mounted.current) setInspectionError(cause?.message || String(cause));
+      } finally {
+        refreshInFlight.current = null;
+        if (mounted.current) setDetecting(false);
+      }
+    })();
+    refreshInFlight.current = pending;
+    return pending;
+  }, [desktop, standalone, onServerReady]);
 
   useEffect(() => {
+    mounted.current = true;
     void refresh();
     const timer = window.setInterval(() => void refresh(), 2500);
     const unsubscribe = desktop ? window.desktop.runtime.onLog((message) => {
       setLogs((current) => [...current, message].slice(-8));
     }) : () => {};
     return () => {
+      mounted.current = false;
       window.clearInterval(timer);
       unsubscribe?.();
     };
@@ -117,7 +133,9 @@ export function RuntimePage({ standalone = false, onServerReady, loadError = '' 
     return result;
   }, [processes]);
   const runningCount = processes.filter((process) => process.status === 'running').length;
+  const externalCount = processes.filter((process) => process.status === 'running' && process.source === 'external').length;
   const enabledCount = processes.filter((process) => process.enabled).length;
+  const controlsDisabled = Boolean(busy || !snapshot || inspectionError);
 
   const updateProcess = async (process, patch, stopWhenDisabled = false) => {
     await invoke(`update:${process.id}`, async () => {
@@ -157,47 +175,50 @@ export function RuntimePage({ standalone = false, onServerReady, loadError = '' 
 
   const content = <>
     <div className="page-head">
-      <div><h1>运行控制</h1><p>这台机器上真正在跑的进程；谁能一键启动、谁只是外部进程，都写清楚。</p></div>
-      <div style={{ display: 'flex', gap: 8 }}>
-        <button type="button" className="btn btn-primary" disabled={busy === 'start-all'} onClick={startAllNow}>{busy === 'start-all' ? '启动中…' : '一键启动'}</button>
-        <button type="button" className="btn" disabled={busy === 'stop-all'} onClick={() => invoke('stop-all', () => window.desktop.runtime.stopAll())}>{busy === 'stop-all' ? '停止中…' : '全部停止'}</button>
-        <button type="button" className="btn" disabled={busy === 'restart-all'} onClick={() => invoke('restart-all', () => window.desktop.runtime.restartAll())}>{busy === 'restart-all' ? '重启中…' : '重启'}</button>
+      <div><h1>运行控制</h1><p>打开时自动检测已有进程，一键启动会跳过已在运行的组件。</p></div>
+      <div style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'flex-end', gap: 8 }}>
+        <button type="button" className="btn" disabled={detecting} onClick={() => void refresh()}>{detecting ? '检测中…' : '重新检测'}</button>
+        <button type="button" className="btn btn-primary" disabled={controlsDisabled} onClick={startAllNow}>{busy === 'start-all' ? '启动中…' : '一键启动'}</button>
+        <button type="button" className="btn" disabled={controlsDisabled} onClick={() => invoke('stop-all', () => window.desktop.runtime.stopAll())}>{busy === 'stop-all' ? '停止中…' : '停止本窗口进程'}</button>
+        <button type="button" className="btn" disabled={controlsDisabled} onClick={() => invoke('restart-all', () => window.desktop.runtime.restartAll())}>{busy === 'restart-all' ? '重启中…' : '重启本窗口进程'}</button>
       </div>
     </div>
 
     <div className="grid grid-4" style={{ marginBottom: 16 }}>
-      <div className="card stat"><div className="stat-label">组件</div><div className="stat-value">{processes.length}</div><div className="stat-note">本窗口管理</div></div>
-      <div className="card stat"><div className="stat-label">运行中</div><div className="stat-value">{runningCount}</div><div className="stat-note">{runningCount === processes.length ? '全部正常' : '实时检测到的进程'}</div></div>
-      <div className="card stat"><div className="stat-label">已启用</div><div className="stat-value">{enabledCount}</div><div className="stat-note">一键启动会包含这些</div></div>
-      <div className="card stat"><div className="stat-label">客户端</div><div className="stat-value">{snapshot?.settings?.autoLaunch ? '自启' : '手动'}</div><div className="stat-note">Windows 登录启动</div></div>
+      <div className="card stat"><div className="stat-label">组件</div><div className="stat-value">{snapshot ? processes.length : '—'}</div><div className="stat-note">每 2.5 秒自动检测</div></div>
+      <div className="card stat"><div className="stat-label">运行中</div><div className="stat-value">{snapshot ? runningCount : '—'}</div><div className="stat-note">{snapshot ? `${externalCount} 个外部启动 · ${runningCount - externalCount} 个本窗口启动` : '正在检测已有进程'}</div></div>
+      <div className="card stat"><div className="stat-label">已启用</div><div className="stat-value">{snapshot ? enabledCount : '—'}</div><div className="stat-note">一键启动会包含这些</div></div>
+      <div className="card stat"><div className="stat-label">客户端</div><div className="stat-value">{snapshot ? (snapshot.settings?.autoLaunch ? '自启' : '手动') : '—'}</div><div className="stat-note">Windows 登录启动</div></div>
     </div>
 
     {startup && <StartupPanel startup={startup} processes={processes} now={clockNow} />}
 
     {error && <div className="note" style={{ color: 'var(--red)', marginBottom: 12 }}>{error}</div>}
+    {inspectionError && <div className="note" role="alert" style={{ color: 'var(--red)', marginBottom: 12 }}>检测失败：{inspectionError}{snapshot ? '；当前显示上次检测结果，请重新检测。' : '；请重新检测。'}</div>}
+    {!snapshot && !inspectionError && <div className="note" role="status" style={{ marginBottom: 12 }}>正在检测本机已有进程…</div>}
     {standalone && loadError && <div className="note" style={{ color: 'var(--amber)', marginBottom: 12 }}>控制台连接失败，服务器就绪后会自动进入完整界面（每 10 秒重试）：{loadError}</div>}
 
     <div className="card" style={{ marginBottom: 16 }}>
       <div className="card-head"><span className="card-title">客户端行为</span><span className="muted" style={{ fontSize: 12 }}>只影响 Desktop 与它管理的进程</span></div>
       <div className="row">
         <div className="row-main"><div className="row-title">Windows 登录时启动客户端</div><div className="row-sub">使用 Electron 登录项，不创建旧的脚本快捷方式</div></div>
-        <button type="button" className={'switch' + (snapshot?.settings?.autoLaunch ? ' is-on' : '')} aria-label="Windows 登录时启动客户端" onClick={() => invoke('auto-launch', async () => { await window.desktop.runtime.setAutoLaunch(!snapshot?.settings?.autoLaunch); })} />
+        <button type="button" className={'switch' + (snapshot?.settings?.autoLaunch ? ' is-on' : '')} disabled={controlsDisabled} aria-label="Windows 登录时启动客户端" onClick={() => invoke('auto-launch', async () => { await window.desktop.runtime.setAutoLaunch(!snapshot?.settings?.autoLaunch); })} />
       </div>
       <div className="row">
-        <div className="row-main"><div className="row-title">打开客户端时启动已启用组件</div><div className="row-sub">关闭后只打开控制台，组件由你手动启动</div></div>
-        <button type="button" className={'switch' + (snapshot?.settings?.startOnOpen ? ' is-on' : '')} aria-label="打开客户端时启动已启用组件" onClick={() => invoke('start-on-open', () => window.desktop.runtime.updateSettings({ startOnOpen: !snapshot?.settings?.startOnOpen }))} />
+        <div className="row-main"><div className="row-title">打开客户端时启动已启用组件</div><div className="row-sub">已有进程会自动识别；关闭此项后仍会检测运行状态</div></div>
+        <button type="button" className={'switch' + (snapshot?.settings?.startOnOpen ? ' is-on' : '')} disabled={controlsDisabled} aria-label="打开客户端时启动已启用组件" onClick={() => invoke('start-on-open', () => window.desktop.runtime.updateSettings({ startOnOpen: !snapshot?.settings?.startOnOpen }))} />
       </div>
       <div className="row">
         <div className="row-main"><div className="row-title">关闭窗口时停止已管理进程</div><div className="row-sub">只停止本窗口启动的组件及其子进程；外部运行的服务保持运行</div></div>
-        <button type="button" className={'switch' + (snapshot?.settings?.stopOnClose !== false ? ' is-on' : '')} aria-label="关闭窗口时停止已管理进程" onClick={() => invoke('stop-on-close', () => window.desktop.runtime.updateSettings({ stopOnClose: snapshot?.settings?.stopOnClose === false }))} />
+        <button type="button" className={'switch' + (snapshot?.settings?.stopOnClose !== false ? ' is-on' : '')} disabled={controlsDisabled} aria-label="关闭窗口时停止已管理进程" onClick={() => invoke('stop-on-close', () => window.desktop.runtime.updateSettings({ stopOnClose: snapshot?.settings?.stopOnClose === false }))} />
       </div>
     </div>
 
     {groups.map((group) => <section key={group.label} className="proc-group">
       <div className="proc-group-head"><span className="proc-eyebrow">PROCESS GROUP</span><h2>{group.label}</h2><span className="muted">{group.processes.length} 个组件</span></div>
       {group.processes.map((process) => {
-        const [label] = statusLabel(process.status);
-        const isBusy = busy === process.id || busy === `update:${process.id}`;
+        const label = process.status === 'running' && process.source === 'external' ? '已在运行' : statusLabel(process.status)[0];
+        const isBusy = controlsDisabled;
         return <div className={'proc' + (busy === process.id ? ' is-starting' : '')} key={process.id}>
           <div className="proc-head">
             <span className="status-dot" style={{ background: dotColor(process.status) }} />
@@ -214,9 +235,9 @@ export function RuntimePage({ standalone = false, onServerReady, loadError = '' 
             </span>
           </div>
           <div className="proc-actions">
-            <button type="button" className="btn btn-sm" disabled={process.status !== 'stopped' || !process.enabled} onClick={() => invoke(process.id, () => window.desktop.runtime.start(process.id))}>启动</button>
-            <button type="button" className="btn btn-sm" disabled={!process.managed} onClick={() => invoke(`stop:${process.id}`, () => window.desktop.runtime.stop(process.id))}>停止</button>
-            <button type="button" className="btn btn-sm" disabled={!process.enabled || process.status === 'missing' || process.status === 'conflict' || process.source === 'external'} onClick={() => invoke(`restart:${process.id}`, () => window.desktop.runtime.restart(process.id))}>重启</button>
+            <button type="button" className="btn btn-sm" disabled={isBusy || process.status !== 'stopped' || !process.enabled} onClick={() => invoke(process.id, () => window.desktop.runtime.start(process.id))}>启动</button>
+            <button type="button" className="btn btn-sm" disabled={isBusy || !process.managed} onClick={() => invoke(`stop:${process.id}`, () => window.desktop.runtime.stop(process.id))}>停止</button>
+            <button type="button" className="btn btn-sm" disabled={isBusy || !process.enabled || process.status === 'missing' || process.status === 'conflict' || process.source === 'external'} onClick={() => invoke(`restart:${process.id}`, () => window.desktop.runtime.restart(process.id))}>重启</button>
             <button type="button" className="btn btn-sm btn-ghost" onClick={() => editing === process.id ? (setEditing(''), setDraft(null)) : beginEdit(process)}>配置</button>
           </div>
 
@@ -227,14 +248,14 @@ export function RuntimePage({ standalone = false, onServerReady, loadError = '' 
               <span> PID {item.pid}{item.kind === 'matching' ? ' · 同组件的其他实例' : item.kind === 'foreign' ? ' · 其他进程' : ''}</span>
               {item.executablePath && <div style={{ fontSize: 11 }}>{item.executablePath}</div>}
             </div>)}
-            <button type="button" className="btn btn-sm" style={{ marginTop: 10 }} disabled={busy === `takeover:${process.id}`} onClick={() => setTakingOver(process)}>停止占用进程并启动</button>
+            <button type="button" className="btn btn-sm" style={{ marginTop: 10 }} disabled={isBusy} onClick={() => setTakingOver(process)}>停止占用进程并启动</button>
           </div>}
 
           {editing === process.id && draft && <div className="note" style={{ marginTop: 12 }}>
             <div className="field"><label>启动文件</label><input value={draft.command} onChange={(event) => setDraft((current) => ({ ...current, command: event.target.value }))} /></div>
             <div className="field"><label>工作目录</label><input value={draft.cwd} onChange={(event) => setDraft((current) => ({ ...current, cwd: event.target.value }))} /></div>
             <div className="field"><label>参数（每行一个）</label><textarea rows="4" value={draft.args} onChange={(event) => setDraft((current) => ({ ...current, args: event.target.value }))} /></div>
-            <button type="button" className="btn btn-sm btn-primary" disabled={busy === `update:${process.id}`} onClick={() => saveEdit(process)}>保存配置</button>
+            <button type="button" className="btn btn-sm btn-primary" disabled={isBusy} onClick={() => saveEdit(process)}>保存配置</button>
           </div>}
 
           {process.lastError && <div className="note" style={{ color: 'var(--red)', marginTop: 10 }}>{process.lastError}</div>}
@@ -307,7 +328,7 @@ function StartupPanel({ startup, processes, now }) {
             {state === 'ready' ? <Check size={14} /> : state === 'failed' ? <AlertTriangle size={14} /> : state === 'starting' ? <Loader2 size={14} className="proc-spin" /> : <Circle size={7} />}
           </span>
           <div className="row-main"><div className="row-title" style={{ fontSize: 13 }}>{process.label}</div></div>
-          <span className="muted" style={{ fontSize: 11 }}>{state === 'ready' ? '已就绪' : state === 'failed' ? '失败' : state === 'starting' ? '启动中' : '未启动'}</span>
+          <span className="muted" style={{ fontSize: 11 }}>{state === 'ready' ? (process.source === 'external' ? '已在运行，已跳过' : '已就绪') : state === 'failed' ? '失败' : state === 'starting' ? '启动中' : '未启动'}</span>
         </div>;
       })}
       {!rows.length && <div className="note">没有已启用的组件。</div>}

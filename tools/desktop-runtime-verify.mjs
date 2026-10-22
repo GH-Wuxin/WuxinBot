@@ -275,6 +275,80 @@ test('command identity and normalized slashes are both checked when detecting ex
   assert.equal(matchesDefinition({ pid: 101, executablePath: 'D:/other/node.exe', commandLine: 'node server/index.ts' }, definition), false);
 });
 
+test('external services can use another runtime only with the same absolute project entry', () => {
+  for (const [host, entry] of [['node.exe', 'server/index.ts'], ['java.exe', 'bot.jar'], ['python.exe', 'tools/cli.py'], ['dotnet.exe', 'Bot.dll']]) {
+    const definition = baseDefinition({ command: `C:/bundled/${host}`, cwd: 'D:/my project', args: [entry], matcher: { includes: [entry] } });
+    const row = { pid: 101, executablePath: `C:/system/${host}`, commandLine: `"C:/system/${host}" "D:/my project/${entry}"` };
+    assert.equal(matchesDefinition(row, definition), true, host);
+    assert.equal(matchesDefinition({ ...row, commandLine: `"C:/system/${host}" "D:/other project/${entry}"` }, definition), false);
+    assert.equal(matchesDefinition({ ...row, commandLine: `${host} ${entry}` }, definition), false, 'unknown cwd does not prove project identity');
+    assert.equal(matchesDefinition({ ...row, executablePath: definition.command, commandLine: `"${definition.command}" "D:/other project/${entry}"` }, definition), false, 'sharing a runtime does not make another project this component');
+  }
+});
+
+test('canonical paths recognize an external service launched through an old junction', async (t) => {
+  const { configDir } = await setup(t);
+  const current = path.join(configDir, 'current project');
+  const legacy = path.join(configDir, 'old project');
+  await fs.mkdir(path.join(current, 'server'), { recursive: true });
+  await fs.writeFile(path.join(current, 'node.exe'), 'test runtime path');
+  await fs.writeFile(path.join(current, 'server', 'index.ts'), 'test entry path');
+  await fs.symlink(current, legacy, process.platform === 'win32' ? 'junction' : 'dir');
+  const definition = baseDefinition({ command: path.join(current, 'node.exe'), cwd: current,
+    args: ['server/index.ts'], matcher: { includes: [path.join(current, 'server', 'index.ts')] } });
+  const row = { pid: 101, executablePath: path.join(legacy, 'node.exe'), commandLine: `"${path.join(legacy, 'node.exe')}" "${path.join(legacy, 'server', 'index.ts')}"` };
+  assert.equal(matchesDefinition(row, definition), true);
+  assert.equal(matchesDefinition({ ...row, commandLine: row.commandLine.replace('index.ts', 'index.ts.backup') }, definition), false);
+});
+
+test('.NET apphost and hosted DLL are recognized as the same configured component', () => {
+  const definition = baseDefinition({ command: 'C:/dotnet/dotnet.exe', cwd: 'D:/bots/ppplus', args: ['--roll-forward', 'Major', 'PerformancePlus.dll'], matcher: { includes: ['PerformancePlus.dll'] } });
+  const row = { pid: 101, executablePath: 'D:/bots/ppplus/PerformancePlus.exe', commandLine: '"D:/bots/ppplus/PerformancePlus.exe"' };
+  assert.equal(matchesDefinition(row, definition), true);
+  assert.equal(matchesDefinition({ ...row, executablePath: 'D:/other/PerformancePlus.exe' }, definition), false);
+});
+
+test('a fresh manager discovers an external launcher worker without claiming ownership', async (t) => {
+  const definition = baseDefinition({ port: 12345 });
+  const rows = [
+    { pid: 90101, ppid: 1, createdAt: 1000, executablePath: process.execPath, commandLine: 'desktop-test' },
+    { pid: 90102, ppid: 90101, createdAt: 1200, executablePath: process.execPath, commandLine: 'worker.mjs' },
+  ];
+  let spawns = 0;
+  const { manager, create } = await setup(t, [definition], { runtime: { ...emptyRuntime,
+    listProcesses: async () => rows, listListeners: async () => [{ address: '127.0.0.1', port: 12345, pid: 90102 }],
+    probePort: async () => true, spawn: () => { spawns++; throw new Error('duplicate launch'); },
+  } });
+  for (const opened of [manager, create()]) {
+    const state = (await opened.state()).processes[0];
+    assert.equal(state.status, 'running');
+    assert.equal(state.source, 'external');
+    assert.deepEqual(state.pids, [90101, 90102]);
+    assert.deepEqual(state.ownedPids, []);
+    assert.equal((await opened.startAll())[0].result.alreadyRunning, true);
+    assert.equal((await opened.stop('sandbox')).notManaged, true);
+    await opened.shutdown();
+  }
+  assert.equal(spawns, 0);
+  rows[1].createdAt = 500;
+  assert.equal((await create().state()).processes[0].status, 'conflict', 'reused parent PID cannot identify an older worker');
+});
+
+test('failed system inspection never reports stopped or starts a duplicate process', async (t) => {
+  for (const failing of ['listProcesses', 'listListeners']) {
+    let spawns = 0;
+    const { manager } = await setup(t, [baseDefinition()], { runtime: { ...emptyRuntime,
+      [failing]: async () => { throw new Error('inspection unavailable'); },
+      spawn: () => { spawns++; throw new Error('duplicate launch'); },
+    } });
+    await assert.rejects(manager.state(), /无法检测.*inspection unavailable/);
+    await assert.rejects(manager.start('sandbox'), /无法检测.*inspection unavailable/);
+    assert.equal(spawns, 0);
+    manager.runtime[failing] = async () => [];
+    assert.equal((await manager.state()).processes[0].status, 'stopped', 'next inspection can recover');
+  }
+});
+
 test('matcher survives malformed rows, quoting shapes, and multi-needle definitions', () => {
   const definition = baseDefinition({ command: 'C:\\runtime\\my node.exe', matcher: { includes: ['server\\index.ts'] } });
   // Rows without identity data and the manager's own pid never match.
@@ -572,7 +646,7 @@ test('real delayed listener waits through connection refusals and simultaneous s
 });
 
 test('real external matching listener stays alive after stop and shutdown', async (t) => {
-  const { manager, port, definition } = await liveManager(t);
+  const { create, port, definition } = await liveManager(t);
   const external = spawn(definition.command, definition.args, { cwd: projectRoot, windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] });
   t.after(async () => {
     if (external.exitCode === null) {
@@ -584,6 +658,12 @@ test('real external matching listener stays alive after stop and shutdown', asyn
     external.once('error', reject);
     external.stdout.once('data', resolve);
   });
+  const manager = create();
+  const initial = (await manager.state()).processes[0];
+  assert.equal(initial.status, 'running', 'opening the page discovers a process started before the manager');
+  assert.equal(initial.source, 'external');
+  assert.equal(initial.managed, false);
+  assert.ok(initial.pids.includes(external.pid));
   const start = await manager.start('sandbox');
   assert.equal(start.alreadyRunning, true);
   assert.equal(start.managed, false);

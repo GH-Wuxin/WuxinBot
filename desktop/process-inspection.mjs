@@ -1,5 +1,8 @@
 import { execFile } from 'node:child_process';
+import fs from 'node:fs';
 import net from 'node:net';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 const WINDOWS = process.platform === 'win32';
 
@@ -128,20 +131,111 @@ export function describeProcesses(pids, processes) {
   });
 }
 
+const normalize = (value) => String(value || '').replaceAll('\\', '/').toLowerCase();
+const absolutePath = (value) => path.isAbsolute(value) || /^[a-z]:[\\/]/i.test(value);
+const entryFile = (value) => /\.(?:[cm]?js|tsx?|py|jar|dll)$/i.test(value);
+
+function runtimeFamily(executable) {
+  const name = normalize(executable).split('/').at(-1).replace(/\.exe$/, '');
+  if (/^python(?:w|\d+(?:\.\d+)?)?$/.test(name)) return 'python';
+  if (name === 'javaw') return 'java';
+  return ['node', 'java', 'dotnet'].includes(name) ? name : '';
+}
+
+// Keep quoted Windows paths together, including --option="path with spaces".
+// Relative arguments are deliberately NOT resolved against the configured cwd:
+// an already-running process may have been started in a different directory.
+function commandPaths(commandLine) {
+  return (String(commandLine || '').match(/(?:[^\s"]+|"[^"]*")+/g) || [])
+    .map((arg) => arg.replaceAll('"', ''))
+    .flatMap((arg) => [arg, ...(arg.includes('=') ? [arg.slice(arg.indexOf('=') + 1)] : [])])
+    .map((arg) => {
+      if (arg.startsWith('file:')) {
+        try { return fileURLToPath(arg); } catch { return ''; }
+      }
+      return arg;
+    }).filter((arg) => arg && absolutePath(arg));
+}
+
+function createProcessMatcher() {
+  // Cache only for this inspection; a junction can change between refreshes.
+  const paths = new Map();
+  const canonical = (value) => {
+    const key = normalize(value);
+    if (!paths.has(key)) {
+      let resolved = value;
+      try { resolved = fs.realpathSync.native(value); } catch { /* absent paths still compare lexically */ }
+      paths.set(key, normalize(resolved).replace(/\/$/, ''));
+    }
+    return paths.get(key);
+  };
+  return (processInfo, definition) => {
+    if (!processInfo || processInfo.pid === process.pid) return false;
+    const includes = Array.isArray(definition.matcher?.includes) ? definition.matcher.includes : [];
+    if (!includes.length || includes.some((needle) => !needle)) return false;
+    const commandLineExecutable = String(processInfo.commandLine || '').match(/^(?:"([^"]+)"|(\S+))/);
+    const executable = processInfo.executablePath || commandLineExecutable?.[1] || commandLineExecutable?.[2];
+    if (!executable) return false;
+    const commands = [definition.command, ...(definition.matcher?.executablePaths || [])].filter(Boolean);
+    const family = runtimeFamily(definition.command);
+    const scriptLauncher = /\.(cmd|bat)$/i.test(definition.command);
+    const exactExecutable = commands.some((candidate) => normalize(candidate).includes('/')
+      ? canonical(executable) === canonical(candidate)
+      : normalize(executable).split('/').at(-1) === normalize(candidate));
+    const sameRuntime = family && family === runtimeFamily(executable);
+    if (!exactExecutable && !scriptLauncher && !sameRuntime && family !== 'dotnet') return false;
+
+    const pathApi = /^[a-z]:[\\/]/i.test(definition.cwd || '') ? path.win32 : path;
+    const entries = (definition.args || []).filter((arg) => !arg.startsWith('-') && entryFile(arg))
+      .map((arg) => absolutePath(arg) ? arg : pathApi.resolve(definition.cwd || '.', arg))
+      .filter((arg) => includes.some((needle) => absolutePath(needle)
+        ? canonical(arg) === canonical(needle) || canonical(arg).startsWith(`${canonical(needle)}/`)
+        : normalize(arg).includes(normalize(needle))));
+    const actualPaths = [executable, ...commandPaths(processInfo.commandLine)].map(canonical);
+    // .NET's apphost and `dotnet Component.dll` are two launch forms of the
+    // same application. Require the full application path, not just its name.
+    const appHost = family === 'dotnet' && entries.find((entry) => /\.dll$/i.test(entry)
+      && canonical(entry.replace(/\.dll$/i, '.exe')) === canonical(executable));
+    if (appHost) actualPaths.push(canonical(appHost));
+    const haystack = normalize(`${executable}\n${processInfo.commandLine}\n${actualPaths.join('\n')}`);
+    if (!includes.every((needle) => absolutePath(needle)
+      ? actualPaths.some((actual) => actual === canonical(needle) || actual.startsWith(`${canonical(needle)}/`))
+      : haystack.includes(normalize(needle)))) return false;
+
+    const entryMatches = entries.some((entry) => actualPaths.includes(canonical(entry)));
+    // Changing Node/Java/Python/.NET installations is fine when the actual
+    // project entry is proven. A generic relative server/index.ts is not proof.
+    if (!exactExecutable && !scriptLauncher) return Boolean(appHost || sameRuntime && entryMatches);
+    const absoluteEntries = commandPaths(processInfo.commandLine).filter((arg) => entryFile(arg)
+      && entries.some((entry) => normalize(entry).split('/').at(-1) === normalize(arg).split('/').at(-1)));
+    if (entries.length && absoluteEntries.length && !entryMatches) return false;
+    return true;
+  };
+}
+
 export function matchesDefinition(processInfo, definition) {
-  if (!processInfo || processInfo.pid === process.pid) return false;
-  const normalize = (value) => String(value || '').replaceAll('\\', '/').toLowerCase();
-  const haystack = normalize(`${processInfo.executablePath}\n${processInfo.commandLine}`);
-  const includes = Array.isArray(definition.matcher?.includes) ? definition.matcher.includes : [];
-  if (!includes.length || !includes.every((needle) => needle && haystack.includes(normalize(needle)))) return false;
-  // A relative entry such as server/index.ts alone is not enough to identify a bot.
-  const command = normalize(definition.command);
-  const commandLineExecutable = String(processInfo.commandLine || '').match(/^(?:"([^"]+)"|(\S+))/);
-  const executable = normalize(processInfo.executablePath || commandLineExecutable?.[1] || commandLineExecutable?.[2]);
-  const executablePaths = Array.isArray(definition.matcher?.executablePaths) ? definition.matcher.executablePaths : [];
-  const commands = [command, ...executablePaths.map(normalize)];
-  return Boolean(executable) && (/\.(cmd|bat)$/i.test(command)
-    || commands.some((candidate) => candidate.includes('/') ? executable === candidate : executable.split('/').at(-1) === candidate));
+  return createProcessMatcher()(processInfo, definition);
+}
+
+export function findMatchingProcesses(definition, processes) {
+  const matches = createProcessMatcher();
+  const found = new Map(processes.filter((row) => matches(row, definition)).map((row) => [row.pid, row]));
+  // A launcher may delegate its listener to a worker whose command line no
+  // longer contains the entry. Current parent + creation times prove this
+  // relationship for detection only; they never confer stop/restart ownership.
+  let changed = true;
+  while (changed) {
+    changed = false;
+    for (const row of processes) {
+      const parent = found.get(row.ppid);
+      if (found.has(row.pid) || row.pid === process.pid || !parent
+        || !Number.isFinite(parent.createdAt) || !Number.isFinite(row.createdAt)
+        || row.createdAt < parent.createdAt) continue;
+      found.set(row.pid, row);
+      changed = true;
+    }
+  }
+  return [...found.values()];
 }
 
 export function isLiveChild(child) {

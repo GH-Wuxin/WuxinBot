@@ -6,8 +6,8 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { isDeepStrictEqual } from 'node:util';
 import {
-  collectOwnedProcesses, describeProcesses, isLiveChild, listPortListeners, listSystemProcesses,
-  loopbackListeners, matchesDefinition, probePort, runFile, sameProcess, waitForPort,
+  collectOwnedProcesses, describeProcesses, findMatchingProcesses, isLiveChild, listPortListeners, listSystemProcesses,
+  loopbackListeners, probePort, runFile, sameProcess, waitForPort,
 } from './process-inspection.mjs';
 
 const WINDOWS = process.platform === 'win32';
@@ -553,14 +553,16 @@ export class ProcessManager {
 
   async matchingProcesses(definition, allProcesses = null) {
     const processes = allProcesses || await this.runtime.listProcesses();
-    return processes.filter((processInfo) => matchesDefinition(processInfo, definition));
+    return findMatchingProcesses(definition, processes);
   }
 
   async inspect() {
     const [processes, listeners] = await Promise.allSettled([this.runtime.listProcesses(), this.runtime.listListeners()]);
+    if (processes.status === 'rejected') throw new Error(`无法检测系统进程：${compactError(processes.reason?.message || processes.reason)}`);
+    if (listeners.status === 'rejected') throw new Error(`无法检测监听端口：${compactError(listeners.reason?.message || listeners.reason)}`);
     return {
-      processes: processes.status === 'fulfilled' ? processes.value : [],
-      listeners: listeners.status === 'fulfilled' ? listeners.value : [],
+      processes: processes.value,
+      listeners: listeners.value,
     };
   }
 
@@ -568,14 +570,15 @@ export class ProcessManager {
     return collectOwnedProcesses(this.launches.get(id), processes);
   }
 
-  async portStatus(definition, snapshot, owned, { managedOnly = false } = {}) {
+  async portStatus(definition, snapshot, owned, { managedOnly = false, matches = null } = {}) {
     if (!definition.port) return { open: false, ready: true, conflict: false, pids: [], processes: [] };
     const open = await this.runtime.probePort(definition.port);
     if (!open) return { open: false, ready: false, conflict: false, pids: [], processes: [] };
     const pids = [...new Set(loopbackListeners(snapshot.listeners, definition.port).map((item) => item.pid))];
     const ownedPids = new Set(owned.map((item) => item.pid));
+    const matchingPids = new Set((matches || await this.matchingProcesses(definition, snapshot.processes)).map((item) => item.pid));
     const verified = pids.filter((pid) => ownedPids.has(pid) || !managedOnly
-      && matchesDefinition(snapshot.processes.find((item) => item.pid === pid), definition));
+      && matchingPids.has(pid));
     const ready = pids.length > 0 && verified.length === pids.length;
     // Identify every listener so the console can name it and offer a takeover.
     // 'owned' = started by this window, 'matching' = another instance of this
@@ -583,7 +586,7 @@ export class ProcessManager {
     const processes = describeProcesses(pids, snapshot.processes).map((item) => ({
       ...item,
       kind: ownedPids.has(item.pid) ? 'owned'
-        : matchesDefinition(snapshot.processes.find((row) => row.pid === item.pid), definition) ? 'matching'
+        : matchingPids.has(item.pid) ? 'matching'
           : 'foreign',
     }));
     return { open, ready, conflict: !ready, pids, processes };
@@ -617,7 +620,7 @@ export class ProcessManager {
       const owned = this.ownedProcesses(definition.id, snapshot.processes);
       const launch = this.launches.get(definition.id);
       const managed = owned.length > 0;
-      const port = await this.portStatus(definition, snapshot, owned);
+      const port = await this.portStatus(definition, snapshot, owned, { matches });
       const running = managed || matches.length > 0;
       const requirementErrors = missingRequirements(definition);
       const available = commandExists(definition.command) && requirementErrors.length === 0;
@@ -683,7 +686,7 @@ export class ProcessManager {
     ensureActive();
     const existing = await this.matchingProcesses(definition, snapshot.processes);
     const owned = this.ownedProcesses(id, snapshot.processes);
-    const port = await this.portStatus(definition, snapshot, owned);
+    const port = await this.portStatus(definition, snapshot, owned, { matches: existing });
     ensureActive();
     if (port.conflict) {
       const error = this.portError(definition, port);
