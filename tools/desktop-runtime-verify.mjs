@@ -277,13 +277,126 @@ test('command identity and normalized slashes are both checked when detecting ex
 
 test('external services can use another runtime only with the same absolute project entry', () => {
   for (const [host, entry] of [['node.exe', 'server/index.ts'], ['java.exe', 'bot.jar'], ['python.exe', 'tools/cli.py'], ['dotnet.exe', 'Bot.dll']]) {
-    const definition = baseDefinition({ command: `C:/bundled/${host}`, cwd: 'D:/my project', args: [entry], matcher: { includes: [entry] } });
-    const row = { pid: 101, executablePath: `C:/system/${host}`, commandLine: `"C:/system/${host}" "D:/my project/${entry}"` };
+    const flags = host === 'java.exe' ? ['-jar'] : [];
+    const prefix = flags.length ? flags.join(' ') + ' ' : '';
+    const definition = baseDefinition({ command: `C:/bundled/${host}`, cwd: 'D:/my project', args: [...flags, entry], matcher: { includes: [entry] } });
+    const row = { pid: 101, executablePath: `C:/system/${host}`, commandLine: `"C:/system/${host}" ${prefix}"D:/my project/${entry}"` };
     assert.equal(matchesDefinition(row, definition), true, host);
-    assert.equal(matchesDefinition({ ...row, commandLine: `"C:/system/${host}" "D:/other project/${entry}"` }, definition), false);
-    assert.equal(matchesDefinition({ ...row, commandLine: `${host} ${entry}` }, definition), false, 'unknown cwd does not prove project identity');
-    assert.equal(matchesDefinition({ ...row, executablePath: definition.command, commandLine: `"${definition.command}" "D:/other project/${entry}"` }, definition), false, 'sharing a runtime does not make another project this component');
+    assert.equal(matchesDefinition({ ...row, commandLine: `"C:/system/${host}" ${prefix}"D:/other project/${entry}"` }, definition), false);
+    assert.equal(matchesDefinition({ ...row, commandLine: `${host} ${prefix}${entry}` }, definition), false, 'unknown cwd does not prove project identity');
+    assert.equal(matchesDefinition({ ...row, executablePath: definition.command, commandLine: `"${definition.command}" ${prefix}"D:/other project/${entry}"` }, definition), false, 'sharing a runtime does not make another project this component');
   }
+});
+
+test('application arguments cannot impersonate the runtime execution target', () => {
+  for (const [host, entry, other, flags] of [
+    ['node.exe', 'server/index.ts', 'watch.mjs', []],
+    ['java.exe', 'bot.jar', 'backup.jar', ['-jar']],
+    ['python.exe', 'cli.py', 'watch.py', ['-u']],
+    ['dotnet.exe', 'Bot.dll', 'Backup.dll', ['--roll-forward', 'Major']],
+  ]) {
+    const definition = baseDefinition({ command: `C:/bundled/${host}`, cwd: 'D:/my bot', args: [...flags, entry], matcher: { includes: [entry] } });
+    for (const executablePath of [definition.command, `C:/system/${host}`]) {
+      const prefix = `"${executablePath}" ${flags.join(' ')} `;
+      const row = { pid: 101, executablePath, commandLine: `${prefix}"D:/my bot/${entry}" --flag` };
+      assert.equal(matchesDefinition(row, definition), true, `${host} actual entry`);
+      for (const argument of [`"D:/my bot/${entry}"`, `--watch="D:/my bot/${entry}"`]) {
+        assert.equal(matchesDefinition({ ...row, commandLine: `${prefix}"D:/tools/${other}" ${argument}` }, definition), false, `${host} argument ${argument}`);
+      }
+    }
+  }
+});
+
+test('Node tsx launchers and loader workers resolve only their execution entry', () => {
+  const definition = baseDefinition({ command: 'C:/bundled/node.exe', cwd: 'D:/my bot',
+    args: ['D:/my bot/node_modules/tsx/dist/cli.mjs', 'D:/my bot/server/index.ts'], matcher: { includes: ['server/index.ts'] } });
+  const prefix = '"C:/system/node.exe"';
+  const row = { pid: 101, executablePath: 'C:/system/node.exe' };
+  for (const args of [
+    '"D:/my bot/node_modules/tsx/dist/cli.mjs" "D:/my bot/server/index.ts"',
+    '"D:/my bot/node_modules/tsx/dist/cli.mjs" watch --clear-screen=false "D:/my bot/server/index.ts"',
+    '--require "D:/my bot/node_modules/tsx/dist/preflight.cjs" --import "file:///D:/my%20bot/node_modules/tsx/dist/loader.mjs" "D:/my bot/server/index.ts"',
+    '--import="file:///D:/my%20bot/loader.mjs" -- "D:/my bot/server/index.ts"',
+  ]) assert.equal(matchesDefinition({ ...row, commandLine: `${prefix} ${args}` }, definition), true, args);
+  for (const args of [
+    '--require "D:/my bot/server/index.ts" D:/tools/other.mjs',
+    '--eval "doSomething()" "D:/my bot/server/index.ts"',
+    '--check "D:/my bot/server/index.ts"',
+    '"D:/my bot/node_modules/tsx/dist/cli.mjs" D:/tools/watch.mjs --watch="D:/my bot/server/index.ts"',
+  ]) assert.equal(matchesDefinition({ ...row, commandLine: `${prefix} ${args}` }, definition), false, args);
+  for (const args of ['-m watcher', '-c "pass"']) {
+    const python = baseDefinition({ command: 'C:/python/python.exe', cwd: 'D:/my bot', args: ['cli.py'], matcher: { includes: ['cli.py'] } });
+    assert.equal(matchesDefinition({ pid: 101, executablePath: python.command, commandLine: `python ${args} "D:/my bot/cli.py"` }, python), false);
+  }
+});
+
+test('a watcher mentioning the entry neither blocks launch nor claims a foreign listener', async (t) => {
+  const definition = baseDefinition({ args: [fixture], matcher: { includes: [fixture] }, port: 12345 });
+  const row = { pid: 90101, executablePath: process.execPath, commandLine: `"${process.execPath}" "D:/tools/watch.mjs" --watch="${fixture}"` };
+  let spawns = 0;
+  const { manager } = await setup(t, [definition], { runtime: { ...emptyRuntime,
+    listProcesses: async () => [row], spawn: () => {
+      spawns++;
+      const child = Object.assign(new EventEmitter(), { exitCode: null, signalCode: null });
+      queueMicrotask(() => { child.emit('error', new Error('test spawn reached')); child.emit('close'); });
+      return child;
+    },
+  } });
+  assert.equal((await manager.state()).processes[0].status, 'stopped');
+  await assert.rejects(manager.start('sandbox'), /test spawn reached/);
+  assert.equal(spawns, 1);
+  manager.runtime.probePort = async () => true;
+  manager.runtime.listListeners = async () => [{ address: '127.0.0.1', port: 12345, pid: row.pid }];
+  assert.equal((await manager.state()).processes[0].status, 'conflict');
+  assert.equal((await manager.stop('sandbox')).notManaged, true);
+  await pause(10); // let the fake child's log streams close before temp cleanup
+});
+
+test('editing entry paths rebases matching through save and reopen while retaining custom guards', async (t) => {
+  for (const relative of [false, true]) {
+    const oldEntry = 'D:/old-renderer/main.js';
+    const newEntry = 'D:/new-renderer/main.js';
+    const definition = baseDefinition({ command: 'C:/node/node.exe', cwd: 'D:/old-renderer',
+      args: [relative ? 'main.js' : oldEntry, '--mode=renderer'], matcher: { includes: [oldEntry, '--mode=renderer'] } });
+    const row = { pid: 90101, executablePath: 'C:/other/node.exe', commandLine: `node "${newEntry}" --mode=renderer` };
+    const { manager, create } = await setup(t, [definition], { runtime: { ...emptyRuntime, listProcesses: async () => [row] } });
+    await manager.updateProcess('sandbox', relative ? { cwd: 'D:/new-renderer' } : { cwd: 'D:/new-renderer', args: [newEntry, '--mode=renderer'] });
+    for (const opened of [manager, create()]) {
+      const state = (await opened.state()).processes[0];
+      assert.equal(state.status, 'running');
+      assert.equal(state.source, 'external');
+      assert.equal((await opened.start('sandbox')).alreadyRunning, true);
+      assert.equal((await opened.stop('sandbox')).notManaged, true);
+      assert.equal(matchesDefinition({ ...row, commandLine: `node "${newEntry}"` }, opened.getDefinition('sandbox')), false, 'keep custom guard');
+    }
+    await manager.updateProcess('sandbox', { cwd: definition.cwd, args: definition.args });
+    assert.deepEqual((await readConfig(manager)).processOverrides, {}, 'returning to default clears derived overrides');
+  }
+});
+
+test('legacy path overrides derive new matching on load without replacing explicit custom rules', async (t) => {
+  const definition = baseDefinition({ command: 'C:/node/node.exe', cwd: 'D:/old-renderer', args: ['D:/old-renderer/main.js'], matcher: { includes: ['D:/old-renderer/main.js', '--custom'] } });
+  const { manager, create } = await setup(t, [definition]);
+  const override = { cwd: 'D:/new-renderer', args: ['D:/new-renderer/main.js'] };
+  await fs.writeFile(manager.configFile, JSON.stringify({ version: 2, processOverrides: { sandbox: override } }));
+  await manager.initialize();
+  const row = { pid: 90101, executablePath: 'C:/other/node.exe', commandLine: 'node D:/new-renderer/main.js --custom' };
+  assert.equal(matchesDefinition(row, manager.getDefinition('sandbox')), true);
+  const custom = { includes: ['D:/deliberate/path', '--custom'] };
+  await fs.writeFile(manager.configFile, JSON.stringify({ version: 2, processOverrides: { sandbox: { ...override, matcher: custom } } }));
+  const next = create();
+  await next.initialize();
+  assert.deepEqual(next.getDefinition('sandbox').matcher, custom);
+});
+
+test('native executable relocation keeps sibling daemon paths and custom constraints', async (t) => {
+  const { manager, create } = await setup(t, [baseDefinition({ command: 'D:/old/bin/launcher.exe', args: [],
+    matcher: { includes: ['launcher.exe', '--instance=mine'], executablePaths: ['D:/old/bin/worker.exe'] } })]);
+  await manager.updateProcess('sandbox', { command: 'D:/new/bin/service.exe' });
+  const next = create();
+  await next.initialize();
+  assert.equal(matchesDefinition({ pid: 90101, executablePath: 'D:/new/bin/worker.exe', commandLine: 'worker --launcher=service.exe --instance=mine' }, next.getDefinition('sandbox')), true);
+  assert.equal(matchesDefinition({ pid: 90101, executablePath: 'D:/old/bin/worker.exe', commandLine: 'worker --launcher=service.exe --instance=mine' }, next.getDefinition('sandbox')), false);
 });
 
 test('canonical paths recognize an external service launched through an old junction', async (t) => {
@@ -305,6 +418,7 @@ test('.NET apphost and hosted DLL are recognized as the same configured componen
   const definition = baseDefinition({ command: 'C:/dotnet/dotnet.exe', cwd: 'D:/bots/ppplus', args: ['--roll-forward', 'Major', 'PerformancePlus.dll'], matcher: { includes: ['PerformancePlus.dll'] } });
   const row = { pid: 101, executablePath: 'D:/bots/ppplus/PerformancePlus.exe', commandLine: '"D:/bots/ppplus/PerformancePlus.exe"' };
   assert.equal(matchesDefinition(row, definition), true);
+  assert.equal(matchesDefinition(row, { ...definition, matcher: { ...definition.matcher, executablePaths: [row.executablePath] } }), true, 'explicitly configured apphosts keep working');
   assert.equal(matchesDefinition({ ...row, executablePath: 'D:/other/PerformancePlus.exe' }, definition), false);
 });
 
@@ -597,6 +711,46 @@ test('closing during startup prevents spawning after asynchronous preflight comp
   release([]);
   await rejected;
   assert.equal(spawns, 0);
+});
+
+test('stopAll cancels active preflight and queued launches, and permits a later retry', async (t) => {
+  let release;
+  let spawns = 0;
+  const { manager } = await setup(t, [baseDefinition(), baseDefinition({ id: 'queued' })], { runtime: {
+    ...emptyRuntime, listProcesses: () => new Promise((resolve) => { release = resolve; }),
+    spawn: () => { spawns++; throw new Error('must not spawn'); },
+  } });
+  await manager.initialize();
+  const starting = manager.startAll();
+  while (!release) await pause(1);
+  await manager.stopAll();
+  release([]);
+  const result = await starting;
+  assert.deepEqual(result.map(({ id, ok, cancelled }) => ({ id, ok, cancelled })), [
+    { id: 'sandbox', ok: false, cancelled: true }, { id: 'queued', ok: false, cancelled: true },
+  ]);
+  assert.equal(spawns, 0);
+  manager.runtime.listProcesses = async () => [{ pid: 90101, executablePath: process.execPath, commandLine: 'desktop-test' }];
+  assert.ok((await manager.startAll()).every((entry) => entry.ok && entry.result.alreadyRunning));
+});
+
+test('stopping a queued component cancels only that component in the current batch', async (t) => {
+  let release;
+  const row = { pid: 90101, executablePath: process.execPath, commandLine: 'desktop-test' };
+  const { manager } = await setup(t, [baseDefinition(), baseDefinition({ id: 'queued' })], { runtime: {
+    ...emptyRuntime, listProcesses: () => new Promise((resolve) => { release = () => resolve([row]); }),
+  } });
+  await manager.initialize();
+  const starting = manager.startAll();
+  while (!release) await pause(1);
+  manager.runtime.listProcesses = async () => [row];
+  assert.equal((await manager.state()).processes[0].startPending, true);
+  await manager.stop('queued');
+  release();
+  const result = await starting;
+  assert.equal(result[0].ok, true);
+  assert.equal(result[1].cancelled, true);
+  assert.equal((await manager.state()).processes[0].startPending, false);
 });
 
 async function freePort() {

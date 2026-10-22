@@ -133,7 +133,6 @@ export function describeProcesses(pids, processes) {
 
 const normalize = (value) => String(value || '').replaceAll('\\', '/').toLowerCase();
 const absolutePath = (value) => path.isAbsolute(value) || /^[a-z]:[\\/]/i.test(value);
-const entryFile = (value) => /\.(?:[cm]?js|tsx?|py|jar|dll)$/i.test(value);
 
 function runtimeFamily(executable) {
   const name = normalize(executable).split('/').at(-1).replace(/\.exe$/, '');
@@ -143,18 +142,69 @@ function runtimeFamily(executable) {
 }
 
 // Keep quoted Windows paths together, including --option="path with spaces".
+function commandArguments(commandLine) {
+  return (String(commandLine || '').match(/(?:[^\s"]+|"[^"]*")+/g) || []).map((arg) => arg.replaceAll('"', ''));
+}
+
+function fileArgument(arg) {
+  if (String(arg).startsWith('file:')) {
+    try { return fileURLToPath(arg); } catch { return ''; }
+  }
+  return arg;
+}
+
+const runtimeValueOptions = {
+  node: new Set(['-r', '--require', '--import', '--loader', '--experimental-loader', '-C', '--conditions',
+    '--env-file', '--env-file-if-exists', '--icu-data-dir', '--openssl-config', '--redirect-warnings',
+    '--diagnostic-dir', '--report-directory', '--report-dir', '--title', '--watch-path', '--inspect-port',
+    '--tsconfig', '--cwd', '--include', '--exclude', '--ignore']),
+  python: new Set(['-W', '-X', '--check-hash-based-pycs']),
+  java: new Set(['-cp', '-classpath', '--class-path', '-p', '--module-path', '--upgrade-module-path',
+    '--add-modules', '--limit-modules', '--add-exports', '--add-opens', '--add-reads', '--enable-native-access', '--source']),
+  dotnet: new Set(['--roll-forward', '--fx-version', '--runtimeconfig', '--depsfile', '--additionalprobingpath', '--additional-deps', '--roll-forward-on-no-candidate-fx']),
+};
+
+// Read only the host's execution target. Arguments after it belong to the app,
+// so a watcher/backup tool mentioning our entry cannot identify our service.
+export function processEntry(command, args = []) {
+  const family = runtimeFamily(command);
+  if (!family) return '';
+  for (let index = 0; index < args.length; index++) {
+    const arg = String(args[index]);
+    const flag = arg.split('=')[0];
+    if (family === 'java') {
+      if (arg === '-jar') return fileArgument(args[index + 1] || '');
+      if (['-m', '--module'].includes(flag)) return '';
+    }
+    if (family === 'node' && (['-e', '--eval', '-p', '--print', '-c', '--check'].includes(flag) || /^-[epc].+/.test(arg))) return '';
+    if (family === 'python' && (['-m', '-c'].includes(flag) || /^-[mc].+/.test(arg))) return '';
+    if (arg === '--') return fileArgument(args[index + 1] || '');
+    if (arg === '-') return '';
+    if (runtimeValueOptions[family].has(flag)) {
+      if (!arg.includes('=')) index++;
+      continue;
+    }
+    if (arg.startsWith('-')) continue;
+    if (family === 'dotnet' && index === 0 && arg === 'exec') continue;
+    if (family === 'java') return ''; // A main class is not a -jar entry.
+    const entry = fileArgument(arg);
+    if (family === 'dotnet' && !/\.dll$/i.test(entry)) return '';
+    if (family === 'node' && /(?:^|[\\/])tsx[\\/]dist[\\/]cli\.[cm]?js$/i.test(entry)) {
+      const rest = args.slice(index + 1);
+      if (rest[0] === 'watch') rest.shift();
+      return processEntry(command, rest);
+    }
+    return entry;
+  }
+  return '';
+}
+
 // Relative arguments are deliberately NOT resolved against the configured cwd:
 // an already-running process may have been started in a different directory.
 function commandPaths(commandLine) {
-  return (String(commandLine || '').match(/(?:[^\s"]+|"[^"]*")+/g) || [])
-    .map((arg) => arg.replaceAll('"', ''))
+  return commandArguments(commandLine)
     .flatMap((arg) => [arg, ...(arg.includes('=') ? [arg.slice(arg.indexOf('=') + 1)] : [])])
-    .map((arg) => {
-      if (arg.startsWith('file:')) {
-        try { return fileURLToPath(arg); } catch { return ''; }
-      }
-      return arg;
-    }).filter((arg) => arg && absolutePath(arg));
+    .map(fileArgument).filter((arg) => arg && absolutePath(arg));
 }
 
 function createProcessMatcher() {
@@ -186,29 +236,32 @@ function createProcessMatcher() {
     if (!exactExecutable && !scriptLauncher && !sameRuntime && family !== 'dotnet') return false;
 
     const pathApi = /^[a-z]:[\\/]/i.test(definition.cwd || '') ? path.win32 : path;
-    const entries = (definition.args || []).filter((arg) => !arg.startsWith('-') && entryFile(arg))
-      .map((arg) => absolutePath(arg) ? arg : pathApi.resolve(definition.cwd || '.', arg))
-      .filter((arg) => includes.some((needle) => absolutePath(needle)
-        ? canonical(arg) === canonical(needle) || canonical(arg).startsWith(`${canonical(needle)}/`)
-        : normalize(arg).includes(normalize(needle))));
+    const configuredEntry = processEntry(definition.command, definition.args);
+    const expectedEntry = configuredEntry && (absolutePath(configuredEntry) ? configuredEntry : pathApi.resolve(definition.cwd || '.', configuredEntry));
+    const actualEntry = processEntry(executable, commandArguments(processInfo.commandLine).slice(1));
     const actualPaths = [executable, ...commandPaths(processInfo.commandLine)].map(canonical);
     // .NET's apphost and `dotnet Component.dll` are two launch forms of the
     // same application. Require the full application path, not just its name.
-    const appHost = family === 'dotnet' && entries.find((entry) => /\.dll$/i.test(entry)
-      && canonical(entry.replace(/\.dll$/i, '.exe')) === canonical(executable));
+    const appHost = family === 'dotnet' && /\.dll$/i.test(expectedEntry)
+      && canonical(expectedEntry.replace(/\.dll$/i, '.exe')) === canonical(executable) && expectedEntry;
     if (appHost) actualPaths.push(canonical(appHost));
     const haystack = normalize(`${executable}\n${processInfo.commandLine}\n${actualPaths.join('\n')}`);
     if (!includes.every((needle) => absolutePath(needle)
       ? actualPaths.some((actual) => actual === canonical(needle) || actual.startsWith(`${canonical(needle)}/`))
       : haystack.includes(normalize(needle)))) return false;
 
-    const entryMatches = entries.some((entry) => actualPaths.includes(canonical(entry)));
+    const entryMatches = expectedEntry && actualEntry && absolutePath(actualEntry) && canonical(actualEntry) === canonical(expectedEntry);
     // Changing Node/Java/Python/.NET installations is fine when the actual
     // project entry is proven. A generic relative server/index.ts is not proof.
-    if (!exactExecutable && !scriptLauncher) return Boolean(appHost || sameRuntime && entryMatches);
-    const absoluteEntries = commandPaths(processInfo.commandLine).filter((arg) => entryFile(arg)
-      && entries.some((entry) => normalize(entry).split('/').at(-1) === normalize(arg).split('/').at(-1)));
-    if (entries.length && absoluteEntries.length && !entryMatches) return false;
+    if (appHost) return true;
+    if (!exactExecutable && !scriptLauncher) return Boolean(sameRuntime && entryMatches);
+    if (expectedEntry) {
+      if (!actualEntry) return false;
+      if (absolutePath(actualEntry)) return Boolean(entryMatches);
+      // A fixed host may use the configured relative entry (e.g. bundled
+      // dotnet Component.dll). Never borrow an entry from later app arguments.
+      return normalize(pathApi.normalize(actualEntry)) === normalize(pathApi.relative(definition.cwd || '.', expectedEntry));
+    }
     return true;
   };
 }

@@ -7,7 +7,7 @@ import { fileURLToPath } from 'node:url';
 import { isDeepStrictEqual } from 'node:util';
 import {
   collectOwnedProcesses, describeProcesses, findMatchingProcesses, isLiveChild, listPortListeners, listSystemProcesses,
-  loopbackListeners, probePort, runFile, sameProcess, waitForPort,
+  loopbackListeners, probePort, processEntry, runFile, sameProcess, waitForPort,
 } from './process-inspection.mjs';
 
 const WINDOWS = process.platform === 'win32';
@@ -296,6 +296,57 @@ function buildDefaultDefinitions(projectRoot) {
   ];
 }
 
+function relocateMatcher(previous, next) {
+  const normalize = (value) => String(value || '').replaceAll('\\', '/').toLowerCase();
+  const api = /^[a-z]:[\\/]/i.test(next.cwd || previous.cwd || '') ? path.win32 : path;
+  const mappings = [];
+  const add = (from, to) => {
+    if (from && to && normalize(from) !== normalize(to)) mappings.push([from, to]);
+  };
+  const mapFile = (from, to) => {
+    if (!from || !to) return;
+    add(from, to);
+    add(api.basename(from), api.basename(to));
+    if (isAbsoluteCommand(from) && isAbsoluteCommand(to)) {
+      add(api.dirname(from), api.dirname(to));
+      add(api.basename(api.dirname(from)), api.basename(api.dirname(to)));
+    }
+  };
+  const beforeEntry = processEntry(previous.command, previous.args);
+  const afterEntry = processEntry(next.command, next.args);
+  if (beforeEntry && afterEntry) {
+    mapFile(api.resolve(previous.cwd || '.', beforeEntry), api.resolve(next.cwd || '.', afterEntry));
+    add(beforeEntry, afterEntry);
+  }
+  mapFile(previous.command, next.command);
+  // Native daemons also identify instances through data/config arguments.
+  // Rebind an argument only when its option and position are unchanged.
+  for (let index = 0; index < previous.args.length; index++) {
+    const before = previous.args[index];
+    const after = next.args[index];
+    if (!after) continue;
+    const option = (arg) => arg.startsWith('-') && arg.includes('=') ? arg.slice(0, arg.indexOf('=')) : '';
+    const value = (arg) => option(arg) ? arg.slice(arg.indexOf('=') + 1) : arg;
+    if (option(before) !== option(after) || index > 0 && previous.args[index - 1].startsWith('-') && previous.args[index - 1] !== next.args[index - 1]) continue;
+    if (isAbsoluteCommand(value(before)) && isAbsoluteCommand(value(after))) add(value(before), value(after));
+  }
+  mappings.sort((left, right) => right[0].length - left[0].length);
+  const relocate = (value) => {
+    const normalized = normalize(value);
+    const format = (replacement) => value.includes('/') && !value.includes('\\') ? replacement.replaceAll('\\', '/') : replacement;
+    for (const [from, to] of mappings) {
+      if (normalized === normalize(from)) return format(to);
+      if (isAbsoluteCommand(from) && normalized.startsWith(`${normalize(from)}/`)) return format(api.join(to, value.slice(from.length + 1)));
+    }
+    return value;
+  };
+  const matcher = { ...previous.matcher };
+  for (const key of ['includes', 'executablePaths']) {
+    if (Array.isArray(matcher[key])) matcher[key] = matcher[key].map(relocate);
+  }
+  return matcher;
+}
+
 function mergeDefinition(defaultDefinition, savedDefinition) {
   const result = { ...defaultDefinition, args: [...defaultDefinition.args], env: { ...defaultDefinition.env } };
   if (savedDefinition && typeof savedDefinition === 'object') {
@@ -320,6 +371,9 @@ function mergeDefinition(defaultDefinition, savedDefinition) {
       result.env.NODE_OPTIONS = stripLegacyTsxLoaderOption(result.env.NODE_OPTIONS);
     }
   }
+  // Old overrides may change the launch path without saving a matcher. Derive
+  // its path fields on load as well as on edit; explicit custom rules survive.
+  if (!savedDefinition?.matcher) result.matcher = relocateMatcher(defaultDefinition, result);
   return result;
 }
 
@@ -437,6 +491,7 @@ export class ProcessManager {
     this.starting = new Map();
     this.closing = false;
     this.startGeneration = 0;
+    this.stopGenerations = new Map();
     this.lastErrors = new Map();
     this.defaults = new Map();
     this.processOverrides = new Map();
@@ -531,6 +586,7 @@ export class ProcessManager {
     if (!this.config) await this.initialize();
     const definition = this.getDefinition(id);
     if (!definition) throw new Error(`未知进程：${id}`);
+    const previous = { ...definition, args: [...definition.args] };
     for (const key of ['command', 'cwd', 'label', 'group']) {
       if (patch[key] !== undefined) definition[key] = text(patch[key]);
     }
@@ -544,6 +600,8 @@ export class ProcessManager {
     }
     if (Array.isArray(patch.args)) definition.args = normalizeArgs(patch.args);
     if (patch.env && typeof patch.env === 'object') definition.env = normalizeEnv(patch.env);
+    if (definition.id === 'wuxin') definition.args = normalizeWuxinRuntimeArgs(definition.args, definition.cwd);
+    definition.matcher = relocateMatcher(previous, definition);
     const overrides = definitionOverrides(definition, this.defaults.get(id));
     if (Object.keys(overrides).length) this.processOverrides.set(id, overrides);
     else this.processOverrides.delete(id);
@@ -641,6 +699,7 @@ export class ProcessManager {
         port: definition.port || null,
         available,
         status,
+        startPending: this.starting.has(definition.id),
         managed,
         source: managed ? 'managed' : running ? 'external' : null,
         ready: running && port.ready,
@@ -847,6 +906,7 @@ export class ProcessManager {
   async stop(id) {
     const definition = this.getDefinition(id);
     if (!definition) throw new Error(`未知进程：${id}`);
+    this.stopGenerations.set(id, (this.stopGenerations.get(id) || 0) + 1);
     this.starting.get(id)?.controller.abort();
     const launch = this.launches.get(id);
     if (!launch) return { stopped: false, notManaged: true, pids: [] };
@@ -948,11 +1008,16 @@ export class ProcessManager {
   async startAll({ onlyAutoStart = false } = {}) {
     const results = [];
     const generation = this.startGeneration;
+    const stops = new Map(this.stopGenerations);
+    const cancelled = (id) => this.closing || generation !== this.startGeneration || (stops.get(id) || 0) !== (this.stopGenerations.get(id) || 0);
     for (const definition of this.definitions) {
-      if (this.closing || generation !== this.startGeneration) break;
       if (!definition.enabled || (onlyAutoStart && !definition.autoStart)) continue;
+      if (cancelled(definition.id)) {
+        results.push({ id: definition.id, ok: false, cancelled: true, error: '启动已取消' });
+        continue;
+      }
       try { results.push({ id: definition.id, ok: true, result: await this.start(definition.id) }); }
-      catch (error) { results.push({ id: definition.id, ok: false, error: error?.message || String(error) }); }
+      catch (error) { results.push({ id: definition.id, ok: false, cancelled: cancelled(definition.id), error: error?.message || String(error) }); }
     }
     return results;
   }
