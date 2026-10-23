@@ -1,6 +1,6 @@
 # WuxinBot V2.0 规划
 
-日期：2026-10-23。状态：已获用户授权建立 Goal 并实施，功能开发与隔离验证进行中。实施决策和验收记录见 [V2_IMPLEMENTATION.md](V2_IMPLEMENTATION.md)。
+日期：2026-10-23。状态：已完成开发、验收并正式启用 V2。本文保留规划时的讨论，已落地的规则、部署与巡检记录以 [V2_IMPLEMENTATION.md](V2_IMPLEMENTATION.md) 为准。
 
 开发基线：`8f4c95f`，该提交的 GitHub CI 已通过。
 
