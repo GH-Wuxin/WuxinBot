@@ -937,6 +937,7 @@ let waitUpTimer = null;
     const liveGroup = getGroup(liveDb, event.groupId) || { groupId: event.groupId, name: '私聊' };
     const liveUserPolicy = getUserPolicy(liveDb, event.groupId, event.userId);
     const messages = buildPrompt(liveDb, liveGroup, event, liveUserPolicy);
+    const socialExpressionContext = messages[0]?.content;
     traceEvent('PROMPT', 'prompt_built', {
       messageCount: messages.length,
       roles: messages.map((message) => message.role),
@@ -1485,6 +1486,7 @@ let waitUpTimer = null;
 
     if (decision.socialReady) {
       const checked = await revalidateSocialReply(event, replyText || `[图片反应：${stickerDecisionId || ''}]`, {
+        expressionPrompt: socialExpressionContext,
         protectedOutput: Boolean(hasDirectToolDelivery || requiredToolLed || evidenceProtectedTurn || stickerDecisionId || imageOnlySticker),
       });
       if (checked === null) return { replied: false, reason: 'V2 发送前判断已取消过时回复' };

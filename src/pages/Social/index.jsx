@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { Heart, MessageCircle, RefreshCw, Undo2 } from 'lucide-react';
+import { Heart, MessageCircle, RefreshCw, Trophy, Undo2 } from 'lucide-react';
 import { api } from '../../lib/api.js';
 import { Button, Card, Input, Select, Switch, Textarea } from '../../components/ui/index.jsx';
 import './social.css';
@@ -13,6 +13,7 @@ export function SocialPage({ db, saveSettings, refreshState }) {
   if (db.settings.ownerQq) scopes.push({ value: `private:${db.settings.ownerQq}`, label: 'Owner 私聊' });
   const [scope, setScope] = useState(scopes[0]?.value || '');
   const [selected, setSelected] = useState('');
+  const [rankScope, setRankScope] = useState(scopes[0]?.value.startsWith('private:') ? 'global' : 'conversation');
   const [search, setSearch] = useState('');
   const [data, setData] = useState(null);
   const [error, setError] = useState('');
@@ -29,10 +30,10 @@ export function SocialPage({ db, saveSettings, refreshState }) {
     const controller = new AbortController();
     requestRef.current = controller;
     try {
-      const result = await api(`/api/social?scope=${encodeURIComponent(scope)}&userId=${encodeURIComponent(selected)}`, { signal: controller.signal, timeoutMs: 15000 });
+      const result = await api(`/api/social?scope=${encodeURIComponent(scope)}&userId=${encodeURIComponent(selected)}&rankScope=${rankScope}`, { signal: controller.signal, timeoutMs: 15000 });
       if (!controller.signal.aborted) { setData(result); setError(''); }
     } catch (cause) { if (!controller.signal.aborted) setError(cause.message); }
-  }, [scope, selected]);
+  }, [scope, selected, rankScope]);
   useEffect(() => { void load(); return () => requestRef.current?.abort(); }, [load, db.socialV2Summary?.revision]);
   useEffect(() => { setEditing(false); }, [scope, selected]);
   const mutate = async (work) => {
@@ -43,6 +44,7 @@ export function SocialPage({ db, saveSettings, refreshState }) {
   };
   const person = data?.people.find((p) => p.userId === selected);
   const people = (data?.people || []).filter((p) => `${p.nickname} ${p.userId}`.toLowerCase().includes(search.toLowerCase()));
+  const ranked = (data?.ranking?.entries || []).filter((p) => `${p.nickname} ${p.userId}`.toLowerCase().includes(search.toLowerCase()));
   const feedback = Object.fromEntries((data?.feedback || []).map((f) => [f.decisionId, f.verdict]));
 
   return <div className="social-page">
@@ -58,6 +60,19 @@ export function SocialPage({ db, saveSettings, refreshState }) {
     {error && <div className="social-error" role="alert">{error}</div>}
     <div className="social-filters"><Select label="会话" value={scope} options={scopes} onChange={(e) => { setScope(e.target.value); setSelected(''); setData(null); }} />
       <Input label="查找成员" placeholder="昵称或 QQ" value={search} onChange={(e) => setSearch(e.target.value)} /></div>
+    <Card className="social-ranking">
+      <div className="social-ranking-heading"><div><h2><Trophy size={18} /> 好感排名</h2><p className="social-note">{data?.ranking?.total ?? 0} 位普通成员 · 同分并列 · 好感为全局数值</p></div>
+        <Select label="排名范围" value={rankScope} options={[{ value: 'conversation', label: '本会话' }, { value: 'global', label: '全局' }]}
+          onChange={(e) => { setRankScope(e.target.value); setData(null); }} /></div>
+      {data?.ranking?.owner && <div className="social-ranking-owner"><strong>Owner</strong><span>{data.ranking.owner.userId}</span><b className="social-special">特殊</b><small>不参与数值排名</small></div>}
+      <div className="social-ranking-list" aria-label="好感排名列表">
+        {ranked.map((p) => <button key={p.userId} className={`social-ranking-row ${selected === p.userId ? 'is-selected' : ''}`} onClick={() => setSelected(p.userId)}>
+          <b className={p.rank <= 3 ? 'social-ranking-leading' : ''}>{p.rank}</b><span><strong>{p.nickname}</strong><small>{p.userId}</small></span><b>{p.score.toFixed(1)}</b>
+        </button>)}
+        {!ranked.length && <p className="social-empty">{search ? '没有匹配的排名成员。' : '这个范围还没有普通成员的关系记录。'}</p>}
+      </div>
+      <p className="social-note">本会话只列出在这里已有关系记录的人。{data?.ranking && data.ranking.total > data.ranking.entries.length ? `当前显示前 ${data.ranking.entries.length} 人。` : ''} QQ 查询：<code>/w 好感榜 [全局]</code>，仅 Owner 可用。</p>
+    </Card>
     <div className="social-columns">
       <Card className="social-members"><h2><Heart size={18} /> 相处的感觉</h2>
         {!people.length && <p className="social-empty">还没有关系记录。启用后，模型会从真实互动开始判断。</p>}

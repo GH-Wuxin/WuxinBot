@@ -36,10 +36,11 @@ function directRoute(handlerKey: OwnerHandlerKey, permissionKey?: string, denyRe
 export function resolveOwnerRoute(ctx: OwnerHandlerContext): OwnerRouteResolution {
   const { command, isWuxinCommand, subCommand, parts, permissions, commandUserPolicy, target } = ctx;
 
-  if (['/好感度', '/affinity', '/指令', '/directive'].includes(command)) {
+  if (['/好感度', '/affinity', '/好感榜', '/好感排名', '/affinity-top', '/指令', '/directive'].includes(command)) {
     if (!isSystemOwner(ctx.commandDb, ctx.event)) return { kind: 'reply',
       reply: '只有所有者可以使用这个指令。', reason: '只有所有者可以使用 V2 关系与长期指令', replied: Boolean(ctx.sendMessage) };
-    return directRoute(['/好感度', '/affinity'].includes(command) ? 'affinity' : 'ownerDirective');
+    return directRoute(['/好感度', '/affinity'].includes(command) ? 'affinity'
+      : ['/指令', '/directive'].includes(command) ? 'ownerDirective' : 'affinityRank');
   }
 
   if (command === '/help' && !isWuxinCommand) {

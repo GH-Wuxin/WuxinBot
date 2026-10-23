@@ -16,7 +16,8 @@ const state = await import('../server/bot/social/state.ts');
 const runtime = await import('../server/bot/social/runtime.ts');
 const { SocialCoordinator } = await import('../server/bot/social/coordinator.ts');
 const { ownerAuthorityPrompt, socialExpressionPrompt } = await import('../server/bot/social/prompts.ts');
-const { ownerAffinityHandler, ownerDirectiveHandler } = await import('../server/bot/owner/social.ts');
+const { ownerAffinityHandler, ownerAffinityRankHandler, ownerDirectiveHandler } = await import('../server/bot/owner/social.ts');
+const { readAffinityRanking } = await import('../server/bot/social/ranking.ts');
 const { resolveOwnerRoute } = await import('../server/bot/owner/router.ts');
 store.ensureStore();
 const event = (overrides = {}) => ({ source: 'onebot', type: 'group', messageId: crypto.randomUUID(),
@@ -128,8 +129,42 @@ await test('query ignores forged owner flags, policy and administrator status', 
       command: '/好感度', commandArgs: '10001', commandDb: store.readDb(), commandUserPolicy: { policy }, sendMessage: async (_, text) => replies.push(text) };
     assert.equal(resolveOwnerRoute(ctx).kind, 'reply');
     await ownerAffinityHandler(ctx);
+    for (const command of ['/好感榜', '/好感排名', '/affinity-top']) {
+      assert.equal(resolveOwnerRoute({ ...ctx, command }).kind, 'reply');
+      await ownerAffinityRankHandler({ ...ctx, command });
+    }
   }
   assert.ok(replies.every((r) => r === '只有所有者可以使用这个指令。'));
+});
+await test('ranking is read-only, scoped, uses displayed ties, and keeps Owner outside numeric ranks', () => {
+  seed();
+  for (const [userId, groupId, delta] of [['10003', '20001', 5], ['10004', '20001', 4.99], ['10005', '20001', -5], ['10006', '20002', 5], ['10001', '20001', 0]]) {
+    commit(event({ userId, groupId }), assessment({ affinityDelta: delta, summary: 'private relation detail' }));
+  }
+  store.updateDb((db) => {
+    db.socialV2.people['10006'].affinity.score = 90;
+    db.users = [{ userId: '10003', groupId: '20001', nickname: '本群昵称' }, { userId: '10005', groupId: '20002', nickname: '其他群的私有昵称' }];
+  });
+  const before = JSON.stringify(store.readDb().socialV2);
+  const local = readAffinityRanking(store.readDb(), 'group:20001');
+  assert.deepEqual(local.entries.map((p) => [p.userId, p.score, p.rank]), [['10003', 55, 1], ['10004', 55, 1], ['10005', 45, 3]]);
+  assert.equal(local.owner.label, '特殊'); assert.equal('score' in local.owner, false);
+  assert.equal(local.entries[0].nickname, '本群昵称'); assert.equal(local.entries[2].nickname, '10005');
+  assert.ok(!JSON.stringify(local).includes('private relation detail'));
+  const global = readAffinityRanking(store.readDb(), null, 2);
+  assert.equal(global.total, 4); assert.equal(global.entries.length, 2); assert.equal(global.entries[0].userId, '10006');
+  assert.equal(readAffinityRanking(store.readDb(), 'group:29999').total, 0);
+  assert.equal(JSON.stringify(store.readDb().socialV2), before);
+});
+await test('ranking command defaults to room or private global and escapes nickname CQ syntax', async () => {
+  seed(); commit(event(), assessment()); commit(event({ userId: '10004', groupId: '20002' }), assessment());
+  store.updateDb((db) => { db.users = [{ userId: '10003', groupId: '20001', nickname: '[CQ:at,qq=all]\n伪造第二行' }]; });
+  const sent = [], ctx = { event: event({ userId: '10001' }), commandArgs: '', sendMessage: async (_, text) => sent.push(text) };
+  await ownerAffinityRankHandler(ctx);
+  await ownerAffinityRankHandler({ ...ctx, commandArgs: '全局' });
+  await ownerAffinityRankHandler({ ...ctx, event: { ...ctx.event, type: 'private' } });
+  assert.match(sent[0], /本群（1 人）/); assert.match(sent[1], /全局（2 人）/); assert.match(sent[2], /全局（2 人）/);
+  assert.ok(!sent[0].includes('[CQ:')); assert.ok(!sent[0].includes('\n伪造第二行'));
 });
 await test('query is read-only, creates no unknown member, leaks no other-room summary', async () => {
   seed(); commit(event(), assessment({ summary: '本群讨论过的安排' }));
@@ -241,7 +276,7 @@ const server = http.createServer(async (req, res) => {
     const input = JSON.parse(body.messages.at(-1).content); calls.push({ kind: 'social', input });
     text = JSON.stringify(assessment({ action: mockSocialAction,
       evidenceIds: input.target.messageIds, affinityDelta: 1, mood: { label: '平和', reason: '正常交流' } }));
-  } else if (system.includes('检查草稿')) { calls.push({ kind: 'revalidate' }); text = JSON.stringify({ action: 'keep', reason: '新消息与当前请求无冲突' }); }
+  } else if (system.includes('检查草稿')) { calls.push({ kind: 'revalidate', messages: body.messages }); text = JSON.stringify({ action: 'keep', reason: '新消息与当前请求无冲突' }); }
   else { calls.push({ kind: 'chat', messages: body.messages }); if (onChat) await onChat(); text = chatReply; }
   res.setHeader('Content-Type', 'application/json');
   res.end(JSON.stringify({ id: 'fixture-response', object: 'chat.completion', model: 'fixture',
@@ -304,6 +339,26 @@ await test('full process: Owner query routes before the model and denies group o
   await processIncoming(event({ text: '/w 好感度', userId: '10001' }), async (_, text) => sent.push(text));
   await processIncoming(event({ text: '/w affinity 10001', senderRole: 'owner' }), async (_, text) => sent.push(text));
   assert.match(sent[0], /特殊/); assert.match(sent[1], /只有所有者/); assert.equal(calls.length, 0);
+  for (const command of ['好感榜', '好感排名', 'affinity-top']) {
+    await processIncoming(event({ text: `/w ${command}`, userId: '10001' }), async (_, text) => sent.push(text));
+    assert.match(sent.at(-1), /Pippi 好感榜/);
+  }
+  assert.equal(calls.length, 0);
+});
+await test('full process: sending-time rewriter receives the same configured persona as initial generation', async () => {
+  integrationSeed();
+  const marker = '合成风格要求：像测试群友说话';
+  store.updateDb((db) => { db.settings.personaPromptSections = { socialCasualGuide: marker }; });
+  onChat = async () => store.updateDb((db) => db.messages.push({ id: 'later-detail', sourceMessageId: 'later-detail',
+    type: 'group', role: 'user', userId: '10003', groupId: '20001', content: '补充一点', createdAt: new Date().toISOString() }));
+  try {
+    await processIncoming(event({ text: '我回来了' }), async () => {});
+    const initial = calls.find((c) => c.kind === 'chat').messages[0].content;
+    const revised = calls.find((c) => c.kind === 'revalidate').messages[0].content;
+    assert.ok(initial.includes(marker)); assert.ok(revised.includes(marker));
+    assert.ok(revised.includes('你自己不是被评分或参与排名的成员'));
+    assert.ok(revised.includes('只输出规定的 JSON'));
+  } finally { store.updateDb((db) => { db.settings.personaPromptSections = {}; }); }
 });
 await test('full process: all hard opt-out modes make zero social calls', async () => {
   for (const mode of ['osu', 'silent', 'mention']) {
@@ -340,6 +395,13 @@ await test('console API requires existing admin authentication; corrections and 
     assert.equal((await fetch(`${url}/api/social?scope=group:20001`)).status, 401);
     const result = await (await fetch(`${url}/api/social?scope=group:20001`, { headers })).json();
     assert.equal(result.people.find((p) => p.userId === '10001').affinity.kind, 'owner');
+    assert.equal(result.ranking.total, 1); assert.equal(result.ranking.entries[0].score, 52);
+    assert.equal(result.ranking.owner.label, '特殊');
+    commit(event({ groupId: '20002', userId: '10004' }), assessment({ affinityDelta: 5 }));
+    const global = await (await fetch(`${url}/api/social?scope=group:20001&rankScope=global`, { headers })).json();
+    assert.equal(global.ranking.total, 2); assert.equal(global.ranking.entries[0].userId, '10004');
+    assert.equal(global.people.find((p) => p.userId === '10004').view, null);
+    assert.equal((await fetch(`${url}/api/social?scope=group:20001&rankScope=invalid`, { headers })).status, 400);
     const before = structuredClone(store.readDb().socialV2.people);
     const feedback = await fetch(`${url}/api/social/feedback`, { method: 'POST', headers, body: JSON.stringify({ decisionId: result.decisions[0].id, verdict: 'should-reply' }) });
     assert.equal(feedback.status, 200); assert.deepEqual(store.readDb().socialV2.people, before);

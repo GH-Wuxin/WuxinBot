@@ -35,5 +35,16 @@
 .social-error { padding: 14px 18px; border-radius: 10px; background: #e8595918; color: #fca4a4; }
 .social-page p, .social-page small, .social-page dd { overflow-wrap: anywhere; }
 .social-note { font-size: 12px; line-height: 1.6; }
+.social-ranking { padding: 24px; }
+.social-ranking-heading { display: flex; justify-content: space-between; align-items: start; gap: 16px; }
+.social-ranking-heading h2 { margin-bottom: 8px; }.social-ranking-heading p { margin-top: 0; }
+.social-ranking-heading > :last-child { min-width: 125px; }
+.social-ranking-owner { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; padding: 12px 0; border-bottom: 1px solid #ffffff0c; }
+.social-ranking-owner > span { color: var(--text-muted, #a49bab); font-size: 12px; }
+.social-ranking-list { max-height: 300px; overflow: auto; }
+.social-ranking-row { display: grid; grid-template-columns: 36px minmax(0, 1fr) 64px; align-items: center; gap: 12px; width: 100%; padding: 12px; border: 1px solid transparent; border-radius: 10px; color: inherit; background: transparent; text-align: left; cursor: pointer; }
+.social-ranking-row:hover, .social-ranking-row.is-selected { background: #ff79b00b; border-color: #ff79b038; }
+.social-ranking-row > span { display: grid; gap: 4px; overflow-wrap: anywhere; }.social-ranking-row > b:last-child { text-align: right; font-variant-numeric: tabular-nums; }
+.social-ranking-leading { color: #f2a6cd; }
 @media (max-width: 1000px) { .social-settings { grid-template-columns: 1fr; }.social-columns { grid-template-columns: 220px minmax(0, 1fr); } }
 @media (max-width: 720px) { .social-columns, .social-filters { grid-template-columns: 1fr; }.social-members { max-height: 320px; overflow: auto; }.social-budget { flex-wrap: wrap; } }

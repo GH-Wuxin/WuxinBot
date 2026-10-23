@@ -2,7 +2,7 @@
 // runOwnerCommand resolves a route and indexes this record; there is no
 // runtime fallback handler.
 import type { OwnerHandler, OwnerHandlerKey } from './types.js';
-import { ownerAffinityHandler, ownerDirectiveHandler } from './social.js';
+import { ownerAffinityHandler, ownerAffinityRankHandler, ownerDirectiveHandler } from './social.js';
 import {
   ownerHelpHandler,
   ownerMyHandler,
@@ -44,6 +44,7 @@ import { ownerInfoHandler, ownerSkillFeedbackHandler, ownerSkillHandler } from '
 
 export const OWNER_HANDLER_REGISTRY: Record<OwnerHandlerKey, OwnerHandler> = {
   affinity: ownerAffinityHandler,
+  affinityRank: ownerAffinityRankHandler,
   ownerDirective: ownerDirectiveHandler,
   lv: ownerLvHandler,
   exp: ownerExpHandler,

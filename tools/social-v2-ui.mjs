@@ -2,6 +2,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import http from 'node:http';
+import assert from 'node:assert/strict';
 import { chromium } from 'playwright-core';
 import { createTestDataDir, cleanupTestDir } from './test-isolation.mjs';
 
@@ -34,7 +35,9 @@ const server = http.createServer(async (req, res) => {
     let result = { ok: true };
     if (url.pathname === '/api/state/revision') result = { ok: true, revision: 'fixture-1' };
     if (url.pathname === '/api/state') result = { ok: true, revision: 'fixture-1', db, oneBot: { connected: false } };
-    if (url.pathname === '/api/social') result = data;
+    if (url.pathname === '/api/social') result = { ...data, ranking: { total: url.searchParams.get('rankScope') === 'global' ? 2 : 1,
+      owner: { userId: '10001', label: '特殊' }, entries: people.slice(1, url.searchParams.get('rankScope') === 'global' ? 3 : 2)
+        .map((p, i) => ({ userId: p.userId, nickname: p.nickname, score: p.affinity.score, rank: i + 1 })) } };
     if (url.pathname === '/api/social/feedback') data = { ...data, feedback: [{ ...body, id: 'f1' }] };
     if (url.pathname === '/api/social/preferences') people.find((p) => p.userId === body.userId).view.preferredNames = body.preferredNames;
     res.end(JSON.stringify(result)); return;
@@ -52,7 +55,12 @@ try {
   await page.goto(`http://127.0.0.1:${server.address().port}`, { waitUntil: 'networkidle' });
   await page.locator('[data-page="__more"]').click();
   await page.locator('[data-page="social"]').click();
-  await page.getByRole('button', { name: /小甲/ }).click();
+  await page.locator('.social-ranking-row').first().waitFor();
+  assert.equal(await page.locator('.social-ranking-row').count(), 1);
+  await page.getByLabel('排名范围').selectOption('global');
+  await page.locator('.social-ranking-row').nth(1).waitFor();
+  assert.equal(await page.locator('.social-ranking-row').count(), 2);
+  await page.locator('.social-ranking-row').filter({ hasText: '小甲' }).click();
   await page.getByText('刚刚分享了练习顺利的消息').waitFor();
   fs.mkdirSync(path.dirname(output), { recursive: true }); await page.screenshot({ path: output, fullPage: true });
   await page.getByRole('button', { name: '应该接话', exact: true }).first().click();
@@ -60,9 +68,11 @@ try {
   await page.getByLabel('已接受称呼（逗号分隔，最多三个）').fill('阿甲');
   await page.getByRole('button', { name: '保存校正' }).click();
   await page.getByText('阿甲', { exact: true }).waitFor();
-  await page.setViewportSize({ width: 760, height: 1000 });
+  await page.setViewportSize({ width: 390, height: 844 });
   await page.evaluate(() => window.scrollTo(0, 0));
   await page.screenshot({ path: output.replace(/\.png$/, '-narrow.png'), fullPage: true });
+  const rankingBounds = await page.locator('.social-ranking').boundingBox();
+  assert.ok(rankingBounds.x >= 0 && rankingBounds.x + rankingBounds.width <= 390, 'ranking must fit the narrow viewport');
   if (errors.length) throw new Error(errors.join('\n'));
   console.log(JSON.stringify({ ok: true, browserErrors: errors.length, feedbackSaved: data.feedback.length, preferredNames: people[1].view.preferredNames, screenshot: output }));
 } finally { await browser.close(); server.closeAllConnections(); await new Promise((r) => server.close(r)); cleanupTestDir(directory); }

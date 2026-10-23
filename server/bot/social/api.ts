@@ -1,6 +1,7 @@
 import type { Express } from 'express';
 import { readDb, updateDb } from '../../store.js';
 import { activeOwnerDirectives, correctSocialPreferences, readSocialPerson, readSocialView, revertSocialTransition } from './state.js';
+import { readAffinityRanking, socialMemberNames } from './ranking.js';
 
 const validScope = (scope: unknown): scope is string => typeof scope === 'string' && /^(group|private):[\w-]{1,64}$/.test(scope);
 /** Mounted only after the existing console authentication middleware. */
@@ -8,18 +9,23 @@ export function mountSocialApi(app: Express) {
   app.get('/api/social', (req, res) => {
     const db = readDb(), scope = String(req.query.scope || '');
     if (!validScope(scope)) return res.status(400).json({ ok: false, error: '请选择一个会话' });
+    const rankScope = String(req.query.rankScope || 'conversation');
+    if (!['conversation', 'global'].includes(rankScope)) return res.status(400).json({ ok: false, error: '排名范围不正确' });
     const selected = String(req.query.userId || ''), query = String(req.query.q || '').slice(0, 80).toLowerCase();
     const state = db.socialV2;
     const ids = [...new Set([String(db.settings.ownerQq || ''), ...Object.keys(state.people)])].filter(Boolean);
+    const names = socialMemberNames(db, scope);
     const people = ids.map((userId) => {
-      const member = db.users.find((u) => u.userId === userId && `group:${u.groupId}` === scope);
-      const message = [...db.messages].reverse().find((m) => m.userId === userId && (m.type === 'group' ? `group:${m.groupId}` : `private:${m.userId}`) === scope);
-      return { ...readSocialPerson(db, userId), nickname: member?.nickname || message?.nickname || userId,
+      return { ...readSocialPerson(db, userId), nickname: names.get(userId) || userId,
         view: readSocialView(db, scope, userId) };
-    }).filter((p) => !query || `${p.userId} ${p.nickname}`.toLowerCase().includes(query)).slice(0, 200);
+    }).filter((p) => !query || `${p.userId} ${p.nickname}`.toLowerCase().includes(query));
+    const selectedPerson = people.find((p) => p.userId === selected);
+    const visiblePeople = people.slice(0, 200);
+    if (selectedPerson && !visiblePeople.includes(selectedPerson)) visiblePeople.push(selectedPerson);
     const decisions = state.decisions.filter((d) => d.scope === scope && (!selected || d.userId === selected)).slice(-80).reverse();
     const recent = state.decisions.filter((d) => d.scope === scope && Date.now() - Date.parse(d.createdAt) < 3600_000);
-    res.json({ ok: true, revision: state.revision, people, decisions,
+    res.json({ ok: true, revision: state.revision, people: visiblePeople, decisions,
+      ranking: readAffinityRanking(db, rankScope === 'global' ? null : scope, 200),
       transitions: state.transitions.filter((t) => t.scope === scope && (!selected || t.userId === selected)).slice(-60).reverse(),
       feedback: state.feedback.filter((f) => decisions.some((d) => d.id === f.decisionId)),
       directives: activeOwnerDirectives(db, scope),

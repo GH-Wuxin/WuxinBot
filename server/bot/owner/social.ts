@@ -1,6 +1,7 @@
 import { readDb, updateDb } from '../../store.js';
 import { activeOwnerDirectives, isSystemOwner, readSocialPerson, readSocialView, socialScope, updateOwnerDirective } from '../social/state.js';
 import type { OwnerHandlerContext } from './types.js';
+import { readAffinityRanking } from '../social/ranking.js';
 
 async function respond(ctx: OwnerHandlerContext, text: string) {
   if (ctx.sendMessage) await ctx.sendMessage(ctx.event, text);
@@ -40,4 +41,24 @@ export async function ownerDirectiveHandler(ctx: OwnerHandlerContext) {
   if (!['set', 'revoke'].includes(action) || !key) return respond(ctx, '用法：/w 指令 set 名称 内容 | revoke 名称 | list。只作用于当前会话。');
   updateDb((draft) => updateOwnerDirective(draft, ctx.event, key, body.join(' '), action === 'set'));
   return respond(ctx, `已${action === 'set' ? '保存' : '撤销'}本会话长期指令：${key}。`);
+}
+
+export async function ownerAffinityRankHandler(ctx: OwnerHandlerContext) {
+  const db = readDb();
+  if (!isSystemOwner(db, ctx.event)) return respond(ctx, '只有所有者可以使用这个指令。');
+  const arg = ctx.commandArgs.trim().toLowerCase();
+  if (!['', '本群', '全局', 'global'].includes(arg) || (arg === '本群' && ctx.event.type !== 'group')) {
+    return respond(ctx, '用法：/w 好感榜 [全局]（别名 好感排名、affinity-top）。群聊默认本群，私聊默认全局。');
+  }
+  const global = ['全局', 'global'].includes(arg) || ctx.event.type === 'private';
+  const ranking = readAffinityRanking(db, global ? null : socialScope(ctx.event));
+  const plainName = (value: string) => value.replace(/\s+/g, ' ').slice(0, 40)
+    .replaceAll('&', '&amp;').replaceAll('[', '&#91;').replaceAll(']', '&#93;');
+  return respond(ctx, [
+    `Pippi 好感榜 · ${global ? '全局' : '本群'}（${ranking.total} 人）`,
+    ranking.owner ? `Owner ${ranking.owner.userId}：特殊 · 不参与数值排名` : '',
+    ...ranking.entries.map((p) => `${p.rank}. ${plainName(p.nickname)}${p.nickname !== p.userId ? ` (${p.userId})` : ''} · ${p.score.toFixed(1)}`),
+    !ranking.total ? '暂无普通成员的好感记录。' : '同分并列；只统计已有关系记录的成员。',
+    ranking.total > ranking.entries.length ? `显示前 ${ranking.entries.length} 人，更多成员可在控制台查看。` : '',
+  ].filter(Boolean).join('\n'));
 }

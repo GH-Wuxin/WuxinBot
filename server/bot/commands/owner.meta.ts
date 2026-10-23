@@ -41,6 +41,7 @@ interface OwnerPermissionPolicy {
 /** Single source for owner-command permission/visibility derivation. */
 export const OWNER_PERMISSION_POLICY: Record<string, OwnerPermissionPolicy> = {
   affinity: { defaultPermissionRole: 'owner', permission: 'owner', visibility: 'owner', discoverability: 'direct_only' },
+  affinityRank: { defaultPermissionRole: 'owner', permission: 'owner', visibility: 'owner', discoverability: 'direct_only' },
   ownerDirective: { defaultPermissionRole: 'owner', permission: 'owner', visibility: 'owner', discoverability: 'direct_only' },
   help: { defaultPermissionRole: 'guest', permission: 'all', visibility: 'public', discoverability: 'listed' },
   my: { defaultPermissionRole: 'guest', permission: 'all', visibility: 'public', discoverability: 'listed' },
@@ -116,6 +117,7 @@ const P = (key: string) => ({
 });
 
 export const OWNER_COMMANDS: OwnerCommandMeta[] = [
+  { id: 'affinityRank', commandPath: '/好感榜', group: '关系与指令', syntax: '/w 好感榜 [全局]（别名 好感排名、affinity-top）', description: '按好感降序排名，同分并列，Owner 单列特殊；仅真实 Owner', permissionKey: 'affinityRank', ...P('affinityRank'), status: 'active', execution: { kind: 'local', handlerKey: 'affinityRank' } },
   { id: 'affinity', commandPath: '/好感度', group: '关系与指令', syntax: '/w 好感度 [@成员或QQ]（别名 affinity）', description: '只读查询 Pippi 好感与本会话情绪，仅真实 Owner', permissionKey: 'affinity', ...P('affinity'), status: 'active', execution: { kind: 'local', handlerKey: 'affinity' } },
   { id: 'ownerDirective', commandPath: '/指令', group: '关系与指令', syntax: '/w 指令 set 名称 内容 | revoke 名称 | list', description: 'Owner 保存或撤销当前会话长期指令，别名 directive', permissionKey: 'ownerDirective', ...P('ownerDirective'), status: 'active', execution: { kind: 'local', handlerKey: 'ownerDirective' } },
   { id: 'lv', commandPath: '/lv', group: '等级', syntax: '/w lv (@某人)', description: '查看等级经验', permissionKey: 'lv', ...P('lv'), status: 'active', execution: { kind: 'local', handlerKey: 'lv' }, implementationRefs: [{ path: 'server/bot/ownerCommands.ts', symbol: 'runOwnerCommand' }] },

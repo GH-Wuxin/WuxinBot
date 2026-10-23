@@ -2,7 +2,7 @@
 // System prompt: identity injection, complexity scoring, auto-model, pricing.
 // Extracted from bot.ts.
 import { readDb } from '../store.js';
-import { ownerAuthorityPrompt, socialExpressionPrompt } from './social/prompts.js';
+import { ownerAuthorityPrompt, socialExpressionPrompt, socialTonePrompt } from './social/prompts.js';
 import { asksToInspectVisual, hasVisualPlaceholder, isQuestion } from './cleaning.js';
 import { llmProvider, llmProviderName, supportsProviderSearch } from './llm.js';
 import { activeModelName, isDeepSeekVisionModel } from '../modelConfig.js';
@@ -586,6 +586,7 @@ export function buildPrompt(db, group, event, userPolicy, options = {}) {
     userPersonality: userPersonality || '',
     promptSections: db.settings.personaPromptSections || {},
     relationshipContext: relBlocks || undefined,
+    socialTone: socialTonePrompt(db, event),
     topicKnowledge: buildOsuTopicKnowledge(event.text) || undefined,
     factualContext: factualCtx || undefined,
     knowledgeBlocks: kbBlocks.length > 0 ? kbBlocks : undefined,

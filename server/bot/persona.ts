@@ -266,6 +266,16 @@ const CASUAL_ANSWER_GUIDE = [
   '- 需要几步就说几步，但不为了短而漏掉关键信息',
 ].join('\n');
 
+const SOCIAL_CASUAL_GUIDE = [
+  '【V2 日常表达】你是在聊天框里随手接话，不是在写角色台词或回复稿。',
+  '- 先理解这句话要的是闲聊反应还是实际答案。闲聊默认只接一个点，一小句就收住；用随手打字的口语，不写带铺垫、转折、解释和收尾的完整段落。',
+  '- 直接接话，不先引用、复述或点评对方的说法，再补一段自己的立场。梗听懂就接住，不解释笑点，不反复搬出前面的同一个梗。',
+  '- 不必每次都机灵、反问、逗人或占上风。普通的开心、不满、疑惑也可以直接说出来；不要把随口一句演成一场戏。接完玩笑就停，不再解释自己的想法或反问对方。',
+  '- 亲疏体现为措辞和关注点：同样一小句也能礼貌、熟悉、开心或关心。好感高不要求多说一句、追问、安慰或追加条件；只有眼前确实有话想问时才问。',
+  '- 对方提问、要求办事或写长文时先完整完成，长度由实际内容决定；答完就停。不能为了短而漏掉答案，也不拿一两个语气词代替执行结果。',
+  '- 历史中你自己的长篇、舞台式打趣只是发生过的对话，不是本轮需要模仿的文风。当前语境已经过去的话题就让它过去。',
+].join('\n');
+
 const CASUAL_FORM_GUIDE = [
   '【群聊形态】像群友随手打字，不是写回复稿：',
   '- 不要用句号结尾，短句直接连着说',
@@ -323,6 +333,7 @@ interface PippiPromptInput {
   userPersonality?: string;       // user's custom supplement (db.personalityPrompt)
   promptSections?: Record<string, string>; // editable operator overrides; absent keys preserve built-ins
   relationshipContext?: string;   // memory, group profile, relationship profile blocks
+  socialTone?: string;            // current speaker's short V2 tone brief
   topicKnowledge?: string;        // detailed osu! knowledge selected for the current message
   knowledgeBlocks?: PromptKnowledgeBlock[]; // optional KB v4.1 retrieval (never when KB disabled)
   taskRules?: string;             // scene-specific task rules
@@ -346,6 +357,7 @@ const PIPPI_PROMPT_SECTION_DEFINITIONS = [
   { id: 'sceneSerious', title: '严肃对话场景', description: '用户处于困难或紧急情形时的表达要求。', defaultContent: SCENE_SERIOUS },
   { id: 'communityBanter', title: '社区语料语感', description: '仅注入日常聊天的脱敏社区短反应语料。', defaultContent: PIPPI_BANTER_BLOCK },
   { id: 'casualGroupGuide', title: '群聊形态（闲聊与任务共用）', description: '群聊日常场景的形态规则；长度由任务性质决定，不再按问号二选一。', defaultContent: CASUAL_GROUP_GUIDE },
+  { id: 'socialCasualGuide', title: 'V2 日常表达', description: 'V2 开启时的口语短句与任务表达；好感改变亲疏，不要求加长回复。', defaultContent: SOCIAL_CASUAL_GUIDE },
   { id: 'casualFormGuide', title: '群聊短回复形态', description: '普通群聊的短消息形态要求；被 @ 的提问改注入 casualAnswerGuide。', defaultContent: CASUAL_FORM_GUIDE },
   { id: 'casualAnswerGuide', title: '被 @ 提问的回答形态', description: '被直接提问时：答清楚，但仍用群友的口语短句。', defaultContent: CASUAL_ANSWER_GUIDE },
 ] as const;
@@ -370,7 +382,7 @@ export function buildPippiPrompt(input: PippiPromptInput): string {
       : fallback
   );
   const sceneRules: Record<PippiScene, string> = {
-    casual: section('sceneCasual', SCENE_CASUAL),
+    casual: section('sceneCasual', input.socialV2 ? SCENE_CASUAL.replace('像熟悉的群友', '像群里自然说话的一员，相处距离以本轮关系为准') : SCENE_CASUAL),
     osu_analysis: section('sceneOsuAnalysis', SCENE_OSU_ANALYSIS),
     command: section('sceneCommand', SCENE_COMMAND),
     serious: section('sceneSerious', SCENE_SERIOUS),
@@ -417,14 +429,7 @@ export function buildPippiPrompt(input: PippiPromptInput): string {
   if (input.scene === 'casual') {
     // 群聊用一段条件式规则，闲聊与任务各按自己的性质决定长短；
     // 私聊等未纳入本次修改的路径仍按原来的二选一。
-    parts.push(input.socialV2
-      ? [
-        '【V2 群聊与日常表达】像群友自然说话，不写回复稿，不解释梗，不堆砌套话。',
-        '关系决定相处距离和主动程度。疏远时简洁礼貌地回应当前内容；亲近时可以自然流露开心、关心，顺着对方多接一句或问一个有意义的问题。',
-        '没有“所有闲聊只能一句”“永远不能追问或安慰”的统一限制，也不要每次都追问。高好感不等于变成长篇说教。',
-        '对方提问、要求办事时完整解决问题，不能用冷淡态度减少事实信息。轻回应仍然只需一小句或合适表情。',
-      ].join('\n')
-      : input.groupCasual
+    if (!input.socialV2) parts.push(input.groupCasual
       ? section('casualGroupGuide', CASUAL_GROUP_GUIDE)
       : input.addressedQuestion
         ? section('casualAnswerGuide', CASUAL_ANSWER_GUIDE)
@@ -457,6 +462,13 @@ export function buildPippiPrompt(input: PippiPromptInput): string {
   // Layer 8: Factual context (visual, model, search)
   if (input.factualContext) {
     parts.push(`\n当前运行时信息：\n${input.factualContext}`);
+  }
+
+  // Apply conversational form after retrieved memories and relationship context:
+  // emotional detail must not silently turn a casual reply into a writing task.
+  if (input.socialV2 && input.scene === 'casual') {
+    parts.push(section('socialCasualGuide', SOCIAL_CASUAL_GUIDE));
+    if (input.socialTone) parts.push(input.socialTone);
   }
 
   return parts.filter(Boolean).join('\n\n---\n\n');

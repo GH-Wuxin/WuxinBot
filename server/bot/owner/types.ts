@@ -34,6 +34,7 @@ export type OwnerHandler = (context: OwnerHandlerContext) => Promise<OwnerComman
  */
 export type OwnerHandlerKey =
   | 'affinity'
+  | 'affinityRank'
   | 'ownerDirective'
   | 'lv'
   | 'exp'
