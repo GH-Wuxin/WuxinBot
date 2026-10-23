@@ -72,7 +72,7 @@ function RecalcPanel() {
 
     <div className="card">
       <div className="card-head"><span className="card-title">备份规则</span></div>
-      <div className="note">自动备份每 8 小时一次；保留份数取上方设置（0 = 不限），超出的按时间从旧到新清理。恢复前会自动再备份当前状态。手动备份默认不参与自动清理，只有设了上限或手动点「清理超限」才会被裁掉。</div>
+      <div className="note">运行期间自动快照约每 5 分钟一次，按已保存的份数保留最新备份（0 = 不限）。恢复前会再备份当前状态。手动备份只有设置上限才会被清理；「清理 30 天前」只处理过期的自动及恢复前备份。</div>
     </div>
   </div>;
 }
@@ -81,6 +81,7 @@ function BackupsPanel() {
   const [backups, setBackups] = useState([]);
   const [working, setWorking] = useState(false);
   const [error, setError] = useState('');
+  const [notice, setNotice] = useState('');
   const [confirm, setConfirm] = useState(null);
   const [retention, setRetention] = useState({ auto: 10, preRestore: 5, manual: 0 });
   const [retentionDraft, setRetentionDraft] = useState({ auto: '10', preRestore: '5', manual: '0' });
@@ -98,24 +99,31 @@ function BackupsPanel() {
   };
   useEffect(() => { load(); }, []);
   const create = async () => {
+    setError(''); setNotice('');
     setWorking(true);
-    try { await api('/api/backups', { method: 'POST', body: { type: 'manual' } }); await load(); }
+    try { await api('/api/backups', { method: 'POST', body: { type: 'manual' } }); await load(); setNotice('备份已创建。'); }
+    catch (cause) { setError(cause.message || String(cause)); }
     finally { setWorking(false); }
   };
   const restore = async (name) => {
+    setError(''); setNotice('');
     setWorking(true);
-    await api(`/api/backups/${name}/restore`, { method: 'POST' });
-    window.location.reload();
+    try { await api(`/api/backups/${encodeURIComponent(name)}/restore`, { method: 'POST' }); window.location.reload(); }
+    catch (cause) { setError(cause.message || String(cause)); }
+    finally { setWorking(false); }
   };
   const remove = async (name) => {
+    setError(''); setNotice('');
     setWorking(true);
-    try { await api(`/api/backups/${name}`, { method: 'DELETE' }); await load(); }
+    try { await api(`/api/backups/${encodeURIComponent(name)}`, { method: 'DELETE' }); await load(); setNotice('备份已删除。'); }
+    catch (cause) { setError(cause.message || String(cause)); }
     finally { setWorking(false); }
   };
   const saveRetention = async () => {
+    setError(''); setNotice('');
     setWorking(true);
     try {
-      await api('/api/backups/retention', {
+      const result = await api('/api/backups/retention', {
         method: 'POST',
         body: {
           auto: Number(retentionDraft.auto),
@@ -124,6 +132,8 @@ function BackupsPanel() {
         },
       });
       await load();
+      setNotice(`保留规则已保存，清理了 ${result.removed || 0} 份旧备份。`);
+      if (result.failed?.length) setError(`${result.failed.length} 份备份删除失败，请检查文件访问权限后重试。`);
     } catch (cause) {
       setError(cause?.message || String(cause));
     } finally {
@@ -131,10 +141,15 @@ function BackupsPanel() {
     }
   };
   const prune = async (olderThanDays) => {
+    setError(''); setNotice('');
     setWorking(true);
     try {
-      await api('/api/backups/prune', { method: 'POST', body: olderThanDays ? { olderThanDays } : {} });
+      const result = await api('/api/backups/prune', { method: 'POST', body: olderThanDays ? { olderThanDays } : {} });
       await load();
+      setNotice(result.removed ? `已清理 ${result.removed} 份备份。` : '没有符合条件的备份需要清理。');
+      if (result.failed?.length) setError(`${result.failed.length} 份备份删除失败，请检查文件访问权限后重试。`);
+    } catch (cause) {
+      setError(cause.message || String(cause));
     } finally {
       setWorking(false);
     }
@@ -148,7 +163,8 @@ function BackupsPanel() {
       <span className="card-title">备份</span>
       <button type="button" className="btn btn-sm" disabled={working} onClick={create}>{working ? '处理中…' : '立即备份'}</button>
     </div>
-    {error && <div className="note" style={{ color: 'var(--red)' }}>{error}</div>}
+    {error && <div className="note" role="alert" style={{ color: 'var(--red)' }}>{error}</div>}
+    {notice && <div className="note" role="status">{notice}</div>}
     <div className="note" style={{ display: 'flex', flexWrap: 'wrap', gap: 10, alignItems: 'center', marginBottom: 10 }}>
       <span className="muted">保留份数（0 = 不限）</span>
       {[['auto', '自动'], ['preRestore', '恢复前'], ['manual', '手动']].map(([key, label]) => (
@@ -199,7 +215,7 @@ function BackupsPanel() {
       description={confirm?.kind === 'delete'
         ? '删除后无法找回。删掉自动备份不会影响当前运行数据，下次按计划会再生成新的。'
         : confirm?.kind === 'prune'
-          ? '超过保留份数的旧备份会被删除；手动备份只在设置了上限时才会被裁掉。'
+          ? `按已保存规则清理：自动 ${retention.auto || '不限'} 份、恢复前 ${retention.preRestore || '不限'} 份、手动 ${retention.manual || '不限'} 份。超过上限的旧备份会被删除。`
           : confirm?.kind === 'prune-old'
             ? '只会删除 30 天前的自动/恢复前备份，手动备份保留。'
             : '恢复将覆盖当前运行数据，恢复前会自动备份当前状态。'}

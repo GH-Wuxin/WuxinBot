@@ -1716,7 +1716,7 @@ app.delete('/api/backups/:name', (req, res) => {
 app.post('/api/backups/prune', (req, res) => {
   const olderThanDays = Number(req.body?.olderThanDays);
   const result = pruneBackups({ olderThanDays });
-  res.json(ok({ removed: result.removed, names: result.names }));
+  res.json(ok(result));
 });
 
 app.post('/api/backups/retention', (req, res) => {
@@ -1739,12 +1739,12 @@ app.post('/api/backups/retention', (req, res) => {
     db.settings.backupRetention = { auto, preRestore, manual };
   });
   const pruned = pruneBackups();
-  res.json(ok({ retention: { auto, preRestore, manual }, removed: pruned.removed }));
+  res.json(ok({ retention: { auto, preRestore, manual }, ...pruned }));
 });
 
-// Auto-prune on startup, then auto-backup every 8 hours
+// Recovery snapshots are created by store.ts at five-minute intervals.
+// Use the same policy at startup; a second timer would duplicate snapshots.
 pruneAutoBackups();
-setInterval(() => { createBackup('auto'); pruneAutoBackups(); }, 8 * 60 * 60 * 1000);
 
 // Auto-evaluate trust scores every 4 hours (legacy compat)
 setInterval(() => { evaluateTrustScores(); }, 4 * 60 * 60 * 1000);

@@ -6,6 +6,7 @@ import { DEFAULT_BOTS } from './bots/registry.js';
 import { DEFAULT_KB_SETTINGS } from './bot/knowledgeTypes.js';
 import { cacheUsageSummary, usageEventHasCacheDetails, eventMeasuredPromptTokens } from './usage.js';
 import { emptySocialState, normalizeSocialState, validSocialState } from './bot/social/state.js';
+import { pruneBackupFiles, resolveBackupRetention } from './backupFiles.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const rootDir = path.resolve(__dirname, '..');
@@ -86,7 +87,6 @@ function assertWriteTargetSafe() {
 // external damage never costs more than the snapshot interval. Kept under the
 // dedicated backups/ directory, pruned to the newest N snapshots.
 const AUTO_BACKUP_INTERVAL_MS = 5 * 60_000;
-const AUTO_BACKUP_KEEP = 24;
 const MAX_MESSAGES = 12_000;
 const MAX_DECISIONS = 30_000;
 const MAX_COMMAND_LOGS = 2_000;
@@ -301,13 +301,8 @@ function autoBackupIfDue(db) {
     const stamp = new Date(now).toISOString().replace(/[:.]/g, '-');
     const dest = path.join(backupDir, `auto-${stamp}.json`);
     if (!fs.existsSync(dest)) writeJsonAtomic(dest, db, false);
-    const files = fs.readdirSync(backupDir)
-      .filter((f) => /^auto-.*\.json$/.test(f))
-      .sort();
-    while (files.length > AUTO_BACKUP_KEEP) {
-      const oldest = files.shift();
-      try { fs.unlinkSync(path.join(backupDir, oldest)); } catch { /* ignore */ }
-    }
+    const result = pruneBackupFiles(backupDir, resolveBackupRetention(db), { types: ['auto'] });
+    if (result.failed.length) console.error('[store] auto backup cleanup failed:', result.failed);
     lastAutoBackupAt = now;
   } catch (error) {
     console.error('[store] auto backup failed:', String(error?.message || error));
