@@ -70,6 +70,7 @@ osu! 是当前最完整的垂直能力：
 - QQ 与 osu! 账号绑定和玩家档案；
 - BP、Recent、PP+ 与谱面类型分析；
 - 单图九维 Skill Profiler，以及经过成绩质量和名次衰减修正的 BP50 长期玩家画像；
+- `/w update [玩家名或 p:[完整玩家名或ID]]` 向所有成员开放，强制更新 `/w info` 的 Skill Profile 与 PP+；省略玩家时使用自己的绑定，刷新结果分项报告，失败保留已有数据；
 - `/w skill recent` 近期状态画像与 `/w skill compare` 玩家能力对比；
 - 基于实际游玩数据的谱面推荐；
 - multiplayer 监听、回合事件推送与比赛 rating。

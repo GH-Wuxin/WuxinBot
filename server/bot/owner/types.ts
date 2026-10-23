@@ -71,6 +71,7 @@ export type OwnerHandlerKey =
   | 'recalc'
   | 'refresh'
   | 'info'
+  | 'playerUpdate'
   | 'skill'
   | 'skillFeedback'
   | 'osu.help'

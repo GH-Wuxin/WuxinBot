@@ -8,7 +8,7 @@ import {
   requestSkillProfilerAnalysisWithFetch,
 } from '../../bots/skillProfiler.js';
 import { renderSkillProfilerCard } from '../../bots/skillProfilerCard.js';
-import { renderPlayerSkillComparison, renderPlayerSkillProfile } from '../../bots/playerSkillProfile.js';
+import { refreshPlayerSkillProfile, renderPlayerSkillComparison, renderPlayerSkillProfile } from '../../bots/playerSkillProfile.js';
 import { renderPlayerRecentSkillProfile } from '../../bots/playerRecentSkillProfile.js';
 import {
   appendSkillProfilerFeedback,
@@ -327,7 +327,7 @@ function feedbackGuidance(beatmapId: number, mods: string[]): string {
   ].join('\n');
 }
 
-async function resolveProfileUser(ctx: OwnerHandlerContext, explicitPlayer: string): Promise<{ id: number; username: string }> {
+async function resolveProfileUser(ctx: OwnerHandlerContext, explicitPlayer: string, command = 'info'): Promise<{ id: number; username: string }> {
   if (explicitPlayer) {
     const numericId = /^\d+$/.test(explicitPlayer) ? Number(explicitPlayer) : 0;
     return Number.isSafeInteger(numericId) && numericId > 0
@@ -349,7 +349,7 @@ async function resolveProfileUser(ctx: OwnerHandlerContext, explicitPlayer: stri
     if (username) return getUser(username, 'osu');
   }
   const binding = resolveOsuBindingValue(rawBinding);
-  if (!binding) throw new Error('请先绑定 osu! 账号：/w osu bind <用户名>，或使用 /w info <玩家名>。');
+  if (!binding) throw new Error(`请先绑定 osu! 账号：/w osu bind <用户名>，或使用 /w ${command} <玩家名>。`);
   return typeof binding === 'number'
     ? getUserById(binding, 'osu')
     : getUser(String(binding), 'osu');
@@ -376,6 +376,33 @@ export async function ownerInfoHandler(ctx: OwnerHandlerContext): Promise<OwnerC
     return { replied: Boolean(ctx.sendMessage), reason: EXPLICIT_PLAYER_USAGE };
   }
   return renderPlayerSkillProfileForContext(ctx, request.player);
+}
+
+export async function ownerPlayerUpdateHandler(ctx: OwnerHandlerContext): Promise<OwnerCommandResult> {
+  const player = unwrapExplicitPlayer(String(ctx.commandArgs || '').trim());
+  if (malformedExplicitPlayer(player)) {
+    if (ctx.sendMessage) await ctx.sendMessage(ctx.event, EXPLICIT_PLAYER_USAGE);
+    return { replied: Boolean(ctx.sendMessage), reason: EXPLICIT_PLAYER_USAGE };
+  }
+  const user = await resolveProfileUser(ctx, player, 'update');
+  if (ctx.sendMessage) await ctx.sendMessage(ctx.event, mentionSkillRequester(ctx,
+    `正在更新 ${user.username} 的 Skill Profile 和 PP+，会重新读取最新资料与 BP；同一玩家的重复请求会合并。PP+ 可能需要几分钟。`));
+  const result = await refreshPlayerSkillProfile(user.id);
+  const completedAt = new Date(result.completedAt).toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai', hour12: false });
+  const reply = [
+    `${user.username} 数据刷新结果`,
+    result.skill.updated
+      ? `Skill Profile：已更新（${result.skill.valid}/${result.skill.requested} 份有效样本）`
+      : `Skill Profile：未更新，保留已有画像。${result.skill.error}`,
+    result.ppPlus.updated ? 'PP+：已更新' : `PP+：未更新，保留已有数据。${result.ppPlus.error}`,
+    `完成时间：${completedAt}（北京时间）`,
+    '使用 /w info 查看画像，对比图也会读取已更新的数据。',
+  ].join('\n');
+  if (ctx.sendMessage) await ctx.sendMessage(ctx.event, mentionSkillRequester(ctx, reply));
+  return {
+    replied: Boolean(ctx.sendMessage), reason: reply,
+    ...(!result.skill.updated || !result.ppPlus.updated ? { error: '部分玩家数据未刷新成功' } : {}),
+  };
 }
 
 export async function ownerSkillHandler(ctx: OwnerHandlerContext): Promise<OwnerCommandResult> {

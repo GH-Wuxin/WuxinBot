@@ -848,9 +848,13 @@ function renderOsuHelp(permissions: any): string {
   }
   const skill = OWNER_COMMANDS.find((entry) => entry.id === 'skill');
   const info = OWNER_COMMANDS.find((entry) => entry.id === 'info');
+  const update = OWNER_COMMANDS.find((entry) => entry.id === 'osuUpdate');
   const feedback = OWNER_COMMANDS.find((entry) => entry.id === 'skillFeedback');
   if (info && canListCommand(info.visibility, info.discoverability, info.permission, perms)) {
     lines.push(`${info.syntax} — ${info.description}`);
+  }
+  if (update && canListCommand(update.visibility, update.discoverability, update.permission, perms)) {
+    lines.push(`${update.syntax} — ${update.description}`);
   }
   if (skill && canListCommand(skill.visibility, skill.discoverability, skill.permission, perms)) {
     lines.push('/w skill compare <玩家A> <玩家B> — 空格分隔；玩家名含空格时用 p:[玩家ID]');

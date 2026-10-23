@@ -165,6 +165,13 @@ async function osuFetch<T>(path: string, options: RequestInit = {}): Promise<T> 
   }
 }
 
+async function playerFetch<T>(path: string, force = false): Promise<T> {
+  // A refresh must start after an older request has settled, rather than join
+  // a response that was already being fetched before the refresh command.
+  if (force) await inFlightGets.get(`GET ${path}`)?.catch(() => undefined);
+  return osuFetch<T>(path);
+}
+
 export async function getUser(
   username: string,
   mode: OsuMode = 'osu',
@@ -173,7 +180,7 @@ export async function getUser(
   const cacheKey = `user:${username}:${mode}`;
   const cached = cacheGet<OsuUser>(cacheKey);
   if (cached && !options.force) return cached;
-  const user = await osuFetch<OsuUser>(`/users/@${encodeURIComponent(username)}/${mode}`);
+  const user = await playerFetch<OsuUser>(`/users/@${encodeURIComponent(username)}/${mode}`, options.force);
   cacheSet(cacheKey, user, TTL.user);
   cacheSet(`user:${user.id}:${mode}`, user, TTL.user);
   if (user.username) cacheSet(`user:${user.username}:${mode}`, user, TTL.user);
@@ -188,17 +195,17 @@ export async function getUserById(
   const cacheKey = `user:${userId}:${mode}`;
   const cached = cacheGet<OsuUser>(cacheKey);
   if (cached && !options.force) return cached;
-  const user = await osuFetch<OsuUser>(`/users/${userId}/${mode}`);
+  const user = await playerFetch<OsuUser>(`/users/${userId}/${mode}`, options.force);
   cacheSet(cacheKey, user, TTL.user);
   if (user.username) cacheSet(`user:${user.username}:${mode}`, user, TTL.user);
   return user;
 }
 
-export async function getUserBestScores(userId: number, mode: OsuMode = 'osu', limit: number = 100): Promise<OsuScore[]> {
+export async function getUserBestScores(userId: number, mode: OsuMode = 'osu', limit: number = 100, options: { force?: boolean } = {}): Promise<OsuScore[]> {
   const cacheKey = `best:${userId}:${mode}:${limit}`;
   const cached = cacheGet<OsuScore[]>(cacheKey);
-  if (cached) return cached;
-  const scores = await osuFetch<OsuScore[]>(`/users/${userId}/scores/best?mode=${mode}&limit=${limit}`);
+  if (cached && !options.force) return cached;
+  const scores = await playerFetch<OsuScore[]>(`/users/${userId}/scores/best?mode=${mode}&limit=${limit}`, options.force);
   cacheSet(cacheKey, scores, TTL.score);
   return scores;
 }

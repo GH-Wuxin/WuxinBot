@@ -49,7 +49,7 @@
     "sandbox:isolation:verify": "node --import tsx tools/sandbox-isolation-verify.mjs",
     "osu-only:verify": "node --import tsx tools/osu-command-only-mode-verify.mjs",
     "osu:api:verify": "node --import tsx tools/osu-api-timeout-retry-verify.mjs",
-    "pplus:verify": "node --import tsx tools/pplus-lifecycle-verify.mjs && node --import tsx tools/player-skill-runtime-verify.mjs",
+    "pplus:verify": "node --import tsx tools/pplus-lifecycle-verify.mjs && node --import tsx tools/player-skill-runtime-verify.mjs && node --import tsx tools/player-update-verify.mjs",
     "osu:analyze:verify": "node --import tsx tools/osu-analyzer-mvp-verify.mjs",
     "profiler:cache:verify": "node --import tsx tools/skill-profiler-cache-verify.mjs",
     "analyze:lifecycle:verify": "node --import tsx tools/analyze-lifecycle-verify.mjs",

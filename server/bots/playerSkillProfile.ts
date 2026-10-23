@@ -16,7 +16,7 @@ import { reservePlayerAnalysis } from './playerAnalysisQueue.js';
 import { saveAndGetCqCode } from './render.js';
 import { renderPlayerSkillComparisonCard, renderPlayerSkillProfileCard } from './playerSkillComparisonCard.js';
 import { lookupSkillByOsuId } from './skills.js';
-import { getPlayerBars, PPlusError } from '../osu/pplus.js';
+import { getPlayerBars, refreshPlayerPPlus, PPlusError } from '../osu/pplus.js';
 import type { PPlusBars } from '../osu/pplus.js';
 import { PLAYER_SKILL_TITLE_POLICY_ID, PLAYER_SKILL_TITLES } from './playerSkillTitles.js';
 export { PLAYER_SKILL_TITLE_POLICY_ID, PLAYER_SKILL_TITLES } from './playerSkillTitles.js';
@@ -110,6 +110,8 @@ const BP_RANK_DECAY = 0.95;
 const PROFILE_ANALYSIS_CONCURRENCY = skillProfilerConcurrency();
 const PLAYER_PROFILE_CACHE_TTL_MS = 30 * 60_000;
 const playerProfileCache = new Map<string, { at: number; payload: Record<string, unknown> }>();
+const playerProfileRevisions = new Map<number, number>();
+const playerRefreshInflight = new Map<number, Promise<PlayerProfileRefreshResult>>();
 type PlayerPPlusResult = { bars: PPlusBars | null; error?: Error };
 const playerPPlusInflight = new Map<number, Promise<PlayerPPlusResult>>();
 const STAR_EQUIVALENT_PLAYER_AXES = new Set<PlayerSkillAxis>([
@@ -168,9 +170,11 @@ async function attachCurrentPlayerPPlus(
   if (error) throw error;
   if (!bars) throw new PPlusError('NO_SCORES', 'PP+ 暂无可计算的标准模式成绩，无法生成完整画像。');
   const enriched = { ...payload, ppPlus: bars };
-  const sample = (payload as { sample?: { failed?: unknown } }).sample;
-  if (!sample || Number(sample.failed || 0) === 0) {
-    playerProfileCache.set(cacheKey, { at: Date.now(), payload: enriched });
+  const cached = playerProfileCache.get(cacheKey);
+  if (cached?.payload === payload) {
+    // Attaching PP+ is not a new BP analysis. Preserve its original age, and
+    // never let a late response replace a newer profile from /w update.
+    playerProfileCache.set(cacheKey, { at: cached.at, payload: enriched });
   }
   return enriched;
 }
@@ -204,6 +208,7 @@ type PreparedBpScore = {
 
 export interface PreparedPlayerSkillProfile {
   osuId: number;
+  revision: number;
   safeLimit: number;
   cacheKey: string;
   profilerIdentity: SkillProfilerIdentity;
@@ -588,16 +593,18 @@ export function aggregatePlayerSkillProfile(analyzed: AnalyzedBp[]): {
   };
 }
 
-export async function preparePlayerSkillProfile(osuId: number, limit = PLAYER_PROFILE_LIMIT): Promise<PreparedPlayerSkillProfile> {
+export async function preparePlayerSkillProfile(osuId: number, limit = PLAYER_PROFILE_LIMIT, options: { force?: boolean } = {}): Promise<PreparedPlayerSkillProfile> {
   const safeLimit = Math.max(1, Math.min(PLAYER_PROFILE_LIMIT, Math.floor(limit)));
+  const revision = playerProfileRevisions.get(osuId) || 0;
   traceEvent('TOOL', 'Skill：读取 BP 与玩家资料', { status: 'running', osuId, requested: safeLimit });
   const profilerIdentity = await getSkillProfilerIdentity();
   const cacheKey = playerProfileCacheKey(osuId, safeLimit, profilerIdentity);
   const cached = playerProfileCache.get(cacheKey);
-  if (cached && Date.now() - cached.at < PLAYER_PROFILE_CACHE_TTL_MS) {
+  if (!options.force && cached && Date.now() - cached.at < PLAYER_PROFILE_CACHE_TTL_MS) {
     traceEvent('TOOL', 'Skill：读取已完成画像缓存', { status: 'completed', osuId });
     return {
       osuId,
+      revision,
       safeLimit,
       cacheKey,
       profilerIdentity,
@@ -613,8 +620,8 @@ export async function preparePlayerSkillProfile(osuId: number, limit = PLAYER_PR
     };
   }
   const [user, scores] = await Promise.all([
-    getUserById(osuId, 'osu'),
-    getUserBestScores(osuId, 'osu', safeLimit),
+    getUserById(osuId, 'osu', options),
+    getUserBestScores(osuId, 'osu', safeLimit, options),
   ]);
   const limitedScores = scores.slice(0, safeLimit);
   const preparedScores: PreparedBpScore[] = limitedScores.map((score: any, index: number) => {
@@ -657,6 +664,7 @@ export async function preparePlayerSkillProfile(osuId: number, limit = PLAYER_PR
     });
   return {
     osuId,
+    revision,
     safeLimit,
     cacheKey,
     profilerIdentity,
@@ -671,6 +679,7 @@ export async function preparePlayerSkillProfile(osuId: number, limit = PLAYER_PR
 
 export async function buildPreparedPlayerSkillProfile(
   prepared: PreparedPlayerSkillProfile,
+  options: { cache?: boolean } = {},
 ): Promise<Record<string, unknown>> {
   if (prepared.cachedPayload) return prepared.cachedPayload;
   const { osuId, safeLimit, cacheKey, profilerIdentity, user } = prepared;
@@ -758,6 +767,7 @@ export async function buildPreparedPlayerSkillProfile(
   const stats: any = user.statistics || {};
   const storedSkill = lookupSkillByOsuId(osuId, 'osu');
   const payload = {
+    generatedAt: new Date().toISOString(),
     player: {
       osuId: user.id,
       username: user.username,
@@ -808,13 +818,19 @@ export async function buildPreparedPlayerSkillProfile(
     rows: analyzed,
   };
   // Reuse successful per-map results, but retry an incomplete batch next time.
-  if (failures.length === 0) playerProfileCache.set(cacheKey, { at: Date.now(), payload });
+  if (options.cache !== false && failures.length === 0 && prepared.revision === (playerProfileRevisions.get(osuId) || 0)) {
+    playerProfileCache.set(cacheKey, { at: Date.now(), payload });
+  }
   return payload;
 }
 
 const playerProfileInflight = new Map<string, Promise<Record<string, unknown>>>();
 
 export async function buildPlayerSkillProfilePayload(osuId: number, limit = PLAYER_PROFILE_LIMIT): Promise<Record<string, unknown>> {
+  // Wait before reserving a queue ticket, otherwise a waiting query could
+  // block the very refresh it is waiting for.
+  const refreshing = playerRefreshInflight.get(osuId);
+  if (refreshing) await refreshing;
   const ticket = reservePlayerAnalysis(osuId);
   traceEvent('TOOL', 'Skill：玩家进入计算队列', {
     status: 'waiting', osuId, queuePosition: ticket.position,
@@ -828,7 +844,8 @@ export async function buildPlayerSkillProfilePayload(osuId: number, limit = PLAY
       ticket.cancel();
       return attachCurrentPlayerPPlus(prepared.cachedPayload, prepared.cacheKey, pplusPromise);
     }
-    const existing = playerProfileInflight.get(prepared.cacheKey);
+    const inflightKey = `${prepared.cacheKey}:${prepared.revision}`;
+    const existing = playerProfileInflight.get(inflightKey);
     if (existing) {
       ticket.cancel();
       const payload = await existing;
@@ -841,19 +858,76 @@ export async function buildPlayerSkillProfilePayload(osuId: number, limit = PLAY
       });
       return buildPreparedPlayerSkillProfile(prepared);
     });
-    playerProfileInflight.set(prepared.cacheKey, pending);
+    playerProfileInflight.set(inflightKey, pending);
     try {
       const payload = await pending;
       return attachCurrentPlayerPPlus(payload, prepared.cacheKey, pplusPromise);
     } finally {
-      if (playerProfileInflight.get(prepared.cacheKey) === pending) {
-        playerProfileInflight.delete(prepared.cacheKey);
+      if (playerProfileInflight.get(inflightKey) === pending) {
+        playerProfileInflight.delete(inflightKey);
       }
     }
   } catch (error) {
     ticket.cancel();
     throw error;
   }
+}
+
+export interface PlayerProfileRefreshResult {
+  osuId: number;
+  completedAt: string;
+  skill: { updated: boolean; valid?: number; requested?: number; error?: string };
+  ppPlus: { updated: boolean; error?: string };
+}
+
+/** Refresh both sources independently; publish only complete Skill results. */
+export async function refreshPlayerSkillProfile(osuId: number): Promise<PlayerProfileRefreshResult> {
+  const existing = playerRefreshInflight.get(osuId);
+  if (existing) return existing;
+  playerProfileRevisions.set(osuId, (playerProfileRevisions.get(osuId) || 0) + 1);
+  const pending = Promise.resolve().then(async () => {
+    const ticket = reservePlayerAnalysis(osuId);
+    const skillJob = (async () => {
+      try {
+        const prepared = await preparePlayerSkillProfile(osuId, PLAYER_PROFILE_LIMIT, { force: true });
+        const payload = await ticket.run(() => buildPreparedPlayerSkillProfile(prepared, { cache: false }));
+        const sample = payload.sample as { valid: number; requested: number; failed: number };
+        if (!sample.valid || sample.failed) {
+          throw new Error(`本次 ${sample.valid}/${sample.requested} 份有效样本${sample.failed ? `，${sample.failed} 份分析失败` : '，暂无可用成绩'}，未替换原画像。`);
+        }
+        return { prepared, payload, sample };
+      } finally {
+        ticket.cancel();
+      }
+    })();
+    const [skill, ppPlus] = await Promise.allSettled([skillJob, refreshPlayerPPlus(osuId)]);
+    // Also fence out recent-profile work prepared while this refresh ran.
+    playerProfileRevisions.set(osuId, (playerProfileRevisions.get(osuId) || 0) + 1);
+    if (skill.status === 'fulfilled') {
+      for (const [key, entry] of playerProfileCache) {
+        if (Number((entry.payload.player as { osuId?: number })?.osuId) === osuId) playerProfileCache.delete(key);
+      }
+      const { prepared, payload } = skill.value;
+      playerProfileCache.set(prepared.cacheKey, {
+        at: Date.parse(String(payload.generatedAt)),
+        payload: ppPlus.status === 'fulfilled' ? { ...payload, ppPlus: ppPlus.value } : payload,
+      });
+    }
+    const message = (error: unknown) => String(error instanceof Error ? error.message : error).slice(0, 200);
+    const result: PlayerProfileRefreshResult = {
+      osuId,
+      completedAt: new Date().toISOString(),
+      skill: skill.status === 'fulfilled'
+        ? { updated: true, valid: skill.value.sample.valid, requested: skill.value.sample.requested }
+        : { updated: false, error: message(skill.reason) },
+      ppPlus: ppPlus.status === 'fulfilled' ? { updated: true } : { updated: false, error: message(ppPlus.reason) },
+    };
+    traceEvent('TOOL', 'Skill：玩家数据刷新完成', { status: result.skill.updated && result.ppPlus.updated ? 'completed' : 'error', ...result });
+    return result;
+  });
+  playerRefreshInflight.set(osuId, pending);
+  try { return await pending; }
+  finally { if (playerRefreshInflight.get(osuId) === pending) playerRefreshInflight.delete(osuId); }
 }
 
 export async function renderPlayerSkillProfile(osuId: number, limit = PLAYER_PROFILE_LIMIT): Promise<{

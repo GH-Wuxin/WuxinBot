@@ -186,11 +186,24 @@ export function ppToBars(perf: PPlusPerformance): PPlusBars {
   };
 }
 
-export async function refreshPlayerPPlus(osuUserId: string | number): Promise<void> {
+export async function refreshPlayerPPlus(osuUserId: string | number): Promise<PPlusBars> {
   const config = configuration();
-  const perf = await waitForPlayerJob(config, osuUserId, true);
-  if (!perf) throw new PPlusError('NO_SCORES', 'PP+ 暂无可计算的标准模式成绩。');
-  writePPlusCache(osuUserId, ppToBars(perf), config.baseUrl);
+  const key = `${config.key}:${osuUserId}`;
+  const existing = playerRefreshInflight.get(key);
+  if (existing) return existing;
+  const pending = (async () => {
+    // Keep the last successful cache on failure, and prevent an older normal
+    // calculation from committing its result after this forced refresh.
+    await playerInflight.get(key)?.catch(() => undefined);
+    const perf = await waitForPlayerJob(config, osuUserId, true);
+    if (!perf) throw new PPlusError('NO_SCORES', 'PP+ 暂无可计算的标准模式成绩。');
+    const bars = ppToBars(perf);
+    writePPlusCache(osuUserId, bars, config.baseUrl);
+    return bars;
+  })();
+  playerRefreshInflight.set(key, pending);
+  try { return await pending; }
+  finally { if (playerRefreshInflight.get(key) === pending) playerRefreshInflight.delete(key); }
 }
 
 // ── 24 小时缓存 ──
@@ -198,6 +211,7 @@ export async function refreshPlayerPPlus(osuUserId: string | number): Promise<vo
 const PPLUS_CACHE_TTL_MS = 24 * 60 * 60 * 1000;
 const pplusMemCache = new Map<string, { bars: PPlusBars; at: number; baseUrl: string }>();
 const playerInflight = new Map<string, Promise<PPlusBars | null>>();
+const playerRefreshInflight = new Map<string, Promise<PPlusBars>>();
 
 function readPPlusCache(osuUserId: string | number, baseUrl: string): { bars: PPlusBars; at: number } | null {
   const key = String(osuUserId);
@@ -234,9 +248,11 @@ function writePPlusCache(osuUserId: string | number, bars: PPlusBars, baseUrl: s
 
 export async function getPlayerBars(osuUserId: string | number): Promise<PPlusBars | null> {
   const config = configuration();
+  const key = `${config.key}:${osuUserId}`;
+  const refreshing = playerRefreshInflight.get(key);
+  if (refreshing) return refreshing;
   const cached = readPPlusCache(osuUserId, config.baseUrl);
   if (cached && Date.now() - cached.at < PPLUS_CACHE_TTL_MS) return cached.bars;
-  const key = `${config.key}:${osuUserId}`;
   const existing = playerInflight.get(key);
   if (existing) return existing;
   const pending = (async () => {
