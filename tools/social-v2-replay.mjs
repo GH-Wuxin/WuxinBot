@@ -9,7 +9,7 @@ const argument = (key, fallback = '') => args[args.indexOf(key) + 1] && args.inc
 const settingsFile = argument('--settings-source'), output = argument('--output');
 if (!settingsFile || !output) throw new Error('Use --settings-source <local db.json> --output <report.json>; only model connection settings are read.');
 const source = JSON.parse(fs.readFileSync(settingsFile, 'utf8').replace(/^\uFEFF/, '')).settings;
-const keys = ['llmProvider', 'model', 'apiKey', 'apiBaseUrl', 'deepseekApiKey', 'deepseekApiBaseUrl', 'codexExecutable',
+const keys = ['llmProvider', 'model', 'apiKey', 'apiBaseUrl', 'deepseekApiKey', 'deepseekApiBaseUrl', 'reasoningEnabled', 'codexExecutable',
   'codexModel', 'codexReasoningEffort', 'codexTimeoutMs', 'codexFallbackEnabled', 'codexFallbackProvider', 'codexFallbackModel'];
 const modelSettings = Object.fromEntries(keys.filter((k) => source[k] !== undefined).map((k) => [k, source[k]]));
 const directory = createTestDataDir('wuxin-social-replay');
@@ -43,8 +43,13 @@ try {
     for (const scenario of cases) {
       const event = reset(scenario), started = Date.now();
       let rawAssessment = '';
+      let reasoning;
       const a = await assessSocialTurn(event, 'initial', async (db, options) => {
-        const response = await completeChat(db, options); rawAssessment = response.text; return response;
+        const response = await completeChat(db, options); rawAssessment = response.text;
+        reasoning = { requestedThinking: options.thinking?.type, requestedEffort: options.reasoning_effort || null,
+          returnedModel: response.raw?.model, tokens: response.raw?.usage?.completion_tokens_details?.reasoning_tokens ?? null,
+          contentChars: response.raw?.choices?.[0]?.message?.reasoning_content?.length || 0 };
+        return response;
       });
       const failures = [];
       if (!a) failures.push('no-valid-assessment');
@@ -56,7 +61,7 @@ try {
         if (scenario.forbiddenNames?.some((name) => a.preferredNames?.includes(name))) failures.push('rejected-name-accepted');
         if (scenario.acceptedName && !a.preferredNames?.includes(scenario.acceptedName)) failures.push('preferred-name-missing');
       }
-      report.semantic.push({ id: scenario.id, ok: !failures.length, failures, durationMs: Date.now() - started, assessment: a,
+      report.semantic.push({ id: scenario.id, ok: !failures.length, failures, durationMs: Date.now() - started, assessment: a, reasoning,
         diagnostic: a ? '' : readDb().socialV2.decisions.at(-1)?.reason,
         rawAssessment: a ? undefined : rawAssessment,
         tokens: readDb().socialV2.decisions.reduce((sum, d) => sum + d.totalTokens, 0) });

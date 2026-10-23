@@ -17,7 +17,13 @@ import { parseSseBuffer } from '../src/lib/api.js';
 import { createTestDataDir, cleanupTestDir } from './test-isolation.mjs';
 const testDataDir = createTestDataDir('wuxin-request-trace');
 process.on('exit', () => cleanupTestDir(testDataDir));
-const { collectChatCompletionStream, completeChat } = await import('../server/bot/llm.ts');
+const { collectChatCompletionStream, completeChat, thinkingParamsForLevel } = await import('../server/bot/llm.ts');
+const { mergeTurnState, emptyTurnState } = await import('../server/bot/reasoningRouter.ts');
+
+const lowTurn = mergeTurnState(emptyTurnState(), { level: 'low', source: 'rule', reasonCode: 'context_dependency' });
+assert.equal(lowTurn.maxLevel, 'low');
+assert.equal(mergeTurnState(lowTurn, { level: 'off', source: 'rule', reasonCode: 'fast_default' }).maxLevel, 'low');
+assert.equal(mergeTurnState(lowTurn, { level: 'high', source: 'rule', reasonCode: 'context_dependency' }).maxLevel, 'high');
 
 clearRequestTracesForTest();
 
@@ -134,17 +140,27 @@ assert.equal(JSON.stringify(bpUpdates).includes('tail-secret'), false, 'late eve
 stopBpUpdates();
 
 const providerBodies = [];
+let providerMode = 'reasoning';
 const fakeProvider = http.createServer((request, response) => {
   let body = '';
   request.on('data', (chunk) => { body += chunk; });
   request.on('end', () => {
     providerBodies.push(JSON.parse(body));
+    const params = JSON.parse(body);
+    const usage = { prompt_tokens: 3, completion_tokens: 4, total_tokens: 7,
+      ...(providerMode === 'missing' ? {} : { completion_tokens_details: { reasoning_tokens: ['reasoning', 'usage-only'].includes(providerMode) ? 2 : 0 } }) };
+    const reasoning_content = providerMode === 'reasoning' ? '实时思考' : '';
+    if (!params.stream) {
+      response.writeHead(200, { 'content-type': 'application/json' });
+      response.end(JSON.stringify({ model: 'deepseek-flash', choices: [{ message: { role: 'assistant', content: '最终回答', reasoning_content }, finish_reason: 'stop' }], usage }));
+      return;
+    }
     response.writeHead(200, { 'content-type': 'text/event-stream' });
     const send = (payload) => response.write(`data: ${JSON.stringify(payload)}\n\n`);
-    send({ id: 'live-1', model: 'deepseek-v4-flash', choices: [{ index: 0, delta: { role: 'assistant', reasoning_content: '实时思考' }, finish_reason: null }] });
+    send({ id: 'live-1', model: 'deepseek-flash', choices: [{ index: 0, delta: { role: 'assistant', reasoning_content }, finish_reason: null }] });
     setTimeout(() => {
-      send({ id: 'live-1', model: 'deepseek-v4-flash', choices: [{ index: 0, delta: { content: '最终回答' }, finish_reason: 'stop' }] });
-      send({ id: 'live-1', model: 'deepseek-v4-flash', choices: [], usage: { prompt_tokens: 3, completion_tokens: 4, total_tokens: 7, completion_tokens_details: { reasoning_tokens: 2 } } });
+      // DeepSeek may attach usage to the terminal choice instead of a separate chunk.
+      send({ id: 'live-1', model: 'deepseek-flash', choices: [{ index: 0, delta: { content: '最终回答' }, finish_reason: 'stop' }], usage });
       response.end('data: [DONE]\n\n');
     }, 20);
   });
@@ -155,7 +171,7 @@ try {
   const endToEndUpdates = [];
   const stopEndToEndUpdates = subscribeRequestTraces((trace) => endToEndUpdates.push(trace));
   const endToEndId = startRequestTrace({ ...input, messageId: 'stream-end-to-end' });
-  const completion = await withRequestTrace(endToEndId, () => completeChat({ settings: {
+  const fakeDb = { settings: {
     llmProvider: 'deepseek',
     model: 'deepseek-v4-flash',
     apiBaseUrl: `http://127.0.0.1:${port}`,
@@ -168,7 +184,8 @@ try {
     visionMaxImages: 3,
     visionMaxImageBytes: 6_000_000,
     visionImageTimeoutMs: 8_000,
-  } }, {
+  } };
+  const completion = await withRequestTrace(endToEndId, () => completeChat(fakeDb, {
     messages: [{ role: 'user', content: 'test live reasoning' }],
     thinking: { type: 'enabled' },
     reasoning_effort: 'high',
@@ -177,10 +194,43 @@ try {
   stopEndToEndUpdates();
   assert.equal(providerBodies[0].stream, true, 'traced DeepSeek request must use provider streaming');
   assert.equal(providerBodies[0].stream_options.include_usage, true);
+  assert.equal(providerBodies[0].thinking.type, 'enabled');
+  assert.equal(providerBodies[0].reasoning_effort, 'high');
+  assert.equal('max_tokens' in providerBodies[0], false, 'chat output cap must not consume the thinking budget');
   assert.equal(completion.text, '最终回答');
   assert.equal(completion.raw.choices[0].message.reasoning_content, '实时思考');
+  assert.equal(completion.meta.model, 'deepseek-flash', 'actual model metadata must use the returned model, not the requested alias');
   assert.equal(endToEndUpdates.some((trace) => trace.events.some((event) => event.name === 'model_call_streaming' && event.data?.response?.reasoning === '实时思考')), true, 'raw CoT must publish before final completion');
   assert.equal(endToEndUpdates.some((trace) => trace.events.some((event) => event.name === 'model_call_completed' && event.data?.streaming === true)), true, 'final trace must retain streaming mode');
+  for (const [level, enabled, mode, stream] of [
+    ['low', true, 'reasoning', true], ['max', true, 'zero', true], ['max', true, 'zero', false],
+    ['high', true, 'missing', true], ['high', true, 'usage-only', true], ['low', false, 'zero', true],
+  ]) {
+    providerMode = mode;
+    const traceId = startRequestTrace({ ...input, messageId: `${level}-${enabled}-${mode}-${stream}` });
+    const before = providerBodies.length;
+    const result = await withRequestTrace(traceId, () => completeChat(fakeDb, {
+      messages: [{ role: 'user', content: 'synthetic reasoning fixture' }],
+      ...thinkingParamsForLevel(level, enabled), requestMaxRetries: 0, traceStreaming: stream,
+    }));
+    assert.equal(providerBodies.length, before + 1, 'a valid answer with zero reasoning must not cause hidden repeat calls');
+    const body = providerBodies.at(-1);
+    assert.equal(body.thinking.type, enabled ? 'enabled' : 'disabled');
+    assert.equal(body.reasoning_effort, enabled ? level : undefined);
+    assert.equal('max_tokens' in body, !enabled);
+    assert.equal(result.text, '最终回答');
+    const trace = listRequestTraces().find((t) => t.id === traceId);
+    const started = trace.events.find((e) => e.name === 'model_call_started').data;
+    const completed = trace.events.find((e) => e.name === 'model_call_completed').data;
+    assert.equal(started.thinkingEnabled, enabled);
+    assert.equal(started.requestedReasoningEffort, enabled ? level : null);
+    assert.equal(completed.thinkingEnabled, enabled);
+    assert.equal(completed.requestedReasoningEffort, enabled ? level : null);
+    assert.equal(completed.returnedModel, 'deepseek-flash');
+    assert.equal(completed.reasoningObserved, ['reasoning', 'usage-only'].includes(mode));
+    assert.equal(completed.response.reasoningExposed, mode === 'reasoning');
+    assert.equal(completed.response.usage.reasoningTokens, mode === 'missing' ? undefined : ['reasoning', 'usage-only'].includes(mode) ? 2 : 0);
+  }
 } finally {
   await new Promise((resolve) => fakeProvider.close(resolve));
 }

@@ -77,7 +77,7 @@ export function buildLlmCompletionMeta(raw, base) {
     totalTokens: toNonNegative(usage?.total_tokens),
     contentEmpty: content.trim().length === 0,
     hadToolCalls: Array.isArray(message?.tool_calls) && message.tool_calls.length > 0,
-    model: String(base?.model ?? ''),
+    model: String(raw?.model || base?.model || ''),
     provider: String(base?.provider ?? ''),
     latencyMs: Number.isFinite(Number(base?.latencyMs)) ? Number(base.latencyMs) : 0,
   };
@@ -101,11 +101,12 @@ export function isReasoningBudgetExhaustion(meta) {
 
 /**
  * Translate a ReasoningLevel into DeepSeek wire params. OFF disables thinking
- * and never sends reasoning_effort; HIGH/MAX enable thinking with the matching
+ * and never sends reasoning_effort; LOW/HIGH/MAX enable thinking with the matching
  * effort level. `enabled=false` (kill switch) always produces the OFF shape.
  */
 export function thinkingParamsForLevel(level, enabled = true) {
   if (!enabled || level === 'off') return { thinking: { type: 'disabled' } };
+  if (level === 'low') return { thinking: { type: 'enabled' }, reasoning_effort: 'low' };
   if (level === 'max') return { thinking: { type: 'enabled' }, reasoning_effort: 'max' };
   return { thinking: { type: 'enabled' }, reasoning_effort: 'high' };
 }
@@ -586,10 +587,8 @@ export async function completeChat(db, options = {}) {
     temperature: Number(options.temperature ?? settings.temperature ?? 0.85)
   };
 
-  // deepseek-v4-flash defaults to thinking on this API and can burn the whole
-  // token budget on reasoning_content (returning empty chat content), which
-  // doubled latency via retries and produced silent empty replies. Chat
-  // replies do not need hidden reasoning; disable it explicitly.
+  // Thinking is selected by each call site. Calls without a reasoning policy
+  // stay explicitly disabled rather than inheriting the provider's default.
   const thinkingEnabled = provider === 'deepseek'
     && ['enabled', 'high', 'max'].includes(String(options.thinking?.type || ''));
   if (provider === 'deepseek') {
@@ -641,6 +640,11 @@ export async function completeChat(db, options = {}) {
     const streaming = provider === 'deepseek'
       && Boolean(currentRequestTraceId())
       && options.traceStreaming !== false;
+    // These are the wire request, not a claim about the provider's execution.
+    const requestedReasoning = provider === 'deepseek' ? {
+      thinkingEnabled: nextParams.thinking?.type === 'enabled',
+      requestedReasoningEffort: nextParams.reasoning_effort || null,
+    } : {};
     traceEvent('MODEL', 'model_call_started', {
       status: 'running',
       invocationId,
@@ -652,7 +656,7 @@ export async function completeChat(db, options = {}) {
       messageCount: nextParams.messages?.length || 0,
       toolCount: nextParams.tools?.length || 0,
       streaming,
-      thinkingEnabled,
+      ...requestedReasoning,
     });
     // The outer timeout must do more than stop waiting: abort the SDK's
     // in-flight fetch AND cancel its pending retries. SDK v6 propagates
@@ -731,6 +735,7 @@ export async function completeChat(db, options = {}) {
           label
         );
       }
+      const responseTrace = extractProviderResponseTrace(response);
       traceEvent('MODEL', 'model_call_completed', {
         status: 'ok',
         durationMs: Date.now() - invocationStarted,
@@ -740,12 +745,15 @@ export async function completeChat(db, options = {}) {
         purpose: options.tracePurpose || label,
         provider,
         model: nextParams.model,
+        returnedModel: response.model || null,
         streaming,
-        response: extractProviderResponseTrace(response),
+        ...requestedReasoning,
+        reasoningObserved: Boolean(responseTrace.reasoningExposed || responseTrace.usage?.reasoningTokens > 0),
+        response: responseTrace,
       });
       finishPromptCall(promptCallId, {
         status: 'ok', provider, model: response.model || nextParams.model,
-        response: extractProviderResponseTrace(response), durationMs: Date.now() - invocationStarted,
+        response: responseTrace, durationMs: Date.now() - invocationStarted,
       });
       return {
         text: response.choices?.[0]?.message?.content?.trim() || '',

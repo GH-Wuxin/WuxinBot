@@ -222,7 +222,7 @@ function evaluateInvariant(
       return [true, `target, actor and ${constraints.length} constraints locked`];
     }
     case 'RR_MONOTONIC_LOOP': {
-      const RANK = { off: 0, high: 1, max: 2 };
+      const RANK = { off: 0, low: 1, high: 2, max: 3 };
       let maxRank = 0;
       for (const event of events(trace, 'reasoning')) {
         const data = event.data as any;

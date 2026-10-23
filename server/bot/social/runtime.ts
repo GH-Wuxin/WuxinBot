@@ -1,5 +1,6 @@
 import { readDb, updateDb } from '../../store.js';
-import { completeChat } from '../llm.js';
+import { completeChat, thinkingParamsForLevel } from '../llm.js';
+import { reasoningEnabledFor } from '../reasoningRouter.js';
 import { isReplyProcessAborted } from '../replyProcesses.js';
 import { traceEvent } from '../../requestTrace.js';
 import { getUserPolicy } from '../gate.js';
@@ -102,7 +103,8 @@ export async function assessSocialTurn(event: SocialEvent, phase = 'initial', in
         mode: db.groups.find((g) => g.groupId === event.groupId)?.mode || 'private', target: { userId: event.userId,
           messageIds: ids, text: event.text, atTargets: event.atTargets || [], replyTo: event.replyMessageId || '' },
         relationship: person, currentConversation: view, timeline }) },
-    ], maxTokens: 1200, timeoutMs: 15_000, temperature: 0.2, thinking: { type: 'disabled' },
+    ], maxTokens: 1200, timeoutMs: 15_000, temperature: 0.2,
+    ...thinkingParamsForLevel('low', reasoningEnabledFor(db)),
     responseFormat: { type: 'json_object' }, label: 'V2 社交评估', tracePurpose: 'social_assessment', traceRole: 'social' });
     tokens = Number(result.usage?.total_tokens || 0);
     const assessment = parseSocialAssessment(result.text, [...new Set([...ids, ...timeline.map((m) => m.messageId)])], isSystemOwner(db, event), ids);
@@ -160,7 +162,8 @@ export async function revalidateSocialReply(event: SocialEvent, reply: string, o
       { role: 'user', content: JSON.stringify({ direct: Boolean(event.socialDirect), protectedOutput: Boolean(options.protectedOutput),
         original: { userId: event.userId, text: event.text }, draft: reply.slice(0, 12000), fresh }) },
     ], maxTokens: Math.min(2500, Math.max(600, reply.length * 2)), timeoutMs: 15_000, temperature: 0.2,
-    thinking: { type: 'disabled' }, responseFormat: { type: 'json_object' }, label: 'V2 发送前复核', tracePurpose: 'social_revalidation', traceRole: 'social' });
+    ...thinkingParamsForLevel('low', reasoningEnabledFor(db)),
+    responseFormat: { type: 'json_object' }, label: 'V2 发送前复核', tracePurpose: 'social_revalidation', traceRole: 'social' });
     tokens = Number(result.usage?.total_tokens || 0);
     const r = parseObject(result.text);
     if (!['keep', 'drop', 'replace'].includes(r.action) || typeof r.reason !== 'string') throw new Error('无效的发送前判断');

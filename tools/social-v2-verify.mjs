@@ -122,6 +122,39 @@ await test('assessment receives configured bot identity and original mention/quo
     assert.equal(captured.target.userId, e.userId);
   }
 });
+await test('assessment and revalidation request low thinking and honor both master switches', async () => {
+  const previousEnv = process.env.REASONING_ENABLED;
+  try {
+    for (const [enabled, env, expected] of [[true, '', 'enabled'], [false, '', 'disabled'], [true, 'false', 'disabled'], [true, '0', 'disabled']]) {
+      seed();
+      process.env.REASONING_ENABLED = env;
+      store.updateDb((db) => { db.settings.reasoningEnabled = enabled; });
+      const e = event({ socialDirect: true });
+      const requests = [];
+      const a = await runtime.assessSocialTurn(e, 'initial', async (_, options) => {
+        requests.push(options);
+        return { text: JSON.stringify(assessment({ action: 'reply', evidenceIds: [e.messageId] })), usage: {} };
+      });
+      assert.equal(a.action, 'reply');
+      store.updateDb((db) => db.messages.push({ id: 'new-detail', type: 'group', role: 'user', userId: e.userId,
+        groupId: e.groupId, content: '补充说明', createdAt: new Date().toISOString() }));
+      const reply = await runtime.revalidateSocialReply(e, '原回复', {}, async (_, options) => {
+        requests.push(options);
+        return { text: JSON.stringify({ action: 'keep', reason: '仍然适用' }), usage: {} };
+      });
+      assert.equal(reply, '原回复');
+      assert.deepEqual(requests.map((r) => r.tracePurpose), ['social_assessment', 'social_revalidation']);
+      for (const request of requests) {
+        assert.equal(request.thinking.type, expected);
+        assert.equal(request.reasoning_effort, expected === 'enabled' ? 'low' : undefined);
+        assert.equal(request.timeoutMs, 15_000, 'thinking must not remove the bounded social timeout');
+      }
+    }
+  } finally {
+    if (previousEnv === undefined) delete process.env.REASONING_ENABLED;
+    else process.env.REASONING_ENABLED = previousEnv;
+  }
+});
 await test('Owner directive provenance survives updates/revocation; outsiders cannot change it', () => {
   seed(); const e = event({ userId: '10001' });
   store.updateDb((db) => state.updateOwnerDirective(db, e, '称呼', '本群叫我测试员'));

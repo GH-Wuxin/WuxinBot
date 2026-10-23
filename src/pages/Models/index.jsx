@@ -326,7 +326,7 @@ export function ModelsPage({ db, saveSettings }) {
             <div className="field" style={{ flex: 1 }}><label>补入预算（字符）</label><input type="number" min="2000" max="40000" step="1000" value={draft.groupContextSearchCharBudget || 12000} onChange={setNumber('groupContextSearchCharBudget')} /></div>
           </div>}
           <div className="field"><label>Owner 私聊上下文软上限（字符）</label><input type="number" min="4000" max="60000" step="1000" value={draft.ownerPrivateContextCharBudget || 24000} onChange={setNumber('ownerPrivateContextCharBudget')} /></div>
-          {[['reasoningEnabled', '启用模型思考', '允许复杂调用开启 DeepSeek thinking；会增加延迟与 Token'], ['ignoreSystemFacts', '纯人设模式', '忽略系统事实注入'], ['profileAntiRecencyV2', '画像 V2 防近因', '长期画像与近期动态分层（实验性）'], ['levelUpNotifyEnabled', '升级恭喜通知', '群内自动祝贺']].map(([field, title, sub]) => <div className="row" key={field}>
+          {[['reasoningEnabled', '启用模型思考', 'V2 判断与发送前复核使用 low，回复按任务选择档位；会增加延迟与 Token'], ['ignoreSystemFacts', '纯人设模式', '忽略系统事实注入'], ['profileAntiRecencyV2', '画像 V2 防近因', '长期画像与近期动态分层（实验性）'], ['levelUpNotifyEnabled', '升级恭喜通知', '群内自动祝贺']].map(([field, title, sub]) => <div className="row" key={field}>
             <div className="row-main"><div className="row-title">{title}</div><div className="row-sub">{sub}</div></div>
             <button type="button" className={'switch' + ((field === 'levelUpNotifyEnabled' ? draft[field] !== false : draft[field] === true) ? ' is-on' : '')} aria-label={title} onClick={() => updateDraft({ [field]: field === 'levelUpNotifyEnabled' ? draft[field] === false : draft[field] !== true })} />
           </div>)}

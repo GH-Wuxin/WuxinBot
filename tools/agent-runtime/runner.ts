@@ -63,6 +63,7 @@ const SCRIPTED_LEVEL: Record<string, ReasoningLevel> = {
   fast: 'off',
   thinking: 'max',
   off: 'off',
+  low: 'low',
   high: 'high',
   max: 'max',
 };

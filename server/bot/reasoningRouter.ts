@@ -15,7 +15,7 @@ export type LlmCallRole =
   | 'decorative_lead'
   | 'rewrite';
 
-export type ReasoningLevel = 'off' | 'high' | 'max';
+export type ReasoningLevel = 'off' | 'low' | 'high' | 'max';
 
 export type ReasoningSource = 'rule' | 'inherit' | 'escalation';
 
@@ -89,7 +89,7 @@ export interface ReasoningShadowSink {
   snapshot(): readonly ReasoningShadowRecord[];
 }
 
-const LEVEL_RANK: Record<ReasoningLevel, number> = { off: 0, high: 1, max: 2 };
+const LEVEL_RANK: Record<ReasoningLevel, number> = { off: 0, low: 1, high: 2, max: 3 };
 
 export function emptyTurnState(): ReasoningTurnState {
   return { maxLevel: 'off', rootReasonCode: null };
@@ -177,7 +177,7 @@ export function resolveReasoningMode(
 }
 
 /**
- * Monotonic turn-level upgrade: off < high < max. Once a substantive call
+ * Monotonic turn-level upgrade: off < low < high < max. Once a substantive call
  * raises the level, later substantive synthesis inherits it. Fast decisions
  * never clear state; the first non-off root reason code is preserved.
  */

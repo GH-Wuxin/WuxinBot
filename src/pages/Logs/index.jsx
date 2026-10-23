@@ -482,6 +482,13 @@ function TraceEvent({ event, totalMs = 0, live = false }) {
       </div>}
       {(isModelResult || isModelStream) && <div className="note">
         <div>{data.purpose} · {data.provider}/{data.model} · 第 {data.attempt} 次</div>
+        {isModelResult && typeof data.thinkingEnabled === 'boolean' && <div>
+          请求思考：{data.thinkingEnabled ? (data.requestedReasoningEffort || '开启（供应商默认档位）') : 'off'}
+          {' · '}返回思考 Token：{response.usage?.reasoningTokens ?? '未提供'}
+          {' · '}思考内容：{response.reasoningExposed ? '已返回' : '未返回'}
+        </div>}
+        {isModelResult && data.thinkingEnabled && data.reasoningObserved === false && <div>本次已请求思考，供应商未返回思考内容或正数思考用量；不代表本地关闭了思考。</div>}
+        {isModelResult && data.returnedModel && data.returnedModel !== data.model && <div>供应商返回模型：{data.returnedModel}</div>}
         {isModelStream && response.reasoningExposed && <details open><summary>供应商 raw CoT（实时）</summary><LivePre>{response.reasoning}</LivePre></details>}
         {isModelStream && response.content && <details open><summary>模型输出（实时）</summary><LivePre>{response.content}</LivePre></details>}
         {isModelStream && !response.reasoningExposed && !response.content && <div>模型流已连接，正在等待首个内容片段……</div>}
