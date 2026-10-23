@@ -1,5 +1,5 @@
 import React, { useEffect } from 'react';
-import { AlertTriangle, ChevronDown, HelpCircle, LoaderCircle, Minus, Plus, UsersRound, X } from 'lucide-react';
+import { AlertTriangle, ChevronDown, HelpCircle, LoaderCircle, Minus, Plus } from 'lucide-react';
 
 const cx = (...values) => values.filter(Boolean).join(' ');
 
@@ -81,21 +81,8 @@ export function InlineHelp({ children, tone = 'normal' }) {
   return <p className={cx('ui-inline-help', `ui-inline-help--${tone}`)}><HelpCircle size={14} aria-hidden="true" /><span>{children}</span></p>;
 }
 
-export function GroupAvatar({ src, name, size = 36, className }) {
-  const [failed, setFailed] = React.useState(false);
-  const initial = String(name || '?').trim().slice(0, 1).toUpperCase() || '?';
-  React.useEffect(() => setFailed(false), [src]);
-  return <span className={cx('ui-group-avatar', className)} style={{ '--avatar-size': `${size}px` }} aria-label={`${name || '群聊'}头像`}>
-    {src && !failed ? <img src={src} alt="" width={size} height={size} onError={() => setFailed(true)} /> : <><UsersRound className="ui-group-avatar__icon" size={Math.round(size * 0.48)} aria-hidden="true" /><span className="ui-group-avatar__initial" aria-hidden="true">{initial}</span></>}
-  </span>;
-}
-
 export function SegmentedControl({ value, onChange, options, label }) {
   return <div className="ui-segments" role="group" aria-label={label}>{options.map((option) => <button key={option.value} className={value === option.value ? 'is-selected' : ''} aria-pressed={value === option.value} onClick={() => onChange(option.value)} type="button">{option.label}</button>)}</div>;
-}
-
-export function ListRow({ selected = false, onClick, title, subtitle, leading, trailing, children }) {
-  return <button type="button" className={cx('ui-list-row', selected && 'is-selected')} onClick={onClick}>{leading && <span className="ui-list-row__leading">{leading}</span>}<span className="ui-list-row__content"><strong>{title}</strong>{subtitle && <small>{subtitle}</small>}{children}</span>{trailing && <span className="ui-list-row__trailing">{trailing}</span>}</button>;
 }
 
 export function SectionHeader({ eyebrow, title, description, actions }) {
@@ -104,10 +91,6 @@ export function SectionHeader({ eyebrow, title, description, actions }) {
 
 export function EmptyState({ title, description, action }) {
   return <div className="ui-state"><strong>{title}</strong>{description && <p>{description}</p>}{action}</div>;
-}
-
-export function LoadingState({ label = '正在加载…' }) {
-  return <div className="ui-state ui-state--loading"><LoaderCircle className="ui-spin" size={20} /><span>{label}</span></div>;
 }
 
 export function ErrorState({ title = '加载失败', message, onRetry }) {

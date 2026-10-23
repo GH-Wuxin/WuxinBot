@@ -234,7 +234,7 @@ export async function runAnalyzerMvp(
     provider = String(completion.provider || provider).trim() || provider;
     actualModel = String(completion.model || actualModel).trim() || actualModel;
     const candidate = cleanCandidate(completion.text);
-    validationReasons = validateAnalysisReport(analysis, candidate, narrative).reasons;
+    validationReasons = validateAnalysisReport(candidate).reasons;
     if (candidate && validationReasons.length === 0) {
       text = candidate;
       source = 'llm';
