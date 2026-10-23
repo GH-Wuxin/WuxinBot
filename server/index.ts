@@ -9,6 +9,7 @@ import { openStore, currentStorageRevision, getStoreLockStats, getStoreWriteStat
 import { backupRetention, createBackup, listBackups, restoreBackup, deleteBackup, pruneAutoBackups, pruneBackups } from './backup.js';
 import { connectOneBot, getOneBotStatus, handleOneBotEvent, sendOneBotMessage, shutdownOneBot } from './onebot.js';
 import { processIncoming } from './bot.js';
+import { mountSocialApi } from './bot/social/api.js';
 import { runSandboxPreview } from './sandboxPreview.js';
 import { getReplyQueueStats } from './bot/queue.js';
 import { abortReplyProcess, listReplyProcesses } from './bot/replyProcesses.js';
@@ -341,6 +342,8 @@ function compactDbResponse(db = readDb()) {
     db: publicDb(db, { includeMemorySamples: false }),
   };
 }
+
+mountSocialApi(app);
 
 app.get('/api/state', (_req, res) => {
   // Samples are only needed after opening a specific memory in the console.
@@ -1145,6 +1148,8 @@ app.get('/api/diagnostics', (_req, res) => {
 app.post('/api/settings', async (req, res) => {
   const settingsBefore = readDb().settings;
   const requested = req.body || {};
+  if ('socialV2Enabled' in requested && typeof requested.socialV2Enabled !== 'boolean') return res.status(400).json({ ok: false, error: 'V2 开关必须为布尔值' });
+  if ('socialMaxAssessmentsPerHour' in requested && (!Number.isInteger(requested.socialMaxAssessmentsPerHour) || requested.socialMaxAssessmentsPerHour < 1 || requested.socialMaxAssessmentsPerHour > 300)) return res.status(400).json({ ok: false, error: '社交评估小时预算必须为 1–300' });
   const preservePplusSecret = requested.pplusClientSecret === undefined ||
     ['', '已填写', '已设置'].includes(requested.pplusClientSecret);
   const pplusPatch = {
@@ -1831,11 +1836,13 @@ app.post('/api/config-snapshots/:index/restore', (req, res) => {
   res.json(ok({ restored: true }));
 });
 
-// 新版控制台（console/）：Electron 直接打开 http://127.0.0.1:8787，
-// 与 API 同源，省掉 file:// 跨域那一堆问题。
+// Serve the same built React console used by Desktop. Keep the historical
+// console as a development fallback when no build exists.
 {
   const serverDir = path.dirname(fileURLToPath(import.meta.url));
   const consoleDirs = [
+    path.join(serverDir, '..', 'dist'),
+    path.join(process.cwd(), 'dist'),
     path.join(process.cwd(), 'console'),
     path.join(serverDir, '..', 'console'),
   ];

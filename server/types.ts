@@ -3,6 +3,7 @@
 // the database, and the LLM layer. Not exhaustive — only covers
 // the high-traffic structures that have caused bugs when mis-assumed.
 import type { KnowledgeBaseSettings } from './bot/knowledgeTypes.js';
+import type { OwnerDirective, SocialState } from './bot/social/types.js';
 
 // ── Incoming event (produced by oneBotToInternal) ──
 
@@ -42,6 +43,8 @@ export interface ReplyDecision {
 export interface DbSettings {
   globalPaused: boolean;
   onlyMentionMode: boolean;
+  socialV2Enabled?: boolean;
+  socialMaxAssessmentsPerHour?: number;
   replyGateNaturalThreshold?: number;
   replyGateLightThreshold?: number;
   apiKey: string;
@@ -354,6 +357,8 @@ export interface GroupProfile {
 }
 
 export interface Db {
+  socialV2: SocialState;
+  ownerDirectives: OwnerDirective[];
   settings: DbSettings;
   groups: Group[];
   users: UserEntry[];

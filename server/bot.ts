@@ -1,5 +1,8 @@
 // @ts-nocheck -- legacy runtime module; new typed modules remain checked by tsc.
 import { pathToFileURL } from 'node:url';
+import { socialCoordinator } from './bot/social/coordinator.js';
+import { isSystemOwner } from './bot/social/state.js';
+import { assessSocialTurn, revalidateSocialReply, socialDeliveryGuard, socialEntryAllowed, socialTimeline, waitForSocialContinuation } from './bot/social/runtime.js';
 import { sendOptionalNotice } from './bot/notice.js';
 import { withLlmTurnPolicy, assertLlmTurnActive } from './llmPolicy.js';
 import { defaultPrompt, readDb, updateDb, nowIso } from './store.js';
@@ -669,7 +672,7 @@ async function processIncomingInner(event, sendMessage = undefined, queuedDecisi
 
   const userPolicy = getUserPolicy(db, event.groupId, event.userId);
   if (isFromDrain && (settings.globalPaused || userPolicy.policy === 'blocked'
-      || userPolicy.policy === 'muted' || (event.type === 'group' && (!group?.enabled || group.mode === 'silent'))
+      || (userPolicy.policy === 'muted' && !(queuedDecision?.socialReady && event.socialDirect)) || (event.type === 'group' && (!group?.enabled || group.mode === 'silent'))
       || (event.type === 'private' && settings.ownerQq && !isPrivateOwner)
       || ((settings.onlyMentionMode || (event.type === 'group' && group?.mode === 'mention')) && !mentionsBot(event.text, settings)))) {
     return { replied: false, reason: '排队期间权限或参与模式已改变，取消回复' };
@@ -679,8 +682,12 @@ async function processIncomingInner(event, sendMessage = undefined, queuedDecisi
   // On the first pass the message + decision are recorded and side effects
   // (memory, XP, pair/profile pending) run exactly once. Drained replays use
   // the stored decision and must NOT duplicate history or side effects.
-  const decision = queuedDecision || (event.type === 'private'
-    ? { shouldReply: String(event.userId) === String(settings.ownerQq || event.userId), reason: '私聊消息' }
+  const socialCandidate = !isFromDrain && socialEntryAllowed(db, event, mentioned || event.type === 'private');
+  const decision = queuedDecision || (socialCandidate
+    ? { shouldReply: false, reason: 'V2 接话等待同群协调与语义评估' }
+    : event.type === 'private'
+    ? { shouldReply: !settings.globalPaused && (settings.socialV2Enabled === true
+        ? isSystemOwner(db, event) : String(event.userId) === String(settings.ownerQq || event.userId)), reason: settings.globalPaused ? '机器人处于全局暂停状态' : '私聊消息' }
     : await decideReply({ db, group, userPolicy, text: event.text, mentioned, userId: event.userId, images: eventVisionImages }));
   traceEvent('GATE', 'reply_gate_decided', {
     status: decision.shouldReply ? 'reply' : 'silent',
@@ -697,7 +704,12 @@ async function processIncomingInner(event, sendMessage = undefined, queuedDecisi
   // 是自己还是别人，也就分不出这句话是不是冲她来的。按 AstrBot 的做法查一次名字
   // （群名片优先，空则回退 QQ 昵称），随消息一起存下来：历史因此是准确的，
   // 渲染时也不必再查。查不到就留空，退回原来的号码，不影响别的。
-  const mentionNames = event.type === 'group' && event.atTargets?.length
+  const mentionNames = socialCandidate
+    ? new Map((event.atTargets || []).map((id) => {
+      const known = db.users.find((u) => String(u.groupId) === String(event.groupId) && String(u.userId) === String(id));
+      return [String(id), { qq: String(id), card: '', nickname: known?.nickname || String(id) }];
+    }))
+    : event.type === 'group' && event.atTargets?.length
     ? await resolveMemberNames(readDb(), event.groupId, event.atTargets)
     : new Map();
   // 同一份结果也给当前这一轮用，免得历史里有名字、当前消息却还是裸号码。
@@ -722,6 +734,8 @@ async function processIncomingInner(event, sendMessage = undefined, queuedDecisi
         content: event.text,
         media: event.images?.length ? { images: event.images } : undefined,
         mentions: mentionNames.size ? [...mentionNames.values()] : undefined,
+        atTargets: event.atTargets || [],
+        replyMessageId: event.replyMessageId || '',
         inContext: decision.inContext !== false,
         createdAt: nowIso()
       });
@@ -810,6 +824,38 @@ async function processIncomingInner(event, sendMessage = undefined, queuedDecisi
     }
   }
 
+  if (socialCandidate) {
+    event.socialDirect = mentioned || event.type === 'private';
+    const priority = event.socialDirect ? (isSystemOwner(db, event) ? 2 : 1) : 0;
+    return socialCoordinator.submit(event, priority, async (merged) => {
+      if (isReplyProcessAborted() || !socialEntryAllowed(readDb(), merged, merged.socialDirect)) {
+        return { replied: false, reason: '接话等待期间权限或运行状态改变' };
+      }
+      let assessment = await assessSocialTurn(merged);
+      if (assessment?.action === 'wait') {
+        await waitForSocialContinuation(merged);
+        assessment = await assessSocialTurn(merged, 'resumed');
+      }
+      const action = assessment?.action || (merged.socialDirect ? 'reply' : 'pass');
+      const guard = socialDeliveryGuard(readDb(), merged);
+      const shouldReply = !isReplyProcessAborted() && !guard && ['react', 'reply'].includes(action);
+      const reason = guard || assessment?.reason || (merged.socialDirect ? '社交评估不可用，继续明确请求' : '社交评估不可用，保持安静');
+      updateDb((draft) => {
+        for (const item of draft.decisions) {
+          if (item.groupId === merged.groupId && item.userId === merged.userId
+            && (merged.socialMessageIds || [merged.messageId]).includes(item.messageId)) {
+            item.shouldReply = shouldReply && item.messageId === merged.messageId;
+            item.reason = `V2 ${action}：${reason}`;
+          }
+        }
+      });
+      if (!shouldReply) return { replied: false, reason };
+      merged.socialAction = action;
+      merged.socialContextIds ||= socialTimeline(readDb(), merged).map((m) => m.messageId);
+      return processIncomingInner(merged, sendMessage, { shouldReply: true, reason, socialReady: true }, true, queueOwner);
+    });
+  }
+
   if (!decision.shouldReply) return { replied: false, reason: decision.reason };
 
   if (decision.visualLimitation) {
@@ -841,7 +887,7 @@ async function processIncomingInner(event, sendMessage = undefined, queuedDecisi
   const replyLockKey = event.type === 'group'
     ? `group:${event.groupId}:${event.userId}`
     : `private:${event.userId}`;
-  const queueState = getQueueState(replyLockKey);
+  const queueState = decision.socialReady ? { locked: false, queue: [] } : getQueueState(replyLockKey);
   if (!isFromDrain && queueState.locked) {
     if (queueState.queue.length >= REPLY_QUEUE_LIMIT) {
       const reason = `回复队列已满(${REPLY_QUEUE_LIMIT})，丢弃`;
@@ -875,7 +921,7 @@ async function processIncomingInner(event, sendMessage = undefined, queuedDecisi
     return { replied: false, reason, queued: true, queuePosition: queueState.queue.length };
   }
   queueState.locked = true;
-  queueOwner.key = replyLockKey;
+  if (!decision.socialReady) queueOwner.key = replyLockKey;
 
   let thinkingTimer = null;
 let waitUpTimer = null;
@@ -898,6 +944,7 @@ let waitUpTimer = null;
       includesVision: Boolean(event?.images?.length),
     });
     const responseOptions = responseOptionsFor(event, liveDb, liveUserPolicy);
+    if (event.socialAction === 'react') responseOptions.maxTokens = Math.min(responseOptions.maxTokens || 250, 250);
     const turnId = String(event.messageId || crypto.randomUUID());
     const reasoningRouter = createShadowReasoningRouter();
     const explicitSearch = asksForExplicitSearch(event.text);
@@ -1368,7 +1415,9 @@ let waitUpTimer = null;
     let replyText = sanitizeReply(ai.text, liveDb.settings);
     const imageCqCodes = [...toolImages, ...toolDeliverImages].map(toolImageToCq).filter(Boolean);
     const hasDirectToolDelivery = Boolean(toolDirectContent || imageCqCodes.length > 0);
-    const rewriteEligible = isWeirdReply(replyText);
+    // V2 delegates conversational meaning to the model. Legacy keyword-driven
+    // rewrites can otherwise replace a valid semantic answer with a stock line.
+    const rewriteEligible = !decision.socialReady && isWeirdReply(replyText);
     const rewriteSkipReason = normalReplyRewriteSkipReason({
       rewriteEligible,
       toolEvidenceProtected: requiredToolLed || evidenceProtectedTurn,
@@ -1433,6 +1482,14 @@ let waitUpTimer = null;
       }
     }
     if (!replyText && imageCqCodes.length > 0) replyText = '查好了，结果在图里。';
+
+    if (decision.socialReady) {
+      const checked = await revalidateSocialReply(event, replyText || `[图片反应：${stickerDecisionId || ''}]`, {
+        protectedOutput: Boolean(hasDirectToolDelivery || requiredToolLed || evidenceProtectedTurn || stickerDecisionId || imageOnlySticker),
+      });
+      if (checked === null) return { replied: false, reason: 'V2 发送前判断已取消过时回复' };
+      if (replyText) replyText = sanitizeReply(checked, liveDb.settings);
+    }
 
     // Deliver a queued level-up phrase as part of this reply (never standalone).
     const pendingUpKey = String(event.userId);

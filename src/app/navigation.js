@@ -15,6 +15,7 @@ export const navigationGroups = [
     { id: 'persona', label: '人设', description: 'pippi 的表达与名字', icon: UsersRound },
     { id: 'memory', label: '记忆', description: '长期画像与近期动态', icon: BookOpen },
     { id: 'relationships', label: '关系', description: '群友关系画像', icon: GitBranch },
+    { id: 'social', label: '接话与好感', description: 'Pippi 的接话判断、好感与情绪', icon: MessageCircle },
     { id: 'profileLogs', label: '画像日志', description: '画像流水与证据记录', icon: FileText }
   ] },
   { label: '系统设置', items: [

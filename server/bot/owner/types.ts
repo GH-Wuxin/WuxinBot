@@ -33,6 +33,8 @@ export type OwnerHandler = (context: OwnerHandlerContext) => Promise<OwnerComman
  * entry is a compile error rather than a runtime fallback.
  */
 export type OwnerHandlerKey =
+  | 'affinity'
+  | 'ownerDirective'
   | 'lv'
   | 'exp'
   | 'top'

@@ -6,6 +6,8 @@ WuxinBot 把开放式对话、确定性消息路由和有边界的工具调用�
 
 当前发行版默认使用 **pippi** 作为交互 persona；pippi 是表现层的人格设定，不是 WuxinBot 的项目定义。
 
+V2.0 的自然接话、好感与情绪系统正在规划中，功能范围、实施阶段和验收标准见 [`docs/WUXINBOT_V2_PLAN.md`](docs/WUXINBOT_V2_PLAN.md)。
+
 ## Desktop 客户端
 
 WuxinBot 现在提供原生 Electron Desktop 客户端，沿用现有控制台 UI，并在“运行控制”页面管理 WuxinBot、NapCat、PP+ 和其他本地组件。客户端支持 Windows 登录自启、单项进程启停、批量重启，以及关闭窗口时结束已管理进程。

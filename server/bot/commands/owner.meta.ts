@@ -40,6 +40,8 @@ interface OwnerPermissionPolicy {
 
 /** Single source for owner-command permission/visibility derivation. */
 export const OWNER_PERMISSION_POLICY: Record<string, OwnerPermissionPolicy> = {
+  affinity: { defaultPermissionRole: 'owner', permission: 'owner', visibility: 'owner', discoverability: 'direct_only' },
+  ownerDirective: { defaultPermissionRole: 'owner', permission: 'owner', visibility: 'owner', discoverability: 'direct_only' },
   help: { defaultPermissionRole: 'guest', permission: 'all', visibility: 'public', discoverability: 'listed' },
   my: { defaultPermissionRole: 'guest', permission: 'all', visibility: 'public', discoverability: 'listed' },
   ping: { defaultPermissionRole: 'guest', permission: 'all', visibility: 'public', discoverability: 'listed' },
@@ -114,6 +116,8 @@ const P = (key: string) => ({
 });
 
 export const OWNER_COMMANDS: OwnerCommandMeta[] = [
+  { id: 'affinity', commandPath: '/好感度', group: '关系与指令', syntax: '/w 好感度 [@成员或QQ]（别名 affinity）', description: '只读查询 Pippi 好感与本会话情绪，仅真实 Owner', permissionKey: 'affinity', ...P('affinity'), status: 'active', execution: { kind: 'local', handlerKey: 'affinity' } },
+  { id: 'ownerDirective', commandPath: '/指令', group: '关系与指令', syntax: '/w 指令 set 名称 内容 | revoke 名称 | list', description: 'Owner 保存或撤销当前会话长期指令，别名 directive', permissionKey: 'ownerDirective', ...P('ownerDirective'), status: 'active', execution: { kind: 'local', handlerKey: 'ownerDirective' } },
   { id: 'lv', commandPath: '/lv', group: '等级', syntax: '/w lv (@某人)', description: '查看等级经验', permissionKey: 'lv', ...P('lv'), status: 'active', execution: { kind: 'local', handlerKey: 'lv' }, implementationRefs: [{ path: 'server/bot/ownerCommands.ts', symbol: 'runOwnerCommand' }] },
   { id: 'exp', commandPath: '/exp', group: '等级', syntax: '/w exp @某人 add/set/reset', description: '管理群友经验（仅 owner）', permissionKey: 'exp', ...P('exp'), status: 'active', execution: { kind: 'local', handlerKey: 'exp' }, implementationRefs: [{ path: 'server/bot/ownerCommands.ts', symbol: 'runOwnerCommand' }] },
   { id: 'top', commandPath: '/top', group: '等级', syntax: '/w top', description: '查看群内等级排行榜', permissionKey: 'top', ...P('top'), status: 'active', execution: { kind: 'local', handlerKey: 'top' }, implementationRefs: [{ path: 'server/bot/ownerCommands.ts', symbol: 'runOwnerCommand' }] },

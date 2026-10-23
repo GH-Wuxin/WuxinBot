@@ -2,6 +2,7 @@
 // System prompt: identity injection, complexity scoring, auto-model, pricing.
 // Extracted from bot.ts.
 import { readDb } from '../store.js';
+import { ownerAuthorityPrompt, socialExpressionPrompt } from './social/prompts.js';
 import { asksToInspectVisual, hasVisualPlaceholder, isQuestion } from './cleaning.js';
 import { llmProvider, llmProviderName, supportsProviderSearch } from './llm.js';
 import { activeModelName, isDeepSeekVisionModel } from '../modelConfig.js';
@@ -528,6 +529,7 @@ export function buildPrompt(db, group, event, userPolicy, options = {}) {
     maxRecords: event.type === 'group' ? 3 : 2,
   }) : '';
   const relBlocks = [
+    socialExpressionPrompt(db, event),
     includeMemory && memoryBlock ? `关于当前发言者的长期记忆：${memoryBlock}\n自然使用，不要生硬复述。` : '',
     includeGroupProfile && event.type === 'group' ? groupProfilePromptBlock(db, event.groupId) : '',
     includeRelationship && event.type === 'group' ? relationshipPromptBlock(db, event) : '',
@@ -577,6 +579,7 @@ export function buildPrompt(db, group, event, userPolicy, options = {}) {
   // 任务当成闲聊压成短话。私聊、命令、严肃场景保持原路径。
   const groupCasual = event.type === 'group' && scene === 'casual';
   const systemPrompt = buildPippiPrompt({
+    socialV2: db.settings.socialV2Enabled === true,
     scene,
     addressedQuestion,
     groupCasual,
@@ -591,7 +594,7 @@ export function buildPrompt(db, group, event, userPolicy, options = {}) {
   return [
     {
       role: 'system',
-      content: systemPrompt,
+      content: `${systemPrompt}\n\n${ownerAuthorityPrompt(db, event)}`,
     },
     ...history,
     {

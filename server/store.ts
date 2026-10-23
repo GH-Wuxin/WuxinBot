@@ -5,6 +5,7 @@ import { activeModelName, activateModelProfile, DEEPSEEK_BASE_URL, recoverProvid
 import { DEFAULT_BOTS } from './bots/registry.js';
 import { DEFAULT_KB_SETTINGS } from './bot/knowledgeTypes.js';
 import { cacheUsageSummary, usageEventHasCacheDetails, eventMeasuredPromptTokens } from './usage.js';
+import { emptySocialState, normalizeSocialState, validSocialState } from './bot/social/state.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const rootDir = path.resolve(__dirname, '..');
@@ -101,7 +102,7 @@ const SHARD_SPECS = [
   {
     name: 'profiles',
     file: 'db-profiles.json',
-    keys: new Set(['groupProfiles', 'relationshipProfiles', 'pendingPairCounts', 'profileLogs', 'profileV3'])
+    keys: new Set(['groupProfiles', 'relationshipProfiles', 'pendingPairCounts', 'profileLogs', 'profileV3', 'socialV2'])
   },
   { name: 'messages', file: 'db-messages.json', keys: new Set(['messages']) },
   { name: 'decisions', file: 'db-decisions.json', keys: new Set(['decisions']) },
@@ -473,6 +474,8 @@ const initialDb = {
   settings: {
     globalPaused: false,
     onlyMentionMode: false,
+    socialV2Enabled: false,
+    socialMaxAssessmentsPerHour: 60,
     replyGateNaturalThreshold: 45,
     replyGateLightThreshold: 70,
     llmProvider: process.env.LLM_PROVIDER || 'deepseek',
@@ -584,6 +587,8 @@ const initialDb = {
   memories: [],
   groupProfiles: [],
   relationshipProfiles: [],
+  socialV2: emptySocialState(),
+  ownerDirectives: [],
   pendingPairCounts: {},
   trustScores: {},
   experience: {},
@@ -714,6 +719,7 @@ export function normalizeDb(db) {
   db.groupExperience ||= {};
   db.profileLogs ||= [];
   db.profileV3 ||= {};
+  normalizeSocialState(db);
   db.messages ||= [];
   db.decisions ||= [];
   db.commandLogs ||= [];
@@ -1085,6 +1091,7 @@ function listBackupCandidates(): string[] {
 // type-checked when present instead of being silently normalized.
 const REQUIRED_BACKUP_ARRAY_KEYS = ['users', 'groups', 'messages', 'decisions', 'memories'];
 const OPTIONAL_BACKUP_ARRAY_KEYS = [
+  'ownerDirectives',
   'commandLogs',
   'groupProfiles',
   'relationshipProfiles',
@@ -1097,6 +1104,7 @@ const OPTIONAL_BACKUP_ARRAY_KEYS = [
   'configSnapshots',
 ];
 const OPTIONAL_BACKUP_OBJECT_KEYS = [
+  'socialV2',
   'botRegistry',
   'skillStore',
   'groupBotConfig',
@@ -1111,6 +1119,7 @@ const OPTIONAL_BACKUP_OBJECT_KEYS = [
 export function isValidLogicalDbShape(value: unknown): boolean {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
   const record = value as Record<string, any>;
+  if ('socialV2' in record && !validSocialState(record.socialV2)) return false;
   if (typeof record.settings !== 'object' || record.settings === null || Array.isArray(record.settings)) return false;
 
   if (Object.prototype.hasOwnProperty.call(record, '_storage')) {
@@ -1551,6 +1560,7 @@ export function publicDb(db = readDb(), options: { includeMemorySamples?: boolea
     memories,
     groupProfiles: db.groupProfiles || [],
     relationshipProfiles: db.relationshipProfiles || [],
+    socialV2Summary: { revision: db.socialV2?.revision || 0, people: Object.keys(db.socialV2?.people || {}).length },
     botRegistry: db.botRegistry || db.settings?.botRegistry || { bots: [], updatedAt: '' },
     skillStore: db.skillStore || { records: [], updatedAt: '' },
     groupBotConfig: db.groupBotConfig || {},

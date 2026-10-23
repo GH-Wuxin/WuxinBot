@@ -16,6 +16,7 @@ import { MembersPage } from './pages/Members/index.jsx';
 import { PersonaPage } from './pages/Persona/index.jsx';
 import { MemoryPage } from './pages/Memory/index.jsx';
 import { RelationshipsPage } from './pages/Relationships/index.jsx';
+import { SocialPage } from './pages/Social/index.jsx';
 import { ProfileLogsPage } from './pages/ProfileLogs/index.jsx';
 import { ModelsPage } from './pages/Models/index.jsx';
 import { IntegrationsPage } from './pages/Integrations/index.jsx';
@@ -123,6 +124,7 @@ export function App() {
     {tab === 'persona' && <PersonaPage db={db} saveSettings={saveSettings} />}
     {tab === 'memory' && <MemoryPage db={db} saveSettings={saveSettings} refreshState={refresh} />}
     {tab === 'relationships' && <RelationshipsPage db={db} refreshState={refresh} />}
+    {tab === 'social' && <SocialPage db={db} refreshState={refresh} saveSettings={saveSettings} />}
     {tab === 'profileLogs' && <ProfileLogsPage />}
     {tab === 'model' && <ModelsPage db={db} saveSettings={saveSettings} />}
     {tab === 'integrations' && <IntegrationsPage db={db} oneBot={state.oneBot} saveSettings={saveSettings} refreshState={refresh} />}

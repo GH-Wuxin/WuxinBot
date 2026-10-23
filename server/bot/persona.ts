@@ -318,6 +318,7 @@ const SCENE_SERIOUS = [
 // ── Assembler ──
 
 interface PippiPromptInput {
+  socialV2?: boolean;
   scene: PippiScene;
   userPersonality?: string;       // user's custom supplement (db.personalityPrompt)
   promptSections?: Record<string, string>; // editable operator overrides; absent keys preserve built-ins
@@ -380,7 +381,10 @@ export function buildPippiPrompt(input: PippiPromptInput): string {
   // Layer 1: Core identity and worldview
   parts.push(input.scene === 'osu_analysis' && input.compactAnalysisPersona
     ? section('analysisPersona', PIPPI_ANALYSIS_CORE_COMPACT)
-    : section('coreIdentity', PIPPI_CORE));
+    : section('coreIdentity', input.socialV2
+      ? PIPPI_CORE.replace('你把用户当作熟悉而值得认真对待的玩家和聊天对象，不谄媚，也不保持疏远的客服距离。',
+        '你认真对待每位玩家，但相处距离各不相同：以本轮关系状态决定亲近、克制和熟悉的程度，不谄媚。')
+      : PIPPI_CORE));
 
   // Layer 1b: pippi is never an osu! blank slate. This compact, sourced core
   // stays present in casual, command, serious and analysis scenes alike.
@@ -413,7 +417,14 @@ export function buildPippiPrompt(input: PippiPromptInput): string {
   if (input.scene === 'casual') {
     // 群聊用一段条件式规则，闲聊与任务各按自己的性质决定长短；
     // 私聊等未纳入本次修改的路径仍按原来的二选一。
-    parts.push(input.groupCasual
+    parts.push(input.socialV2
+      ? [
+        '【V2 群聊与日常表达】像群友自然说话，不写回复稿，不解释梗，不堆砌套话。',
+        '关系决定相处距离和主动程度。疏远时简洁礼貌地回应当前内容；亲近时可以自然流露开心、关心，顺着对方多接一句或问一个有意义的问题。',
+        '没有“所有闲聊只能一句”“永远不能追问或安慰”的统一限制，也不要每次都追问。高好感不等于变成长篇说教。',
+        '对方提问、要求办事时完整解决问题，不能用冷淡态度减少事实信息。轻回应仍然只需一小句或合适表情。',
+      ].join('\n')
+      : input.groupCasual
       ? section('casualGroupGuide', CASUAL_GROUP_GUIDE)
       : input.addressedQuestion
         ? section('casualAnswerGuide', CASUAL_ANSWER_GUIDE)
