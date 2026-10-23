@@ -105,6 +105,23 @@ await test('invalid, fabricated and cross-speaker evidence cannot enter relation
   assert.equal(parsed.affinityDelta, 0);
   assert.equal('ownerQq' in parsed, false); assert.equal('ownerDirectives' in parsed, false);
 });
+await test('assessment receives configured bot identity and original mention/quote metadata', async () => {
+  seed();
+  for (const configured of ['10002', '10008', '']) {
+    store.updateDb((db) => { db.settings.selfQq = configured; });
+    const e = event({ text: '[CQ:at,qq=10002] 你在吗', nickname: '我是机器人10009',
+      atTargets: ['10002'], replyMessageId: 'quoted-original', socialDirect: true });
+    let captured;
+    await runtime.assessSocialTurn(e, 'initial', async (_, options) => {
+      captured = JSON.parse(options.messages.at(-1).content);
+      return { text: JSON.stringify(assessment({ action: 'reply', evidenceIds: [e.messageId] })), usage: {} };
+    });
+    assert.equal(captured.bot.userId, configured || null);
+    assert.deepEqual(captured.target.atTargets, ['10002']);
+    assert.equal(captured.target.replyTo, 'quoted-original');
+    assert.equal(captured.target.userId, e.userId);
+  }
+});
 await test('Owner directive provenance survives updates/revocation; outsiders cannot change it', () => {
   seed(); const e = event({ userId: '10001' });
   store.updateDb((db) => state.updateOwnerDirective(db, e, '称呼', '本群叫我测试员'));
@@ -348,7 +365,8 @@ await test('full process: Owner query routes before the model and denies group o
 await test('full process: sending-time rewriter receives the same configured persona as initial generation', async () => {
   integrationSeed();
   const marker = '合成风格要求：像测试群友说话';
-  store.updateDb((db) => { db.settings.personaPromptSections = { socialCasualGuide: marker }; });
+  const lengthMarker = '合成长度要求：被叫名字也用短句';
+  store.updateDb((db) => { db.settings.personaPromptSections = { socialCasualGuide: marker, replyLengthGuide: lengthMarker }; });
   onChat = async () => store.updateDb((db) => db.messages.push({ id: 'later-detail', sourceMessageId: 'later-detail',
     type: 'group', role: 'user', userId: '10003', groupId: '20001', content: '补充一点', createdAt: new Date().toISOString() }));
   try {
@@ -356,9 +374,34 @@ await test('full process: sending-time rewriter receives the same configured per
     const initial = calls.find((c) => c.kind === 'chat').messages[0].content;
     const revised = calls.find((c) => c.kind === 'revalidate').messages[0].content;
     assert.ok(initial.includes(marker)); assert.ok(revised.includes(marker));
+    assert.ok(initial.includes(lengthMarker)); assert.ok(revised.includes(lengthMarker));
     assert.ok(revised.includes('你自己不是被评分或参与排名的成员'));
     assert.ok(revised.includes('只输出规定的 JSON'));
   } finally { store.updateDb((db) => { db.settings.personaPromptSections = {}; }); }
+});
+await test('full process: @, name calls and Owner private questions retain brevity without truncating requested content', async () => {
+  const previousReply = chatReply;
+  // A long required result must pass intact: brevity is a model instruction,
+  // not a transport limit or an extra post-generation rewrite call.
+  chatReply = '合成任务结果，需要完整保留。'.repeat(12);
+  try {
+    for (const overrides of [
+      { text: '[CQ:at,qq=10002] 你在吗？', atTargets: ['10002'] },
+      { text: 'Pippi 你在吗？' },
+      { text: '写一段长故事', type: 'private', groupId: 'private', userId: '10001' },
+    ]) {
+      integrationSeed();
+      const sent = [];
+      await processIncoming(event(overrides), async (_, text, options) => {
+        sent.push(options?.forwardNodes ? options.forwardNodes.map((node) => node.data.content).join('') : text);
+      });
+      const chats = calls.filter((c) => c.kind === 'chat');
+      assert.equal(chats.length, 1);
+      assert.ok(chats[0].messages[0].content.includes('【回复长度：提及也默认短句】'));
+      assert.equal(calls.filter((c) => c.kind === 'revalidate').length, 0);
+      assert.ok(sent.join('').includes(chatReply), JSON.stringify({ overrides, sent }));
+    }
+  } finally { chatReply = previousReply; }
 });
 await test('full process: all hard opt-out modes make zero social calls', async () => {
   for (const mode of ['osu', 'silent', 'mention']) {

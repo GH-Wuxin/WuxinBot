@@ -111,5 +111,18 @@ assert.ok(!commandPrompt.includes('【回答提问】'), '命令场景不该注�
 const seriousPrompt = buildPippiPrompt({ scene: 'serious', groupCasual: true });
 assert.ok(!seriousPrompt.includes('【群聊形态】'), '严肃场景不该注入群聊形态规则');
 
+// Scene routing and addressed-question selection may change voice, but cannot
+// omit the shared length preference. Detailed tasks remain an explicit exception.
+for (const socialV2 of [false, true]) for (const scene of ['casual', 'osu_analysis', 'command', 'serious']) {
+  for (const addressedQuestion of [false, true]) {
+    const prompt = buildPippiPrompt({ scene, socialV2, addressedQuestion, socialTone: 'TONE', relationshipContext: 'MEMORY' });
+    assert.ok(prompt.includes('【回复长度：提及也默认短句】'));
+    assert.ok(prompt.includes('用户明确要求详细说明或创作长文'));
+    assert.ok(prompt.indexOf('【回复长度：提及也默认短句】') > prompt.indexOf('MEMORY'));
+    const edited = buildPippiPrompt({ scene, socialV2, addressedQuestion, promptSections: { replyLengthGuide: 'EDITED LENGTH' } });
+    assert.ok(edited.endsWith('EDITED LENGTH'));
+  }
+}
+
 console.log('persona studio: F4 group-casual form rule verified (task-driven length, punctuation style kept, untouched paths unchanged)');
 console.log('persona studio: built-in default prompts unchanged; editable layers/modules, module routing, redacted snapshots, tool visibility, and bounded retention PASS');

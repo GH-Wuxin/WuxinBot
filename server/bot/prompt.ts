@@ -569,11 +569,8 @@ export function buildPrompt(db, group, event, userPolicy, options = {}) {
       .join('\n');
   }
 
-  // A question that was actually addressed to pippi keeps the full answer
-  // budget: the group short-form guide exists for ambient chatter, and
-  // applying it to "DT为什么会让AR变高" collapsed a 75-character explanation
-  // into 21.  Un-addressed questions stay casual -- in a group, most of them
-  // are not aimed at her.
+  // Legacy voice selection only. The shared length guide applies to every
+  // branch; an @, name call or question does not grant a longer answer.
   const addressedQuestion = looksLikeQuestion(event.text) && Boolean(atSelf);
   // 群聊日常场景改用单段条件式形态规则：不再因为「没有问号 / 没有 @」就把用户的
   // 任务当成闲聊压成短话。私聊、命令、严肃场景保持原路径。

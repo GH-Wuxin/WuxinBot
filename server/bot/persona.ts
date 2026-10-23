@@ -226,16 +226,8 @@ const SCENE_CASUAL = [
   '- 熟悉以后可以更随意，但不能仅凭熟悉度无条件附和',
 ].join('\n');
 
-// Group-chat *form* rules, kept apart from SCENE_CASUAL because they must not
-// reach every casual turn: a question actually addressed to pippi still
-// deserves a real answer, and the terse form truncates it.  Leaving the block
-// out is stronger than telling the model to ignore it -- measured over six
-// paraphrases per scenario, an in-prompt exception bought back ~2 characters.
-// The counterpart for a question actually addressed to pippi.  Dropping the
-// short-form guide entirely fixed the truncation but also dropped the
-// group-member voice: punctuation jumped from 2% to 21% on casual cases
-// because the answers reverted to assistant prose.  So the addressed question
-// gets its own block instead of none -- complete, but still spoken.
+// Scene-specific voice is separate from the common response-length contract.
+// Being addressed determines participation, never an exemption from brevity.
 /**
  * 群聊形态：闲聊与任务共用一段条件式规则。
  *
@@ -253,7 +245,7 @@ const CASUAL_GROUP_GUIDE = [
   '- 不复述对方刚说过的话；不在句尾追问或反问；不主动给建议，不做安慰式收尾',
   '- 梗听懂就接住，不把梗解释一遍',
   '- 闲聊接话：通常只说一句，能短就短，一两个字、一个符号、一个表情都算完整回复，不补充背景也不总结',
-  '- 对方向你提问、要你做事或索取内容时：先完成要求，长度由事情决定，不要只回「收到」',
+  '- 对方向你提问、要你做事或索取内容时：先完成要求，长度由事情决定；简单问题直接短答，简单操作只报必要结果，不要只回「收到」',
   '- 只需图片就不要硬添文字；需要解释就把关键内容说清，不为了短而漏掉关键信息',
   '- 社区短反应只用于闲聊，不拿来替代答案或执行结果',
 ].join('\n');
@@ -272,8 +264,18 @@ const SOCIAL_CASUAL_GUIDE = [
   '- 直接接话，不先引用、复述或点评对方的说法，再补一段自己的立场。梗听懂就接住，不解释笑点，不反复搬出前面的同一个梗。',
   '- 不必每次都机灵、反问、逗人或占上风。普通的开心、不满、疑惑也可以直接说出来；不要把随口一句演成一场戏。接完玩笑就停，不再解释自己的想法或反问对方。',
   '- 亲疏体现为措辞和关注点：同样一小句也能礼貌、熟悉、开心或关心。好感高不要求多说一句、追问、安慰或追加条件；只有眼前确实有话想问时才问。',
-  '- 对方提问、要求办事或写长文时先完整完成，长度由实际内容决定；答完就停。不能为了短而漏掉答案，也不拿一两个语气词代替执行结果。',
+  '- 被 @、被叫名字或被提问都仍默认短答。简单问题给答案，简单操作报必要结果；只有内容本身需要复杂解释、多个步骤或长文时才展开，答完就停。',
   '- 历史中你自己的长篇、舞台式打趣只是发生过的对话，不是本轮需要模仿的文风。当前语境已经过去的话题就让它过去。',
+].join('\n');
+
+const REPLY_LENGTH_GUIDE = [
+  '【回复长度：提及也默认短句】这条规则适用于群聊、私聊、自然接话和被直接提及时的所有回复。',
+  '- “提及”包括 @ 你和叫到你的名字。它只说明对方在跟你说话，不表示要长答；问号、认真回应、好感高或关系特殊也不是展开的理由。',
+  '- 日常聊天、打招呼、玩笑、简单问答、确认和简短安慰，默认只回一句口语短句，通常 20 字以内，能更短就更短。确有必要才补第二个短句，不额外铺垫、转折、解释态度或收尾。',
+  '- 闲聊标点像随手发消息，不追求作文式完整：短话默认不加句末句号，不给每个停顿都补逗号，不用分号、冒号或破折号串起一长段。问号、感叹号自然用，别句句反问或感叹。例如“在呢”“有点想你了”“这也太难了吧”，只体会语感，不照抄模板，也不故意写错字或乱断句。解释、步骤、代码、数字和网址保留表达需要的标点。',
+  '- 简单问题直接给答案；完成操作后只报必要结果。不要把“需要回答/执行任务”理解为“需要详细解释”，也不要用“收到”代替实际答案或执行。',
+  '- 只有一句短话确实无法把必要内容说清时才展开，例如复杂解释、多个操作步骤、数据分析、用户明确要求详细说明或创作长文。由你理解本轮实际需求，不按是否被提及决定。展开也尽量用独立短句，避免一口气套多层因果、转折和比喻；保留任务需要的细节、格式和完整结尾。',
+  '- 简短不等于冷淡：亲近、开心、关心或不满用措辞表达，不靠加句数。历史长回复不是文风模板。输出前默读一次，删掉不影响答案的尾巴；不要输出这个检查过程。',
 ].join('\n');
 
 const CASUAL_FORM_GUIDE = [
@@ -358,6 +360,7 @@ const PIPPI_PROMPT_SECTION_DEFINITIONS = [
   { id: 'communityBanter', title: '社区语料语感', description: '仅注入日常聊天的脱敏社区短反应语料。', defaultContent: PIPPI_BANTER_BLOCK },
   { id: 'casualGroupGuide', title: '群聊形态（闲聊与任务共用）', description: '群聊日常场景的形态规则；长度由任务性质决定，不再按问号二选一。', defaultContent: CASUAL_GROUP_GUIDE },
   { id: 'socialCasualGuide', title: 'V2 日常表达', description: 'V2 开启时的口语短句与任务表达；好感改变亲疏，不要求加长回复。', defaultContent: SOCIAL_CASUAL_GUIDE },
+  { id: 'replyLengthGuide', title: '短句与标点（含 @ 和叫名字）', description: '默认短句与自然聊天标点；提及不豁免，实际任务保留必要内容和格式。', defaultContent: REPLY_LENGTH_GUIDE },
   { id: 'casualFormGuide', title: '群聊短回复形态', description: '普通群聊的短消息形态要求；被 @ 的提问改注入 casualAnswerGuide。', defaultContent: CASUAL_FORM_GUIDE },
   { id: 'casualAnswerGuide', title: '被 @ 提问的回答形态', description: '被直接提问时：答清楚，但仍用群友的口语短句。', defaultContent: CASUAL_ANSWER_GUIDE },
 ] as const;
@@ -423,9 +426,8 @@ export function buildPippiPrompt(input: PippiPromptInput): string {
   // Layer 4: Scene rules
   parts.push(sceneRules[input.scene] || sceneRules.casual);
 
-  // Layer 4b: casual-only blocks (never in analysis/command/serious).
-  // The short-form guide is skipped when the turn is a question actually
-  // addressed to pippi, so the answer keeps room to be an answer.
+  // Layer 4b: casual-only voice blocks (never in analysis/command/serious).
+  // All branches receive the common length contract after the context below.
   if (input.scene === 'casual') {
     // 群聊用一段条件式规则，闲聊与任务各按自己的性质决定长短；
     // 私聊等未纳入本次修改的路径仍按原来的二选一。
@@ -470,6 +472,9 @@ export function buildPippiPrompt(input: PippiPromptInput): string {
     parts.push(section('socialCasualGuide', SOCIAL_CASUAL_GUIDE));
     if (input.socialTone) parts.push(input.socialTone);
   }
+  // The model decides whether the content needs detail. Mentions, scene routing
+  // and relationship context cannot silently remove the short-sentence default.
+  parts.push(section('replyLengthGuide', REPLY_LENGTH_GUIDE));
 
   return parts.filter(Boolean).join('\n\n---\n\n');
 }

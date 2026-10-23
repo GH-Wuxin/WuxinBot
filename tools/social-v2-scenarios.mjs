@@ -5,6 +5,8 @@ export const socialScenarios = [
   { id: 'short-why', history: [m(member, 'Pippi，节奏怎么练？'), m(bot, '先跟节拍器慢练。', { replyToUserId: member })], text: '为什么', actions: ['reply'], addressee: ['bot'] },
   { id: 'short-next', history: [m(member, 'Pippi，教我安装'), m(bot, '先打开设置。', { replyToUserId: member })], text: '然后呢', actions: ['reply'], addressee: ['bot'] },
   { id: 'question-to-other', history: [m(other, '明天我去图书馆')], text: '@乙 你几点走？', atTargets: [other], actions: ['pass'], addressee: ['member'] },
+  { id: 'raw-self-mention', history: [], text: `[CQ:at,qq=${bot}]`, atTargets: [bot], direct: true, actions: ['reply'], addressee: ['bot'] },
+  { id: 'raw-other-mention', history: [], text: `[CQ:at,qq=${other}] 明天几点走？`, atTargets: [other], actions: ['pass'], addressee: ['member'] },
   { id: 'quote-other', history: [m(other, '明天考试')], text: '为什么', replyTo: 'h0', actions: ['pass'], addressee: ['member'] },
   { id: 'two-topics', history: [m(member, 'Pippi，这张图很难'), m(bot, '可以先降速练。', { replyToUserId: member }), m(other, '午饭吃面吗')], text: '@乙 我吃米饭', atTargets: [other], actions: ['pass'], addressee: ['member'] },
   { id: 'already-answered', history: [m(member, '谁知道明天几点集合？'), m(other, '早上八点，群公告里写了')], text: '好的看到了，谢谢', actions: ['pass', 'react'], addressee: ['member', 'group'] },

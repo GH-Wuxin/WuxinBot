@@ -7,6 +7,7 @@ import { createTestDataDir, assertNotProduction, cleanupTestDir } from './test-i
 const args = process.argv.slice(2);
 const arg = (key) => args.includes(key) ? args[args.indexOf(key) + 1] : '';
 const output = arg('--output'), settingsFile = arg('--settings-source'), baselineRoot = arg('--baseline-root');
+const chosen = arg('--cases').split(',').filter(Boolean);
 if (!output || !settingsFile) throw new Error('Requires --settings-source <db.json> --output <report.json>; optional --baseline-root <older installed code>.');
 const source = JSON.parse(fs.readFileSync(settingsFile, 'utf8').replace(/^\uFEFF/, '')).settings;
 const keys = ['llmProvider', 'model', 'apiKey', 'apiBaseUrl', 'deepseekApiKey', 'deepseekApiBaseUrl', 'codexExecutable',
@@ -36,16 +37,26 @@ const cases = [
   { id: 'old-prose', text: '你写的结尾也太坏了', history: '你们一个两个记得这么牢，说明我写对了嘛。坏结局才留得住人。下次要甜要虐，你们先表态，我再决定要不要心软。' },
   { id: 'affection', text: '我喜欢你' },
   { id: 'reported-score', text: '他们说我有99分，那你呢' },
+  { id: 'at-only', text: '[CQ:at,qq=10002]' },
+  { id: 'at-greeting', text: '[CQ:at,qq=10002] 晚上好啊', mode: 'mention' },
+  { id: 'at-simple-question', text: '[CQ:at,qq=10002] 你在干嘛呢？', mode: 'mention' },
+  { id: 'at-simple-fact', text: '[CQ:at,qq=10002] 7 加 8 等于多少？' },
+  { id: 'name-call', text: 'Pippi！', atTargets: [] },
+  { id: 'name-simple-question', text: 'pippi 你喜欢下雨天吗？', atTargets: [], mode: 'mention' },
+  { id: 'ambient-simple-question', text: '你觉得呢？', atTargets: [], direct: false, history: '晚上一起玩一会儿吧' },
+  { id: 'owner-private', text: '你今天想我了吗？', private: true, atTargets: [] },
   { id: 'explanation', text: 'AR 和 OD 有什么区别？各举一个具体例子', task: true },
   { id: 'writing', text: '写一段大约200字的小故事，讲一只猫偷偷搭上末班车，要有结尾', task: true },
 ];
 const report = { at: new Date().toISOString(), provider: source.llmProvider, model: source.model, syntheticOnly: true, cases: [] };
 const save = () => { fs.mkdirSync(path.dirname(path.resolve(output)), { recursive: true }); fs.writeFileSync(output, JSON.stringify(report, null, 2)); };
 try {
-  for (const scenario of cases) for (const score of scenario.scores || [50]) {
-    const event = { source: 'onebot', type: 'group', groupId: '20001', userId: '10003', nickname: '小甲', messageId: crypto.randomUUID(),
-      text: scenario.text, atTargets: ['10002'], socialAction: 'reply', socialDirect: true };
+  for (const scenario of cases.filter((s) => !chosen.length || chosen.includes(s.id))) for (const score of scenario.scores || [50]) {
+    const event = { source: 'onebot', type: scenario.private ? 'private' : 'group', groupId: scenario.private ? 'private' : '20001',
+      userId: scenario.private ? '10001' : '10003', nickname: '小甲', messageId: crypto.randomUUID(),
+      text: scenario.text, atTargets: scenario.atTargets ?? ['10002'], socialAction: 'reply', socialDirect: scenario.direct ?? true };
     updateDb((db) => {
+      db.groups[0].mode = scenario.mode || 'natural';
       db.socialV2 = emptySocialState();
       db.socialV2.people[event.userId] = { userId: event.userId, affinity: { kind: 'ordinary', score }, familiarity: 50, revision: 1, updatedAt: new Date().toISOString() };
       db.messages = scenario.history ? [{ id: 'old', role: 'assistant', type: 'group', groupId: event.groupId, userId: 'bot',

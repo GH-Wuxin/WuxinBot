@@ -98,8 +98,10 @@ export async function assessSocialTurn(event: SocialEvent, phase = 'initial', in
     const result = await invoke(db, { messages: [
       { role: 'system', content: `${SOCIAL_ASSESSMENT_PROMPT}\n${ownerAuthorityPrompt(db, event)}` },
       { role: 'user', content: JSON.stringify({ phase, now: new Date().toISOString(), direct: Boolean(event.socialDirect),
+        bot: { userId: String(db.settings.selfQq || '').trim() || null },
         mode: db.groups.find((g) => g.groupId === event.groupId)?.mode || 'private', target: { userId: event.userId,
-          messageIds: ids, text: event.text }, relationship: person, currentConversation: view, timeline }) },
+          messageIds: ids, text: event.text, atTargets: event.atTargets || [], replyTo: event.replyMessageId || '' },
+        relationship: person, currentConversation: view, timeline }) },
     ], maxTokens: 1200, timeoutMs: 15_000, temperature: 0.2, thinking: { type: 'disabled' },
     responseFormat: { type: 'json_object' }, label: 'V2 社交评估', tracePurpose: 'social_assessment', traceRole: 'social' });
     tokens = Number(result.usage?.total_tokens || 0);
