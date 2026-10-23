@@ -2,6 +2,8 @@ node_modules/
 dist/
 data/
 logs/
+# Windows Git may match logs/ against the Logs source directory as well.
+!/src/pages/Logs/
 incidents/
 .env
 fix-*.mjs

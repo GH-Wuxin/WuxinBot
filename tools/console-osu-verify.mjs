@@ -6,6 +6,7 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { quotaWindows, shortNumber, usageSummary } from '../src/pages/Dashboard/usageView.js';
 import { buildRequestEntries, filterLogEntries, traceMetrics } from '../src/pages/Logs/explorer.js';
 import { correlateChatRecords } from '../src/pages/Logs/correlation.js';
+import { createDemoTraces } from '../src/pages/Logs/traceFixture.js';
 import { DashboardPage } from '../src/pages/Dashboard/index.jsx';
 import { ModelsPage } from '../src/pages/Models/index.jsx';
 import { LogsPage } from '../src/pages/Logs/index.jsx';
@@ -69,17 +70,43 @@ assert.equal(buildRequestEntries([{ kind: 'decision', decision: { id: 'd', shoul
 assert.equal(filterLogEntries([{ status: 'silent' }], 'silent').length, 1);
 console.log('PASS stable request correlation, recorded usage only, replay ordering and all filters');
 
-const db = { settings: { llmProvider: 'deepseek', model: 'fixture', effectiveModel: 'actual-model', temperature: 0.8, maxTokens: 500, contextLimit: 20 }, usageStats: stats, usage, groups: [], messages, decisions, experience: {}, commandLogs: [] };
+for (const live of [false, true]) {
+  const demos = createDemoTraces(live);
+  assert.ok(demos.length > 0);
+  for (const demo of demos) {
+    assert.equal(demo.eventCount, demo.events.length);
+    assert.equal(demo.status, live ? 'active' : 'completed');
+    assert.equal(Boolean(demo.finishedAt), !live);
+    assert.ok(demo.events.every((item, index) => Date.parse(item.at) >= Date.parse(index ? demo.events[index - 1].at : demo.startedAt)));
+  }
+}
+assert.equal(traceMetrics(createDemoTraces()[0]).tokens, 140);
+assert.equal(traceMetrics(createDemoTraces(true)[0]).tokens, null);
+console.log('PASS synthetic trace previews retain ordered events, live state and completed usage');
+
+// Today and rolling 24-hour data deliberately differ so a period mix-up is visible.
+const today = { ...point, requests: 7, totalTokens: 50000, promptTokens: 49000, completionTokens: 1000, cachedTokens: 75, cacheMeasuredPromptTokens: 100 };
+const db = { settings: { llmProvider: 'deepseek', model: 'fixture', effectiveModel: 'actual-model', temperature: 0.8, maxTokens: 500, contextLimit: 20 }, usageStats: { ...stats, today }, usage, groups: [], messages, decisions, experience: {}, commandLogs: [] };
 const noop = () => {};
 const render = (Component, props) => renderToStaticMarkup(React.createElement(Component, props));
 const overview = render(DashboardPage, { db, oneBot: {}, saveSettings: noop, refreshState: noop, onNavigate: noop });
 assert.match(overview, /actual-model/);
-assert.match(overview, /75%/);
-assert.match(overview, /近 24 小时 Token 明细/);
-assert.match(overview, /与滚动 24 小时不同/);
+assert.match(overview, /75\.0%/);
+assert.match(overview, /今日 Token<\/span><b>5\.0 万/);
+assert.match(overview, /今天已经回了 <em>7<\/em>/);
+assert.match(overview, /Token 用量 · 24 小时/);
+assert.match(overview, /data-tokens="1020"/);
+assert.match(overview, /0\.1<span/);
+const renderToday = (value) => render(DashboardPage, { db: { ...db, usageStats: { ...db.usageStats, today: value } }, oneBot: {}, refreshState: noop, onNavigate: noop });
+assert.match(renderToday({}), /缓存命中 —/);
+assert.match(renderToday({ cacheMeasuredPromptTokens: 100, cachedTokens: 0 }), /缓存命中 0\.0%/);
 assert.match(render(ModelsPage, { db, saveSettings: noop }), /当前运行模型/);
-assert.match(render(ModelsPage, { db: { ...db, settings: { ...db.settings, llmProvider: 'codex-app-server' } }, saveSettings: noop }), /高级连接设置/);
-assert.match(render(LogsPage, { db }), /请求详情/);
+const codexModels = render(ModelsPage, { db: { ...db, settings: { ...db.settings, llmProvider: 'codex-app-server' } }, saveSettings: noop });
+assert.match(codexModels, /Codex 可执行文件/);
+assert.match(codexModels, /aria-label="自动降级"/);
+const logs = render(LogsPage, { db: { ...db, messages: [messages[0]] } });
+assert.match(logs, /hello/);
+assert.match(logs, /为何回复/);
 assert.match(render(LogsPage, { db: { ...db, messages: [], decisions: [] } }), /没有匹配的记录/);
 assert.match(render(SegmentedControl, { value: 'a', onChange: noop, options: [{ value: 'a', label: 'A' }, { value: 'b', label: 'B' }] }), /aria-pressed="true"/);
 assert.match(render(SettingRow, { title: '接口供应商', control: React.createElement(Select, { options: [] }) }), /aria-label="接口供应商"/);
@@ -88,17 +115,16 @@ console.log('PASS real React page rendering, preserved model sections, empty log
 
 const shell = render(AppShell, { page: 'overview', db, oneBot: {}, onNavigate: noop, onPauseToggle: noop, onStopAll: noop });
 assert.doesNotMatch(shell, /always in rhythm|CONTROL ROOM|made for the community|osu-shell-footer/);
-assert.match(shell, /暂停机器人/);
-assert.match(shell, /停止后台操作/);
+assert.match(shell, /id="pauseBtn"[^>]*>暂停<\/button>/);
+assert.match(render(AppShell, { page: 'overview', db: { ...db, settings: { ...db.settings, globalPaused: true } }, oneBot: {}, onNavigate: noop, onPauseToggle: noop }), /id="pauseBtn"[^>]*>恢复<\/button>/);
+assert.match(shell, /运行控制/);
 assert.match(overview, /Token 用量/);
-assert.match(overview, /Token 统计周期/);
-assert.match(overview, /缓存命中率只使用可观测输入/);
-assert.match(overview, /账号额度与本地 Token 用量是两个口径/);
+assert.match(overview, /API 通道计费与本地 Token 是两个口径/);
 assert.doesNotMatch(overview, /osu-dashboard__intro|掌握每一拍|一眼看清|迹可循|选择这一拍|什么时候加入聊天/);
 for (const page of ['Agent', 'Dashboard', 'Groups', 'Integrations', 'Logs', 'Maintenance', 'Members', 'Memory', 'Models', 'Osu', 'Permissions', 'Persona', 'ProfileLogs', 'Relationships']) {
   const source = readFileSync(new URL(`../src/pages/${page}/index.jsx`, import.meta.url), 'utf8');
   assert.doesNotMatch(source, /eyebrow="|YOUR BOT, IN RHYTHM|找到合适的聊天节奏|回看每一次判断|每一次对话，都有迹可循|一眼看清|REQUEST DETAIL/, `${page}: no decorative copy`);
 }
-assert.match(readFileSync(new URL('../src/pages/Groups/index.jsx', import.meta.url), 'utf8'), /这些操作会清理或永久删除已有数据/);
-assert.match(readFileSync(new URL('../src/pages/Models/index.jsx', import.meta.url), 'utf8'), /图片理解需要实际多模态模型支持/);
+assert.match(readFileSync(new URL('../src/pages/Groups/index.jsx', import.meta.url), 'utf8'), /清空上下文会删除该群的聊天上下文和决策日志/);
+assert.match(readFileSync(new URL('../src/pages/Models/index.jsx', import.meta.url), 'utf8'), /需要多模态模型/);
 console.log('PASS decorative copy removed across 14 pages; functional controls and warnings retained');

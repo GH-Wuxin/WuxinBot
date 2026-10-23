@@ -19,6 +19,8 @@ const { getStickerDeliveryState, getStickerDeliveryStats } = await import(
 
 let llmRequests = 0;
 let llmReplyEnvelope = { reply: '', mode: 'image_only', sticker_id: 'hello' };
+let failureRewriteText = '这会儿发不了图，晚点再试。';
+const failureRewriteRequests = [];
 let timeoutServer;
 let failureServer;
 const llmServer = http.createServer((req, res) => {
@@ -28,7 +30,11 @@ const llmServer = http.createServer((req, res) => {
     llmRequests += 1;
     const body = JSON.parse(raw || '{}');
     const stickerProtocolEnabled = body.response_format?.type === 'json_object';
-    const content = stickerProtocolEnabled ? JSON.stringify(llmReplyEnvelope) : '收到。';
+    const failureRewrite = !stickerProtocolEnabled
+      && body.messages?.some((message) => message.role === 'user' && String(message.content).startsWith('失败原因：'));
+    if (failureRewrite) failureRewriteRequests.push(body.messages);
+    const content = stickerProtocolEnabled ? JSON.stringify(llmReplyEnvelope)
+      : failureRewrite ? failureRewriteText : '收到。';
     const response = {
       id: `sticker-fixture-${llmRequests}`,
       object: 'chat.completion',
@@ -388,10 +394,24 @@ function assertFailureNotice(sends, label) {
     async (_event, text) => { rejectedSends.push(String(text || '')); return { outcome: 'confirmed_success', messageId: 51 }; },
   );
   assert.equal(rejectedSends.length, 1, '明确要图但被策略拒绝：应当有且只有一条回退');
-  assert.equal(rejectedSends[0].includes('这张没发出去'), true,
-    '明确要图却没有可发的图时必须说清楚，实际: ' + rejectedSends[0]);
+  assert.equal(failureRewriteRequests.length, 1, '策略拒绝后应调用模型改写失败说明');
+  assert.ok(failureRewriteRequests[0].some((message) => String(message.content).includes('这个群没有开启表情包发送')),
+    '改写请求必须包含实际拒绝原因');
+  assert.equal(rejectedSends[0], failureRewriteText, '应发送模型改写的失败说明，而不是旧版固定话术');
   assert.equal(rejectedSends[0].includes('收到。'), false, '不该用一句「收到。」盖过没发出去这件事');
   assert.equal(rejectedSends[0].includes('[CQ:image'), false, '被拒绝时不该有图');
+
+  // 没有可用改写时，固定失败说明仍必须兜底，不能退回「收到。」。
+  failureRewriteText = '';
+  configurePolicy([]);
+  const emptyRewriteSends = [];
+  await processIncoming(
+    event('sticker-send-group', 'sticker-requested-empty-rewrite-message'),
+    async (_event, text) => { emptyRewriteSends.push(String(text || '')); return { outcome: 'confirmed_success', messageId: 52 }; },
+  );
+  assert.ok(failureRewriteRequests.length > 1, '必须实际走过空改写路径');
+  assert.deepEqual(emptyRewriteSends, ['这张没发出去']);
+  failureRewriteText = '这会儿发不了图，晚点再试。';
 
   // 有图待发但发送确认失败：只能说一次，不能「收到。」和「这张没发出去」各来一句。
   llmReplyEnvelope = { reply: '', sticker_use: 'requested', mode: 'image_only', sticker_id: 'hello' };
