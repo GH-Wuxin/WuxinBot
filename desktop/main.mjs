@@ -15,6 +15,29 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const sourceRoot = path.resolve(__dirname, '..');
 const packagedRoot = path.join(process.resourcesPath, 'app.asar.unpacked');
 const projectRoot = process.env.WUXIN_PROJECT_ROOT || (app.isPackaged ? packagedRoot : sourceRoot);
+// Explicit paths and a quiet startup allow local maintenance without taking focus.
+// A deployment can bind its data independently of the launching user's AppData
+// (including Windows packaged-app filesystem virtualization).
+const deploymentPathsFile = path.join(process.resourcesPath, 'wuxin-paths.json');
+const deploymentPaths = app.isPackaged && fs.existsSync(deploymentPathsFile)
+  ? JSON.parse(fs.readFileSync(deploymentPathsFile, 'utf8')) : {};
+function deploymentDirectory(key) {
+  const value = deploymentPaths[key];
+  if (value === undefined) return '';
+  if (typeof value !== 'string' || !path.isAbsolute(value) || !fs.statSync(value).isDirectory()) {
+    throw new Error(`Invalid deployment data directory: ${key}`);
+  }
+  return fs.realpathSync.native(value);
+}
+const deploymentDesktopData = deploymentDirectory('desktopDataDir');
+const deploymentProductionData = deploymentDirectory('productionDataDir');
+if (deploymentProductionData) {
+  process.env.WUXIN_PRODUCTION_DATA_DIR ||= deploymentProductionData;
+  process.env.DATA_DIR ||= deploymentProductionData;
+}
+const desktopDataPath = path.resolve(process.env.WUXIN_DESKTOP_DATA_DIR || deploymentDesktopData || app.getPath('userData'));
+app.setPath('userData', fs.existsSync(desktopDataPath) ? fs.realpathSync.native(desktopDataPath) : desktopDataPath);
+const startHidden = process.env.WUXIN_DESKTOP_START_HIDDEN === '1';
 const devUrl = process.env.WUXIN_DEV_SERVER_URL || '';
 const productionApi = 'http://127.0.0.1:8787';
 const packagedIndex = path.join(projectRoot, 'dist', 'index.html');
@@ -117,6 +140,7 @@ async function loadConsole() {
 
 function createWindow() {
   mainWindow = new BrowserWindow({
+    show: !startHidden,
     width: 1440,
     height: 920,
     minWidth: 1080,
@@ -463,9 +487,9 @@ async function boot() {
   if (storedAutoLaunch !== manager.settings.autoLaunch) await manager.updateSettings({ autoLaunch: storedAutoLaunch });
 
   createWindow();
-  if (manager.settings.startOnOpen) {
+  if (manager.settings.startOnOpen || process.env.WUXIN_DESKTOP_START_ALL === '1') {
     log('按设置启动已启用组件');
-    void manager.startAll({ onlyAutoStart: true });
+    void manager.startAll({ onlyAutoStart: process.env.WUXIN_DESKTOP_START_ALL !== '1' });
   }
 }
 

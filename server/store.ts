@@ -15,13 +15,13 @@ function defaultDataDir() {
 
 /** The production data directory, computed from environment at call time. */
 export function productionDataDir(): string {
-  return path.resolve(defaultDataDir());
+  return path.resolve(process.env.WUXIN_PRODUCTION_DATA_DIR || defaultDataDir());
 }
 
 /** Resolve the active data directory. Reads DATA_DIR on every call so a
  *  forgotten/empty env var cannot silently keep pointing at production. */
 export function getDataDir(): string {
-  return path.resolve(process.env.DATA_DIR || defaultDataDir());
+  return path.resolve(process.env.DATA_DIR || productionDataDir());
 }
 
 function getDbPath() {
@@ -32,11 +32,26 @@ function getDbLockPath() {
   return path.join(getDataDir(), 'db.lock');
 }
 
+function comparableDataPath(input: string): string {
+  let cursor = path.resolve(input);
+  const suffix: string[] = [];
+  while (!fs.existsSync(cursor)) {
+    const parent = path.dirname(cursor);
+    if (parent === cursor) break;
+    suffix.unshift(path.basename(cursor));
+    cursor = parent;
+  }
+  try { cursor = fs.realpathSync.native(cursor); } catch { /* Preserve the literal path if inaccessible. */ }
+  const resolved = path.normalize(path.join(cursor, ...suffix));
+  return process.platform === 'win32' ? resolved.toLowerCase() : resolved;
+}
+
 export function isProductionDb(): boolean {
-  const current = getDataDir();
-  const production = productionDataDir();
-  if (process.platform === 'win32') return current.toLowerCase() === production.toLowerCase();
-  return current === production;
+  const current = comparableDataPath(getDataDir());
+  // Keep protecting the legacy location during migration as well as the
+  // configured production root, including aliases through directory junctions.
+  return [productionDataDir(), defaultDataDir()]
+    .some((directory) => comparableDataPath(directory) === current);
 }
 
 function isTrustedServerEntry(): boolean {

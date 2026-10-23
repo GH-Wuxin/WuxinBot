@@ -144,7 +144,7 @@ export function AppShell({ page, onNavigate, db, oneBot, onPauseToggle, children
   return <>
     <header className="topbar">
       <div className="brand">
-        <span className="brand-puck" aria-hidden="true">w!</span>
+        <img className="brand-puck brand-logo" src="./icon.png" width="40" height="40" alt="" aria-hidden="true" />
         <span className="brand-name">WuxinBot</span>
         <span className="brand-tag">control</span>
       </div>

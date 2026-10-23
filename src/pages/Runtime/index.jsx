@@ -329,7 +329,7 @@ export function RuntimePage({ standalone = false, onServerReady, loadError = '' 
   if (standalone) {
     return <div className="runtime-standalone" style={{ padding: '40px 28px' }}>
       <header style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 24 }}>
-        <span className="brand-puck" aria-hidden="true" style={{ width: 34, height: 34 }}>w!</span>
+        <img className="brand-puck brand-logo" src="./icon.png" width="34" height="34" alt="" aria-hidden="true" style={{ width: 34, height: 34 }} />
         <strong style={{ fontSize: 16 }}>WuxinBot Desktop</strong>
         <span className="muted" style={{ fontSize: 12 }}>本地运行控制</span>
       </header>

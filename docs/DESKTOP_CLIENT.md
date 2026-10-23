@@ -18,7 +18,21 @@ npm run desktop:dev
 npm run desktop:build
 ```
 
-安装包输出在 `dist/WuxinBot Desktop Setup 1.0.3.exe`。
+安装包输出在 `release/WuxinBot Desktop Setup 1.0.3.exe`。
+
+## 迁移后的固定数据目录
+
+安装版支持在 EXE 旁的 `resources/wuxin-paths.json` 配置 `desktopDataDir`（启动配置与 Electron 状态）和 `productionDataDir`（业务数据库）。模板见 `desktop/wuxin-paths.example.json`。迁移已有数据后，填写真实绝对目录；目录必须已存在，非法或缺失的配置路径会阻止启动，避免静默创建空库。该文件属于本机部署配置，更新安装产物时应备份并保留。
+
+显式环境变量 `WUXIN_DESKTOP_DATA_DIR`、`WUXIN_PRODUCTION_DATA_DIR` 和 `DATA_DIR` 优先于部署文件；运行控制中为组件保存的环境变量覆盖也需一起核对。没有部署文件时，保留原有 AppData 默认行为。服务端 `.env` 不负责设置 Electron 启动前的目录。
+
+Windows 打包应用可能将 AppData 文件操作重定向到包的私有目录。在此类终端中看到或建立的 Junction，并不证明从普通桌面启动时会使用同一份数据。迁移必须从打包工具环境之外直接启动 EXE，核对实际群聊、历史记录、模型配置及 osu! 绑定；端口和健康接口正常不足以证明数据接对。
+
+命令行后台维护可在启动 Electron 前设置 `WUXIN_DESKTOP_START_HIDDEN=1`；`WUXIN_DESKTOP_START_ALL=1` 仅在本次启动全部已启用组件，不改变自动启动偏好。外部数据库应先正常关闭，再结束 Desktop。旧 BAT 入口已移除，使用 Desktop 或已核实目录和数据路径的管理脚本。
+
+生产数据保护同时识别 `WUXIN_PRODUCTION_DATA_DIR`、旧 AppData 入口及其 Junction 真实目录。验证必须使用独立测试数据目录；`npm run runtime:paths:verify` 检查这些保护，并验证 Oracle 的可配置脚本和 Python 路径。
+
+应用图标从 `build/icon-source.png` 统一生成；`npm run build` 自动导出多尺寸 ICO 和 PNG。来源及生成提示词见 `build/ICON.md`。
 
 ## 运行控制
 

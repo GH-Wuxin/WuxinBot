@@ -36,6 +36,9 @@ async function openRuntimePage(t) {
     if (files.has(name)) {
       response.setHeader('Content-Type', name.endsWith('.css') ? 'text/css' : 'text/javascript');
       response.end(files.get(name));
+    } else if (name === 'icon.png') {
+      response.setHeader('Content-Type', 'image/png');
+      response.end(fs.readFileSync(path.join(projectRoot, 'public', 'icon.png')));
     } else {
       response.setHeader('Content-Type', 'text/html; charset=utf-8');
       response.end('<!doctype html><html lang="zh-CN"><link rel="stylesheet" href="/stdin.css"><div id="root"></div><script src="/stdin.js"></script></html>');

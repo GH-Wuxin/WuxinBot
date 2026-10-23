@@ -69,9 +69,11 @@ function mergeClassificationResults(
 }
 
 function runClassifierProcess(ids: string[]): Promise<Record<string, Record<string, number>>> {
-  const SCRIPT = path.resolve(__dirname, '..', '..', '..', 'My pack', 'osu_oracle', 'predict_onnx.py');
+  const SCRIPT = process.env.OSU_ORACLE_SCRIPT
+    ? path.resolve(process.env.OSU_ORACLE_SCRIPT)
+    : path.resolve(__dirname, '..', '..', '..', 'My pack', 'osu_oracle', 'predict_onnx.py');
   return new Promise((resolve) => {
-    const python = spawn('python', [SCRIPT, '--json'], {
+    const python = spawn(process.env.OSU_ORACLE_PYTHON || 'python', [SCRIPT, '--json'], {
       stdio: ['pipe', 'pipe', 'pipe'],
       cwd: path.dirname(SCRIPT)
     });

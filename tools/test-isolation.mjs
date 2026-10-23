@@ -8,7 +8,7 @@ import os from 'node:os';
 import crypto from 'node:crypto';
 import { spawnSync } from 'node:child_process';
 
-const PRODUCTION_DIR = path.join(
+const PRODUCTION_DIR = process.env.WUXIN_PRODUCTION_DATA_DIR || path.join(
   process.env.APPDATA || path.join(process.env.USERPROFILE || 'C:', 'AppData', 'Roaming'),
   'Wuxin'
 );
