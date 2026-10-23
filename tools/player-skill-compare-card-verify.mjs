@@ -1,21 +1,15 @@
-import {closeSkillCardBrowser} from '../server/bots/skillCard/browser.ts';
+import {createTestDataDir,assertNotProduction} from './test-isolation.mjs';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
 import sharp from 'sharp';
-import {
-  buildPlayerSkillComparisonSvg,
-  playerProfileTitlePresentation,
-  renderPlayerSkillComparisonCard,
-  renderPlayerSkillProfileCard,
-} from '../server/bots/playerSkillComparisonCard.ts';
-import {buildPlayerSkillCardHtml} from '../server/bots/skillCard/cards.ts';
-import { PLAYER_SKILL_AXES, PLAYER_SKILL_AXIS_LABELS } from '../server/bots/playerSkillProfile.ts';
-
-const testDataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'wuxin-player-skill-card-'));
-process.env.DATA_DIR = testDataDir;
-
+const testDataDir=createTestDataDir('wuxin-player-skill-card');
+assertNotProduction(testDataDir);
+const {closeSkillCardBrowser}=await import('../server/bots/skillCard/browser.ts');
+const {buildPlayerSkillComparisonHtml,playerProfileTitlePresentation,renderPlayerSkillComparisonCard,renderPlayerSkillProfileCard}=await import('../server/bots/playerSkillComparisonCard.ts');
+const {buildPlayerSkillCardHtml}=await import('../server/bots/skillCard/cards.ts');
+const {PLAYER_SKILL_AXES,PLAYER_SKILL_AXIS_LABELS}=await import('../server/bots/playerSkillProfile.ts');
+const {RATING_TIERS}=await import('../server/bots/skillCard/presentation.ts');
 const side = (username, colorOffset) => ({
   player: {
     osuId: colorOffset + 1,
@@ -49,54 +43,68 @@ const side = (username, colorOffset) => ({
   },
 });
 
-const comparisonPayload = { left: side('LeftPlayer', 0), right: side('RightPlayer', 200), limit: 50 };
-const svg = buildPlayerSkillComparisonSvg(comparisonPayload);
-assert.match(svg,/data-design="tier-radar-v2"/);
-assert.match(svg,/class="comparison-radar"/);
-assert.match(svg,/class="comparison-ppplus-radar"/,'comparison includes the PP+ radar');
-assert.equal((svg.match(/class="ppplus-axis-value"/g)||[]).length,6,'comparison PP+ radar shows all six dimensions');
-assert.equal((svg.match(/class="ppplus-dot (?:left|right)"/g)||[]).length,12,'comparison PP+ radar shows both players');
-assert.match(svg,/PP\+ PROFILE/);
-assert.match(svg,/PP\+ SOURCE · github\.com\/Apeuriox\/lazybot-pp-plus/,'comparison credits the PP+ source');
-assert.equal((svg.match(/data-tier-emblem="/g)||[]).length,2,'comparison carries both player Tier emblems');
-assert.equal((svg.match(/class="axis-value"/g)||[]).length,9,'comparison radar shows all nine fixed dimensions');
-assert.match(svg,/data-axis-label="spatial_precision"/,'comparison preserves the Spatial Precision label');
-assert.deepEqual(
-  [...svg.matchAll(/data-axis-label="([^"]+)"/g)].map((match) => match[1]),
-  [...PLAYER_SKILL_AXES],
-  'comparison radar angles match the profile axis order',
-);
-assert.match(svg,/data-unit="independent"/,'Stamina and Endurance retain independent /10 units');
-assert.match(svg,/RightPlayer leads by Skill Rating/,'the summary names the leader by Skill Rating');
-assert.match(svg,/SKILL RATING/,'comparison exposes the weighted Skill Rating');
-assert.match(svg,/data-left-rating="\d+"/);
-assert.match(svg,/data-right-rating="\d+"/);
-assert.match(svg,/Ballistic Virtuoso/,'comparison renders the left player profile title');
-assert.match(svg,/Tapping Overdrive/,'comparison renders the right player profile title');
-const leftRadarColor = svg.match(/data-left-color="([^"]+)"/)?.[1];
-const rightRadarColor = svg.match(/data-right-color="([^"]+)"/)?.[1];
-assert.match(svg,new RegExp(`<text[^>]*fill="${rightRadarColor}"[^>]*>\\+2\\.0</text>`),'positive deltas use the right-player tier color');
-assert.match(svg,/r="39"[^>]*stroke-width="1\.7"/,'comparison avatars use the enlarged profile-card size');
-assert.doesNotMatch(svg,/TIER [IVX]+ · [A-Z]+<\/text><text[^>]*>[^<]+<\/text>/,'tier label is not packed beside the player name');
-assert.doesNotMatch(svg,/维度领先|势均力敌|Largest meaningful gap|dimensions are close|comparisonRows|comparisonBars/i);
-assert.doesNotMatch(svg,/<linearGradient id="compare-bg"/,'comparison uses the restrained graphite surface');
-assert.notEqual(leftRadarColor,rightRadarColor,'player radar accents come from their different Tiers');
-const closePayload = { left: side('LeftPlayer', 0), right: side('RightPlayer', 0), limit: 50 };
-const closeSvg = buildPlayerSkillComparisonSvg(closePayload);
-assert.match(closeSvg,/Skill Rating tied/);
-assert.equal((closeSvg.match(/Skill Rating tied/g)||[]).length,1,'tied Skill Rating summary is not duplicated');
-assert.equal(closeSvg.match(/data-left-tier-color="([^"]+)"/)?.[1],closeSvg.match(/data-right-tier-color="([^"]+)"/)?.[1],'same-tier players retain one shared Tier identity color');
-assert.notEqual(closeSvg.match(/data-left-color="([^"]+)"/)?.[1],closeSvg.match(/data-right-color="([^"]+)"/)?.[1],'same-tier comparison series still have distinct player colors');
-assert.match(closeSvg,/data-marker="circle"/,'left radar series uses circle markers');
-assert.match(closeSvg,/data-marker="diamond"/,'right radar series uses diamond markers');
-assert.match(closeSvg,/class="profile-series right"[^>]*stroke-dasharray="5 3"/,'right radar outline is dashed to remain distinguishable');
-const png = await renderPlayerSkillComparisonCard(comparisonPayload);
-assert.ok(png.length > 10_000, `comparison PNG should be non-trivial, got ${png.length} bytes`);
-assert.deepEqual([...png.subarray(0, 8)], [137, 80, 78, 71, 13, 10, 26, 10]);
-assert.deepEqual(
-  await sharp(png).metadata().then(({ width, height }) => ({ width, height })),
-  { width: 2560, height: 1440 },
-);
+
+const comparisonPayload={left:side('LeftPlayer',0),right:side('RightPlayer',200),limit:50};
+const html=buildPlayerSkillComparisonHtml(comparisonPayload);
+const attr=(html,key)=>html.match(new RegExp(key+'="([^"]*)"'))?.[1];
+const chart=(html,kind)=>html.split('class="compare-radar '+kind+'-radar"')[1].split('</svg>')[0];
+assert.equal(attr(html,'data-rating-leader'),'b');
+assert.notEqual(attr(html,'data-left-color'),attr(html,'data-right-color'));
+assert.deepEqual([...chart(html,'skill').matchAll(/data-axis-label="([^"]+)"/g)].map(m=>m[1]),PLAYER_SKILL_AXES);
+assert.equal((chart(html,'pplus').match(/class="axis-value"/g)||[]).length,6);
+assert.equal((html.match(/class="series-dot /g)||[]).length,30);
+assert.equal((html.match(/class="median-series"/g)||[]).length,2);
+assert.match(html,/PP\+ ALGORITHM · ALOIC/);
+assert.match(html,/data-unit="independent"/);
+assert.match(html,/Ballistic Virtuoso/);
+assert.match(html,/Tapping Overdrive/);
+// All twelve real Tier thresholds, neutral silver, swapped positions and ties.
+const atRating=(name,value)=>{
+  const p=side(name,0);
+  p.profile.axes=p.profile.axes.map(a=>({...a,ceiling:a.key==='raw_speed'?Math.cbrt(value):0,median:0}));
+  return p;
+};
+for(const [i,tier] of RATING_TIERS.entries()){
+  const width=(RATING_TIERS[i+1]?.min??tier.min+600)-tier.min;
+  const left=atRating('Stronger',tier.min+Math.round(width*.68)),right=atRating('Quieter',tier.min+Math.round(width*.28));
+  const normal=buildPlayerSkillComparisonHtml({left,right});
+  const swapped=buildPlayerSkillComparisonHtml({left:right,right:left});
+  assert.equal(attr(normal,'data-tier-left'),String(i+1));
+  assert.equal(attr(normal,'data-tier-right'),String(i+1));
+  assert.equal(attr(normal,'data-rating-leader'),'a');
+  assert.equal(attr(swapped,'data-rating-leader'),'b');
+  assert.notEqual(attr(normal,'data-left-color'),attr(normal,'data-right-color'));
+  assert.equal(attr(normal,'data-left-color'),attr(swapped,'data-right-color'));
+  assert.equal(attr(normal,'data-right-color'),attr(swapped,'data-left-color'));
+  if(i===2){
+    const channels=attr(normal,'data-left-color').slice(1).match(/../g).map(x=>parseInt(x,16));
+    assert.ok(Math.max(...channels)-Math.min(...channels)<25,'silver remains neutral');
+  }
+  const tied=buildPlayerSkillComparisonHtml({left,right:left});
+  assert.equal(attr(tied,'data-rating-leader'),'tie');
+  assert.equal(attr(tied,'data-left-color'),attr(tied,'data-right-color'),'a tie does not invent a leader');
+  assert.match(tied,/data-marker="circle"/);assert.match(tied,/data-marker="diamond"/);
+}
+const missing=structuredClone(comparisonPayload);
+missing.left.ppPlus=null;
+missing.right.ppPlus={jump:0,flow:null,speed:Infinity,stamina:{value:3},precision:-1};
+const missingChart=chart(buildPlayerSkillComparisonHtml(missing),'pplus');
+assert.doesNotMatch(missingChart,/NaN|Infinity|class="series-dot a"/);
+assert.equal((missingChart.match(/class="series-dot b"/g)||[]).length,2,'unknown PP+ values are not zero-valued points');
+assert.doesNotMatch(missingChart,/<polygon[^>]+class="profile-series/,'partial evidence must not close a polygon');
+assert.match(missingChart,/>0\.00</,'real zero values remain visible');
+const unrated=structuredClone(comparisonPayload);
+unrated.left.profile.profileStatus='INSUFFICIENT_EVIDENCE';
+const unratedHtml=buildPlayerSkillComparisonHtml(unrated);
+assert.equal(attr(unratedHtml,'data-rating-leader'),'unrated');
+assert.equal(attr(unratedHtml,'data-left-rating'),'');
+assert.doesNotMatch(chart(unratedHtml,'skill'),/class="series-dot a"/);
+assert.match(unratedHtml,/UNRATED · INSUFFICIENT EVIDENCE/);
+const unsafe=structuredClone(comparisonPayload);unsafe.right.player.username='<script>&"';
+assert.doesNotMatch(buildPlayerSkillComparisonHtml(unsafe),/<script>/);
+const png=await renderPlayerSkillComparisonCard(comparisonPayload);
+assert.ok(png.length>10000);
+assert.deepEqual(await sharp(png).metadata().then(({width,height})=>({width,height})),{width:1280,height:720});
 const profile = side('ProfilePlayer', 0);
 profile.sample.averageScoreQuality = 0.86;
 profile.profile.profileTitle = 'GOD OF AIM';

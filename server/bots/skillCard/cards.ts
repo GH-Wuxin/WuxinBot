@@ -276,16 +276,14 @@ function tierBackground(level:number,tierColor:string,mode:'normal'|'inverse'|'h
   const inverse=mode==='inverse'||mode==='hybrid';
   const tint=inverse?complementHex(tierColor):tierColor;
   const energy=tierEnergy(clamped);
-  const amount=mode==='inverse'
-    ? .018 + energy*.025
-    : .006 + energy*.024;
+  const amount=mode==='inverse' ? .018 + energy*.025 : .18;
   const paper=mixHex(base,mode==='inverse'?tint:tierColor,amount);
   return {paper,panel:mixHex(paper,'#ffffff',.045),rule:mixHex(paper,'#ffffff',.14),ruleSoft:mixHex(paper,'#ffffff',.085)};
 }
 
 
 
-function playerPage(payload:any,avatar:string){
+export function playerSkillCardIdentity(payload:any,avatar='',label=''){
   const user=payload.player||{};
   const profile=payload.profile||{};
   const p={...profile,player:{...user,statistics:{global_rank:user.globalRank,country_rank:user.countryRank,pp:user.pp}},rows:(payload.rows||[]).map((row:any)=>({...row,accuracy:finite(row.accuracy)/100}))};
@@ -300,7 +298,6 @@ function playerPage(payload:any,avatar:string){
   const roman=['I','II','III','IV','V','VI','VII','VIII','IX','X','XI','XII'][Math.max(0,(view.tier?.level||1)-1)];
   const top=[...p.axes].sort((left:any,right:any)=>right.ceiling-left.ceiling||right.median-left.median||allKeys.indexOf(left.key)-allKeys.indexOf(right.key))[0];
   const topDef=defs[top.key]||defs.jump_aim;
-  const axesByKey=Object.fromEntries(p.axes.map((axis:any)=>[axis.key,axis]));
   const tierLabel=view.rated&&view.tier?`TIER ${roman} · ${view.tier.en}`:'UNRATED';
   const title=view.rated?(mark?.label||view.title||profile.profileTitle||profile.profileType||'PROFILE'):'UNRATED';
   const pp=fmt(numeric(user.pp)===null?null:Math.round(user.pp));
@@ -317,15 +314,6 @@ function playerPage(payload:any,avatar:string){
   const tierEmblem=view.rated&&tierEmblemDataUrl
     ? `<img class="tier-emblem" src="${tierEmblemDataUrl}" alt="" aria-hidden="true">`
     : '';
-  const previewBackgroundMode=payload.previewBackgroundMode==='inverse'||payload.previewBackgroundMode==='hybrid'
-    ? payload.previewBackgroundMode
-    : payload.previewInverseBackground===true?'inverse':'hybrid';
-  const background=tierBackground(tierLevel,view.rated?tierColor:String(RATING_TIERS[0].color),previewBackgroundMode);
-  const radar=radarSvg(axesByKey,'player',radarColor,view.rated?view.tier?.level||1:1);
-  const ppPlus=payload.ppPlus&&typeof payload.ppPlus==='object'?payload.ppPlus:null;
-  const ppPlusRadar=ppPlus
-    ? pplusRadarSvg(ppPlus,radarColor,tierLevel)
-    : '<div class="no-pplus">PP+ DATA UNAVAILABLE</div>';
   const sampleLabel=`${finite(sample.valid)}/${finite(sample.requested,50)} VALID`;
   const inactive=user.isActive===false&&user.isRanked===false&&user.isDeleted!==true;
   const visitDate=inactive&&user.lastVisit?new Date(user.lastVisit):null;
@@ -334,8 +322,7 @@ function playerPage(payload:any,avatar:string){
     ? `UNRANKED · ${pp} pp · ${n(user.accuracy,2)}%`
     : `GLOBAL ${rank(user.globalRank)} · COUNTRY ${rank(user.countryRank)} · ${pp} pp · ${n(user.accuracy,2)}%`;
   const activityNote=inactive?`<div class="activity-note"><b>INACTIVE</b>${lastVisit?`<span>LAST VISIT · ${esc(lastVisit)}</span>`:''}</div>`:'';
-  return {top:top.key,rating:view.rated?view.value:null,tier:view.rated?view.tier?.level||0:0,specialty:mark?.label||null,reps:(payload.rows||[]).slice(0,2).map((row:any)=>row.beatmapId),html:`<main class="sheet radar-sheet player-sheet" style="--paper:${background.paper};--panel:${background.panel};--rule:${background.rule};--rule-soft:${background.ruleSoft};--rank-color:${radarColor};--radar-color:${radarColor};--accent:${topDef.color};--tier-energy:${tierEnergyValue.toFixed(3)};--tier-rule-width:${(1+tierEnergyValue*2.2).toFixed(2)}px;--tier-score-size:${(30+tierEnergyValue*5).toFixed(1)}px" data-rating-policy="${esc(view.ratingPolicy)}" data-tier="${view.rated?view.tier?.level||0:0}" data-tier-material="${esc(tierMaterial)}">
-    <div class="who">
+  return {profile:p,view,top,topDef,tierColor,tierLevel,tierMaterial,tierEnergyValue,radarColor,html:`    <div class="who">${label}
       ${avatar?`<img class="avatar" src="${esc(avatar)}" alt="${esc(user.username)} avatar">`:`<div class="avatar avatar-placeholder">${esc(String(user.username||'SP').slice(0,2).toUpperCase())}</div>`}
       <div class="identity">
         <div class="eyebrow">OSU! STANDARD · ${esc(String(user.countryCode||'—').toUpperCase())}</div>
@@ -351,7 +338,24 @@ function playerPage(payload:any,avatar:string){
         <div class="st"><span>ACCURACY</span><b>${n(user.accuracy,2)}%</b></div>
       </div>
       <div class="sample">PROFILE SAMPLE ${esc(sampleLabel)} · ${esc(view.honor?.label||'BP50')}</div>
-    </div>
+    </div>`};
+}
+
+function playerPage(payload:any,avatar:string){
+  const {profile:p,view,top,topDef,tierColor,tierLevel,tierMaterial,tierEnergyValue,radarColor,html:identity}=playerSkillCardIdentity(payload,avatar);
+  const mark=view.specialty;
+  const axesByKey=Object.fromEntries(p.axes.map((axis:any)=>[axis.key,axis]));
+  const previewBackgroundMode=payload.previewBackgroundMode==='inverse'||payload.previewBackgroundMode==='hybrid'
+    ? payload.previewBackgroundMode
+    : payload.previewInverseBackground===true?'inverse':'hybrid';
+  const background=tierBackground(tierLevel,view.rated?tierColor:String(RATING_TIERS[0].color),previewBackgroundMode);
+  const radar=radarSvg(axesByKey,'player',radarColor,view.rated?view.tier?.level||1:1);
+  const ppPlus=payload.ppPlus&&typeof payload.ppPlus==='object'?payload.ppPlus:null;
+  const ppPlusRadar=ppPlus
+    ? pplusRadarSvg(ppPlus,radarColor,tierLevel)
+    : '<div class="no-pplus">PP+ DATA UNAVAILABLE</div>';
+  return {top:top.key,rating:view.rated?view.value:null,tier:view.rated?view.tier?.level||0:0,specialty:mark?.label||null,reps:(payload.rows||[]).slice(0,2).map((row:any)=>row.beatmapId),html:`<main class="sheet radar-sheet player-sheet" style="--paper:${background.paper};--panel:${background.panel};--rule:${background.rule};--rule-soft:${background.ruleSoft};--rank-color:${radarColor};--radar-color:${radarColor};--accent:${topDef.color};--tier-energy:${tierEnergyValue.toFixed(3)};--tier-rule-width:${(1+tierEnergyValue*2.2).toFixed(2)}px;--tier-score-size:${(30+tierEnergyValue*5).toFixed(1)}px" data-rating-policy="${esc(view.ratingPolicy)}" data-tier="${view.rated?view.tier?.level||0:0}" data-tier-material="${esc(tierMaterial)}">
+    ${identity}
     <div class="col">
       <section class="radar-panel"><div class="panel-head"><b>SKILL PROFILER</b><span>9 DIMENSIONS</span></div><div class="radar-box">${radar}</div><div class="radar-key"><span><i class="key-solid"></i>WEIGHTED P80</span><span><i class="key-dashed"></i>WEIGHTED P50</span><span class="key-note">STAMINA / ENDURANCE: /10</span></div></section>
       <section class="radar-panel ppplus-panel"><div class="panel-head"><b>PP+ PROFILE</b><span>6 DIMENSIONS</span></div><div class="radar-box">${ppPlusRadar}</div><div class="radar-key"><span><i class="key-solid"></i>PP+ DISPLAY</span><span><i class="key-dashed"></i>15 EXPERTPLUS</span></div><span class="src">PP+ ALGORITHM · ALOIC</span></section>
@@ -482,10 +486,10 @@ function mapPage(payload:any,background:string,theme:MapSkillCardTheme=DEFAULT_M
 
 const playerCss=fs.readFileSync(new URL('./player.css',import.meta.url),'utf8');
 const mapCss=fs.readFileSync(new URL('./map.css',import.meta.url),'utf8');
-const document=(body:string,kind:'player'|'map')=>`<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=1280"><style>${skillCardFontFace()}${kind==='player'?playerCss:mapCss}</style></head><body>${body}</body></html>`;
+export const buildSkillCardDocument=(body:string,kind:'player'|'map',extraCss='')=>`<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=1280"><style>${skillCardFontFace()}${kind==='player'?playerCss:mapCss}${extraCss}</style></head><body>${body}</body></html>`;
 
-export const buildPlayerSkillCardHtml=(payload:any,avatar='')=>document(playerPage(payload,avatar).html,'player');
-export const buildMapSkillCardHtml=(payload:any,background='',theme:MapSkillCardTheme=DEFAULT_MAP_THEME)=>document(mapPage(payload,background,theme).html,'map');
+export const buildPlayerSkillCardHtml=(payload:any,avatar='')=>buildSkillCardDocument(playerPage(payload,avatar).html,'player');
+export const buildMapSkillCardHtml=(payload:any,background='',theme:MapSkillCardTheme=DEFAULT_MAP_THEME)=>buildSkillCardDocument(mapPage(payload,background,theme).html,'map');
 
 export async function renderPlayerSkillProfileCard(payload:any):Promise<Buffer>{
   const avatar=await imageDataUrl(payload.player?.avatarUrl,payload.player?.osuId);

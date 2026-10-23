@@ -1,0 +1,45 @@
+.sheet.comparison-sheet{position:relative;isolation:isolate;display:grid;grid-template-columns:252px minmax(0,1fr) 252px;gap:18px;padding:24px;background:#14171b;color:#f4f7f7;border-top:0}
+.tier-backdrop{position:absolute;inset:0;width:100%;height:100%;z-index:-1;pointer-events:none}
+.player-side{min-width:0;min-height:0;position:relative;display:flex;flex-direction:column;justify-content:center;padding:0 8px}
+.player-side .who{gap:14px;justify-content:center}
+.player-label{display:flex;align-items:center;gap:8px;font-size:10px;letter-spacing:.19em;color:var(--series-color);font-weight:700;margin-bottom:6px}
+.marker{display:inline-block;width:6px;height:6px;background:var(--series-color);border-radius:50%}
+.marker.b{border-radius:0;transform:rotate(45deg);background:#0d171e;border:1.5px solid var(--series-color)}
+.player-side .avatar{width:160px;height:160px;margin:4px 0 6px 10px;box-shadow:0 0 0 1.5px var(--rank-color)}
+.player-side .nrow{gap:10px;margin-top:8px}
+.player-side .nrow h1{font-size:32px;line-height:1.1;letter-spacing:-.7px}
+.player-side .tier-emblem{width:36px;height:36px;padding:5px}
+.player-side[data-tier="12"] .tier-emblem{padding:0;background:none;box-shadow:none;filter:none}
+.player-side .identity-profile-title{font-size:9px;letter-spacing:.1em;margin-top:10px;max-width:100%;background:transparent;border-color:color-mix(in srgb,var(--rank-color) 28%,transparent)}
+.player-side .rate{display:block;margin-top:3px}
+.player-side .rate b{font-size:54px;color:var(--rank-color);letter-spacing:-1.8px}
+.player-side .rate-meta{padding:0;gap:5px;margin-top:7px}
+.player-side .rate-meta small{font-size:9px;letter-spacing:.12em}
+.player-side .rate-meta span{opacity:.7}
+.player-side .stats{gap:17px 8px;padding-top:16px;margin-top:0;border-top-color:color-mix(in srgb,var(--rank-color) 24%,transparent)}
+.player-side .st b{font-size:21px;letter-spacing:-.6px}
+.player-side .st span{font-size:8px}
+.player-side .eyebrow,.player-side .st span{opacity:.74}
+.player-side .sample{font-size:8px;letter-spacing:.06em;opacity:.68}
+.rating-gap{display:flex;align-items:baseline;gap:7px;color:var(--rank-color);font-size:16px;font-weight:750;border-top:1px solid #ffffff12;padding-top:12px;margin-top:14px}
+.rating-gap span{font-size:7px;letter-spacing:.05em;color:#96a0a6;font-weight:500}
+.compare-center{min-width:0;min-height:0;display:flex;flex-direction:column;gap:14px}
+.compare-panel{position:relative;min-height:0;flex:1;display:flex;flex-direction:column;padding:12px 14px 10px;background:#14191ff5;border:1px solid #ffffff0c;border-radius:8px}
+.compare-panel .panel-head{height:22px;flex:none;gap:10px}
+.compare-panel .panel-head b{font-size:13px;letter-spacing:1.25px;flex:none}
+.player-legend{display:flex;align-items:center;justify-content:flex-end;gap:18px;min-width:0}
+.compare-panel .player-legend span{display:flex;align-items:center;gap:5px;min-width:0;color:var(--series-color);font-size:11px;letter-spacing:0;font-weight:650}
+.compare-panel .player-legend .legend-name{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.player-legend em{font-style:normal;font-size:8px;opacity:.7;margin-left:3px}
+.legend-line{position:relative;display:inline-block;flex:0 0 22px;height:0;border-top:2.5px solid var(--series-color)}
+.legend-line:after{content:'';position:absolute;left:8px;top:-4px;width:6px;height:6px;border-radius:50%;background:var(--series-color)}
+.legend-line.b:after{top:-4.5px;left:8px;width:5px;height:5px;box-sizing:content-box;border-radius:0;transform:rotate(45deg);border:1.5px solid var(--series-color);background:#0d171e}
+.chart-box{min-height:0;flex:1;display:flex;align-items:center}
+.compare-radar{width:100%;height:100%;overflow:visible}
+.compare-radar text{font-family:'Skill Sans','Segoe UI',sans-serif;font-variant-numeric:tabular-nums}
+.compare-key{display:flex;align-items:center;justify-content:space-between;gap:7px;height:19px;flex:none;color:#9eabb2;font-size:9px;letter-spacing:.04em}
+.compare-key .pair{display:flex;align-items:center;gap:13px}
+.compare-key .pair span{display:flex;align-items:center;gap:5px}
+.compare-key .line{display:inline-block;width:16px;height:0;border-top:1.5px solid #b6c1c7}
+.compare-key .line.dashed{border-top-style:dashed;opacity:.6}
+.source-note{font-size:9px;color:#a0abb1;letter-spacing:.04em}

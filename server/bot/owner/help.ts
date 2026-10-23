@@ -67,7 +67,7 @@ export const OWNER_FALLBACK_HELP = `Wuxin 指令 · 都可以简写为 /w
 /w info [玩家名或 p:[完整玩家名或ID]] · 用成绩质量与名次衰减后的真实 BP50 生成玩家 Skill 雷达画像
 /w update [玩家名或 p:[完整玩家名或ID]] · 更新 Skill Profile 与 PP+；默认更新自己绑定的玩家
 /w skill recent [玩家名或 p:[完整玩家名或ID]] · 最近 50 条起步，最多回溯 5 天，生成近期发挥与 BP50 参考画像
-/w skill compare <玩家A> <玩家B> · 玩家名含空格或方括号时可用 p:[完整玩家名或ID]，如 p:[Tong Tong]
+/w compare <玩家A> <玩家B> · 对比 Skill Profile 与 PP+；名字含空格可用 p:[完整玩家名或ID]，兼容 /w skill compare
 /w skill <BP名次或BID> [+Mods] · 指定玩家：<玩家名> <BP名次>；名称含空格或方括号时用 p:[完整玩家名或ID]
 /w cd <BID> [+Mods] <反馈> · 按谱面和 Mod 提交分析异议；不写 Mod 表示 NM
 

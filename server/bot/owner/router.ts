@@ -142,6 +142,7 @@ export function resolveOwnerRoute(ctx: OwnerHandlerContext): OwnerRouteResolutio
   if (command === '/recalc') return { kind: 'handler', handlerKey: 'recalc' };
   if (command === '/info') return directRoute('info', 'info');
   if (command === '/update' && isWuxinCommand) return directRoute('playerUpdate', 'osuUpdate');
+  if (command === '/compare' && isWuxinCommand) return directRoute('skill', 'skill');
   if (command === '/skill') return directRoute('skill', 'skill');
   if (command === '/cd') return directRoute('skillFeedback', 'skillFeedback');
   if (command === '/ping') return directRoute('ping', 'ping');

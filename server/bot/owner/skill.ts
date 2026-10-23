@@ -406,6 +406,7 @@ export async function ownerPlayerUpdateHandler(ctx: OwnerHandlerContext): Promis
 }
 
 export async function ownerSkillHandler(ctx: OwnerHandlerContext): Promise<OwnerCommandResult> {
+  if (ctx.command === '/compare') ctx = { ...ctx, commandArgs: `compare ${ctx.commandArgs}` };
   const legacyProfileRequest = parsePlayerSkillProfileRequest(ctx.commandArgs);
   if (legacyProfileRequest.matched) {
     const reason = '这条指令已移除，请改用 /w info [玩家名或 p:[完整玩家名或ID]]。';

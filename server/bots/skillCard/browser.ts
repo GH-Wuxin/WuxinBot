@@ -80,10 +80,10 @@ async function render(html:string):Promise<Buffer>{
     await page.evaluate(async()=>{
       await document.fonts.ready;
       await Promise.all([...document.images].map(img=>img.decode()));
-      const name=document.querySelector<HTMLElement>('.identity h1');
-      if(name){
+      for(const name of document.querySelectorAll<HTMLElement>('.identity h1')){
+        const minimum=name.closest('.comparison-sheet')?18:20;
         let size=parseFloat(getComputedStyle(name).fontSize);
-        while(name.scrollWidth>name.clientWidth+1&&size>20){size-=1;name.style.fontSize=size+'px';}
+        while(name.scrollWidth>name.clientWidth+1&&size>minimum){size-=1;name.style.fontSize=size+'px';}
       }
     });
     const box=await page.locator('.sheet').boundingBox();

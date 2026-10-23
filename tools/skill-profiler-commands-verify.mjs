@@ -1,11 +1,11 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import http from 'node:http';
-import os from 'node:os';
-import path from 'node:path';
-import { closeSkillCardBrowser } from '../server/bots/skillCard/browser.ts';
+import {createTestDataDir,assertNotProduction} from './test-isolation.mjs';
 
-const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'wuxin-skill-command-'));
+const dataDir = createTestDataDir('wuxin-skill-command');
+assertNotProduction(dataDir);
+const {closeSkillCardBrowser}=await import('../server/bots/skillCard/browser.ts');
 process.env.DATA_DIR = dataDir;
 process.env.NODE_ENV = 'test';
 process.env.OSU_CLIENT_ID = 'fixture-client';
@@ -209,6 +209,23 @@ try {
     source: 'onebot', type: 'group', messageId: id, groupId: 'g1', userId: 'player',
     nickname: 'Player', text, atTargets: [], raw: {},
   });
+
+  const {allowedByOsuCommandOnlyMode}=await import('../server/bot.ts');
+  const {parseOwnerCommandText,OWNER_COMMANDS}=await import('../server/bot/commands/owner.meta.ts');
+  assert.equal(parseOwnerCommandText('/w compare p:[970] mrekk').id,'skillCompare');
+  assert.equal(OWNER_COMMANDS.find(c=>c.id==='skillCompare').permissionKey,'skill');
+  assert.equal(OWNER_COMMANDS.find(c=>c.id==='skillCompare').permission,'all');
+  assert.equal(allowedByOsuCommandOnlyMode({text:'/w compare a b'}),true);
+  for(const command of ['/w compare','/w skill compare']){
+    await processIncoming(event(command+' p:[970] p:[970]',command+'-same-user'),sendMessage);
+    assert.match(sent.at(-1),/两个不同的玩家/,'both aliases resolve explicit player names');
+    await processIncoming(event(command,command+'-usage'),sendMessage);
+    assert.match(sent.at(-1),/玩家A/);
+  }
+  const permissionDb=readDb();permissionDb.settings.commandPermissions={...permissionDb.settings.commandPermissions,skill:'owner'};writeDb(permissionDb);
+  await processIncoming(event('/w compare','compare-denied'),sendMessage);
+  assert.match(sent.at(-1),/这个指令需要/,'short alias respects existing skill permissions');
+  const restoredDb=readDb();delete restoredDb.settings.commandPermissions.skill;writeDb(restoredDb);
 
   const bp = await processIncoming(event('/w skill 2', 'skill-bp'), sendMessage);
   assert.equal(bp.replied, true);

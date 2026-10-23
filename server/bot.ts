@@ -475,7 +475,7 @@ export function allowedByOsuCommandOnlyMode(event, quickMatch = null) {
   // `/w info` is the deterministic player Skill Profiler command. It must
   // remain reachable in osu-only groups just like `/w skill`; otherwise the
   // hard ingress gate discards it before the owner dispatcher can run.
-  if (ownerCommand) return ['osu', 'skill', 'info', 'update', 'cd', 'mode'].includes(ownerCommand);
+  if (ownerCommand) return ['osu', 'skill', 'info', 'update', 'compare', 'cd', 'mode'].includes(ownerCommand);
   return quickMatch?.def?.kind === 'osu';
 }
 
