@@ -1,6 +1,7 @@
 import type { BotEvent } from '../../types.js';
 
 export type SocialAction = 'pass' | 'wait' | 'react' | 'reply';
+export type SocialEngagement = 'direct' | 'continuation' | 'ambient';
 export type Affinity = { kind: 'ordinary'; score: number } | { kind: 'owner'; label: '特殊' };
 export interface SocialPerson {
   userId: string;
@@ -57,7 +58,9 @@ export interface SocialDecision {
   evidenceIds: string[];
   durationMs: number;
   totalTokens: number;
-  stage: 'assessment' | 'wait' | 'revalidation' | 'guard' | 'failure';
+  stage: 'assessment' | 'wait' | 'revalidation' | 'guard' | 'failure' | 'delivery';
+  engagement?: SocialEngagement;
+  phase?: 'initial' | 'resumed' | 'revalidation';
   createdAt: string;
 }
 export interface OwnerDirective {
@@ -85,5 +88,8 @@ export interface SocialEvent extends BotEvent {
   socialMessageIds?: string[];
   socialAction?: SocialAction;
   socialDirect?: boolean;
+  socialNamed?: boolean;
   socialContextIds?: string[];
+  socialEngagement?: SocialEngagement;
+  socialMessages?: { messageId: string; userId: string; text: string; atTargets: string[]; replyMessageId: string }[];
 }

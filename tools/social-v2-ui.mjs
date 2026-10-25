@@ -21,7 +21,8 @@ const people = [
   { userId: '10004', nickname: '阿乙', affinity: { kind: 'ordinary', score: 50 }, familiarity: 12 },
 ].map((p) => ({ ...p, revision: 1, updatedAt: at, view: { revision: 1, summary: '聊起最近的练习，会自然地分享遇到的难点。',
   preferredNames: ['小甲'], style: '直接自然，偶尔接梗，不反复起外号', mood: { label: '轻松', reason: '刚刚分享了练习顺利的消息', updatedAt: at }, updatedAt: at } }));
-let data = { ok: true, people, directives: [], transitions: [], feedback: [], usage: { calls: 12, tokens: 13620 }, decisions: [
+let data = { ok: true, people, directives: [], transitions: [], feedback: [], usage: { calls: 12, tokens: 13620 },
+  participation: { mode: 'natural', reason: '' }, activity: { lastAssessmentAt: at, lastReplyAt: at, reasons: [{ reason: 'assessment:react', count: 3 }] }, decisions: [
   { id: 'd1', userId: '10003', action: 'reply', reason: '“为什么”接着上一句解释，明确在问 Pippi。', evidenceIds: ['m12', 'm13'], durationMs: 1210, totalTokens: 900, stage: 'assessment', createdAt: at },
   { id: 'd2', userId: '10004', action: 'pass', reason: '对话在两位群友之间，已经得到充分回答。', evidenceIds: ['m11'], durationMs: 805, totalTokens: 820, stage: 'assessment', createdAt: at },
 ] };

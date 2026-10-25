@@ -383,11 +383,8 @@ export function ModelsPage({ db, saveSettings }) {
         </>}
 
         {section === 'participation' && <div className="card">
-          <div className="card-head"><span className="card-title">主动参与</span><span className="muted" style={{ fontSize: 12 }}>本地规则先判断，不额外调用 LLM</span></div>
-          <div style={{ display: 'flex', gap: 10 }}>
-            <div className="field" style={{ flex: 1 }}><label>自然群友阈值</label><input type="number" min="0" max="100" value={draft.replyGateNaturalThreshold ?? 45} onChange={setNumber('replyGateNaturalThreshold')} /></div>
-            <div className="field" style={{ flex: 1 }}><label>轻度参与阈值</label><input type="number" min="0" max="100" value={draft.replyGateLightThreshold ?? 70} onChange={setNumber('replyGateLightThreshold')} /></div>
-          </div>
+          <div className="card-head"><span className="card-title">主动参与</span><span className="muted" style={{ fontSize: 12 }}>按群模式和当前对话判断</span></div>
+          <p className="note">轻度参与主要接住明确的交流机会；自然群友也会接梗、回应分享。参与意愿由模型结合上下文、关系和情绪判断，频率与冷却在群聊页面设置，评估预算在社交页面设置。</p>
           <div className="field"><label>思考状态提示</label>
             <select value={draft.thinkingNoticeMode || 'slow'} onChange={(event) => updateDraft({ thinkingNoticeMode: event.target.value })}>
               <option value="off">关闭</option>

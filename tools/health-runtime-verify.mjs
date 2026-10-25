@@ -9,7 +9,7 @@ const dataDir = createTestDataDir('wuxin-health-runtime');
 const { fetchBoundedBody } = await import('../server/httpBody.ts');
 const { CodexAppServerClient, completeCodexAppServerChat } = await import('../server/codexAppServer.ts');
 const { recentVisionImageMessages } = await import('../server/bot/gate.ts');
-const queue = await import('../server/bot/queue.ts');
+const { SocialCoordinator } = await import('../server/bot/social/coordinator.ts');
 const store = await import('../server/store.ts');
 const { sendOptionalNotice } = await import('../server/bot/notice.ts');
 const deferred = () => { let resolve; const promise = new Promise(r => { resolve = r; }); return { promise, resolve }; };
@@ -121,30 +121,24 @@ try {
   }
   console.log('PASS real Codex completion: item fallback and immediate turn failure retain known usage');
 
-  const state = queue.getQueueState('fixture');
-  state.locked = true;
-  const hold = deferred();
-  const event = id => ({ event: { type: 'private', userId: 'u', groupId: 'private', text: id, messageId: id }, decision: { shouldReply: true } });
-  state.queue.push(event('A'));
+  {
+  const queue = new SocialCoordinator(0), hold = deferred();
+  const event = id => ({ type: 'private', userId: 'u', groupId: 'private', text: id, messageId: id });
   let active = 0, maxActive = 0, calls = 0;
-  const worker = async () => {
-    calls++; active++; maxActive = Math.max(maxActive, active);
+  const worker = async () => { calls++; active++; maxActive = Math.max(maxActive, active);
     if (calls === 1) await hold.promise;
-    active--;
-    if (calls === 2) throw new Error('replay failure');
+    active--; if (calls === 2) throw new Error('queued failure');
+    return { replied: false };
   };
-  const draining = queue.drainReplyQueue('fixture', worker);
-  await queue.drainReplyQueue('fixture', worker);
-  assert.equal(queue.getQueueState('fixture'), state);
-  assert.equal(state.locked, true);
-  state.queue.push(event('B'));
-  hold.resolve(); await draining;
-  assert.equal(calls, 2); assert.equal(maxActive, 1);
-  assert.equal(queue.getReplyQueueStats().fixture, undefined);
-  const early = queue.getQueueState('early'); early.locked = true; early.queue.push(event('C'));
-  await queue.drainReplyQueue('early', async () => ({ replied: false }));
-  assert.equal(queue.getReplyQueueStats().early, undefined);
-  console.log('PASS real queue: overlapping drains, replay failure and early return release ownership');
+  const first = queue.submit(event('A'), 1, worker);
+  while (!calls) await new Promise(r => setTimeout(r, 5));
+  const second = queue.submit(event('B'), 1, worker);
+  const failure = assert.rejects(second, /queued failure/);
+  hold.resolve(); await first; await failure;
+  assert.equal(calls, 2); assert.equal(maxActive, 1); assert.deepEqual(queue.stats, {});
+  await queue.submit(event('C'), 1, worker); assert.deepEqual(queue.stats, {});
+  console.log('PASS shared coordinator: queued failure and early return release ownership');
+  }
 
   const img = (userId, inContext) => ({ id: userId, type: 'private', groupId: 'private', userId, inContext, createdAt: new Date().toISOString(), media: { images: [{ url: 'https://example.invalid/image' }] } });
   const messages = [img('other', true), img('owner', false)];

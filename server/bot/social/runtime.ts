@@ -3,35 +3,19 @@ import { completeChat, thinkingParamsForLevel } from '../llm.js';
 import { reasoningEnabledFor } from '../reasoningRouter.js';
 import { isReplyProcessAborted } from '../replyProcesses.js';
 import { traceEvent } from '../../requestTrace.js';
-import { getUserPolicy } from '../gate.js';
-import { textWithoutControlPlaceholders } from '../cleaning.js';
+import { chatAdmissionReason, conversationContext, replyLimitReason, assessmentBudgetReason } from './policy.js';
 import { commitSocialAssessment, isSystemOwner, readSocialPerson, readSocialView, socialScope } from './state.js';
 import { ownerAuthorityPrompt, SOCIAL_ASSESSMENT_PROMPT } from './prompts.js';
 import { socialCoordinator } from './coordinator.js';
 import type { SocialAssessment, SocialDecision, SocialEvent } from './types.js';
 
 export function socialEntryAllowed(db: any, event: SocialEvent, direct: boolean): boolean {
-  if (db.settings.socialV2Enabled !== true || db.settings.globalPaused || !event.text?.trim() || event.text.startsWith('/')) return false;
-  if (!textWithoutControlPlaceholders(event.text) && !direct) return false;
-  if (event.type === 'private') return isSystemOwner(db, event);
-  const group = db.groups.find((g) => String(g.groupId) === String(event.groupId));
-  const policy = getUserPolicy(db, event.groupId, event.userId);
-  return Boolean(group?.enabled && ['mention', 'light', 'natural'].includes(group.mode)
-    && policy.policy !== 'blocked' && (policy.policy !== 'muted' || direct)
-    && (!(db.settings.onlyMentionMode || group.mode === 'mention') || direct));
+  return db.settings.socialV2Enabled === true && !chatAdmissionReason(db, event, direct || Boolean(event.socialNamed));
 }
 
 export function socialDeliveryGuard(db: any, event: SocialEvent): string {
-  if (!socialEntryAllowed(db, event, Boolean(event.socialDirect))) return '参与范围或权限已变化';
-  if (event.type === 'private') return '';
-  const group = db.groups.find((g) => String(g.groupId) === String(event.groupId));
-  const policy = getUserPolicy(db, event.groupId, event.userId);
-  if (event.socialDirect && (isSystemOwner(db, event) || policy.policy === 'admin' || policy.allowCommands)) return '';
-  const history = db.messages.filter((m) => m.role === 'assistant' && String(m.groupId) === String(event.groupId));
-  const recent = history.filter((m) => Date.now() - Date.parse(m.createdAt) < 3600_000);
-  if (recent.length >= Math.max(1, Number(group.maxPerHour || 20))) return '已达到本群每小时回复上限';
-  if (!event.socialDirect && Date.now() - Date.parse(history.at(-1)?.createdAt || '') < Math.max(0, Number(group.cooldownSec ?? 30)) * 1000) return '本群回复冷却中';
-  return '';
+  return chatAdmissionReason(db, event, Boolean(event.socialDirect)) || replyLimitReason(db, event,
+    event.socialEngagement === 'continuation' && conversationContext(db, event).continuationCandidate);
 }
 
 export function socialTimeline(db: any, event: SocialEvent, limit = 24) {
@@ -71,25 +55,34 @@ export function parseSocialAssessment(text: string, allowedEvidence: string[], o
 }
 
 export function recordSocialDecision(event: SocialEvent, data: Omit<SocialDecision, 'id' | 'scope' | 'userId' | 'messageIds' | 'createdAt'>) {
-  const entry: SocialDecision = { ...data, id: crypto.randomUUID(), scope: socialScope(event), userId: event.userId,
+  const entry: SocialDecision = { engagement: event.socialEngagement, ...data, id: crypto.randomUUID(), scope: socialScope(event), userId: event.userId,
     messageIds: event.socialMessageIds || [event.messageId], createdAt: new Date().toISOString() };
   updateDb((db) => {
-    db.socialV2.decisions = [...db.socialV2.decisions, entry].slice(-1200);
+    const all = [...db.socialV2.decisions, entry], counts = new Map<string, number>();
+    let other = 0;
+    // Busy rooms' guard records must not evict another room's hourly budget.
+    db.socialV2.decisions = all.reverse().filter((d) => {
+      if (d.stage !== 'assessment' && d.stage !== 'failure') return ++other <= 300;
+      const count = (counts.get(d.scope) || 0) + 1; counts.set(d.scope, count);
+      return count <= 300;
+    }).reverse();
     db.socialV2.revision++;
   });
   traceEvent('GATE', `social_${data.stage}`, { action: data.action, reason: data.reason, evidenceIds: data.evidenceIds, durationMs: data.durationMs, totalTokens: data.totalTokens });
 }
 
-export async function assessSocialTurn(event: SocialEvent, phase = 'initial', invoke = completeChat) {
+export async function assessSocialTurn(event: SocialEvent, phase: 'initial' | 'resumed' = 'initial', invoke = completeChat) {
   const db = readDb();
   if (!socialEntryAllowed(db, event, Boolean(event.socialDirect)) || isReplyProcessAborted()) return null;
   const scope = socialScope(event), ids = event.socialMessageIds || [event.messageId];
+  const conversation = conversationContext(db, event);
+  event.socialEngagement = event.socialDirect ? 'direct' : conversation.continuationCandidate ? 'continuation' : 'ambient';
   const person = readSocialPerson(db, event.userId), view = readSocialView(db, scope, event.userId);
-  const used = db.socialV2.decisions.filter((d) => d.scope === scope && ['assessment', 'failure'].includes(d.stage)
-    && Date.now() - Date.parse(d.createdAt) < 3600_000).length;
-  const budget = Math.max(1, Math.min(300, Number(db.settings.socialMaxAssessmentsPerHour || 60)));
-  if (used >= budget) {
-    recordSocialDecision(event, { stage: 'guard', action: event.socialDirect ? 'reply' : 'pass', reason: '本会话社交评估达到小时预算；关系保持不变', evidenceIds: [], durationMs: 0, totalTokens: 0 });
+  const candidate = event.socialNamed ? { ...event, socialDirect: true } : event;
+  const blocked = replyLimitReason(db, candidate, conversation.continuationCandidate)
+    || assessmentBudgetReason(db, candidate, phase === 'resumed');
+  if (blocked) {
+    recordSocialDecision(event, { stage: 'guard', action: event.socialDirect ? 'reply' : 'pass', reason: blocked, evidenceIds: [], durationMs: 0, totalTokens: 0 });
     return null;
   }
   const timeline = socialTimeline(db, event, 40);
@@ -98,17 +91,20 @@ export async function assessSocialTurn(event: SocialEvent, phase = 'initial', in
   try {
     const result = await invoke(db, { messages: [
       { role: 'system', content: `${SOCIAL_ASSESSMENT_PROMPT}\n${ownerAuthorityPrompt(db, event)}` },
-      { role: 'user', content: JSON.stringify({ phase, now: new Date().toISOString(), direct: Boolean(event.socialDirect),
+      { role: 'user', content: JSON.stringify({ phase, now: new Date().toISOString(), direct: Boolean(event.socialDirect), nameMentioned: Boolean(event.socialNamed),
         bot: { userId: String(db.settings.selfQq || '').trim() || null },
-        mode: db.groups.find((g) => g.groupId === event.groupId)?.mode || 'private', target: { userId: event.userId,
+        conversation, mode: db.groups.find((g) => String(g.groupId) === String(event.groupId))?.mode || 'private', target: { userId: event.userId,
           messageIds: ids, text: event.text, atTargets: event.atTargets || [], replyTo: event.replyMessageId || '' },
-        relationship: person, currentConversation: view, timeline }) },
+        batch: event.socialMessages || [], relationship: person, currentConversation: view, timeline }) },
     ], maxTokens: 1200, timeoutMs: 15_000, temperature: 0.2,
     ...thinkingParamsForLevel('low', reasoningEnabledFor(db)),
     responseFormat: { type: 'json_object' }, label: 'V2 社交评估', tracePurpose: 'social_assessment', traceRole: 'social' });
     tokens = Number(result.usage?.total_tokens || 0);
     const assessment = parseSocialAssessment(result.text, [...new Set([...ids, ...timeline.map((m) => m.messageId)])], isSystemOwner(db, event), ids);
+    if (event.socialNamed && assessment.addressee === 'bot') event.socialDirect = true;
     if (event.socialDirect) assessment.action = 'reply';
+    event.socialEngagement = event.socialDirect ? 'direct'
+      : assessment.addressee === 'bot' && conversation.continuationCandidate ? 'continuation' : 'ambient';
     if (isReplyProcessAborted() || !socialEntryAllowed(readDb(), event, Boolean(event.socialDirect))) return null;
     // A wait is provisional: commit once, after its one bounded resumption.
     if (assessment.action !== 'wait' || phase === 'resumed') {
@@ -121,11 +117,11 @@ export async function assessSocialTurn(event: SocialEvent, phase = 'initial', in
       if (!committed.applied) traceEvent('GATE', 'social_state_not_committed', { reason: committed.reason });
     }
     event.socialContextIds = timeline.map((m) => m.messageId);
-    recordSocialDecision(event, { stage: 'assessment', action: assessment.action, reason: assessment.reason,
+    recordSocialDecision(event, { stage: 'assessment', phase, action: assessment.action, reason: assessment.reason,
       evidenceIds: assessment.evidenceIds, durationMs: Date.now() - started, totalTokens: tokens });
     return assessment;
   } catch (error) {
-    recordSocialDecision(event, { stage: 'failure', action: event.socialDirect ? 'reply' : 'pass',
+    recordSocialDecision(event, { stage: 'failure', phase, action: event.socialDirect ? 'reply' : 'pass',
       reason: `评估失败，保持关系状态：${String(error.message || error).slice(0, 130)}`, evidenceIds: [], durationMs: Date.now() - started, totalTokens: tokens });
     return null;
   }
@@ -136,7 +132,7 @@ export async function waitForSocialContinuation(event: SocialEvent) {
   const until = Date.now() + 1400;
   const known = new Set(event.socialContextIds || []);
   while (Date.now() < until && !isReplyProcessAborted()) {
-    if (socialTimeline(readDb(), event).some((m) => !known.has(m.messageId))) break;
+    if (socialTimeline(readDb(), event).some((m) => m.role === 'user' && m.senderId === event.userId && !known.has(m.messageId))) break;
     await new Promise((resolve) => setTimeout(resolve, 100));
   }
   recordSocialDecision(event, { stage: 'wait', action: 'wait', reason: '短暂等待结束，最多重新判断一次', evidenceIds: [], durationMs: 1400, totalTokens: 0 });
@@ -176,7 +172,7 @@ export async function revalidateSocialReply(event: SocialEvent, reply: string, o
     if (isReplyProcessAborted() || socialDeliveryGuard(readDb(), event)) return null;
     return action === 'drop' ? null : action === 'replace' ? r.reply.trim() : reply;
   } catch (error) {
-    recordSocialDecision(event, { stage: 'failure', action: event.socialDirect ? 'reply' : 'pass',
+    recordSocialDecision(event, { stage: 'failure', phase: 'revalidation', action: event.socialDirect ? 'reply' : 'pass',
       reason: `发送前复核失败：${String(error.message || error).slice(0, 140)}`, evidenceIds: [], durationMs: Date.now() - started, totalTokens: tokens });
     return event.socialDirect && !isReplyProcessAborted() && !socialDeliveryGuard(readDb(), event) ? reply : null;
   }

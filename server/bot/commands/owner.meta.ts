@@ -73,7 +73,7 @@ export const OWNER_PERMISSION_POLICY: Record<string, OwnerPermissionPolicy> = {
   groupProfileEdit: { defaultPermissionRole: 'admin', permission: 'group_admin', visibility: 'public', discoverability: 'direct_only' },
   relationshipShow: { defaultPermissionRole: 'admin', permission: 'group_admin', visibility: 'public', discoverability: 'direct_only' },
   relationshipEdit: { defaultPermissionRole: 'admin', permission: 'group_admin', visibility: 'public', discoverability: 'direct_only' },
-  // 预设会改 globalPaused / onlyMentionMode / groupProfileAutoUpdate，都是全局开关。
+  // 预设会改 globalPaused / groupProfileAutoUpdate，都是全局开关。
   preset: { defaultPermissionRole: 'owner', permission: 'owner', visibility: 'owner', discoverability: 'direct_only' },
   profileRetry: { defaultPermissionRole: 'admin', permission: 'group_admin', visibility: 'public', discoverability: 'direct_only' },
   recalc: { defaultPermissionRole: 'guest', permission: 'all', visibility: 'public', discoverability: 'listed' },

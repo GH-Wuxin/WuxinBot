@@ -1,8 +1,6 @@
 // Reply queue + inbound dedupe. Type-checked module.
-import { updateDb, nowIso } from '../store.js';
+import { socialCoordinator } from './social/coordinator.js';
 
-export const REPLY_QUEUE_LIMIT = 20;
-const REPLY_QUEUE_TTL_MS = 180_000;
 const INBOUND_EVENT_DEDUPE_TTL_MS = 10 * 60_000;
 const INBOUND_EVENT_DEDUPE_LIMIT = 5_000;
 const recentInboundEvents = new Map();
@@ -35,65 +33,7 @@ export function claimInboundEvent(event) {
   }
   return true;
 }
-const replyQueues = new Map(); // key → { locked: boolean, queue: [{event, sendMessage, decision}] }
-
-export function getQueueState(key) {
-  if (!replyQueues.has(key)) replyQueues.set(key, { locked: false, queue: [] });
-  return replyQueues.get(key);
-}
-
-export function getReplyQueueStats() {
-  const stats = {};
-  for (const [key, state] of replyQueues) {
-    if (state.locked || state.queue.length > 0) {
-      stats[key] = { locked: state.locked, queued: state.queue.length };
-    }
-  }
-  return stats;
-}
-
-export async function drainReplyQueue(key, processIncoming) {
-  const state = replyQueues.get(key);
-  if (!state || state.draining) return;
-  state.draining = true;
-  try {
-    while (state.queue.length > 0) {
-      const now = Date.now();
-      const fresh = [];
-      for (const item of state.queue) {
-        if (!item.enqueuedAt || now - item.enqueuedAt <= REPLY_QUEUE_TTL_MS) {
-          fresh.push(item);
-          continue;
-        }
-        updateDb((draft) => {
-          draft.decisions.push({
-            id: crypto.randomUUID(),
-            messageId: item.event.messageId,
-            groupId: item.event.groupId,
-            userId: item.event.userId,
-            shouldReply: false,
-            reason: '回复队列等待超时，丢弃旧消息',
-            createdAt: nowIso()
-          });
-        });
-      }
-      state.queue = fresh;
-      if (state.queue.length === 0) break;
-      // Merge a burst from the same member into one reply, not N model turns.
-      const items = state.queue.splice(0, state.queue.length);
-      const next = mergeQueuedReplyItems(items);
-      try {
-        await processIncoming(next.event, next.sendMessage, next.decision, true);
-      } catch {
-        // processIncoming records failure; the worker still owns the queue.
-      }
-    }
-  } finally {
-    state.draining = false;
-    state.locked = false;
-    if (replyQueues.get(key) === state) replyQueues.delete(key);
-  }
-}
+export const getReplyQueueStats = () => socialCoordinator.stats;
 
 /**
  * Second dedupe boundary, persisted inside the same atomic update that records
@@ -112,27 +52,5 @@ export function persistedInboundDuplicate(draft, event) {
     String(message?.type || 'unknown') === type &&
     String(message?.groupId || 'private') === groupId
   );
-}
-
-function mergeQueuedReplyItems(items) {
-  const last = items[items.length - 1];
-  const texts = items
-    .map((item) => String(item.event?.text || '').trim())
-    .filter(Boolean);
-  const images = items.flatMap((item) =>
-    Array.isArray(item.event?.images) ? item.event.images : [],
-  );
-  const event = { ...last.event };
-  if (texts.length > 1) {
-    event.text = texts.join('\n') + '\n（以上是同一成员连续发送的消息，请综合这些内容回复一次）';
-  }
-  if (images.length > 0) {
-    event.images = images;
-  }
-  return {
-    event,
-    sendMessage: last.sendMessage,
-    decision: last.decision,
-  };
 }
 

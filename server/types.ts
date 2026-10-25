@@ -42,11 +42,8 @@ export interface ReplyDecision {
 
 export interface DbSettings {
   globalPaused: boolean;
-  onlyMentionMode: boolean;
   socialV2Enabled?: boolean;
   socialMaxAssessmentsPerHour?: number;
-  replyGateNaturalThreshold?: number;
-  replyGateLightThreshold?: number;
   apiKey: string;
   apiBaseUrl: string;
   deepseekApiKey?: string;

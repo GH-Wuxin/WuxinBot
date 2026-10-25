@@ -31,7 +31,7 @@ updateDb((db) => {
   db.settings.ownerQq = 'owner';
   db.settings.selfQq = 'bot';
   db.settings.globalPaused = false;
-  db.settings.onlyMentionMode = true;
+  db.settings.socialV2Enabled = true;
   db.groups = [
     { groupId: 'g1', name: '群一', enabled: true, mode: 'natural', maxPerHour: 20, cooldownSec: 30 },
     { groupId: 'g2', name: '群二', enabled: true, mode: 'natural', maxPerHour: 20, cooldownSec: 30 },
@@ -59,7 +59,7 @@ check(readDb().settings.globalPaused === false, '群管理员 /w pause 没有改
 const presetByAdmin = await handleOwnerCommand(event('/w preset sleep'), undefined, admin);
 check(String(presetByAdmin.reason || '').includes('所有者'), '群管理员 /w preset sleep 被拒绝，且提示的是所有者', String(presetByAdmin.reason || ''));
 check(readDb().settings.globalPaused === false, '群管理员 /w preset 没有改动 globalPaused');
-check(readDb().settings.onlyMentionMode === true, '群管理员 /w preset 没有改动 onlyMentionMode');
+check(readDb().settings.socialV2Enabled === true, '群管理员 /w preset 没有改动 socialV2Enabled');
 
 // 3. 权限函数本身的行为。
 const db = readDb();

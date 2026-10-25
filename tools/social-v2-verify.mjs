@@ -14,6 +14,7 @@ assertNotProduction(directory);
 const store = await import('../server/store.ts');
 const state = await import('../server/bot/social/state.ts');
 const runtime = await import('../server/bot/social/runtime.ts');
+const policy = await import('../server/bot/social/policy.ts');
 const { SocialCoordinator } = await import('../server/bot/social/coordinator.ts');
 const { ownerAuthorityPrompt, socialExpressionPrompt } = await import('../server/bot/social/prompts.ts');
 const { ownerAffinityHandler, ownerAffinityRankHandler, ownerDirectiveHandler } = await import('../server/bot/owner/social.ts');
@@ -312,7 +313,7 @@ await test('backup and restart retain relationship records, names, moods and dir
   assert.deepEqual(store.readDb().socialV2, expected); assert.equal(store.readDb().ownerDirectives.length, 1);
 });
 
-let calls = [], chatReply = '我听到了，这样练习会更轻松一些。', onChat, mockSocialAction = 'reply';
+let calls = [], chatReply = '我听到了，这样练习会更轻松一些。', onChat, onSocial, mockSocialAction = 'reply', mockAddressee = 'bot';
 const server = http.createServer(async (req, res) => {
   let raw = ''; for await (const part of req) raw += part;
   if (req.url !== '/v1/chat/completions') {
@@ -324,7 +325,8 @@ const server = http.createServer(async (req, res) => {
   let text;
   if (system.includes('社交判断器')) {
     const input = JSON.parse(body.messages.at(-1).content); calls.push({ kind: 'social', input });
-    text = JSON.stringify(assessment({ action: mockSocialAction,
+    const action = onSocial ? await onSocial(input) : mockSocialAction;
+    text = JSON.stringify(assessment({ action, addressee: mockAddressee,
       evidenceIds: input.target.messageIds, affinityDelta: 1, mood: { label: '平和', reason: '正常交流' } }));
   } else if (system.includes('检查草稿')) { calls.push({ kind: 'revalidate', messages: body.messages }); text = JSON.stringify({ action: 'keep', reason: '新消息与当前请求无冲突' }); }
   else { calls.push({ kind: 'chat', messages: body.messages }); if (onChat) await onChat(); text = chatReply; }
@@ -337,7 +339,7 @@ await new Promise((r) => server.listen(0, '127.0.0.1', r));
 const port = server.address().port;
 const { processIncoming } = await import('../server/bot.ts');
 function integrationSeed() {
-  seed(); calls = []; onChat = undefined; mockSocialAction = 'reply';
+  seed(); calls = []; onChat = undefined; onSocial = undefined; mockSocialAction = 'reply'; mockAddressee = 'bot';
   store.updateDb((db) => {
     db.settings.llmProvider = 'openai-compatible'; db.settings.apiKey = 'fixture'; db.settings.apiBaseUrl = `http://127.0.0.1:${port}/v1`;
     db.settings.oneBotHttpUrl = `http://127.0.0.1:${port}`; db.settings.oneBotWsUrl = ''; db.settings.oneBotAccessToken = '';
@@ -457,6 +459,124 @@ await test('full process: Owner request completes despite outsider cancellation 
   assert.match(calls.find((c) => c.kind === 'chat').messages[0].content, /当前发送者是系统 Owner/);
 });
 
+await test('legacy global mention restriction migrates visibly without expanding group scope', () => {
+  seed(); const db = structuredClone(store.readDb());
+  db.settings.onlyMentionMode = true; db.settings.replyGateNaturalThreshold = 45;
+  db.groups.push({ ...db.groups[0], groupId: '20002', mode: 'light' }, { ...db.groups[0], groupId: '20003', mode: 'osu' });
+  const normalized = store.normalizeDb(db);
+  assert.deepEqual(normalized.groups.map(g => g.mode), ['mention', 'mention', 'osu']);
+  assert.equal('onlyMentionMode' in normalized.settings, false);
+  assert.equal('replyGateNaturalThreshold' in normalized.settings, false);
+  normalized.groups[0].mode = 'natural';
+  assert.equal(store.normalizeDb(normalized).groups[0].mode, 'natural');
+  assert.equal(policy.participationStatus(normalized, normalized.groups[0]).mode, 'natural');
+  normalized.settings.globalPaused = true;
+  assert.deepEqual(policy.participationStatus(normalized, normalized.groups[0]), { mode: 'silent', reason: '全局暂停中' });
+});
+await test('continuation evidence stays attached to the actual speaker, quote and recent conversation', () => {
+  seed(); const db = structuredClone(store.readDb());
+  db.messages = [{ id: 'bot-reply', sourceMessageId: 'qq-reply', type: 'group', groupId: '20001', role: 'assistant',
+    replyToUserId: '10003', createdAt: new Date().toISOString() }];
+  assert.equal(policy.conversationContext(db, event({ text: '为什么' })).continuationCandidate, true);
+  assert.equal(policy.conversationContext(db, event({ userId: '10004' })).continuationCandidate, false);
+  assert.equal(policy.conversationContext(db, event({ atTargets: ['10004'] })).continuationCandidate, false);
+  assert.equal(policy.conversationContext(db, event({ replyMessageId: 'someone-else' })).continuationCandidate, false);
+  db.messages[0].createdAt = new Date(Date.now() - 600_000).toISOString();
+  assert.equal(policy.conversationContext(db, event()).continuationCandidate, false);
+  assert.equal(policy.conversationContext(db, event({ replyMessageId: 'qq-reply' })).repliesToBot, true);
+});
+await test('ambient evaluations are paced, continuations and direct requests keep priority', async () => {
+  seed(); let invoked = 0;
+  const invoke = async (_db, options) => { invoked++; const input = JSON.parse(options.messages.at(-1).content);
+    return { text: JSON.stringify(assessment({ addressee: input.conversation.continuationCandidate ? 'bot' : 'group', evidenceIds: input.target.messageIds })), usage: {} }; };
+  for (let i = 0; i < 3; i++) assert.ok(await runtime.assessSocialTurn(event(), 'initial', invoke));
+  assert.equal(await runtime.assessSocialTurn(event(), 'initial', invoke), null); assert.equal(invoked, 3);
+  assert.match(store.readDb().socialV2.decisions.at(-1).reason, /间隔/);
+  assert.ok(await runtime.assessSocialTurn(event({ socialDirect: true }), 'initial', invoke));
+  store.updateDb(db => db.messages.push({ id: 'recent-bot', role: 'assistant', type: 'group', groupId: '20001', replyToUserId: '10003', createdAt: new Date().toISOString() }));
+  assert.ok(await runtime.assessSocialTurn(event({ text: '然后呢' }), 'initial', invoke));
+  assert.equal(invoked, 5);
+  store.updateDb(db => { db.socialV2.decisions.forEach(d => { d.createdAt = new Date(Date.now() - 61_000).toISOString(); }); db.messages = []; });
+  assert.ok(await runtime.assessSocialTurn(event(), 'initial', invoke));
+});
+await test('guard floods cannot evict hourly assessment budgets', () => {
+  seed(); const e = event();
+  runtime.recordSocialDecision(e, { stage: 'assessment', phase: 'initial', engagement: 'ambient', action: 'pass', reason: 'fixture', evidenceIds: [], durationMs: 1, totalTokens: 1 });
+  store.updateDb(db => { const original = db.socialV2.decisions[0]; db.socialV2.decisions.push(...Array.from({ length: 1300 }, (_, i) => ({ ...original, id: 'guard-' + i, scope: 'group:20002', stage: 'guard' }))); });
+  runtime.recordSocialDecision(e, { stage: 'guard', action: 'pass', reason: 'fixture', evidenceIds: [], durationMs: 0, totalTokens: 0 });
+  assert.equal(store.readDb().socialV2.decisions.filter(d => d.stage === 'assessment').length, 1);
+  assert.equal(store.readDb().socialV2.decisions.filter(d => d.stage === 'guard').length, 300);
+});
+await test('reply limits count failed attempts, deduplicate successful sends, and exclude the current reservation', () => {
+  seed(); const db = structuredClone(store.readDb()), e = event(); db.groups[0].maxPerHour = 2; db.groups[0].cooldownSec = 30;
+  const at = new Date().toISOString();
+  db.decisions = [{ messageId: 'previous', groupId: '20001', shouldReply: true, createdAt: at }, { messageId: e.messageId, groupId: '20001', shouldReply: true, createdAt: at }];
+  db.messages = [{ id: 'reply', replyToMessageId: 'previous', groupId: '20001', role: 'assistant', createdAt: at }];
+  assert.match(policy.replyLimitReason(db, e), /冷却/);
+  assert.equal(policy.replyLimitReason(db, { ...e, socialDirect: true }), '');
+  db.decisions.push({ messageId: 'failed-send', groupId: '20001', shouldReply: true, createdAt: at });
+  assert.match(policy.replyLimitReason(db, { ...e, socialDirect: true }), /上限/);
+  assert.equal(policy.replyLimitReason(db, { ...e, userId: '10001', socialDirect: true }), '');
+});
+await test('full process: continuing a real bot conversation passes cooldown without repeat mention', async () => {
+  integrationSeed(); store.updateDb(db => { db.groups[0].cooldownSec = 30;
+    db.messages.push({ id: 'prior', role: 'assistant', type: 'group', groupId: '20001', replyToUserId: '10003', content: '你觉得呢', createdAt: new Date().toISOString() }); });
+  const sent = [];
+  await processIncoming(event({ text: '为什么' }), async (_, text) => sent.push(text));
+  assert.ok(sent.length); assert.equal(calls.find(c => c.kind === 'social').input.conversation.continuationCandidate, true);
+  assert.equal(store.readDb().socialV2.decisions.find(d => d.stage === 'delivery').engagement, 'continuation');
+  const callCount = calls.length;
+  await processIncoming(event({ userId: '10004', text: '随便一句旁观的话' }), async () => assert.fail('cooldown must block ambient send'));
+  assert.equal(calls.length, callCount);
+});
+await test('full process: one bounded wait absorbs the same speaker followup once', async () => {
+  integrationSeed(); let reached;
+  const started = new Promise(resolve => { reached = resolve; });
+  onSocial = async input => { if (input.phase === 'initial') { reached(); return 'wait'; } return 'reply'; };
+  const sent = [], firstEvent = event({ text: '我想说的是' }), secondEvent = event({ text: '终于打过了' });
+  const first = processIncoming(firstEvent, async (e, text) => sent.push({ id: e.messageId, text }));
+  await started;
+  const second = processIncoming(secondEvent, async () => assert.fail('absorbed addition must not reply again'));
+  const results = await Promise.all([first, second]);
+  const assessments = calls.filter(c => c.kind === 'social');
+  assert.equal(assessments.length, 2); assert.equal(assessments[1].input.phase, 'resumed');
+  assert.deepEqual(assessments[1].input.target.messageIds, [firstEvent.messageId, secondEvent.messageId]);
+  assert.equal(assessments[1].input.batch.length, 2); assert.equal(sent.length, 1); assert.equal(results[1].merged, true);
+  assert.equal(store.readDb().socialV2.transitions.length, 1);
+});
+await test('full process: disabling social evaluation keeps direct requests in the shared queue', async () => {
+  integrationSeed(); store.updateDb(db => { db.settings.socialV2Enabled = false; });
+  let entered, release;
+  const active = new Promise(r => { entered = r; }), held = new Promise(r => { release = r; });
+  onChat = async () => { entered(); await held; };
+  const sent = [], first = processIncoming(event({ userId: '10001', text: 'Pippi 你好' }), async (_, text) => sent.push(text));
+  await active;
+  const second = processIncoming(event({ userId: '10001', text: 'Pippi 再回答我一句' }), async (_, text) => sent.push(text));
+  await new Promise(r => setTimeout(r, 20)); release(); await Promise.all([first, second]);
+  assert.equal(calls.filter(c => c.kind === 'social').length, 0);
+  assert.equal(calls.filter(c => c.kind === 'chat').length, 2); assert.equal(sent.length, 2);
+});
+
+await test('full process: mentioning the bot in a third-party conversation is not forced into a direct reply', async () => {
+  integrationSeed(); mockSocialAction = 'pass'; mockAddressee = 'member';
+  await processIncoming(event({ text: '[CQ:at,qq=10004] Pippi 刚才说的我收到了', atTargets: ['10004'] }), async () => assert.fail('must not force a name reference into a reply'));
+  const input = calls.find(c => c.kind === 'social').input;
+  assert.equal(input.direct, false); assert.equal(input.nameMentioned, true);
+  assert.equal(calls.filter(c => c.kind === 'chat').length, 0);
+  integrationSeed(); store.updateDb(db => { db.groups[0].mode = 'mention'; });
+  const sent = [];
+  await processIncoming(event({ text: 'Pippi 帮我解释一下' }), async (_, text) => sent.push(text));
+  assert.ok(sent.length); assert.equal(store.readDb().socialV2.decisions.find(d => d.stage === 'delivery').engagement, 'direct');
+});
+await test('full process: an exhausted assessment budget cannot swallow a clear Owner name call', async () => {
+  integrationSeed(); store.updateDb(db => { db.settings.socialMaxAssessmentsPerHour = 1;
+    db.socialV2.decisions.push({ id: 'used', scope: 'group:20001', stage: 'assessment', action: 'pass', createdAt: new Date().toISOString() }); });
+  const sent = [];
+  await processIncoming(event({ userId: '10001', text: 'Pippi 你好' }), async (_, text) => sent.push(text));
+  assert.ok(sent.length); assert.equal(calls.filter(c => c.kind === 'social').length, 0);
+  assert.equal(calls.filter(c => c.kind === 'chat').length, 1);
+});
+
 await test('console API requires existing admin authentication; corrections and feedback stay explicit', async () => {
   integrationSeed(); commit(event(), assessment({ affinityDelta: 2 }));
   runtime.recordSocialDecision(event(), { stage: 'assessment', action: 'pass', reason: '没有必要插话', evidenceIds: [], durationMs: 10, totalTokens: 20 });
@@ -473,6 +593,7 @@ await test('console API requires existing admin authentication; corrections and 
     assert.equal(result.people.find((p) => p.userId === '10001').affinity.kind, 'owner');
     assert.equal(result.ranking.total, 1); assert.equal(result.ranking.entries[0].score, 52);
     assert.equal(result.ranking.owner.label, '特殊');
+    assert.equal(result.participation.mode, 'natural'); assert.ok(Array.isArray(result.activity.reasons));
     commit(event({ groupId: '20002', userId: '10004' }), assessment({ affinityDelta: 5 }));
     const global = await (await fetch(`${url}/api/social?scope=group:20001&rankScope=global`, { headers })).json();
     assert.equal(global.ranking.total, 2); assert.equal(global.ranking.entries[0].userId, '10004');

@@ -2,6 +2,7 @@ import type { Express } from 'express';
 import { readDb, updateDb } from '../../store.js';
 import { activeOwnerDirectives, correctSocialPreferences, readSocialPerson, readSocialView, revertSocialTransition } from './state.js';
 import { readAffinityRanking, socialMemberNames } from './ranking.js';
+import { participationStatus } from './policy.js';
 
 const validScope = (scope: unknown): scope is string => typeof scope === 'string' && /^(group|private):[\w-]{1,64}$/.test(scope);
 /** Mounted only after the existing console authentication middleware. */
@@ -24,7 +25,14 @@ export function mountSocialApi(app: Express) {
     if (selectedPerson && !visiblePeople.includes(selectedPerson)) visiblePeople.push(selectedPerson);
     const decisions = state.decisions.filter((d) => d.scope === scope && (!selected || d.userId === selected)).slice(-80).reverse();
     const recent = state.decisions.filter((d) => d.scope === scope && Date.now() - Date.parse(d.createdAt) < 3600_000);
+    const ambient = state.decisions.filter((d) => d.scope === scope && d.engagement === 'ambient');
+    const group = db.groups.find((g) => `group:${g.groupId}` === scope);
     res.json({ ok: true, revision: state.revision, people: visiblePeople, decisions,
+      participation: group ? participationStatus(db, group) : { mode: db.settings.globalPaused ? 'silent' : 'private', reason: db.settings.globalPaused ? '全局暂停中' : '' },
+      activity: { lastAssessmentAt: ambient.filter((d) => d.stage === 'assessment').at(-1)?.createdAt || null,
+        lastReplyAt: ambient.filter((d) => d.stage === 'delivery' && d.action !== 'pass').at(-1)?.createdAt || null,
+        reasons: Object.entries(recent.reduce((out, d) => { const key = d.stage === 'guard' ? d.reason : `${d.stage}:${d.action}`;
+          out[key] = (out[key] || 0) + 1; return out; }, {} as Record<string, number>)).map(([reason, count]) => ({ reason, count })) },
       ranking: readAffinityRanking(db, rankScope === 'global' ? null : scope, 200),
       transitions: state.transitions.filter((t) => t.scope === scope && (!selected || t.userId === selected)).slice(-60).reverse(),
       feedback: state.feedback.filter((f) => decisions.some((d) => d.id === f.decisionId)),

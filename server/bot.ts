@@ -1,8 +1,9 @@
 // @ts-nocheck -- legacy runtime module; new typed modules remain checked by tsc.
 import { pathToFileURL } from 'node:url';
 import { socialCoordinator } from './bot/social/coordinator.js';
+import { chatAdmissionReason, replyLimitReason, conversationContext } from './bot/social/policy.js';
 import { isSystemOwner } from './bot/social/state.js';
-import { assessSocialTurn, revalidateSocialReply, socialDeliveryGuard, socialEntryAllowed, socialTimeline, waitForSocialContinuation } from './bot/social/runtime.js';
+import { assessSocialTurn, revalidateSocialReply, socialDeliveryGuard, socialEntryAllowed, socialTimeline, waitForSocialContinuation, recordSocialDecision } from './bot/social/runtime.js';
 import { sendOptionalNotice } from './bot/notice.js';
 import { withLlmTurnPolicy, assertLlmTurnActive } from './llmPolicy.js';
 import { defaultPrompt, readDb, updateDb, nowIso } from './store.js';
@@ -13,12 +14,9 @@ import {
   extractAtTargets,
   extractReplyMessageId,
   mentionsBot,
-  isQuestion,
   hasVisualPlaceholder,
   asksToInspectVisual,
   looksLikeVisualFollowup,
-  onlyVisualMessage,
-  textWithoutControlPlaceholders,
   cardPlaceholder
 } from './bot/cleaning.js';
 import {
@@ -75,7 +73,7 @@ import { buildRewriteEntry, recordRewriteTelemetry } from './bot/rewriteTelemetr
 import { recordMemoryObservation, maybeUpdateMemoryProfile, maybeRecordImageMemorySummary, updateMemoryProfile, commitMemoryProfileResult, maybeSweepDueMemoryProfiles } from './bot/memory.js';
 import { getGroupProfile, updateGroupProfile, clearGroupProfile, incrementGroupProfilePending, hasGroupProfileContent } from './bot/groupProfile.js';
 import { getRelationshipProfile, updateRelationshipProfile, clearRelationshipProfile, incrementPairPending } from './bot/relationshipProfile.js';
-import { processTrustSignal, evaluateTrustScores, trustInteractionBonus, isTrustedMember } from './bot/trust.js';
+import { processTrustSignal, evaluateTrustScores, isTrustedMember } from './bot/trust.js';
 import { abortReplyProcess, isReplyProcessAborted, runReplyProcess, updateReplyProcessStage } from './bot/replyProcesses.js';
 import { processXpGain, getExperience, getXpBonus, formatXpBar, getUnlockedFeatures, getLevelInfo, getNextLevelInfo, levelToPp, decayInactiveUsers } from './bot/experience.js';
 import {
@@ -119,10 +117,7 @@ import {
 } from './bots/agentToolContracts.js';
 import {
   claimInboundEvent,
-  persistedInboundDuplicate,
-  getQueueState,
-  drainReplyQueue,
-  REPLY_QUEUE_LIMIT
+  persistedInboundDuplicate
 } from './bot/queue.js';
 import {
   looksLikeExternalBotSender,
@@ -136,13 +131,6 @@ import {
   recentGroupMessages,
   ownerPrivateMessages,
   limitMessagesByCharBudget,
-  countRecentReplies,
-  scoreReplyParticipation,
-  lastAssistantAt,
-  lastAssistantMessage,
-  isPrivilegedForConversation,
-  looksLikeReplyToBot,
-  recentBotConversation,
   recentVisionImageMessages,
   shouldUseRecentVisionImage
 } from './bot/gate.js';
@@ -319,91 +307,15 @@ export function compactDirectToolLead(text, directContent = '', hasImages = fals
 /** Replies at or below this length are never merged into a forward card. */
 const MERGE_FORWARD_MIN_CHARS = 200;
 
-// Reply queue: each group+user pair keeps its own FIFO, so different members
-// never block each other. While a reply is being generated, that member's new
-// messages are queued; after the current reply finishes, queued messages from
-// the same member are merged into one reply and processed automatically.
+// Console preview reports admission; only the social model decides ambient participation.
 export async function decideReply({ db, group, userPolicy, text, mentioned, userId, images = [] }) {
-  // Keep the participation boundary deterministic. Natural/light group
-  // messages use a local score before entering the one main reply-model turn;
-  // there is deliberately no second LLM preflight call here.
-  if (db.settings.globalPaused) return { shouldReply: false, reason: '机器人处于全局暂停状态' };
-  if (!group?.enabled) return { shouldReply: false, reason: '这个群没有启用机器人' };
-  if (userPolicy.policy === 'blocked') return { shouldReply: false, reason: '该用户在黑名单中', inContext: false };
-  if (group.mode === 'silent') return { shouldReply: false, reason: '当前群是静默模式' };
-  if (group.mode === 'osu') return { shouldReply: false, reason: '当前群仅处理 osu! 指令', inContext: false };
-  if (db.settings.onlyMentionMode && !mentioned) return { shouldReply: false, reason: '全局设置为只在 @ 时回复' };
-  const visionCapable = modelSupportsVision(db);
-  const hasVisionImages = visionCapable && Array.isArray(images) && images.length > 0;
-  if (text.length < 1) {
-    if (hasVisionImages) return { shouldReply: false, reason: '真实纯图片已记录，未点名机器人时不主动回复' };
-    return { shouldReply: false, reason: '空消息或无法识别的消息' };
-  }
-  if (!textWithoutControlPlaceholders(text)) {
-    if (hasVisionImages && mentioned) return { shouldReply: true, reason: '用户 @ 机器人并发送图片，交给视觉模型回答' };
-    if (hasVisionImages) return { shouldReply: false, reason: '真实纯图片已记录，未点名机器人时不主动回复' };
-    return { shouldReply: false, reason: '只有 @/媒体/卡片占位，没有可回复的文字', inContext: false };
-  }
-  if (onlyVisualMessage(text)) {
-    if (hasVisionImages && mentioned) return { shouldReply: true, reason: '用户 @ 机器人并发送纯图片，交给视觉模型回答' };
-    if (hasVisionImages) return { shouldReply: false, reason: '真实纯图片已记录，未点名机器人时不主动回复' };
-    return { shouldReply: false, reason: visionCapable ? '纯图片或表情包消息，默认不抢话' : '图片或表情包消息，当前默认忽略', inContext: false };
-  }
-  if (asksToInspectVisual(text)) {
-    if (visionCapable) return { shouldReply: true, reason: '用户要求看图，交给模型按当前视觉能力回答' };
-    return { shouldReply: true, reason: '用户要求看图或识别表情包，需要解释当前不支持视觉识别', visualLimitation: true };
-  }
-
-  const privilegedMention =
-    mentioned &&
-    (userPolicy.policy === 'owner' || userPolicy.policy === 'admin' || userPolicy.allowCommands);
-
-  // Owner/admin mentions are allowed to bypass rate/cooldown limits. Ordinary
-  // group members still respect maxPerHour and cooldownSec.
-  const maxPerHour = Number(group.maxPerHour || 20);
-  if (!privilegedMention && countRecentReplies(db, group.groupId, 60) >= maxPerHour) {
-    return { shouldReply: false, reason: `已达到每小时最多 ${maxPerHour} 次回复` };
-  }
-
-  const cooldownMs = Number(group.cooldownSec || 30) * 1000;
-  const inCooldown = Date.now() - lastAssistantAt(db, group.groupId) < cooldownMs;
-  if (privilegedMention) return { shouldReply: true, reason: 'owner/admin @ 机器人，绕过频率限制' };
-  if (mentioned) return { shouldReply: true, reason: '有人 @ 或叫到了机器人' };
-  if (userPolicy.policy === 'muted') return { shouldReply: false, reason: '该用户被设置为少回应' };
-  const convWindow = trustInteractionBonus(db, userId).conversationWindowSec;
-  const botConversation = recentBotConversation(db, group.groupId, convWindow);
-  if (botConversation.active && looksLikeReplyToBot(text)) {
-    return { shouldReply: true, reason: '识别到用户在接机器人上一句' };
-  }
-  if (botConversation.active && isPrivilegedForConversation(userPolicy) && !text.startsWith('/') && (isQuestion(text) || looksLikeReplyToBot(text))) {
-    return { shouldReply: true, reason: 'owner/admin/重点关注对象正在连续对话' };
-  }
-  if (group.mode === 'mention') return { shouldReply: false, reason: '当前群只在 @ 时回复' };
-  if (inCooldown) return { shouldReply: false, reason: '距离上次发言太近，正在冷却' };
-
-  if (group.mode === 'light' || group.mode === 'natural') {
-    const thresholdKey = group.mode === 'light'
-      ? 'replyGateLightThreshold'
-      : 'replyGateNaturalThreshold';
-    const defaultThreshold = group.mode === 'light' ? 70 : 45;
-    const threshold = Math.max(0, Math.min(100, Number(
-      db.settings[thresholdKey] ?? defaultThreshold,
-    )));
-    const participation = scoreReplyParticipation(db, group.groupId, text, { userPolicy });
-    const modeLabel = group.mode === 'light' ? '轻度参与' : '自然群友';
-    if (participation.score < threshold) {
-      return {
-        shouldReply: false,
-        reason: `${modeLabel}门控 ${participation.score}/${threshold}，未达到接话阈值`,
-      };
-    }
-    return {
-      shouldReply: true,
-      reason: `${modeLabel}门控 ${participation.score}/${threshold}，交给主回复模型`,
-    };
-  }
-
-  return { shouldReply: false, reason: '这条消息没有达到当前主动性阈值' };
+  const event = { type: 'group', groupId: String(group?.groupId || ''), userId: String(userId || ''), text, messageId: '', socialDirect: mentioned };
+  const preview = { ...db, groups: [group].filter(Boolean), users: [{ ...userPolicy, groupId: event.groupId, userId: event.userId }] };
+  const blocked = chatAdmissionReason(preview, event, mentioned) || replyLimitReason(preview, event);
+  if (blocked) return { shouldReply: false, reason: blocked };
+  if (!mentioned) return { shouldReply: false, pendingAssessment: true, reason: '等待 LLM 根据对话判断参与，不按字数或标点评分' };
+  if (asksToInspectVisual(text) && !modelSupportsVision(db)) return { shouldReply: true, reason: '当前模型不支持视觉识别', visualLimitation: true };
+  return { shouldReply: true, reason: '有人 @ 或叫到了机器人' };
 }
 
 export function oneBotToInternal(event) {
@@ -491,12 +403,11 @@ function llmTurnLimitsForEvent(event) {
   return undefined;
 }
 
-export function processIncoming(event, sendMessage = undefined, queuedDecision = undefined, isFromDrain = false) {
-  return runInboundTask('onebot.message', () => processIncomingAdmitted(event, sendMessage, queuedDecision, isFromDrain));
+export function processIncoming(event, sendMessage = undefined) {
+  return runInboundTask('onebot.message', () => processIncomingAdmitted(event, sendMessage));
 }
 
-export async function processIncomingAdmitted(event, sendMessage = undefined, queuedDecision = undefined, isFromDrain = false) {
-  const queueOwner = { key: '' };
+export async function processIncomingAdmitted(event, sendMessage = undefined) {
   const requestId = requestTraceIdFor(event);
   startRequestTrace(event, requestId);
   return withRequestTrace(requestId, async () => {
@@ -506,7 +417,6 @@ export async function processIncomingAdmitted(event, sendMessage = undefined, qu
       userId: event?.userId,
       messageType: event?.type,
       imageCount: event?.images?.length || 0,
-      replayedFromQueue: Boolean(isFromDrain),
     });
     markActiveProcessing(1);
     // 控制台要能看见并掐断正在跑的这一轮。发送统一走 guardedSend：
@@ -524,7 +434,7 @@ export async function processIncomingAdmitted(event, sendMessage = undefined, qu
       const result = await runReplyProcess(
         { groupId: event?.groupId, userId: event?.userId, nickname: event?.nickname, messageId: event?.messageId },
         () => withLlmTurnPolicy(
-          () => processIncomingInner(event, guardedSend, queuedDecision, isFromDrain, queueOwner),
+          () => processIncomingInner(event, guardedSend),
           llmTurnLimitsForEvent(event),
         ),
       );
@@ -539,24 +449,18 @@ export async function processIncomingAdmitted(event, sendMessage = undefined, qu
       throw error;
     } finally {
       markActiveProcessing(-1);
-      if (queueOwner.key && !isFromDrain) {
-        void drainReplyQueue(queueOwner.key, processIncoming).catch((error) => {
-          console.error('[reply-queue] worker failed:', error?.message || error);
-        });
-      }
     }
   });
 }
 
-async function processIncomingInner(event, sendMessage = undefined, queuedDecision = undefined, isFromDrain = false, queueOwner = { key: '' }) {
+async function processIncomingInner(event, sendMessage = undefined) {
   // High-level pipeline:
   // 1. Ignore self messages and route slash commands.
   // 2. Log the incoming message and decide whether to reply.
   // 3. Handle deterministic visual-limitation replies (bot genuinely cannot see images).
   // 4. Call the configured LLM (with optional provider search), sanitize/rewrite, send, record usage.
   // Identity/model questions are handled by the model via the runtime-injected system prompt.
-  // A queued message was already claimed when it first entered the pipeline.
-  if (!isFromDrain && !claimInboundEvent(event)) {
+  if (!claimInboundEvent(event)) {
     return { replied: false, reason: '忽略重复投递的 OneBot message_id', duplicate: true };
   }
 
@@ -671,24 +575,20 @@ async function processIncomingInner(event, sendMessage = undefined, queuedDecisi
   }
 
   const userPolicy = getUserPolicy(db, event.groupId, event.userId);
-  if (isFromDrain && (settings.globalPaused || userPolicy.policy === 'blocked'
-      || (userPolicy.policy === 'muted' && !(queuedDecision?.socialReady && event.socialDirect)) || (event.type === 'group' && (!group?.enabled || group.mode === 'silent'))
-      || (event.type === 'private' && settings.ownerQq && !isPrivateOwner)
-      || ((settings.onlyMentionMode || (event.type === 'group' && group?.mode === 'mention')) && !mentionsBot(event.text, settings)))) {
-    return { replied: false, reason: '排队期间权限或参与模式已改变，取消回复' };
-  }
-  const mentioned = mentionsBot(event.text, settings);
-  const eventVisionImages = collectEventVisionImages(event);
+  const mentioned = isDirectBotMention(event, settings) || mentionsBot(event.text, settings);
+  event.socialNamed = mentioned && !isDirectBotMention(event, settings);
+  event.socialDirect = event.type === 'private' || isDirectBotMention(event, settings)
+    || settings.socialV2Enabled !== true && mentioned;
   // On the first pass the message + decision are recorded and side effects
   // (memory, XP, pair/profile pending) run exactly once. Drained replays use
   // the stored decision and must NOT duplicate history or side effects.
-  const socialCandidate = !isFromDrain && socialEntryAllowed(db, event, mentioned || event.type === 'private');
-  const decision = queuedDecision || (socialCandidate
-    ? { shouldReply: false, reason: 'V2 接话等待同群协调与语义评估' }
-    : event.type === 'private'
-    ? { shouldReply: !settings.globalPaused && (settings.socialV2Enabled === true
-        ? isSystemOwner(db, event) : String(event.userId) === String(settings.ownerQq || event.userId)), reason: settings.globalPaused ? '机器人处于全局暂停状态' : '私聊消息' }
-    : await decideReply({ db, group, userPolicy, text: event.text, mentioned, userId: event.userId, images: eventVisionImages }));
+  const socialCandidate = socialEntryAllowed(db, event, mentioned || event.type === 'private');
+  const boundary = chatAdmissionReason(db, event, event.socialDirect || event.socialNamed);
+  const decision = socialCandidate
+    ? { shouldReply: false, reason: '等待同群协调与语义评估' }
+    : { shouldReply: !boundary && event.socialDirect, reason: boundary || '明确请求', inContext: userPolicy.policy !== 'blocked' };
+  decision.visualLimitation = !socialCandidate && event.type === 'group' && decision.shouldReply
+    && asksToInspectVisual(event.text) && !modelSupportsVision(db);
   traceEvent('GATE', 'reply_gate_decided', {
     status: decision.shouldReply ? 'reply' : 'silent',
     shouldReply: Boolean(decision.shouldReply),
@@ -715,7 +615,7 @@ async function processIncomingInner(event, sendMessage = undefined, queuedDecisi
   // 同一份结果也给当前这一轮用，免得历史里有名字、当前消息却还是裸号码。
   event.mentionNames = mentionNames;
 
-  if (!isFromDrain) {
+  {
     let persistedDuplicate = false;
     updateDb((draft) => {
       if (persistedInboundDuplicate(draft, event)) {
@@ -824,110 +724,76 @@ async function processIncomingInner(event, sendMessage = undefined, queuedDecisi
     }
   }
 
-  if (socialCandidate) {
-    event.socialDirect = mentioned || event.type === 'private';
-    const priority = event.socialDirect ? (isSystemOwner(db, event) ? 2 : 1) : 0;
-    return socialCoordinator.submit(event, priority, async (merged) => {
-      if (isReplyProcessAborted() || !socialEntryAllowed(readDb(), merged, merged.socialDirect)) {
-        return { replied: false, reason: '接话等待期间权限或运行状态改变' };
-      }
-      let assessment = await assessSocialTurn(merged);
+  if (!socialCandidate && !decision.shouldReply) {
+    if (settings.socialV2Enabled && group?.enabled && group.mode !== 'osu') recordSocialDecision(event, {
+      stage: 'guard', action: 'pass', reason: decision.reason, evidenceIds: [], durationMs: 0, totalTokens: 0,
+    });
+    return { replied: false, reason: decision.reason };
+  }
+  const priority = event.socialDirect || event.socialNamed ? (isSystemOwner(db, event) ? 2 : 1) : 0;
+  const result = await socialCoordinator.submit(event, priority, async (merged) => {
+    const entryBlock = chatAdmissionReason(readDb(), merged, merged.socialDirect || merged.socialNamed);
+    if (isReplyProcessAborted() || entryBlock) return { replied: false, reason: entryBlock || '请求已取消' };
+    let assessment;
+    if (socialCandidate) {
+      assessment = await assessSocialTurn(merged);
       if (assessment?.action === 'wait') {
         await waitForSocialContinuation(merged);
+        socialCoordinator.takeContinuation(merged);
         assessment = await assessSocialTurn(merged, 'resumed');
       }
-      const action = assessment?.action || (merged.socialDirect ? 'reply' : 'pass');
-      const guard = socialDeliveryGuard(readDb(), merged);
-      const shouldReply = !isReplyProcessAborted() && !guard && ['react', 'reply'].includes(action);
-      const reason = guard || assessment?.reason || (merged.socialDirect ? '社交评估不可用，继续明确请求' : '社交评估不可用，保持安静');
-      updateDb((draft) => {
-        for (const item of draft.decisions) {
-          if (item.groupId === merged.groupId && item.userId === merged.userId
-            && (merged.socialMessageIds || [merged.messageId]).includes(item.messageId)) {
-            item.shouldReply = shouldReply && item.messageId === merged.messageId;
-            item.reason = `V2 ${action}：${reason}`;
-          }
-        }
-      });
-      if (!shouldReply) return { replied: false, reason };
-      merged.socialAction = action;
-      merged.socialContextIds ||= socialTimeline(readDb(), merged).map((m) => m.messageId);
-      return processIncomingInner(merged, sendMessage, { shouldReply: true, reason, socialReady: true }, true, queueOwner);
-    });
-  }
-
-  if (!decision.shouldReply) return { replied: false, reason: decision.reason };
-
-  if (decision.visualLimitation) {
-    const replyText = visualLimitationReply(event, db);
-    traceEvent('SEND', 'deterministic_visual_reply_started', { contentLength: replyText.length });
-    const segments = await sendReplySegments(sendMessage, event, replyText);
-    traceEvent('SEND', 'deterministic_visual_reply_sent', { status: 'ok', segmentCount: segments.length });
-    updateDb((draft) => {
-      draft.messages.push({
-        id: crypto.randomUUID(),
-        requestId: currentRequestTraceId(),
-        ...replyTargetMetadata(event),
-        role: 'assistant',
-        type: event.type,
-        groupId: event.groupId,
-        userId: 'bot',
-        nickname: '机器人',
-        content: replyText,
-        inContext: true,
-        createdAt: nowIso()
-      });
-      draft.usage.replies += Math.max(1, segments.length);
-    });
-    return { replied: true, text: replyText, segments, reason: decision.reason };
-  }
-
-  // Per-member FIFO: members of the same group reply in parallel, while each
-  // member's own rapid messages stay ordered (and get merged on drain).
-  const replyLockKey = event.type === 'group'
-    ? `group:${event.groupId}:${event.userId}`
-    : `private:${event.userId}`;
-  const queueState = decision.socialReady ? { locked: false, queue: [] } : getQueueState(replyLockKey);
-  if (!isFromDrain && queueState.locked) {
-    if (queueState.queue.length >= REPLY_QUEUE_LIMIT) {
-      const reason = `回复队列已满(${REPLY_QUEUE_LIMIT})，丢弃`;
-      updateDb((draft) => {
-        draft.decisions.push({
-          id: crypto.randomUUID(),
-          messageId: event.messageId,
-          groupId: event.groupId,
-          userId: event.userId,
-          shouldReply: false,
-          reason,
-          createdAt: nowIso()
-        });
-      });
-      return { replied: false, reason };
     }
-    const reason = '已有回复正在生成，加入队列等待';
+    // Preserve name-call availability when assessment is unavailable, while
+    // an explicit other recipient keeps ambiguous name references ambient.
+    if (!assessment && merged.socialNamed && !(merged.atTargets || []).some((id) => String(id) !== String(readDb().settings.selfQq))
+      && (!merged.replyMessageId || conversationContext(readDb(), merged).repliesToBot)) merged.socialDirect = true;
+    const action = assessment?.action || (merged.socialDirect ? 'reply' : 'pass');
+    const guard = socialDeliveryGuard(readDb(), merged);
+    const shouldReply = !isReplyProcessAborted() && !guard && ['react', 'reply'].includes(action);
+    const reason = guard || assessment?.reason || (merged.socialDirect ? '继续明确请求' : '本轮不参与');
     updateDb((draft) => {
-      draft.decisions.push({
-        id: crypto.randomUUID(),
-        messageId: event.messageId,
-        groupId: event.groupId,
-        userId: event.userId,
-        shouldReply: false,
-        reason,
-        createdAt: nowIso()
-      });
+      for (const item of draft.decisions) if (item.groupId === merged.groupId && item.userId === merged.userId
+        && (merged.socialMessageIds || [merged.messageId]).includes(item.messageId)) {
+        item.shouldReply = shouldReply && item.messageId === merged.messageId;
+        item.reason = reason;
+      }
     });
-    queueState.queue.push({ event, sendMessage, decision, enqueuedAt: Date.now() });
-    traceEvent('QUEUE', 'reply_enqueued', { status: 'waiting', position: queueState.queue.length });
-    return { replied: false, reason, queued: true, queuePosition: queueState.queue.length };
+    if (!shouldReply) return { replied: false, reason };
+    merged.socialAction = action;
+    merged.socialContextIds ||= socialTimeline(readDb(), merged, 40).map((m) => m.messageId);
+    const output = await generateConversationReply(merged, sendMessage, { shouldReply: true, reason,
+      socialReady: socialCandidate, visualLimitation: decision.visualLimitation });
+    if (socialCandidate) recordSocialDecision(merged, { stage: 'delivery', action: output.replied ? action : 'pass',
+      reason: output.replied ? '已发送' : output.error ? '生成或发送失败' : output.reason,
+      evidenceIds: [], durationMs: 0, totalTokens: 0 });
+    return output;
+  });
+  if (socialCandidate && !result.replied && !result.merged && !result.error && !['本轮不参与'].includes(result.reason)) {
+    // Queue expiry/permission changes are visible even before an LLM evaluation.
+    const seen = readDb().socialV2.decisions.some((d) => d.scope === (event.type === 'group' ? 'group:' + event.groupId : 'private:' + event.userId)
+      && d.messageIds.includes(event.messageId));
+    if (!seen) recordSocialDecision(event, { stage: 'guard', action: 'pass', reason: result.reason, evidenceIds: [], durationMs: 0, totalTokens: 0 });
   }
-  queueState.locked = true;
-  if (!decision.socialReady) queueOwner.key = replyLockKey;
+  return result;
+}
 
+async function generateConversationReply(event, sendMessage, decision) {
   let thinkingTimer = null;
-let waitUpTimer = null;
+  let waitUpTimer = null;
   let modelStageStarted = false;
   let deliveryStarted = false;
   try {
+    if (decision.visualLimitation) {
+      const text = visualLimitationReply(event, readDb());
+      deliveryStarted = true;
+      const segments = await sendReplySegments(sendMessage, event, text);
+      updateDb((draft) => {
+        draft.messages.push({ id: crypto.randomUUID(), requestId: currentRequestTraceId(), ...replyTargetMetadata(event),
+          role: 'assistant', type: event.type, groupId: event.groupId, userId: 'bot', nickname: '机器人', content: text, inContext: true, createdAt: nowIso() });
+        draft.usage.replies += Math.max(1, segments.length);
+      });
+      return { replied: true, text, segments, reason: decision.reason };
+    }
     // QUICK_CONTEXT_FIX_QB08: before building this conversational turn's
     // context, drain any pending quick observation whose visible reply already
     // completed for THIS group+user. Bounded by QUICK_CONTEXT_PENDING_WAIT_MS;
@@ -1370,7 +1236,7 @@ let waitUpTimer = null;
       // HIGH is triggered solely by existing deterministic signals.
       const hasPriorContext = messages.filter((m) => m.role !== 'system').length > 1;
       const contextDependent = hasPriorContext
-        && (looksLikeReplyToBot(event.text) || shouldUseRecentVisionImage(liveDb, event));
+        && (event.socialEngagement === 'continuation' || shouldUseRecentVisionImage(liveDb, event));
       const convInput = reasoningInput('conversation', { contextDependent });
       let convTurn = emptyTurnState();
       const convDecision = reasoningRouter.resolve(convInput, convTurn);
@@ -1484,6 +1350,8 @@ let waitUpTimer = null;
     }
     if (!replyText && imageCqCodes.length > 0) replyText = '查好了，结果在图里。';
 
+    const deliveryGuard = socialDeliveryGuard(readDb(), event);
+    if (deliveryGuard) return { replied: false, reason: deliveryGuard };
     if (decision.socialReady) {
       const checked = await revalidateSocialReply(event, replyText || `[图片反应：${stickerDecisionId || ''}]`, {
         expressionPrompt: socialExpressionContext,

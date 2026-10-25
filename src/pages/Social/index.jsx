@@ -5,6 +5,9 @@ import { Button, Card, Input, Select, Switch, Textarea } from '../../components/
 import './social.css';
 
 const actions = { pass: '略过', wait: '等一句', react: '轻回应', reply: '回答' };
+const stages = { assessment: '语义判断', wait: '等待后续', revalidation: '发送前复核', guard: '参与限制', failure: '调用失败', delivery: '发送结果' };
+const engagements = { direct: '明确提及', continuation: '对话延续', ambient: '主动加入' };
+const modes = { natural: '自然群友', light: '轻度参与', mention: '仅提及', silent: '静默', osu: '仅 osu! 指令', private: 'Owner 私聊' };
 const date = (value) => value ? new Date(value).toLocaleString('zh-CN') : '尚无记录';
 const score = (person) => person?.affinity.kind === 'owner' ? '特殊' : `${Number(person?.affinity.score ?? 50).toFixed(1)}`;
 
@@ -51,7 +54,7 @@ export function SocialPage({ db, saveSettings, refreshState }) {
     <div className="social-heading"><div><span className="social-eyebrow">PIPPI · V2.0</span><h1>接话与好感</h1><p>听懂对话，记住相处的感觉。</p></div>
       <Button icon={RefreshCw} onClick={load} disabled={busy}>刷新</Button></div>
     <Card className="social-settings">
-      <Switch checked={db.settings.socialV2Enabled === true} disabled={busy} label="V2 自然接话与关系" description="在现有群聊模式内运行；关闭后回到原接话方式，保留关系记录。"
+      <Switch checked={db.settings.socialV2Enabled === true} disabled={busy} label="V2 自然接话与关系" description="在现有群聊模式内运行；关闭后仅回应明确提及，保留关系记录。"
         onChange={(e) => { const enabled = e.target.checked; void mutate(() => saveSettings({ socialV2Enabled: enabled })); }} />
       <div className="social-budget"><Input label="每会话每小时评估预算" type="number" min="1" max="300" value={budget} onChange={(e) => setBudget(e.target.value)} />
         <Button disabled={busy} onClick={() => mutate(() => saveSettings({ socialMaxAssessmentsPerHour: Number(budget) }))}>保存预算</Button></div>
@@ -97,9 +100,12 @@ export function SocialPage({ db, saveSettings, refreshState }) {
             : <Button disabled={busy || !person.view} onClick={() => { setNames(person.view.preferredNames.join('，')); setStyle(person.view.style); setEditRevision(person.view.revision); setEditing(true); }}>校正称呼与偏好</Button>}
         </Card>}
         <Card className="social-decisions"><h2><MessageCircle size={18} /> 接话记录</h2>
+          <p className="social-note">当前生效：{modes[data?.participation?.mode] || '读取中'}{data?.participation?.reason ? ` · ${data.participation.reason}` : ''}</p>
+          <p className="social-note">最近主动接话判断：{date(data?.activity?.lastAssessmentAt)} · 最近主动发言：{date(data?.activity?.lastReplyAt)}</p>
+          <p className="social-note">近一小时：{(data?.activity?.reasons || []).map(({ reason, count }) => `${reason.includes(':') ? `${stages[reason.split(':')[0]] || reason}·${actions[reason.split(':')[1]] || ''}` : reason} ${count} 次`).join('；') || '尚无记录'}</p>
           {!(data?.decisions.length) && <p className="social-empty">本会话暂无 V2 判断。</p>}
           {(data?.decisions || []).slice(0, 30).map((d) => <article key={d.id} className="social-decision"><div><b className={`social-action social-action-${d.action}`}>{actions[d.action]}</b><small>{date(d.createdAt)} · {d.userId}</small></div>
-            <p>{d.reason}</p><small>{d.durationMs} ms · {d.totalTokens} tokens{d.evidenceIds.length ? ` · 依据 ${d.evidenceIds.join('、')}` : ''}</small>
+            <p>{d.reason}</p><small>{stages[d.stage] || d.stage}{d.engagement ? ` · ${engagements[d.engagement]}` : ''} · {d.durationMs} ms · {d.totalTokens} tokens{d.evidenceIds.length ? ` · 依据 ${d.evidenceIds.join('、')}` : ''}</small>
             <div className="social-feedback">{[['should-reply', '应该接话'], ['should-pass', '不该接话']].map(([verdict, label]) => <Button key={verdict} size="sm" disabled={busy} variant={feedback[d.id] === verdict ? 'primary' : 'ghost'}
               onClick={() => mutate(() => api('/api/social/feedback', { method: 'POST', body: { decisionId: d.id, verdict } }))}>{label}</Button>)}</div>
           </article>)}<p className="social-note">反馈留作校准依据，不会立即改写人设或给成员加减分。</p>

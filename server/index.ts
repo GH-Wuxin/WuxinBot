@@ -10,6 +10,7 @@ import { backupRetention, createBackup, listBackups, restoreBackup, deleteBackup
 import { connectOneBot, getOneBotStatus, handleOneBotEvent, sendOneBotMessage, shutdownOneBot } from './onebot.js';
 import { processIncoming } from './bot.js';
 import { mountSocialApi } from './bot/social/api.js';
+import { participationStatus } from './bot/social/policy.js';
 import { runSandboxPreview } from './sandboxPreview.js';
 import { getReplyQueueStats } from './bot/queue.js';
 import { abortReplyProcess, listReplyProcesses } from './bot/replyProcesses.js';
@@ -337,9 +338,11 @@ function ok(data = {}) {
 // prevents a settings save or context cleanup from blocking the UI on a
 // multi-megabyte JSON parse.
 function compactDbResponse(db = readDb()) {
+  const exposed = publicDb(db, { includeMemorySamples: false });
+  exposed.groups = exposed.groups.map((group) => ({ ...group, participation: participationStatus(db, group) }));
   return {
     revision: currentStorageRevision(),
-    db: publicDb(db, { includeMemorySamples: false }),
+    db: exposed,
   };
 }
 
@@ -349,8 +352,7 @@ app.get('/api/state', (_req, res) => {
   // Samples are only needed after opening a specific memory in the console.
   // Keeping them out of the global heartbeat avoids sending megabytes every
   // ten seconds to every open console tab.
-  const revision = currentStorageRevision();
-  res.json(ok({ revision, db: publicDb(readDb(), { includeMemorySamples: false }), oneBot: getOneBotStatus() }));
+  res.json(ok({ ...compactDbResponse(), oneBot: getOneBotStatus() }));
 });
 
 app.get('/api/state/revision', (_req, res) => {

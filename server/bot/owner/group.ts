@@ -11,12 +11,12 @@ export async function ownerPresetHandler(ctx: OwnerHandlerContext): Promise<Owne
   const { event, sendMessage, parts, subCommand } = ctx;
   const presetName = subCommand || (parts[2] || '').toLowerCase();
   const presets = {
-    class: { mode: 'silent', maxPerHour: 0, cooldownSec: 300, onlyMentionMode: true, groupProfileAutoUpdate: false, globalPaused: false, label: '上课/会议：完全静默，不回复' },
-    away: { mode: 'silent', maxPerHour: 3, cooldownSec: 120, onlyMentionMode: true, groupProfileAutoUpdate: false, globalPaused: false, label: '出门/忙：极少回复，只在@时可能回' },
-    sleep: { mode: 'silent', maxPerHour: 0, cooldownSec: 600, onlyMentionMode: true, groupProfileAutoUpdate: false, globalPaused: true, label: '睡觉：全局暂停' },
-    active: { mode: 'natural', maxPerHour: 30, cooldownSec: 15, onlyMentionMode: false, groupProfileAutoUpdate: true, globalPaused: false, label: '活跃聊天：自然参与，自动画像' },
-    silent: { mode: 'light', maxPerHour: 10, cooldownSec: 60, onlyMentionMode: false, groupProfileAutoUpdate: true, globalPaused: false, label: '安静挂机：轻度参与，保持画像更新' },
-    debug: { mode: 'mention', maxPerHour: 60, cooldownSec: 5, onlyMentionMode: false, groupProfileAutoUpdate: true, globalPaused: false, label: '调试：高频回复，只在@模式' },
+    class: { mode: 'silent', maxPerHour: 0, cooldownSec: 300, groupProfileAutoUpdate: false, globalPaused: false, label: '上课/会议：完全静默，不回复' },
+    away: { mode: 'silent', maxPerHour: 3, cooldownSec: 120, groupProfileAutoUpdate: false, globalPaused: false, label: '出门/忙：极少回复，只在@时可能回' },
+    sleep: { mode: 'silent', maxPerHour: 0, cooldownSec: 600, groupProfileAutoUpdate: false, globalPaused: true, label: '睡觉：全局暂停' },
+    active: { mode: 'natural', maxPerHour: 30, cooldownSec: 15, groupProfileAutoUpdate: true, globalPaused: false, label: '活跃聊天：自然参与，自动画像' },
+    silent: { mode: 'light', maxPerHour: 10, cooldownSec: 60, groupProfileAutoUpdate: true, globalPaused: false, label: '安静挂机：轻度参与，保持画像更新' },
+    debug: { mode: 'mention', maxPerHour: 60, cooldownSec: 5, groupProfileAutoUpdate: true, globalPaused: false, label: '调试：高频回复，只在@模式' },
   };
   const preset = presets[presetName];
   if (!preset) {
@@ -38,7 +38,6 @@ export async function ownerPresetHandler(ctx: OwnerHandlerContext): Promise<Owne
       g.cooldownSec = preset.cooldownSec;
       g.updatedAt = nowIso();
     }
-    draft.settings.onlyMentionMode = preset.onlyMentionMode;
     draft.settings.groupProfileAutoUpdate = preset.groupProfileAutoUpdate !== false;
     draft.settings.globalPaused = preset.globalPaused;
     setBotPaused(preset.globalPaused);

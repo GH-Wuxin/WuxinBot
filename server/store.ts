@@ -468,11 +468,8 @@ export const defaultCommandPermissions = {
 const initialDb = {
   settings: {
     globalPaused: false,
-    onlyMentionMode: false,
     socialV2Enabled: false,
     socialMaxAssessmentsPerHour: 60,
-    replyGateNaturalThreshold: 45,
-    replyGateLightThreshold: 70,
     llmProvider: process.env.LLM_PROVIDER || 'deepseek',
     apiKey: process.env.LLM_API_KEY || process.env.DEEPSEEK_API_KEY || '',
     apiBaseUrl: process.env.LLM_API_BASE_URL || DEEPSEEK_BASE_URL,
@@ -616,17 +613,12 @@ const initialDb = {
 
 export function normalizeDb(db) {
   const settings = db.settings || {};
-  // The old names belonged to the removed second-LLM gate. Migrate them once
-  // to the local participation gate so existing operator choices survive
-  // without keeping a misleading dead configuration surface.
-  if (!Object.prototype.hasOwnProperty.call(settings, 'replyGateNaturalThreshold')
-    && Object.prototype.hasOwnProperty.call(settings, 'llmReplyGateNaturalThreshold')) {
-    settings.replyGateNaturalThreshold = settings.llmReplyGateNaturalThreshold;
-  }
-  if (!Object.prototype.hasOwnProperty.call(settings, 'replyGateLightThreshold')
-    && Object.prototype.hasOwnProperty.call(settings, 'llmReplyGateLightThreshold')) {
-    settings.replyGateLightThreshold = settings.llmReplyGateLightThreshold;
-  }
+  // Preserve the old effective restriction as an explicit group mode. The
+  // retired hidden global override must never silently reopen another group.
+  const legacyMentionOnly = settings.onlyMentionMode === true;
+  delete settings.onlyMentionMode;
+  delete settings.replyGateNaturalThreshold;
+  delete settings.replyGateLightThreshold;
   delete settings.llmReplyGateMaxPerHour;
   delete settings.llmReplyGateNaturalThreshold;
   delete settings.llmReplyGateLightThreshold;
@@ -677,6 +669,7 @@ export function normalizeDb(db) {
     if (!Object.prototype.hasOwnProperty.call(group, 'randomImageRate')) {
       group.randomImageRate = group.mode === 'light' ? 'low' : 'standard';
     }
+    if (legacyMentionOnly && ['natural', 'light'].includes(group.mode)) group.mode = 'mention';
   }
   // Bot registry: merge saved bots with defaults (add new default bots, keep user changes)
   if (!db.settings.botRegistry) {

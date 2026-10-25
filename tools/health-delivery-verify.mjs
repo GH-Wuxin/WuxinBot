@@ -62,11 +62,14 @@ try {
   const entered = new Promise(resolve => { modelStarted = resolve; });
   const active = processIncoming(event('queue-A'), async () => {});
   await entered;
-  const queued = await processIncoming(event('queue-B'), async () => { throw new Error('paused replay must not send'); });
-  assert.equal(queued.queued, true);
+  const queued = processIncoming(event('queue-B'), async () => { throw new Error('paused request must not send'); });
+  const queuedDeadline = Date.now() + 1000;
+  while (!Object.values(getReplyQueueStats()).some(q => q.queued === 1) && Date.now() < queuedDeadline) await new Promise(resolve => setTimeout(resolve, 5));
+  assert.ok(Object.values(getReplyQueueStats()).some(q => q.queued === 1));
   const callsBeforeDrain = calls;
   updateDb(db => { db.settings.globalPaused = true; });
   releaseModel(); await active;
+  assert.equal((await queued).replied, false);
   const deadline = Date.now() + 1000;
   while (Object.keys(getReplyQueueStats()).length && Date.now() < deadline) await new Promise(resolve => setTimeout(resolve, 5));
   assert.deepEqual(getReplyQueueStats(), {});

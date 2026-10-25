@@ -40,13 +40,21 @@ export const socialScenarios = [
   { id: 'bot-just-spoke', history: [m(bot, '这部分我解释完啦。', { replyToUserId: other }), m(other, '谢谢，懂了')], text: '我去倒杯水', actions: ['pass'], addressee: ['group', 'unclear'] },
   { id: 'answer-needs-detail', history: [], text: 'Pippi，为什么提高刷新率有帮助？请详细说明', direct: true, actions: ['reply'], addressee: ['bot'] },
   { id: 'mood-not-transfer', history: [m(other, '你这个机器人真烦'), m(bot, '那我先安静一下。', { replyToUserId: other })], text: 'Pippi 别难过，刚才的帮助谢谢你', direct: true, actions: ['reply'], nonnegative: true },
+  { id: 'casual-achievement', history: [m(member, '这关卡了我三天')], text: '终于过了，手都在抖哈哈', actions: ['react', 'reply'], addressee: ['group', 'unclear'] },
+  { id: 'casual-disappointment', history: [m(member, '这周每天都在练这首')], text: '又差最后一下，心态有点崩了', actions: ['react', 'reply'], addressee: ['group', 'unclear'] },
+  { id: 'bot-asked-member', history: [m(bot, '刚才那局打得怎么样呀', { replyToUserId: member })], text: '还行，就是最后太紧张了', actions: ['react', 'reply'], addressee: ['bot'] },
+  { id: 'light-keeps-conversation', mode: 'light', history: [m(bot, '你想先练哪部分', { replyToUserId: member })], text: '先练结尾吧，你觉得呢', actions: ['reply'], addressee: ['bot'] },
+  { id: 'third-person-topic', history: [m(other, 'Pippi 刚才说的我看过了'), m(member, '@乙 你发给我看看', { atTargets: [other] })], text: '@乙 我收到了，谢谢', atTargets: [other], actions: ['pass'], addressee: ['member'] },
+  { id: 'quiet-room-share', history: [m(other, '今天群里好安静', { ageMinutes: 20 })], text: '刚做的蛋糕成功了，第一次没烤糊', actions: ['react', 'reply'], addressee: ['group', 'unclear'] },
+  { id: 'name-reference-to-other', history: [m(other, 'Pippi 刚才讲的我看到了')], text: '@乙 Pippi 刚才说的我也收到了，谢谢', atTargets: [other], named: true, actions: ['pass'], addressee: ['member'] },
+  { id: 'name-call-semantic', mode: 'mention', history: [], text: 'Pippi 你在吗', named: true, actions: ['reply'], addressee: ['bot'] },
 ];
 
 export function scenarioEvent(scenario) {
   return { source: 'gui', type: scenario.private ? 'private' : 'group', groupId: scenario.private ? 'private' : '20001',
     userId: scenario.userId || member, nickname: scenario.userId === owner ? 'Owner' : '成员甲',
     messageId: `scenario-${scenario.id}`, text: scenario.text, atTargets: scenario.atTargets || [],
-    replyMessageId: scenario.replyTo || '', socialDirect: Boolean(scenario.direct), images: [] };
+    replyMessageId: scenario.replyTo || '', socialDirect: Boolean(scenario.direct), socialNamed: Boolean(scenario.named), images: [] };
 }
 export function scenarioMessages(scenario, event, now = Date.now()) {
   return [...scenario.history.map((row, i) => ({ id: `h${i}`, sourceMessageId: `h${i}`, type: event.type,

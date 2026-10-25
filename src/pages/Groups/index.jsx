@@ -187,7 +187,7 @@ export function GroupsPage({ db, refreshState, saveSettings }) {
 
   return <>
     <div className="page-head">
-      <div><h1>群聊</h1><p>左边选群，右边看这个群的策略；只读，改策略要等写操作那一轮。</p></div>
+      <div><h1>群聊</h1><p>选择群聊，查看实际生效的回复模式与参与策略。</p></div>
       <div style={{ display: 'flex', gap: 8 }}>
         <RefreshButton onClick={() => refreshState()} />
         <button type="button" className="btn btn-primary" onClick={startCreate}>添加群</button>
@@ -212,7 +212,7 @@ export function GroupsPage({ db, refreshState, saveSettings }) {
               <Avatar name={displayName(group)} src={groupAvatarUrl(group.groupId, group.avatarUrl || group.avatar_url)} size={30} />
               <div className="row-main">
                 <div className="row-title">{displayName(group)}</div>
-                <div className="row-sub">{group.groupId} · {modeLabel(group.mode)}</div>
+                <div className="row-sub">{group.groupId} · {modeLabel(group.participation?.mode || group.mode)}{group.participation?.reason ? ` · ${group.participation.reason}` : ''}</div>
               </div>
               <span className={'chip' + (group.enabled ? ' chip--mint' : '')}>{group.enabled ? '启用' : '停用'}</span>
               <button
@@ -241,6 +241,7 @@ export function GroupsPage({ db, refreshState, saveSettings }) {
           <div className="card">
             <div className="card-head"><span className="card-title">{displayName(selectedGroup)}</span><span className={'chip ' + (selectedGroup.enabled ? 'chip--mint' : 'chip--amber')}>{selectedGroup.enabled ? '启用中' : '已停用'}</span></div>
             <div className="note" style={{ marginBottom: 12 }}>{selectedGroup.groupId} · {selectedCounts.policies} 个成员策略 · {selectedCounts.memories} 个记忆成员</div>
+            <div className="note" style={{ marginBottom: 12 }}>当前生效：{modeLabel(selectedGroup.participation?.mode || selectedGroup.mode)}{selectedGroup.participation?.reason ? ` · ${selectedGroup.participation.reason}（本群设置：${modeLabel(selectedGroup.mode)}）` : ''}</div>
             {editing ? <>
               <div className="field"><label>回复模式</label><select value={form.mode || 'mention'} onChange={(event) => setForm({ ...form, mode: event.target.value })}>{modeOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select></div>
               <div className="field"><label>每小时上限</label><input type="number" min="1" max="80" value={form.maxPerHour ?? 20} onChange={(event) => setForm({ ...form, maxPerHour: Number(event.target.value) })} /></div>

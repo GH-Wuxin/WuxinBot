@@ -70,7 +70,7 @@ export async function runSandboxPreview(body: any = {}) {
   // Optional LLM call
   let replyPreview = '';
   let usage = null;
-  if (callLlm && decision.shouldReply) {
+  if (callLlm && (decision.shouldReply || decision.pendingAssessment)) {
     try {
       // Keep the system prompt (persona) at all costs; only the recent history
       // is trimmed when the context is longer than the sandbox budget.
@@ -84,7 +84,8 @@ export async function runSandboxPreview(body: any = {}) {
   }
 
   return ok({
-    decision: { shouldReply: decision.shouldReply, reason: decision.reason },
+    decision: { shouldReply: decision.shouldReply, reason: decision.reason,
+      pendingAssessment: Boolean(decision.pendingAssessment), expressionPreviewOnly: Boolean(callLlm && decision.pendingAssessment) },
     context: {
       group: `${group.name || groupId} (${group.mode})`,
       userPolicy: userPolicy.policy,

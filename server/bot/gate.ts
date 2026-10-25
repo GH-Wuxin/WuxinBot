@@ -4,8 +4,6 @@ import {
   mentionsBot,
   asksToInspectVisual,
   looksLikeVisualFollowup,
-  isQuestion,
-  textWithoutControlPlaceholders,
 } from './cleaning.js';
 import {
   modelSupportsVision,
@@ -147,109 +145,10 @@ export function limitMessagesByCharBudget(messages, budget) {
   return selected;
 }
 
-export function countRecentReplies(db, groupId, minutes) {
-  const since = Date.now() - minutes * 60 * 1000;
-  // Count reply decisions rather than only successful assistant messages.
-  // A downstream OneBot failure must still consume the participation budget;
-  // otherwise every following message looks like the bot never replied and
-  // can start another model turn.
-  return (db.decisions || []).filter((decision) =>
-    String(decision.groupId) === String(groupId) &&
-    decision.shouldReply === true &&
-    new Date(decision.createdAt).getTime() >= since
-  ).length;
-}
-
-export function countRecentUserMessages(db, groupId, minutes) {
-  const since = Date.now() - minutes * 60 * 1000;
-  return db.messages.filter(
-    (message) =>
-      String(message.groupId) === String(groupId) &&
-      message.role === 'user' &&
-      new Date(message.createdAt).getTime() >= since
-  ).length;
-}
-
-export function lastAssistantAt(db, groupId) {
-  const lastAssistant = [...db.messages]
-    .reverse()
-    .find((message) => String(message.groupId) === String(groupId) && message.role === 'assistant');
-  const lastAttempt = [...(db.decisions || [])]
-    .reverse()
-    .find((decision) => String(decision.groupId) === String(groupId) && decision.shouldReply === true);
-  return Math.max(
-    lastAssistant ? new Date(lastAssistant.createdAt).getTime() : 0,
-    lastAttempt ? new Date(lastAttempt.createdAt).getTime() : 0,
-  );
-}
-
-/**
- * Cheap, deterministic participation scoring for natural/light groups.
- *
- * This is deliberately not a second model call. The main reply model remains
- * the only LLM turn for an accepted message; this score only decides whether
- * an ordinary unmentioned message is worth admitting to that turn.
- */
-export function scoreReplyParticipation(
-  db,
-  groupId,
-  text,
-  { userPolicy = {} }: { userPolicy?: { policy?: string } } = {},
-) {
-  const clean = textWithoutControlPlaceholders(String(text || '')).trim();
-  const characterCount = [...clean].length;
-  if (!clean || /^[/!]/.test(clean)) {
-    return { score: 0, characterCount, recentUserMessages5m: 0, recentBotReplies10m: 0, busy: false };
-  }
-
-  const recentUserMessages5m = countRecentUserMessages(db, groupId, 5);
-  const recentBotReplies10m = countRecentReplies(db, groupId, 10);
-  const busy = recentUserMessages5m >= 10;
-  let score = Math.min(45, characterCount * 3);
-
-  // A little structure is stronger evidence than raw length, but none of
-  // these signals selects a sticker or interprets a particular keyword.
-  if (characterCount >= 6) score += 5;
-  if (characterCount >= 18) score += 5;
-  if (isQuestion(clean)) score += 30;
-  if (/[!?！？]/.test(clean)) score += 5;
-  if (/[。；;\n]/.test(clean)) score += 5;
-
-  if (userPolicy?.policy === 'trusted' || userPolicy?.policy === 'priority'
-    || userPolicy?.policy === 'admin' || userPolicy?.policy === 'owner') {
-    score += 10;
-  }
-  if (busy) score -= 20;
-  if (recentBotReplies10m >= 3) score -= 15;
-  else if (recentBotReplies10m >= 1) score -= 5;
-
-  return {
-    score: Math.max(0, Math.min(100, score)),
-    characterCount,
-    recentUserMessages5m,
-    recentBotReplies10m,
-    busy,
-  };
-}
-
 export function lastAssistantMessage(db, groupId) {
   return [...db.messages]
     .reverse()
     .find((message) => String(message.groupId) === String(groupId) && message.role === 'assistant');
-}
-
-export function isPrivilegedForConversation(userPolicy) {
-  return userPolicy.policy === 'owner' ||
-    userPolicy.policy === 'admin' ||
-    userPolicy.policy === 'priority' ||
-    userPolicy.allowCommands;
-}
-
-export function looksLikeReplyToBot(text) {
-  const value = String(text || '').trim();
-  if (!value) return false;
-  if (/^(6+|草|笑死|绷|难绷|牛逼|离谱|对|是|不是|行|好|嗯|？|\?)$/.test(value)) return false;
-  return /你这|你刚|刚才|上一句|说的啥|说错|错了|不对|幻觉|编的|乱说|什么鬼|有头没尾|没写完|没结尾|继续|补上|接着|重写|改改|搜一下|上网搜|查一下|查查|不是这个|撤回|算错/.test(value);
 }
 
 export function recentBotConversation(db, groupId, seconds = 120) {
