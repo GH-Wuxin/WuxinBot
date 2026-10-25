@@ -10,6 +10,7 @@ import { backupRetention, createBackup, listBackups, restoreBackup, deleteBackup
 import { connectOneBot, getOneBotStatus, handleOneBotEvent, sendOneBotMessage, shutdownOneBot } from './onebot.js';
 import { processIncoming } from './bot.js';
 import { mountSocialApi } from './bot/social/api.js';
+import { startPippiActivity, stopPippiActivity } from './bot/activity.js';
 import { participationStatus } from './bot/social/policy.js';
 import { runSandboxPreview } from './sandboxPreview.js';
 import { getReplyQueueStats } from './bot/queue.js';
@@ -118,6 +119,7 @@ async function emergencyShutdown(): Promise<void> {
   if (crashCleanupPromise) return crashCleanupPromise;
   crashCleanupPromise = (async () => {
     stopInboundAdmission();
+    stopPippiActivity();
     try { shutdownOneBot(); } catch (error) {
       console.error('[crash] shutdownOneBot failed:', String(error?.message || error));
     }
@@ -173,6 +175,7 @@ async function gracefulShutdown(signal) {
   shutdownPromise = (async () => {
     console.log(`[shutdown] ${signal} received, stopping ingress and draining background work`);
     stopInboundAdmission();
+    stopPippiActivity();
     try {
       // Stop new QQ events/reconnects before closing the local HTTP and render
       // endpoints. The instance lock stays held until all bounded cleanup is
@@ -1148,6 +1151,10 @@ app.get('/api/diagnostics', (_req, res) => {
 });
 
 app.post('/api/settings', async (req, res) => {
+  for (const key of ['pippiActivityEnabled']) if (req.body?.[key] !== undefined && typeof req.body[key] !== 'boolean') return res.status(400).json({ ok: false, error: '自主活动开关必须为布尔值' });
+  if (req.body?.pippiActivityDailyTokens !== undefined && (!Number.isSafeInteger(req.body.pippiActivityDailyTokens) || req.body.pippiActivityDailyTokens < 1000 || req.body.pippiActivityDailyTokens > 100000)) return res.status(400).json({ ok: false, error: '后台每日额度应为 1000–100000 Token' });
+  if (req.body?.pippiActivityMaxWakes !== undefined && (!Number.isSafeInteger(req.body.pippiActivityMaxWakes) || req.body.pippiActivityMaxWakes < 1 || req.body.pippiActivityMaxWakes > 6)) return res.status(400).json({ ok: false, error: '每日自主唤醒次数应为 1–6' });
+  if (req.body?.pippiActivityForumIds !== undefined && (!Array.isArray(req.body.pippiActivityForumIds) || req.body.pippiActivityForumIds.length > 3 || req.body.pippiActivityForumIds.some(id => !Number.isSafeInteger(id) || id < 1 || id > 1000000))) return res.status(400).json({ ok: false, error: '最多配置三个公开论坛板块 ID' });
   const settingsBefore = readDb().settings;
   const requested = req.body || {};
   if ('socialV2Enabled' in requested && typeof requested.socialV2Enabled !== 'boolean') return res.status(400).json({ ok: false, error: 'V2 开关必须为布尔值' });
@@ -1854,6 +1861,7 @@ httpServer = app.listen(port, '127.0.0.1', async () => {
   }
   console.log(`QQ AI ChatBot server running at http://127.0.0.1:${port}`);
   connectOneBot();
+  startPippiActivity(sendOneBotMessage);
   // Start Wuxin's local yumu-image endpoint on 8389. The renderer keeps its
   // original 8388 connection and opens this second connection independently.
   startRenderServer(Number(process.env.WUXIN_RENDER_PORT || 8389));

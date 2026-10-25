@@ -13,6 +13,7 @@ process.env.NODE_ENV = 'test';
 assertNotProduction(directory);
 const store = await import('../server/store.ts');
 const state = await import('../server/bot/social/state.ts');
+const selfState = await import('../server/bot/social/self.ts');
 const runtime = await import('../server/bot/social/runtime.ts');
 const policy = await import('../server/bot/social/policy.ts');
 const { SocialCoordinator } = await import('../server/bot/social/coordinator.ts');
@@ -296,6 +297,11 @@ await test('failed revalidation cannot bypass a pause applied while the model wa
 });
 await test('backup and restart retain relationship records, names, moods and directive versions', async () => {
   seed(); commit(event(), assessment({ affinityDelta: 3, preferredNames: ['阿甲'], mood: { label: '开心', reason: '练习成功' } }));
+  store.updateDb(db => {
+    const sources = [{ id: 'actual', scope: 'group:20001', kind: 'message', userId: '10003', at: new Date().toISOString() }];
+    selfState.commitSelfProposal(db, { evidenceIds: ['actual'], remember: { fact: '讨论了练习进展', impression: '想听听后续' }, focus: { text: '后续进展' } }, { scope: 'group:20001', sources, expectedRevision: 0 });
+    db.socialV2.activity.days['2026-10-26'] = { tokens: 100, unknownTokens: 50, wakes: 1, reservations: { interrupted: 200 }, shares: {} };
+  });
   store.updateDb((db) => state.updateOwnerDirective(db, event({ userId: '10001' }), '称呼', '叫我测试员'));
   const expected = structuredClone(store.readDb().socialV2);
   const copy = structuredClone(store.readDb());
@@ -396,6 +402,19 @@ await test('full process: Owner query routes before the model and denies group o
     assert.match(sent.at(-1), /Pippi 好感榜/);
   }
   assert.equal(calls.length, 0);
+});
+
+await test('ordinary direct mentions can pass, a new friendly turn can recover, and Owner still gets a reply', async () => {
+  integrationSeed(); mockSocialAction = 'pass'; const sends = [];
+  const send = async (_, text) => { sends.push(text); return { outcome: 'confirmed_success', messageId: crypto.randomUUID() }; };
+  const first = await processIncoming(event({ text: 'Pippi 看我', atTargets: ['10002'] }), send);
+  assert.equal(first.replied, false); assert.equal(sends.length, 0); assert.equal(calls.filter(c => c.kind === 'chat').length, 0);
+  mockSocialAction = 'reply';
+  await processIncoming(event({ text: 'Pippi 这个练习建议挺有用的', atTargets: ['10002'] }), send);
+  assert.equal(sends.length, 1);
+  mockSocialAction = 'pass';
+  await processIncoming(event({ userId: '10001', text: 'Pippi 回答一下', atTargets: ['10002'] }), send);
+  assert.equal(sends.length, 2); assert.equal(state.readSocialPerson(store.readDb(), '10001').affinity.kind, 'owner');
 });
 await test('full process: sending-time rewriter receives the same configured persona as initial generation', async () => {
   integrationSeed();
@@ -601,6 +620,20 @@ await test('console API requires existing admin authentication; corrections and 
   const headers = { 'x-wuxin-admin-password': 'fixture-admin', 'Content-Type': 'application/json' };
   try {
     assert.equal((await fetch(`${url}/api/social?scope=group:20001`)).status, 401);
+    assert.equal((await fetch(`${url}/api/social/self`)).status, 401);
+    let experienceId;
+    store.updateDb(db => { experienceId = selfState.commitSelfProposal(db,
+      { evidenceIds: ['actual'], remember: { fact: '读了公开资料', impression: '有点好奇' }, focus: { text: '等后续' } },
+      { scope: 'public', sources: [{ id: 'actual', kind: 'reading', scope: 'public', at: new Date().toISOString(), url: 'https://osu.ppy.sh/home/news/1' }], expectedRevision: 0 }).experienceId; });
+    const selfUrl = `${url}/api/social/self/experiences/${experienceId}`;
+    assert.equal((await fetch(selfUrl, { method: 'DELETE', headers: { 'Content-Type': 'application/json' }, body: '{"revision":0}' })).status, 401);
+    const selfResult = await (await fetch(`${url}/api/social/self`, { headers })).json();
+    assert.equal(selfResult.total, 1); assert.equal(selfResult.self.focus.length, 1);
+    const correction = { revision: 0, fact: '校正公开资料的理解', impression: '' };
+    assert.equal((await fetch(selfUrl, { method: 'PATCH', headers, body: JSON.stringify(correction) })).status, 200);
+    assert.equal((await fetch(selfUrl, { method: 'PATCH', headers, body: JSON.stringify(correction) })).status, 409);
+    assert.equal((await fetch(selfUrl, { method: 'DELETE', headers, body: '{"revision":1}' })).status, 200);
+    assert.equal((await (await fetch(`${url}/api/social/self`, { headers })).json()).total, 0);
     const result = await (await fetch(`${url}/api/social?scope=group:20001`, { headers })).json();
     assert.equal(result.people.find((p) => p.userId === '10001').affinity.kind, 'owner');
     assert.equal(result.ranking.total, 1); assert.equal(result.ranking.entries[0].score, 52);

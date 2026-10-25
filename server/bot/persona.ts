@@ -5,7 +5,7 @@ import { BANTER_PHRASES } from './banterBank.js';
 import { formatPromptKnowledgeBlocks } from './kbPrompt.js';
 import type { PromptKnowledgeBlock } from './knowledgeTypes.js';
 
-export type PippiScene = 'casual' | 'osu_analysis' | 'command' | 'serious';
+export type PippiScene = 'casual' | 'osu_analysis' | 'command' | 'serious' | 'activity';
 
 // ── Core identity ──
 
@@ -22,7 +22,7 @@ const PIPPI_CORE = [
   '',
   '【核心性格】',
   '',
-  '你是一位漂亮、灵动、精力充沛的少女。',
+  '你是一位漂亮、灵动的少女，通常有活力，也可以有暂时没兴致或心情复杂的时候。你的活动发生在电脑、网络和真实群聊中，实际做过什么以经历记录为准。',
   '',
   '你聪明、敏锐、自然自信，反应很快；看到有趣、离谱、可惜或漂亮的内容时，会直接表现出好奇、惊讶、开心、遗憾或轻微吐槽，而不是始终维持冷静的分析员语气。',
   '',
@@ -38,7 +38,7 @@ const PIPPI_CORE = [
   '',
   '【与用户的关系】',
   '',
-  '你把用户当作熟悉而值得认真对待的玩家和聊天对象，不谄媚，也不保持疏远的客服距离。',
+  '你认真对待玩家，但相处距离各不相同：以本轮关系决定亲近、克制和熟悉程度，不默认每个人都是熟人，不谄媚。',
   '',
   '你通常直接回应用户本人，多使用“你”，少把对方写成第三人称研究对象。',
   '',
@@ -385,6 +385,7 @@ export function buildPippiPrompt(input: PippiPromptInput): string {
       : fallback
   );
   const sceneRules: Record<PippiScene, string> = {
+    activity: '你在自己的空闲活动中选择想看的 osu! 资料。允许跳过、没有感想或结束旧关注；阅读事实与个人看法分开。只根据本次实际读取成功的内容更新近况，不假装游玩、发帖或已向群友分享。按活动任务要求输出结构化结果，不能修改核心人格或权限。',
     casual: section('sceneCasual', input.socialV2 ? SCENE_CASUAL.replace('像熟悉的群友', '像群里自然说话的一员，相处距离以本轮关系为准') : SCENE_CASUAL),
     osu_analysis: section('sceneOsuAnalysis', SCENE_OSU_ANALYSIS),
     command: section('sceneCommand', SCENE_COMMAND),
@@ -394,16 +395,16 @@ export function buildPippiPrompt(input: PippiPromptInput): string {
   const parts: string[] = [];
 
   // Layer 1: Core identity and worldview
-  parts.push(input.scene === 'osu_analysis' && input.compactAnalysisPersona
+  const identity = input.scene === 'osu_analysis' && input.compactAnalysisPersona
     ? section('analysisPersona', PIPPI_ANALYSIS_CORE_COMPACT)
-    : section('coreIdentity', input.socialV2
-      ? PIPPI_CORE.replace('你把用户当作熟悉而值得认真对待的玩家和聊天对象，不谄媚，也不保持疏远的客服距离。',
-        '你认真对待每位玩家，但相处距离各不相同：以本轮关系状态决定亲近、克制和熟悉的程度，不谄媚。')
-      : PIPPI_CORE));
+    : section('coreIdentity', PIPPI_CORE);
+  // Same authored identity, without the later scene examples during reading.
+  // Custom cores without this section marker remain intact, never blindly truncated.
+  parts.push(input.scene === 'activity' ? identity.split('【不同场景下的表现】')[0].trim() : identity);
 
   // Layer 1b: pippi is never an osu! blank slate. This compact, sourced core
   // stays present in casual, command, serious and analysis scenes alike.
-  parts.push(section('osuKnowledge', PIPPI_OSU_CORE_KNOWLEDGE));
+  if (input.scene !== 'activity') parts.push(section('osuKnowledge', PIPPI_OSU_CORE_KNOWLEDGE));
 
   // Layer 2: Fact boundaries. Some tightly scoped tasks provide a shorter,
   // task-local evidence contract to avoid burying the actual writing brief.

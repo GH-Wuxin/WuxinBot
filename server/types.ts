@@ -8,7 +8,7 @@ import type { OwnerDirective, SocialState } from './bot/social/types.js';
 // ── Incoming event (produced by oneBotToInternal) ──
 
 export interface BotEvent {
-  source: 'onebot' | 'gui';
+  source: 'onebot' | 'gui' | 'pippi-activity';
   type: 'group' | 'private';
   messageId: string;
   groupId: string;
@@ -96,6 +96,10 @@ export interface DbSettings {
   externalBotQqs?: string;
   adminPassword: string;
   osuSearchEnabled?: boolean;
+  pippiActivityEnabled?: boolean;
+  pippiActivityDailyTokens?: number;
+  pippiActivityMaxWakes?: number;
+  pippiActivityForumIds?: number[];
   enableAutoModel: boolean;
   /** Agent Runtime V2 is default; set legacy or env PIPPI_AGENT_RUNTIME_MODE=legacy for rollback. */
   agentRuntimeMode?: 'legacy' | 'model_first';

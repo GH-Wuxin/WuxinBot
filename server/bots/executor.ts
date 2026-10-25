@@ -2520,9 +2520,9 @@ export interface ToolLoopOptions {
   /** Return typed evidence envelopes to the model instead of prose blobs. */
   structuredToolResults?: boolean;
   /** Optional response envelope requested only for the final synthesis call. */
-  finalResponseFormat?: Record<string, unknown>;
+  finalResponseFormat?: Record<string, unknown> | (() => Record<string, unknown> | undefined);
   /** Instruction paired with finalResponseFormat; never sent to planner turns. */
-  finalResponseInstruction?: string;
+  finalResponseInstruction?: string | (() => string);
   /** Shadow reasoning: per-turn id + router. Recording only; never applied. */
   turnId?: string;
   reasoningRouter?: ReasoningShadowSink;
@@ -3198,8 +3198,9 @@ export async function runToolLoop(
     // final-synthesis fallback. Give that finishing path the same envelope
     // contract without adding another model request. Tool calls still take
     // precedence when the model decides more evidence is needed.
-    const plannerMessages = finalResponseInstruction
-      ? withStickerReplyInstruction(currentMessages, `${finalResponseInstruction}\n如果仍需要工具，先使用结构化 tool_calls；只有决定结束本轮时才输出上面的 JSON。`)
+    const finishingInstruction = typeof finalResponseInstruction === 'function' ? finalResponseInstruction() : finalResponseInstruction;
+    const plannerMessages = finishingInstruction
+      ? withStickerReplyInstruction(currentMessages, `${finishingInstruction}\n如果仍需要工具，先使用结构化 tool_calls；只有决定结束本轮时才输出上面的 JSON。`)
       : currentMessages;
     let response;
     try {
@@ -3589,8 +3590,10 @@ export async function runToolLoop(
   } else {
     finalPrompt = '请基于以上工具调用结果给出 pippi 的自然评价，不要再调用工具。';
   }
-  if (finalResponseInstruction) {
-    finalPrompt += `\n\n${finalResponseInstruction}`;
+  const finishingInstruction = typeof finalResponseInstruction === 'function' ? finalResponseInstruction() : finalResponseInstruction;
+  const finishingFormat = typeof finalResponseFormat === 'function' ? finalResponseFormat() : finalResponseFormat;
+  if (finishingInstruction) {
+    finalPrompt += `\n\n${finishingInstruction}`;
   }
   currentMessages.push({
     role: 'user',
@@ -3617,7 +3620,7 @@ export async function runToolLoop(
       temperature,
       maxTokens,
       model,
-      ...(finalResponseFormat ? { responseFormat: finalResponseFormat } : {}),
+      ...(finishingFormat ? { responseFormat: finishingFormat } : {}),
       label: label ? `${label} [最终回答]` : undefined,
       traceRole: 'tool_synthesis',
       tracePurpose: 'tool_result_synthesis',

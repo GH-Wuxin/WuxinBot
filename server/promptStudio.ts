@@ -12,6 +12,7 @@ export interface PromptStudioModule {
 }
 
 const MODULES: PromptStudioModule[] = [
+  { id: 'pippi_activity', name: '自主阅读与近况', description: '在有限预算内选择资料、形成经历和判断自主分享时机。', injectionMethod: '与聊天共用 Pippi 核心的精简视图 + 实际来源 + 近况；不带全量群聊和人物档案。', usesPippi: true, toolsPossible: true, editableLabel: '自主活动表达补充' },
   { id: 'conversation', name: '群聊与私聊', description: '普通对话、上下文回复与最终回答。', injectionMethod: 'Pippi 完整人格 + 当前场景规则 + 全局补充；Agent 在需要时追加工具定义。', usesPippi: true, toolsPossible: true, editableLabel: '对话人格补充' },
   { id: 'agent_tools', name: '工具规划与结果整合', description: 'Agent 工具选择、必需工具引导与工具结果后的回答合成。', injectionMethod: 'Agent 专用任务提示；工具 schema 随本轮能力按需注入，不默认注入 Pippi 核心人格。', usesPippi: false, toolsPossible: true, editableLabel: '工具流程人格补充' },
   { id: 'osu_analyzer', name: 'osu! 玩家分析', description: 'Analyzer MVP 与玩家报告生成。', injectionMethod: 'Pippi 精简分析人格 + osu! 知识 + 事实边界 + 可核验数据与任务规则。', usesPippi: true, toolsPossible: false, editableLabel: '玩家分析人格补充' },

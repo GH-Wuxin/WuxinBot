@@ -1,6 +1,7 @@
 import { listModelStickers } from './index.js';
 
 export interface ParsedStickerReply {
+  self?: unknown;
   /** 独立正文：不依赖图片是否发得出去，图片失败时应当完整保留。 */
   reply: string;
   /** 只跟图片一起出现的短句。图片没交付时宿主不会把它发给用户。 */
@@ -193,7 +194,8 @@ export function parseStickerReply(value: unknown): ParsedStickerReply {
         ? ''
         : parsed.sticker_caption.trim();
       if (mode === 'none' || !stickerId) {
-        return { reply: parsed.reply.trim(), stickerCaption: '', stickerIntent, captionSplit, stickerId: null, mode: 'none', structured: true };
+        return { reply: parsed.reply.trim(), stickerCaption: '', stickerIntent, captionSplit, stickerId: null, mode: 'none', structured: true,
+          ...(parsed.self !== undefined ? { self: parsed.self } : {}) };
       }
       return {
         reply: mode === 'image_only' ? '' : parsed.reply.trim(),
@@ -203,6 +205,7 @@ export function parseStickerReply(value: unknown): ParsedStickerReply {
         stickerId,
         mode,
         structured: true,
+        ...(parsed.self !== undefined ? { self: parsed.self } : {}),
       };
     } catch {
       // Try the bounded object slice before treating the content as plain text.

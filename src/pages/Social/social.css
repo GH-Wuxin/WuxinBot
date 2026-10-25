@@ -48,3 +48,20 @@
 .social-ranking-leading { color: #f2a6cd; }
 @media (max-width: 1000px) { .social-settings { grid-template-columns: 1fr; }.social-columns { grid-template-columns: 220px minmax(0, 1fr); } }
 @media (max-width: 720px) { .social-columns, .social-filters { grid-template-columns: 1fr; }.social-members { max-height: 320px; overflow: auto; }.social-budget { flex-wrap: wrap; } }
+.pippi-self { margin: 16px 0; }
+.pippi-self h2, .pippi-self h3 { margin: 0 0 10px; }
+.pippi-self h3 { margin-top: 16px; font-size: 15px; }
+.pippi-self small { color: var(--muted); font-weight: 400; }
+.pippi-self-heading, .pippi-focus, .pippi-pages { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.pippi-self-heading p { color: var(--muted); margin: 6px 0; }
+.pippi-self-columns { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; }
+.pippi-self-columns section { min-width: 0; }
+.pippi-focus { padding: 10px 0; border-bottom: 1px solid var(--line); }
+.pippi-focus small { display: block; margin-top: 4px; }
+.pippi-activity-settings { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.pippi-experiences article { padding: 14px 0; border-bottom: 1px solid var(--line); overflow-wrap: anywhere; }
+.pippi-experiences article > button { margin-right: 8px; }
+.pippi-self details { margin-top: 10px; font-size: 13px; }
+.pippi-self summary { cursor: pointer; color: var(--muted); }
+.pippi-pages { justify-content: flex-end; margin-top: 12px; }
+@media (max-width: 800px) { .pippi-self-columns { grid-template-columns: 1fr; } }

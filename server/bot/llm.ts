@@ -449,6 +449,9 @@ export async function completeChat(db, options = {}) {
     };
   }
   const promptModule = resolvePromptModule({ ...options, promptModule: options.promptStudioModuleId });
+  if (Number(options.completionBudget) > 0 && rawLlmProvider(db) === 'codex-app-server') {
+    throw new Error('当前 Codex 通道不支持本活动要求的单次输出上限，请使用已配置的 API 模型进行自主阅读');
+  }
   if (rawLlmProvider(db) === 'codex-app-server') {
     const fallbackKey = `${db.settings.codexExecutable || ''}:${db.settings.codexModel || ''}`;
     const runFallback = async (message) => {
@@ -586,7 +589,9 @@ export async function completeChat(db, options = {}) {
   }
   // Thinking requests must not be capped by the chat-default max_tokens; the
   // reasoning content itself needs budget, so keep the provider's own limit.
-  if (!thinkingEnabled) {
+  if (Number(options.completionBudget) > 0) {
+    params.max_tokens = Math.max(128, Math.min(8192, Math.floor(Number(options.completionBudget))));
+  } else if (!thinkingEnabled) {
     params.max_tokens = Number(options.maxTokens || settings.maxTokens || 420);
   }
 
@@ -646,6 +651,9 @@ export async function completeChat(db, options = {}) {
     // `signal` to the per-attempt fetch and re-checks it before every attempt,
     // so an abort during backoff prevents the next HTTP request entirely.
     const controller = new AbortController();
+    const abortFromCaller = () => controller.abort();
+    if (options.signal?.aborted) controller.abort();
+    else options.signal?.addEventListener('abort', abortFromCaller, { once: true });
     const timer = setTimeout(() => controller.abort(), outerTimeoutMs);
     try {
       let response;
@@ -770,11 +778,14 @@ export async function completeChat(db, options = {}) {
       throw error;
     } finally {
       clearTimeout(timer);
+      options.signal?.removeEventListener('abort', abortFromCaller);
       reservation.release();
     }
   };
 
   const retryAfterEmpty = async (first) => {
+    // Autonomous work pays for every attempt and must never remove its cap.
+    if (Number(options.completionBudget) > 0) return first;
     if (options.retryOnEmpty === false) return first;
     const firstMeta = buildLlmCompletionMeta(first.raw, {
       model: params.model,

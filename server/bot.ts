@@ -89,6 +89,7 @@ import {
 import { activeModelName, activateModelProfile, activeProviderLabel } from './modelConfig.js';
 import { handleOsuCommand } from './osu/commands.js';
 import { OSU_SEARCH_TOOL, OSU_READ_TOOL, buildOsuSearchTools, executeOsuSearchTool, isOsuSearchAvailable, osuSearchGuidance } from './osu/search.js';
+import { commitSelfProposal, readPippiSelf, SELF_PROPOSAL_GUIDANCE, markExperienceShared, type SelfEvidence } from './bot/social/self.js';
 import { loadRegistry, buildBotToolSchemas, enabledBots, findBot } from './bots/registry.js';
 import {
   detectRequiredOsuTool,
@@ -775,6 +776,18 @@ async function processIncomingInner(event, sendMessage = undefined) {
 }
 
 async function generateConversationReply(event, sendMessage, decision) {
+  const readingSources: SelfEvidence[] = [];
+  const readingScope = event.type === 'group' ? `group:${event.groupId}` : `private:${event.userId}`;
+  let readingRevision = readPippiSelf(readDb()).revision;
+  let rememberedReadingId: string | undefined;
+  const confirmedReceipts: string[] = [];
+  const originalSend = sendMessage;
+  // Track the actual answer separately from thinking notices and optional stickers.
+  const sendReadingReply = originalSend ? async (...args) => {
+    const receipt = await originalSend(...args);
+    if (receipt?.outcome === 'confirmed_success') confirmedReceipts.push(String(receipt.messageId || crypto.randomUUID()));
+    return receipt;
+  } : undefined;
   let thinkingTimer = null;
   let waitUpTimer = null;
   let modelStageStarted = false;
@@ -797,6 +810,7 @@ async function generateConversationReply(event, sendMessage, decision) {
     // no pending work means zero added latency.
     await settlePendingQuickObservations(event);
     const liveDb = readDb();
+    readingRevision = readPippiSelf(liveDb).revision;
     const liveGroup = getGroup(liveDb, event.groupId) || { groupId: event.groupId, name: '私聊' };
     const liveUserPolicy = getUserPolicy(liveDb, event.groupId, event.userId);
     const messages = buildPrompt(liveDb, liveGroup, event, liveUserPolicy);
@@ -1088,7 +1102,12 @@ async function generateConversationReply(event, sendMessage, decision) {
           if (!osuSearchEnabled) return { toolCallId: toolCall.id, ok: false, content: '当前未开放 osu! 官方搜索', error: 'osu_search_unavailable' };
           if (osuSearchCalls >= 4) return { toolCallId: toolCall.id, ok: false, content: '本轮 osu! 检索与阅读已达到 4 次上限', error: 'osu_search_call_limit' };
           osuSearchCalls += 1;
-          return executeOsuSearchTool(toolCall, context);
+          const result = await executeOsuSearchTool(toolCall, context);
+          const reading = result.metadata?.reading as { id: string; url: string; title: string; at: string } | undefined;
+          if (result.ok && reading && liveDb.settings.socialV2Enabled === true) {
+            if (!readingSources.some(s => s.id === reading.id)) readingSources.push({ ...reading, kind: 'reading', scope: readingScope, userId: event.userId });
+          }
+          return result;
         }
         return executeToolCall(toolCall, context);
       };
@@ -1129,10 +1148,11 @@ async function generateConversationReply(event, sendMessage, decision) {
         continueAfterDirectPayload: modelFirstRuntime,
         deduplicateToolCalls: modelFirstRuntime,
         structuredToolResults: modelFirstRuntime,
-        ...(stickerReplyEnabled && stickerReplyInstruction ? {
-          finalResponseFormat: STICKER_REPLY_RESPONSE_FORMAT,
-          finalResponseInstruction: stickerReplyInstruction,
-        } : {}),
+        finalResponseFormat: () => stickerReplyEnabled || readingSources.length ? STICKER_REPLY_RESPONSE_FORMAT : undefined,
+        finalResponseInstruction: () => [stickerReplyInstruction || '', ...(readingSources.length ? [
+          '结束本轮时输出 JSON，reply 为实际回复；可选 self 用于保留本次阅读的经历，不必每次都记。保留已有表情字段（若开放）。回复尚未送出，self 只写已完成的阅读与感受，不记为已向群友分享。',
+          SELF_PROPOSAL_GUIDANCE, '本次实际读取成功的来源：' + JSON.stringify(readingSources),
+        ] : [])].filter(Boolean).join('\n'),
         turnId,
         reasoningRouter,
         executeToolCallFn: executeConversationTool,
@@ -1210,10 +1230,18 @@ async function generateConversationReply(event, sendMessage, decision) {
       });
     }
 
-    const stickerReply = stickerReplyEnabled
+    const stickerReply = stickerReplyEnabled || readingSources.length
       ? parseStickerReply(ai.text)
       : { reply: String(ai.text || ''), stickerCaption: '', stickerIntent: 'none' as const, captionSplit: false, stickerId: null, mode: 'none' as const, structured: false };
     ai.text = stickerReply.reply;
+    if (readingSources.length && 'self' in stickerReply && stickerReply.self) {
+      updateDb(draft => {
+        const result = commitSelfProposal(draft, stickerReply.self, { scope: readingScope, sources: readingSources,
+          expectedRevision: readingRevision, requiredEvidenceIds: readingSources.map(s => s.id) });
+        rememberedReadingId = result.experienceId;
+        traceEvent('GATE', 'pippi_self_reading', result);
+      });
+    }
     const stickerDecisionId = stickerReplyEnabled ? stickerReply.stickerId : null;
     const imageOnlySticker = stickerReplyEnabled && stickerReply.mode === 'image_only';
     // 附文只跟图片一起出现，绝不进 ai.text / deliveredText —— 于是图片发送失败时，
@@ -1538,7 +1566,7 @@ async function generateConversationReply(event, sendMessage, decision) {
       // three-segment/merged-forward paths. NapCat receives one complete,
       // deterministic message with any images appended structurally.
       const outboundText = [deliveredText, ...imageCqCodes].filter(Boolean).join('\n');
-      if (sendMessage) await sendMessage(event, outboundText, replyToCurrentMessageOptions(event));
+      if (sendReadingReply) await sendReadingReply(event, outboundText, replyToCurrentMessageOptions(event));
       segments = [outboundText];
     } else if (modelStickerCqCode && sendMessage) {
       const completeModelStickerOutcome = (stickerOutcome: StickerDeliveryOutcome, error?: unknown) => {
@@ -1571,7 +1599,7 @@ async function generateConversationReply(event, sendMessage, decision) {
       try {
         let stickerResult;
         if (isLongReply) {
-          await sendForwardText(sendMessage, event, 'Wuxin 回复', deliveredText);
+          await sendForwardText(sendReadingReply, event, 'Wuxin 回复', deliveredText);
           // The body is already visible to the user. A later optional sticker
           // failure must not turn this successful turn into replied=false or
           // cause the long body to be sent a second time.
@@ -1604,7 +1632,7 @@ async function generateConversationReply(event, sendMessage, decision) {
         } else {
           // 附文只在这一条里出现 —— 它跟图片同生共死，于是图片失败时天然不会被重发。
           const outboundText = [deliveredText, stickerCaption, modelStickerCqCode].filter(Boolean).join('\n');
-          stickerResult = await sendMessage(event, outboundText, replyToCurrentMessageOptions(event));
+          stickerResult = await (deliveredText.trim() ? sendReadingReply! : sendMessage)(event, outboundText, replyToCurrentMessageOptions(event));
           segments = [outboundText];
           const rawOutcome = stickerResult?.outcome;
           const stickerOutcome: StickerDeliveryOutcome = rawOutcome === 'confirmed_success'
@@ -1636,7 +1664,7 @@ async function generateConversationReply(event, sendMessage, decision) {
         const outboundFallback = [notice && placeholderOnly ? '' : fallbackText, notice].filter(Boolean).join('\n');
         if (outboundFallback && sendMessage) {
           try {
-            await sendMessage(event, outboundFallback, replyToCurrentMessageOptions(event));
+            await sendReadingReply!(event, outboundFallback, replyToCurrentMessageOptions(event));
             deliveredText = outboundFallback;
             segments = [outboundFallback];
             fallbackSent = true;
@@ -1669,12 +1697,16 @@ async function generateConversationReply(event, sendMessage, decision) {
         if (!fallbackSent) throw error;
       }
     } else if (isLongReply && sendMessage) {
-      await sendForwardText(sendMessage, event, 'Wuxin 回复', deliveredText);
+      await sendForwardText(sendReadingReply, event, 'Wuxin 回复', deliveredText);
       segments = [deliveredText];
     } else {
-      segments = await sendReplySegments(sendMessage, event, deliveredText);
+      segments = await sendReplySegments(sendReadingReply, event, deliveredText);
     }
     traceEvent('SEND', 'qq_delivery_completed', { status: deliveryStatus, segmentCount: segments.length });
+
+    if (rememberedReadingId && confirmedReceipts.length) updateDb(draft => {
+      markExperienceShared(draft, rememberedReadingId!, readingScope, confirmedReceipts.at(-1)!);
+    });
 
     updateDb((draft) => {
       draft.messages.push({

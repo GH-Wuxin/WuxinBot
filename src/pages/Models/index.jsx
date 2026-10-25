@@ -333,7 +333,7 @@ export function ModelsPage({ db, saveSettings }) {
           <div className="card">
             <div className="card-head"><span className="card-title">联网搜索</span><span className="muted" style={{ fontSize: 12 }}>只发送检索词，不发送整段群聊</span></div>
             <div className="row">
-              <div className="row-main"><div className="row-title">osu! 官方搜索</div><div className="row-sub">Wiki、新闻、更新日志与谱面资料，独立启用，无需 Docker</div></div>
+              <div className="row-main"><div className="row-title">osu! 官方搜索</div><div className="row-sub">Wiki、新闻、更新、谱面与公开论坛；论坛内容属于玩家观点</div></div>
               <button type="button" className={'switch' + (draft.osuSearchEnabled === true ? ' is-on' : '')} aria-label="启用 osu! 官方搜索" onClick={() => updateDraft({ osuSearchEnabled: draft.osuSearchEnabled !== true })} />
             </div>
             {draft.osuSearchEnabled === true && <p className="note">复用「osu!」页面的 API 凭据。Pippi 自行选择检索词、阅读原文并附来源；每轮最多检索或阅读 4 次。新闻按年度标题和近期摘要检索，更新日志覆盖所选频道最近 21 个构建。</p>}

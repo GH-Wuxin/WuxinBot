@@ -3,10 +3,36 @@ import { readDb, updateDb } from '../../store.js';
 import { activeOwnerDirectives, correctSocialPreferences, readSocialPerson, readSocialView, revertSocialTransition } from './state.js';
 import { readAffinityRanking, socialMemberNames } from './ranking.js';
 import { participationStatus } from './policy.js';
+import { correctSelfExperience, finishSelfFocus, readPippiSelf, selfScopeVisible } from './self.js';
+import { pippiActivityStatus } from '../activity.js';
 
 const validScope = (scope: unknown): scope is string => typeof scope === 'string' && /^(group|private):[\w-]{1,64}$/.test(scope);
 /** Mounted only after the existing console authentication middleware. */
 export function mountSocialApi(app: Express) {
+  app.get('/api/social/self', (req, res) => {
+    const scope = String(req.query.scope || 'public');
+    if (scope !== 'public' && !validScope(scope)) return res.status(400).json({ ok: false, error: '经历范围无效' });
+    const db = readDb(), self = readPippiSelf(db);
+    const all = self.experiences.filter(e => selfScopeVisible(e.scope, scope)).slice().reverse();
+    const offset = Math.max(0, Math.floor(Number(req.query.offset) || 0));
+    res.json({ ok: true, self: { revision: self.revision, mood: self.mood, focus: self.focus, updatedAt: self.updatedAt },
+      experiences: all.slice(offset, offset + 30), total: all.length, activity: pippiActivityStatus(db) });
+  });
+  const editExperience = (req, res) => {
+    if (!Number.isSafeInteger(req.body?.revision)) return res.status(400).json({ ok: false, error: '缺少经历版本' });
+    try {
+      updateDb(db => correctSelfExperience(db, String(req.params.id), req.body.revision,
+        req.method === 'DELETE' ? { remove: true } : { fact: req.body.fact, impression: req.body.impression }));
+      res.json({ ok: true });
+    } catch (error) { res.status(409).json({ ok: false, error: error.message }); }
+  };
+  app.patch('/api/social/self/experiences/:id', editExperience);
+  app.delete('/api/social/self/experiences/:id', editExperience);
+  app.post('/api/social/self/focus/:id/end', (req, res) => {
+    if (!Number.isSafeInteger(req.body?.revision)) return res.status(400).json({ ok: false, error: '缺少近况版本' });
+    try { updateDb(db => finishSelfFocus(db, String(req.params.id), req.body.revision)); res.json({ ok: true }); }
+    catch (error) { res.status(409).json({ ok: false, error: error.message }); }
+  });
   app.get('/api/social', (req, res) => {
     const db = readDb(), scope = String(req.query.scope || '');
     if (!validScope(scope)) return res.status(400).json({ ok: false, error: '请选择一个会话' });

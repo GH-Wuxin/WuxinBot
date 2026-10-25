@@ -36,7 +36,14 @@ const server = http.createServer(async (req, res) => {
   if (url.pathname.startsWith('/api/v2/changelog/')) return json(build);
   if (url.pathname === '/api/v2/beatmapsets/search') return json({ beatmapsets: [map] });
   if (url.pathname === '/api/v2/beatmapsets/123') return json(map);
+  if (url.pathname === '/api/v2/forums/2') return json({ forum: { name: 'General Discussion' }, topics: [{ id: 123, title: 'Reading practice', post_count: 12, last_post_id: 12, updated_at: '2026-10-26T00:00:00Z' }] });
+  if (url.pathname === '/api/v2/forums/topics/123') return json({ topic: { title: 'Reading practice', post_count: 12 }, posts:
+    (url.searchParams.get('sort') === 'id_desc' ? [12, 11] : [1, 2]).map(id => ({ id, user_id: 42, created_at: '2026-10-26T00:00:00Z', body: { raw: `Player opinion ${id}` } })) });
   if (url.pathname === '/v1/chat/completions') {
+    const input = JSON.parse(raw);
+    if (String(input.messages?.[0]?.content).includes('社交判断器')) return json({ choices: [{ message: { role: 'assistant', content: JSON.stringify({
+      action: 'reply', addressee: 'bot', reason: '正常资料查询', evidenceIds: [], affinityDelta: 0, familiarityDelta: 0,
+      summary: null, preferredNames: null, style: null, mood: null }) }, finish_reason: 'stop' }], usage: { total_tokens: 10 } });
     llmCalls++;
     const body = JSON.parse(raw), results = body.messages.filter(m => m.role === 'tool');
     inventories.push((body.tools || []).map(t => t.function.name));
@@ -46,7 +53,11 @@ const server = http.createServer(async (req, res) => {
     if (scenario === 'limit' && results.length < 4) calls = Array.from({ length: results.length ? 2 : 3 }, (_, i) => call('read_osu', { url: `https://osu.ppy.sh/wiki/en/Test${i + results.length}` }, `limit-${i + results.length}`));
     else if (!results.length) calls = [call('search_osu', { kind: 'wiki', query: 'accuracy' })];
     else if (results.length === 1 && scenario !== 'limit') calls = [call('read_osu', { url: 'https://osu.ppy.sh/wiki/zh/Gameplay/Accuracy' })];
-    else content = '准确率按判定加权计算。来源：https://osu.ppy.sh/wiki/zh/Gameplay/Accuracy';
+    else {
+      const evidence = body.messages.map(r => r.content).join('\n').match(/reading:[a-f0-9]{32}/)?.[0];
+      content = JSON.stringify({ reply: '准确率按判定加权计算。来源：https://osu.ppy.sh/wiki/zh/Gameplay/Accuracy',
+        self: evidence ? { evidenceIds: [evidence], remember: { fact: '读了准确率的官方说明', impression: '权重差别挺直观' } } : null });
+    }
     return json({ id: `model-${llmCalls}`, model: 'fixture-model', choices: [{ index: 0, message: { role: 'assistant', content, ...(calls.length ? { tool_calls: calls } : {}) }, finish_reason: calls.length ? 'tool_calls' : 'stop' }], usage: { prompt_tokens: 10, completion_tokens: 5, total_tokens: 15 } });
   }
   res.statusCode = 404; json({ error: 'unexpected fixture request' });
@@ -83,6 +94,15 @@ try {
   const changes = await searchOsu({ kind: 'changelog', query: 'scoring', stream: 'lazer' });
   assert.equal(changes.results.length, 1);
   assert.ok((await readOsuArticle(changes.results[0].url)).text.includes('scoring'));
+  const forums = await searchOsu({ kind: 'forum', forumId: 2, query: 'reading' });
+  assert.equal(forums.results[0].url, 'https://osu.ppy.sh/community/forums/topics/123');
+  const first = await readOsuArticle(forums.results[0].url), latest = await readOsuArticle(forums.results[0].url, true);
+  assert.ok(first.text.includes('Player opinion 1')); assert.equal(first.truncated, true);
+  assert.ok(latest.text.indexOf('opinion 11') < latest.text.indexOf('opinion 12')); assert.match(latest.coverage, /最近/);
+  assert.ok(requests.some(u => u.pathname === '/api/v2/forums/topics/123' && u.searchParams.get('sort') === 'id_desc'));
+  const reading = await executeOsuSearchTool(call('read_osu', { url: forums.results[0].url }), { db: readDb() });
+  assert.match(reading.metadata.reading.id, /^reading:/);
+  assert.equal((await executeOsuSearchTool(call('search_osu', { kind: 'forum', forumId: 2 }), { db: readDb() })).metadata?.reading, undefined);
   const maps = await searchOsu({ kind: 'beatmaps', query: 'Fixture song', mode: 'mania' });
   assert.ok(requests.some(u => u.searchParams.get('m') === '3'));
   assert.ok((await readOsuArticle(maps.results[0].url + '#mania/456')).text.includes('3.5'));
@@ -114,16 +134,27 @@ try {
   assert.ok(readDb().searchLogs.every(l => l.queryHash && !l.query && !l.url));
 
   const { processIncoming } = await import('../server/bot.ts');
-  const run = async id => {
+  const run = async (id, confirmed = false) => {
     const sends = [];
     const result = await processIncoming({ source: 'gui', type: 'private', messageId: `osu-search-${id}`, groupId: 'private',
       userId: '10001', nickname: 'Owner', text: '联网搜索 osu! 准确率规则，给我官方来源', atTargets: [], images: [], raw: {} },
-    async (_event, text) => sends.push(String(text)));
+    async (_event, text) => { sends.push(String(text)); return confirmed === true || confirmed === 'notice-only' && String(text).includes('正在思考')
+      ? { outcome: 'confirmed_success', messageId: `sent-${id}` } : undefined; });
     assert.equal(result.replied, true);
     return sends.join('\n');
   };
+  updateDb(db => { db.settings.socialV2Enabled = true; });
   assert.ok((await run('independent')).includes('https://osu.ppy.sh/wiki/zh/Gameplay/Accuracy'));
   assert.equal(llmCalls, 3, 'search, read, synthesize must form one conversation');
+  assert.equal(readDb().socialV2.self.experiences.length, 1);
+  assert.equal(readDb().socialV2.self.experiences[0].shared.length, 0, 'unknown delivery cannot claim sharing');
+  updateDb(db => { db.settings.thinkingNoticeMode = 'simple'; });
+  await run('notice-only', 'notice-only');
+  assert.equal(readDb().socialV2.self.experiences[0].shared.length, 0, 'thinking notice confirmation is not answer confirmation');
+  updateDb(db => { db.settings.thinkingNoticeMode = 'off'; });
+  await run('confirmed', true);
+  assert.equal(readDb().socialV2.self.experiences.length, 1, 'same source must not create another experience');
+  assert.equal(readDb().socialV2.self.experiences[0].shared[0].messageId, 'sent-confirmed');
   assert.ok(inventories.every(names => names.includes('search_osu') && names.includes('read_osu') && !names.includes('search_web')));
   assert.ok(envelopes.some(e => e.includes('judgement weights') && e.includes('仅作证据')));
   assert.ok(envelopes.some(e => e.includes('END_OF_ORIGINAL')), 'article evidence must survive the old 4000-character tool cap');

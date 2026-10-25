@@ -7,6 +7,7 @@ import { chatAdmissionReason, conversationContext, replyLimitReason, assessmentB
 import { commitSocialAssessment, isSystemOwner, readSocialPerson, readSocialView, socialScope } from './state.js';
 import { ownerAuthorityPrompt, SOCIAL_ASSESSMENT_PROMPT } from './prompts.js';
 import { socialCoordinator } from './coordinator.js';
+import { commitSelfProposal, readPippiSelf, selfContext, SELF_PROPOSAL_GUIDANCE } from './self.js';
 import type { SocialAssessment, SocialDecision, SocialEvent } from './types.js';
 
 export function socialEntryAllowed(db: any, event: SocialEvent, direct: boolean): boolean {
@@ -51,7 +52,8 @@ export function parseSocialAssessment(text: string, allowedEvidence: string[], o
   return { action: a.action, addressee: a.addressee, reason: a.reason, evidenceIds: [...new Set<string>(a.evidenceIds)],
     affinityDelta: owner ? 0 : a.affinityDelta, familiarityDelta: a.familiarityDelta,
     summary: a.summary, preferredNames: a.preferredNames, style: a.style,
-    mood: a.mood === null ? null : { label: a.mood.label, reason: a.mood.reason } };
+    mood: a.mood === null ? null : { label: a.mood.label, reason: a.mood.reason },
+    ...(a.self !== undefined ? { self: a.self } : {}) };
 }
 
 export function recordSocialDecision(event: SocialEvent, data: Omit<SocialDecision, 'id' | 'scope' | 'userId' | 'messageIds' | 'createdAt'>) {
@@ -78,6 +80,7 @@ export async function assessSocialTurn(event: SocialEvent, phase: 'initial' | 'r
   const conversation = conversationContext(db, event);
   event.socialEngagement = event.socialDirect ? 'direct' : conversation.continuationCandidate ? 'continuation' : 'ambient';
   const person = readSocialPerson(db, event.userId), view = readSocialView(db, scope, event.userId);
+  const selfRevision = readPippiSelf(db).revision;
   const candidate = event.socialNamed ? { ...event, socialDirect: true } : event;
   const blocked = replyLimitReason(db, candidate, conversation.continuationCandidate)
     || assessmentBudgetReason(db, candidate, phase === 'resumed');
@@ -90,19 +93,20 @@ export async function assessSocialTurn(event: SocialEvent, phase: 'initial' | 'r
   let tokens = 0;
   try {
     const result = await invoke(db, { messages: [
-      { role: 'system', content: `${SOCIAL_ASSESSMENT_PROMPT}\n${ownerAuthorityPrompt(db, event)}` },
+      { role: 'system', content: `${SOCIAL_ASSESSMENT_PROMPT}\n${SELF_PROPOSAL_GUIDANCE}\n${ownerAuthorityPrompt(db, event)}` },
       { role: 'user', content: JSON.stringify({ phase, now: new Date().toISOString(), direct: Boolean(event.socialDirect), nameMentioned: Boolean(event.socialNamed),
         bot: { userId: String(db.settings.selfQq || '').trim() || null },
         conversation, mode: db.groups.find((g) => String(g.groupId) === String(event.groupId))?.mode || 'private', target: { userId: event.userId,
           messageIds: ids, text: event.text, atTargets: event.atTargets || [], replyTo: event.replyMessageId || '' },
-        batch: event.socialMessages || [], relationship: person, currentConversation: view, timeline }) },
+        batch: event.socialMessages || [], relationship: person, currentConversation: view,
+        selfContext: selfContext(db, scope, event.userId), timeline }) },
     ], maxTokens: 1200, timeoutMs: 15_000, temperature: 0.2,
     ...thinkingParamsForLevel('low', reasoningEnabledFor(db)),
     responseFormat: { type: 'json_object' }, label: 'V2 社交评估', tracePurpose: 'social_assessment', traceRole: 'social' });
     tokens = Number(result.usage?.total_tokens || 0);
     const assessment = parseSocialAssessment(result.text, [...new Set([...ids, ...timeline.map((m) => m.messageId)])], isSystemOwner(db, event), ids);
     if (event.socialNamed && assessment.addressee === 'bot') event.socialDirect = true;
-    if (event.socialDirect) assessment.action = 'reply';
+    if (event.socialDirect && isSystemOwner(db, event)) assessment.action = 'reply';
     event.socialEngagement = event.socialDirect ? 'direct'
       : assessment.addressee === 'bot' && conversation.continuationCandidate ? 'continuation' : 'ambient';
     if (isReplyProcessAborted() || !socialEntryAllowed(readDb(), event, Boolean(event.socialDirect))) return null;
@@ -113,6 +117,11 @@ export async function assessSocialTurn(event: SocialEvent, phase: 'initial' | 'r
       updateDb((draft) => {
         committed = commitSocialAssessment(draft, { event, messageIds: ids, assessment,
           expectedPersonRevision: person?.revision || 0, expectedViewRevision: view?.revision || 0 });
+        if (committed.reason !== 'duplicate') {
+          const selfResult = commitSelfProposal(draft, assessment.self, { scope, expectedRevision: selfRevision, requiredEvidenceIds: ids,
+            sources: timeline.map(m => ({ id: m.messageId, kind: 'message' as const, scope, at: m.at, userId: m.senderId })) });
+          if (assessment.self) traceEvent('GATE', 'pippi_self_assessment', selfResult);
+        }
       });
       if (!committed.applied) traceEvent('GATE', 'social_state_not_committed', { reason: committed.reason });
     }

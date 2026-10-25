@@ -20,6 +20,8 @@ import { toPromptBlocks } from './kbPrompt.js';
 import { selectAdaptiveGroupContext } from './contextSearch.js';
 import { traceEvent } from '../requestTrace.js';
 import { buildCapabilitySummary } from './capabilitySummary.js';
+import { selfContextPrompt } from './social/self.js';
+import { socialScope } from './social/state.js';
 import { replyFailureNotice } from './replyFailures.js';
 import { displayName } from './memberDirectory.js';
 import { stickerAvailabilityForGroup } from './stickers/delivery.js';
@@ -502,6 +504,7 @@ export function buildPrompt(db, group, event, userPolicy, options = {}) {
     maxRecords: event.type === 'group' ? 3 : 2,
   }) : '';
   const relBlocks = [
+    db.settings.socialV2Enabled === true ? selfContextPrompt(db, socialScope(event), event.userId) : '',
     socialExpressionPrompt(db, event),
     includeMemory && memoryBlock ? `关于当前发言者的长期记忆：${memoryBlock}\n自然使用，不要生硬复述。` : '',
     includeGroupProfile && event.type === 'group' ? groupProfilePromptBlock(db, event.groupId) : '',

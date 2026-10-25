@@ -3,6 +3,7 @@ import { Heart, MessageCircle, RefreshCw, Trophy, Undo2 } from 'lucide-react';
 import { api } from '../../lib/api.js';
 import { Button, Card, Input, Select, Switch, Textarea } from '../../components/ui/index.jsx';
 import './social.css';
+import { SelfPanel } from './SelfPanel.jsx';
 
 const actions = { pass: '略过', wait: '等一句', react: '轻回应', reply: '回答' };
 const stages = { assessment: '语义判断', wait: '等待后续', revalidation: '发送前复核', guard: '参与限制', failure: '调用失败', delivery: '发送结果' };
@@ -63,6 +64,7 @@ export function SocialPage({ db, saveSettings, refreshState }) {
     {error && <div className="social-error" role="alert">{error}</div>}
     <div className="social-filters"><Select label="会话" value={scope} options={scopes} onChange={(e) => { setScope(e.target.value); setSelected(''); setData(null); }} />
       <Input label="查找成员" placeholder="昵称或 QQ" value={search} onChange={(e) => setSearch(e.target.value)} /></div>
+    <SelfPanel db={db} scope={scope} saveSettings={saveSettings} refreshState={refreshState} />
     <Card className="social-ranking">
       <div className="social-ranking-heading"><div><h2><Trophy size={18} /> 好感排名</h2><p className="social-note">{data?.ranking?.total ?? 0} 位普通成员 · 同分并列 · 好感为全局数值</p></div>
         <Select label="排名范围" value={rankScope} options={[{ value: 'conversation', label: '本会话' }, { value: 'global', label: '全局' }]}

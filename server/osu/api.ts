@@ -179,7 +179,7 @@ async function osuFetch<T>(path: string, options: RequestInit = {}, maxBytes?: n
 
 /** Bounded read-only public resources for the osu! information tools. */
 export async function getOsuSearchResource<T = any>(resource: string): Promise<T> {
-  if (!/^\/(?:search\?|wiki\/|news(?:\?|\/|$)|changelog(?:\?|\/|$)|beatmapsets\/)/.test(resource)
+  if (!/^\/(?:search\?|wiki\/|news(?:\?|\/|$)|changelog(?:\?|\/|$)|beatmapsets\/|forums\/(?:topics\/)?\d+(?:\?|$))/.test(resource)
     || resource.includes('\\') || resource.split('?')[0].includes('..')) throw new Error('不允许的 osu! 资料路径');
   const controller = new AbortController();
   let timer: ReturnType<typeof setTimeout>;

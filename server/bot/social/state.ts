@@ -1,9 +1,10 @@
 import type { BotEvent, Db } from '../../types.js';
+import { normalizePippiSelf, validPippiAdditions } from './self.js';
 import type { OwnerDirective, SocialAssessment, SocialPerson, SocialState, SocialTransition, SocialView } from './types.js';
 
 export const SOCIAL_DEFAULT_SCORE = 50;
-export const isSystemOwner = (db: Pick<Db, 'settings'>, event: Pick<BotEvent, 'userId'>) =>
-  Boolean(db.settings.ownerQq && String(db.settings.ownerQq) === String(event.userId));
+export const isSystemOwner = (db: Pick<Db, 'settings'>, event: Pick<BotEvent, 'userId'> & Partial<Pick<BotEvent, 'source'>>) =>
+  Boolean(event.source !== 'pippi-activity' && db.settings.ownerQq && String(db.settings.ownerQq) === String(event.userId));
 export const socialScope = (event: Pick<BotEvent, 'type' | 'groupId' | 'userId'>) =>
   event.type === 'private' ? `private:${event.userId}` : `group:${event.groupId}`;
 export const viewKey = (scope: string, userId: string) => `${scope}/${userId}`;
@@ -24,12 +25,13 @@ export function validSocialState(value: unknown): value is SocialState {
     && Object.values(value.views).every((v: any) => plainObject(v) && typeof v.summary === 'string'
       && Array.isArray(v.preferredNames) && v.preferredNames.every((n: unknown) => typeof n === 'string')
       && typeof v.style === 'string' && Number.isSafeInteger(v.revision) && plainObject(v.mood)
-      && typeof v.mood.label === 'string' && typeof v.mood.reason === 'string');
+      && typeof v.mood.label === 'string' && typeof v.mood.reason === 'string') && validPippiAdditions(value);
 }
 
 export function normalizeSocialState(db: any) {
   if (db.socialV2 === undefined) db.socialV2 = emptySocialState();
   if (!validSocialState(db.socialV2)) throw new Error('无效的 socialV2 数据；拒绝静默清空，请从备份恢复');
+  normalizePippiSelf(db);
   db.ownerDirectives ??= [];
   if (!Array.isArray(db.ownerDirectives)) throw new Error('无效的 Owner 指令记录');
   // Identity is configuration, never an LLM-controlled score or a cached role.

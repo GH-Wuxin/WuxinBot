@@ -1,4 +1,5 @@
 import type { BotEvent } from '../../types.js';
+import type { PippiSelf, SelfProposal, PippiActivityState } from './self.js';
 
 export type SocialAction = 'pass' | 'wait' | 'react' | 'reply';
 export type SocialEngagement = 'direct' | 'continuation' | 'ambient';
@@ -26,6 +27,7 @@ export interface SocialView {
   updatedAt: string;
 }
 export interface SocialAssessment {
+  self?: SelfProposal | null;
   action: SocialAction;
   addressee: 'bot' | 'member' | 'group' | 'unclear';
   reason: string;
@@ -75,6 +77,8 @@ export interface OwnerDirective {
   createdAt: string;
 }
 export interface SocialState {
+  self?: PippiSelf;
+  activity?: PippiActivityState;
   schemaVersion: 1;
   revision: number;
   people: Record<string, SocialPerson>;

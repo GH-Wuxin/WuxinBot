@@ -77,7 +77,7 @@
     "score:fallback:verify": "node --import tsx tools/score-fallback-verify.mjs",
     "score:command:verify": "node --import tsx tools/score-command-verify.mjs",
     "runtime:paths:verify": "node --import tsx tools/runtime-paths-verify.mjs",
-    "social:v2:verify": "node --import tsx --test tools/social-v2-verify.mjs",
+    "social:v2:verify": "node --import tsx --test tools/social-v2-verify.mjs tools/pippi-self-verify.mjs tools/pippi-activity-verify.mjs && node tools/pippi-self-ui-verify.mjs",
     "social:v2:replay": "node --import tsx tools/social-v2-replay.mjs"
   },
   "keywords": [],
