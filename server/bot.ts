@@ -758,7 +758,12 @@ async function processIncomingInner(event, sendMessage = undefined) {
         item.reason = reason;
       }
     });
-    if (!shouldReply) return { replied: false, reason };
+    if (!shouldReply) {
+      if (assessment && ['react', 'reply'].includes(action)) recordSocialDecision(merged, {
+        stage: 'guard', action: 'pass', reason: guard || '请求已取消', evidenceIds: [], durationMs: 0, totalTokens: 0,
+      });
+      return { replied: false, reason };
+    }
     merged.socialAction = action;
     merged.socialContextIds ||= socialTimeline(readDb(), merged, 40).map((m) => m.messageId);
     const output = await generateConversationReply(merged, sendMessage, { shouldReply: true, reason,

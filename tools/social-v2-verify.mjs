@@ -577,6 +577,18 @@ await test('full process: an exhausted assessment budget cannot swallow a clear 
   assert.equal(calls.filter(c => c.kind === 'chat').length, 1);
 });
 
+await test('full process: a positive assessment blocked at delivery records the actual reason', async () => {
+  integrationSeed(); mockSocialAction = 'react'; mockAddressee = 'group';
+  store.updateDb(db => { db.groups[0].cooldownSec = 30;
+    db.messages.push({ id: 'prior-other', role: 'assistant', type: 'group', groupId: '20001', replyToUserId: '10004', createdAt: new Date().toISOString() }); });
+  const e = event({ text: '大家在讨论 Pippi 呢' });
+  const result = await processIncoming(e, async () => assert.fail('cooldown must prevent delivery'));
+  assert.equal(result.replied, false); assert.match(result.reason, /冷却/);
+  const decisions = store.readDb().socialV2.decisions.filter(d => d.messageIds.includes(e.messageId));
+  assert.deepEqual(decisions.map(d => d.stage), ['assessment', 'guard']);
+  assert.equal(calls.filter(c => c.kind === 'chat').length, 0);
+});
+
 await test('console API requires existing admin authentication; corrections and feedback stay explicit', async () => {
   integrationSeed(); commit(event(), assessment({ affinityDelta: 2 }));
   runtime.recordSocialDecision(event(), { stage: 'assessment', action: 'pass', reason: '没有必要插话', evidenceIds: [], durationMs: 10, totalTokens: 20 });
