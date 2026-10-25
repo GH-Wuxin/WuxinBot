@@ -15,7 +15,6 @@ import { updateGroupProfile } from '../groupProfile.js';
 import { updateRelationshipProfile } from '../relationshipProfile.js';
 import { completeChat } from '../llm.js';
 import { activeModelName, activateModelProfile, activeProviderLabel, updateProviderSettings } from '../../modelConfig.js';
-import { isSearchAvailable, getLastSearchStatus } from '../search.js';
 import { sendForwardText } from '../reply.js';
 import { OWNER_FALLBACK_HELP } from './help.js';
 import { runBackgroundTask } from '../../backgroundTasks.js';
@@ -250,66 +249,6 @@ ${knownModels.join('\n')}
   });
   const missingCredential = switchedSettings?.llmProvider !== 'codex-app-server' && !switchedSettings?.apiKey;
   const reply = `已切换模型：${activeModelName(switchedSettings)}\n接口：${activeProviderLabel(switchedSettings)}${missingCredential ? '\n注意：该接口的 API Key 尚未配置，请到控制台“模型”页填写。' : ''}`;
-  if (ctx.sendMessage) await ctx.sendMessage(ctx.event, reply);
-  return { replied: Boolean(ctx.sendMessage), reason: reply };
-}
-
-export async function ownerSearchHandler(ctx: OwnerHandlerContext): Promise<OwnerCommandResult> {
-  const arg = (ctx.parts[2] || '').toLowerCase();
-  if (arg === 'on' || arg === 'off') {
-    updateDb((draft) => {
-      draft.settings.enableWebSearch = arg === 'on';
-      draft.adminActions.push({
-        id: crypto.randomUUID(),
-        operatorUserId: ctx.event.userId,
-        action: `/wuxin search ${arg}`,
-        targetUserId: 'bot',
-        groupId: ctx.event.groupId,
-        detail: `联网搜索${arg === 'on' ? '开启' : '关闭'}`,
-        createdAt: nowIso()
-      });
-    });
-    const reply = `已${arg === 'on' ? '开启' : '关闭'}联网搜索。`;
-    if (ctx.sendMessage) await ctx.sendMessage(ctx.event, reply);
-    return { replied: Boolean(ctx.sendMessage), reason: reply };
-  }
-
-  if (arg === 'status') {
-    const db = readDb();
-    const statusLine = db.settings.enableWebSearch ? '已开启' : '已关闭';
-    const searchAvailable = isSearchAvailable(db);
-    const lastSearch = getLastSearchStatus(db);
-    const searchInfo = searchAvailable
-      ? `真实搜索源：${db.settings.searchProvider} (${db.settings.searchBaseUrl})`
-      : '未接入真实搜索源，显式搜索会拒绝（避免瞎编）';
-    const lastLine = lastSearch
-      ? `最近搜索：${lastSearch.resultCount}条结果 · ${lastSearch.latencyMs}ms${lastSearch.error ? ' · 错误：' + lastSearch.error : ''}`
-      : '暂无搜索记录';
-    const reply = `联网搜索：${statusLine}，模式：${db.settings.webSearchMode || 'balanced'}。${searchInfo}。${lastLine}。`;
-    if (ctx.sendMessage) await ctx.sendMessage(ctx.event, reply);
-    return { replied: Boolean(ctx.sendMessage), reason: reply };
-  }
-
-  if (['fast', 'balanced', 'deep'].includes(arg)) {
-    updateDb((draft) => {
-      draft.settings.enableWebSearch = true;
-      draft.settings.webSearchMode = arg;
-      draft.adminActions.push({
-        id: crypto.randomUUID(),
-        operatorUserId: ctx.event.userId,
-        action: `/wuxin search ${arg}`,
-        targetUserId: 'bot',
-        groupId: ctx.event.groupId,
-        detail: `联网搜索模式切换为 ${arg}`,
-        createdAt: nowIso()
-      });
-    });
-    const reply = `已设置联网搜索模式为 ${arg}，并已开启搜索。`;
-    if (ctx.sendMessage) await ctx.sendMessage(ctx.event, reply);
-    return { replied: Boolean(ctx.sendMessage), reason: reply };
-  }
-
-  const reply = '用法：/w search on|off|status|fast|balanced|deep';
   if (ctx.sendMessage) await ctx.sendMessage(ctx.event, reply);
   return { replied: Boolean(ctx.sendMessage), reason: reply };
 }

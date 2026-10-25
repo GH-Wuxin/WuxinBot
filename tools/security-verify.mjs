@@ -77,6 +77,15 @@ async function main() {
     const state = await authorized.json();
     assert(state.db.settings.adminPassword === '已设置', 'admin password must remain masked');
 
+    const retiredSearch = await request('/api/search/test-local', { method: 'POST', headers: authHeaders });
+    assert(retiredSearch.status === 404, 'retired local search endpoint must be absent');
+    const oldSettings = await request('/api/settings', { method: 'POST', headers: authHeaders,
+      body: { enableWebSearch: true, searchProvider: 'searxng', searchBaseUrl: 'http://127.0.0.1:1', osuSearchEnabled: true } });
+    assert(oldSettings.status === 200, 'official search setting must save');
+    const afterSearch = await (await request('/api/state', { headers: authHeaders })).json();
+    assert(afterSearch.db.settings.osuSearchEnabled === true, 'official search setting must persist');
+    assert(!('searchProvider' in afterSearch.db.settings), 'old clients must not restore retired search settings');
+
     const invalidGroup = await request('/api/groups', {
       method: 'POST',
       headers: authHeaders,

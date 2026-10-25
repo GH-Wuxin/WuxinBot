@@ -324,7 +324,7 @@ export function validateOperation(op: AllowedOperation): { ok: true } | { ok: fa
 
 // ── LLM tool result sanitization ──
 
-export function sanitizeToolResult(content: string): string {
+export function sanitizeToolResult(content: string, maxLength = 4000): string {
   const safeUrls: string[] = [];
   const withUrlPlaceholders = String(content || '').replace(/https?:\/\/[^\s<>"'`]+/gi, (candidate) => {
     try {
@@ -349,8 +349,8 @@ export function sanitizeToolResult(content: string): string {
     .replace(/__SAFE_TOOL_URL_(\d+)__/g, (_, index) => safeUrls[Number(index)] || '[链接已隐藏]');
 
   // Truncate if too long
-  if (cleaned.length > 4000) {
-    cleaned = cleaned.slice(0, 4000) + '\n（结果过长，已截断）';
+  if (cleaned.length > maxLength) {
+    cleaned = cleaned.slice(0, maxLength) + '\n（结果过长，已截断）';
   }
 
   return cleaned;

@@ -95,8 +95,7 @@ export interface DbSettings {
   selfQq: string;
   externalBotQqs?: string;
   adminPassword: string;
-  enableWebSearch: boolean;
-  webSearchMode: 'fast' | 'balanced' | 'deep';
+  osuSearchEnabled?: boolean;
   enableAutoModel: boolean;
   /** Agent Runtime V2 is default; set legacy or env PIPPI_AGENT_RUNTIME_MODE=legacy for rollback. */
   agentRuntimeMode?: 'legacy' | 'model_first';
@@ -395,7 +394,6 @@ export interface LlmCompletionOptions {
   overrideModel?: string | null;
   maxTokens?: number | null;
   timeoutMs?: number;
-  searchMode?: string | null;
 }
 
 export interface LlmUsage {

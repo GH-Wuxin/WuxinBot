@@ -56,9 +56,6 @@ export const OWNER_FALLBACK_HELP = `Wuxin 指令 · 都可以简写为 /w
 【模型与搜索】
 /w model 模型名 · 切换模型
 /w model list · 模型列表
-/w search on|off · 开关搜索
-/w search status · 搜索状态
-/w search fast|balanced|deep · 搜索模式
 /w thinking off|simple|detail|slow [ms]|status · 思考提示
 /w sysfacts on|off · 纯人设模式
 /w summarize 条数 · 总结群聊

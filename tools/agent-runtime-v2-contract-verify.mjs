@@ -102,9 +102,9 @@ assert.ok(!v2Tools.some((tool) => tool.function.name === 'osu_analyze_beatmap_sk
 assert.equal(agentRuntimeModeFor({ settings: {} }), 'model_first', 'model-first runtime is the default');
 assert.equal(agentRuntimeModeFor({ settings: { agentRuntimeMode: 'legacy' } }), 'legacy', 'stored rollback mode is honored');
 assert.match(
-  buildAgentAutonomyGuidance({ searchEnabled: true, maxSearchCalls: 2 }),
-  /search_web；本轮最多 2 次/,
-  'autonomy guidance names the exact exposed web-search function',
+  buildAgentAutonomyGuidance({ osuSearchEnabled: true }),
+  /search_osu.*read_osu/,
+  'autonomy guidance names the available official osu tools',
 );
 
 let modelRound = 0;

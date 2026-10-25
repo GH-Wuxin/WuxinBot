@@ -9,7 +9,7 @@ const policyOptions = [
 const modeOptions = [
   ['', '按真实配置'], ['silent', '静默'], ['mention', '只在 @ 时回复'], ['light', '轻度参与'], ['natural', '自然群友'], ['osu', '仅 osu! 指令'],
 ];
-const TOOL_SURFACE = ['best_score', 'best_scores', 'player', 'pp_plus', 'bp_type', 'recommend', 'beatmap', 'pp_calc', 'leaderboard', 'search_web', 'memory', 'group_profile'];
+const TOOL_SURFACE = ['best_score', 'best_scores', 'player', 'pp_plus', 'bp_type', 'recommend', 'beatmap', 'pp_calc', 'leaderboard', 'search_osu', 'read_osu', 'memory', 'group_profile'];
 
 export function AgentPage({ db }) {
   const groups = db.groups || [];

@@ -24,7 +24,7 @@ ensureStore();
 updateDb((db) => {
   Object.assign(db.settings, Object.fromEntries(keys.filter((k) => source[k] !== undefined).map((k) => [k, source[k]])), {
     ownerQq: '10001', selfQq: '10002', socialV2Enabled: true, enableAutoModel: false, memoryEnabled: false,
-    enableWebSearch: false, oneBotHttpUrl: 'http://127.0.0.1:1', oneBotWsUrl: '', oneBotAccessToken: '', thinkingNoticeMode: 'off',
+    osuSearchEnabled: false, oneBotHttpUrl: 'http://127.0.0.1:1', oneBotWsUrl: '', oneBotAccessToken: '', thinkingNoticeMode: 'off',
   });
   db.groups = [{ groupId: '20001', name: '合成测试群', enabled: true, mode: 'natural' }];
   db.users = []; db.memories = []; db.groupProfiles = []; db.relationshipProfiles = []; db.ownerDirectives = [];

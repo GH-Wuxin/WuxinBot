@@ -32,12 +32,11 @@ export function agentRuntimeModeFor(db: any): AgentRuntimeMode {
  * cross-tool evidence, persistence and safety invariants.
  */
 export function buildAgentAutonomyGuidance(options: {
-  searchEnabled?: boolean;
-  maxSearchCalls?: number;
+  osuSearchEnabled?: boolean;
 } = {}): string {
-  const searchLine = options.searchEnabled
-    ? `网页信息可能过期或本地工具没有答案时，可调用 search_web；本轮最多 ${options.maxSearchCalls || 1} 次。`
-    : '本轮没有可用的网页搜索工具，不得声称已经联网搜索。';
+  const searchLine = options.osuSearchEnabled
+      ? '本轮仅开放 osu! 官方资料搜索 search_osu 和原文阅读 read_osu；其他领域不可声称已联网核实。'
+      : '本轮没有可用的网页搜索工具，不得声称已经联网搜索。';
   return [
     '【Agent 行动约定】',
     '你可以自行决定直接回答或调用一个、多个工具。需要实时、精确、外部或玩家私有数据时先取证；普通闲聊和仅凭当前上下文即可回答的问题不要调用工具。',

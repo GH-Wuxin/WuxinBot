@@ -53,7 +53,7 @@ export async function runSandboxPreview(body: any = {}) {
 
   // Context preview
   const sandboxEvent = { type: 'group', groupId, userId, nickname, text, atTargets };
-  const messages = buildPrompt(db, group, sandboxEvent, userPolicy, {
+  const messages = buildPrompt({ ...db, settings: { ...db.settings, osuSearchEnabled: false } }, group, sandboxEvent, userPolicy, {
     includeSkill: useSkill,
     includeMemory: useMemory,
     includeGroupProfile: useGroupProfile,
@@ -77,7 +77,7 @@ export async function runSandboxPreview(body: any = {}) {
       const llmMessages = messages.length > 10
         ? [messages[0], ...messages.slice(-9)]
         : messages;
-      const ai = await callLLM(db, llmMessages, db.settings.enableWebSearch ? (db.settings.webSearchMode || 'balanced') : null, { maxTokens: 300 });
+      const ai = await callLLM(db, llmMessages, { maxTokens: 300 });
       replyPreview = ai.text || '';
       usage = ai.usage || null;
     } catch (e: any) { replyPreview = `LLM 调用失败: ${e.message}`; }

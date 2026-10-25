@@ -22,7 +22,7 @@ const { buildPrompt } = await import('../server/bot/prompt.ts');
 ensureStore();
 updateDb((db) => {
   Object.assign(db.settings, modelSettings, { ownerQq: '10001', selfQq: '10002', socialV2Enabled: true,
-    enableAutoModel: false, memoryEnabled: false, enableWebSearch: false, oneBotHttpUrl: 'http://127.0.0.1:1', oneBotWsUrl: '',
+    enableAutoModel: false, memoryEnabled: false, osuSearchEnabled: false, oneBotHttpUrl: 'http://127.0.0.1:1', oneBotWsUrl: '',
     oneBotAccessToken: '', thinkingNoticeMode: 'off', socialMaxAssessmentsPerHour: 300 });
 });
 const report = { generatedAt: new Date().toISOString(), model: source.model, provider: source.llmProvider,

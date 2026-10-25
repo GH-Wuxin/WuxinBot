@@ -41,13 +41,9 @@ export interface LlmCompletionMeta {
 /** Pure policy helper so the empty-response retry contract is regression-testable. */
 export function buildEmptyReplyRetryParams(
   params: Record<string, any>,
-  options: { retainToolsOnEmpty?: boolean; removeProviderSearch?: boolean } = {},
+  options: { retainToolsOnEmpty?: boolean } = {},
 ): Record<string, any> {
   const retryParams = { ...params };
-  if (options.removeProviderSearch) {
-    delete retryParams.enable_search;
-    delete retryParams.search_mode;
-  }
   if (!options.retainToolsOnEmpty && retryParams.tools) {
     delete retryParams.tools;
     delete retryParams.tool_choice;
@@ -188,14 +184,6 @@ export function llmProviderName(provider) {
     'codex-app-server': 'ChatGPT / Codex'
   };
   return names[provider] || provider || 'LLM';
-}
-
-export function supportsProviderSearch(provider) {
-  // DeepSeek's official chat-completion API is OpenAI-compatible but does not
-  // currently document a built-in web-search parameter. Keep this false until a
-  // real search adapter (SearXNG/Brave/Bing/etc.) is wired in; otherwise the bot
-  // may look like it searched while the model is only guessing.
-  return false;
 }
 
 function rawLlmProvider(db) {
@@ -577,7 +565,6 @@ export async function completeChat(db, options = {}) {
   const { provider, client, baseURL, settings } = createLLMClient(db, requestedModel);
   const resolvedDb = { ...db, settings };
   const started = Date.now();
-  const searchMode = options.searchMode;
   const messages = normalizeLlmMessages(
     await attachVisionImages(resolvedDb, options.messages || [], options.visionImages || [], options)
   );
@@ -609,10 +596,6 @@ export async function completeChat(db, options = {}) {
     params.tool_choice = options.tool_choice || 'auto';
   }
 
-  if (searchMode && supportsProviderSearch(provider)) {
-    params.enable_search = true;
-    params.search_mode = searchMode;
-  }
   if (options.responseFormat) {
     params.response_format = options.responseFormat;
   }
@@ -814,7 +797,6 @@ export async function completeChat(db, options = {}) {
     if (first.text || (first.raw?.choices?.[0]?.message?.tool_calls?.length > 0)) return first;
     const retryParams = buildEmptyReplyRetryParams(params, {
       retainToolsOnEmpty: options.retainToolsOnEmpty === true,
-      removeProviderSearch: Boolean(searchMode && supportsProviderSearch(provider)),
     });
     const second = await runCompletion(retryParams);
     return {
@@ -840,29 +822,7 @@ export async function completeChat(db, options = {}) {
     };
   } catch (error) {
     recordLlmError(String(error?.message || error?.code || ''));
-    const status = Number(error?.status || 0);
     const message = String(error?.message || error?.code || '');
-    if (
-      searchMode &&
-      supportsProviderSearch(provider) &&
-      status === 400 &&
-      (message.includes('enable_search') || message.includes('search'))
-    ) {
-      delete params.enable_search;
-      delete params.search_mode;
-      const result = await retryAfterEmpty(await runCompletion(params));
-      return {
-        ...result,
-        provider,
-        model: params.model,
-        latencyMs: Date.now() - started,
-        meta: buildLlmCompletionMeta(result.raw, {
-          model: params.model,
-          provider,
-          latencyMs: Date.now() - started,
-        })
-      };
-    }
     if (/Connection error/i.test(message) || error?.name === 'APIConnectionError') {
       const cause = error?.cause?.code || error?.cause?.message || '';
       throw new Error(`${llmProviderName(provider)} 连接失败：${baseURL || '未配置 API 地址'}。${cause || message}`);
@@ -871,11 +831,10 @@ export async function completeChat(db, options = {}) {
   }
 }
 
-export async function callLLM(db, messages, searchMode, options = {}) {
+export async function callLLM(db, messages, options = {}) {
   return completeChat(db, {
     ...options,
     messages,
-    searchMode,
     model: options.overrideModel || db.settings.model || 'deepseek-chat'
   });
 }

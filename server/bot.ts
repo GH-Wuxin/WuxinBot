@@ -39,7 +39,6 @@ import {
   describeModel,
   getPricing,
   calcCost,
-  asksForExplicitSearch,
   isLongFormRequest,
   responseOptionsFor,
   ownerPrivateContextStats,
@@ -76,14 +75,6 @@ import { getRelationshipProfile, updateRelationshipProfile, clearRelationshipPro
 import { processTrustSignal, evaluateTrustScores, isTrustedMember } from './bot/trust.js';
 import { abortReplyProcess, isReplyProcessAborted, runReplyProcess, updateReplyProcessStage } from './bot/replyProcesses.js';
 import { processXpGain, getExperience, getXpBonus, formatXpBar, getUnlockedFeatures, getLevelInfo, getNextLevelInfo, levelToPp, decayInactiveUsers } from './bot/experience.js';
-import {
-  SEARCH_TOOL_NAME,
-  buildSearchToolGuidance,
-  buildSearchToolSchema,
-  executeSearchToolCall,
-  extractSearchQuery,
-  isSearchAvailable,
-} from './bot/search.js';
 import { setBotPaused, getRecalcProgress, startRecalc, tickRecalc, finishRecalc, markActiveProcessing, recordDecisionError } from './health.js';
 import { runBackgroundTask } from './backgroundTasks.js';
 import { runInboundTask } from './bot/inboundGate.js';
@@ -97,6 +88,7 @@ import {
 } from './requestTrace.js';
 import { activeModelName, activateModelProfile, activeProviderLabel } from './modelConfig.js';
 import { handleOsuCommand } from './osu/commands.js';
+import { OSU_SEARCH_TOOL, OSU_READ_TOOL, buildOsuSearchTools, executeOsuSearchTool, isOsuSearchAvailable, osuSearchGuidance } from './osu/search.js';
 import { loadRegistry, buildBotToolSchemas, enabledBots, findBot } from './bots/registry.js';
 import {
   detectRequiredOsuTool,
@@ -819,10 +811,6 @@ async function generateConversationReply(event, sendMessage, decision) {
     if (event.socialAction === 'react') responseOptions.maxTokens = Math.min(responseOptions.maxTokens || 250, 250);
     const turnId = String(event.messageId || crypto.randomUUID());
     const reasoningRouter = createShadowReasoningRouter();
-    const explicitSearch = asksForExplicitSearch(event.text);
-    // osu! data queries use their own deterministic routing. Don't let the
-    // generic "查/搜" search keyword match eat them before tool availability
-    // is checked — the requiredTool path handles data retrieval directly.
     let osuDataIntent = detectRequiredOsuTool(event.text);
     // BP 谱面类型/组成问题（含显式点名 osu_oracle）必须走确定性 bp_type 路由，
     // 不允许 LLM 用上下文旧数据编造比例。
@@ -839,7 +827,6 @@ async function generateConversationReply(event, sendMessage, decision) {
     const registryHere = loadRegistry(liveDb);
     const namedBotRequest = detectNamedBotRequest(event.text, registryHere.bots || []);
     traceEvent('ROUTER', 'conversation_route_resolved', {
-      explicitSearch,
       osuCapability: osuDataIntent?.args?.capability || '',
       namedBotId: namedBotRequest?.botId || '',
     });
@@ -903,24 +890,11 @@ async function generateConversationReply(event, sendMessage, decision) {
       return { replied: true, text: replyText, reason: 'named_bot_no_adapter' };
     }
 
-    // Explicit search still has a deterministic availability guard. Query
-    // planning and execution happen later through the LLM tool loop.
-    if (explicitSearch && !osuDataIntent && !namedBotRequest && !isSearchAvailable(liveDb)) {
-      // Search requested but no real provider configured — don't let LLM fake it
-      const replyText = '当前还没有接入真实联网搜索源。可以在控制台「模型」页配置 SearXNG 或其他搜索服务。';
-      if (sendMessage) await sendMessage(event, replyText);
-      updateDb((draft) => {
-        draft.messages.push({ id: crypto.randomUUID(), ...replyTargetMetadata(event), role: 'assistant', type: event.type, groupId: event.groupId, userId: 'bot', nickname: '机器人', content: replyText, inContext: true, createdAt: nowIso() });
-        draft.usage.replies += 1;
-      });
-      return { replied: true, text: replyText, reason: '搜索请求但未接入真实搜索源' };
-    }
-
     // Natural replies decide an optional sticker only in their final model
-    // output. Data queries, explicit searches and named-bot routes keep their
+    // output. Data queries and named-bot routes keep their
     // existing delivery semantics and do not pay for a sticker envelope.
     const stickerCapability = resolveStickerReplyCapability({
-      eligible: !explicitSearch && !osuDataIntent && !namedBotRequest,
+      eligible: !osuDataIntent && !namedBotRequest,
       deliveryMode: stickerDeliveryConfig(liveDb).mode,
     });
     if (stickerCapability.reason === 'catalog_unavailable') {
@@ -929,8 +903,6 @@ async function generateConversationReply(event, sendMessage, decision) {
     const stickerReplyEnabled = stickerCapability.enabled;
     const stickerReplyInstruction = stickerCapability.instruction;
 
-    const searchMode = responseOptions.searchMode || liveDb.settings.webSearchMode || 'balanced';
-    const maxSearchCalls = searchMode === 'deep' ? 3 : (searchMode === 'fast' ? 1 : 2);
     const agentRuntimeMode = agentRuntimeModeFor(liveDb);
     const modelFirstRuntime = agentRuntimeMode === 'model_first';
     const registryForTurn = loadRegistry(liveDb);
@@ -938,23 +910,19 @@ async function generateConversationReply(event, sendMessage, decision) {
     const botTools = hasEnabledBots
       ? buildBotToolSchemas(registryForTurn, { surface: modelFirstRuntime ? 'v2' : 'legacy' })
       : [];
-    // Clear osu! data intents keep their deterministic domain tool. Other
-    // conversational turns receive search_web and let the LLM decide whether,
-    // what and how to search.
     // 第二层：发图工具。只在 V2 运行时提供，第一层整批结束后由执行器切换。
     const imageTools = modelFirstRuntime && hasEnabledBots
       ? buildBotToolSchemas(registryForTurn, { surface: 'v2', phase: 'image' })
       : [];
-    const searchToolEnabled = isSearchAvailable(liveDb) && (modelFirstRuntime || !osuDataIntent);
+    const osuSearchEnabled = isOsuSearchAvailable(liveDb);
     const toolsForTurn = [
       ...botTools,
-      ...(searchToolEnabled ? [buildSearchToolSchema()] : []),
+      ...(osuSearchEnabled ? buildOsuSearchTools() : []),
     ];
     const useTools = toolsForTurn.length > 0;
     traceEvent('ROUTER', 'execution_path_selected', {
       route: useTools ? 'tool_loop' : 'direct_model',
       enabledToolNames: toolsForTurn.map((tool) => tool?.function?.name).filter(Boolean),
-      explicitSearch,
       requiredOsuCapability: osuDataIntent?.args?.capability || '',
       agentRuntimeMode,
     });
@@ -1099,36 +1067,30 @@ async function generateConversationReply(event, sendMessage, decision) {
         }
         const guidanceBlocks = [];
         if (modelFirstRuntime) {
-          guidanceBlocks.push(buildAgentAutonomyGuidance({ searchEnabled: searchToolEnabled, maxSearchCalls }));
+          guidanceBlocks.push(buildAgentAutonomyGuidance({ osuSearchEnabled }));
         } else {
           if (botTools.length > 0) {
             guidanceBlocks.push(requiredCapability
               ? buildToolGuidance({ exposedCapabilities: [requiredCapability] })
               : buildToolGuidance());
           }
-          if (searchToolEnabled) {
-            guidanceBlocks.push(buildSearchToolGuidance({ explicitSearch, maxCalls: maxSearchCalls }));
-          }
         }
+        if (osuSearchEnabled) guidanceBlocks.push(osuSearchGuidance());
         if (guidanceBlocks.filter(Boolean).length > 0) {
           messages[0].content += '\n\n' + guidanceBlocks.filter(Boolean).join('\n\n');
         }
       }
 
-      let webSearchCalls = 0;
+      let osuSearchCalls = 0;
       const executeConversationTool = async (toolCall, context) => {
         assertLlmTurnActive();
-        if (String(toolCall?.function?.name || '') !== SEARCH_TOOL_NAME) {
-          return executeToolCall(toolCall, context);
+        if ([OSU_SEARCH_TOOL, OSU_READ_TOOL].includes(toolCall?.function?.name)) {
+          if (!osuSearchEnabled) return { toolCallId: toolCall.id, ok: false, content: '当前未开放 osu! 官方搜索', error: 'osu_search_unavailable' };
+          if (osuSearchCalls >= 4) return { toolCallId: toolCall.id, ok: false, content: '本轮 osu! 检索与阅读已达到 4 次上限', error: 'osu_search_call_limit' };
+          osuSearchCalls += 1;
+          return executeOsuSearchTool(toolCall, context);
         }
-        if (!searchToolEnabled) {
-          return { toolCallId: toolCall.id, ok: false, content: '当前未开放网页搜索', error: 'search_unavailable' };
-        }
-        if (webSearchCalls >= maxSearchCalls) {
-          return { toolCallId: toolCall.id, ok: false, content: `本轮网页搜索已达到 ${maxSearchCalls} 次上限`, error: 'search_call_limit' };
-        }
-        webSearchCalls += 1;
-        return executeSearchToolCall(toolCall, context);
+        return executeToolCall(toolCall, context);
       };
 
       let toolLoopModel = '';
@@ -1137,7 +1099,6 @@ async function generateConversationReply(event, sendMessage, decision) {
         updateReplyProcessStage('生成中');
         const result = await completeChat(db, {
           ...opts,
-          searchMode,
           visionImages,
           label: opts.label || 'Bot Harness'
         });
@@ -1187,26 +1148,6 @@ async function generateConversationReply(event, sendMessage, decision) {
       requiredToolLed = Boolean(requiredTool || toolResult.evidenceFallbackExecuted);
       turnToolCallsMade = Number(toolResult.toolCallsMadeThisTurn ?? toolResult.toolCallsMade) || 0;
 
-      // Explicit search is a hard user requirement. Normally the first LLM
-      // planner chooses a better query and calls search_web itself. If it
-      // ignores the tool contract, execute one bounded fallback search using
-      // the cleaned user request, then let the LLM synthesize the result.
-      const fallbackSearchQuery = explicitSearch ? extractSearchQuery(event.text) : '';
-      if (
-        explicitSearch &&
-        searchToolEnabled &&
-        webSearchCalls === 0 &&
-        fallbackSearchQuery.length >= 2
-      ) {
-        toolResult = mergeToolLoopResults(toolResult, await runToolLoop(harnessChat, {
-          ...loopOptions,
-          toolCallsExecutedBeforeLoop: turnToolCallsMade,
-          requiredTool: { toolName: SEARCH_TOOL_NAME, args: { query: fallbackSearchQuery } },
-        }));
-        requiredToolLed = true;
-        turnToolCallsMade = Number(toolResult.toolCallsMadeThisTurn ?? toolResult.toolCallsMade) || 0;
-      }
-
       // Hard guard: when the user clearly asked for recommendations but the
       // model answered WITHOUT ever running the recommend tool, any map names
       // in the reply are improvising. Re-run the loop with the deterministic
@@ -1250,7 +1191,7 @@ async function generateConversationReply(event, sendMessage, decision) {
       const finalMessages = stickerReplyEnabled && stickerReplyInstruction
         ? withStickerReplyInstruction(messages, stickerReplyInstruction)
         : messages;
-      ai = await callLLM(liveDb, finalMessages, searchMode, {
+      ai = await callLLM(liveDb, finalMessages, {
         maxTokens: responseOptions.maxTokens,
         overrideModel: responseOptions.overrideModel,
         visionImages,

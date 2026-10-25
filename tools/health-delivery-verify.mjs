@@ -30,7 +30,7 @@ try {
   ensureStore();
   updateDb(db => {
     Object.assign(db.settings, { ownerQq: '10001', selfQq: '10002', llmProvider: 'openai-compatible', model: 'fixture-model', apiKey: 'test-only',
-      apiBaseUrl: `http://127.0.0.1:${server.address().port}/v1`, enableAutoModel: false, memoryEnabled: false, enableWebSearch: false,
+      apiBaseUrl: `http://127.0.0.1:${server.address().port}/v1`, enableAutoModel: false, memoryEnabled: false, osuSearchEnabled: false,
       thinkingNoticeMode: 'slow', thinkingNoticeDelayMs: 1, botRegistry: { bots: [{ id: 'disabled-fixture', enabled: false }], updatedAt: new Date().toISOString() } });
   });
   const delivered = [];

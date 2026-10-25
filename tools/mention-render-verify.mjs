@@ -40,8 +40,7 @@ const promptFor = (messages) => {
   updateDb((db) => {
     db.settings.selfQq = SELF;
     db.settings.botNames = 'pippi';
-    db.settings.searchProvider = 'disabled';
-    db.settings.enableWebSearch = false;
+    db.settings.osuSearchEnabled = false;
     db.settings.memoryEnabled = false;
     db.groups = [{ groupId: 'mr-group', name: 'fixture', enabled: true, mode: 'natural', cooldownSec: 0, maxPerHour: 20 }];
     db.messages = messages;

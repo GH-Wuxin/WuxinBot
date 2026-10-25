@@ -4,7 +4,8 @@
 import { readDb } from '../store.js';
 import { ownerAuthorityPrompt, socialExpressionPrompt, socialTonePrompt } from './social/prompts.js';
 import { asksToInspectVisual, hasVisualPlaceholder, isQuestion } from './cleaning.js';
-import { llmProvider, llmProviderName, supportsProviderSearch } from './llm.js';
+import { llmProvider, llmProviderName } from './llm.js';
+import { isOsuSearchAvailable } from '../osu/search.js';
 import { activeModelName, isDeepSeekVisionModel } from '../modelConfig.js';
 import { groupProfilePromptBlock } from './groupProfile.js';
 import { relationshipPromptBlock } from './relationshipProfile.js';
@@ -244,16 +245,6 @@ export function calcCost(inputTokens, outputTokens, pricing) {
   return (inputTokens / 1_000_000) * pricing.input + (outputTokens / 1_000_000) * pricing.output;
 }
 
-export function asksForExplicitSearch(text) {
-  const value = String(text || '');
-  // Web search requires explicit network semantics. A bare "查/搜" (查一下、
-  // 查查、搜一下、帮我查) is NOT treated as web search — it can be an osu!
-  // data query, a named-bot invocation, or casual speech. Routing on the bare
-  // "查" ate real osu! queries and named-bot requests.
-  if (/联网(?:搜索|搜|查)?|上网(?:搜|查|搜一下)?|网上(?:查|搜|找)|搜网页|搜索网页|网页搜索|查官网|官网(?:查|搜)?|搜新闻|找网页(?:链接|结果)?|百度(?:一下|搜|查)?|搜狗(?:搜|查)?|\bgoogle\b|\bsearch\s+(?:the|on)\s+web|\bweb\s+search/i.test(value)) return true;
-  return false;
-}
-
 // Literal question markers.  This gate decides one thing only: whether the
 // group short-form guide is injected.  Getting it slightly wrong costs a
 // terser answer, not a broken one, so a plain word list beats a pattern --
@@ -285,22 +276,10 @@ export function isLongFormRequest(text) {
   return /作文|文章|长文|写一篇|写个|续写|继续|补上|结尾|三百字|300字|[0-9０-９]{3,}\s*字|不少于|大约.*字|高考作文|议论文|小说|故事/.test(String(text || ''));
 }
 
-function hasConfiguredSearch(db) {
-  const settings = db?.settings || {};
-  return Boolean(
-    settings.enableWebSearch !== false &&
-    settings.searchProvider &&
-    settings.searchProvider !== 'disabled' &&
-    String(settings.searchBaseUrl || '').trim()
-  );
-}
-
 export function responseOptionsFor(event, db, userPolicy) {
   // 不再按"任务复杂度"换模型：评分、自动路由、owner 特判都删了。
   // 现在只有一条规则 —— 带图的一轮必须锁在视觉模型上，其余一律跟着 settings.model。
   const longForm = isLongFormRequest(event.text);
-  const canSearch = supportsProviderSearch(llmProvider(db)) || hasConfiguredSearch(db);
-  const strictSearch = canSearch && asksForExplicitSearch(event.text);
   const visualTurn = modelSupportsVision(db) && (
     (Array.isArray(event.images) && event.images.length > 0) ||
     (Array.isArray(event.quotedMessage?.images) && event.quotedMessage.images.length > 0) ||
@@ -309,15 +288,10 @@ export function responseOptionsFor(event, db, userPolicy) {
   );
   const baseMax = Number(db.settings.maxTokens || 300);
   const maxTokens = Math.max(baseMax, 760);
-  const searchMode = strictSearch || (canSearch && db.settings.enableWebSearch)
-    ? (db.settings.webSearchMode || 'balanced')
-    : null;
   return {
     longForm,
-    strictSearch,
     overrideModel: visualTurn ? activeModelName(db.settings) : null,
-    maxTokens,
-    searchMode
+    maxTokens
   };
 }
 
@@ -454,8 +428,7 @@ export function buildPrompt(db, group, event, userPolicy, options = {}) {
   const speakerIdentity = `${event.nickname || event.userId}（QQ:${event.userId}，身份:${describePolicy(userPolicy.policy)}）`;
   const memoryBlock = includeMemory ? memoryPromptBlock(db, event.userId) : '';
   const provider = llmProvider(db);
-  const canSearch = supportsProviderSearch(provider) || hasConfiguredSearch(db);
-  const strictSearch = canSearch && asksForExplicitSearch(event.text);
+  const canSearch = isOsuSearchAvailable(db);
   const longForm = isLongFormRequest(event.text);
   const ownerContextNotice = ownerContext.truncated
     ? `\n【owner 私聊上下文预算】\nowner 私聊会尽量多带历史，但本次只带入最近 ${ownerContext.selected} 条，较早的 ${ownerContext.total - ownerContext.selected} 条因上下文预算被省略。不要声称自己拥有完整无限历史；如果需要更早内容，可以自然说明需要对方补一句。`
@@ -554,7 +527,6 @@ export function buildPrompt(db, group, event, userPolicy, options = {}) {
     `当前发言者：${speakerIdentity}${isOwner ? '（是系统 owner）' : ''}`,
     groupSpeakerBoundary(event, speakerIdentity, selfQq),
     visualCapabilityNotice(db, event),
-    strictSearch ? '当前消息要求搜索。不确定就说没查到，不要编造细节。' : '',
     longForm ? '当前消息是长文/续写任务。尽量完整输出，首尾完整。' : '',
     ownerContextNotice,
     groupContextNotice,

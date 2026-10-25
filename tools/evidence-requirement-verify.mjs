@@ -92,19 +92,14 @@ await check('empty retry policy retains tools only for evidence-required calls',
     model: 'test',
     tools: exposedTools,
     tool_choice: 'auto',
-    enable_search: true,
-    search_mode: 'balanced',
   };
   const strict = buildEmptyReplyRetryParams(params, {
     retainToolsOnEmpty: true,
-    removeProviderSearch: true,
   });
   assert.equal(strict.tools, exposedTools);
   assert.equal(strict.tool_choice, 'auto');
-  assert.equal(strict.enable_search, undefined);
-  assert.equal(strict.search_mode, undefined);
 
-  const ordinary = buildEmptyReplyRetryParams(params, { removeProviderSearch: true });
+  const ordinary = buildEmptyReplyRetryParams(params);
   assert.equal(ordinary.tools, undefined);
   assert.equal(ordinary.tool_choice, undefined);
   assert.ok(params.tools, 'pure helper must not mutate the original request');

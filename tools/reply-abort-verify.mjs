@@ -53,7 +53,7 @@ store.updateDb((db) => {
   db.settings.model = 'mock-model';
   db.settings.visionMode = 'off';
   db.settings.memoryEnabled = false;
-  db.settings.enableWebSearch = false;
+  db.settings.osuSearchEnabled = false;
   db.settings.enableAutoModel = false;
   db.settings.thinkingNoticeMode = 'off';
   // mention 模式：被 @ 就一定进模型，不受自然接话阈值影响，测试才稳定。

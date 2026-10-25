@@ -124,7 +124,7 @@ updateDb((db) => {
   db.settings.memoryEnabled = false;
   db.settings.contextLimit = 30;
   db.settings.enableAutoModel = false;
-  db.settings.enableWebSearch = false;
+  db.settings.osuSearchEnabled = false;
   db.settings.thinkingNoticeMode = 'off';
   db.settings.kb = JSON.parse(JSON.stringify(kbDisabledSettings));
   Object.assign(db.settings, llmSettings);

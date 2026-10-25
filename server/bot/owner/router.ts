@@ -153,9 +153,8 @@ export function resolveOwnerRoute(ctx: OwnerHandlerContext): OwnerRouteResolutio
     return directRoute('modelSet', 'modelSet');
   }
 
-  if (command === '/search') return directRoute('search', 'search');
   if (command === '/thinking') return directRoute('thinking', 'thinking');
-  if (command === '/sysfacts') return directRoute('sysfacts', 'search');
+  if (command === '/sysfacts') return directRoute('sysfacts', 'sysfacts');
 
   if (command === '/summarize') {
     const countArg = parseInt(parts[2], 10);

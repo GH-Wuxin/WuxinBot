@@ -106,8 +106,7 @@ for (const kind of ['capacity', 'timeout', 'auth', 'other']) {
     updateDb((db) => {
       db.settings.selfQq = '900000001';
       db.settings.botNames = 'pippi';
-      db.settings.searchProvider = 'disabled';
-      db.settings.enableWebSearch = false;
+      db.settings.osuSearchEnabled = false;
       db.replyFailures = failures;
       db.groups = [{ groupId: 'rf-group', name: 'fixture', enabled: true, mode: 'natural', cooldownSec: 0, maxPerHour: 20 }];
     });

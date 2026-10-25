@@ -437,7 +437,7 @@ export const defaultCommandPermissions = {
   modelShow: 'admin',
   modelSet: 'admin',
   pause: 'owner',
-  search: 'admin',
+  sysfacts: 'admin',
   thinking: 'admin',
   promptShow: 'admin',
   promptEdit: 'admin',
@@ -535,12 +535,7 @@ const initialDb = {
     selfQq: '',
     externalBotQqs: '',
     adminPassword: process.env.ADMIN_PASSWORD || '',
-    enableWebSearch: true,
-    webSearchMode: 'balanced',
-    searchProvider: 'disabled',
-    searchBaseUrl: '',
-    searchMaxResults: 5,
-    searchTimeoutMs: 8000,
+    osuSearchEnabled: false,
     enableAutoModel: true,
     agentRuntimeMode: 'model_first',
     reasoningEnabled: false,
@@ -617,6 +612,11 @@ export function normalizeDb(db) {
   // retired hidden global override must never silently reopen another group.
   const legacyMentionOnly = settings.onlyMentionMode === true;
   delete settings.onlyMentionMode;
+  for (const key of ['enableWebSearch', 'webSearchMode', 'searchProvider', 'searchBaseUrl', 'searchMaxResults', 'searchTimeoutMs']) delete settings[key];
+  if (settings.commandPermissions?.search) {
+    settings.commandPermissions.sysfacts ??= settings.commandPermissions.search;
+    delete settings.commandPermissions.search;
+  }
   delete settings.replyGateNaturalThreshold;
   delete settings.replyGateLightThreshold;
   delete settings.llmReplyGateMaxPerHour;

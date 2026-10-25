@@ -101,8 +101,7 @@ function promptFor(stickerGroupIds, mode = 'live') {
   updateDb((db) => {
     db.settings.selfQq = '900000001';
     db.settings.botNames = 'pippi';
-    db.settings.searchProvider = 'disabled';
-    db.settings.enableWebSearch = false;
+    db.settings.osuSearchEnabled = false;
     db.settings.stickerPolicy = {
       mode, allGroups: false, groupIds: stickerGroupIds,
       groupCooldownSec: 0, userCooldownSec: 0, hourlyLimit: 10, dailyLimit: 20, userDailyLimit: 10,

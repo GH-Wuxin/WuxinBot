@@ -41,8 +41,6 @@ const baseModelOptions = [
 export function ModelsPage({ db, saveSettings }) {
   const [draft, setDraft] = useState(db.settings);
   const [dirty, setDirty] = useState(false);
-  const [testingLocal, setTestingLocal] = useState(false);
-  const [localSearchStatus, setLocalSearchStatus] = useState(null);
   const [codexStatus, setCodexStatus] = useState(null);
   const [codexModels, setCodexModels] = useState([]);
   const [codexLimits, setCodexLimits] = useState(null);
@@ -170,26 +168,6 @@ export function ModelsPage({ db, saveSettings }) {
       setCodexMessage(cause.message || '退出失败');
     } finally {
       setCodexBusy(false);
-    }
-  };
-
-  const testLocalSearch = async () => {
-    setTestingLocal(true);
-    setLocalSearchStatus(null);
-    try {
-      const data = await api('/api/search/test-local', { method: 'POST' });
-      if (data.baseUrl) {
-        const patch = { enableWebSearch: true, searchProvider: 'searxng', searchBaseUrl: data.baseUrl };
-        updateDraft(patch);
-        await saveSettings(patch);
-        setLocalSearchStatus({ ok: true, message: '已检测到本地 SearXNG，并已保存配置。' });
-      } else {
-        setLocalSearchStatus({ ok: false, message: data.message || '未检测到本地搜索服务' });
-      }
-    } catch (cause) {
-      setLocalSearchStatus({ ok: false, message: `检测失败：${cause.message || '网络错误'}` });
-    } finally {
-      setTestingLocal(false);
     }
   };
 
@@ -355,30 +333,10 @@ export function ModelsPage({ db, saveSettings }) {
           <div className="card">
             <div className="card-head"><span className="card-title">联网搜索</span><span className="muted" style={{ fontSize: 12 }}>只发送检索词，不发送整段群聊</span></div>
             <div className="row">
-              <div className="row-main"><div className="row-title">启用联网搜索</div><div className="row-sub">模型按问题时效性自行决定是否搜索</div></div>
-              <button type="button" className={'switch' + (draft.enableWebSearch === true ? ' is-on' : '')} aria-label="启用联网搜索" onClick={() => updateDraft({ enableWebSearch: draft.enableWebSearch !== true })} />
+              <div className="row-main"><div className="row-title">osu! 官方搜索</div><div className="row-sub">Wiki、新闻、更新日志与谱面资料，独立启用，无需 Docker</div></div>
+              <button type="button" className={'switch' + (draft.osuSearchEnabled === true ? ' is-on' : '')} aria-label="启用 osu! 官方搜索" onClick={() => updateDraft({ osuSearchEnabled: draft.osuSearchEnabled !== true })} />
             </div>
-            {draft.enableWebSearch === true && <>
-              <div className="field"><label>搜索模式</label>
-                <select value={draft.webSearchMode || 'balanced'} onChange={(event) => updateDraft({ webSearchMode: event.target.value })}>
-                  <option value="fast">快速（1 次）</option>
-                  <option value="balanced">平衡（2 次，推荐）</option>
-                  <option value="deep">深度（3 次）</option>
-                </select>
-              </div>
-              <div className="field"><label>真实搜索源</label>
-                <select value={draft.searchProvider || 'disabled'} onChange={(event) => updateDraft({ searchProvider: event.target.value })}>
-                  <option value="disabled">未接入（关闭）</option>
-                  <option value="searxng">SearXNG</option>
-                </select>
-              </div>
-              {draft.searchProvider === 'disabled' && <div className="note" style={{ color: 'var(--amber)' }}>联网开关已打开，但真实搜索源仍未接入；显式搜索会被拒绝。</div>}
-              {draft.searchProvider === 'searxng' && <div className="field"><label>SearXNG 地址</label><input value={draft.searchBaseUrl || ''} onChange={(event) => updateDraft({ searchBaseUrl: event.target.value })} /></div>}
-              <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-                <button type="button" className="btn btn-sm" disabled={testingLocal} onClick={testLocalSearch}>{testingLocal ? '检测中…' : '检测本地搜索服务'}</button>
-                {localSearchStatus && <span className="note" style={{ color: localSearchStatus.ok ? 'var(--mint)' : 'var(--amber)' }}>{localSearchStatus.message}</span>}
-              </div>
-            </>}
+            {draft.osuSearchEnabled === true && <p className="note">复用「osu!」页面的 API 凭据。Pippi 自行选择检索词、阅读原文并附来源；每轮最多检索或阅读 4 次。新闻按年度标题和近期摘要检索，更新日志覆盖所选频道最近 21 个构建。</p>}
           </div>
         </>}
 
@@ -424,7 +382,7 @@ export function ModelsPage({ db, saveSettings }) {
           <div className="card-head"><span className="card-title">当前生效</span></div>
           <div className="kv"><span>供应商</span><b>{draft.llmProvider === 'codex-app-server' ? 'Codex 配额' : draft.llmProvider === 'openai-compatible' ? 'OpenAI 兼容' : 'DeepSeek'}</b></div>
           <div className="kv"><span>模型</span><b>{draft.llmProvider === 'codex-app-server' ? selectedCodexModel : (draft.customModel?.trim() || currentModel)}</b></div>
-          <div className="kv"><span>联网搜索</span><b>{draft.enableWebSearch ? draft.webSearchMode || 'balanced' : '关闭'}</b></div>
+          <div className="kv"><span>osu! 官方搜索</span><b>{draft.osuSearchEnabled === true ? '开启' : '关闭'}</b></div>
           <div className="kv"><span>视觉</span><b>{draft.visionMode || 'auto'}</b></div>
         </div>
       </div>

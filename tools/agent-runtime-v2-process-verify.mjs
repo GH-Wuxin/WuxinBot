@@ -127,7 +127,7 @@ try {
     db.settings.agentRuntimeMode = 'model_first';
     db.settings.thinkingNoticeMode = 'off';
     db.settings.memoryEnabled = false;
-    db.settings.enableWebSearch = false;
+    db.settings.osuSearchEnabled = false;
     db.settings.botRegistry = {
       updatedAt: new Date().toISOString(),
       bots: [{ id: 'yumu', name: '雨沐', description: 'fixture', qq: '', channel: 'internal', enabled: true, commands: [] }],

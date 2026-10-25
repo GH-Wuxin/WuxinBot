@@ -89,7 +89,7 @@ function buildLines(input: CapabilitySummaryInput): SummaryLine[] {
     protected: true,
   });
   lines.push({
-    text: '联网搜索：本轮' + (input.searchAvailable ? '可用' : '不可用') + '。',
+    text: 'osu! 官方搜索：本轮' + (input.searchAvailable ? '可用' : '不可用') + '。',
     protected: false,
   });
   lines.push({ text: CAPABILITY_SUMMARY_BOUNDARY, protected: true });
@@ -125,7 +125,7 @@ export function buildCapabilitySummary(input: CapabilitySummaryInput): string {
   // 加长，「无论如何都不超预算」这个契约就不成立了。要保住的是「不误导能力
   // 状态」这条语义，不是要求每一句都完整常驻，所以压缩而不是截断。
   const compact = '【本轮能力】' + compactSticker(input.stickerState)
-    + '；联网' + (input.searchAvailable ? '可用' : '不可用') + '。' + CAPABILITY_SUMMARY_BOUNDARY;
+    + '；osu!资料搜索' + (input.searchAvailable ? '可用' : '不可用') + '。' + CAPABILITY_SUMMARY_BOUNDARY;
   if (fitsText(compact)) return compact;
   // 连边界句都放不下（预算被配得极小）—— 那就不输出，而不是输出一个超预算的东西。
   return fitsText(CAPABILITY_SUMMARY_BOUNDARY) ? CAPABILITY_SUMMARY_BOUNDARY : '';

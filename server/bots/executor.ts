@@ -2970,7 +2970,7 @@ export async function runToolLoop(
       };
     }
 
-    const safeContent = sanitizeToolResult(result.content);
+    const safeContent = sanitizeToolResult(result.content, result.metadata?.provider === 'osu-official' ? 40000 : 4000);
     if (evidenceRequirement && !isSafeToolResult(safeContent)) {
       return {
         text: '[系统] 查询结果未通过安全校验，本轮无法生成有数据依据的回答。',
@@ -3442,7 +3442,7 @@ export async function runToolLoop(
         recommendToolCalled = osuCapabilityForToolCall(tc) === 'recommend';
       }
 
-      const safeContent = sanitizeToolResult(result.content);
+      const safeContent = sanitizeToolResult(result.content, result.metadata?.provider === 'osu-official' ? 40000 : 4000);
       if (toolResultSatisfiesEvidence(evidenceRequirement, tc, result, safeContent)) {
         evidenceRequirementSatisfied = true;
       }

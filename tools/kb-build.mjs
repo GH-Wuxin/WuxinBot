@@ -280,12 +280,11 @@ const WUXIN_SELF = [
     title: '模型与搜索',
     tags: ['model', 'search', '模型', '搜索'],
     content: [
-      '命令：/w model 模型名（切换模型）、/w model list（模型列表）、/w search on|off|status|fast|balanced|deep（搜索开关与模式）、/w thinking off|simple|detail|slow（思考提示）、/w summarize 条数（总结群聊）',
+      '命令：/w model 模型名（切换模型）、/w model list（模型列表）、/w thinking off|simple|detail|slow（思考提示）、/w summarize 条数（总结群聊）',
       '模型与搜索属于系统级设置，普通群友只能查看部分状态，修改需要管理员权限。',
     ].join('\n'),
     commandExamples: [
       { command: '/w model list', verifier: 'wuxin' },
-      { command: '/w search status', verifier: 'wuxin' },
     ],
     implementationRefs: [
       { path: 'server/bot/ownerCommands.ts', symbol: 'runOwnerCommand' },
@@ -360,7 +359,6 @@ function concreteCommandExample(entry) {
     status: '/w status',
     modelShow: '/w model list',
     modelSet: '/w model deepseek-v4-flash',
-    search: '/w search status',
     thinking: '/w thinking off',
     sysfacts: '/w sysfacts on',
     summarize: '/w summarize 10',

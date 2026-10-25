@@ -128,14 +128,6 @@ export function IntegrationsPage({ db, oneBot, saveSettings, refreshState }) {
 
       <div className="stack">
         <div className="card">
-          <div className="card-head"><span className="card-title">联网搜索</span></div>
-          <div className="kv"><span>开关</span><b>{draft.enableWebSearch ? '开启' : '关闭'}</b></div>
-          <div className="kv"><span>模式</span><b>{draft.webSearchMode || '—'}</b></div>
-          <div className="kv"><span>供应商</span><b>{draft.searchProvider || '—'}</b></div>
-          <div className="kv"><span>单轮上限</span><b>{draft.searchMaxResults || '—'} 条</b></div>
-        </div>
-
-        <div className="card">
           <div className="card-head"><span className="card-title">身份</span><span className="muted" style={{ fontSize: 12 }}>改完点右上角保存</span></div>
           <div className="field"><label>Bot QQ</label><input value={draft.selfQq || ''} onChange={(event) => update('selfQq', event.target.value)} /></div>
           <div className="field"><label>Owner QQ</label><input value={draft.ownerQq || ''} onChange={(event) => update('ownerQq', event.target.value)} /></div>

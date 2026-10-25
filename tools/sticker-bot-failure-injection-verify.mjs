@@ -65,8 +65,7 @@ updateDb((db) => {
   db.settings.enableAutoModel = false;
   db.settings.thinkingNoticeMode = 'off';
   db.settings.memoryEnabled = false;
-  db.settings.searchProvider = 'disabled';
-  db.settings.enableWebSearch = false;
+  db.settings.osuSearchEnabled = false;
   db.settings.botRegistry = {
     updatedAt: new Date().toISOString(),
     bots: [{ id: 'disabled-fixture', name: 'disabled-fixture', enabled: false, channel: 'internal', commands: [] }],

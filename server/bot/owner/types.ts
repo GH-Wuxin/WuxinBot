@@ -57,7 +57,6 @@ export type OwnerHandlerKey =
   | 'status'
   | 'modelShow'
   | 'modelSet'
-  | 'search'
   | 'thinking'
   | 'sysfacts'
   | 'summarize'

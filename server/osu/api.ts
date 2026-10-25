@@ -95,9 +95,10 @@ async function fetchWithTimeout(url: string, opts: RequestInit, timeoutMs: numbe
     const ctrl = new AbortController();
     const timer = setTimeout(() => ctrl.abort(), timeoutMs);
     try {
-      return await fetch(url, { ...opts, signal: ctrl.signal });
+      return await fetch(url, { ...opts, signal: opts.signal ? AbortSignal.any([ctrl.signal, opts.signal]) : ctrl.signal });
     } catch (error) {
       lastError = error;
+      if (opts.signal?.aborted) break;
       if (attempt >= maxAttempts || !isRetryableFetchError(error)) break;
       await new Promise((resolve) => setTimeout(resolve, GET_RETRY_BACKOFF_MS * attempt));
     } finally {
@@ -113,7 +114,7 @@ async function fetchWithTimeout(url: string, opts: RequestInit, timeoutMs: numbe
   throw new Error(`osu! API 网络请求失败${maxAttempts > 1 ? '（已自动重试 1 次）' : ''}：${message}`);
 }
 
-async function performOsuFetch<T>(path: string, options: RequestInit = {}): Promise<T> {
+async function performOsuFetch<T>(path: string, options: RequestInit = {}, maxBytes?: number): Promise<T> {
   const url = `${API_BASE}${path}`;
   let token = await getToken();
   let authRetried = false;
@@ -144,25 +145,51 @@ async function performOsuFetch<T>(path: string, options: RequestInit = {}): Prom
       if (response.status === 404) throw new Error(`osu! 资源不存在 ${path}`);
       throw new Error(`osu! API ${response.status} ${path}`);
     }
-    return response.json() as Promise<T>;
+    if (!maxBytes || !response.body) return response.json() as Promise<T>;
+    const reader = response.body.getReader(), chunks: Uint8Array[] = [];
+    let size = 0;
+    try {
+      while (true) {
+        const { value, done } = await reader.read(); if (done) break;
+        size += value.byteLength;
+        if (size > maxBytes) throw new Error('osu! 资料超过单次读取上限');
+        chunks.push(value);
+      }
+      return JSON.parse(Buffer.concat(chunks).toString('utf8')) as T;
+    } finally { await reader.cancel().catch(() => {}); reader.releaseLock(); }
   }
 }
 
-async function osuFetch<T>(path: string, options: RequestInit = {}): Promise<T> {
+async function osuFetch<T>(path: string, options: RequestInit = {}, maxBytes?: number): Promise<T> {
   const method = String(options.method || 'GET').toUpperCase();
-  if (method !== 'GET') return performOsuFetch<T>(path, options);
+  if (method !== 'GET') return performOsuFetch<T>(path, options, maxBytes);
 
   const key = `GET ${path}`;
   const existing = inFlightGets.get(key);
   if (existing) return existing as Promise<T>;
 
-  const request = performOsuFetch<T>(path, options);
+  const request = performOsuFetch<T>(path, options, maxBytes);
   inFlightGets.set(key, request);
   try {
     return await request;
   } finally {
     if (inFlightGets.get(key) === request) inFlightGets.delete(key);
   }
+}
+
+/** Bounded read-only public resources for the osu! information tools. */
+export async function getOsuSearchResource<T = any>(resource: string): Promise<T> {
+  if (!/^\/(?:search\?|wiki\/|news(?:\?|\/|$)|changelog(?:\?|\/|$)|beatmapsets\/)/.test(resource)
+    || resource.includes('\\') || resource.split('?')[0].includes('..')) throw new Error('不允许的 osu! 资料路径');
+  const controller = new AbortController();
+  let timer: ReturnType<typeof setTimeout>;
+  const deadline = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => { controller.abort(); reject(new Error('osu! 资料读取超时')); }, 15_000);
+  });
+  try {
+    return await Promise.race([deadline, osuFetch<T>(resource, { headers: { Accept: 'application/json' }, redirect: 'error',
+      signal: controller.signal }, 2 * 1024 * 1024)]);
+  } finally { clearTimeout(timer!); }
 }
 
 async function playerFetch<T>(path: string, force = false): Promise<T> {

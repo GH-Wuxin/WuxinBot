@@ -25,8 +25,7 @@ const db = {
     enableAutoModel: false,
     visionMode: 'on',
     maxTokens: 300,
-    webSearchMode: 'balanced',
-    enableWebSearch: false,
+    osuSearchEnabled: false,
   },
 };
 const ownerPolicy = { policy: 'owner' };

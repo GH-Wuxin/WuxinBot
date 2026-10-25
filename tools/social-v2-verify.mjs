@@ -28,7 +28,7 @@ const assessment = (patch = {}) => ({ action: 'pass', addressee: 'bot', reason: 
 const seed = () => store.updateDb((db) => {
   db.settings.ownerQq = '10001'; db.settings.selfQq = '10002'; db.settings.socialV2Enabled = true;
   db.settings.globalPaused = false; db.settings.onlyMentionMode = false; db.settings.socialMaxAssessmentsPerHour = 60;
-  db.settings.memoryEnabled = false; db.settings.enableWebSearch = false; db.settings.enableAutoModel = false;
+  db.settings.memoryEnabled = false; db.settings.osuSearchEnabled = false; db.settings.enableAutoModel = false;
   db.settings.thinkingNoticeMode = 'off'; db.settings.levelUpNotifyEnabled = false;
   db.settings.stickerPolicy = { mode: 'off' };
   db.groups = [{ groupId: '20001', name: '测试群', enabled: true, mode: 'natural', cooldownSec: 0, maxPerHour: 100 }];
