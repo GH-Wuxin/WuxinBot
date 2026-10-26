@@ -72,6 +72,13 @@ async function main() {
     assert(wrong.status === 401, 'wrong admin password must be rejected');
 
     const authHeaders = { 'X-Wuxin-Admin-Password': password };
+    const invalidSaving = await request('/api/settings', { method: 'POST', headers: authHeaders, body: { tokenSavingMode: 'true' } });
+    assert(invalidSaving.status === 400, 'token saving flag must be a boolean');
+    const enabledSaving = await request('/api/settings', { method: 'POST', headers: authHeaders, body: { tokenSavingMode: true } });
+    assert(enabledSaving.status === 200, 'token saving flag must save');
+    const savingState = await (await request('/api/state', { headers: authHeaders })).json();
+    assert(savingState.db.settings.tokenSavingMode === true, 'token saving flag must persist');
+    await request('/api/settings', { method: 'POST', headers: authHeaders, body: { tokenSavingMode: false } });
     const authorized = await request('/api/state', { headers: authHeaders });
     assert(authorized.status === 200, 'correct admin password must be accepted');
     const state = await authorized.json();

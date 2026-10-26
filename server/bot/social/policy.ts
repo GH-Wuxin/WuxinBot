@@ -1,3 +1,4 @@
+import { tokenSaving } from '../tokenSaving.js';
 import { getUserPolicy } from '../gate.js';
 import { textWithoutControlPlaceholders } from '../cleaning.js';
 import { isSystemOwner } from './state.js';
@@ -72,6 +73,13 @@ export function assessmentBudgetReason(db: any, event: SocialEvent, resumed: boo
   const scope = event.type === 'private' ? `private:${event.userId}` : `group:${event.groupId}`;
   const calls = db.socialV2.decisions.filter((d) => d.scope === scope && ['assessment', 'failure'].includes(d.stage)
     && d.phase !== 'revalidation' && Date.now() - Date.parse(d.createdAt) < 3600_000);
+  if (tokenSaving(db)) {
+    if (event.socialDirect || resumed || conversationContext(db, event).continuationCandidate) return '';
+    const ambient = calls.filter(d => d.engagement === 'ambient');
+    if (ambient.length >= Math.min(6, Number(db.settings.socialMaxAssessmentsPerHour || 60))) return '节能模式：自然门控达到小时额度';
+    if (ambient.some(d => Date.now() - Date.parse(d.createdAt) < 10 * 60_000)) return '节能模式：自然门控间隔中';
+    return '';
+  }
   const budget = Math.max(1, Math.min(300, Number(db.settings.socialMaxAssessmentsPerHour || 60)));
   if (calls.length >= budget) return '本会话社交评估达到小时预算；关系保持不变';
   if (event.socialDirect || resumed || conversationContext(db, event).continuationCandidate) return '';

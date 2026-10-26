@@ -102,7 +102,7 @@ const SHARD_SPECS = [
   {
     name: 'profiles',
     file: 'db-profiles.json',
-    keys: new Set(['groupProfiles', 'relationshipProfiles', 'pendingPairCounts', 'profileLogs', 'profileV3', 'socialV2'])
+    keys: new Set(['groupProfiles', 'relationshipProfiles', 'pendingPairCounts', 'profileAutoAttempts', 'profileLogs', 'profileV3', 'socialV2'])
   },
   { name: 'messages', file: 'db-messages.json', keys: new Set(['messages']) },
   { name: 'decisions', file: 'db-decisions.json', keys: new Set(['decisions']) },
@@ -467,6 +467,7 @@ const initialDb = {
   settings: {
     globalPaused: false,
     socialV2Enabled: false,
+    tokenSavingMode: false,
     socialMaxAssessmentsPerHour: 60,
     llmProvider: process.env.LLM_PROVIDER || 'deepseek',
     apiKey: process.env.LLM_API_KEY || process.env.DEEPSEEK_API_KEY || '',
@@ -578,6 +579,7 @@ const initialDb = {
   socialV2: emptySocialState(),
   ownerDirectives: [],
   pendingPairCounts: {},
+  profileAutoAttempts: {},
   trustScores: {},
   experience: {},
   groupExperience: {},
@@ -707,6 +709,7 @@ export function normalizeDb(db) {
   db.groupProfiles ||= [];
   db.relationshipProfiles ||= [];
   db.pendingPairCounts ||= {};
+  db.profileAutoAttempts ||= {};
   db.trustScores ||= {};
   db.experience ||= {};
   db.groupExperience ||= {};
@@ -1102,6 +1105,7 @@ const OPTIONAL_BACKUP_OBJECT_KEYS = [
   'skillStore',
   'groupBotConfig',
   'pendingPairCounts',
+  'profileAutoAttempts',
   'trustScores',
   'experience',
   'groupExperience',

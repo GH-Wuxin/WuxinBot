@@ -1,6 +1,7 @@
 // @ts-nocheck -- legacy runtime module; new typed modules remain checked by tsc.
 // Long-term memory: sample collection, classification, profile updates.
 // Extracted from bot.ts.
+import { tokenSaving, savingMemoryThresholds, savingMemoryDue } from './tokenSaving.js';
 import { readDb, updateDb, nowIso } from '../store.js';
 import { applyUsageTotals, usageEventFields } from '../usage.js';
 import { recordDecisionError } from '../health.js';
@@ -175,7 +176,7 @@ function thresholdsForMemory(db, memory) {
   const trustMul = trustInteractionBonus(db, memory?.userId).memoryThresholdMul;
   thresholds.minMessages = Math.max(2, Math.round(thresholds.minMessages * trustMul));
   thresholds.updateEvery = Math.max(2, Math.round(thresholds.updateEvery * trustMul));
-  return thresholds;
+  return savingMemoryThresholds(db, thresholds);
 }
 
 export function memoryIsDueForProfile(db, memory) {
@@ -188,6 +189,7 @@ export function memoryIsDueForProfile(db, memory) {
   const profileMessages = Number(memory.profileMessageCount || 0);
   const pending = Number(memory.pendingCount || 0);
   if (profileMessages < thresholds.minMessages) return false;
+  if (tokenSaving(db)) return savingMemoryDue(db, memory, thresholds, hasProfileContent(memory));
   if (!hasProfileContent(memory)) return pending >= 1;
   return pending >= thresholds.updateEvery;
 }
@@ -526,6 +528,7 @@ export function recordMemoryObservation(event, userPolicy) {
     const trustMul = trustInteractionBonus(draft, event.userId).memoryThresholdMul;
     thresholds.minMessages = Math.max(2, Math.round(thresholds.minMessages * trustMul));
     thresholds.updateEvery = Math.max(2, Math.round(thresholds.updateEvery * trustMul));
+    Object.assign(thresholds, savingMemoryThresholds(draft, thresholds));
     memory.nickname = event.nickname || memory.nickname || event.userId;
     memory.enabled = memory.enabled !== false;
     memory.importanceLevel = Math.max(Number(memory.importanceLevel || 0), importance.level);
@@ -554,7 +557,7 @@ export function recordMemoryObservation(event, userPolicy) {
     const bootstrapReady = needsInitialProfile
       && memory.pendingCount >= 1
       && (memory.lastProfileStatus === 'error' || !hasRecentProfileAttempt(memory, 30));
-    if (!retryBlockedMs && memory.profileMessageCount >= thresholds.minMessages && (memory.pendingCount >= thresholds.updateEvery || bootstrapReady)) {
+    if (!retryBlockedMs && (tokenSaving(draft) ? savingMemoryDue(draft, memory, thresholds, !needsInitialProfile) : memory.profileMessageCount >= thresholds.minMessages && (memory.pendingCount >= thresholds.updateEvery || bootstrapReady))) {
       shouldUpdate = true;
     }
     thresholdLog = {
@@ -637,6 +640,7 @@ function autoImageMemoryBudget(db, event, policy) {
 
 async function processImageMemorySummary(event, userPolicy) {
   const db = readDb();
+  if (tokenSaving(db)) return { ok: false, skipped: true, reason: '节能模式暂停自动图片记忆' };
   if (db.settings.memoryEnabled === false) return { ok: false, reason: '长期记忆已关闭' };
   if (!event.images?.length) return { ok: false, reason: '没有图片' };
   if (!canUseVisionForMemory(db)) return { ok: false, reason: '当前模型/供应商不支持视觉记忆' };
@@ -720,6 +724,7 @@ async function processImageMemorySummary(event, userPolicy) {
     const trustMul = trustInteractionBonus(draft, event.userId).memoryThresholdMul;
     thresholds.minMessages = Math.max(2, Math.round(thresholds.minMessages * trustMul));
     thresholds.updateEvery = Math.max(2, Math.round(thresholds.updateEvery * trustMul));
+    Object.assign(thresholds, savingMemoryThresholds(draft, thresholds));
     const context = captureContext(draft, event);
     const content = caption
       ? `图片摘要：${summary}；用户配文：${caption}`
@@ -765,7 +770,7 @@ async function processImageMemorySummary(event, userPolicy) {
 
     const needsInitialProfile = !hasProfileContent(memory) && memory.profileMessageCount >= thresholds.minMessages;
     const bootstrapReady = needsInitialProfile && memory.pendingCount >= 1 && !hasRecentProfileAttempt(memory, 30);
-    shouldUpdate = memory.profileMessageCount >= thresholds.minMessages && (memory.pendingCount >= thresholds.updateEvery || bootstrapReady);
+    shouldUpdate = tokenSaving(draft) ? savingMemoryDue(draft, memory, thresholds, !needsInitialProfile) : memory.profileMessageCount >= thresholds.minMessages && (memory.pendingCount >= thresholds.updateEvery || bootstrapReady);
   });
 
   if (shouldUpdate) {
@@ -781,6 +786,7 @@ async function processImageMemorySummary(event, userPolicy) {
  * configured daily budget and the machine's available resources.
  */
 export function maybeRecordImageMemorySummary(event, userPolicy) {
+  if (tokenSaving(readDb())) return Promise.resolve({ ok: false, skipped: true, reason: '节能模式暂停自动图片记忆' });
   const messageId = String(event?.messageId || '');
   const inFlightKey = messageId
     ? `${String(event?.groupId || 'private')}:${messageId}`
@@ -924,8 +930,8 @@ export async function updateMemoryProfile(db, memory, options = {}) {
   }).join('\n');
 
   // Format samples as context blocks instead of isolated lines
-  const promptSamples = selectDiverseSamples(usedSamples, 24);
-  const sampleBlocks = formatMemorySampleBlocks(memory, promptSamples);
+  const promptSamples = selectDiverseSamples(usedSamples, tokenSaving(db) ? 16 : 24);
+  const sampleBlocks = formatMemorySampleBlocks(memory, promptSamples).slice(0, tokenSaving(db) ? 6000 : undefined);
 
   // Check if old profile was generated without context awareness (legacy)
   const hasContextSamples = usedSamples.some((s) => s.context && s.context.nearby && s.context.nearby.length > 0);
@@ -980,6 +986,7 @@ ${memory.profilingRule ? `- 【硬性约束】${memory.profilingRule}` : ''}` },
   try {
     return { profile: parseProfileJson(response.text || '{}'), usage: response.usage || {}, model: response.model, provider: response.provider, runId };
   } catch (firstError) {
+    if (tokenSaving(db)) { firstError.profileRunId = runId; throw firstError; }
     try {
       const retry = await completeChat(db, {
         messages: [
@@ -1245,7 +1252,7 @@ export function commitMemoryProfileResult(userId, result, options = {}) {
     target.profileFailureCount = 0;
     target.profileRetryAfter = '';
     if (hasProfile) {
-      target.pendingCount = 0;
+      target.pendingCount = result?.pendingCountBefore !== undefined ? Math.max(0, Number(target.pendingCount || 0) - result.pendingCountBefore) : 0;
       target.lastProfiledAt = stamp;
       target.lastProfileError = '';
       target.lastProfileStatus = applyResult.changed ? 'updated' : 'checked';
@@ -1330,6 +1337,7 @@ export function maybeUpdateMemoryProfile(event, options = {}) {
   if (!initialMemory || initialMemory.enabled === false) {
     return Promise.resolve({ ok: false, skipped: true, reason: '画像不存在或已停用' });
   }
+  if (!options.force && tokenSaving(initialDb) && !memoryIsDueForProfile(initialDb, initialMemory)) return Promise.resolve({ ok: false, skipped: true, reason: '节能画像尚未达到阈值或更新间隔' });
   const initialRetryMs = profileRetryRemainingMs(initialMemory);
   if (!options.force && initialRetryMs > 0) {
     writeProfileLog({
@@ -1354,6 +1362,7 @@ export function maybeUpdateMemoryProfile(event, options = {}) {
     if (!storedMemory || storedMemory.enabled === false) {
       return { ok: false, skipped: true, reason: '画像不存在或已停用', runId, queuedMs };
     }
+    if (!options.force && tokenSaving(db) && !memoryIsDueForProfile(db, storedMemory)) return { ok: false, skipped: true, reason: '节能画像尚未到更新时机' };
     const retryMs = profileRetryRemainingMs(storedMemory);
     if (!options.force && retryMs > 0) {
       writeProfileLog({
@@ -1387,9 +1396,15 @@ export function maybeUpdateMemoryProfile(event, options = {}) {
     const memory = options.profilingRule === undefined
       ? storedMemory
       : { ...storedMemory, profilingRule: String(options.profilingRule || '') };
+    const pendingCountBefore = Number(memory.pendingCount || 0);
+    if (tokenSaving(db)) updateDb(draft => {
+      const current = (draft.memories || []).find(entry => String(entry.userId) === userId);
+      if (current) current.lastProfileAttemptAt = nowIso();
+    });
     try {
       const result = await updateMemoryProfile(db, memory, { runId });
       if (!result) return { ok: false, skipped: true, reason: '画像模型未返回结果', runId, queuedMs };
+      if (tokenSaving(db)) result.pendingCountBefore = pendingCountBefore;
       // 成功一次就清零连续失败计数，下次再坏仍从 10 分钟起步。
       profileLlmCircuit = clearProfileCircuit();
       const outcome = commitMemoryProfileResult(userId, result, {
@@ -1451,6 +1466,7 @@ export function maybeUpdateMemoryProfile(event, options = {}) {
 }
 
 export function maybeSweepDueMemoryProfiles(event) {
+  if (tokenSaving(readDb())) return { started: false, reason: '节能模式只在新增交流时更新画像' };
   const now = Date.now();
   if (now - lastMemorySweepAt < MEMORY_SWEEP_INTERVAL_MS) return { started: false, reason: '画像补偿队列冷却中' };
   const db = readDb();

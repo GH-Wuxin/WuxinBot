@@ -33,6 +33,7 @@ export type ReasonCode =
   | 'user_correction'
   | 'conflicting_context'
   | 'fast_failure_escalation'
+  | 'token_saving'
   | 'fast_default';
 
 /**
@@ -222,10 +223,15 @@ export function formatShadowRecord(record: ReasoningShadowRecord): string {
 export function createShadowReasoningRouter(
   capacity = 2000,
   log: (line: string) => void = (line) => console.log(`[reasoning-shadow] ${line}`),
+  maxLevel: ReasoningLevel = 'max',
 ): ReasoningShadowSink {
   const ring: ReasoningShadowRecord[] = [];
   return {
-    resolve: (input, turn) => resolveReasoningMode(input, turn),
+    resolve: (input, turn) => {
+      const decision = resolveReasoningMode(input, turn);
+      return LEVEL_RANK[decision.level] > LEVEL_RANK[maxLevel]
+        ? { level: maxLevel, source: 'rule', reasonCode: 'token_saving' } : decision;
+    },
     mergeTurn: (turn, decision) => mergeTurnState(turn, decision),
     record(entry) {
       ring.push(entry);

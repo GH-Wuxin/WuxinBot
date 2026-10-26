@@ -1,6 +1,7 @@
 // Group Chat Profile: per-group atmosphere description, stored separately
 // from personal memory profiles. Keyed by groupId, injected into buildPrompt
 // for the current group only.
+import { tokenSaving, groupProfileThreshold, claimProfileAttempt } from './tokenSaving.js';
 import { readDb, updateDb, nowIso } from '../store.js';
 import { applyUsageTotals, usageEventFields } from '../usage.js';
 import { activeModelName } from '../modelConfig.js';
@@ -49,7 +50,8 @@ export function collectGroupProfileSamples(db, groupId, limit = 120) {
 }
 
 export async function updateGroupProfile(db, groupId) {
-  const samples = collectGroupProfileSamples(db, groupId, 150);
+  const pendingAtStart = Number((db.groupProfiles || []).find(p => String(p.groupId) === String(groupId))?.pendingMessageCount || 0);
+  const samples = collectGroupProfileSamples(db, groupId, tokenSaving(db) ? 40 : 150);
   if (!samples || samples.length < 10) return { ok: false, error: '群聊消息太少（至少需要 10 条有内容的用户发言）' };
 
   const sampleText = samples.map((s) => `[${new Date(s.createdAt).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })}] ${s.nickname}：${s.content}`).join('\n');
@@ -124,7 +126,7 @@ export async function updateGroupProfile(db, groupId) {
         ...normalized,
         confidence: Number.isFinite(profile.confidence) ? Math.round(profile.confidence * 100) / 100 : 0.5,
         evidenceCount: samples.length,
-        pendingMessageCount: 0,
+        pendingMessageCount: Math.max(0, Number(draft.groupProfiles[existing]?.pendingMessageCount || 0) - pendingAtStart),
         lastAutoUpdateAt: nowIso(),
         lastUpdateStatus: 'success',
         lastUpdateError: '',
@@ -160,7 +162,7 @@ export function incrementGroupProfilePending(db, groupId, eventText) {
   if (!text || text.startsWith('/') || text.match(/^\[(图片|表情|表情包|视频|文件|语音|分享卡片)\]/)) return;
   const clean = textWithoutControlPlaceholders(text);
   if (clean.length < 3) return;
-  const threshold = Number(db.settings.groupProfileThreshold || 80);
+  const threshold = groupProfileThreshold(db);
   updateDb((draft) => {
     if (!draft.groupProfiles) draft.groupProfiles = [];
     let gp = draft.groupProfiles.find((p) => String(p.groupId) === String(groupId));
@@ -191,25 +193,26 @@ export async function maybeAutoUpdateGroupProfile(groupId) {
   const db = readDb();
   const gp = (db.groupProfiles || []).find((p) => String(p.groupId) === String(groupId));
   if (!gp || gp.enabled === false) return;
-  const threshold = Number(db.settings.groupProfileThreshold || 80);
+  const threshold = groupProfileThreshold(db);
   if (gp.pendingMessageCount < threshold) return;
-  const pendingBeforeUpdate = gp.pendingMessageCount || threshold;
-  // Reset counter immediately to prevent duplicate triggers
+  let admitted = false;
+  updateDb(draft => { admitted = claimProfileAttempt(draft, 'group:' + groupId, gp.lastAutoUpdateAt); });
+  if (!admitted) return;
+  // The persisted attempt timestamp prevents duplicate and failed retries.
   updateDb((draft) => {
     const p = (draft.groupProfiles || []).find((x) => String(x.groupId) === String(groupId));
     if (p) {
-      p.pendingMessageCount = 0;
       p.lastUpdateStatus = 'running';
       p.lastUpdateError = '';
     }
   });
   try {
     const result = await updateGroupProfile(db, groupId);
+    if (result.ok && !tokenSaving(readDb())) updateDb(draft => { delete draft.profileAutoAttempts?.['group:' + groupId]; });
     if (!result.ok) {
       updateDb((draft) => {
         const p = (draft.groupProfiles || []).find((x) => String(x.groupId) === String(groupId));
         if (!p) return;
-        p.pendingMessageCount = Math.max(1, Math.min(threshold - 1, Math.floor(pendingBeforeUpdate * 0.75)));
         p.lastUpdateStatus = 'failed';
         p.lastUpdateError = String(result.error || '群聊画像自动更新失败').slice(0, 240);
         p.updatedAt = nowIso();
@@ -219,7 +222,6 @@ export async function maybeAutoUpdateGroupProfile(groupId) {
     updateDb((draft) => {
       const p = (draft.groupProfiles || []).find((x) => String(x.groupId) === String(groupId));
       if (!p) return;
-      p.pendingMessageCount = Math.max(1, Math.min(threshold - 1, Math.floor(pendingBeforeUpdate * 0.75)));
       p.lastUpdateStatus = 'failed';
       p.lastUpdateError = String(error?.message || '群聊画像自动更新失败').slice(0, 240);
       p.updatedAt = nowIso();

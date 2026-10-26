@@ -1096,6 +1096,7 @@ app.get('/api/diagnostics', (_req, res) => {
 });
 
 app.post('/api/settings', async (req, res) => {
+  if (req.body?.tokenSavingMode !== undefined && typeof req.body.tokenSavingMode !== 'boolean') return res.status(400).json({ ok: false, error: '节能模式必须为布尔值' });
   for (const key of ['pippiActivityEnabled']) if (req.body?.[key] !== undefined && typeof req.body[key] !== 'boolean') return res.status(400).json({ ok: false, error: '自主活动开关必须为布尔值' });
   if (req.body?.pippiActivityDailyTokens !== undefined && (!Number.isSafeInteger(req.body.pippiActivityDailyTokens) || req.body.pippiActivityDailyTokens < 1000 || req.body.pippiActivityDailyTokens > 100000)) return res.status(400).json({ ok: false, error: '后台每日额度应为 1000–100000 Token' });
   if (req.body?.pippiActivityMaxWakes !== undefined && (!Number.isSafeInteger(req.body.pippiActivityMaxWakes) || req.body.pippiActivityMaxWakes < 1 || req.body.pippiActivityMaxWakes > 6)) return res.status(400).json({ ok: false, error: '每日自主唤醒次数应为 1–6' });

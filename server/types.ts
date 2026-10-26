@@ -43,6 +43,7 @@ export interface ReplyDecision {
 export interface DbSettings {
   globalPaused: boolean;
   socialV2Enabled?: boolean;
+  tokenSavingMode?: boolean;
   socialMaxAssessmentsPerHour?: number;
   apiKey: string;
   apiBaseUrl: string;
@@ -366,6 +367,7 @@ export interface Db {
   groupProfiles: GroupProfile[];
   relationshipProfiles: Record<string, unknown>[];
   pendingPairCounts: Record<string, number>;
+  profileAutoAttempts: Record<string, string>;
   trustScores: Record<string, unknown>;
   messages: MessageRecord[];
   decisions: DecisionRecord[];

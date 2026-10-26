@@ -3,6 +3,7 @@
 // CRITICAL: No relationType enum. Only interactionStyle/tone/topics/botStrategy/boundaries.
 // Sensitive real-world relationships (couple/family/etc.) are NEVER written as conclusions.
 // They may only be recorded as boundaries ("避免起哄现实关系/避免调侃亲密关系").
+import { tokenSaving, pairProfileThreshold, claimProfileAttempt } from './tokenSaving.js';
 import { readDb, updateDb, nowIso } from '../store.js';
 import { applyUsageTotals, usageEventFields } from '../usage.js';
 import { activeModelName } from '../modelConfig.js';
@@ -70,7 +71,7 @@ export function incrementPairPending(db, groupId, userId) {
       });
     }
   }
-  // Check thresholds
+  // Only reconsider pairs that received new evidence in this conversation.
   const updated = readDb();
   const counts = updated.pendingPairCounts || {};
   for (const [pKey, count] of Object.entries(counts)) {
@@ -79,13 +80,23 @@ export function incrementPairPending(db, groupId, userId) {
       updateDb((draft) => { if (draft.pendingPairCounts) delete draft.pendingPairCounts[pKey]; });
       continue;
     }
-    if (count >= 25 && !autoUpdateLock.has(pKey)) {
+    if (parsed.groupId !== String(groupId) || ![parsed.userA, parsed.userB].includes(String(userId))) continue;
+    if (!pairs.some(p => relationshipPendingKey(groupId, p.userA, p.userB) === pKey)) continue;
+    const profile = (updated.relationshipProfiles || []).find(p => String(p.groupId) === String(groupId) && p.pairKey === [parsed.userA, parsed.userB].sort().join(':'));
+    if (profile?.enabled === false) continue;
+    if (Number(count) >= pairProfileThreshold(updated) && !autoUpdateLock.has(pKey)) {
+      let admitted = false;
+      updateDb(draft => { admitted = claimProfileAttempt(draft, 'pair:' + pKey, profile?.updatedAt); });
+      if (!admitted) continue;
       autoUpdateLock.add(pKey);
       void runBackgroundTask('relationship-profile.auto-update', async () => {
         try {
-          const result = await updateRelationshipProfile(updated, parsed.groupId, parsed.userA, parsed.userB);
+          const result = await updateRelationshipProfile(readDb(), parsed.groupId, parsed.userA, parsed.userB);
           if (result.ok) {
-            updateDb((draft) => { if (draft.pendingPairCounts) draft.pendingPairCounts[pKey] = 0; });
+            updateDb((draft) => {
+              if (draft.pendingPairCounts) draft.pendingPairCounts[pKey] = Math.max(0, Number(draft.pendingPairCounts[pKey] || 0) - Number(count));
+              if (!tokenSaving(draft)) delete draft.profileAutoAttempts?.['pair:' + pKey];
+            });
           }
         } finally {
           autoUpdateLock.delete(pKey);
@@ -199,7 +210,7 @@ export function isSubstantiveRelationshipProfile(profile) {
 
 export async function updateRelationshipProfile(db, groupId, userA, userB) {
   const pairKey = [String(userA), String(userB)].sort().join(':');
-  const samples = collectPairSamples(db, groupId, userA, userB, 40);
+  const samples = collectPairSamples(db, groupId, userA, userB, tokenSaving(db) ? 24 : 40);
   if (!samples || samples.length < 6) {
     return { ok: true, skipped: true, reason: '两人真实互动太少，未保存关系画像', sampleCount: samples.length };
   }

@@ -1,3 +1,4 @@
+import { tokenSaving } from './tokenSaving.js';
 import crypto from 'node:crypto';
 import { readDb, updateDb } from '../store.js';
 import { runBackgroundTask } from '../backgroundTasks.js';
@@ -42,7 +43,7 @@ function note(status: string, detail: string, extra: { tokens?: number; unknown?
   });
 }
 function allowed(db: any) {
-  return !stopped && !controller?.signal.aborted && pippiActivityConfig(db).enabled
+  return !stopped && !controller?.signal.aborted && !tokenSaving(db) && pippiActivityConfig(db).enabled
     && db.settings.socialV2Enabled === true && !db.settings.globalPaused && isOsuSearchAvailable(db);
 }
 function ensureDay(db: any, key: string) {
@@ -88,7 +89,7 @@ export function recoverActivityReservations(db: any) {
 export function pippiActivityStatus(db: any, now = Date.now()) {
   const config = pippiActivityConfig(db), activity = readPippiActivity(db), key = activityDay(now), day = activity.days[key] || emptyDay();
   return { ...config, busy, day: key, tokens: day.tokens, knownTokens: day.tokens - day.unknownTokens,
-    blockedReason: !config.enabled ? '自主阅读已关闭' : db.settings.socialV2Enabled !== true ? '需要先开启 V2 自然接话与关系'
+    blockedReason: tokenSaving(db) ? '节能模式暂停自主阅读' : !config.enabled ? '自主阅读已关闭' : db.settings.socialV2Enabled !== true ? '需要先开启 V2 自然接话与关系'
       : db.settings.globalPaused ? '机器人全局暂停中' : !isOsuSearchAvailable(db) ? '需要可用的 osu! API 凭据和官方搜索开关'
         : db.settings.llmProvider === 'codex-app-server' ? '当前模型通道不支持自主阅读的单次输出上限' : '',
     unknownTokens: day.unknownTokens, reservedTokens: reserved(day), wakes: day.wakes,

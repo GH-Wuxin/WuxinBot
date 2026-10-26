@@ -19,8 +19,15 @@ const timeOf = (iso) => {
 
 
 
-export function DashboardPage({ db, oneBot, refreshState, onNavigate }) {
+export function DashboardPage({ db, oneBot, saveSettings, refreshState, onNavigate }) {
   const [hovered, setHovered] = useState(null);
+  const [savingEnergy, setSavingEnergy] = useState(false), [energyError, setEnergyError] = useState('');
+  const toggleEnergy = async () => {
+    setSavingEnergy(true); setEnergyError('');
+    try { await saveSettings({ tokenSavingMode: db.settings.tokenSavingMode !== true }); }
+    catch (error) { setEnergyError(error.message); }
+    finally { setSavingEnergy(false); }
+  };
   const health = usePollingResource(() => api('/api/health'), 5000);
   const settings = db.settings || {};
   const paused = Boolean(settings.globalPaused);
@@ -52,11 +59,14 @@ export function DashboardPage({ db, oneBot, refreshState, onNavigate }) {
     <div className="page-head">
       <div><h1>总览</h1><p>这台机器人现在在做什么，今天花了多少。</p></div>
       <div style={{ display: 'flex', gap: 8 }}>
+        <button type="button" className={'btn' + (settings.tokenSavingMode ? ' btn-primary' : '')} aria-pressed={settings.tokenSavingMode === true} disabled={savingEnergy} onClick={toggleEnergy}>{savingEnergy ? '保存中…' : settings.tokenSavingMode ? '节能模式：已开启' : '开启节能模式'}</button>
         <RefreshButton className="btn btn-ghost" label="刷新状态" onClick={() => Promise.all([refreshState(), health.refresh()])} />
         <button type="button" className="btn" onClick={() => onNavigate('runtime')}>更多操作</button>
       </div>
     </div>
 
+    {energyError && <div className="note" role="alert" style={{ color: 'var(--red)' }}>{energyError}</div>}
+    {settings.tokenSavingMode && <div className="note" style={{ marginBottom: 12 }}>节能中：画像仍会更新，首次至少 30 条可用记录，后续至少 120 条新记录且间隔 6 小时；接话只做简短门控，暂不调整好感与心情。自主阅读和自动图片记忆暂停。</div>}
     <div className="hero">
       <div>
         <span className="hero-eyebrow">{paused ? 'WuxinBot · 已暂停' : 'WuxinBot · 在线'}</span>

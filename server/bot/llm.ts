@@ -2,6 +2,7 @@
 // Provider-neutral LLM client layer.
 // DeepSeek is the default provider today, but the rest of the bot should call
 // this module instead of depending on DeepSeek-specific names.
+import { savingLlmOptions, assertSavingApiAvailable, recordSavingApiFailure } from './tokenSaving.js';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import crypto from 'node:crypto';
@@ -435,6 +436,8 @@ export function createLLMClient(db, requestedModel = db.settings.model) {
 }
 
 export async function completeChat(db, options = {}) {
+  assertSavingApiAvailable(db);
+  options = savingLlmOptions(db, options);
   if (!options.promptStudioApplied) {
     const promptModule = resolvePromptModule(options);
     options = {
@@ -754,6 +757,7 @@ export async function completeChat(db, options = {}) {
         raw: response
       };
     } catch (error) {
+      recordSavingApiFailure(db, error);
       finishPromptCall(promptCallId, { status: 'error', error: error?.message || String(error), provider, model: nextParams.model, durationMs: Date.now() - invocationStarted });
       traceEvent('MODEL', 'model_call_failed', {
         status: 'error',

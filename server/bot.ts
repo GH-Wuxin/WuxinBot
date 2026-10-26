@@ -1,4 +1,5 @@
 // @ts-nocheck -- legacy runtime module; new typed modules remain checked by tsc.
+import { tokenSaving } from './bot/tokenSaving.js';
 import { pathToFileURL } from 'node:url';
 import { socialCoordinator } from './bot/social/coordinator.js';
 import { chatAdmissionReason, replyLimitReason, conversationContext } from './bot/social/policy.js';
@@ -416,6 +417,7 @@ export async function processIncomingAdmitted(event, sendMessage = undefined) {
         { groupId: event?.groupId, userId: event?.userId, nickname: event?.nickname, messageId: event?.messageId },
         () => withLlmTurnPolicy(
           () => processIncomingInner(event, guardedSend),
+          tokenSaving(readDb()) ? { maxCalls: 6, timeoutMs: 180_000 } : undefined,
         ),
       );
       finishRequestTrace(result?.error ? 'failed' : 'completed', {
@@ -684,7 +686,7 @@ async function processIncomingInner(event, sendMessage = undefined) {
               contextLines,
             );
             const { completeChat } = await import('./bot/llm.js');
-            const resp = await completeChat(readDb(), { messages: [{ role: 'user', content: congratsPrompt }], temperature: 0.9, maxTokens: 60, label: '升级短语' });
+            const resp = tokenSaving(liveDb) ? { text: '' } : await completeChat(readDb(), { messages: [{ role: 'user', content: congratsPrompt }], temperature: 0.9, maxTokens: 60, label: '升级短语' });
             const congratsText = resp.text?.trim() || levelUpFallback(oldPp, newPp, realPp);
             updateDb((draft) => {
               draft.pendingLevelUps = draft.pendingLevelUps || {};
@@ -811,7 +813,7 @@ async function generateConversationReply(event, sendMessage, decision) {
     const responseOptions = responseOptionsFor(event, liveDb, liveUserPolicy);
     if (event.socialAction === 'react') responseOptions.maxTokens = Math.min(responseOptions.maxTokens || 250, 250);
     const turnId = String(event.messageId || crypto.randomUUID());
-    const reasoningRouter = createShadowReasoningRouter();
+    const reasoningRouter = createShadowReasoningRouter(undefined, undefined, tokenSaving(liveDb) ? 'low' : 'max');
     let osuDataIntent = detectRequiredOsuTool(event.text);
     // BP 谱面类型/组成问题（含显式点名 osu_oracle）必须走确定性 bp_type 路由，
     // 不允许 LLM 用上下文旧数据编造比例。
@@ -1091,7 +1093,7 @@ async function generateConversationReply(event, sendMessage, decision) {
           osuSearchCalls += 1;
           const result = await executeOsuSearchTool(toolCall, context);
           const reading = result.metadata?.reading as { id: string; url: string; title: string; at: string } | undefined;
-          if (result.ok && reading && liveDb.settings.socialV2Enabled === true) {
+          if (result.ok && reading && liveDb.settings.socialV2Enabled === true && !tokenSaving(readDb())) {
             if (!readingSources.some(s => s.id === reading.id)) readingSources.push({ ...reading, kind: 'reading', scope: readingScope, userId: event.userId });
           }
           return result;
@@ -1122,7 +1124,7 @@ async function generateConversationReply(event, sendMessage, decision) {
         sendMessage,
         event,
         selfQq: liveDb.settings.selfQq,
-        maxIterations: 4,
+        maxIterations: tokenSaving(liveDb) ? 2 : 4,
         temperature: responseOptions.temperature,
         maxTokens: responseOptions.maxTokens,
         model: responseOptions.overrideModel,
@@ -1221,7 +1223,7 @@ async function generateConversationReply(event, sendMessage, decision) {
       ? parseStickerReply(ai.text)
       : { reply: String(ai.text || ''), stickerCaption: '', stickerIntent: 'none' as const, captionSplit: false, stickerId: null, mode: 'none' as const, structured: false };
     ai.text = stickerReply.reply;
-    if (readingSources.length && 'self' in stickerReply && stickerReply.self) {
+    if (readingSources.length && 'self' in stickerReply && stickerReply.self && !tokenSaving(readDb())) {
       updateDb(draft => {
         const result = commitSelfProposal(draft, stickerReply.self, { scope: readingScope, sources: readingSources,
           expectedRevision: readingRevision, requiredEvidenceIds: readingSources.map(s => s.id) });
@@ -1484,6 +1486,7 @@ async function generateConversationReply(event, sendMessage, decision) {
       const failureReason = String(modelStickerHistory?.reason || '');
       let softened = '';
       try {
+        if (tokenSaving(readDb())) throw new Error('节能模式使用现有发送失败提示');
         const instruction = stickerFailureInstruction(replyText, failureReason);
         const rewritten = await completeChat(readDb(), {
           messages: [

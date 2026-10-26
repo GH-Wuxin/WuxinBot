@@ -1,6 +1,7 @@
 // @ts-nocheck -- legacy runtime module; new typed modules remain checked by tsc.
 // System prompt: identity injection, complexity scoring, auto-model, pricing.
 // Extracted from bot.ts.
+import { tokenSaving } from './tokenSaving.js';
 import { readDb } from '../store.js';
 import { ownerAuthorityPrompt, socialExpressionPrompt, socialTonePrompt } from './social/prompts.js';
 import { asksToInspectVisual, hasVisualPlaceholder, isQuestion } from './cleaning.js';
@@ -404,6 +405,8 @@ function buildUserInfoLines(db, event) {
 }
 
 export function buildPrompt(db, group, event, userPolicy, options = {}) {
+  if (tokenSaving(db)) db = { ...db, settings: { ...db.settings, contextLimit: Math.min(12, Number(db.settings.contextLimit || 30)),
+    groupContextSearchEnabled: false, ownerPrivateContextCharBudget: Math.min(8000, Number(db.settings.ownerPrivateContextCharBudget || 24000)) } };
   const {
     includeSkill = true,
     includeMemory = true,
