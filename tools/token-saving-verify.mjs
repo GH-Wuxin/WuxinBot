@@ -19,6 +19,11 @@ const payload = { longTermUpdates: { summary: '经常交流 osu! 练习进展', 
 const server = http.createServer(async (req, res) => {
   let raw = ''; for await (const chunk of req) raw += chunk; const body = JSON.parse(raw); calls.push(body);
   if (onRequest) await onRequest();
+  if (body.stream && status === 200) {
+    res.writeHead(200, { 'content-type':'text/event-stream' });
+    res.end('data: ' + JSON.stringify({ choices:[{index:0,delta:{role:'assistant',content:responseText ? responseText(calls.length) : JSON.stringify(payload)},finish_reason:'stop'}],usage:{prompt_tokens:50,completion_tokens:30,total_tokens:80} }) + '\n\ndata: [DONE]\n\n');
+    return;
+  }
   res.writeHead(status, { 'content-type': 'application/json' });
   res.end(JSON.stringify(status === 200 ? { choices: [{ message: { role: 'assistant', content: responseText ? responseText(calls.length) : JSON.stringify(payload) }, finish_reason: 'stop' }],
     usage: { prompt_tokens: 50, completion_tokens: 30, total_tokens: 80 } } : { error: { message: 'fixture account unavailable', code: 'insufficient_quota' } }));
@@ -45,7 +50,7 @@ function seed(extra = {}) {
   store.updateDb(db => {
     Object.assign(db.settings, { tokenSavingMode: true, socialV2Enabled: true, reasoningEnabled: true, socialMaxAssessmentsPerHour: 60, globalPaused: false,
       ownerQq: '10001', selfQq: '10002', memoryEnabled: true, memoryMinMessages: 5, memoryUpdateEvery: 30,
-      groupProfileThreshold: 80, apiBaseUrl: base, apiKey: crypto.randomUUID(), llmProvider: 'openai-compatible', model: 'saving-fixture', ...extra });
+      groupProfileThreshold: 80, apiBaseUrl: base, apiKey: crypto.randomUUID(), llmProvider: 'openai-compatible', model: 'saving-fixture', osuClientId:'fixture-id', osuClientSecret:'fixture-secret', ...extra });
     db.socialV2 = state.emptySocialState(); state.normalizeSocialState(db); db.profileAutoAttempts = {};
     db.groups = [{ groupId: '20001', enabled: true, mode: 'natural', cooldownSec: 0, maxPerHour: 100 }]; db.users = [];
     db.groupProfiles = []; db.relationshipProfiles = []; db.pendingPairCounts = {}; db.memories = [memory()];
@@ -58,7 +63,7 @@ try {
   await test('compact gate only decides participation and never commits model-supplied mood/affinity', async () => {
     seed(); const before = structuredClone(store.readDb().socialV2); let input;
     const result = await assessSocialTurn(event(), 'initial', async (_db, options) => { input = options; return { text: JSON.stringify({ reply: true, to: 'bot', affinityDelta: 5, self: { mood: 'fake' } }), usage: { total_tokens: 10 } }; });
-    assert.equal(result.action, 'reply'); assert.equal(input.completionBudget, 512); assert.equal(input.reasoning_effort, 'low');
+    assert.equal(result.action, 'reply'); assert.equal(input.completionBudget, 768); assert.equal(input.reasoning_effort, 'low');
     assert.equal(input.requestMaxRetries, 0); assert.equal(input.retryOnEmpty, false);
     assert.ok(JSON.stringify(input.messages).length < 2600);
     for (const field of ['people', 'views', 'transitions', 'self']) assert.deepEqual(store.readDb().socialV2[field], before[field]);
@@ -164,6 +169,72 @@ try {
     });
     assert.equal(calls.length, 2); assert.ok(sent.some(text => String(text).includes('练得不错')));
     assert.deepEqual(store.readDb().socialV2.people, {}); assert.deepEqual(store.readDb().socialV2.self, before);
+  });
+  await test('saving prompt bounds history and keeps identity, quote attribution and accepted relationship context', async () => {
+    seed();
+    const { buildPrompt } = await import('../server/bot/prompt.ts');
+    const db = structuredClone(store.readDb());
+    db.settings.personalityPrompt = 'NORMAL_PERSONALITY_SENTINEL';
+    db.settings.personaModulePrompts = { conversation:'NORMAL_MODULE_SENTINEL' };
+    db.ownerDirectives = [{ authorId:'10001', scope:'group:20001', key:'language', text:'用中文交流', active:true, version:1 }];
+    db.memories[0].summary = 'MEMORY_SENTINEL';
+    db.messages.forEach(m => { m.content = 'OLDER_HISTORY_SENTINEL' + '旧'.repeat(900); });
+    const e = event({ userId:'10001', quotedMessage:{ userId:'10004', nickname:'Another', text:'QUOTE_SENTINEL' } });
+    const prompt = buildPrompt(db, db.groups[0], e, { policy:'owner' });
+    const text = JSON.stringify(prompt);
+    assert.ok(text.includes('用中文交流') && text.includes('QUOTE_SENTINEL') && text.includes('10004'));
+    assert.ok(text.includes('ownerId') && text.includes('isOwner'));
+    assert.ok(!text.includes('NORMAL_PERSONALITY_SENTINEL'));
+    assert.ok(text.length < 5200, 'Saving prompt must remain bounded even with long history');
+    const beforeSettings = structuredClone(db.settings);
+    const normal = structuredClone(db); normal.settings.tokenSavingMode = false;
+    const first = buildPrompt(normal, normal.groups[0], e, { policy:'owner' });
+    buildPrompt(db, db.groups[0], e, { policy:'owner' });
+    assert.deepEqual(buildPrompt(normal, normal.groups[0], e, { policy:'owner' }), first);
+    assert.ok(JSON.stringify(first).includes('NORMAL_PERSONALITY_SENTINEL'));
+    assert.deepEqual(db.settings, beforeSettings);
+    const memberPrompt = buildPrompt(db, db.groups[0], event(), { policy:'normal' });
+    assert.equal(JSON.stringify(memberPrompt).split('MEMORY_SENTINEL').length - 1, 1);
+  });
+  await test('saving dialogue module is independent of normal conversation and preserves the sticker contract', async () => {
+    const { applyModulePersonality, resolvePromptModule } = await import('../server/promptStudio.ts');
+    const { buildSavingStickerReplyInstruction, buildStickerReplyInstruction } = await import('../server/bot/stickers/finalReply.ts');
+    const { listModelStickers } = await import('../server/bot/stickers/index.ts');
+    assert.equal(resolvePromptModule({promptModule:'conversation_saving'}).id, 'conversation_saving');
+    const messages=[{role:'system',content:'fixture'}], prompts={conversation:'NORMAL_MARKER',conversation_saving:'SAVING_MARKER'};
+    const applied=JSON.stringify(applyModulePersonality(messages,'conversation_saving',prompts));
+    assert.ok(applied.includes('SAVING_MARKER') && !applied.includes('NORMAL_MARKER'));
+    const compact=buildSavingStickerReplyInstruction();
+    assert.ok(compact.length < buildStickerReplyInstruction().length);
+    for(const sticker of listModelStickers()) assert.ok(compact.includes(sticker.id+'｜'));
+    for(const field of ['reply','sticker_caption','sticker_use','mode','sticker_id']) assert.ok(compact.includes(field));
+  });
+  await test('saving chat sends a selected sticker with one model call and no osu tools even for named data requests', async () => {
+    seed({ llmProvider:'deepseek', memoryEnabled:false, socialV2Enabled:false, thinkingNoticeMode:'off', osuSearchEnabled:true, levelUpNotifyEnabled:false });
+    store.updateDb(db => { db.settings.botRegistry={updatedAt:iso(),bots:[{id:'yumu',name:'雨沐',enabled:true,channel:'internal',commands:[]}]};
+      db.stickerDeliveryState=undefined; db.settings.stickerPolicy={mode:'live',allGroups:true}; });
+    responseText=()=>JSON.stringify({reply:'节能时查不了实时成绩',sticker_caption:'',sticker_use:'requested',mode:'text_image',sticker_id:'hello'});
+    const { processIncoming }=await import('../server/bot.ts'); const sent=[];
+    await processIncoming(event({userId:'10001',messageId:'saving-sticker-osu',text:'pippi 用雨沐查我的最近成绩，再发个打招呼表情',nickname:'Owner',atTargets:['10002'],images:[],raw:{}}),async(_event,text)=>{
+      sent.push(String(text)); return {outcome:'confirmed_success',messageId:'sticker-receipt'};
+    });
+    assert.equal(calls.length,1); assert.equal(calls[0].tools,undefined);
+    assert.equal(calls[0].reasoning_effort,'low'); assert.equal(calls[0].thinking.type,'enabled');
+    assert.equal(calls[0].response_format.type,'json_object');
+    assert.ok(!JSON.stringify(calls[0]).includes('osu_get_player') && !JSON.stringify(calls[0]).includes('query_osu'));
+    assert.ok(sent.some(text=>text.includes('[CQ:image,')), 'Sticker still travels through the existing delivery callback');
+    assert.ok(sent.some(text=>text.includes('节能时查不了')));
+    console.log('Saving full reply request characters:',JSON.stringify(calls[0]).length);
+  });
+  await test('switching saving mode off restores normal osu tool schemas', async () => {
+    seed({tokenSavingMode:false,memoryEnabled:false,socialV2Enabled:false,thinkingNoticeMode:'off',osuSearchEnabled:true,levelUpNotifyEnabled:false});
+    store.updateDb(db=>{db.settings.stickerPolicy={mode:'off'};});
+    responseText=()=> '正常回复';
+    const {processIncoming}=await import('../server/bot.ts');
+    await processIncoming(event({userId:'10001',messageId:'normal-tools',text:'pippi 今天聊什么',nickname:'Owner',atTargets:['10002'],images:[],raw:{}}),async()=>({outcome:'confirmed_success',messageId:'normal-receipt'}));
+    assert.equal(calls.length,1);
+    assert.ok(calls[0].tools.some(t=>t.function.name==='osu_get_player'));
+    assert.ok(calls[0].tools.some(t=>t.function.name==='search_osu'));
   });
 } finally {
   await waitForBackgroundTasks(3000); globalThis.fetch = nativeFetch; server.closeAllConnections(); await new Promise(resolve => server.close(resolve)); cleanupTestDir(directory);

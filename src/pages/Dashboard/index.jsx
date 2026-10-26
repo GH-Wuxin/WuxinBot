@@ -66,7 +66,7 @@ export function DashboardPage({ db, oneBot, saveSettings, refreshState, onNaviga
     </div>
 
     {energyError && <div className="note" role="alert" style={{ color: 'var(--red)' }}>{energyError}</div>}
-    {settings.tokenSavingMode && <div className="note" style={{ marginBottom: 12 }}>节能中：画像仍会更新，首次至少 30 条可用记录，后续至少 120 条新记录且间隔 6 小时；接话只做简短门控，暂不调整好感与心情。自主阅读和自动图片记忆暂停。</div>}
+    {settings.tokenSavingMode && <div className="note" style={{ marginBottom: 12 }}>节能中：画像仍会更新，首次至少 30 条可用记录，后续至少 120 条新记录且间隔 6 小时；接话只做简短门控，暂不调整好感与心情。聊天使用精简提示词，仅保留表情包选择与发送；自主阅读和自动图片记忆暂停。</div>}
     <div className="hero">
       <div>
         <span className="hero-eyebrow">{paused ? 'WuxinBot · 已暂停' : 'WuxinBot · 在线'}</span>

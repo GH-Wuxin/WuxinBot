@@ -12,6 +12,7 @@ export interface PromptStudioModule {
 }
 
 const MODULES: PromptStudioModule[] = [
+  { id: 'conversation_saving', name: '节能对话', description: '短句聊天与表情选择；不提供 osu!、联网或机器人调用工具。', injectionMethod: '独立精简人格 + 有限当前对象记忆与历史；表情由最终回复 JSON 选择。', usesPippi: true, toolsPossible: false, editableLabel: '节能对话补充' },
   { id: 'social_gate', name: '节能接话门控', description: '只判断当下是否接话，不更新关系和情绪。', injectionMethod: '简短规则与有限上下文；无完整画像和经历。', usesPippi: false, toolsPossible: false, editableLabel: '节能门控补充' },
   { id: 'pippi_activity', name: '自主阅读与近况', description: '在有限预算内选择资料、形成经历和判断自主分享时机。', injectionMethod: '与聊天共用 Pippi 核心的精简视图 + 实际来源 + 近况；不带全量群聊和人物档案。', usesPippi: true, toolsPossible: true, editableLabel: '自主活动表达补充' },
   { id: 'conversation', name: '群聊与私聊', description: '普通对话、上下文回复与最终回答。', injectionMethod: 'Pippi 完整人格 + 当前场景规则 + 全局补充；Agent 在需要时追加工具定义。', usesPippi: true, toolsPossible: true, editableLabel: '对话人格补充' },

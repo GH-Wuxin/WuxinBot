@@ -140,6 +140,7 @@ import {
 } from './bot/stickers/debug.js';
 import {
   parseStickerReply,
+  buildSavingStickerReplyInstruction,
   resolveStickerReplyCapability,
   STICKER_REPLY_RESPONSE_FORMAT,
   withStickerReplyInstruction,
@@ -802,6 +803,7 @@ async function generateConversationReply(event, sendMessage, decision) {
     readingRevision = readPippiSelf(liveDb).revision;
     const liveGroup = getGroup(liveDb, event.groupId) || { groupId: event.groupId, name: '私聊' };
     const liveUserPolicy = getUserPolicy(liveDb, event.groupId, event.userId);
+    const savingMode = tokenSaving(liveDb);
     const messages = buildPrompt(liveDb, liveGroup, event, liveUserPolicy);
     const socialExpressionContext = messages[0]?.content;
     traceEvent('PROMPT', 'prompt_built', {
@@ -814,10 +816,10 @@ async function generateConversationReply(event, sendMessage, decision) {
     if (event.socialAction === 'react') responseOptions.maxTokens = Math.min(responseOptions.maxTokens || 250, 250);
     const turnId = String(event.messageId || crypto.randomUUID());
     const reasoningRouter = createShadowReasoningRouter(undefined, undefined, tokenSaving(liveDb) ? 'low' : 'max');
-    let osuDataIntent = detectRequiredOsuTool(event.text);
+    let osuDataIntent = savingMode ? null : detectRequiredOsuTool(event.text);
     // BP 谱面类型/组成问题（含显式点名 osu_oracle）必须走确定性 bp_type 路由，
     // 不允许 LLM 用上下文旧数据编造比例。
-    if (detectBpTypeAnalysisIntent(event.text)) {
+    if (!savingMode && detectBpTypeAnalysisIntent(event.text)) {
       const bpTypeUsername = extractBpTypeUsername(event.text);
       osuDataIntent = {
         toolName: 'query_osu',
@@ -828,7 +830,7 @@ async function generateConversationReply(event, sendMessage, decision) {
       };
     }
     const registryHere = loadRegistry(liveDb);
-    const namedBotRequest = detectNamedBotRequest(event.text, registryHere.bots || []);
+    const namedBotRequest = savingMode ? null : detectNamedBotRequest(event.text, registryHere.bots || []);
     traceEvent('ROUTER', 'conversation_route_resolved', {
       osuCapability: osuDataIntent?.args?.capability || '',
       namedBotId: namedBotRequest?.botId || '',
@@ -899,6 +901,7 @@ async function generateConversationReply(event, sendMessage, decision) {
     const stickerCapability = resolveStickerReplyCapability({
       eligible: !osuDataIntent && !namedBotRequest,
       deliveryMode: stickerDeliveryConfig(liveDb).mode,
+      ...(savingMode ? { buildInstruction: buildSavingStickerReplyInstruction } : {}),
     });
     if (stickerCapability.reason === 'catalog_unavailable') {
       recordStickerReplyCapabilityWarning(new Error('manifest or visual annotations could not be loaded'));
@@ -910,14 +913,14 @@ async function generateConversationReply(event, sendMessage, decision) {
     const modelFirstRuntime = agentRuntimeMode === 'model_first';
     const registryForTurn = loadRegistry(liveDb);
     const hasEnabledBots = enabledBots(registryForTurn).length > 0;
-    const botTools = hasEnabledBots
+    const botTools = !savingMode && hasEnabledBots
       ? buildBotToolSchemas(registryForTurn, { surface: modelFirstRuntime ? 'v2' : 'legacy' })
       : [];
     // 第二层：发图工具。只在 V2 运行时提供，第一层整批结束后由执行器切换。
-    const imageTools = modelFirstRuntime && hasEnabledBots
+    const imageTools = !savingMode && modelFirstRuntime && hasEnabledBots
       ? buildBotToolSchemas(registryForTurn, { surface: 'v2', phase: 'image' })
       : [];
-    const osuSearchEnabled = isOsuSearchAvailable(liveDb);
+    const osuSearchEnabled = !savingMode && isOsuSearchAvailable(liveDb);
     const toolsForTurn = [
       ...botTools,
       ...(osuSearchEnabled ? buildOsuSearchTools() : []),
@@ -1194,7 +1197,9 @@ async function generateConversationReply(event, sendMessage, decision) {
         && (event.socialEngagement === 'continuation' || shouldUseRecentVisionImage(liveDb, event));
       const convInput = reasoningInput('conversation', { contextDependent });
       let convTurn = emptyTurnState();
-      const convDecision = reasoningRouter.resolve(convInput, convTurn);
+      const convDecision = savingMode
+        ? { level: 'low' as const, source: 'rule' as const, reasonCode: 'token_saving' as const }
+        : reasoningRouter.resolve(convInput, convTurn);
       convTurn = reasoningRouter.mergeTurn(convTurn, convDecision);
       const convWire = thinkingParamsForLevel(convDecision.level, reasoningEnabledFor(liveDb));
       const finalMessages = stickerReplyEnabled && stickerReplyInstruction
@@ -1207,6 +1212,7 @@ async function generateConversationReply(event, sendMessage, decision) {
         ...(stickerReplyEnabled && stickerReplyInstruction ? { responseFormat: STICKER_REPLY_RESPONSE_FORMAT } : {}),
         traceRole: 'conversation',
         tracePurpose: 'conversation_reply',
+        ...(savingMode ? { promptModule: 'conversation_saving' } : {}),
         ...convWire
       });
       reasoningRouter.record({
