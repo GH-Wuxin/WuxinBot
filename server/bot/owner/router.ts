@@ -171,7 +171,6 @@ export function resolveOwnerRoute(ctx: OwnerHandlerContext): OwnerRouteResolutio
 
   if (command === '/osu') {
     if (subCommand === 'bind') return directRoute('osu.bind', 'osuBind');
-    if (subCommand === 'analyze') return directRoute('osu.analyze', 'osuAnalyze');
     if (subCommand === 'clear') {
       // commandArgs still carries the subcommand itself ('clear cache'), so
       // reading its first word yielded 'clear' for every action and routed
@@ -180,7 +179,6 @@ export function resolveOwnerRoute(ctx: OwnerHandlerContext): OwnerRouteResolutio
       const clearAction = String(parts[3] || '').trim().toLowerCase();
       const mapping: Record<string, { handlerKey: OwnerHandlerKey; permissionKey: string }> = {
         bind: { handlerKey: 'osu.clear.bind', permissionKey: 'osuClearBind' },
-        history: { handlerKey: 'osu.clear.history', permissionKey: 'osuClearHistory' },
         cooldown: { handlerKey: 'osu.clear.cooldown', permissionKey: 'osuClearCooldown' },
         recommend: { handlerKey: 'osu.clear.recommend', permissionKey: 'osuClearRecommend' },
         cache: { handlerKey: 'osu.clear.cache', permissionKey: 'osuClearCache' },

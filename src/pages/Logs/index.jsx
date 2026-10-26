@@ -36,7 +36,6 @@ const traceEventLabels = {
   reply_rewrite_completed: '回复改写完成',
   thinking_notice_failed: '思考提示发送失败',
   knowledge_retrieval_completed: '知识库检索完成',
-  osu_analyze_job_started: '启动 osu! 分析任务',
   message_received: '收到消息',
   onebot_message_received: '收到 OneBot 消息',
   reply_gate_decided: '闸门判定',

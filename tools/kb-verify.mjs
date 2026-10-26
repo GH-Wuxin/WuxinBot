@@ -70,7 +70,7 @@ const {
 const { parseOsuCommandText, OSU_SUBCOMMANDS, OSU_CLEAR_ACTIONS_META } = await import('../server/bot/commands/osu.meta.ts');
 const { parseOwnerCommandText, OWNER_COMMANDS } = await import('../server/bot/commands/owner.meta.ts');
 const { resolveQuickCommand, QUICK_DEFS, finalizeQuickDef } = await import('../server/bot/commands/quick.meta.ts');
-const { ANALYSIS_COOLDOWN, RECOMMEND_COOLDOWN } = await import('../server/bot/commands/commandConstants.ts');
+const { RECOMMEND_COOLDOWN } = await import('../server/bot/commands/commandConstants.ts');
 const { quickCollisionKey } = await import('../server/bot/commands/alias.ts');
 
 ensureStore();
@@ -137,7 +137,7 @@ resetKbForTests();
   const before = JSON.stringify(getKbHealth().collections);
   const result = retrieveKnowledgeForPrompt({
     scene: 'osu_analysis',
-    text: '/w osu analyze mrekk',
+    text: '/w skill 123',
     groupId: '770001',
     messageType: 'group',
     settings: enabledSettings,
@@ -159,7 +159,7 @@ updateDb(fixtureDbSetup);
     ['short_reaction', '666'],
     ['serious', '最近压力好大，有点想死'],
     ['command', '/w osu help'],
-    ['analysis_command', '/w osu analyze mrekk'],
+    ['analysis_command', '/w skill 123'],
     ['dt_talk', '这把DT开得有点飘'],
   ];
   const group = { groupId: '770001', name: 'KBTest' };
@@ -599,10 +599,6 @@ function knowledgeRootFor(knowledgeDirPath) {
 
 {
   let ok = true;
-  if (OSU_SUBCOMMANDS.analyze.cooldown !== ANALYSIS_COOLDOWN) {
-    ok = false;
-    console.error('  analyze cooldown is not the shared ANALYSIS_COOLDOWN object');
-  }
   for (const def of QUICK_DEFS) {
     if ((def.id === 'recommend' || def.id === 'rd') && def.cooldown !== RECOMMEND_COOLDOWN) {
       ok = false;
@@ -661,7 +657,7 @@ function knowledgeRootFor(knowledgeDirPath) {
     ['owner', { isOwner: true, isAdmin: true }],
   ];
   const isWuxinOsuHelp = (entry) => entry.namespace === 'wuxin' && entry.family === 'osu';
-  const canonicalSubById = { osuBind: 'bind', osuAnalyze: 'analyze', osuHelp: 'help' };
+  const canonicalSubById = { osuBind: 'bind', osuHelp: 'help' };
   let ok = true;
   for (const [label, perms] of audiences) {
     for (const entry of entries) {

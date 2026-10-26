@@ -454,9 +454,7 @@ export const defaultCommandPermissions = {
   memberPolicy: 'owner',
   exp: 'owner',
   osuBind: 'guest',
-  osuAnalyze: 'guest',
   osuClearBind: 'guest',
-  osuClearHistory: 'guest',
   osuClearCache: 'owner',
   osuClearCooldown: 'owner',
   osuClearRecommend: 'owner',
@@ -560,7 +558,6 @@ const initialDb = {
     pplusClientId: 0,
     pplusClientSecret: '',
     pplusBaseUrl: 'http://127.0.0.1:9001',
-    pplusReferences: [] as (string | number)[],
     commandRoles: defaultCommandRoles,
     commandPermissions: defaultCommandPermissions,
     botRegistry: undefined, // populated by normalizeDb from defaults
@@ -616,6 +613,10 @@ export function normalizeDb(db) {
   // retired hidden global override must never silently reopen another group.
   const legacyMentionOnly = settings.onlyMentionMode === true;
   delete settings.onlyMentionMode;
+  delete settings.pplusReferences;
+  delete settings.commandPermissions?.osuAnalyze;
+  delete settings.commandPermissions?.osuClearHistory;
+  delete settings.personaModulePrompts?.osu_analyzer;
   for (const key of ['enableWebSearch', 'webSearchMode', 'searchProvider', 'searchBaseUrl', 'searchMaxResults', 'searchTimeoutMs']) delete settings[key];
   if (settings.commandPermissions?.search) {
     settings.commandPermissions.sysfacts ??= settings.commandPermissions.search;

@@ -1,3 +1,5 @@
+> 历史审计：本文描述旧实现。`/w osu analyze` 及其完整报告链已于 2026-10-26 退役；以下旧调用图不代表当前可用功能。
+
 # WUXINBOT_PROMPT_REVIEW_AUDIT_V01
 
 Status: **AUDIT ONLY — NO BEHAVIOR CHANGE**

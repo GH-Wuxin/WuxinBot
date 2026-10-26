@@ -79,6 +79,10 @@ async function main() {
 
     const retiredSearch = await request('/api/search/test-local', { method: 'POST', headers: authHeaders });
     assert(retiredSearch.status === 404, 'retired local search endpoint must be absent');
+    for (const method of ['GET', 'POST']) {
+      const retiredAnalyze = await request('/api/osu/player/123/analyze', { method, headers: authHeaders });
+      assert(retiredAnalyze.status === 404, 'retired player analysis endpoint must be absent: ' + method);
+    }
     const oldSettings = await request('/api/settings', { method: 'POST', headers: authHeaders,
       body: { enableWebSearch: true, searchProvider: 'searxng', searchBaseUrl: 'http://127.0.0.1:1', osuSearchEnabled: true } });
     assert(oldSettings.status === 200, 'official search setting must save');

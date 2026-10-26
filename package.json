@@ -13,7 +13,7 @@
     "server": "tsx watch server/index.ts",
     "build": "node tools/build-desktop-icons.mjs && vite build",
     "typecheck": "tsc --noEmit --noUnusedLocals",
-    "check": "npm run typecheck && npm run runtime:paths:verify && npm run build && npm run sanity && npm run usage:verify && npm run codex:verify && npm run osu-only:verify && npm run osu:api:verify && npm run pplus:verify && npm run profiler:cache:verify && npm run analyze:lifecycle:verify && npm run security && npm run osu:search:verify && npm run agent:v2:verify && npm run evidence:verify && npm run osu:analyze:verify && npm run runtime:safety:verify && npm run store:shards:verify && npm run store:recovery:verify && npm run sandbox:isolation:verify && npm run request:trace:verify && npm run api:transport:verify && npm run api:cancellation:verify && npm run api:sse:verify && npm run onebot:envelope:verify && npm run onebot:delivery:verify && npm run sticker:delivery:verify && npm run sticker:bot:failure:verify && npm run sticker:decision:edge:verify && npm run sticker:scenario:verify && npm run sticker:llm:cancellation:verify && npm run sticker:api:verify && npm run sticker:gray:observer:verify && npm run profile:llm:verify && npm run random:image:verify && npm run capability:summary:verify && npm run reply:llm:verify && npm run mention:render:verify && npm run prompt:snapshot:verify && npm run console:verify && npm run command:scope:verify && npm run reply:abort:verify && npm run quoted:image:verify && npm run owner:model:verify && npm run profile:circuit:verify && npm run profile:queue:verify && npm run skill:text:verify && npm run tool:phases:verify && npm run score:fallback:verify && npm run score:command:verify && npm run social:v2:verify",
+    "check": "npm run typecheck && npm run runtime:paths:verify && npm run build && npm run sanity && npm run usage:verify && npm run codex:verify && npm run osu-only:verify && npm run osu:api:verify && npm run pplus:verify && npm run profiler:cache:verify && npm run security && npm run osu:search:verify && npm run agent:v2:verify && npm run evidence:verify && npm run osu:retirement:verify && npm run runtime:safety:verify && npm run store:shards:verify && npm run store:recovery:verify && npm run sandbox:isolation:verify && npm run request:trace:verify && npm run api:transport:verify && npm run api:cancellation:verify && npm run api:sse:verify && npm run onebot:envelope:verify && npm run onebot:delivery:verify && npm run sticker:delivery:verify && npm run sticker:bot:failure:verify && npm run sticker:decision:edge:verify && npm run sticker:scenario:verify && npm run sticker:llm:cancellation:verify && npm run sticker:api:verify && npm run sticker:gray:observer:verify && npm run profile:llm:verify && npm run random:image:verify && npm run capability:summary:verify && npm run reply:llm:verify && npm run mention:render:verify && npm run prompt:snapshot:verify && npm run console:verify && npm run command:scope:verify && npm run reply:abort:verify && npm run quoted:image:verify && npm run owner:model:verify && npm run profile:circuit:verify && npm run profile:queue:verify && npm run skill:text:verify && npm run tool:phases:verify && npm run score:fallback:verify && npm run score:command:verify && npm run social:v2:verify",
     "start": "tsx server/index.ts",
     "sanity": "tsx tools/sanity.mjs",
     "security": "tsx tools/security-verify.mjs",
@@ -50,9 +50,7 @@
     "osu:search:verify": "node --import tsx tools/osu-search-verify.mjs",
     "osu:api:verify": "node --import tsx tools/osu-api-timeout-retry-verify.mjs",
     "pplus:verify": "node --import tsx tools/pplus-lifecycle-verify.mjs && node --import tsx tools/player-skill-runtime-verify.mjs && node --import tsx tools/player-update-verify.mjs",
-    "osu:analyze:verify": "node --import tsx tools/osu-analyzer-mvp-verify.mjs",
     "profiler:cache:verify": "node --import tsx tools/skill-profiler-cache-verify.mjs",
-    "analyze:lifecycle:verify": "node --import tsx tools/analyze-lifecycle-verify.mjs",
     "structure": "node tools/structure-report.mjs",
     "verify-all": "node tools/run-all-verifies.mjs",
     "agent:replay": "node --import tsx tools/agent-replay.ts",
@@ -78,7 +76,8 @@
     "score:command:verify": "node --import tsx tools/score-command-verify.mjs",
     "runtime:paths:verify": "node --import tsx tools/runtime-paths-verify.mjs",
     "social:v2:verify": "node --import tsx --test tools/social-v2-verify.mjs tools/pippi-self-verify.mjs tools/pippi-activity-verify.mjs && node tools/pippi-self-ui-verify.mjs",
-    "social:v2:replay": "node --import tsx tools/social-v2-replay.mjs"
+    "social:v2:replay": "node --import tsx tools/social-v2-replay.mjs",
+    "osu:retirement:verify": "node --import tsx tools/osu-analyze-retirement-verify.mjs"
   },
   "keywords": [],
   "author": "",

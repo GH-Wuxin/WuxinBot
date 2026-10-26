@@ -755,7 +755,6 @@ app.get('/api/osu/status', async (_req, res) => {
   }
 
   const osuLogs = (db.commandLogs || []).filter((c) => String(c.command || '') === '/osu');
-  const analyzeCount = osuLogs.filter((c) => String(c.subCommand || '') === 'analyze').length;
   const bindCount = osuLogs.filter((c) => String(c.subCommand || '') === 'bind').length;
 
   res.json(ok({
@@ -767,7 +766,6 @@ app.get('/api/osu/status', async (_req, res) => {
     },
     bindings: osuBindingList(db),
     stats: {
-      analyzeCount,
       bindCount,
     },
   }));
@@ -1064,59 +1062,6 @@ app.get('/api/osu/player/:id/skill', async (req, res) => {
     recentSummary: record.recentSummary || '',
     lastAnalyzed: record.lastAnalyzed || '',
   } : null }));
-});
-
-app.get('/api/osu/player/:id/analyze', async (req, res) => {
-  const osuId = osuIdParam(req, res);
-  if (osuId === null) return;
-  const { getStoredAnalysis } = await import('./osu/profileStore.js');
-  res.json(ok({ analysis: getStoredAnalysis(osuId) }));
-});
-
-app.post('/api/osu/player/:id/analyze', async (req, res) => {
-  const osuId = osuIdParam(req, res);
-  if (osuId === null) return;
-  const { getStoredAnalysis, setStoredAnalysis } = await import('./osu/profileStore.js');
-  const current = getStoredAnalysis(osuId);
-  if (current?.status === 'running') {
-    return res.status(202).json(ok({ analysis: current, started: false }));
-  }
-
-  const startedAt = nowIso();
-  const running = { status: 'running' as const, at: startedAt };
-  setStoredAnalysis(osuId, running);
-  res.status(202).json(ok({ analysis: running, started: true }));
-
-  void runBackgroundTask('osu.analyzer-mvp', async () => {
-    try {
-      const db = readDb();
-      const { runAnalyzerMvp } = await import('./osu/analyzerMvp.js');
-      const result = await runAnalyzerMvp(db, osuId, 'osu', {
-        playerName: String(osuId),
-        perspective: 'unknown',
-      });
-      setStoredAnalysis(osuId, {
-        status: 'done',
-        at: startedAt,
-        finishedAt: nowIso(),
-        text: result.text,
-        source: result.source,
-        provider: result.provider,
-        model: result.model,
-        formatVersion: 91,
-        validationReasons: result.validationReasons,
-        bestCount: result.collection.bestScores.length,
-        recentCount: result.collection.recentScores.length,
-      });
-    } catch (error) {
-      setStoredAnalysis(osuId, {
-        status: 'error',
-        at: startedAt,
-        finishedAt: nowIso(),
-        error: String(error?.message || error).slice(0, 500),
-      });
-    }
-  });
 });
 
 app.get('/api/diagnostics', (_req, res) => {

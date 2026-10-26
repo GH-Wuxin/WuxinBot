@@ -384,18 +384,6 @@ export function allowedByOsuCommandOnlyMode(event, quickMatch = null) {
   return quickMatch?.def?.kind === 'osu';
 }
 
-function llmTurnLimitsForEvent(event) {
-  const text = String(event?.text || '').trim();
-  // osu Analyze spends most of its time collecting BP100/Recent/PP+ evidence
-  // before it makes the single Codex report call. The normal 180s conversation
-  // budget can expire during collection and incorrectly turn a healthy model
-  // into LLM_TURN_BUDGET_EXHAUSTED. Keep this exception narrow and explicit.
-  if (/^\/w(?:uxin)?\s+osu\s+analyze(?:\s|$)/i.test(text)) {
-    return { maxCalls: 4, timeoutMs: 600_000 };
-  }
-  return undefined;
-}
-
 export function processIncoming(event, sendMessage = undefined) {
   return runInboundTask('onebot.message', () => processIncomingAdmitted(event, sendMessage));
 }
@@ -428,7 +416,6 @@ export async function processIncomingAdmitted(event, sendMessage = undefined) {
         { groupId: event?.groupId, userId: event?.userId, nickname: event?.nickname, messageId: event?.messageId },
         () => withLlmTurnPolicy(
           () => processIncomingInner(event, guardedSend),
-          llmTurnLimitsForEvent(event),
         ),
       );
       finishRequestTrace(result?.error ? 'failed' : 'completed', {
@@ -1143,7 +1130,7 @@ async function generateConversationReply(event, sendMessage, decision) {
         requiredTool,
         evidenceRequirement,
         // 自然聊天不回显工具原文：数据只供 LLM 参考并自然融入回答。
-        // 显式指令（/w osu analyze、!p 等）走独立通道，不受此开关影响。
+        // 显式指令（/w info、!p 等）走独立通道，不受此开关影响。
         deliverDirectContent: requiredTool?.args.capability === 'recommend',
         continueAfterDirectPayload: modelFirstRuntime,
         deduplicateToolCalls: modelFirstRuntime,

@@ -10,7 +10,6 @@ import type {
   CommandVisibility,
   CooldownPolicy,
 } from './types.js';
-import { ANALYSIS_COOLDOWN } from './commandConstants.js';
 
 export interface OsuSubcommandMeta {
   id: string;
@@ -34,7 +33,7 @@ export const OSU_SUBCOMMANDS = {
   bind: {
     id: 'bind',
     syntax: '/w osu bind <osu用户名>',
-    description: '把当前 QQ 绑定到 osu! 账号，之后查成绩、分析、推图默认使用该账号',
+    description: '把当前 QQ 绑定到 osu! 账号，之后查成绩、玩家画像、推图默认使用该账号',
     permission: 'all',
     visibility: 'public',
     discoverability: 'listed',
@@ -43,23 +42,10 @@ export const OSU_SUBCOMMANDS = {
     tags: ['bind', '绑定', 'osu绑定'],
     availability: { contexts: ['group', 'private'], requiresBinding: false },
   },
-  analyze: {
-    id: 'analyze',
-    syntax: '/w osu analyze [用户名] [--mode=std/taiko/catch/mania]',
-    description: '生成基于 BP、Recent 与 PP+ 证据的 LLM 玩家分析',
-    permission: 'all',
-    visibility: 'public',
-    discoverability: 'listed',
-    status: 'active',
-    execution: { kind: 'local', handlerKey: 'analyze' },
-    cooldown: ANALYSIS_COOLDOWN,
-    tags: ['analyze', '锐评', '玩家锐评'],
-    availability: { contexts: ['group', 'private'], requiresBinding: false, supportedModes: ['std', 'taiko', 'catch', 'mania'] },
-  },
   clear: {
     id: 'clear',
-    syntax: '/w osu clear <bind|history|cooldown|recommend|cache>',
-    description: '清除绑定、分析历史、冷却、推图历史或全局缓存',
+    syntax: '/w osu clear <bind|cooldown|recommend|cache>',
+    description: '清除绑定、推图冷却、推图历史或类型分析缓存',
     permission: 'all',
     visibility: 'public',
     discoverability: 'listed',
@@ -105,21 +91,10 @@ export const OSU_CLEAR_ACTIONS_META = {
     execution: { kind: 'local', handlerKey: 'clear.bind' },
     tags: ['解绑', '清除绑定'],
   },
-  history: {
-    id: 'clear.history',
-    syntax: '/w osu clear history',
-    description: '删除当前 QQ 的所有分析历史',
-    permission: 'all',
-    visibility: 'public',
-    discoverability: 'listed',
-    status: 'active',
-    execution: { kind: 'local', handlerKey: 'clear.history' },
-    tags: ['清除历史', '分析历史'],
-  },
   cooldown: {
     id: 'clear.cooldown',
     syntax: '/w osu clear cooldown <osu用户名或ID>',
-    description: '清除指定玩家的完整分析/近期/推图冷却',
+    description: '清除指定玩家的推图冷却',
     permission: 'owner',
     visibility: 'owner',
     discoverability: 'direct_only',
@@ -141,7 +116,7 @@ export const OSU_CLEAR_ACTIONS_META = {
   cache: {
     id: 'clear.cache',
     syntax: '/w osu clear cache',
-    description: '清除全局所有用户的完整分析、近期分析和类型分析缓存',
+    description: '清除全局所有用户的 BP 类型分析缓存',
     permission: 'owner',
     visibility: 'public',
     discoverability: 'direct_only',

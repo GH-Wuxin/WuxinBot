@@ -1,56 +1,11 @@
-// /w osu commands — bind and analyze with cooldown, queue, and @mention.
+// /w osu commands: binding, help and shared cache maintenance.
 
-import { readDb, updateDb, nowIso } from '../store.js';
-import { traceEvent, startRequestTrace, finishRequestTrace, withRequestTrace, requestTraceIdFor } from '../requestTrace.js';
-import { withLlmTurnPolicy } from '../llmPolicy.js';
+import { readDb, updateDb } from '../store.js';
 import { withSticker } from '../bot/stickers/index.js';
-import type { OsuMode, OsuScore } from './types.js';
-import { normalizedScoreMods, scoreStarRating } from './scoreMetrics.js';
-import {
-  ANALYZER_MVP_FORMAT_VERSION,
-  runAnalyzerMvp,
-  sanitizeGeneratedText,
-} from './analyzerMvp.js';
-import {
-  extractSkillRecord,
-  resolveSkillQq,
-  upsertSkillRecordInDb,
-} from '../bots/skills.js';
 import { syncLazybotBinding, removeLazybotBinding } from '../bots/bindingSync.js';
-import {
-  OSU_SUBCOMMANDS,
-  OSU_CLEAR_ACTIONS_META,
-  type OsuClearActionId,
-  type OsuCommandId,
-} from '../bot/commands/osu.meta.js';
-import { ANALYSIS_COOLDOWN } from '../bot/commands/commandConstants.js';
+import { OSU_SUBCOMMANDS, OSU_CLEAR_ACTIONS_META, type OsuClearActionId, type OsuCommandId } from '../bot/commands/osu.meta.js';
 import { OWNER_COMMANDS } from '../bot/commands/owner.meta.js';
-import {
-  canViewCommand,
-  canListCommand,
-  type CommandPermissions,
-} from '../bot/commands/index.js';
-
-// ── Queue (serial — only one analysis runs at a time) ──
-
-interface QueueEntry {
-  event: any;
-  sendMessage: any;
-  target: string | number;
-  mode: OsuMode;
-  userId: string;
-  groupId: string;
-  /** Request identity captured at enqueue so the job owns its own trace. */
-  requestId: string;
-  resolve: (result: any) => void;
-}
-
-const ANALYSIS_COOLDOWN_MS = ANALYSIS_COOLDOWN.ms;
-const ANALYSIS_FORMAT_VERSION = ANALYZER_MVP_FORMAT_VERSION;
-let queue: QueueEntry[] = [];
-let running = false;
-let currentEntry: QueueEntry | null = null;
-const MAX_ANALYZE_QUEUE = 8;
+import { canViewCommand, canListCommand, type CommandPermissions } from '../bot/commands/index.js';
 
 /**
  * Normalize every osuBindings format that has existed in Wuxin's database.
@@ -78,365 +33,6 @@ export function resolveOsuBindingValue(binding: any): string | number | null {
   return null;
 }
 
-export function osuBindingMatchesUser(
-  binding: any,
-  user: { id?: unknown; username?: unknown } | null | undefined,
-): boolean {
-  if (!binding || !user) return false;
-  const resolvedId = Number(user.id ?? 0);
-  const resolvedUsername = String(user.username ?? '').trim().toLocaleLowerCase();
-
-  if (binding && typeof binding === 'object') {
-    const bindingId = Number(binding.osuUserId ?? binding.userId ?? binding.id ?? 0);
-    const bindingUsername = String(binding.osuUsername ?? binding.username ?? '')
-      .trim()
-      .toLocaleLowerCase();
-    return Boolean(
-      (Number.isFinite(bindingId) && bindingId > 0 && bindingId === resolvedId)
-      || (bindingUsername && bindingUsername === resolvedUsername)
-    );
-  }
-
-  const target = resolveOsuBindingValue(binding);
-  if (typeof target === 'number') return target === resolvedId;
-  return Boolean(target && String(target).trim().toLocaleLowerCase() === resolvedUsername);
-}
-
-function resolveUsername(db: any, event: any, args?: string): string | number | null {
-  const provided = String(args || '').trim();
-  if (provided && !provided.startsWith('--')) return provided;
-  if (event.atTargets?.[0]) {
-    const bindings = db.osuBindings || {};
-    return resolveOsuBindingValue(bindings[String(event.atTargets[0])]);
-  }
-  const bindings = db.osuBindings || {};
-  return resolveOsuBindingValue(bindings[String(event.userId)]);
-}
-
-function parseMode(arg?: string): OsuMode {
-  const map: Record<string, OsuMode> = { std: 'osu', osu: 'osu', taiko: 'taiko', fruits: 'fruits', catch: 'fruits', mania: 'mania' };
-  return map[String(arg || '').toLowerCase()] || 'osu';
-}
-
-function parseTargetAndMode(db: any, event: any, value: string): {
-  target: string | number | null;
-  mode: OsuMode;
-} {
-  const parts = String(value || '').split(/\s+/).filter(Boolean);
-  const flagParts: string[] = [];
-  const nameParts: string[] = [];
-  for (const part of parts) {
-    if (part.startsWith('--')) flagParts.push(part);
-    else if (!part.startsWith('[CQ:')) nameParts.push(part);
-  }
-
-  let target: string | number | null = null;
-  const atQq = event.atTargets?.[0];
-  if (atQq) target = resolveOsuBindingValue(db.osuBindings?.[String(atQq)]);
-  if (!target && nameParts.length > 0) target = nameParts.join(' ');
-  if (!target) target = resolveUsername(db, event);
-
-  let mode: OsuMode = 'osu';
-  for (const flag of flagParts) {
-    const match = flag.match(/^--mode=(.+)$/);
-    if (match) mode = parseMode(match[1]);
-  }
-  return { target, mode };
-}
-
-function average(values: number[]): number {
-  return values.length > 0 ? values.reduce((sum, value) => sum + value, 0) / values.length : 0;
-}
-
-function buildScoreSnapshot(scores: OsuScore[]) {
-  const stars = scores
-    .map(scoreStarRating)
-    .filter(value => value > 0);
-  const accuracies = scores.map(score => Number(score.accuracy || 0));
-  return {
-    count: scores.length,
-    averageStars: average(stars),
-    averageAcc: average(accuracies),
-  };
-}
-
-function scoreModCombination(score: OsuScore): string {
-  const mods = normalizedScoreMods(score);
-  return mods.length > 0 ? mods.join('') : 'NM';
-}
-
-function buildModComposition(scores: OsuScore[]): Record<string, number> {
-  const counts: Record<string, number> = {};
-  for (const score of scores) {
-    const label = scoreModCombination(score);
-    counts[label] = (counts[label] || 0) + 1;
-  }
-  return counts;
-}
-
-function compactConclusion(value: unknown, maxLength = 360): string {
-  const text = String(value || '')
-    .replace(/^【结论】\s*/u, '')
-    .replace(/\s+/g, ' ')
-    .trim();
-  if (text.length <= maxLength) return text;
-  return `${text.slice(0, Math.max(0, maxLength - 1)).trimEnd()}…`;
-}
-
-function ppPlusRecord(bars: any): Record<string, number> | undefined {
-  if (!bars) return undefined;
-  return {
-    jump: Number(bars.jump || 0),
-    flow: Number(bars.flow || 0),
-    speed: Number(bars.speed || 0),
-    stamina: Number(bars.stamina || 0),
-    precision: Number(bars.precision || 0),
-    accuracy: Number(bars.accuracy || 0),
-    ppTotal: Number(bars.ppTotal || 0),
-  };
-}
-
-function lookupCachedAnalysis(db: any, userId: string, target: string | number, mode: string): string | null {
-  const analyses = (db.osuAnalyses || []) as any[];
-  const skillRecords = (db.skillStore?.records || []) as any[];
-  const cutoff = Date.now() - ANALYSIS_COOLDOWN_MS;
-  for (let i = analyses.length - 1; i >= 0; i--) {
-    const a = analyses[i];
-    const hasSkillMemory = skillRecords.some(record =>
-      (record.mode || 'osu') === (mode || 'osu') &&
-      (
-        (Number(a.osuUserId || 0) > 0 && Number(record.osuUserId || 0) === Number(a.osuUserId)) ||
-        String(record.osuUsername || '').trim().toLowerCase() === String(a.displayName || '').trim().toLowerCase()
-      )
-    );
-    if (String(a.userId) === String(userId) &&
-        String(a.target) === String(target) &&
-        (a.mode || 'osu') === (mode || 'osu') &&
-        Number(a.formatVersion || 0) === ANALYSIS_FORMAT_VERSION &&
-        new Date(a.createdAt).getTime() > cutoff &&
-        a.fullText &&
-        hasSkillMemory) {
-      return sanitizeGeneratedText(a.fullText);
-    }
-  }
-  return null;
-}
-
-export async function sendAsReply(event: any, sendMessage: any, text: string) {
-  if (!sendMessage || !text) return;
-  text = sanitizeGeneratedText(text);
-  const mention = `[CQ:at,qq=${event.userId}]`;
-  // Use merge-forward for long reports (>400 chars)
-  if (text.length > 400) {
-    const { sendForwardBlocks } = await import('../bot/reply.js');
-    const title = `${event.nickname || event.userId} 的 osu! 分析报告`;
-    await sendForwardBlocks(sendMessage, event, title, text);
-  } else {
-    await sendMessage(event, `${mention}\n${text}`);
-  }
-}
-
-const SECTION_COMMENT_KEYS = ['profile', 'top', 'top5', 'mods', 'pplus', 'recent', 'classification'] as const;
-type SectionCommentKey = typeof SECTION_COMMENT_KEYS[number];
-type SectionCommentSource = 'llm' | 'fallback' | 'none';
-type SectionCommentSources = Record<SectionCommentKey, SectionCommentSource>;
-
-function allSectionSources(source: SectionCommentSource): SectionCommentSources {
-  return Object.fromEntries(SECTION_COMMENT_KEYS.map(key => [key, source])) as SectionCommentSources;
-}
-
-
-async function runMvpAnalysisCommand(
-  event: any,
-  target: string | number,
-  mode: OsuMode,
-): Promise<string> {
-  const db = readDb();
-  const callerBinding = db.osuBindings?.[String(event.userId)];
-  const narrativeUser = /^\d+$/.test(String(target).trim())
-    ? { id: Number(target), username: '' }
-    : { id: 0, username: String(target) };
-  const result = await runAnalyzerMvp(db, target, mode, {
-    playerName: String(target),
-    perspective: osuBindingMatchesUser(callerBinding, narrativeUser) ? 'self' : 'unknown',
-  });
-  const { collection } = result;
-  const topSnapshot = buildScoreSnapshot(collection.bestScores);
-  const recentSnapshot = buildScoreSnapshot(collection.recentScores);
-  const displayName = collection.user?.username || String(target);
-  const modComposition = buildModComposition(collection.bestScores);
-  const topMods = Object.entries(modComposition)
-    .sort((left, right) => right[1] - left[1] || left[0].localeCompare(right[0]))
-    .slice(0, 4)
-    .map(([label]) => label);
-  const createdAt = nowIso();
-
-  updateDb((draft) => {
-    draft.osuAnalyses = draft.osuAnalyses || [];
-    draft.osuAnalyses.push({
-      target: String(target),
-      displayName,
-      mode,
-      analysisType: 'full',
-      analysisModel: result.model,
-      conclusionSource: result.source,
-      conclusionValidationReasons: result.validationReasons,
-      conclusionRejectedDraft: result.rejectedDraft,
-      sectionCommentsSource: 'none',
-      sectionCommentSources: allSectionSources('none'),
-      sectionComments: null,
-      sectionCommentsValidationReasons: [],
-      sectionCommentsRejectedDraft: '',
-      reviewLog: [],
-      generationTrace: {
-        pipeline: 'analyzer_mvp',
-        reportSource: result.source,
-        provider: result.provider,
-        model: result.model,
-        validationReasons: result.validationReasons,
-      },
-      conclusionText: compactConclusion(result.text),
-      formatVersion: ANALYSIS_FORMAT_VERSION,
-      osuUserId: collection.user.id,
-      userId: String(event.userId),
-      groupId: String(event.groupId || ''),
-      createdAt,
-      pp: collection.user.statistics.pp,
-      rank: collection.user.statistics.global_rank,
-      acc: collection.user.statistics.hit_accuracy,
-      analysisProvider: result.provider,
-      bestCount: collection.bestScores.length,
-      recentCount: collection.recentScores.length,
-      summary: compactConclusion(result.text),
-      fullText: result.text,
-      baseline: {
-        topCount: topSnapshot.count,
-        topAverageStars: topSnapshot.averageStars,
-        topAverageAcc: topSnapshot.averageAcc,
-        capturedAt: createdAt,
-      },
-      recentSnapshot: {
-        count: recentSnapshot.count,
-        averageStars: recentSnapshot.averageStars,
-        averageAcc: recentSnapshot.averageAcc,
-      },
-      ppBars: result.collection.pplusBars ? {
-        jump: result.collection.pplusBars.jump,
-        flow: result.collection.pplusBars.flow,
-        speed: result.collection.pplusBars.speed,
-        stamina: result.collection.pplusBars.stamina,
-        precision: result.collection.pplusBars.precision,
-        accuracy: result.collection.pplusBars.accuracy,
-        ppTotal: result.collection.pplusBars.ppTotal,
-      } : null,
-      errors: collection.errors,
-    });
-
-    const associatedQq = resolveSkillQq({
-      bindings: draft.osuBindings || {},
-      requesterQq: event.userId,
-      mentionedQqs: event.atTargets || [],
-      osuUserId: collection.user.id,
-      osuUsername: displayName,
-    });
-    upsertSkillRecordInDb(draft, extractSkillRecord({
-      userId: associatedQq,
-      osuUsername: displayName,
-      osuUserId: collection.user.id,
-      mode,
-      pp: Number(collection.user.statistics.pp || 0),
-      rank: Number(collection.user.statistics.global_rank || 0),
-      countryRank: Number(collection.user.statistics.country_rank || 0),
-      accuracy: Number(collection.user.statistics.hit_accuracy || 0),
-      playCount: Number(collection.user.statistics.play_count || 0),
-      playTimeSeconds: Number(collection.user.statistics.play_time || 0),
-      level: Number(collection.user.statistics.level?.current || 0),
-      levelProgress: Number(collection.user.statistics.level?.progress || 0),
-      ppPlus: ppPlusRecord(collection.pplusBars),
-      modComposition,
-      topMods,
-      gradeCounts: collection.user.grade_counts || collection.user.statistics.grade_counts || {},
-      summary: compactConclusion(result.text),
-    }));
-  });
-
-  if (collection.errors.length > 0) {
-    console.error(`[osu analyzer mvp] ${displayName} (${target}) 的非致命错误：`, collection.errors);
-  }
-  return result.text;
-}
-
-// One user Analyze request is one logical job. It must never execute inside
-// the first requester's async turn: that would spend the requester's model
-// budget on other jobs and mis-attribute their traces and ledger entries
-// (finding F04). Each job re-enters its own trace context and gets a fresh
-// execution budget, so queue waiting never consumes the execution deadline.
-const ANALYZE_JOB_BUDGET = { maxCalls: 4, timeoutMs: 600_000 };
-
-function analyzeExecutionAllowed(entry: QueueEntry): string | null {
-  // Admission was checked at accept time; eligibility is re-checked when the
-  // job actually starts, so a paused or disabled group cannot run a task that
-  // was queued before the change (§5.3).
-  const fresh = readDb();
-  if (fresh.settings?.globalPaused) return 'OSU_ANALYZE_PAUSED: 全局暂停中，排队任务已取消';
-  const groupRow = fresh.groups?.find((group) => String(group.groupId) === String(entry.groupId));
-  if (groupRow && groupRow.enabled === false) return 'OSU_ANALYZE_GROUP_DISABLED: 该群已停用，排队任务已取消';
-  return null;
-}
-
-async function runQueuedAnalyzeEntry(entry: QueueEntry): Promise<string> {
-  const requestId = `${entry.requestId || 'osu-analyze'}:job`;
-  startRequestTrace(entry.event, requestId);
-  return withRequestTrace(requestId, async () => {
-    traceEvent('INGRESS', 'osu_analyze_job_started', {
-      originalRequestId: entry.requestId || '',
-      userId: entry.userId,
-      groupId: entry.groupId,
-      target: String(entry.target),
-      mode: entry.mode,
-    });
-    try {
-      const blocked = analyzeExecutionAllowed(entry);
-      if (blocked) throw new Error(blocked);
-      const text = await withLlmTurnPolicy(
-        () => runMvpAnalysisCommand(entry.event, entry.target, entry.mode),
-        ANALYZE_JOB_BUDGET,
-      );
-      finishRequestTrace('completed', { queued: true, reason: 'osu analyze job completed' });
-      return text;
-    } catch (error) {
-      finishRequestTrace('failed', { queued: true, error: String(error?.message || error).slice(0, 300) });
-      throw error;
-    }
-  });
-}
-
-async function drainQueue() {
-  while (queue.length > 0) {
-    currentEntry = queue.shift()!;
-    running = true;
-    const entry = currentEntry;
-    try {
-      const text = await runQueuedAnalyzeEntry(entry);
-      await sendAsReply(entry.event, entry.sendMessage, text);
-      entry.resolve({ replied: true, reason: 'osu analyze 完成', text });
-    } catch (error) {
-      const msg = `分析失败：${String(error?.message || error).slice(0, 300)}`;
-      if (entry.sendMessage) {
-        try {
-          await sendAsReply(entry.event, entry.sendMessage, msg);
-        } catch (sendError) {
-          console.error('[osu analyze] 失败通知也未能发送：', sendError?.message || sendError);
-        }
-      }
-      entry.resolve({ replied: true, reason: msg, error: String(error?.message || error) });
-    } finally {
-      running = false;
-      currentEntry = null;
-    }
-  }
-}
-
 interface OsuCommandContext {
   event: any;
   sendMessage: any;
@@ -444,8 +40,6 @@ interface OsuCommandContext {
   subCommand: string;
   args: string;
   subFree: string;
-  options: { bypassCooldown?: boolean };
-  db: any;
 }
 
 type OsuHandler = (ctx: OsuCommandContext) => Promise<{ replied?: boolean; reason?: string; text?: string; error?: string }>;
@@ -484,74 +78,6 @@ async function handleOsuBind(ctx: OsuCommandContext) {
   return { replied: true, reason: msg };
 }
 
-export async function handleOsuAnalyze(ctx: OsuCommandContext) {
-  const { event, sendMessage, subFree, options, db } = ctx;
-  const { target, mode } = parseTargetAndMode(db, event, subFree);
-  if (!target) {
-    if (sendMessage) await sendMessage(event, '请先绑定 osu! 账号（/w osu bind <用户名>）或指定要分析的用户名。');
-    return { replied: true, reason: 'osu analyze 无用户' };
-  }
-
-  // Check 4-hour cooldown — admin console calls bypass it.
-  if (!options.bypassCooldown) {
-    const cached = lookupCachedAnalysis(db, String(event.userId), target, mode);
-    if (cached) {
-      if (sendMessage) await sendAsReply(event, sendMessage, `（4 小时内已分析过 ${mode} 模式，显示上次结果）\n\n${cached}`);
-      return { replied: true, reason: 'osu analyze 缓存命中', text: cached };
-    }
-  }
-
-  // Prevent double-submit: same user can't have multiple pending analyses.
-  // Dedupe, capacity, and the queue push must be one synchronous section —
-  // awaiting the queue notice between check and push let concurrent requests
-  // pass the same checks (finding F05).
-  const isSameUser = (e: QueueEntry) => String(e.userId) === String(event.userId);
-  if (currentEntry && isSameUser(currentEntry)) {
-    if (sendMessage) await sendAsReply(event, sendMessage, '这份 Analyze 正在生成，别重复提交。');
-    return { replied: true, reason: 'osu analyze 重复提交（正在运行）' };
-  }
-  if (queue.some(isSameUser)) {
-    if (sendMessage) await sendAsReply(event, sendMessage, '你已经在 Analyze 队列里了。');
-    return { replied: true, reason: 'osu analyze 重复提交（已在队列）' };
-  }
-  if (queue.length >= MAX_ANALYZE_QUEUE) {
-    if (sendMessage) await sendAsReply(event, sendMessage, `Analyze 队列已满（正在运行 1 个，排队最多 ${MAX_ANALYZE_QUEUE} 个），请稍后再试。`);
-    return { replied: true, reason: `osu analyze 队列已满（${queue.length}/${MAX_ANALYZE_QUEUE}）` };
-  }
-
-  // Reserve the slot first. The task is accepted the moment it is enqueued;
-  // the queue notice is a side effect of acceptance, and a failed notice must
-  // not undo the reservation or leave the entry undefined (§5.2).
-  let resolveEntry!: (result: { replied?: boolean; reason?: string; text?: string; error?: string }) => void;
-  const completion = new Promise<{ replied?: boolean; reason?: string; text?: string; error?: string }>((resolve) => {
-    resolveEntry = resolve;
-  });
-  const entry: QueueEntry = {
-    event, sendMessage,
-    target, mode,
-    userId: String(event.userId),
-    groupId: String(event.groupId),
-    requestId: requestTraceIdFor(event),
-    resolve: resolveEntry,
-  };
-  queue.push(entry);
-  if (!running) void drainQueue();
-
-  const ahead = queue.length - 1 + (running ? 1 : 0);
-  if (sendMessage) {
-    const statusMsg = ahead > 0
-      ? `已加入 Analyze 队列（前面还有 ${ahead} 人），到你时我会 @ 你。`
-      : 'pippi 正在整理这份玩家数据，马上生成 Analyze 报告…';
-    try {
-      await sendAsReply(event, sendMessage, statusMsg);
-    } catch (notifyError) {
-      console.error('[osu analyze] 排队提示发送失败（任务保持已接受）：', notifyError?.message || notifyError);
-    }
-  }
-
-  return completion;
-}
-
 async function handleClearBind(ctx: OsuCommandContext) {
   const { event, sendMessage } = ctx;
   // A binding is a long-lived association (it is also synced to LazyBot), so a
@@ -577,15 +103,6 @@ async function handleClearBind(ctx: OsuCommandContext) {
   return { replied: true, reason: 'osu clear bind' };
 }
 
-async function handleClearHistory(ctx: OsuCommandContext) {
-  const { event, sendMessage } = ctx;
-  updateDb((draft) => {
-    draft.osuAnalyses = (draft.osuAnalyses || []).filter((a: any) => String(a.userId) !== String(event.userId));
-  });
-  if (sendMessage) await sendMessage(event, '已删除你的所有分析历史。');
-  return { replied: true, reason: 'osu clear history' };
-}
-
 async function handleClearCooldown(ctx: OsuCommandContext) {
   const { event, sendMessage, permissions, subFree } = ctx;
   if (!permissions?.isOwner) {
@@ -598,7 +115,6 @@ async function handleClearCooldown(ctx: OsuCommandContext) {
     return { replied: true, reason: 'osu clear cooldown 缺目标' };
   }
   const needleId = /^\d+$/.test(targetArg) ? Number(targetArg) : 0;
-  const needleLower = targetArg.toLowerCase();
   let recommendOsuId = needleId;
   if (!recommendOsuId) {
     try {
@@ -608,28 +124,14 @@ async function handleClearCooldown(ctx: OsuCommandContext) {
       // Name resolution failed; recommend cooldown stays untouched.
     }
   }
-  let removedAnalyze = 0;
-  let removedRecent = 0;
   let removedRecommend = 0;
   updateDb((draft) => {
-    const matches = (entry: any) => {
-      const idMatch = needleId > 0 && Number(entry?.osuUserId || 0) === needleId;
-      const nameMatch = [entry?.target, entry?.displayName, entry?.osuUsername]
-        .some((value) => String(value || '').toLowerCase() === needleLower);
-      return idMatch || nameMatch;
-    };
-    const beforeAnalyze = (draft.osuAnalyses || []).length;
-    draft.osuAnalyses = (draft.osuAnalyses || []).filter((entry: any) => !matches(entry));
-    removedAnalyze = beforeAnalyze - draft.osuAnalyses.length;
-    const beforeRecent = (draft.osuRecentAnalyses || []).length;
-    draft.osuRecentAnalyses = (draft.osuRecentAnalyses || []).filter((entry: any) => !matches(entry));
-    removedRecent = beforeRecent - draft.osuRecentAnalyses.length;
     if (recommendOsuId > 0 && draft.osuRecommendCooldowns?.[String(recommendOsuId)] !== undefined) {
       delete draft.osuRecommendCooldowns[String(recommendOsuId)];
       removedRecommend = 1;
     }
   });
-  const reply = `已清除 ${targetArg} 的冷却（完整分析 ${removedAnalyze} 条、近期 ${removedRecent} 条、推图 ${removedRecommend} 条）。推图防重复历史保留。`;
+  const reply = `已清除 ${targetArg} 的冷却（推图 ${removedRecommend} 条）。推图防重复历史保留。`;
   if (sendMessage) await sendMessage(event, reply);
   return { replied: true, reason: reply };
 }
@@ -664,24 +166,21 @@ async function handleClearRecommend(ctx: OsuCommandContext) {
 
 async function handleClearCache(ctx: OsuCommandContext) {
   const { event, sendMessage, permissions } = ctx;
-  // Global cache wipe affects every user's analysis/recent/type caches: owner
+  // Global BP-type cache wipe affects every user: owner
   // only. Permission is checked before any mutation.
   if (!permissions?.isOwner) {
     if (sendMessage) await sendMessage(event, '该操作仅限 owner。');
     return { replied: true, reason: 'osu clear cache 非 owner' };
   }
   updateDb((draft) => {
-    draft.osuAnalyses = [];
-    draft.osuRecentAnalyses = [];
     draft.osuTypeAnalyses = [];
   });
-  if (sendMessage) await sendMessage(event, '已清除所有分析缓存。');
+  if (sendMessage) await sendMessage(event, '已清除所有玩家的 BP 类型分析缓存。');
   return { replied: true, reason: 'osu clear cache' };
 }
 
 const CLEAR_ACTIONS = {
   bind: handleClearBind,
-  history: handleClearHistory,
   cooldown: handleClearCooldown,
   recommend: handleClearRecommend,
   cache: handleClearCache,
@@ -695,13 +194,12 @@ async function handleOsuClear(ctx: OsuCommandContext) {
   // The single exception is `bind confirm`: unbinding drops a long-lived
   // association, so it needs an explicit second word (see handleClearBind).
   const key: OsuClearActionId | null = action === 'bind' || action === 'bind confirm' ? 'bind'
-    : action === 'history' ? 'history'
     : action === 'cache' ? 'cache'
     : action === 'cooldown' || action.startsWith('cooldown ') ? 'cooldown'
     : action === 'recommend' || action.startsWith('recommend ') ? 'recommend'
     : null;
   if (!key) {
-    if (sendMessage) await sendMessage(event, '用法：/w osu clear bind（删除绑定）/ /w osu clear history（删除分析历史）/ /w osu clear cooldown <玩家>（取消指定玩家冷却，仅 owner）/ /w osu clear recommend <玩家>（清除指定玩家推图历史，仅 owner）/ /w osu clear cache（清除全部缓存，仅 owner）');
+    if (sendMessage) await sendMessage(event, '用法：/w osu clear bind（删除绑定）/ /w osu clear cooldown <玩家>（取消指定玩家冷却，仅 owner）/ /w osu clear recommend <玩家>（清除指定玩家推图历史，仅 owner）/ /w osu clear cache（清除全部缓存，仅 owner）');
     return { replied: true, reason: 'osu clear 缺参数' };
   }
   return CLEAR_ACTIONS[key](ctx);
@@ -753,7 +251,6 @@ async function handleOsuHelp(ctx: OsuCommandContext) {
 
 const OSU_HANDLERS = {
   bind: handleOsuBind,
-  analyze: handleOsuAnalyze,
   clear: handleOsuClear,
   help: handleOsuHelp,
 } satisfies Record<OsuCommandId, OsuHandler>;
@@ -764,9 +261,7 @@ export async function handleOsuCommand(
   permissions: any,
   subCommand: string,
   args: string,
-  options: { bypassCooldown?: boolean } = {},
 ) {
-  const db = readDb();
   const sub = String(subCommand || 'help').toLowerCase();
   const subFree = String(args || '').startsWith(sub + ' ') ? String(args).slice(sub.length + 1)
     : String(args || '') === sub ? '' : String(args || '');
@@ -775,5 +270,5 @@ export async function handleOsuCommand(
     if (sendMessage) await sendMessage(event, `未知 osu 子命令：${subCommand}`);
     return { replied: true, reason: `未知 osu 子命令: ${subCommand}` };
   }
-  return handler({ event, sendMessage, permissions, subCommand: sub, args, subFree, options, db });
+  return handler({ event, sendMessage, permissions, subCommand: sub, args, subFree });
 }

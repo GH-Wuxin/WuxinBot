@@ -80,7 +80,7 @@ async function main() {
     assert(!mentionsBot('这bot疯了', db.settings), 'generic bot alias should not match inside a sentence');
     assert(mentionsBot('bot 在吗', db.settings), 'generic bot alias should still match at word boundary');
     assert(
-      normalizeMessage('/w osu analyze &#91;TST&#93;Alpha') === '/w osu analyze [TST]Alpha',
+      normalizeMessage('/w skill &#91;TST&#93;Alpha') === '/w skill [TST]Alpha',
       'raw_message should decode CQ-escaped brackets in osu! usernames'
     );
     assert(

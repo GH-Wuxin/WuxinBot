@@ -63,7 +63,7 @@ const scenarios = [
   scenario('short_reaction', '666'),
   scenario('serious', '最近压力好大，有点想死'),
   scenario('command', '/w osu help'),
-  scenario('analysis_command', '/w osu analyze mrekk'),
+  scenario('analysis_command', '/w skill mrekk'),
   scenario('dt_talk', '这把DT开得有点飘'),
 ];
 

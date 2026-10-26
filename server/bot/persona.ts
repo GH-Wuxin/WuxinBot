@@ -489,9 +489,6 @@ export function detectScene(event: {
 }): PippiScene {
   const text = String(event.text || '').trim();
 
-  // osu analysis commands
-  if (/^\/w(?:uxin)?\s+osu\s+analyze(?:\s|$)/i.test(text)) return 'osu_analysis';
-
   // Wuxin commands
   if (/^\/w(uxin)?\s+/i.test(text)) return 'command';
 

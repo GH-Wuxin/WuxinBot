@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { ChevronLeft, ChevronRight, ExternalLink, RefreshCw, Search, Sparkles, Trash2, UserRound, X } from 'lucide-react';
+import { ChevronLeft, ChevronRight, ExternalLink, RefreshCw, Search, Trash2, UserRound, X } from 'lucide-react';
 import { api } from '../../lib/api.js';
 import { Button, Card, ConfirmDialog, EmptyState, ErrorState, IconButton, InlineHelp, Input, MetricCard, Pill, SectionHeader, SegmentedControl, StatusBadge } from '../../components/ui/index.jsx';
 import { Avatar, userAvatarUrl } from '../../components/Avatar.jsx';
@@ -8,7 +8,7 @@ import { RefreshButton } from '../../components/ui/RefreshButton.jsx';
 const botLabels = { yumu: 'Yumu / 雨沐', kanon: 'Kanon / 猫猫', hydrant: 'Hydrant / 消防栓', lazybot: 'LazyBot' };
 const playerTabs = [
   { value: 'overview', label: '概览' }, { value: 'bp', label: 'BP' }, { value: 'recent', label: '最近' },
-  { value: 'pplus', label: 'PP+' }, { value: 'bptype', label: '类型' }, { value: 'badges', label: '徽章' }, { value: 'analysis', label: '分析' }
+  { value: 'pplus', label: 'PP+' }, { value: 'bptype', label: '类型' }, { value: 'badges', label: '徽章' }
 ];
 const countryEmoji = (code) => !code || code.length !== 2 ? '🌐' : String.fromCodePoint(...[...code.toUpperCase()].map((char) => 0x1f1e6 + char.charCodeAt(0) - 65));
 const fmtDuration = (seconds) => `${Math.round(Number(seconds || 0) / 3600)} 小时`;
@@ -89,9 +89,8 @@ export function OsuPage({ db, refreshState }) {
     {loadError && <div className="note" style={{ color: 'var(--red)', marginBottom: 12 }}>osu! 状态读取失败：{loadError}</div>}
     {operationError && <div className="note" style={{ color: 'var(--red)', marginBottom: 12 }}>操作失败：{operationError}</div>}
 
-    <div className="grid grid-4" style={{ marginBottom: 16 }}>
+    <div className="grid grid-3" style={{ marginBottom: 16 }}>
       <div className="card stat"><div className="stat-label">绑定账号</div><div className="stat-value">{number(bindings.length)}</div><div className="stat-note">QQ ↔ osu!</div></div>
-      <div className="card stat"><div className="stat-label">玩家分析</div><div className="stat-value">{number(status?.stats?.analyzeCount)}</div><div className="stat-note">/w osu analyze</div></div>
       <div className="card stat"><div className="stat-label">绑定指令</div><div className="stat-value">{number(status?.stats?.bindCount)}</div><div className="stat-note">/w osu bind</div></div>
       <div className="card stat"><div className="stat-label">API 429</div><div className="stat-value">{number(status?.health?.api429Count)}</div><div className="stat-note">运行期记录</div></div>
     </div>
@@ -148,7 +147,6 @@ export function OsuPage({ db, refreshState }) {
         <div className="card">
           <div className="card-head"><span className="card-title">本地能力</span></div>
           <div className="kv"><span>渲染失败</span><b>{number(status?.health?.renderFailures)}</b></div>
-          <div className="kv"><span>玩家分析</span><b>{number(status?.stats?.analyzeCount)}</b></div>
           <div className="kv"><span>绑定指令</span><b>{number(status?.stats?.bindCount)}</b></div>
           <div className="kv"><span>API 429</span><b>{number(status?.health?.api429Count)}</b></div>
         </div>
@@ -202,8 +200,6 @@ function PlayerDrawer({ osuId, username, onClose }) {
   const [data, setData] = useState({});
   const [loading, setLoading] = useState({});
   const [bpPage, setBpPage] = useState(1);
-  const [analysis, setAnalysis] = useState(null);
-  const [analyzing, setAnalyzing] = useState(false);
 
   useEffect(() => {
     const close = (event) => { if (event.key === 'Escape') onClose(); };
@@ -232,33 +228,8 @@ function PlayerDrawer({ osuId, username, onClose }) {
     else if (tab === 'pplus' && data.pplus === undefined && !loading.pplus) loadTab('pplus', () => api(`/api/osu/player/${osuId}/pplus`, { timeoutMs: 20000 }));
     else if (tab === 'bptype' && data.bptype === undefined && !loading.bptype) loadTab('bptype', () => api(`/api/osu/player/${osuId}/bptype`, { timeoutMs: 75000 }));
     else if (tab === 'badges' && data.badges === undefined && !loading.badges) loadTab('badges', async () => { const result = await api(`/api/osu/player/${osuId}`, { timeoutMs: 20000 }); return { badges: result.profile.player.badges || [] }; });
-    else if (tab === 'analysis' && analysis === null) {
-      const controller = new AbortController();
-      api(`/api/osu/player/${osuId}/analyze`, { signal: controller.signal, timeoutMs: 15000 })
-        .then((result) => setAnalysis(result.analysis))
-        .catch(() => {});
-      return () => controller.abort();
-    }
-  }, [tab, profile, data, loading, bpPage, osuId, analysis]);
+  }, [tab, profile, data, loading, bpPage, osuId]);
 
-  useEffect(() => {
-    if (tab !== 'analysis' || analysis?.status !== 'running') return undefined;
-    const controller = new AbortController();
-    let inFlight = false;
-    const poll = async () => {
-      if (inFlight) return;
-      inFlight = true;
-      try {
-        const result = await api(`/api/osu/player/${osuId}/analyze`, { signal: controller.signal, timeoutMs: 15000 });
-        if (!controller.signal.aborted) setAnalysis(result.analysis);
-      } catch { /* keep last state */ }
-      finally { inFlight = false; }
-    };
-    const timer = setInterval(poll, 5000);
-    return () => { clearInterval(timer); controller.abort(); };
-  }, [tab, analysis?.status, osuId]);
-
-  const startAnalysis = async () => { setAnalyzing(true); try { const result = await api(`/api/osu/player/${osuId}/analyze`, { method: 'POST', timeoutMs: 15000 }); setAnalysis(result.analysis); } finally { setAnalyzing(false); } };
   const forceRefresh = async () => { setRefreshing(true); try { await loadProfile(true); } finally { setRefreshing(false); } };
   const player = profile?.player || null;
   const bpResult = data.bp;
@@ -297,7 +268,6 @@ function PlayerDrawer({ osuId, username, onClose }) {
         {tab === 'pplus' && <PPlusTab data={data.pplus} loading={loading.pplus} />}
         {tab === 'bptype' && <TextTab data={data.bptype} loading={loading.bptype} title="BP 类型分布（osu!oracle）" />}
         {tab === 'badges' && <BadgesTab data={data.badges} loading={loading.badges} />}
-        {tab === 'analysis' && <AnalysisTab analysis={analysis} analyzing={analyzing} onStart={startAnalysis} />}
       </div>
     </aside>
   </div>;
@@ -399,22 +369,5 @@ function BadgesTab({ data, loading }) {
         <div className="row-sub">{fmtDate(badge.awarded_at)}</div>
       </div>
     </div>)}
-  </div>;
-}
-
-function AnalysisTab({ analysis, analyzing, onStart }) {
-  return <div>
-    <div style={{ display: 'flex', gap: 8, marginBottom: 10, alignItems: 'center' }}>
-      <button type="button" className="btn btn-primary btn-sm" disabled={analyzing || analysis?.status === 'running'} onClick={onStart}>{analysis?.status === 'running' ? '分析中…' : '生成 Analyze 报告'}</button>
-      <span className="note" style={{ margin: 0 }}>控制台触发不经过 QQ 侧冷却；同一玩家同时只运行一个任务。</span>
-    </div>
-    {analysis?.status === 'running' && <div className="note">分析生成中，完成后会自动显示…</div>}
-    {analysis?.status === 'error' && <div className="note" style={{ color: 'var(--red)' }}>分析失败：{analysis.error}</div>}
-    {analysis?.status === 'done' && <>
-      <div className="note">完成于 {fmtDate(analysis.finishedAt)} · 开始于 {fmtDate(analysis.at)}</div>
-      {analysis.source === 'fallback' && <div className="note" style={{ color: 'var(--amber)' }}>本次 LLM 输出未通过事实校验，已显示确定性安全报告。</div>}
-      <pre style={{ maxHeight: 460, overflow: 'auto', fontSize: 11, whiteSpace: 'pre-wrap', color: 'var(--soft)' }}>{analysis.text}</pre>
-    </>}
-    {!analysis && <div className="note">还没有分析记录，触发后会在这里展示当前玩家的完整报告。</div>}
   </div>;
 }

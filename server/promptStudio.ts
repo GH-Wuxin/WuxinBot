@@ -15,7 +15,6 @@ const MODULES: PromptStudioModule[] = [
   { id: 'pippi_activity', name: '自主阅读与近况', description: '在有限预算内选择资料、形成经历和判断自主分享时机。', injectionMethod: '与聊天共用 Pippi 核心的精简视图 + 实际来源 + 近况；不带全量群聊和人物档案。', usesPippi: true, toolsPossible: true, editableLabel: '自主活动表达补充' },
   { id: 'conversation', name: '群聊与私聊', description: '普通对话、上下文回复与最终回答。', injectionMethod: 'Pippi 完整人格 + 当前场景规则 + 全局补充；Agent 在需要时追加工具定义。', usesPippi: true, toolsPossible: true, editableLabel: '对话人格补充' },
   { id: 'agent_tools', name: '工具规划与结果整合', description: 'Agent 工具选择、必需工具引导与工具结果后的回答合成。', injectionMethod: 'Agent 专用任务提示；工具 schema 随本轮能力按需注入，不默认注入 Pippi 核心人格。', usesPippi: false, toolsPossible: true, editableLabel: '工具流程人格补充' },
-  { id: 'osu_analyzer', name: 'osu! 玩家分析', description: 'Analyzer MVP 与玩家报告生成。', injectionMethod: 'Pippi 精简分析人格 + osu! 知识 + 事实边界 + 可核验数据与任务规则。', usesPippi: true, toolsPossible: false, editableLabel: '玩家分析人格补充' },
   { id: 'osu_sections', name: 'osu! 区块短评', description: '生成或重写玩家报告中的指定区块。', injectionMethod: 'Pippi 精简分析人格 + 当前区块写作要求；程序继续执行 JSON 与事实校验。', usesPippi: true, toolsPossible: false, editableLabel: '区块短评人格补充' },
   { id: 'osu_conclusion', name: 'osu! 分析结论', description: '生成或重写玩家报告结论。', injectionMethod: 'Pippi 精简分析人格 + 结论写作要求；程序继续执行报告校验。', usesPippi: true, toolsPossible: false, editableLabel: '分析结论人格补充' },
   { id: 'osu_review', name: 'osu! 独立审查', description: '独立审查报告事实与结构。', injectionMethod: '独立审查器系统提示，不注入 Pippi 人格；输出由程序校验。', usesPippi: false, toolsPossible: false, editableLabel: '审查模块人格补充' },
@@ -48,7 +47,6 @@ export function resolvePromptModule(options: Record<string, any> = {}) {
   if (/osu区块短评/.test(identity)) return moduleById.get('osu_sections')!;
   if (/osu分析创意稿|结论重写/.test(identity)) return moduleById.get('osu_conclusion')!;
   if (/osu_one_line_roast|osu 一句话锐评/.test(identity)) return moduleById.get('osu_one_line')!;
-  if (/osu_analyzer_mvp|osu analyzer mvp/.test(identity)) return moduleById.get('osu_analyzer')!;
   if (/conversation_reply|bot harness/.test(identity)) return moduleById.get('conversation')!;
   if (/画像更新|画像json修复|图片记忆摘要/.test(identity)) return moduleById.get('player_profile')!;
   if (/群聊画像/.test(identity)) return moduleById.get('group_profile')!;

@@ -1,6 +1,6 @@
 // Console player-profile snapshots: a small JSON store in the runtime data
 // directory so the GUI can show "fetched at" and refresh without hammering the
-// osu! API. Analysis results for the console drawer are kept here too.
+// osu! API. Legacy report fields remain readable for data compatibility.
 import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
@@ -13,7 +13,7 @@ function storeFilePath(): string {
   return path.join(getDataDir(), 'osu-console-profiles.json');
 }
 
-export interface ConsoleAnalysisEntry {
+interface LegacyAnalysisEntry {
   status: 'idle' | 'running' | 'done' | 'error';
   at?: string;
   finishedAt?: string;
@@ -30,7 +30,7 @@ export interface ConsoleAnalysisEntry {
 
 interface PlayerRecord {
   profile?: { fetchedAt: string; user: any };
-  analysis?: ConsoleAnalysisEntry;
+  analysis?: LegacyAnalysisEntry;
 }
 
 const MIGRATION_META_KEY = '__wuxin_profile_store_meta__';
@@ -153,26 +153,8 @@ function load(): ProfileStoreRecords {
     const parsed = JSON.parse(fs.readFileSync(storePath, 'utf8'));
     if (isObject(parsed)) records = parsed as ProfileStoreRecords;
   } catch { /* missing or unreadable: start from an empty set */ }
-  // A persisted 'running' flag is not proof of a live worker: it belongs to a
-  // previous process generation. Mark those tasks interrupted at first load so
-  // the console can retry instead of receiving 202 started:false forever
-  // (finding F07).
-  let interrupted = 0;
-  for (const [key, record] of Object.entries(records)) {
-    if (key === MIGRATION_META_KEY || !isPlayerRecord(record)) continue;
-    if (record.analysis?.status === 'running') {
-      record.analysis = {
-        ...record.analysis,
-        status: 'error',
-        finishedAt: new Date().toISOString(),
-        error: 'ANALYSIS_INTERRUPTED: 后端重启导致分析中断，可重新发起',
-      };
-      interrupted += 1;
-    }
-  }
   cache = records;
   cacheDataDir = dataDir;
-  if (interrupted > 0) persist();
   return cache;
 }
 
@@ -194,19 +176,6 @@ export function setStoredProfile(osuId: string | number, user: any): void {
   const key = String(osuId);
   const existing = isPlayerRecord(records[key]) ? records[key] : {};
   records[key] = { ...existing, profile: { fetchedAt: new Date().toISOString(), user } };
-  persist();
-}
-
-export function getStoredAnalysis(osuId: string | number): ConsoleAnalysisEntry | null {
-  const record = load()[String(osuId)];
-  return isPlayerRecord(record) ? record.analysis || null : null;
-}
-
-export function setStoredAnalysis(osuId: string | number, entry: ConsoleAnalysisEntry): void {
-  const records = load();
-  const key = String(osuId);
-  const existing = isPlayerRecord(records[key]) ? records[key] : {};
-  records[key] = { ...existing, analysis: entry };
   persist();
 }
 

@@ -1,5 +1,5 @@
 [
-  { "id": "s001", "split": "calibration", "scene": "command", "text": "/w osu analyze mrekk", "expected": "none", "note": "确定性命令不注入" },
+  { "id": "s001", "split": "calibration", "scene": "command", "text": "/w skill mrekk", "expected": "none", "note": "确定性命令不注入" },
   { "id": "s002", "split": "calibration", "scene": "casual", "text": "!p", "expected": "none", "note": "快捷指令" },
   { "id": "s003", "split": "calibration", "scene": "casual", "text": "!bp 1-100", "expected": "none", "note": "快捷指令" },
   { "id": "s004", "split": "calibration", "scene": "casual", "text": "/ppp", "expected": "none", "note": "LazyBot 指令" },
@@ -11,7 +11,7 @@
   { "id": "s010", "split": "calibration", "scene": "casual", "text": "!ra", "expected": "none", "note": "rating 指令" },
   { "id": "s011", "split": "calibration", "scene": "casual", "text": "!s 4270382", "expected": "none", "note": "成绩查询指令" },
   { "id": "s012", "split": "calibration", "scene": "command", "text": "/w osu help", "expected": "none", "note": "帮助命令" },
-  { "id": "s013", "split": "calibration", "scene": "osu_analysis", "text": "/w osu analyze mrekk", "expected": "none", "note": "分析场景零注入" },
+  { "id": "s013", "split": "calibration", "scene": "osu_analysis", "text": "/w skill mrekk", "expected": "none", "note": "分析场景零注入" },
   { "id": "s014", "split": "calibration", "scene": "serious", "text": "最近压力好大，有点想死", "expected": "none", "note": "严肃场景不注入社区风格" },
   { "id": "s015", "split": "calibration", "scene": "casual", "text": "怎么绑定osu账号", "expected": "wuxin_self", "note": "绑定用法" },
   { "id": "s016", "split": "calibration", "scene": "casual", "text": "绑定怎么弄", "expected": "wuxin_self", "note": "绑定用法倒装" },

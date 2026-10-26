@@ -99,7 +99,7 @@ const WUXIN_SELF = [
     tags: ['bind', '绑定', '解绑'],
     content: [
       '命令：/w osu bind <osu用户名>',
-      '把当前 QQ 绑定到 osu! 账号，之后查成绩、分析、推图默认使用该账号。绑定前需要用户提供正确的 osu! 用户名；不要绑定他人账号。解绑用 /w osu clear bind。',
+      '把当前 QQ 绑定到 osu! 账号，之后查成绩、玩家画像、推图默认使用该账号。绑定前需要用户提供正确的 osu! 用户名；不要绑定他人账号。解绑用 /w osu clear bind。',
     ].join('\n'),
     commandExamples: [
       { command: '/w osu bind LimaPlayer', verifier: 'wuxin' },
@@ -117,11 +117,10 @@ const WUXIN_SELF = [
     tags: ['clear', '清除', '冷却', '历史', '缓存', '推图历史'],
     content: [
       '命令：/w osu clear bind（删除绑定）',
-      '/w osu clear history（删除分析历史）',
-      '/w osu clear cooldown <玩家>（取消指定玩家分析/近期/推图冷却，仅 owner）',
+      '/w osu clear cooldown <玩家>（取消指定玩家推图冷却，仅 owner）',
       '/w osu clear recommend <玩家>（清除推图历史与冷却，仅 owner）',
-      '/w osu clear cache（清除全部用户的分析/近期/类型缓存，仅 owner）',
-      '普通群友只能清除自己的绑定和分析历史；冷却与推图历史清除涉及他人，仅 owner 可执行。',
+      '/w osu clear cache（清除全部用户的 BP 类型分析缓存，仅 owner）',
+      '普通群友只能清除自己的绑定；冷却与推图历史清除涉及他人，仅 owner 可执行。',
     ].join('\n'),
     commandExamples: [
       { command: '/w osu clear cooldown LimaPlayer', verifier: 'wuxin' },
@@ -378,10 +377,8 @@ function concreteCommandExample(entry) {
     style: '/w style 简洁',
     me: '/w me',
     osuBind: '/w osu bind LimaPlayer',
-    osuAnalyze: '/w osu analyze',
     osuHelp: '/w osu help',
     'clear.bind': '/w osu clear bind',
-    'clear.history': '/w osu clear history',
     'clear.cooldown': '/w osu clear cooldown LimaPlayer',
     'clear.recommend': '/w osu clear recommend LimaPlayer',
     'clear.cache': '/w osu clear cache',
