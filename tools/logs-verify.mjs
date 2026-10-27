@@ -8,6 +8,8 @@ assert.equal(rows.length,1);assert.equal(rows[0].replies.length,2);
 let entries=buildRequestEntries(rows,[]);assert.equal(entries[0].replied,true);assert.equal(entries[0].status,'replied');assert.equal(entries[0].blocked,false);
 assert.equal(filterLogEntries(entries,'replied').length,1);assert.equal(filterLogEntries(entries,'all','回复 b').length,1);
 assert.equal(filterLogEntries(buildRequestEntries(correlateChatRecords([user('not-sent')],[{id:'pending',groupId:'g',messageId:'not-sent',shouldReply:true}]),[]),'replied').length,0);
+const cachedOnly={id:'r:not-sent',groupId:'g',status:'completed',startedAt:iso(0),events:[{name:'request_completed',data:{replied:true}}]};
+assert.equal(filterLogEntries(buildRequestEntries(correlateChatRecords([user('not-sent')],[]),[cachedOnly]),'replied').length,0,'A temporary trace alone cannot change retained-history reply filtering');
 
 rows=correlateChatRecords([user('same','g1'),user('same','g2'),reply('scoped','same',{groupId:'g1'})],[]);
 assert.equal(rows.find(r=>r.message?.groupId==='g1').replies.length,1);assert.equal(rows.find(r=>r.message?.groupId==='g2').replies.length,0);

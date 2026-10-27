@@ -75,7 +75,8 @@ export function buildRequestEntries(rows: RecordLike[], traces: RecordLike[] = [
     const item = row.message || row.decision || row.replies?.[0];
     const candidate = byId.get(row.requestId), trace = candidate && (!candidate.groupId || !item.groupId || String(candidate.groupId) === String(item.groupId)) ? candidate : null;
     if (trace) seen.add(trace.id);
-    const replied = (row.replies || []).length > 0 || traceReplied(trace);
+    // History must not enter/leave the replied filter when the short-lived trace cache rotates.
+    const replied = (row.replies || []).length > 0;
     const failed = trace?.status === 'failed';
     const status = failed ? 'failed' : replied ? 'replied' : trace?.status === 'active' ? 'active'
       : row.decision?.shouldReply === false ? 'silent' : trace?.status || (row.decision?.shouldReply ? 'reply' : 'unknown');
