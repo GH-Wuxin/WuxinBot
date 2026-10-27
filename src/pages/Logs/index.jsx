@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { usePollingResource } from '../../app/polling.js';
 import { api, subscribeRequestTraceStream } from '../../lib/api.js';
-import { ConfirmDialog } from '../../components/ui/index.jsx';
+import { ConfirmDialog, Input, Select } from '../../components/ui/index.jsx';
 import { Avatar, userAvatarUrl } from '../../components/Avatar.jsx';
 import { Activity, AlertTriangle, CheckCircle2, FileText, Inbox, PenLine, Send, ShieldCheck, Sparkles, Wrench } from 'lucide-react';
 import { requestProgressSnapshot } from './correlation.js';
@@ -276,11 +276,11 @@ export function LogsPage({ db }) {
     </div>
 
     <div className="log-history-controls">
-      <label>群聊 <select aria-label="筛选群聊" value={groupFilter} onChange={event=>{setGroupFilter(event.target.value);setListPage(0);setSelectedId(null);}}>
-        <option value="">全部群聊与私聊</option><option value="__private">私聊</option>
-        {(db.groups || []).map(group=><option key={group.groupId} value={String(group.groupId)}>{group.name || group.groupId}</option>)}
-      </select></label>
-      <label>日期 <input type="date" aria-label="筛选日期" title="按触发消息的日期筛选" value={dateFilter} onChange={event=>{setDateFilter(event.target.value);setListPage(0);setSelectedId(null);}} /></label>
+      <Select label="群聊" aria-label="筛选群聊" value={groupFilter}
+        options={[{value:'',label:'全部群聊与私聊'},{value:'__private',label:'私聊'},...(db.groups || []).map(group=>({value:String(group.groupId),label:group.name || group.groupId}))]}
+        onChange={event=>{setGroupFilter(event.target.value);setListPage(0);setSelectedId(null);}} />
+      <Input label="日期" type="date" aria-label="筛选日期" title="按触发消息的日期筛选" value={dateFilter}
+        onChange={event=>{setDateFilter(event.target.value);setListPage(0);setSelectedId(null);}} />
       {(groupFilter || dateFilter || logSearch) && <button type="button" className="btn btn-sm btn-ghost" onClick={()=>{setGroupFilter('');setDateFilter('');setLogSearch('');setQuery('');setListPage(0);setSelectedId(null);}}>清除条件</button>}
       <button type="button" className={'btn btn-sm'+(hasNewRecords?' btn-primary':'')} disabled={historyLoading} onClick={refreshHistory}>{historyLoading?'读取中…':hasNewRecords?'有新记录 · 点击更新':'更新记录'}</button>
       <span className="muted">翻页时列表保持不动</span>
