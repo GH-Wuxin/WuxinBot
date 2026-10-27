@@ -1,11 +1,11 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { ReplyProcesses } from '../../components/ReplyProcesses.jsx';
 import { usePollingResource } from '../../app/polling.js';
 import { api, subscribeRequestTraceStream } from '../../lib/api.js';
 import { ConfirmDialog } from '../../components/ui/index.jsx';
 import { Avatar, userAvatarUrl } from '../../components/Avatar.jsx';
 import { Activity, AlertTriangle, CheckCircle2, FileText, Inbox, PenLine, Send, ShieldCheck, Sparkles, Wrench } from 'lucide-react';
-import { correlateChatRecords, requestProgressSnapshot } from './correlation.js';
+import { requestProgressSnapshot } from './correlation.js';
+import { queryLogEntries } from '../../../server/logRecords.ts';
 import { buildRequestEntries, filterLogEntries } from './explorer.js';
 
 // 版式对齐原型 PAGES.logs：左「最近记录」+ 右详情（消息 + 请求时间线）。
@@ -64,9 +64,10 @@ const avatarFor = (entry, botQq) => {
   return userAvatarUrl(entry?.userId || entry?.row?.message?.userId);
 };
 
-const entryStatusLabels = { active: '进行中', completed: '完成', failed: '失败', silent: '未回复', reply: '决定回复', unknown: '无状态', ok: '执行成功', denied: '权限拒绝', error: '执行失败', invalid: '参数有误', ignored: '已忽略' };
+const entryStatusLabels = { replied: '已回复', active: '进行中', completed: '完成', failed: '失败', silent: '未回复', reply: '决定回复', unknown: '无状态', ok: '执行成功', denied: '权限拒绝', error: '执行失败', invalid: '参数有误', ignored: '已忽略' };
 const filters = [
   { value: 'all', label: '全部' },
+  { value: 'replied', label: '已回复' },
   { value: 'blocked', label: '被阻断' },
   { value: 'silent', label: '未回复' },
   { value: 'failed', label: '失败' },
@@ -100,6 +101,16 @@ export function LogsPage({ db }) {
   const [exporting, setExporting] = useState(false);
   const [exportError, setExportError] = useState('');
   const [phaseFilter, setPhaseFilter] = useState('');
+  const [groupFilter, setGroupFilter] = useState('');
+  const [dateFilter, setDateFilter] = useState('');
+  const [query, setQuery] = useState('');
+  const [history, setHistory] = useState(() => queryLogEntries(db, [], {}));
+  const [historyLoading, setHistoryLoading] = useState(false);
+  const [historyError, setHistoryError] = useState('');
+  const [refreshKey, setRefreshKey] = useState(0);
+  const snapshotRef = useRef(null);
+  const rowsRef = useRef(null);
+  useEffect(() => { if (rowsRef.current) rowsRef.current.scrollTop=0; }, [history]);
   const botQq = db?.settings?.selfQq || '';
   // 群号后面跟上群名，日志里才认得出是哪个群。
   const groupNames = useMemo(
@@ -107,7 +118,7 @@ export function LogsPage({ db }) {
     [db?.groups],
   );
   const groupLabel = (groupId) => {
-    if (!groupId) return '私聊';
+    if (!groupId || groupId === 'private') return '私聊';
     const name = groupNames.get(String(groupId));
     return name ? `${groupId} · ${name}` : String(groupId);
   };
@@ -151,7 +162,27 @@ export function LogsPage({ db }) {
     };
   }, []);
 
-  const query = logSearch.trim().toLowerCase();
+  useEffect(() => {
+    const timer = window.setTimeout(() => { setQuery(logSearch.trim()); setListPage(0); setSelectedId(null); }, 250);
+    return () => window.clearTimeout(timer);
+  }, [logSearch]);
+  useEffect(() => {
+    const controller = new AbortController(); let alive = true;
+    const params = new URLSearchParams({ channel, filter, q:query, page:String(listPage), pageSize:'8', group:groupFilter });
+    if (snapshotRef.current !== null) params.set('asOf', String(snapshotRef.current));
+    if (dateFilter) {
+      const start = new Date(dateFilter+'T00:00:00'), end = new Date(start);
+      end.setDate(end.getDate()+1); params.set('from',String(start.getTime())); params.set('to',String(end.getTime()-1));
+    }
+    setHistoryLoading(true); setHistoryError('');
+    api('/api/logs?'+params, {signal:controller.signal}).then(result => {
+      if (!alive) return;
+      snapshotRef.current=result.asOf; setHistory(result);
+    }).catch(error => { if(alive && error?.name !== 'AbortError') setHistoryError(error.message || String(error)); })
+      .finally(() => { if(alive) setHistoryLoading(false); });
+    return () => { alive=false; controller.abort(); };
+  }, [channel,filter,query,listPage,groupFilter,dateFilter,refreshKey]);
+  const refreshHistory = () => { snapshotRef.current=null; setListPage(0); setRefreshKey(n=>n+1); };
   const traceResource = usePollingResource(
     async () => (await api('/api/request-traces?limit=80')).traces || [],
     10_000,
@@ -171,28 +202,12 @@ export function LogsPage({ db }) {
   }, []);
 
   const traces = [...demoTraces, ...(streamTraces ?? traceResource.data ?? [])];
-  const chatRows = useMemo(() => correlateChatRecords(
-    [...(db.messages || [])].reverse().slice(0, 160),
-    [...(db.decisions || [])].reverse().slice(0, 160),
-  ), [db.messages, db.decisions]);
-  const requestEntries = useMemo(() => buildRequestEntries(chatRows, traces), [chatRows, traces]);
-  const commandEntries = useMemo(() => [...(db.commandLogs || [])].reverse().slice(0, 100).map((log) => ({
-    id: 'command:' + log.id,
-    log,
-    title: (log.command || '未知指令') + ' ' + (log.subCommand || ''),
-    groupId: log.groupId,
-    preview: log.reason || log.errorMessage || log.rawText,
-    at: log.createdAt,
-    status: log.status || 'unknown',
-    duration: log.latencyMs ?? null,
-    tokens: null,
-  })), [db.commandLogs]);
-  const filtered = useMemo(() => filterLogEntries(channel === 'requests' ? requestEntries : commandEntries, filter, query), [channel, requestEntries, commandEntries, filter, query]);
-  const pageSize = 8;
-  const pageCount = Math.max(1, Math.ceil(filtered.length / pageSize));
-  const currentPage = Math.min(listPage, pageCount - 1);
-  const pageEntries = filtered.slice(currentPage * pageSize, (currentPage + 1) * pageSize);
-  const selected = filtered.find((entry) => entry.id === selectedId) || pageEntries[0];
+  const fixtureEntries=demoTraces.length ? filterLogEntries(buildRequestEntries([],demoTraces),filter,query) : null;
+  const pageEntries=fixtureEntries || history.entries || [], pageCount=fixtureEntries ? 1 : history.pageCount || 1, currentPage=fixtureEntries ? 0 : history.page || 0;
+  const selectedBase=pageEntries.find(entry=>entry.id===selectedId) || pageEntries[0];
+  const selected=selectedBase ? {...selectedBase,trace:traces.find(trace=>trace.id===selectedBase.requestId) || selectedBase.trace} : null;
+  const hasNewRecords=[...(db.messages || []),...(db.decisions || []),...(db.commandLogs || [])].some(item=>Date.parse(item.createdAt)>history.asOf)
+    || traces.some(trace=>Date.parse(trace.events?.at(-1)?.at || trace.startedAt)>history.asOf);
 
   useEffect(() => {
     if (selected?.trace?.status !== 'active') return undefined;
@@ -243,9 +258,9 @@ export function LogsPage({ db }) {
 
   return <>
     <div className="page-head">
-      <div><h1>日志</h1><p>一条消息从进来到决定回不回，每一步都能查。</p></div>
+      <div><h1>日志</h1><p>按一轮对话找记录，原消息和 Pippi 的回复放在一起。</p></div>
       <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-        <span className={'chip ' + (streamState === 'connected' ? 'chip--mint' : 'chip--amber')}>{streamState === 'connected' ? '实时连接' : '连接恢复中'}</span>
+        <span className={'chip ' + (streamState === 'connected' ? 'chip--mint' : 'chip--amber')}>{streamState === 'connected' ? '追踪已连接' : '连接恢复中'}</span>
         <button type="button" className="btn btn-ghost" disabled={exporting} onClick={exportDiagnostics}>{exporting ? '导出中…' : '导出诊断'}</button>
         <button type="button" className="btn btn-ghost" onClick={() => setClearConfirm(true)}>清空全部上下文</button>
       </div>
@@ -253,12 +268,24 @@ export function LogsPage({ db }) {
 
     <div className="searchbar" style={{ marginBottom: 16 }}>
       <span className="muted">搜索</span>
-      <input value={logSearch} onChange={(event) => { setLogSearch(event.target.value); setListPage(0); setSelectedId(null); }} placeholder="搜索消息、群号、模型或事件" aria-label="搜索日志" />
+      <input value={logSearch} onChange={(event) => { setLogSearch(event.target.value); setListPage(0); setSelectedId(null); }} placeholder="搜索原消息、Pippi 回复、昵称或 QQ" maxLength={200} aria-label="搜索日志" />
       <div className="seg">
         <button type="button" className={channel === 'requests' ? 'is-active' : ''} onClick={() => selectChannel('requests')}>会话与请求</button>
         <button type="button" className={channel === 'commands' ? 'is-active' : ''} onClick={() => selectChannel('commands')}>指令与错误</button>
       </div>
     </div>
+
+    <div className="log-history-controls">
+      <label>群聊 <select aria-label="筛选群聊" value={groupFilter} onChange={event=>{setGroupFilter(event.target.value);setListPage(0);setSelectedId(null);}}>
+        <option value="">全部群聊与私聊</option><option value="__private">私聊</option>
+        {(db.groups || []).map(group=><option key={group.groupId} value={String(group.groupId)}>{group.name || group.groupId}</option>)}
+      </select></label>
+      <label>日期 <input type="date" aria-label="筛选日期" title="按触发消息的日期筛选" value={dateFilter} onChange={event=>{setDateFilter(event.target.value);setListPage(0);setSelectedId(null);}} /></label>
+      {(groupFilter || dateFilter || logSearch) && <button type="button" className="btn btn-sm btn-ghost" onClick={()=>{setGroupFilter('');setDateFilter('');setLogSearch('');setQuery('');setListPage(0);setSelectedId(null);}}>清除条件</button>}
+      <button type="button" className={'btn btn-sm'+(hasNewRecords?' btn-primary':'')} disabled={historyLoading} onClick={refreshHistory}>{historyLoading?'读取中…':hasNewRecords?'有新记录 · 点击更新':'更新记录'}</button>
+      <span className="muted">翻页时列表保持不动</span>
+    </div>
+    {historyError && <div className="note" role="alert">历史记录读取失败：{historyError} <button type="button" className="btn btn-sm" onClick={refreshHistory}>重试</button></div>}
 
     {(streamError || traceResource.error || exportError) && <div className="note" style={{ color: 'var(--red)', marginBottom: 12 }}>
       {exportError ? '诊断导出失败：' + exportError : '实时追踪暂不可用，使用轮询重试：' + (streamError || traceResource.error)}
@@ -267,38 +294,40 @@ export function LogsPage({ db }) {
     <div className="logs">
       <div className="card">
         <div className="card-head">
-          <span className="card-title">最近记录</span>
+          <span className="card-title">{channel === 'requests' ? '对话记录' : '指令记录'}</span>
           <div className="seg">
-            {filters.map((item) => <button key={item.value} type="button" className={filter === item.value ? 'is-active' : ''} onClick={() => selectFilter(item.value)}>{item.label}</button>)}
+            {filters.filter(item=>channel==='requests' || ['all','failed','slow'].includes(item.value)).map((item) => <button key={item.value} type="button" className={filter === item.value ? 'is-active' : ''} onClick={() => selectFilter(item.value)}>{item.label}</button>)}
           </div>
         </div>
-        <div className="muted" style={{ fontSize: 12, marginBottom: 8 }}>{filtered.length} 条 · 每页 {pageSize} 条</div>
-        <div className="rows">
+        <div className="muted" style={{ fontSize: 12, marginBottom: 8 }}>{history.total} 条 · 每页 {history.pageSize} 条 · 截至 {stamp(history.asOf)}</div>
+        <div className="rows" ref={rowsRef} aria-busy={historyLoading}>
           {pageEntries.map((entry) => <div
             key={entry.id}
+            data-entry-id={entry.id}
             className={'log-item' + (selected?.id === entry.id ? ' is-active' : '')}
             onClick={() => setSelectedId(entry.id)}
             role="button"
             tabIndex={0}
-            onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') setSelectedId(entry.id); }}
+            onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); setSelectedId(entry.id); } }}
           >
             <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, alignItems: 'center' }}>
               <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
                 <Avatar name={entry.title} src={avatarFor(entry, botQq)} size={24} />
                 <span className="log-user">{entry.title}</span>
               </span>
-              <span className={'chip' + (entry.blocked ? ' chip--amber' : entry.status === 'completed' || entry.status === 'ok' ? ' chip--mint' : entry.status === 'active' ? ' chip--amber' : '')}>{entry.blocked ? '阻断' : (entryStatusLabels[entry.status] || entry.status)}</span>
+              <span className={'chip' + (entry.blocked ? ' chip--amber' : entry.replied || entry.status === 'completed' || entry.status === 'ok' ? ' chip--mint' : entry.status === 'active' ? ' chip--amber' : '')}>{entry.blocked ? '阻断' : (entryStatusLabels[entry.status] || entry.status)}</span>
             </div>
-            <div className="log-text">{entry.preview || '暂无正文'}</div>
+            <div className="log-text log-preview">{entry.preview || '暂无正文'}</div>
+            {entry.row?.replies?.length > 0 && <div className="log-reply-preview">Pippi · {entry.row.replies.map(reply=>reply.content || (reply.sticker?'[表情包]':'[图片]')).join(' / ')}</div>}
             {entry.blocked && entry.blockReason && <div className="log-time" style={{ color: 'var(--amber)' }}>闸门：{entry.blockReason}</div>}
             <div className="log-time">{stamp(entry.at)} · {groupLabel(entry.groupId)} · {entry.tokens == null ? '— Token' : entry.tokens.toLocaleString() + ' Token'}{entry.duration == null ? '' : ' · ' + formatElapsed(entry.duration)}</div>
           </div>)}
           {!pageEntries.length && <div className="note">没有匹配的记录。</div>}
         </div>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 14 }}>
-          <button type="button" className="btn btn-sm" disabled={currentPage === 0} onClick={() => { setListPage(currentPage - 1); setSelectedId(null); }}>上一页</button>
+          <button type="button" className="btn btn-sm" disabled={historyLoading || currentPage === 0} onClick={() => { setListPage(currentPage - 1); setSelectedId(null); }}>上一页</button>
           <span className="muted" style={{ fontSize: 12 }}>{currentPage + 1} / {pageCount}</span>
-          <button type="button" className="btn btn-sm" disabled={currentPage + 1 >= pageCount} onClick={() => { setListPage(currentPage + 1); setSelectedId(null); }}>下一页</button>
+          <button type="button" className="btn btn-sm" disabled={historyLoading || currentPage + 1 >= pageCount} onClick={() => { setListPage(currentPage + 1); setSelectedId(null); }}>下一页</button>
         </div>
       </div>
 
@@ -306,14 +335,20 @@ export function LogsPage({ db }) {
         {selected ? <>
           <div className="card-head">
             <span className="card-title">{selected.title}</span>
-            <span className={'chip' + (selected.blocked ? ' chip--amber' : selected.status === 'completed' || selected.status === 'ok' ? ' chip--mint' : selected.status === 'active' ? ' chip--amber' : '')}>{selected.blocked ? '阻断' : (entryStatusLabels[selected.status] || selected.status)}</span>
+            <span className={'chip' + (selected.blocked ? ' chip--amber' : selected.replied || selected.status === 'completed' || selected.status === 'ok' ? ' chip--mint' : selected.status === 'active' ? ' chip--amber' : '')}>{selected.blocked ? '阻断' : (entryStatusLabels[selected.status] || selected.status)}</span>
           </div>
-          <div className="muted" style={{ fontSize: 12 }}>{stamp(selected.at)} · {selected.groupId || '私聊'}{selected.row?.message?.userId ? ' · ' + selected.row.message.userId : ''}</div>
-          <div className="log-text" style={{ margin: '14px 0' }}>{selected.preview || '暂无正文'}</div>
+          <div className="muted" style={{ fontSize: 12 }}>{stamp(selected.at)} · {groupLabel(selected.groupId)}{selected.row?.message?.userId ? ' · ' + selected.row.message.userId : ''}</div>
+          <div className="log-conversation">
+            {selected.row?.message ? <LogMessage message={selected.row.message} label="收到的消息" botQq={botQq}/> : <div className="note">{selected.row?.orphanReply ? '这条历史回复的原消息未保留，已保留回复正文；不会按时间猜测关联。' : selected.preview || '原消息未保留'}</div>}
+            {(selected.row?.replies || []).map(reply=><LogMessage key={reply.id} message={reply} label="Pippi 回复" botQq={botQq}/>)}
+            {channel==='requests' && !selected.row?.replies?.length && <div className="note">{selected.replied?'追踪记录显示已发送回复，当前列表没有回复正文；可点击更新记录。':'本轮尚未记录到 Pippi 的回复。'}</div>}
+          </div>
+
+          <details className="log-diagnostics"><summary>处理详情与请求时间线</summary>
 
           {selected.row?.decision && <div className="note" style={{ marginBottom: 10 }}>
             <b style={{ color: selected.blocked ? 'var(--amber)' : 'var(--text)' }}>
-              {selected.row.decision.shouldReply ? '为何回复' : selected.blocked ? '被闸门阻断' : '为何沉默'}
+              {selected.row.decision.shouldReply ? '为何回复' : selected.replied ? '初始判断（后续已回复）' : selected.blocked ? '被闸门阻断' : '为何沉默'}
             </b>
             <div>{selected.row.decision.reason}</div>
           </div>}
@@ -348,9 +383,10 @@ export function LogsPage({ db }) {
                 {!allEvents.length && <div className="note">这条追踪还没有事件。</div>}
               </div>
             </>;
-          })() : <div className="note">暂无关联的请求追踪。</div>}
+          })() : <div className="note">原消息与回复可独立查看；这轮的详细追踪已不在最近缓存中。</div>}
 
-          <div className="note" style={{ marginTop: 16 }}>Token 仅统计已保留的模型追踪，非账单；“—”表示未知。</div>
+          <div className="note" style={{ marginTop: 16 }}>Token 为本请求已记录的模型用量；“—”表示未记录。历史范围取决于后台保留的数据。</div>
+          </details>
         </> : <div className="note">选择一条记录。</div>}
       </div>
     </div>
@@ -364,6 +400,16 @@ export function LogsPage({ db }) {
       onConfirm={() => { setClearConfirm(false); return clearAllContext(); }}
     />
   </>;
+}
+
+function LogMessage({message,label,botQq}) {
+  const assistant=message.role==='assistant';
+  return <article className={'log-message'+(assistant?' log-message--reply':'')}>
+    <div className="log-message-head"><Avatar name={assistant?'Pippi':message.nickname || message.userId} src={userAvatarUrl(assistant?botQq:message.userId)} size={24}/>
+      <strong>{label}</strong><span>{assistant?'Pippi':message.nickname || message.userId}</span><time>{stamp(message.createdAt)}</time></div>
+    <div className="log-message-text">{message.content || (message.sticker?'[表情包]':message.media?.images?.length?'[图片]':'（无文字内容）')}</div>
+    {(message.media?.images?.length > 0 || message.sticker) && <div className="log-time">{message.media?.images?.length > 0 ? '图片 × '+message.media.images.length : ''}{message.sticker ? ' 表情：'+message.sticker.id : ''}</div>}
+  </article>;
 }
 
 // 每个阶段的配色与图标：时间线上靠颜色和图标区分「入口 / 闸门 / 提示 / 模型 / 工具 / 改写 / 发送」。

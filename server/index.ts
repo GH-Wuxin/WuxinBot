@@ -1,3 +1,4 @@
+import { queryLogEntries } from './logRecords.js';
 import 'dotenv/config';
 import crypto from 'node:crypto';
 import net from 'node:net';
@@ -440,6 +441,11 @@ app.post('/api/codex/logout', async (_req, res) => {
   } catch (error) {
     res.status(502).json({ ok: false, error: `ChatGPT 退出登录失败：${String(error?.message || error).slice(0, 300)}` });
   }
+});
+
+app.get('/api/logs', (req, res) => {
+  try { res.json(ok(queryLogEntries(readDb(), listRequestTraces(160), req.query))); }
+  catch (error) { res.status(400).json({ ok:false, error:String(error.message || error) }); }
 });
 
 app.get('/api/request-traces', (req, res) => {

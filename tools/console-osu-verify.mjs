@@ -53,7 +53,7 @@ assert.deepEqual(traceMetrics({ events: [event('[TRUNCATED]')] }), { tokens: nul
 assert.equal(traceMetrics({ ...trace, startedAt: 'bad date' }).duration, null);
 assert.equal(traceMetrics({ events: [event(0)] }).tokens, 0, 'known zero differs from missing usage');
 const messages = [{ id: 'm1', requestId: 'request-1', nickname: 'Example', groupId: 'fixture', content: 'hello', createdAt: startedAt }, { id: 'm2', nickname: 'Example', content: 'same time is not the same request', createdAt: startedAt }];
-const decisions = [{ id: 'd1', requestId: 'request-1', shouldReply: true, createdAt: startedAt }];
+const decisions = [{ id: 'd1', requestId: 'request-1', groupId: 'fixture', shouldReply: true, createdAt: startedAt }];
 const rows = correlateChatRecords(messages, decisions);
 const entries = buildRequestEntries(rows, [trace, { id: 'active', status: 'active', startedAt }]);
 assert.equal(entries.length, 3);
