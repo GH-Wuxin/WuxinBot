@@ -36,28 +36,25 @@ function normalizeEnv(env) {
   return Object.fromEntries(Object.entries(env).map(([key, value]) => [String(key), String(value)]));
 }
 
-// These are the selectors exposed by the current profiler CLI. The v0.40
-// release worktree has its own formal selector; v100 is the older stable line.
-// Keep both explicit so a saved old Desktop config cannot silently start the
-// wrong algorithm.
-const PROFILER_ALGORITHMS = new Set([
-  'v040-formal', 'v100', 'v101-experimental',
-  'v010-beta9.2', 'v010-beta9.1', 'v010-beta9', 'v010-beta8',
-  'v010-beta7', 'v010-beta6', 'v010-beta5', 'v010-beta4',
-  'v010-beta3', 'v010-beta2', 'v010-beta1', 'v096',
-]);
+const DEFAULT_PROFILER_ALGORITHM = 'v041-formal';
 
-function normalizeProfilerArgs(args, fallback = 'v040-formal') {
+function normalizeProfilerAlgorithm(value) {
+  // Only migrate known retired formal launch arguments. A separately updated
+  // or custom CLI owns validation of other selectors; never downgrade them.
+  return ['v040', 'v040-formal'].includes(value) ? DEFAULT_PROFILER_ALGORITHM : value;
+}
+
+function normalizeProfilerArgs(args) {
   const normalized = normalizeArgs(args);
   for (let index = 0; index < normalized.length; index += 1) {
     const arg = normalized[index];
     if (arg === '--algorithm') {
-      if (!PROFILER_ALGORITHMS.has(normalized[index + 1])) normalized[index + 1] = fallback;
+      if (normalized[index + 1]) normalized[index + 1] = normalizeProfilerAlgorithm(normalized[index + 1]);
       continue;
     }
     if (arg.startsWith('--algorithm=')) {
       const value = arg.slice('--algorithm='.length);
-      if (!PROFILER_ALGORITHMS.has(value)) normalized[index] = `--algorithm=${fallback}`;
+      normalized[index] = `--algorithm=${normalizeProfilerAlgorithm(value)}`;
     }
   }
   return normalized;
@@ -153,11 +150,11 @@ function buildDefaultDefinitions(projectRoot) {
   const napcatUserData = envOr('NAPCAT_USER_DATA_DIR', 'D:\\PippiQQProfile');
   const profilerRoot = envOr('SKILL_PROFILER_ROOT', 'G:\\My pack\\Agent Work\\codex_work\\osu-skill-profiler-v040-release');
   const profilerCli = path.join(profilerRoot, 'tools', 'map_demand_v01', 'cli.py');
-  // The formal release worktree contains the v0.40 runtime. Keep the large
+  // The formal release worktree contains the current v0.41 runtime. Keep the large
   // local manifest in the main checkout instead of the release worktree's
   // placeholder manifest.
   const profilerManifest = envOr('SKILL_PROFILER_MANIFEST', 'G:\\My pack\\Agent Work\\osu-skill-profiler\\training\\datasets\\std_manifest.json');
-  const profilerAlgorithm = envOr('SKILL_PROFILER_ALGORITHM', 'v040-formal');
+  const profilerAlgorithm = normalizeProfilerAlgorithm(envOr('SKILL_PROFILER_ALGORITHM', DEFAULT_PROFILER_ALGORITHM));
   const yumuNode = firstExisting(envOr('YUMU_NODE', ''), path.join(runtime, 'node-v22.23.1-win-x64', 'node-v22.23.1-win-x64', 'node.exe'), node);
   const yumuDir = envOr('YUMU_DIR', path.join(localRoot, 'sources', 'yumu-image'));
   const yumuImageEnv = {
@@ -371,6 +368,7 @@ function mergeDefinition(defaultDefinition, savedDefinition) {
       result.env.NODE_OPTIONS = stripLegacyTsxLoaderOption(result.env.NODE_OPTIONS);
     }
   }
+  if (result.id === 'skillProfiler') result.args = normalizeProfilerArgs(result.args);
   // Old overrides may change the launch path without saving a matcher. Derive
   // its path fields on load as well as on edit; explicit custom rules survive.
   if (!savedDefinition?.matcher) result.matcher = relocateMatcher(defaultDefinition, result);
@@ -439,7 +437,7 @@ function migrateLegacyDefinition(defaultDefinition, savedDefinition) {
     const knownManifest = [defaultDefinition.args[4], path.join(savedRoot, 'training', 'datasets', 'std_manifest.json')].includes(result.args[4]);
     const generatedArgs = ['-u', path.join(savedRoot, 'tools', 'map_demand_v01', 'cli.py'), 'bid-review-ui', '--manifest', result.args[4], '--no-open', '--algorithm', result.args[7]];
     if (knownRoots.includes(savedRoot) && knownManifest && isDeepStrictEqual(result.args, generatedArgs)
-      && ['v100', 'v040', 'v040-formal'].includes(result.args[7])) {
+      && ['v100', 'v040', 'v040-formal', 'v041-formal'].includes(result.args[7])) {
       result.cwd = defaultDefinition.cwd;
       result.args = [...defaultDefinition.args];
       result.matcher = defaultDefinition.matcher;
