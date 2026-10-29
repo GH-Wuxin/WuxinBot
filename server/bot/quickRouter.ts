@@ -15,6 +15,7 @@ import {
   type BpQuerySelection,
 } from '../bots/executor.js';
 import { callLocalBot, hasLocalEndpoint } from '../bots/localBridge.js';
+import { fallbackContextForQuick, renderWuxinFallbackFailure, type WuxinFallbackContext } from '../bots/wuxinFallback.js';
 import {
   recordQuickContext,
   recordQuickContextPending,
@@ -543,8 +544,7 @@ async function handleQuickCommandInner(
   }
 
   // ── Local bot bridge: direct invocation of the original bot ──
-  // Original rendering (雨沐 E5/A4 面板、消防栓文字卡等) beats the internal
-  // engine; on any bridge failure we fall through to the internal handler.
+  // Keep the requested bot's reply on success; failures use Wuxin's own card.
   let bridgeUser = '';
   let parsedArgs: ParsedOsuArgs | undefined;
   // Request-scoped marker for QUICK_BRIDGE_FIX_P0_2: set only when a local
@@ -552,6 +552,8 @@ async function handleQuickCommandInner(
   // consumed by executeInternalBotCommand so its recent case does not repeat
   // the same-target bridge after the fallback.
   let bridgeAlreadyAttemptedFor = '';
+  let bridgeFailure: WuxinFallbackContext['reason'] = 'unavailable';
+  const fallbackContext = () => fallbackContextForQuick(def.source, match.alias, args, bridgeFailure);
   if (def.bridge && hasLocalEndpoint(def.source)) {
     if (traceId) markLatencySpan(traceId, 'subject_resolution_start');
     let bridgeCommand = buildBridgeCommand(match);
@@ -694,10 +696,12 @@ async function handleQuickCommandInner(
         log('bridge', `${def.source}:${bridgeCommand}`);
         return { handled: true, replied: true, reason: `bridge:${def.source}` };
       }
-      console.error(`[quick] bridge ${def.source} 返回空回复，回退内部引擎`);
+      bridgeFailure = 'empty';
+      console.error(`[quick] bridge ${def.source} 返回空回复，使用 Wuxin 备用卡片`);
     } catch (error: any) {
       if (traceId) markLatencySpan(traceId, 'bridge_failed', { source: def.source });
-      console.error(`[quick] bridge ${def.source} 失败，回退内部引擎:`, error?.message || error);
+      bridgeFailure = 'failed';
+      console.error(`[quick] bridge ${def.source} 失败，使用 Wuxin 备用卡片:`, error?.message || error);
     }
   }
 
@@ -744,7 +748,7 @@ async function handleQuickCommandInner(
     try {
       result = await executeInternalBotCommand('hydrant', 'profile', username, {
         db, userId: String(event.userId), groupId: event.groupId,
-      });
+      }, undefined, def.bridge ? { fallback: fallbackContext() } : undefined);
     } catch (error: any) {
       if (sendMessage) await sendMessage(event, String(error?.message || error));
       record(`查询失败：${String(error?.message || error)}`);
@@ -786,7 +790,7 @@ async function handleQuickCommandInner(
     try {
       result = await executeInternalBotCommand('hydrant', 'profile', query, {
         db, userId: String(event.userId), groupId: event.groupId,
-      });
+      }, undefined, def.bridge ? { fallback: fallbackContext() } : undefined);
     } catch (error: any) {
       if (sendMessage) await sendMessage(event, String(error?.message || error));
       record(`查询失败：${String(error?.message || error)}`);
@@ -863,7 +867,7 @@ async function handleQuickCommandInner(
         username,
         { db, userId: String(event.userId), groupId: event.groupId, event, isOwner: permissions.isOwner, beatmapId: parsed.scoreBeatmapId, scoreMods: parsed.scoreMods },
         parsed.bpSelection,
-        bridgeAlreadyAttemptedFor ? { bridgeAlreadyAttemptedFor } : undefined,
+        def.bridge ? { fallback: fallbackContext(), bridgeAlreadyAttemptedFor } : undefined,
         traceId,
       );
       if (traceId && def.capability === 'recent') {
@@ -891,6 +895,15 @@ async function handleQuickCommandInner(
     const memImages = typeof result === 'string' ? [] : ((result as any).images || []);
     record(memContent || `${def.capability} 查询完成（结果见图片）`, memImages);
     return { handled: true, replied: true, reason: def.capability };
+  }
+
+  // A failed external operation must not become a different guessed query.
+  if (def.bridge) {
+    const result = await renderWuxinFallbackFailure(fallbackContext(), Object.assign(new Error(), {code:'FALLBACK_UNSUPPORTED'}), bridgeUser ? {username:bridgeUser} : undefined);
+    try { if (sendMessage) await sendMessage(event, quickPayload(result)); }
+    catch (error: any) { console.error('[quick] Wuxin 备用卡片发送失败:', error?.message || error); }
+    record(result.content, result.images);
+    return {handled:true,replied:true,reason:'wuxin_fallback_unavailable'};
   }
 
   // Registered but not yet ported: keep the LLM pipeline as the fallback so

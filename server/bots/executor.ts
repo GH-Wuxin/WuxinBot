@@ -27,6 +27,7 @@ import { getRenderServer } from './renderServer.js';
 import { scoreStarRating } from '../osu/scoreMetrics.js';
 import { enrichScoreStarRatings } from '../osu/starRating.js';
 import type { OsuScore, OsuUser } from '../osu/types.js';
+import type { WuxinFallbackContext } from './wuxinFallback.js';
 import { describeFilters, isEmptyFilters } from '../osu/recommendFilters.js';
 import type { RecommendFilters } from '../osu/recommendFilters.js';
 import { thinkingParamsForLevel } from '../bot/llm.js';
@@ -858,15 +859,16 @@ async function executeToolCallInner(
             }
           }
         }
-        const result: { content: string; images: string[]; final?: boolean; deliverOnlyImages?: string[] } =
+        const result: InternalBotCommandResult & { images: string[]; deliverOnlyImages?: string[] } =
           typeof rawResult === 'string'
             ? { content: rawResult, images: [] as string[] }
-            : { content: rawResult.content, images: rawResult.images || [], final: rawResult.final, deliverOnlyImages: rawResult.deliverOnlyImages || [] };
+            : { ...rawResult, content: rawResult.content, images: rawResult.images || [], final: rawResult.final, deliverOnlyImages: rawResult.deliverOnlyImages || [] };
         if (result.final) {
           return {
             toolCallId: toolCall.id,
-            ok: true,
+            ok: !result.failure,
             content: String(result.content || ''),
+            images: result.images,
             final: true,
             directContent: String(result.content || ''),
             metadata: {
@@ -874,8 +876,10 @@ async function executeToolCallInner(
               requestedCapability: capability,
               actualExecutor: 'wuxin_internal',
               command: capability,
-              success: true,
-              terminal: 'recommend_cooldown',
+              success: !result.failure,
+              renderer: result.renderer || 'none',
+              dataSource: result.dataSource,
+              terminal: result.failure ? 'fallback_unavailable' : 'recommend_cooldown',
             },
           };
         }
@@ -894,8 +898,8 @@ async function executeToolCallInner(
             requestId: toolCall.id,
             requestedCapability: capability,
             actualExecutor: 'wuxin_internal',
-            dataSource: capability === 'ppplus' || capability === 'skill' ? 'ppplus_skill_store' : 'osu_api',
-            renderer: result.images.length > 0 ? 'yumu_image' : 'none',
+            dataSource: result.dataSource || (capability === 'ppplus' || capability === 'skill' ? 'ppplus_skill_store' : 'osu_api'),
+            renderer: result.renderer || (result.images.length > 0 ? 'yumu_image' : 'none'),
             command: capability,
             args: { capability, ...(oBpSelection ? { bp_start: oBpSelection.startRank, bp_end: oBpSelection.endRank } : {}) },
             success: true,
@@ -1376,6 +1380,9 @@ export interface InternalPlayerTarget {
 export interface InternalBotCommandResult {
   content: string;
   images?: string[];
+  renderer?: 'wuxin_card';
+  dataSource?: string;
+  failure?: boolean;
   /** Terminal deterministic reply: deliver verbatim, skip the LLM lead. */
   final?: boolean;
 }
@@ -1726,9 +1733,9 @@ export async function executeInternalBotCommand(
     /** Request-scoped: the caller already attempted a local bridge for THIS
      *  top-level request with this bot id (quickRouter bridge #1). The recent
      *  case then skips its duplicate same-target bridge and goes internal.
-     *  A different bot id does not suppress a deliberate cross-target
-     *  compatibility fallback (e.g. lazybot recent -> yumu). */
+     *  Explicit fallback requests render a Wuxin card before any bridge. */
     bridgeAlreadyAttemptedFor?: string;
+    fallback?: WuxinFallbackContext;
   },
   traceId?: string | null,
 ): Promise<string | InternalBotCommandResult> {
@@ -1738,8 +1745,17 @@ export async function executeInternalBotCommand(
   // `ppplus`. Normalizing here keeps the two spellings behavior-identical.
   commandName = normalizeCapabilityName(commandName);
 
+  if (options?.fallback?.unsupportedMode) {
+    const {renderWuxinFallbackFailure} = await import('./wuxinFallback.js');
+    return renderWuxinFallbackFailure(options.fallback, Object.assign(new Error(), {code:'FALLBACK_MODE_UNSUPPORTED'}));
+  }
+
   // Match watching does not need a resolved player (the command carries a
   // match id); handle it before the player resolution below.
+  if (commandName === 'match' && options?.fallback) {
+    const {renderWuxinFallbackFailure} = await import('./wuxinFallback.js');
+    return renderWuxinFallbackFailure(options.fallback, Object.assign(new Error(), {code:'FALLBACK_UNSUPPORTED'}));
+  }
   if (commandName === 'match') {
     const { matchManager } = await import('../osu/match.js');
     const result = await matchManager.handleCommand(
@@ -1781,9 +1797,24 @@ export async function executeInternalBotCommand(
   try {
     user = await loadInternalOsuUser(target);
   } catch (error) {
+    if (options?.fallback) {
+      const {renderWuxinFallbackFailure} = await import('./wuxinFallback.js');
+      return renderWuxinFallbackFailure(options.fallback, error, {username:requestedPlayer});
+    }
     throw new Error(`找不到 osu! 用户 "${requestedPlayer}"：${String(error?.message || error)}`);
   }
-  if (!user?.id) throw new Error(`找不到 osu! 用户 "${requestedPlayer}"。`);
+  if (!user?.id) {
+    if (options?.fallback) {
+      const {renderWuxinFallbackFailure} = await import('./wuxinFallback.js');
+      return renderWuxinFallbackFailure(options.fallback, new Error('user_not_found'), {username:requestedPlayer});
+    }
+    throw new Error(`找不到 osu! 用户 "${requestedPlayer}"。`);
+  }
+  if (options?.fallback) {
+    const {executeWuxinFallback} = await import('./wuxinFallback.js');
+    return executeWuxinFallback({user,capability:commandName,fallback:options.fallback,bpSelection,
+      beatmapId:context.beatmapId,scoreMods:context.scoreMods});
+  }
 
   switch (commandName) {
     case 'recent': {
@@ -1851,42 +1882,9 @@ export async function executeInternalBotCommand(
         }
       }
 
-      const { getUserRecentScores } = await import('../osu/api.js');
-      if (traceId) markLatencySpan(traceId, 'osu_api_request_start', { scope: 'recent' });
-      const rawScores = await getUserRecentScores(user.id, 'osu', 1);
-      if (traceId) markLatencySpan(traceId, 'osu_api_request_done', { scope: 'recent' });
-      if (!Array.isArray(rawScores) || rawScores.length === 0) {
-        return `${user.username} 最近没有 osu! 成绩记录（osu! API 未返回，可能最近没有提交成绩，或新成绩尚未同步）。`;
-      }
-
-      if (traceId) markLatencySpan(traceId, 'enrichment_start');
-      const [score] = (await enrichScoreStarRatings(rawScores, 'osu')).scores;
-      if (traceId) markLatencySpan(traceId, 'enrichment_done');
-      if (traceId) markLatencySpan(traceId, 'result_build_start');
-      const scoreLine = formatInternalScoreLine(score, { includeCombo: true });
-      if (traceId) markLatencySpan(traceId, 'result_build_done');
-
-      // Try to render a score image via yumu-image
-      if (getRenderServer().hasClients()) {
-        try {
-          // 雨沐 original single-score panel (E5), same as its !r/!p output.
-          const { renderScoreCard } = await import('./render.js');
-          if (traceId) markLatencySpan(traceId, 'render_start');
-          const rendered = await renderScoreCard(scoreForRenderer(score), user, null);
-          if (traceId) markLatencySpan(traceId, 'render_done', { rendered: Boolean(rendered) });
-          if (rendered) {
-            return {
-              content: `${user.username} 最近一次 osu! 成绩：\n${scoreLine}`,
-              images: [rendered.cqCode]
-            };
-          }
-        } catch {
-          if (traceId) markLatencySpan(traceId, 'render_failed');
-          /* fall through to text */
-        }
-      }
-
-      return `${user.username} 最近一次 osu! 成绩：\n${scoreLine}`;
+      const {executeWuxinFallback} = await import('./wuxinFallback.js');
+      return executeWuxinFallback({user,capability:'recent',fallback:{sourceBot:bridgeBot,
+        reason:'failed',recentSource:'recent_play',requested:'最近游玩'}});
     }
 
     case 'score': {
@@ -2095,10 +2093,10 @@ export async function executeInternalBotCommand(
         const beatmapId = Number(toolArgs.beatmap_id || context.beatmapId || 0);
         if (source === 'beatmap_score' && !beatmapId) throw new Error('画某谱面成绩需要 beatmap_id');
         const commands = source === 'beatmap_score'
-          ? [`!score ${user.username} ${beatmapId}`, `!s ${user.username} ${beatmapId}`]
+          ? [`!score ${user.username} #${beatmapId}`]
           : source === 'recent_pass'
-            ? [`!pr ${user.username}`, `!re ${user.username}`]
-            : [`!r ${user.username}`, `!re ${user.username}`];
+            ? [`!pr ${user.username}`]
+            : [`!re ${user.username}`];
         const bridged = await bridgeScore(commands);
         if (bridged) {
           return {
@@ -2106,29 +2104,10 @@ export async function executeInternalBotCommand(
             images: bridged.images,
           };
         }
-        // 降级也必须画对"哪一条成绩"：最近通过不能画成失败记录，
-        // 某谱面成绩更不能画成另一张图。
-        const { getUserRecentScores, getUserBeatmapScore } = await import('../osu/api.js');
-        const { renderScoreCard } = await import('./render.js');
-        let picked: any = null;
-        if (source === 'beatmap_score') {
-          try {
-            picked = await getUserBeatmapScore(user.id, beatmapId, 'osu');
-          } catch {
-            return { content: `${user.username} 没有 BID ${beatmapId} 的成绩记录，画不出来。`, images: [] };
-          }
-        } else {
-          const { pickFallbackScore } = await import('./scoreFallback.js');
-          const scores = await getUserRecentScores(user.id, 'osu', source === 'recent_pass' ? 50 : 1);
-          picked = pickFallbackScore(source as 'recent_play' | 'recent_pass', scores);
-          if (!picked) {
-            return { content: `${user.username} 最近没有${source === 'recent_pass' ? '通过的' : ''}成绩可画。`, images: [] };
-          }
-        }
-        const [score] = (await enrichScoreStarRatings([picked], 'osu')).scores;
-        const rendered = await renderScoreCard(scoreForRenderer(score), user, null);
-        if (!rendered) return { content: '成绩图没画出来（渲染服务未连接）。', images: [] };
-        return { content: `已出图：${user.username} 的${source === 'recent_pass' ? '最近通过' : source === 'beatmap_score' ? '谱面成绩' : '最近成绩'}卡（kanon 不可用，用内部渲染）`, images: [rendered.cqCode] };
+        const {executeWuxinFallback} = await import('./wuxinFallback.js');
+        return executeWuxinFallback({user,capability:source==='beatmap_score' ? 'score' : 'recent',
+          beatmapId,fallback:{sourceBot:'kanon',reason:'failed',
+            recentSource:source==='recent_pass' ? 'recent_pass' : 'recent_play',requested:source}});
       }
 
       if (source === 'bp_range') {
@@ -2909,7 +2888,7 @@ export async function runToolLoop(
       recommendToolCalled = true;
     }
 
-    // Terminal deterministic reply (recommendation cooldown): deliver
+    // Terminal deterministic reply (cooldown or failed fallback): deliver
     // verbatim and never let the LLM lead or comment on it.
     if (result.final) {
       const terminalSafeContent = sanitizeToolResult(result.directContent || result.content);
@@ -2919,7 +2898,7 @@ export async function runToolLoop(
         result,
         terminalSafeContent,
       );
-      if (evidenceRequirement && !terminalSatisfied) {
+      if (evidenceRequirement && !terminalSatisfied && result.metadata?.terminal !== 'fallback_unavailable') {
         return {
           text: '[系统] 工具返回结果与本轮取证要求不匹配，无法生成有数据依据的回答。',
           usage: totalUsage,
@@ -2941,7 +2920,7 @@ export async function runToolLoop(
         toolCallsMade: 1,
         iterations: 1,
         recommendToolCalled,
-        images: [],
+        images: result.images || [],
         deliverOnlyImages: collectedDeliverOnlyImages,
         directContent: sanitizeDirectDeliveryContent(result.directContent || result.content),
         toolCallsSkippedByCap: 0,
@@ -3451,7 +3430,7 @@ export async function runToolLoop(
       // Terminal deterministic reply: stop the loop immediately and deliver
       // verbatim; the LLM never sees the result and cannot add claims.
       if (result.final) {
-        if (evidenceRequirement && !evidenceRequirementSatisfied) {
+        if (evidenceRequirement && !evidenceRequirementSatisfied && result.metadata?.terminal !== 'fallback_unavailable') {
           return mergeEvidenceFallback();
         }
         const finalDirect = sanitizeDirectDeliveryContent(result.directContent || result.content);
@@ -3461,7 +3440,7 @@ export async function runToolLoop(
           toolCallsMade,
           iterations,
           recommendToolCalled,
-          images: collectedImages,
+          images: [...new Set([...collectedImages, ...(result.images || [])])],
           deliverOnlyImages: collectedDeliverOnlyImages,
           directContent: [...collectedDirectContent, finalDirect].filter(Boolean).join('\n\n'),
           toolCallsSkippedByCap,

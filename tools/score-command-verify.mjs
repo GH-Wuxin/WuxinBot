@@ -231,7 +231,8 @@ try {
       assert.equal(scoreRequests.length, 2);
       assert(scoreRequests.every((url) => url.searchParams.getAll('mods[]').join(',') === 'DA,HD'));
       assert(requests.slice(before).every((url) => !decodeURIComponent(url.pathname).includes('+hdda')));
-      assert.match(output.sent[0], /\+HDDA.*没有查到成绩/);
+      if (parse(text).match.def.bridge) assert.match(output.sent[0], /\[CQ:image,file=.*wuxin-query-cards/);
+      else assert.match(output.sent[0], /\+HDDA.*没有查到成绩/);
     });
   }
   const kbBuild = spawnSync(process.execPath, [
@@ -265,6 +266,8 @@ try {
   }, null, 2));
   console.log(`score-command-verify: ${passed} checks passed; no external traffic or QQ messages`);
 } finally {
+  const { closeSkillCardBrowser } = await import(source('server/bots/skillCard/browser.ts'));
+  await closeSkillCardBrowser();
   globalThis.fetch = originalFetch;
   for (const socket of wss.clients) socket.terminate();
   await new Promise((resolve) => wss.close(resolve));

@@ -267,6 +267,26 @@ export async function getPlayerBars(osuUserId: string | number): Promise<PPlusBa
   finally { if (playerInflight.get(key) === pending) playerInflight.delete(key); }
 }
 
+/** Read an existing result for a fallback card; never start or refresh a job. */
+export async function getPlayerBarsSnapshot(osuUserId: string | number): Promise<{
+  bars: PPlusBars; source: 'cache' | 'completed_job'; cachedAt: number | null;
+} | null> {
+  const config = configuration();
+  const cached = readPPlusCache(osuUserId, config.baseUrl);
+  if (cached) return { bars: { ...cached.bars }, source: 'cache', cachedAt: cached.at };
+  const response = await authorizedRequest(config, `/player/jobs/status?id=${encodeURIComponent(String(osuUserId))}`);
+  if (response.status === 404 || response.json.code === 404) return null;
+  if (response.status >= 400 || response.json.code !== 200) throw new PPlusError('UNAVAILABLE', 'PP+ 结果暂不可用。');
+  const job = response.json.data;
+  if (String(job?.id) !== String(osuUserId)) throw new PPlusError('INVALID_RESPONSE', 'PP+ 返回的玩家不匹配。');
+  if (job.status !== 'completed') return null;
+  const perf = job.result?.performances;
+  if (!perf || ['pp', 'ppJumpAim', 'ppFlowAim', 'ppSpeed', 'ppStamina', 'ppPrecision', 'ppAcc'].some(
+    key => typeof perf[key] !== 'number' || !Number.isFinite(perf[key]) || perf[key] < 0,
+  )) throw new PPlusError('INVALID_RESPONSE', 'PP+ 六维数据不完整。');
+  return { bars: ppToBars(perf), source: 'completed_job', cachedAt: null };
+}
+
 export function formatBarsForPrompt(bars: PPlusBars, label: string): string {
   const dims: [string, number][] = [
     ['Jump',     bars.jump],
