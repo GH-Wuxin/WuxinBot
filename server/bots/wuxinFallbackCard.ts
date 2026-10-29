@@ -7,7 +7,7 @@ import {buildSkillCardDocument} from './skillCard/cards.js';
 import {renderSkillCardHtml} from './skillCard/browser.js';
 import {imageDataUrl} from './skillCard/images.js';
 
-export const WUXIN_QUERY_CARD_VERSION = 'WUXIN_QUERY_CARD_V1';
+export const WUXIN_QUERY_CARD_VERSION = 'WUXIN_QUERY_CARD_V2';
 export type QueryCardKind = 'score' | 'scores' | 'profile' | 'ppplus' | 'error';
 export interface WuxinQueryCard {
   kind: QueryCardKind;
@@ -35,6 +35,47 @@ const ratio = (value: unknown) => {
 };
 const rank = (value: unknown) => nullableNumber(value) && Number(value) > 0 ? '#' + n(value) : '—';
 const statistic = (stats: any, modern: string, classic: string) => nullableNumber(stats?.[modern]) ?? nullableNumber(stats?.[classic]);
+const safeImage = (value: unknown): string => typeof value === 'string' && /^data:image\/(?:png|jpeg|webp);base64,[A-Za-z0-9+/=]+$/.test(value) ? value : '';
+
+/** Score cards use that beatmap's artwork; player cards use the player's cover. */
+export function queryCardBackgroundUrls(payload: WuxinQueryCard): string[] {
+  const candidates: unknown[] = [];
+  if (payload.kind === 'score' || payload.kind === 'scores') {
+    const score = payload.scores?.[0]?.score;
+    const set = score?.beatmapset || score?.beatmap?.beatmapset || {};
+    const setId = Number(set.id || score?.beatmap?.beatmapset_id || score?.beatmapset_id);
+    if (Number.isSafeInteger(setId) && setId > 0) candidates.push(`https://assets.ppy.sh/beatmaps/${setId}/covers/fullsize.jpg`);
+    candidates.push(set.covers?.['cover@2x'], set.covers?.cover, set.covers?.['card@2x']);
+  } else {
+    candidates.push(payload.user?.cover?.url, payload.user?.cover?.custom_url, payload.user?.cover_url);
+  }
+  return [...new Set(candidates.filter((value): value is string => typeof value === 'string' && Boolean(value)).filter(value => {
+    try { const url = new URL(value); return url.protocol === 'https:' && url.hostname === 'assets.ppy.sh' && !url.username && !url.password; }
+    catch { return false; }
+  }))];
+}
+
+export async function loadWuxinQueryCardMedia(payload: WuxinQueryCard): Promise<{avatar: string; background: string}> {
+  const bounded = async (promise: Promise<string>, ms: number): Promise<string> => {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    try { return await Promise.race([promise.catch(() => ''), new Promise<string>(resolve => { timer = setTimeout(() => resolve(''), ms); })]); }
+    finally { if (timer) clearTimeout(timer); }
+  };
+  const backgroundRequest = (async () => {
+    for (const url of queryCardBackgroundUrls(payload)) {
+      const data = await imageDataUrl(url);
+      if (data) return data;
+    }
+    return '';
+  })();
+  // Fetch once for the entire result, including a multi-page BP list.
+  // Warm requests use the shared in-flight and disk caches immediately.
+  const [avatar, background] = await Promise.all([
+    bounded(imageDataUrl(payload.user?.avatar_url, payload.user?.id), 2000),
+    bounded(backgroundRequest, 6000),
+  ]);
+  return {avatar, background};
+}
 export function scoreModsLabel(score: any): string {
   const mods = (Array.isArray(score?.mods) ? score.mods : []).map((mod: any) => {
     if (typeof mod === 'string') return mod.toUpperCase();
@@ -63,7 +104,7 @@ const stat = (label: string, value: string) => `<div class="query-stat"><span>${
 function playerSide(payload: WuxinQueryCard, avatar: string): string {
   const user = payload.user || {}, stats = user.statistics || {};
   const name = String(user.username || payload.requested || 'Wuxin 查询');
-  const safeAvatar = /^data:image\/(?:png|jpeg|webp);base64,[A-Za-z0-9+/=]+$/.test(avatar) ? avatar : '';
+  const safeAvatar = safeImage(avatar);
   const image = safeAvatar ? `<img class="query-avatar" src="${safeAvatar}" alt="">` : `<div class="query-avatar query-initials">${esc([...name].slice(0,2).join(''))}</div>`;
   return `<aside class="query-side"><div class="query-brand">WUXIN<span>OSU! QUERY</span></div><div class="query-person">${image}<div class="identity"><div class="query-eyebrow">OSU! STANDARD${user.country_code ? ` · ${esc(user.country_code)}` : ''}</div><h1>${esc(name)}</h1><div class="query-user-id">${user.id ? `UID ${esc(user.id)}` : '查询结果暂不可用'}</div></div></div><div class="query-player-pp"><b>${n(stats.pp,0)}</b><span>PLAYER PP</span></div><div class="query-player-stats">${stat('全球排名',rank(stats.global_rank))}${stat('地区排名',rank(stats.country_rank))}${stat('准确率',nullableNumber(stats.hit_accuracy) === null ? '—' : n(stats.hit_accuracy,2)+'%')}${stat('游玩次数',n(stats.play_count))}</div><div class="query-source-tag">WUXIN 备用查询</div><div class="query-source">${esc(payload.source)}${payload.sourceBot ? `<br>${esc(payload.sourceBot)} 未能完成原查询` : ''}</div></aside>`;
 }
@@ -103,7 +144,7 @@ export function queryCardNotes(payload: WuxinQueryCard): string[] {
   if (payload.scores?.some(({score})=>nullableNumber(score?.accuracy)===null || Number(score.accuracy)>1 || nullableNumber(score?.max_combo)===null)) notes.push('部分成绩字段未提供');
   return [...new Set(notes)];
 }
-export function buildWuxinQueryCardHtml(payload: WuxinQueryCard, options: {avatar?: string; page?: number} = {}): string {
+export function buildWuxinQueryCardHtml(payload: WuxinQueryCard, options: {avatar?: string; background?: string; page?: number} = {}): string {
   const all = payload.scores || [], pages = Math.max(1,Math.ceil(all.length/8));
   const page = Math.max(0,Math.min(pages-1,options.page || 0));
   const notes = queryCardNotes(payload);
@@ -115,7 +156,9 @@ export function buildWuxinQueryCardHtml(payload: WuxinQueryCard, options: {avata
   else body=scoreTable(all.slice(page*8,page*8+8));
   const partial=notes.some(note=>/未提供|未获取|仅返回/.test(note));
   const status=payload.kind==='error' ? '未完成' : partial ? '部分数据' : payload.source.includes('已保存') ? '缓存结果' : '查询结果';
-  const html=`<main class="sheet query-sheet" data-query-card="${WUXIN_QUERY_CARD_VERSION}">${playerSide(payload,options.avatar || '')}<section class="query-main"><header class="query-header"><div><span>WUXIN QUERY</span><h1>${esc(payload.title)}</h1></div><b class="query-state ${partial ? 'partial' : ''}">${status}</b></header><div class="query-content">${body}</div><div class="query-notes">${notes.length ? notes.map(esc).join(' · ') : '— 表示数据源未提供该字段'}</div><div class="query-footer"><span>${esc(payload.source)}</span><span>${payload.kind==='scores' ? `${all.length} 条记录 · ${page+1} / ${pages} 页` : esc(date(payload.fetchedAt))}</span></div></section></main>`;
+  const background = safeImage(options.background);
+  const artwork = background ? `<img class="query-background" src="${background}" alt="" aria-hidden="true"><div class="query-background-shade" aria-hidden="true"></div>` : '';
+  const html=`<main class="sheet query-sheet${background ? ' has-background' : ''}" data-query-card="${WUXIN_QUERY_CARD_VERSION}">${artwork}${playerSide(payload,options.avatar || '')}<section class="query-main"><header class="query-header"><div><span>WUXIN QUERY</span><h1>${esc(payload.title)}</h1></div><b class="query-state ${partial ? 'partial' : ''}">${status}</b></header><div class="query-content">${body}</div><div class="query-notes">${notes.length ? notes.map(esc).join(' · ') : '— 表示数据源未提供该字段'}</div><div class="query-footer"><span>${esc(payload.source)}</span><span>${payload.kind==='scores' ? `${all.length} 条记录 · ${page+1} / ${pages} 页` : esc(date(payload.fetchedAt))}</span></div></section></main>`;
   return buildSkillCardDocument(html,'player',css);
 }
 
@@ -137,12 +180,11 @@ function saveCard(buffer: Buffer): string {
   return `[CQ:image,file=${pathToFileURL(file).href}]`;
 }
 export async function renderWuxinQueryCards(payload: WuxinQueryCard): Promise<{images:string[];buffers:Buffer[]}> {
-  let timer: ReturnType<typeof setTimeout>;
-  const avatar=await Promise.race([imageDataUrl(payload.user?.avatar_url,payload.user?.id),new Promise<string>(resolve=>{timer=setTimeout(()=>resolve(''),2000);})]).finally(()=>clearTimeout(timer));
+  const media=await loadWuxinQueryCardMedia(payload);
   const images:string[]=[],buffers:Buffer[]=[];
   const pages=payload.kind==='scores' ? Math.max(1,Math.ceil((payload.scores?.length || 0)/8)) : 1;
   for(let page=0;page<pages;page++) {
-    const buffer=await renderSkillCardHtml(buildWuxinQueryCardHtml(payload,{avatar,page}));
+    const buffer=await renderSkillCardHtml(buildWuxinQueryCardHtml(payload,{...media,page}));
     buffers.push(buffer);images.push(saveCard(buffer));
   }
   return {images,buffers};
