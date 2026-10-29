@@ -37,10 +37,9 @@ export function claimProfileAttempt(db: any, key: string, lastSuccess = '', now 
 
 export function savingLlmOptions(db: any, options: any) {
   if (!tokenSaving(db)) return options;
-  const thinking = options.thinking && options.thinking.type !== 'disabled';
-  const cap = Number(options.completionBudget || (thinking ? 2048 : options.maxTokens || db.settings.maxTokens || 420));
+  // Save on context and call frequency, without cutting off a normal answer.
+  // Explicit budgets (such as the small participation gate) stay with callers.
   return { ...options, requestMaxRetries: 0, retryOnEmpty: false,
-    ...(db.settings.llmProvider === 'codex-app-server' ? {} : { completionBudget: Math.min(2048, Math.max(128, cap)) }),
     ...(['high', 'max'].includes(options.reasoning_effort) ? { thinking: { type: 'enabled' }, reasoning_effort: 'low' } : {}),
     codexReasoningEffort: 'low' };
 }

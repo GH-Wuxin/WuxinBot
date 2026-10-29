@@ -1209,7 +1209,9 @@ async function generateConversationReply(event, sendMessage, decision) {
         maxTokens: responseOptions.maxTokens,
         overrideModel: responseOptions.overrideModel,
         visionImages,
-        ...(stickerReplyEnabled && stickerReplyInstruction ? { responseFormat: STICKER_REPLY_RESPONSE_FORMAT } : {}),
+        // DeepSeek JSON mode can finish with whitespace only. Saving chat keeps
+        // the JSON prompt/parser without the provider's constrained decoder.
+        ...(!savingMode && stickerReplyEnabled && stickerReplyInstruction ? { responseFormat: STICKER_REPLY_RESPONSE_FORMAT } : {}),
         traceRole: 'conversation',
         tracePurpose: 'conversation_reply',
         ...(savingMode ? { promptModule: 'conversation_saving' } : {}),

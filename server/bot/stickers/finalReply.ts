@@ -69,7 +69,7 @@ export function buildStickerReplyInstruction(): string {
 /** Same parser and delivery contract, with a smaller catalogue description for saving mode. */
 export function buildSavingStickerReplyInstruction(): string {
   return [
-    '【回复与表情】只输出 JSON：{"reply":"正文","sticker_caption":"配图短句或空串","sticker_use":"none|requested|reaction","mode":"none|text_image|image_only","sticker_id":null}。',
+    '【回复与表情】只输出一个 JSON 对象，不加代码块或额外解释。普通回复示例：{"reply":"我在呢","sticker_caption":"","sticker_use":"none","mode":"none","sticker_id":null}。',
     '通常用 none，sticker_id=null。明确要图用 requested；自选情绪反应用 reaction；严肃查询、错误说明与状态确认不要附图。最多一张，ID 只能从清单选，不能自造路径。',
     '正文须独立成立，不宣称图片已送达；依赖图片的短句放 sticker_caption。纯图时 image_only，正文和配图短句留空；文字配图用 text_image。图的选择与发送由这一个 JSON 完成，不再调用工具。',
     '可用 ID｜画面｜避免：',

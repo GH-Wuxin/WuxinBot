@@ -105,9 +105,9 @@ async function assessSavingTurn(event: SocialEvent, invoke: typeof completeChat)
           target: { id: event.messageId, sender: event.userId, text: String(event.text || '').slice(0, 500), at: (event.atTargets || []).slice(0, 4), replyTo: event.replyMessageId || '' },
           recent: timeline.filter(m => m.messageId !== event.messageId).map(m => ({ id: m.messageId, sender: m.senderId, role: m.role, text: m.text.slice(0, 100), replyTo: m.replyTo })) }) },
       ], ...thinkingParamsForLevel('low', reasoningEnabledFor(db)), maxTokens: 512,
-      ...(db.settings.llmProvider === 'codex-app-server' ? {} : { completionBudget: 768 }),
-      requestMaxRetries: 0, retryOnEmpty: false, timeoutMs: 10_000, temperature: 0.1,
-      responseFormat: { type: 'json_object' }, promptModule: 'social_gate', label: '节能接话门控', tracePurpose: 'social_gate', traceRole: 'social',
+      ...(db.settings.llmProvider === 'codex-app-server' ? {} : { completionBudget: 2048 }),
+      requestMaxRetries: 0, retryOnEmpty: false, timeoutMs: 15_000, temperature: 0.1,
+      promptModule: 'social_gate', label: '节能接话门控', tracePurpose: 'social_gate', traceRole: 'social',
     });
     tokens = Number(response.usage?.total_tokens || 0);
     const result = parseObject(response.text);

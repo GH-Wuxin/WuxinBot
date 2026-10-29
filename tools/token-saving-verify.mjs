@@ -21,11 +21,11 @@ const server = http.createServer(async (req, res) => {
   if (onRequest) await onRequest();
   if (body.stream && status === 200) {
     res.writeHead(200, { 'content-type':'text/event-stream' });
-    res.end('data: ' + JSON.stringify({ choices:[{index:0,delta:{role:'assistant',content:responseText ? responseText(calls.length) : JSON.stringify(payload)},finish_reason:'stop'}],usage:{prompt_tokens:50,completion_tokens:30,total_tokens:80} }) + '\n\ndata: [DONE]\n\n');
+    res.end('data: ' + JSON.stringify({ choices:[{index:0,delta:{role:'assistant',content:responseText ? responseText(calls.length, body) : JSON.stringify(payload)},finish_reason:'stop'}],usage:{prompt_tokens:50,completion_tokens:30,total_tokens:80} }) + '\n\ndata: [DONE]\n\n');
     return;
   }
   res.writeHead(status, { 'content-type': 'application/json' });
-  res.end(JSON.stringify(status === 200 ? { choices: [{ message: { role: 'assistant', content: responseText ? responseText(calls.length) : JSON.stringify(payload) }, finish_reason: 'stop' }],
+  res.end(JSON.stringify(status === 200 ? { choices: [{ message: { role: 'assistant', content: responseText ? responseText(calls.length, body) : JSON.stringify(payload) }, finish_reason: 'stop' }],
     usage: { prompt_tokens: 50, completion_tokens: 30, total_tokens: 80 } } : { error: { message: 'fixture account unavailable', code: 'insufficient_quota' } }));
 });
 await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
@@ -63,7 +63,8 @@ try {
   await test('compact gate only decides participation and never commits model-supplied mood/affinity', async () => {
     seed(); const before = structuredClone(store.readDb().socialV2); let input;
     const result = await assessSocialTurn(event(), 'initial', async (_db, options) => { input = options; return { text: JSON.stringify({ reply: true, to: 'bot', affinityDelta: 5, self: { mood: 'fake' } }), usage: { total_tokens: 10 } }; });
-    assert.equal(result.action, 'reply'); assert.equal(input.completionBudget, 768); assert.equal(input.reasoning_effort, 'low');
+    assert.equal(result.action, 'reply'); assert.equal(input.completionBudget, 2048); assert.equal(input.reasoning_effort, 'low');
+    assert.equal(input.responseFormat, undefined);
     assert.equal(input.requestMaxRetries, 0); assert.equal(input.retryOnEmpty, false);
     assert.ok(JSON.stringify(input.messages).length < 2600);
     for (const field of ['people', 'views', 'transitions', 'self']) assert.deepEqual(store.readDb().socialV2[field], before[field]);
@@ -129,15 +130,20 @@ try {
   await test('out-of-credit response blocks further HTTP calls and does not retry the paid request', async () => {
     seed(); status = 402;
     await assert.rejects(() => completeChat(store.readDb(), { messages: [{ role: 'user', content: 'fixture' }], thinking: { type: 'enabled' }, reasoning_effort: 'max' }));
-    assert.equal(calls.length, 1); assert.equal(calls[0].max_tokens, 2048);
+    assert.equal(calls.length, 1);
     await assert.rejects(() => completeChat(store.readDb(), { messages: [] }), /10 分钟/); assert.equal(calls.length, 1);
     saving.assertSavingApiAvailable(store.readDb(), Date.now() + 11 * 60000); status = 200;
     await completeChat(store.readDb(), { messages: [{ role: 'user', content: 'fixture' }] }); assert.equal(calls.length, 2);
   });
-  await test('DeepSeek fixture receives actual low effort and the thinking-inclusive cap', async () => {
+  await test('saving thinking keeps low effort without imposing a smaller answer budget', async () => {
     seed({ llmProvider: 'deepseek' });
     await completeChat(store.readDb(), { messages: [{ role: 'user', content: 'fixture' }], thinking: { type: 'enabled' }, reasoning_effort: 'max', traceStreaming: false });
-    assert.equal(calls.length, 1); assert.equal(calls[0].reasoning_effort, 'low'); assert.equal(calls[0].thinking.type, 'enabled'); assert.equal(calls[0].max_tokens, 2048);
+    assert.equal(calls.length, 1); assert.equal(calls[0].reasoning_effort, 'low'); assert.equal(calls[0].thinking.type, 'enabled'); assert.equal(calls[0].max_tokens, undefined);
+    await completeChat(store.readDb(), { messages: [{ role: 'user', content: 'bounded background work' }], thinking: { type: 'enabled' }, completionBudget: 4096 });
+    assert.equal(calls[1].max_tokens, 4096, 'An explicit caller budget must not be silently halved');
+    responseText = () => ' \n ';
+    const empty = await completeChat(store.readDb(), { messages: [{ role: 'user', content: 'empty response fixture' }], thinking: { type: 'enabled' } });
+    assert.equal(empty.text, ''); assert.equal(calls.length, 3, 'No unbounded paid empty-response retries');
   });
   await test('normal-mode options and stored preferences restore without being rewritten', () => {
     seed({ tokenSavingMode: false }); const options = { maxTokens: 900, reasoning_effort: 'max' };
@@ -161,13 +167,14 @@ try {
   });
   await test('the existing chat pipeline uses one gate then one reply without social state updates', async () => {
     seed({ memoryEnabled: false, thinkingNoticeMode: 'off', stickerDeliveryMode: 'off', osuSearchEnabled: false, levelUpNotifyEnabled: false });
-    responseText = count => count === 1 ? '{"reply":true,"to":"bot"}' : '练得不错';
+    responseText = (count, body) => body.response_format ? '   \n ' : count === 1 ? '{"reply":true,"to":"bot"}' : '练得不错';
     const { processIncoming } = await import('../server/bot.ts'); const sent = [];
     const before = structuredClone(store.readDb().socialV2.self);
     await processIncoming(event({ socialDirect: true, nickname: 'Fixture', atTargets: ['10002'], images: [], raw: {} }), async (_event, text) => {
       sent.push(text); return { outcome: 'confirmed_success', messageId: 'receipt' };
     });
     assert.equal(calls.length, 2); assert.ok(sent.some(text => String(text).includes('练得不错')));
+    assert.equal(calls[0].max_tokens, 2048); assert.equal(calls[0].response_format, undefined);
     assert.deepEqual(store.readDb().socialV2.people, {}); assert.deepEqual(store.readDb().socialV2.self, before);
   });
   await test('saving prompt bounds history and keeps identity, quote attribution and accepted relationship context', async () => {
@@ -213,14 +220,14 @@ try {
     seed({ llmProvider:'deepseek', memoryEnabled:false, socialV2Enabled:false, thinkingNoticeMode:'off', osuSearchEnabled:true, levelUpNotifyEnabled:false });
     store.updateDb(db => { db.settings.botRegistry={updatedAt:iso(),bots:[{id:'yumu',name:'雨沐',enabled:true,channel:'internal',commands:[]}]};
       db.stickerDeliveryState=undefined; db.settings.stickerPolicy={mode:'live',allGroups:true}; });
-    responseText=()=>JSON.stringify({reply:'节能时查不了实时成绩',sticker_caption:'',sticker_use:'requested',mode:'text_image',sticker_id:'hello'});
+    responseText=(_count,body)=>body.response_format ? '   \n ' : JSON.stringify({reply:'节能时查不了实时成绩',sticker_caption:'',sticker_use:'requested',mode:'text_image',sticker_id:'hello'});
     const { processIncoming }=await import('../server/bot.ts'); const sent=[];
     await processIncoming(event({userId:'10001',messageId:'saving-sticker-osu',text:'pippi 用雨沐查我的最近成绩，再发个打招呼表情',nickname:'Owner',atTargets:['10002'],images:[],raw:{}}),async(_event,text)=>{
       sent.push(String(text)); return {outcome:'confirmed_success',messageId:'sticker-receipt'};
     });
     assert.equal(calls.length,1); assert.equal(calls[0].tools,undefined);
     assert.equal(calls[0].reasoning_effort,'low'); assert.equal(calls[0].thinking.type,'enabled');
-    assert.equal(calls[0].response_format.type,'json_object');
+    assert.equal(calls[0].response_format,undefined); assert.equal(calls[0].max_tokens,undefined);
     assert.ok(!JSON.stringify(calls[0]).includes('osu_get_player') && !JSON.stringify(calls[0]).includes('query_osu'));
     assert.ok(sent.some(text=>text.includes('[CQ:image,')), 'Sticker still travels through the existing delivery callback');
     assert.ok(sent.some(text=>text.includes('节能时查不了')));
