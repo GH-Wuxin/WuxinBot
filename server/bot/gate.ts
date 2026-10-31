@@ -67,6 +67,7 @@ export async function llmContentFilter(text, label) {
   // Basic safety: empty, control chars, prompt injection patterns
   if (!text || !text.trim()) return { ok: false, reason: '内容为空' };
   if (/[\x00-\x08\x0e-\x1f]/.test(text)) return { ok: false, reason: '包含控制字符' };
+  if (/\[CQ:[^\]]+\]/i.test(text)) return { ok: false, reason: '包含不允许的 QQ 控制代码' };
   if (/(忽略|忘记|切换到|你现在听我的|我是你(主人|老板|开发者)|系统提示|system prompt|ignore previous)/i.test(text)) {
     return { ok: false, reason: '疑似提示词注入' };
   }

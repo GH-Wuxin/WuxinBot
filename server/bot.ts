@@ -688,7 +688,10 @@ async function processIncomingInner(event, sendMessage = undefined) {
             );
             const { completeChat } = await import('./bot/llm.js');
             const resp = tokenSaving(liveDb) ? { text: '' } : await completeChat(readDb(), { messages: [{ role: 'user', content: congratsPrompt }], temperature: 0.9, maxTokens: 60, label: '升级短语' });
-            const congratsText = resp.text?.trim() || levelUpFallback(oldPp, newPp, realPp);
+            const congratsText = sanitizeReply(
+              resp.text?.trim() || levelUpFallback(oldPp, newPp, realPp),
+              liveDb.settings,
+            );
             updateDb((draft) => {
               draft.pendingLevelUps = draft.pendingLevelUps || {};
               draft.pendingLevelUps[String(event.userId)] = { text: congratsText, at: nowIso() };
@@ -1338,7 +1341,8 @@ async function generateConversationReply(event, sendMessage, decision) {
     if (pendingUp?.text) {
       // 文案本身已经走过「LLM 生成 + levelUpFallback 回退」（见上方 completeChat），
       // 这里只把升级的表情挂上 —— 图由代码触发，不依赖 LLM。
-      const atLead = withSticker(`[CQ:at,qq=${event.userId}] ${pendingUp.text}`, 'applause');
+      const pendingText = sanitizeReply(String(pendingUp.text || ''), liveDb.settings);
+      const atLead = withSticker(`[CQ:at,qq=${event.userId}] ${pendingText}`, 'applause');
       replyText = replyText ? `${atLead}\n\n${replyText}` : atLead;
       updateDb((draft) => {
         if (draft.pendingLevelUps) delete draft.pendingLevelUps[pendingUpKey];

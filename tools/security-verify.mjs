@@ -109,6 +109,19 @@ async function main() {
     assert(sharedConfig.keep?.yumu === false, 'group bot config must preserve other groups');
     assert(sharedConfig['new-group']?.kanon === false, 'group bot config must write the requested toggle');
 
+    const protoConfig = await request('/api/group-bot-config', {
+      method: 'POST',
+      headers: authHeaders,
+      body: { groupId: '__proto__', botId: 'yumu', enabled: false }
+    });
+    assert(protoConfig.status === 400, 'unsafe object keys must be rejected by group bot config');
+    const protoGroup = await request('/api/groups', {
+      method: 'POST',
+      headers: authHeaders,
+      body: { groupId: '__proto__', enabled: true }
+    });
+    assert(protoGroup.status === 400, 'unsafe group ids must be rejected by group creation');
+
     const corruptSharedConfig = '{broken';
     fs.writeFileSync(sharedConfigPath, corruptSharedConfig, 'utf8');
     const corruptSave = await request('/api/group-bot-config', {

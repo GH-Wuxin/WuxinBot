@@ -286,6 +286,7 @@ const app = express();
 app.use(express.json({ limit: '2mb' }));
 
 const SAFE_ID = /^[A-Za-z0-9_-]{1,64}$/;
+const UNSAFE_OBJECT_KEYS = new Set(['__proto__', 'prototype', 'constructor']);
 const GROUP_MODES = new Set(['silent', 'mention', 'light', 'natural', 'osu']);
 const USER_POLICIES = new Set(['normal', 'whitelist', 'priority', 'muted', 'blocked', 'admin', 'owner']);
 
@@ -309,7 +310,7 @@ app.use('/api', (req, res, next) => {
 
 function identifier(value, label, res) {
   const result = String(value || '').trim();
-  if (!SAFE_ID.test(result)) {
+  if (!SAFE_ID.test(result) || UNSAFE_OBJECT_KEYS.has(result)) {
     res.status(400).json({ ok: false, error: `${label} 必须为 1-64 位字母、数字、下划线或连字符` });
     return null;
   }
@@ -714,6 +715,9 @@ function readSharedBotConfig(): { config: SharedBotConfig; exists: boolean } {
     throw new Error('共享配置必须是群 ID 到配置对象的映射');
   }
   for (const [groupId, value] of Object.entries(parsed)) {
+    if (UNSAFE_OBJECT_KEYS.has(groupId)) {
+      throw new Error(`共享配置包含不允许的群键: ${groupId}`);
+    }
     if (!value || typeof value !== 'object' || Array.isArray(value)) {
       throw new Error(`群 ${groupId} 的共享配置不是对象`);
     }
@@ -730,6 +734,9 @@ function writeSharedBotConfig(config: SharedBotConfig): void {
 app.post('/api/group-bot-config', async (req, res) => {
   const { groupId, botId, enabled } = req.body || {};
   if (!groupId || !botId) return res.status(400).json({ ok: false, error: '缺少 groupId 或 botId' });
+  if (UNSAFE_OBJECT_KEYS.has(String(groupId))) {
+    return res.status(400).json({ ok: false, error: `无效的 groupId: ${groupId}` });
+  }
   const validBots = new Set(['yumu', 'kanon', 'hydrant', 'lazybot']);
   if (!validBots.has(botId)) return res.status(400).json({ ok: false, error: `无效的 botId: ${botId}，可选值: ${[...validBots].join(', ')}` });
   let shared: SharedBotConfig;

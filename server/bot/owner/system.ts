@@ -15,7 +15,7 @@ import { updateGroupProfile } from '../groupProfile.js';
 import { updateRelationshipProfile } from '../relationshipProfile.js';
 import { completeChat } from '../llm.js';
 import { activeModelName, activateModelProfile, activeProviderLabel, updateProviderSettings } from '../../modelConfig.js';
-import { sendForwardText } from '../reply.js';
+import { sanitizeReply, sendForwardText } from '../reply.js';
 import { OWNER_FALLBACK_HELP } from './help.js';
 import { runBackgroundTask } from '../../backgroundTasks.js';
 import type { OwnerHandlerContext, OwnerCommandResult } from './types.js';
@@ -25,10 +25,11 @@ export async function ownerWhyHandler(ctx: OwnerHandlerContext): Promise<OwnerCo
   const lastDecision = [...(db.decisions || [])].reverse().find((d) => String(d.groupId) === String(ctx.event.groupId));
   if (!lastDecision) { const reply = '还没有本群的回复决策记录。'; if (ctx.sendMessage) await ctx.sendMessage(ctx.event, reply); return { replied: Boolean(ctx.sendMessage), reason: reply }; }
   const lastMsg = [...(db.messages || [])].reverse().find((m) => String(m.groupId) === String(ctx.event.groupId) && m.role === 'user');
-  const reply = `最近一条消息：${lastMsg ? `${lastMsg.nickname || lastMsg.userId}：${(lastMsg.content || '').slice(0, 80)}` : '无'}`
+  const rawReply = `最近一条消息：${lastMsg ? `${lastMsg.nickname || lastMsg.userId}：${(lastMsg.content || '').slice(0, 80)}` : '无'}`
     + `\n决策：${lastDecision.shouldReply ? '回复了' : '没有回复'}`
     + `\n原因：${lastDecision.reason}`
     + `\n时间：${lastDecision.createdAt ? new Date(lastDecision.createdAt).toLocaleString('zh-CN') : '未知'}`;
+  const reply = sanitizeReply(rawReply, db.settings);
   if (ctx.sendMessage) await ctx.sendMessage(ctx.event, reply);
   return { replied: Boolean(ctx.sendMessage), reason: reply };
 }

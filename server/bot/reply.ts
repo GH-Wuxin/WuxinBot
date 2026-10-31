@@ -24,7 +24,11 @@ export function normalReplyRewriteSkipReason(options: {
 }
 
 export function sanitizeReply(text, settings) {
-  let cleaned = String(text || '').trim();
+  // Model/user text must never create a QQ control segment. Host-owned CQ
+  // codes (reply, @, image, sticker) are added by the delivery layer later.
+  let cleaned = String(text || '')
+    .replace(/\[CQ:[^\]]+\]/gi, ' ')
+    .trim();
   const names = [
     '机器人',
     'bot',

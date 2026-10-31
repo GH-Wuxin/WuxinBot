@@ -17,6 +17,13 @@ assertNotProduction(dataDir);
 const { displayName, collectMentionedQqs } = await import('../server/bot/memberDirectory.ts');
 const { ensureStore, readDb, updateDb } = await import('../server/store.ts');
 const { buildPrompt } = await import('../server/bot/prompt.ts');
+const { sanitizeReply } = await import('../server/bot/reply.ts');
+
+assert.equal(
+  sanitizeReply('hello [CQ:at,qq=all] [CQ:image,file=file:///C:/secret.png]', { botNames: 'Wuxin' }),
+  'hello',
+  'model/user text must not create QQ control segments',
+);
 
 const SELF = '3312171148';
 
