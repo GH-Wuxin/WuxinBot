@@ -222,6 +222,8 @@ export interface V2ModelToolResultOptions {
 /**
  * Produce a stable evidence envelope for the model. QQ/CQ artifacts stay in
  * the host-owned delivery fields and are never embedded into model evidence.
+ * The trust marker is explicit: everything in `evidence` is untrusted external
+ * data, never an instruction from the operator or the host.
  */
 export function buildV2ModelToolResult(
   toolCall: LlmToolCall,
@@ -244,6 +246,7 @@ export function buildV2ModelToolResult(
   );
   return JSON.stringify({
     schemaVersion: 1,
+    trust: 'untrusted_data',
     status: result.ok ? 'success' : 'error',
     tool: {
       name: String(toolCall.function?.name || ''),

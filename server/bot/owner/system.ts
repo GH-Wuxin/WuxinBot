@@ -144,6 +144,7 @@ export async function ownerRefreshHandler(ctx: OwnerHandlerContext): Promise<Own
   // progress through /w recalc.
   void runBackgroundTask('recalc.qq', async () => {
   let pCount = 0, gCount = 0, rCount = 0;
+  let pFailed = 0, gFailed = 0, rFailed = 0;
   let failure = '';
   try {
     for (const mem of mems) {
@@ -156,12 +157,21 @@ export async function ownerRefreshHandler(ctx: OwnerHandlerContext): Promise<Own
           messageId: `${ctx.event.messageId || 'memory-recalc'}:${mem.userId}`,
         }, { force: true, kind: 'memory-recalc' });
         if (outcome.ok) pCount++;
-      } catch { /* skip */ }
+      } catch (error) {
+        pFailed++;
+        console.error('[recalc] memory profile failed:', mem.userId, String(error?.message || error).slice(0, 200));
+      }
       tickRecalc();
     }
     for (const g of gps) {
       if (getRecalcProgress().stopped) break;
-      try { const r = await updateGroupProfile(readDb(), g.groupId); if (r.ok) gCount++; } catch { /* skip */ }
+      try {
+        const r = await updateGroupProfile(readDb(), g.groupId);
+        if (r.ok) gCount++;
+      } catch (error) {
+        gFailed++;
+        console.error('[recalc] group profile failed:', g.groupId, String(error?.message || error).slice(0, 200));
+      }
       tickRecalc();
     }
     for (const rp of rels) {
@@ -169,7 +179,10 @@ export async function ownerRefreshHandler(ctx: OwnerHandlerContext): Promise<Own
       try {
         const r = await updateRelationshipProfile(readDb(), rp.groupId, rp.userA, rp.userB);
         if (r?.ok !== false && !r?.skipped) rCount++;
-      } catch { /* skip */ }
+      } catch (error) {
+        rFailed++;
+        console.error('[recalc] relationship profile failed:', rp.groupId, String(error?.message || error).slice(0, 200));
+      }
       tickRecalc();
     }
   } catch (error) {
@@ -177,9 +190,13 @@ export async function ownerRefreshHandler(ctx: OwnerHandlerContext): Promise<Own
     console.error('[recalc] QQ端重算异常结束:', failure);
   } finally {
     if (getRecalcProgress().running) {
+      const failed = pFailed + gFailed + rFailed;
+      const summary = failed
+        ? `QQ端重算完成：成功 ${pCount + gCount + rCount}/${total}，失败 ${failed}`
+        : 'QQ端全部重算完成';
       finishRecalc(getRecalcProgress().stopped
         ? 'QQ端已停止'
-        : (failure ? `QQ端重算失败：${failure}` : 'QQ端全部重算完成'));
+        : (failure ? `QQ端重算失败：${failure}` : summary));
     }
   }
   if (failure) console.error('[recalc] QQ端重算失败:', failure);

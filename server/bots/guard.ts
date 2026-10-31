@@ -29,24 +29,6 @@ const ALLOWED_OPERATIONS: ReadonlySet<AllowedOperationType> = new Set([
   'get_recent_score'
 ]);
 
-// Operations that the LLM is NEVER allowed to request. These patterns are a
-// defence-in-depth check for any future, free-form parameters. The currently
-// supported tools use an exact key allowlist and field-specific validation
-// below, so data such as an osu! username is never mistaken for an operation
-// merely because the JSON key happens to be named "command".
-const BLOCKED_PATTERNS: ReadonlyArray<{ pattern: RegExp; reason: string }> = [
-  // Match English operation words as complete tokens. Substring matching here
-  // used to reject the legitimate osu! command name "profile" because it ends
-  // in "file".
-  { pattern: /(?:^|[^a-z0-9])(?:file|read|write|delete|create|remove|unlink|mkdir)(?:$|[^a-z0-9])|文件|写入|删除|修改|创建|读取/i, reason: '禁止文件系统操作' },
-  { pattern: /exec|shell|bash|cmd|powershell|command|执行|运行|启动|进程|process/i, reason: '禁止执行系统命令' },
-  { pattern: /config|设置|settings|修改配置|change.*setting|update.*config/i, reason: '禁止修改配置' },
-  { pattern: /http|fetch|curl|wget|api(?!.*osu)|外部|网络请求|下载|upload|上传/i, reason: '禁止外部网络请求（osu API 除外）' },
-  { pattern: /token|password|secret|key|密码|密钥|凭证|api.?key/i, reason: '禁止访问凭据' },
-  { pattern: /db|database|数据库|sql|mongo/i, reason: '禁止直接数据库操作' },
-  { pattern: /eval|function\s*\(|require|import\s*\(|Function\(|setTimeout|setInterval/i, reason: '禁止代码执行' },
-];
-
 // ── Validation ──
 
 const QUERY_OSU_PARAM_KEYS: ReadonlySet<string> = new Set([
@@ -291,12 +273,9 @@ export function validateOperation(op: AllowedOperation): { ok: true } | { ok: fa
       if (!/^[\p{L}\p{N}_!/~+.#-]+(?:[ \t][\p{L}\p{N}_!/~+.#-]+)*$/u.test(command)) {
         return { ok: false, reason: '指令格式无效' };
       }
-      for (const { pattern, reason } of BLOCKED_PATTERNS) {
-        pattern.lastIndex = 0;
-        if (pattern.test(command)) {
-          return { ok: false, reason };
-        }
-      }
+      // Exact command membership is enforced by executor.findCommand. Do not
+      // add a lexical blacklist here: no shell/file/db operation is reachable
+      // from this tool merely by naming one in the command text.
 
       const username = String(op.params.username || '').trim();
       const usernameError = validatePlayerText(username, '玩家名', false);
@@ -354,18 +333,6 @@ export function sanitizeToolResult(content: string, maxLength = 4000): string {
   }
 
   return cleaned;
-}
-
-// ── Tool result should NOT contain executable instructions ──
-
-export function isSafeToolResult(content: string): boolean {
-  // Results must not contain LLM prompt injection patterns
-  const dangerPatterns = [
-    /忽略.*指令|ignore.*instruction|system.*prompt/i,
-    /你是.*不是.*pippi|you are not pippi/i,
-    /new.*instruction|新的.*指令/i,
-  ];
-  return !dangerPatterns.some((p) => p.test(content));
 }
 
 // ── Tool-call markup guard ──

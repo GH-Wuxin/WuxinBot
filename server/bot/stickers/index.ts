@@ -106,6 +106,7 @@ let cache: StickerEntry[] | null = null;
 let byId: Map<string, StickerEntry> | null = null;
 let byGroup: Map<string, StickerEntry[]> | null = null;
 let byEmotion: Map<string, StickerEntry[]> | null = null;
+let catalogValidationCache: StickerCatalogValidation | null = null;
 
 function loadVisualAnnotations(): Map<string, StickerVisualAnnotation> {
   const url = new URL('./visual-annotations.json', import.meta.url);
@@ -118,11 +119,18 @@ function loadVisualAnnotations(): Map<string, StickerVisualAnnotation> {
 }
 
 function pngDimensions(filePath: string): { width: number; height: number } | null {
-  const header = fs.readFileSync(filePath).subarray(0, 24);
-  if (header.length < 24
-    || !header.subarray(0, 8).equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]))
-    || header.toString('ascii', 12, 16) !== 'IHDR') return null;
-  return { width: header.readUInt32BE(16), height: header.readUInt32BE(20) };
+  const fd = fs.openSync(filePath, 'r');
+  try {
+    const header = Buffer.alloc(24);
+    const bytesRead = fs.readSync(fd, header, 0, header.length, 0);
+    const view = header.subarray(0, bytesRead);
+    if (view.length < 24
+      || !view.subarray(0, 8).equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]))
+      || view.toString('ascii', 12, 16) !== 'IHDR') return null;
+    return { width: view.readUInt32BE(16), height: view.readUInt32BE(20) };
+  } finally {
+    fs.closeSync(fd);
+  }
 }
 
 /**
@@ -130,7 +138,7 @@ function pngDimensions(filePath: string): { width: number; height: number } | nu
  * A malformed catalogue is a deployment error, not a reason to guess at
  * runtime. The caller decides whether to fail startup or expose the report.
  */
-export function validateStickerCatalog(options: { verifyHashes?: boolean } = {}): StickerCatalogValidation {
+function validateStickerCatalogUncached(options: { verifyHashes?: boolean } = {}): StickerCatalogValidation {
   const manifestRaw = fs.readFileSync(new URL('./manifest.json', import.meta.url), 'utf8');
   const manifest = JSON.parse(manifestRaw) as { count?: number; stickers?: unknown[] };
   const annotationRaw = fs.readFileSync(new URL('./visual-annotations.json', import.meta.url), 'utf8');
@@ -240,6 +248,21 @@ export function validateStickerCatalog(options: { verifyHashes?: boolean } = {})
     hashMismatches,
     invalidEntries,
   };
+}
+
+/**
+ * The manifest and annotations are deployment assets, not per-message input.
+ * Validate the structure once per process; hash verification remains an
+ * explicit, uncached startup/debug operation.
+ */
+export function validateStickerCatalog(options: { verifyHashes?: boolean } = {}): StickerCatalogValidation {
+  if (options.verifyHashes) return validateStickerCatalogUncached(options);
+  if (!catalogValidationCache) {
+    const result = validateStickerCatalogUncached(options);
+    if (result.ok) catalogValidationCache = result;
+    return result;
+  }
+  return catalogValidationCache;
 }
 
 function load(): StickerEntry[] {

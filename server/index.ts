@@ -692,31 +692,75 @@ app.get('/api/group-bot-config', (_req, res) => {
   res.json(ok({ config: db.groupBotConfig || {}, groups: db.groups.map(g => ({ groupId: g.groupId, name: g.name })) }));
 });
 
+type SharedBotConfig = Record<string, Record<string, boolean>>;
+
+function readSharedBotConfig(): { config: SharedBotConfig; exists: boolean } {
+  const filePath = sharedGroupBotConfigPath();
+  let raw: string;
+  try {
+    raw = fs.readFileSync(filePath, 'utf8');
+  } catch (error: any) {
+    if (error?.code === 'ENOENT') return { config: {}, exists: false };
+    throw new Error(`共享配置读取失败：${String(error?.message || error)}`);
+  }
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw.replace(/^\uFEFF/, ''));
+  } catch (error) {
+    throw new Error(`共享配置 JSON 损坏，已拒绝覆盖：${String((error as Error)?.message || error)}`);
+  }
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+    throw new Error('共享配置必须是群 ID 到配置对象的映射');
+  }
+  for (const [groupId, value] of Object.entries(parsed)) {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) {
+      throw new Error(`群 ${groupId} 的共享配置不是对象`);
+    }
+  }
+  return { config: parsed as SharedBotConfig, exists: true };
+}
+
+function writeSharedBotConfig(config: SharedBotConfig): void {
+  const filePath = sharedGroupBotConfigPath();
+  fs.mkdirSync(path.dirname(filePath), { recursive: true });
+  fs.writeFileSync(filePath, JSON.stringify(config, null, 2), 'utf8');
+}
+
 app.post('/api/group-bot-config', async (req, res) => {
   const { groupId, botId, enabled } = req.body || {};
   if (!groupId || !botId) return res.status(400).json({ ok: false, error: '缺少 groupId 或 botId' });
   const validBots = new Set(['yumu', 'kanon', 'hydrant', 'lazybot']);
   if (!validBots.has(botId)) return res.status(400).json({ ok: false, error: `无效的 botId: ${botId}，可选值: ${[...validBots].join(', ')}` });
+  let shared: SharedBotConfig;
+  try {
+    const loaded = readSharedBotConfig();
+    shared = loaded.exists ? loaded.config : { ...(readDb().groupBotConfig || {}) };
+  } catch (error: any) {
+    console.error('[group-bot-config] Failed to read shared config:', error?.message || error);
+    return res.status(500).json({
+      ok: false,
+      error: `共享配置读取失败，未写入任何配置：${String(error?.message || error).slice(0, 300)}`,
+    });
+  }
+
   updateDb((db) => {
     db.groupBotConfig = db.groupBotConfig || {};
     db.groupBotConfig[groupId] = db.groupBotConfig[groupId] || { yumu: true, kanon: true, hydrant: true, lazybot: true };
     db.groupBotConfig[groupId][botId] = Boolean(enabled);
   });
-  // Write shared config file that all bots read
+
   try {
-    const fs = await import('node:fs');
-    const path = await import('node:path');
-    const sharedConfigPath = sharedGroupBotConfigPath();
-    const dir = path.dirname(sharedConfigPath);
-    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-    let shared = {};
-    try { shared = JSON.parse(fs.readFileSync(sharedConfigPath, 'utf8')); } catch {}
     shared[String(groupId)] = shared[String(groupId)] || { yumu: true, kanon: true, hydrant: true, lazybot: true };
     shared[String(groupId)][botId] = Boolean(enabled);
-    fs.writeFileSync(sharedConfigPath, JSON.stringify(shared, null, 2), 'utf8');
-    console.log('[group-bot-config] Written shared config:', sharedConfigPath);
-  } catch (err) {
-    console.error('[group-bot-config] Failed to write shared config:', err.message);
+    writeSharedBotConfig(shared);
+    console.log('[group-bot-config] Written shared config:', sharedGroupBotConfigPath());
+  } catch (error: any) {
+    console.error('[group-bot-config] Failed to write shared config:', error?.message || error);
+    return res.status(500).json({
+      ok: false,
+      error: `共享配置写入失败：${String(error?.message || error).slice(0, 300)}`,
+    });
   }
   const db = readDb();
   res.json(ok({ config: db.groupBotConfig || {} }));
@@ -1704,6 +1748,7 @@ app.post('/api/recalc', (_req, res) => {
       const { maybeUpdateMemoryProfile } = await import('./bot/memory.js');
       const { updateGroupProfile } = await import('./bot/groupProfile.js');
       const { updateRelationshipProfile } = await import('./bot/relationshipProfile.js');
+      let memoryFailed = 0, groupFailed = 0, relationshipFailed = 0;
       for (const mem of mems) {
         if (getRecalcProgress().stopped) break;
         try {
@@ -1711,20 +1756,34 @@ app.post('/api/recalc', (_req, res) => {
             type: 'private', groupId: '', userId: String(mem.userId), nickname: mem.nickname || String(mem.userId),
             messageId: `memory-recalc:${mem.userId}:${Date.now()}`
           }, { force: true, kind: 'memory-recalc' });
-        } catch { /* skip */ }
+        } catch (error) {
+          memoryFailed += 1;
+          console.error('[recalc] memory profile failed:', mem.userId, String(error?.message || error).slice(0, 200));
+        }
         tickRecalc();
       }
       for (const g of gps) {
         if (getRecalcProgress().stopped) break;
-        try { await updateGroupProfile(readDb(), g.groupId); } catch { /* skip */ }
+        try {
+          await updateGroupProfile(readDb(), g.groupId);
+        } catch (error) {
+          groupFailed += 1;
+          console.error('[recalc] group profile failed:', g.groupId, String(error?.message || error).slice(0, 200));
+        }
         tickRecalc();
       }
       for (const rp of rels) {
         if (getRecalcProgress().stopped) break;
-        try { await updateRelationshipProfile(readDb(), rp.groupId, rp.userA, rp.userB); } catch { /* skip */ }
+        try {
+          await updateRelationshipProfile(readDb(), rp.groupId, rp.userA, rp.userB);
+        } catch (error) {
+          relationshipFailed += 1;
+          console.error('[recalc] relationship profile failed:', rp.groupId, String(error?.message || error).slice(0, 200));
+        }
         tickRecalc();
       }
-      finishRecalc(getRecalcProgress().stopped ? '已停止' : '全部重算完成');
+      const failed = memoryFailed + groupFailed + relationshipFailed;
+      finishRecalc(getRecalcProgress().stopped ? '已停止' : (failed ? `重算完成：成功 ${total - failed}/${total}，失败 ${failed}` : '全部重算完成'));
     } catch (error) {
       const message = String(error?.message || error).slice(0, 300);
       console.error('[recalc] 后台重算异常结束:', message);

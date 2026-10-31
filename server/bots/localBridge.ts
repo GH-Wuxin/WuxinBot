@@ -73,13 +73,6 @@ const MAX_POST_REPLY_MS = positiveEnvMs('BRIDGE_MAX_POST_REPLY_MS', 2 * SETTLE_M
 // - pool exhaustion (101st call in a pool second) fails BEFORE any WebSocket
 //   is created and is the mechanism that makes wall-clock rollback fail fast;
 //   the caller's existing bridge failure fallback consumes the rejection.
-//
-// The 30s drift guard below is a Wuxin defensive / future-proof policy, not a
-// Shiro protocol limit: the target gate only rejects "past" times and has no
-// future bound. Under the current control flow it is effectively unreachable
-// (safe-slot values are 2000..3098ms ahead, and on rollback the pool boundary
-// check fires first). It is kept to guard against future changes to the pool
-// arithmetic.
 let lastYumuSafeTimeMs = 0;
 export function yumuSafeTimeMs(nowMs: number = Date.now()): number {
   const poolBase = Math.ceil((nowMs + 2000) / 1000);
@@ -88,7 +81,6 @@ export function yumuSafeTimeMs(nowMs: number = Date.now()): number {
   let t = poolFirst;
   if (t <= lastYumuSafeTimeMs) t = lastYumuSafeTimeMs + 1;
   if (t > poolLast) throw new Error('yumu bridge safe-slot pool exhausted (100/s)');
-  if (t - nowMs > 30_000) throw new Error('yumu bridge event time drift exceeded');
   lastYumuSafeTimeMs = t;
   return t;
 }
@@ -122,14 +114,6 @@ function bridgeSelfId(botId: string, requestedUserId: string | undefined): strin
   }
   for (let attempt = 0; attempt < 100; attempt++) {
     const candidate = String(KANON_SELF_ID_START + crypto.randomInt(0, KANON_SELF_ID_SIZE));
-    if (Number(candidate) !== logicalUserId && !activeKanonSelfIds.has(candidate)) {
-      activeKanonSelfIds.add(candidate);
-      return candidate;
-    }
-  }
-  // Exhaustive fallback for the (practically impossible) random collision case.
-  for (let n = KANON_SELF_ID_START; n < KANON_SELF_ID_START + KANON_SELF_ID_SIZE; n++) {
-    const candidate = String(n);
     if (Number(candidate) !== logicalUserId && !activeKanonSelfIds.has(candidate)) {
       activeKanonSelfIds.add(candidate);
       return candidate;

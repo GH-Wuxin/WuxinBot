@@ -129,6 +129,14 @@ function wait(milliseconds: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, milliseconds));
 }
 
+function isRetryableImageFetchError(error: unknown): boolean {
+  const name = String((error as { name?: string } | undefined)?.name || '');
+  if (name === 'AbortError') return true;
+  const message = String((error as Error)?.message || error || '');
+  if (/^HTTP_(?:429|5\d\d)$/.test(message)) return true;
+  return /fetch failed|network|socket|ECONNRESET|ETIMEDOUT|timeout|aborted/i.test(message);
+}
+
 async function downloadImageDataUrl(url: URL): Promise<string> {
   maybeGarbageCollectImageCache();
   const cached = readCachedImage(url);
@@ -157,6 +165,9 @@ async function downloadImageDataUrl(url: URL): Promise<string> {
       return dataUrl;
     } catch (error) {
       lastError = error;
+      // Permanent failures (404, unsupported content, size limits, redirect
+      // policy) are not fixed by repeating the same request.
+      if (!isRetryableImageFetchError(error)) break;
     } finally {
       clearTimeout(timer);
     }

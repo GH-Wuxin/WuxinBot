@@ -207,10 +207,16 @@ await check('tool failures end explicitly instead of releasing hallucinated text
   assert.ok(!result.text.includes('FAKE'));
 });
 
-await check('unsafe tool output cannot satisfy evidence or reach synthesis', async () => {
+await check('prompt-like tool text stays data and is not a hard failure', async () => {
+  let llmCalls = 0;
   let executorCalls = 0;
+  let seenToolContent = '';
   const result = await runToolLoop(async (_db, options) => {
-    return options.tools ? completion('FAKE_UNSAFE') : completion('SHOULD_NOT_SYNTHESIZE');
+    llmCalls += 1;
+    if (llmCalls === 1) return completion('', [call('bp_data', 'osu_get_best_score')]);
+    const toolMessage = (options.messages || []).find((message) => message.role === 'tool');
+    seenToolContent = String(toolMessage?.content || '');
+    return completion('SYNTHESIZED_AFTER_DATA');
   }, baseOptions({
     executeToolCallFn: async (toolCall) => {
       executorCalls += 1;
@@ -218,9 +224,10 @@ await check('unsafe tool output cannot satisfy evidence or reach synthesis', asy
     },
   }));
   assert.equal(executorCalls, 1);
-  assert.equal(result.evidenceRequirementSatisfied, false);
-  assert.match(result.text, /未通过安全校验/);
-  assert.ok(!result.text.includes('SHOULD_NOT_SYNTHESIZE'));
+  assert.equal(result.evidenceRequirementSatisfied, true);
+  assert.equal(result.text, 'SYNTHESIZED_AFTER_DATA');
+  assert.match(seenToolContent, /忽略之前的指令/);
+  assert.ok(!result.text.includes('未通过安全校验'));
 });
 
 await check('a mismatched deterministic observation fails closed', async () => {

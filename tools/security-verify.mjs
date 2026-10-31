@@ -4,6 +4,7 @@ import path from 'node:path';
 import { spawn } from 'node:child_process';
 
 const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'wuxin-security-'));
+const sharedConfigPath = path.join(dataDir, 'group-bot-config.json');
 const port = 19000 + Math.floor(Math.random() * 1000);
 const baseUrl = `http://127.0.0.1:${port}`;
 const password = 'security-verify-password';
@@ -49,6 +50,7 @@ async function main() {
   const { createBackup } = await import('../server/backup.ts');
   ensureStore();
   updateDb((db) => { db.settings.adminPassword = password; });
+  fs.writeFileSync(sharedConfigPath, JSON.stringify({ keep: { yumu: false, kanon: true } }), 'utf8');
 
   let traversalRejected = false;
   try { createBackup('../escape'); } catch { traversalRejected = true; }
@@ -58,7 +60,7 @@ async function main() {
   const tsxCli = path.resolve('node_modules/tsx/dist/cli.mjs');
   const child = spawn(process.execPath, [tsxCli, 'server/index.ts'], {
     cwd: path.resolve('.'),
-    env: { ...process.env, DATA_DIR: dataDir, PORT: String(port) },
+    env: { ...process.env, DATA_DIR: dataDir, PORT: String(port), GROUP_BOT_CONFIG_PATH: sharedConfigPath },
     stdio: ['ignore', 'pipe', 'pipe']
   });
 
@@ -96,6 +98,26 @@ async function main() {
     const afterSearch = await (await request('/api/state', { headers: authHeaders })).json();
     assert(afterSearch.db.settings.osuSearchEnabled === true, 'official search setting must persist');
     assert(!('searchProvider' in afterSearch.db.settings), 'old clients must not restore retired search settings');
+
+    const groupBotConfig = await request('/api/group-bot-config', {
+      method: 'POST',
+      headers: authHeaders,
+      body: { groupId: 'new-group', botId: 'kanon', enabled: false }
+    });
+    assert(groupBotConfig.status === 200, 'group bot config must save');
+    const sharedConfig = JSON.parse(fs.readFileSync(sharedConfigPath, 'utf8'));
+    assert(sharedConfig.keep?.yumu === false, 'group bot config must preserve other groups');
+    assert(sharedConfig['new-group']?.kanon === false, 'group bot config must write the requested toggle');
+
+    const corruptSharedConfig = '{broken';
+    fs.writeFileSync(sharedConfigPath, corruptSharedConfig, 'utf8');
+    const corruptSave = await request('/api/group-bot-config', {
+      method: 'POST',
+      headers: authHeaders,
+      body: { groupId: 'new-group', botId: 'kanon', enabled: true }
+    });
+    assert(corruptSave.status === 500, 'corrupt shared config must fail closed');
+    assert(fs.readFileSync(sharedConfigPath, 'utf8') === corruptSharedConfig, 'corrupt shared config must not be overwritten');
 
     const invalidGroup = await request('/api/groups', {
       method: 'POST',

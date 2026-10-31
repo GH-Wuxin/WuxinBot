@@ -5,7 +5,6 @@ import type { LlmToolCall, ToolResult, BotResponse, LlmTool, BotCommand } from '
 import {
   validateOperation,
   sanitizeToolResult,
-  isSafeToolResult,
   looksLikeToolCallMarkup,
   stripToolCallMarkup,
   parseToolCallMarkup,
@@ -433,29 +432,42 @@ function integerQueryParam(value: unknown): number | null {
  * An ordinary `/bp` remains BP1-10 for compatibility; BP1/BP10 and explicit
  * ranges only fetch and render the requested rows.
  */
+function bpRangeValidationError(startRank: number, endRank: number): string | null {
+  if (!Number.isInteger(startRank) || !Number.isInteger(endRank)) return 'BP 名次必须是整数';
+  if (startRank < 1 || endRank > 100 || startRank > endRank) {
+    return 'BP 名次必须在 1 到 100 之间，且范围起点不能大于终点';
+  }
+  return null;
+}
+
 export function resolveBpQuerySelection(params: Record<string, unknown>): BpQuerySelection {
-  const rank = hasQueryParam(params, 'bp_rank')
-    ? integerQueryParam(params.bp_rank)
-    : null;
-  if (rank !== null) {
-    return { startRank: rank, endRank: rank, explicit: true, single: true, compact: params.compact === true };
+  const compact = params.compact === true;
+  const hasRank = hasQueryParam(params, 'bp_rank');
+  const hasStart = hasQueryParam(params, 'bp_start');
+  const hasEnd = hasQueryParam(params, 'bp_end');
+
+  if (hasRank) {
+    if (hasStart || hasEnd) throw new Error('bp_rank 不能和 BP 范围同时使用');
+    const rank = integerQueryParam(params.bp_rank);
+    const error = rank === null ? 'BP 名次必须是整数' : bpRangeValidationError(rank, rank);
+    if (error) throw new Error(error);
+    return { startRank: rank, endRank: rank, explicit: true, single: true, compact };
   }
 
-  const start = hasQueryParam(params, 'bp_start')
-    ? integerQueryParam(params.bp_start)
-    : null;
-  const end = hasQueryParam(params, 'bp_end')
-    ? integerQueryParam(params.bp_end)
-    : null;
-  if (start !== null || end !== null) {
-    const startRank = start ?? end ?? 1;
-    const endRank = end ?? startRank;
+  if (hasStart || hasEnd) {
+    if (!hasStart || !hasEnd) throw new Error('BP 范围必须同时提供起点和终点');
+    const startRank = integerQueryParam(params.bp_start);
+    const endRank = integerQueryParam(params.bp_end);
+    const error = startRank === null || endRank === null
+      ? 'BP 名次必须是整数'
+      : bpRangeValidationError(startRank, endRank);
+    if (error) throw new Error(error);
     return {
       startRank,
       endRank,
       explicit: true,
       single: startRank === endRank,
-      compact: params.compact === true,
+      compact,
     };
   }
 
@@ -473,24 +485,8 @@ export function parseEmbeddedBpCommand(command: string): {
 
   const startRank = Number(match[2]);
   const endRank = match[3] ? Number(match[3]) : startRank;
-  if (
-    !Number.isInteger(startRank) ||
-    !Number.isInteger(endRank) ||
-    startRank < 1 ||
-    endRank > 100 ||
-    startRank > endRank
-  ) {
-    return {
-      command: match[1],
-      error: 'BP 名次必须是 1 到 100，且范围起点不能大于终点',
-    };
-  }
-  if (endRank - startRank + 1 > 100) {
-    return {
-      command: match[1],
-      error: '一次最多查询 100 张 BP',
-    };
-  }
+  const rangeError = bpRangeValidationError(startRank, endRank);
+  if (rangeError) return { command: match[1], error: rangeError };
   return {
     command: match[1],
     selection: {
@@ -514,12 +510,8 @@ export function parseBpSelectionFromUserText(text: string): {
 
   const startRank = Number(match[1]);
   const endRank = match[2] ? Number(match[2]) : startRank;
-  if (startRank < 1 || endRank > 100 || startRank > endRank) {
-    return { error: 'BP 名次必须是 1 到 100，且范围起点不能大于终点' };
-  }
-  if (endRank - startRank + 1 > 100) {
-    return { error: '一次最多查询 100 张 BP' };
-  }
+  const rangeError = bpRangeValidationError(startRank, endRank);
+  if (rangeError) return { error: rangeError };
   return {
     selection: {
       startRank,
@@ -2585,9 +2577,8 @@ function toolResultSatisfiesEvidence(
   requirement: EvidenceRequirement | undefined,
   toolCall: LlmToolCall,
   result: ToolResult,
-  safeContent: string,
 ): boolean {
-  if (!requirement || !result.ok || !isSafeToolResult(safeContent)) return false;
+  if (!requirement || !result.ok) return false;
   const canonical = normalizeAgentToolCall(toolCall);
   if (String(canonical.function.name || '') !== String(requirement.toolName || '')) return false;
 
@@ -2891,12 +2882,10 @@ export async function runToolLoop(
     // Terminal deterministic reply (cooldown or failed fallback): deliver
     // verbatim and never let the LLM lead or comment on it.
     if (result.final) {
-      const terminalSafeContent = sanitizeToolResult(result.directContent || result.content);
       const terminalSatisfied = toolResultSatisfiesEvidence(
         evidenceRequirement,
         syntheticCall,
         result,
-        terminalSafeContent,
       );
       if (evidenceRequirement && !terminalSatisfied && result.metadata?.terminal !== 'fallback_unavailable') {
         return {
@@ -2950,27 +2939,10 @@ export async function runToolLoop(
     }
 
     const safeContent = sanitizeToolResult(result.content, result.metadata?.provider === 'osu-official' ? 40000 : 4000);
-    if (evidenceRequirement && !isSafeToolResult(safeContent)) {
-      return {
-        text: '[系统] 查询结果未通过安全校验，本轮无法生成有数据依据的回答。',
-        usage: totalUsage,
-        toolCallsMade: 1,
-        iterations: 1,
-        recommendToolCalled,
-        images: [],
-        deliverOnlyImages: collectedDeliverOnlyImages,
-        directContent: '',
-        toolCallsSkippedByCap: 0,
-        hardCapReached: false,
-        toolCallsMadeThisTurn: turnToolCallsMade(),
-        evidenceRequirementSatisfied: false,
-      };
-    }
     evidenceRequirementSatisfied = toolResultSatisfiesEvidence(
       evidenceRequirement,
       syntheticCall,
       result,
-      safeContent,
     );
     if (evidenceRequirement && !evidenceRequirementSatisfied) {
       return {
@@ -2988,7 +2960,6 @@ export async function runToolLoop(
         evidenceRequirementSatisfied: false,
       };
     }
-    if (isSafeToolResult(safeContent)) {
       if (result.ok) {
         for (const image of result.images || []) {
           const imageRef = String(image || '').trim();
@@ -3002,7 +2973,7 @@ export async function runToolLoop(
         // handled in the normal loop below, where the tool name is known.
         if (deliverDirectContent) {
           const dc = sanitizeDirectDeliveryContent(result.directContent || '');
-          if (dc && isSafeToolResult(dc) && !collectedDirectContent.includes(dc)) {
+          if (dc && !collectedDirectContent.includes(dc)) {
             collectedDirectContent.push(dc);
           }
         }
@@ -3034,28 +3005,18 @@ export async function runToolLoop(
         tool_call_id: syntheticCall.id,
         content: toolNote ? `${safeContent}\n\n${toolNote}` : safeContent
       });
-    } else {
-      currentMessages.push({
-        role: 'assistant',
-        content: null,
-        tool_calls: [syntheticCall]
-      });
-      currentMessages.push({
-        role: 'tool',
-        tool_call_id: syntheticCall.id,
-        content: '[工具结果被安全过滤器拦截]'
-      });
-    }
+
 
     const noDirectPayload = collectedImages.length === 0 && collectedDirectContent.length === 0;
     const leadRole: LlmCallRole = noDirectPayload ? 'tool_synthesis' : 'decorative_lead';
     // Keep complete source lines: do not cut numbers or fabricate a summary.
-    const sourceLines = isSafeToolResult(safeContent)
-      ? sanitizeDirectDeliveryContent(safeContent).split('\n').filter(line => line.trim() && line.length <= 400).slice(0, 6)
-      : [];
+    const sourceLines = sanitizeDirectDeliveryContent(safeContent)
+      .split('\n')
+      .filter((line) => line.trim() && line.length <= 400)
+      .slice(0, 6);
     const synthesisFallback = noDirectPayload && sourceLines.length
       ? `自动整理失败，以下为已查询到的数据摘录：\n${sourceLines.join('\n')}`
-      : (noDirectPayload ? '[系统] 已完成查询，但结果无法安全展示，请稍后重试。' : '');
+      : (noDirectPayload ? '[系统] 已完成查询，但结果为空，请稍后重试。' : '');
     const leadInput = reasoningInput(leadRole, {
       requiredTool: true,
       toolSelectionRequired: false,
@@ -3423,7 +3384,7 @@ export async function runToolLoop(
       }
 
       const safeContent = sanitizeToolResult(result.content, result.metadata?.provider === 'osu-official' ? 40000 : 4000);
-      if (toolResultSatisfiesEvidence(evidenceRequirement, tc, result, safeContent)) {
+      if (toolResultSatisfiesEvidence(evidenceRequirement, tc, result)) {
         evidenceRequirementSatisfied = true;
       }
 
@@ -3450,17 +3411,6 @@ export async function runToolLoop(
         };
       }
 
-      // Sanitize and validate result
-      if (!isSafeToolResult(safeContent)) {
-        const content = '[工具结果被安全过滤器拦截]';
-        currentMessages.push({
-          role: 'tool',
-          tool_call_id: tc.id,
-          content: syntheticModelToolError(tc, content, 'TOOL_RESULT_SAFETY_FILTERED')
-        });
-        continue;
-      }
-
       let acceptedDirectContent = '';
       if (result.ok) {
         for (const image of result.images || []) {
@@ -3479,7 +3429,7 @@ export async function runToolLoop(
         const isNamedBotTool = String(tc.function?.name || '') === 'query_bot';
         if (callDeliversDirect || (isNamedBotTool && result.directContent)) {
           const directContent = sanitizeDirectDeliveryContent(result.directContent || '');
-          if (directContent && isSafeToolResult(directContent)) {
+          if (directContent) {
             acceptedDirectContent = directContent;
             if (!collectedDirectContent.includes(directContent)) {
               collectedDirectContent.push(directContent);

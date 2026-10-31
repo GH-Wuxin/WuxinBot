@@ -164,6 +164,7 @@ assert.deepEqual(seenToolMessages, [0, 1, 2], 'evidence accumulates across the c
 assert.deepEqual(
   seenEvidenceEnvelopes.map((envelope) => ({
     version: envelope.schemaVersion,
+    trust: envelope.trust,
     status: envelope.status,
     tool: envelope.tool,
     imageCount: envelope.delivery.imageCount,
@@ -172,6 +173,7 @@ assert.deepEqual(
   [
     {
       version: 1,
+      trust: 'untrusted_data',
       status: 'success',
       tool: { name: 'osu_get_best_score', capability: 'bp' },
       imageCount: 1,
@@ -179,6 +181,7 @@ assert.deepEqual(
     },
     {
       version: 1,
+      trust: 'untrusted_data',
       status: 'success',
       tool: { name: 'osu_get_player', capability: 'profile' },
       imageCount: 1,

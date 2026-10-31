@@ -26,6 +26,9 @@ const { validateStickerSelection } = await import('../server/bot/stickers/debug.
 
 const catalog = validateStickerCatalog({ verifyHashes: true });
 assert.equal(catalog.ok, true, JSON.stringify(catalog));
+const runtimeCatalogA = validateStickerCatalog({ verifyHashes: false });
+const runtimeCatalogB = validateStickerCatalog({ verifyHashes: false });
+assert.equal(runtimeCatalogA, runtimeCatalogB, 'runtime catalog validation must be cached per process');
 
 // Plain malformed model output remains ordinary text and cannot create a
 // sticker decision. A valid-looking envelope still cannot bypass the exact-ID

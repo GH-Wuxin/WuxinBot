@@ -14,6 +14,16 @@ function assert(condition, message) {
   if (!condition) throw new Error(message);
 }
 
+function assertThrows(fn, pattern, message) {
+  try {
+    fn();
+  } catch (error) {
+    assert(pattern.test(String(error?.message || error)), `${message}: unexpected error ${error?.message || error}`);
+    return;
+  }
+  throw new Error(`${message}: expected an error`);
+}
+
 function toolCall(id, args) {
   return {
     id,
@@ -114,6 +124,21 @@ assert(
   rangeSelection.endRank === 13 &&
   !rangeSelection.single,
   'range parameters must retain their exact inclusive ranks',
+);
+assertThrows(
+  () => resolveBpQuerySelection({ bp_start: 11 }),
+  /同时提供/,
+  'a half-specified range must fail instead of becoming a single-rank query',
+);
+assertThrows(
+  () => resolveBpQuerySelection({ bp_rank: 101 }),
+  /1 到 100/,
+  'an out-of-range rank must fail instead of falling back to BP1-10',
+);
+assertThrows(
+  () => resolveBpQuerySelection({ bp_rank: 10, bp_start: 1, bp_end: 10 }),
+  /不能和/,
+  'rank and range selectors must not be silently mixed',
 );
 
 const embeddedSingle = parseEmbeddedBpCommand('/bp10');

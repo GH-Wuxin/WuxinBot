@@ -187,18 +187,6 @@ export function llmProviderName(provider) {
   return names[provider] || provider || 'LLM';
 }
 
-function rawLlmProvider(db) {
-  return String(db.settings.llmProvider || 'deepseek').trim() || 'deepseek';
-}
-
-function assertLlmConfigCompatible(db, provider, baseURL, apiKey) {
-  // Mimo 已下线；供应商与地址是否匹配由模型设置页保证。
-  void db;
-  void provider;
-  void baseURL;
-  void apiKey;
-}
-
 function requestModelForProvider(db, provider, baseURL, options = {}) {
   void baseURL;
   const fallback = 'deepseek-chat';
@@ -410,11 +398,6 @@ export async function attachVisionImages(db, messages, images = [], options = {}
 }
 
 export function createLLMClient(db, requestedModel = db.settings.model) {
-  if (!/^mimo-/i.test(String(requestedModel || ''))) {
-    const rawProvider = llmProvider(db);
-    const rawBaseUrl = db.settings.apiBaseUrl || defaultBaseUrlForProvider(rawProvider);
-    assertLlmConfigCompatible(db, rawProvider, rawBaseUrl, db.settings.apiKey);
-  }
   const resolvedSettings = activateModelProfile(db.settings, requestedModel);
   const resolvedDb = { ...db, settings: resolvedSettings };
   const provider = llmProvider(resolvedDb);
@@ -423,7 +406,6 @@ export function createLLMClient(db, requestedModel = db.settings.model) {
     throw new Error(`${llmProviderName(provider)} API Key 还没有填写，请先在 GUI 的“模型设置”里填写。`);
   }
   const baseURL = resolvedSettings.apiBaseUrl || defaultBaseUrlForProvider(provider);
-  assertLlmConfigCompatible(resolvedDb, provider, baseURL, apiKey);
   return {
     provider,
     baseURL,
@@ -452,10 +434,10 @@ export async function completeChat(db, options = {}) {
     };
   }
   const promptModule = resolvePromptModule({ ...options, promptModule: options.promptStudioModuleId });
-  if (Number(options.completionBudget) > 0 && rawLlmProvider(db) === 'codex-app-server') {
+  if (Number(options.completionBudget) > 0 && llmProvider(db) === 'codex-app-server') {
     throw new Error('当前 Codex 通道不支持本活动要求的单次输出上限，请使用已配置的 API 模型进行自主阅读');
   }
-  if (rawLlmProvider(db) === 'codex-app-server') {
+  if (llmProvider(db) === 'codex-app-server') {
     const fallbackKey = `${db.settings.codexExecutable || ''}:${db.settings.codexModel || ''}`;
     const runFallback = async (message) => {
       const fallbackProvider = ['deepseek', 'openai-compatible'].includes(String(db.settings.codexFallbackProvider))
