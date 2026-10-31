@@ -141,6 +141,23 @@ try {
     assert.equal(parse('!s 1').match.def.source, 'yumu');
     assert.equal(parse('/score 1').match.def.source, 'lazybot');
   });
+  const recentDef = QUICK_DEFS.find((def) => def.source === 'kanon' && def.capability === 'recent');
+  assert(recentDef);
+  for (const [args, expected] of [
+    ['', ''],
+    ['#2', ''],
+    ['&sb :4', ''],
+    [':4', ''],
+    ['#2 &sb', ''],
+    ['&sb #2', ''],
+    ['Bound Player', 'Bound Player'],
+    ['Bound Player &sb :4', 'Bound Player'],
+    ['Bound Player #2 &sb', 'Bound Player'],
+  ]) {
+    check(`recent args ${JSON.stringify(args)}`, () => {
+      assert.equal(parseOsuArgs(recentDef, args, '!pr').username, expected);
+    });
+  }
   const invoke = async (text, userId = '10001', atTargets = []) => {
     const event = { source: 'gui', type: 'group', messageId: `fixture-${passed}`, groupId: '991337', userId, nickname: 'Fixture', text, atTargets, raw: {} };
     const sent = [];
@@ -187,6 +204,41 @@ try {
       assert.equal(requests.length, 0, 'bridge path must not look up +mods as a player');
     });
   }
+  const recentBridge = await invoke('!pr &sb :4', '10001');
+  check('recent modifier-only args inject Wuxin binding', () => {
+    assert.equal(recentBridge.result.reason, 'bridge:kanon');
+    assert.equal(bridgeEvents.at(-1).raw_message, '!pr Bound Player &sb :4');
+    assert.equal(requests.length, 0, 'recent bridge path must not query the osu API');
+  });
+  for (const [text, atTargets, expected] of [
+    ['!bs [CQ:at,qq=10002]', [], '!bs Target Player'],
+    ['!bs [CQ:at,qq=10002] 1-10', ['10002'], '!bs Target Player 1-10'],
+    ['!bs [CQ:at,qq=10002] mod=dt', [], '!bs Target Player mod=dt'],
+    ['!bs [CQ:at,qq=10002] :mania', [], '!bs :mania Target Player'],
+    ['!bs [CQ:at,qq=10002] :mania 1-10', [], '!bs :mania Target Player 1-10'],
+  ]) {
+    const output = await invoke(text, '10001', atTargets);
+    check(`bp at bridge ${text}`, () => {
+      assert.equal(output.result.reason, 'bridge:yumu');
+      assert.equal(bridgeEvents.at(-1).raw_message, expected);
+      const message = bridgeEvents.at(-1).message;
+      assert.equal(
+        Array.isArray(message)
+          ? message.every((segment) => segment.type !== 'at')
+          : !String(message).includes('[CQ:at'),
+        true,
+      );
+      assert.equal(requests.length, 0);
+    });
+  }
+  const beforeUnboundAt = bridgeEvents.length;
+  const unboundAt = await invoke('!bs [CQ:at,qq=99999]', '10001');
+  check('bp at target without binding stops before bridge', () => {
+    assert.equal(unboundAt.result.reason, 'unbound_target');
+    assert.equal(bridgeEvents.length, beforeUnboundAt);
+    assert.match(unboundAt.sent[0], /对方还没绑定/);
+    assert.equal(requests.length, 0);
+  });
   const beforeInvalid = bridgeEvents.length;
   const invalid = await invoke('!score 0 +hdda', '99999');
   const unbound = await invoke('!score 3648544 +hdda', '99999');

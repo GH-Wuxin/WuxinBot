@@ -236,13 +236,17 @@ export function parseOsuArgs(def: RawQuickCommandDef, args: string, command?: st
   if (def.capability === 'recent') {
     // `!pr #2` / `!re #2`：裸 `#N` 是成绩序号，不是用户名。保留原始 args，
     // 桥接时会重建成 `!pr <绑定的用户名> #2`，避免把命令丢给 Kanon 后触发
-    // 它自己的 desu.life 绑定检查。
+    // 它自己的 desu.life 绑定检查。`&sb` / `&dev` 与 `:mode` 同样是修饰参数，
+    // 不能当成用户名；否则 `!pr &sb :4` 会绕过绑定注入。
     const value = String(args || '').trim();
     if (!value) return { username: '' };
-    if (/^[#＃]\s*\d{1,3}$/.test(value)) return { username: '' };
-    const trailingIndex = /^(.+?)\s+[#＃]\s*\d{1,3}$/.exec(value);
-    if (trailingIndex) return { username: trailingIndex[1].trim() };
-    return { username: value };
+    const username = value
+      .replace(/[#＃]\s*\d{1,3}(?=\s|$)/g, ' ')
+      .replace(/&[\w-]+/g, ' ')
+      .replace(/:[\w-]+/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+    return { username };
   }
   return { username: String(args || '').trim() };
 }
@@ -372,6 +376,37 @@ function resolveAtBinding(db: any, atTargets: string[]): string {
   return String(binding.osuUsername ?? binding.username ?? binding.id ?? '');
 }
 
+const CQ_AT_SEGMENT = /\[CQ:at,qq=(\d+)\]/g;
+
+/** QQ ids carried by CQ at segments in a quick-command argument string. */
+function extractCqAtTargets(text: string): string[] {
+  const targets: string[] = [];
+  for (const match of String(text || '').matchAll(CQ_AT_SEGMENT)) targets.push(match[1]);
+  return targets;
+}
+
+/** Remove CQ at segments so the remaining text can be parsed as command args. */
+function stripCqAtSegments(text: string): string {
+  return String(text || '').replace(CQ_AT_SEGMENT, ' ').replace(/\s+/g, ' ').trim();
+}
+
+/** Yumu BP conditions (mod=, name=, star>=, :mode, ...) are not usernames. */
+function isBpCondition(value: string): boolean {
+  const text = String(value || '').trim();
+  if (!text) return false;
+  return /(?:^|\s)[a-z][a-z0-9_-]*\s*(?:=|>=|<=|>|<)/i.test(text)
+    || /^:[a-z0-9_-]+(?:\s|$)/i.test(text);
+}
+
+/** Yumu expects the mode before the player; keep it there after injection. */
+function splitBpMode(args: string): { mode: string; rest: string } {
+  const text = String(args || '').trim();
+  const match = /(?:^|\s)(:[a-z0-9_-]+)(?=\s|$)/i.exec(text);
+  if (!match) return { mode: '', rest: text };
+  const rest = text.replace(match[0], ' ').replace(/\s+/g, ' ').trim();
+  return { mode: match[1], rest };
+}
+
 export interface QuickRoutePermissions {
   isOwner: boolean;
   isAdmin: boolean;
@@ -424,7 +459,17 @@ async function handleQuickCommandInner(
   permissions: QuickRoutePermissions,
   traceId?: string | null,
 ): Promise<{ handled: boolean; replied?: boolean; reason?: string }> {
-  const { def, args, atTargets } = match;
+  const { def } = match;
+  // BP commands accept an @ target in several shapes. OneBot commonly leaves a
+  // literal CQ at segment in args; if it is parsed as a username, the bridge
+  // sends that code to Yumu and the real target is lost. Normalize it before
+  // argument parsing and keep the extra QQ ids as at targets.
+  const cqAtTargets = def.bpArgs ? extractCqAtTargets(match.args) : [];
+  const atTargets = def.bpArgs
+    ? [...new Set([...(match.atTargets || []).map(String), ...cqAtTargets])]
+    : match.atTargets;
+  const args = def.bpArgs ? stripCqAtSegments(match.args) : match.args;
+  const cmdText = def.bpArgs ? stripCqAtSegments(match.cmdText) : match.cmdText;
 
   // Global/group/user gates shared with the main pipeline.
   if (db?.settings?.globalPaused) return { handled: true, replied: false, reason: '全局暂停' };
@@ -556,7 +601,7 @@ async function handleQuickCommandInner(
   const fallbackContext = () => fallbackContextForQuick(def.source, match.alias, args, bridgeFailure);
   if (def.bridge && hasLocalEndpoint(def.source)) {
     if (traceId) markLatencySpan(traceId, 'subject_resolution_start');
-    let bridgeCommand = buildBridgeCommand(match);
+    let bridgeCommand = buildBridgeCommand({ ...match, cmdText, args, atTargets });
     const bridgeContext = {
       // Bridge traffic always uses the dedicated virtual group 770099, whose
       // shared config keeps all four bots enabled. Using the real group id
@@ -622,7 +667,14 @@ async function handleQuickCommandInner(
         record(`参数错误：${parsed.error}`);
         return { handled: true, replied: true, reason: '参数错误' };
       }
-      if (!parsed.username) {
+      // `!bs @某人 mod=dt` gives parseOsuArgs the condition as "username".
+      // When an @ target is present, the target must still win and the
+      // condition stays in args for the rebuilt bridge command.
+      const atTargetCondition = Boolean(parsed.username)
+        && atTargets.length > 0
+        && Boolean(def.bpArgs)
+        && isBpCondition(parsed.username);
+      if (!parsed.username || atTargetCondition) {
         const usesAt = atTargets.length > 0;
         const target = usesAt ? String(atTargets[0]) : String(event.userId);
         const user = await resolveInjectionUser(db, target);
@@ -637,8 +689,10 @@ async function handleQuickCommandInner(
           return { handled: true, replied: true, reason: usesAt ? 'unbound_target' : 'unbound_self' };
         }
         bridgeUser = user;
-        // Rebuild with the injected user before any BP range.
-        bridgeCommand = `${match.prefix}${match.alias} ${user}${args ? ' ' + args : ''}`;
+        // Rebuild with the injected user before any BP range/condition. Yumu
+        // puts the mode before the player, so keep `:mode` in front.
+        const bpMode = def.bpArgs ? splitBpMode(args) : { mode: '', rest: args };
+        bridgeCommand = `${match.prefix}${match.alias}${bpMode.mode ? ' ' + bpMode.mode : ''} ${user}${bpMode.rest ? ' ' + bpMode.rest : ''}`;
       } else {
         bridgeUser = parsed.username;
       }
@@ -649,6 +703,9 @@ async function handleQuickCommandInner(
         bridgeContext.atTargets = [];
       }
     }
+    // Once a username is in the command, don't also send the raw @ segment:
+    // localBridge would append it and the original bot could resolve it again.
+    if (bridgeUser) bridgeContext.atTargets = [];
     if (traceId) markLatencySpan(traceId, 'subject_resolution_done', { resolved: Boolean(bridgeUser) });
     try {
       // Hydrant's profile/where/PP+ commands have a complete internal-engine

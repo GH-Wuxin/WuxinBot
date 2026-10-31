@@ -19,6 +19,8 @@
   - 测试：`tools/desktop-runtime-verify.mjs` 新增 6 个用例（占用者描述、同组件实例归属、无占用时拒绝接管、无端口/未启用/未知 id 的拒绝、终止前监听者校验、真实外部进程的完整接管），并修正 3 个因本次行为变更而过期的断言。**46/46 通过**。
 
 ### 修复
+- **快捷查询 recent 的修饰参数不再被当成用户名**：`!pr &sb :4` 过去把 `&sb :4` 解析成用户名，导致 Wuxin 不注入已有绑定，桥接到 Kanon 后触发其 desu.life 未绑定提示。现在 recent 参数解析会剥离 `&flag`、`:mode` 与 `#N`，只把剩余部分当用户名；`score-command-verify` 已补参数矩阵和真实桥接断言。
+- **`!bs @某人` / `!bp @某人` 的 CQ at 码不再被当成用户名**：桥接参数里的 `[CQ:at,qq=…]` 过去会绕过 Wuxin 的 @ 目标绑定解析，直接以 CQ 码作为玩家名发给雨沐，60 秒后超时并生成“备用查询未完成”错误卡。现在 BP 指令会剥离 CQ at 码、从 `atTargets` 解析目标绑定，并把范围/Mods/模式等条件保留在注入用户名之后；未绑定目标立即提示，不再等待外部 Bot。`score-command-verify` 已补已绑定、未绑定、范围、Mods 和模式的自真实桥接断言。
 - **引用消息不再阻塞入站管线**：`hydrateQuotedMessage` 过去对每条引用回复同步等待 NapCat `/get_msg`，用的是 12 秒默认超时。NapCat 对已淘汰缓存的消息从不响应，于是一次引用就占住 6 个入站准入槽之一长达 12 秒（生产日志累计 446 次超时 + 54 次 `fetch failed`，并触发过 48 槽等待队列耗尽）。现在：本地库已解析出引用内容时不再发网络请求；超时收紧到 2.5 秒；同一 `message_id` 的失败在 5 分钟内不再重试（上限 500 条）。最坏耗时由 12 秒降至 2.5 秒，重复引用降至 0。
 - **单实例锁失败不再伪装成崩溃**：`acquireInstanceLock` 抛错原本无人接住，会走 `uncaughtException` 写一份 crash 日志并打印带 source-map 误导帧的堆栈（曾连续 3 次）。现在输出一行 `[instance] 启动失败：…` 后 `process.exit(1)`，行为与紧随其后的 `openStore` fail-closed 分支一致。
 - **`UserEntry.policy` 类型补齐 `owner`**：`server/types.ts` 的联合类型漏了 `'owner'`，而 `USER_POLICIES`（`server/index.ts`）与 `bot.ts` 的限频绕过分支都按 owner 处理。补上并加注释说明必须与 `USER_POLICIES` 同步。
