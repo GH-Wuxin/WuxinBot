@@ -83,6 +83,15 @@ try {
     await assessSocialTurn(event({ socialNamed: false, messageId: 'later' }), 'initial', invoke); assert.equal(count, 1);
     await assessSocialTurn(event({ socialDirect: true, messageId: 'direct' }), 'initial', invoke); assert.equal(count, 2);
   });
+  await test('ambient gate enforces a two-hour cooldown per room', async () => {
+    seed(); let count = 0; const invoke = async () => { count++; return { text: '{"reply":false,"to":"group"}', usage: {} }; };
+    await assessSocialTurn(event({ socialNamed: false }), 'initial', invoke);
+    assert.equal(count, 1);
+    store.updateDb(db => { for (const d of db.socialV2.decisions) if (d.engagement === 'ambient') d.createdAt = new Date(Date.now() - 11 * 60000).toISOString(); });
+    await assessSocialTurn(event({ socialNamed: false, messageId: 'eleven-minutes' }), 'initial', invoke); assert.equal(count, 1);
+    store.updateDb(db => { for (const d of db.socialV2.decisions) if (d.engagement === 'ambient') d.createdAt = new Date(Date.now() - 121 * 60000).toISOString(); });
+    await assessSocialTurn(event({ socialNamed: false, messageId: 'two-hours' }), 'initial', invoke); assert.equal(count, 2);
+  });
   await test('profiles stay eligible at higher evidence thresholds and six-hour intervals', () => {
     seed(); const db = store.readDb(), m = memory(); m.profileMessageCount = 29;
     assert.equal(memoryIsDueForProfile(db, m), false); m.profileMessageCount = 30; assert.equal(memoryIsDueForProfile(db, m), true);

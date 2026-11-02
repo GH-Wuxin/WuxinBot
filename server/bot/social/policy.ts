@@ -4,6 +4,14 @@ import { textWithoutControlPlaceholders } from '../cleaning.js';
 import { isSystemOwner } from './state.js';
 import type { SocialEvent } from './types.js';
 
+/**
+ * Ambient participation is the only social LLM call that can be triggered by
+ * ordinary group chatter. Keep it on a slow per-room cadence so a busy room
+ * cannot spend the whole token budget on deciding not to speak. Direct
+ * requests and likely continuations bypass this cooldown.
+ */
+export const AMBIENT_COOLDOWN_MS = 120 * 60_000;
+
 export function participationStatus(db: any, group: any) {
   const mode = !group?.enabled || db.settings.globalPaused ? 'silent'
     : db.settings.socialV2Enabled !== true && ['light', 'natural'].includes(group.mode) ? 'mention' : group.mode;
@@ -69,10 +77,23 @@ export function replyLimitReason(db: any, event: SocialEvent, continuation = fal
   return '';
 }
 
+function ambientCooldownReason(db: any, scope: string, event: SocialEvent, resumed: boolean): string {
+  if (event.socialDirect || resumed || conversationContext(db, event).continuationCandidate) return '';
+  const now = Date.now();
+  const cooling = (db.socialV2?.decisions || []).some((d: any) => d?.scope === scope
+    && d.engagement === 'ambient' && ['assessment', 'failure'].includes(d.stage)
+    && d.phase !== 'revalidation' && now - Date.parse(d.createdAt) < AMBIENT_COOLDOWN_MS);
+  return cooling ? `${tokenSaving(db) ? '节能模式：' : ''}自然接话冷却中（120 分钟）` : '';
+}
+
 export function assessmentBudgetReason(db: any, event: SocialEvent, resumed: boolean): string {
   const scope = event.type === 'private' ? `private:${event.userId}` : `group:${event.groupId}`;
   const calls = db.socialV2.decisions.filter((d) => d.scope === scope && ['assessment', 'failure'].includes(d.stage)
     && d.phase !== 'revalidation' && Date.now() - Date.parse(d.createdAt) < 3600_000);
+  // The two-hour room cooldown is the primary ambient limiter; the hourly and
+  // ten-minute checks below remain as defensive fallbacks.
+  const cooldown = ambientCooldownReason(db, scope, event, resumed);
+  if (cooldown) return cooldown;
   if (tokenSaving(db)) {
     if (event.socialDirect || resumed || conversationContext(db, event).continuationCandidate) return '';
     const ambient = calls.filter(d => d.engagement === 'ambient');

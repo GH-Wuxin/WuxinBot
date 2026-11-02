@@ -508,15 +508,14 @@ await test('ambient evaluations are paced, continuations and direct requests kee
   seed(); let invoked = 0;
   const invoke = async (_db, options) => { invoked++; const input = JSON.parse(options.messages.at(-1).content);
     return { text: JSON.stringify(assessment({ addressee: input.conversation.continuationCandidate ? 'bot' : 'group', evidenceIds: input.target.messageIds })), usage: {} }; };
-  for (let i = 0; i < 3; i++) assert.ok(await runtime.assessSocialTurn(event(), 'initial', invoke));
-  assert.equal(await runtime.assessSocialTurn(event(), 'initial', invoke), null); assert.equal(invoked, 3);
-  assert.match(store.readDb().socialV2.decisions.at(-1).reason, /间隔/);
-  assert.ok(await runtime.assessSocialTurn(event({ socialDirect: true }), 'initial', invoke));
+  assert.ok(await runtime.assessSocialTurn(event(), 'initial', invoke)); assert.equal(invoked, 1);
+  assert.equal(await runtime.assessSocialTurn(event({ messageId: 'cooldown' }), 'initial', invoke), null); assert.equal(invoked, 1);
+  assert.match(store.readDb().socialV2.decisions.at(-1).reason, /冷却|间隔/);
+  assert.ok(await runtime.assessSocialTurn(event({ socialDirect: true }), 'initial', invoke)); assert.equal(invoked, 2);
   store.updateDb(db => db.messages.push({ id: 'recent-bot', role: 'assistant', type: 'group', groupId: '20001', replyToUserId: '10003', createdAt: new Date().toISOString() }));
-  assert.ok(await runtime.assessSocialTurn(event({ text: '然后呢' }), 'initial', invoke));
-  assert.equal(invoked, 5);
-  store.updateDb(db => { db.socialV2.decisions.forEach(d => { d.createdAt = new Date(Date.now() - 61_000).toISOString(); }); db.messages = []; });
-  assert.ok(await runtime.assessSocialTurn(event(), 'initial', invoke));
+  assert.ok(await runtime.assessSocialTurn(event({ text: '然后呢' }), 'initial', invoke)); assert.equal(invoked, 3);
+  store.updateDb(db => { db.socialV2.decisions.forEach(d => { d.createdAt = new Date(Date.now() - 121 * 60_000).toISOString(); }); db.messages = []; });
+  assert.ok(await runtime.assessSocialTurn(event(), 'initial', invoke)); assert.equal(invoked, 4);
 });
 await test('guard floods cannot evict hourly assessment budgets', () => {
   seed(); const e = event();
