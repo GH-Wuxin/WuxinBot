@@ -90,6 +90,12 @@ async function assessSavingTurn(event: SocialEvent, invoke: typeof completeChat)
     recordSocialDecision(event, { stage: 'assessment', phase: 'initial', action: 'reply', reason: '节能：Owner 明确请求直接回应', evidenceIds: [], durationMs: 0, totalTokens: 0 });
     return neutral(true, 'bot', 'Owner 明确请求');
   }
+  // Explicit @/private requests already prove they are addressed to Pippi.
+  // The cheap gate exists for ambiguous ambient talk; name mentions stay gated.
+  if (event.socialDirect) {
+    recordSocialDecision(event, { stage: 'assessment', phase: 'initial', action: 'reply', reason: '节能：直接 @/明确请求，跳过门控', evidenceIds: [], durationMs: 0, totalTokens: 0 });
+    return neutral(true, 'bot', '直接 @/明确请求');
+  }
   const candidate = event.socialNamed ? { ...event, socialDirect: true } : event;
   const budget = assessmentBudgetReason(db, candidate, false);
   if (budget) {

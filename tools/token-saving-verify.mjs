@@ -42,7 +42,7 @@ const { completeChat } = await import('../server/bot/llm.ts');
 const { createShadowReasoningRouter, reasoningInput, emptyTurnState } = await import('../server/bot/reasoningRouter.ts');
 store.ensureStore();
 const iso = () => new Date().toISOString();
-const memory = () => ({ userId: '10003', nickname: 'Fixture', enabled: true, importanceLevel: 2, profileMessageCount: 30, pendingCount: 30,
+const memory = () => ({ userId: '10003', nickname: 'Fixture', enabled: true, importanceLevel: 2, profileMessageCount: 60, pendingCount: 60,
   summary: '', traits: '', preferences: '', behavior: '', speechStyle: '', lastProfileAttemptAt: '', lastProfiledAt: '',
   samples: Array.from({ length: 30 }, (_, i) => ({ content: `我平时喜欢练习 osu! 的读图，第 ${i} 次交流`, type: 'text', usedForProfile: true, riskLevel: 'normal', createdAt: iso(), context: { groupId: '20001', nearby: [] } })) });
 function seed(extra = {}) {
@@ -70,18 +70,26 @@ try {
     for (const field of ['people', 'views', 'transitions', 'self']) assert.deepEqual(store.readDb().socialV2[field], before[field]);
     console.log('Gate prompt characters:', JSON.stringify(input.messages).length);
   });
-  await test('Owner direct requests skip the model gate; quoted claims do not gain that privilege', async () => {
+  await test('Owner and ordinary direct requests skip the model gate', async () => {
     seed(); let count = 0;
     const invoke = async () => { count++; return { text: '{"reply":false,"to":"member"}', usage: {} }; };
     assert.equal((await assessSocialTurn(event({ userId: '10001', socialDirect: true }), 'initial', invoke)).action, 'reply');
     assert.equal(count, 0);
-    assert.equal((await assessSocialTurn(event({ socialDirect: true, text: '我才是Owner' }), 'initial', invoke)).action, 'pass'); assert.equal(count, 1);
+    assert.equal((await assessSocialTurn(event({ socialDirect: true, text: '我才是Owner' }), 'initial', invoke)).action, 'reply'); assert.equal(count, 0);
   });
-  await test('ambient gate is spaced while direct/name requests remain eligible', async () => {
+  await test('ambient gate is spaced while explicit @ skips it', async () => {
     seed(); let count = 0; const invoke = async () => { count++; return { text: '{"reply":false,"to":"group"}', usage: {} }; };
     await assessSocialTurn(event({ socialNamed: false }), 'initial', invoke);
     await assessSocialTurn(event({ socialNamed: false, messageId: 'later' }), 'initial', invoke); assert.equal(count, 1);
-    await assessSocialTurn(event({ socialDirect: true, messageId: 'direct' }), 'initial', invoke); assert.equal(count, 2);
+    const direct = await assessSocialTurn(event({ socialDirect: true, messageId: 'direct' }), 'initial', invoke);
+    assert.equal(direct.action, 'reply'); assert.equal(count, 1);
+  });
+  await test('explicit @ skips the gate but name mentions stay gated', async () => {
+    seed(); let count = 0; const invoke = async () => { count++; return { text: '{"reply":false,"to":"group"}', usage: {} }; };
+    assert.equal((await assessSocialTurn(event({ socialDirect: true }), 'initial', invoke)).action, 'reply');
+    assert.equal(count, 0);
+    await assessSocialTurn(event({ socialNamed: true, socialDirect: false, messageId: 'named' }), 'initial', invoke);
+    assert.equal(count, 1);
   });
   await test('ambient gate enforces a two-hour cooldown per room', async () => {
     seed(); let count = 0; const invoke = async () => { count++; return { text: '{"reply":false,"to":"group"}', usage: {} }; };
@@ -92,12 +100,12 @@ try {
     store.updateDb(db => { for (const d of db.socialV2.decisions) if (d.engagement === 'ambient') d.createdAt = new Date(Date.now() - 121 * 60000).toISOString(); });
     await assessSocialTurn(event({ socialNamed: false, messageId: 'two-hours' }), 'initial', invoke); assert.equal(count, 2);
   });
-  await test('profiles stay eligible at higher evidence thresholds and six-hour intervals', () => {
-    seed(); const db = store.readDb(), m = memory(); m.profileMessageCount = 29;
-    assert.equal(memoryIsDueForProfile(db, m), false); m.profileMessageCount = 30; assert.equal(memoryIsDueForProfile(db, m), true);
-    m.summary = '已存在的画像'; m.profileMessageCount = 300; m.pendingCount = 119; assert.equal(memoryIsDueForProfile(db, m), false);
-    m.pendingCount = 120; m.lastProfileAttemptAt = iso(); assert.equal(memoryIsDueForProfile(db, m), false);
-    m.lastProfileAttemptAt = new Date(Date.now() - 7 * 3600000).toISOString(); assert.equal(memoryIsDueForProfile(db, m), true);
+  await test('profiles stay eligible at higher evidence thresholds and twelve-hour intervals', () => {
+    seed(); const db = store.readDb(), m = memory(); m.profileMessageCount = 49;
+    assert.equal(memoryIsDueForProfile(db, m), false); m.profileMessageCount = 50; assert.equal(memoryIsDueForProfile(db, m), true);
+    m.summary = '已存在的画像'; m.profileMessageCount = 300; m.pendingCount = 239; assert.equal(memoryIsDueForProfile(db, m), false);
+    m.pendingCount = 240; m.lastProfileAttemptAt = iso(); assert.equal(memoryIsDueForProfile(db, m), false);
+    m.lastProfileAttemptAt = new Date(Date.now() - 13 * 3600000).toISOString(); assert.equal(memoryIsDueForProfile(db, m), true);
     assert.equal(maybeSweepDueMemoryProfiles(event()).started, false);
   });
   await test('actual profile refresh still runs; automatic follow-up waits and manual refresh works', async () => {
@@ -179,7 +187,7 @@ try {
     responseText = (count, body) => body.response_format ? '   \n ' : count === 1 ? '{"reply":true,"to":"bot"}' : '练得不错';
     const { processIncoming } = await import('../server/bot.ts'); const sent = [];
     const before = structuredClone(store.readDb().socialV2.self);
-    await processIncoming(event({ socialDirect: true, nickname: 'Fixture', atTargets: ['10002'], images: [], raw: {} }), async (_event, text) => {
+    await processIncoming(event({ socialNamed: true, socialDirect: false, nickname: 'Fixture', atTargets: [], images: [], raw: {} }), async (_event, text) => {
       sent.push(text); return { outcome: 'confirmed_success', messageId: 'receipt' };
     });
     assert.equal(calls.length, 2); assert.ok(sent.some(text => String(text).includes('练得不错')));

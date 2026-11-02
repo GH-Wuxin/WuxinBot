@@ -1,11 +1,11 @@
 import crypto from 'node:crypto';
 /** Effective limits only; saved normal-mode settings are never overwritten. */
 export const tokenSaving = (db: any) => db?.settings?.tokenSavingMode === true;
-export const SAVING_PROFILE_INTERVAL_MS = 6 * 3600_000;
+export const SAVING_PROFILE_INTERVAL_MS = 12 * 3600_000;
 
 export function savingMemoryThresholds(db: any, thresholds: { minMessages: number; updateEvery: number; maxSamples: number }) {
-  return tokenSaving(db) ? { minMessages: Math.max(30, thresholds.minMessages * 3),
-    updateEvery: Math.max(120, thresholds.updateEvery * 4), maxSamples: Math.min(16, thresholds.maxSamples) } : thresholds;
+  return tokenSaving(db) ? { minMessages: Math.max(50, thresholds.minMessages * 5),
+    updateEvery: Math.max(240, thresholds.updateEvery * 8), maxSamples: Math.min(16, thresholds.maxSamples) } : thresholds;
 }
 
 export function savingMemoryDue(db: any, memory: any, thresholds: { minMessages: number; updateEvery: number }, hasProfile: boolean, now = Date.now()) {
