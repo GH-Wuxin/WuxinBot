@@ -468,6 +468,7 @@ const initialDb = {
     globalPaused: false,
     socialV2Enabled: false,
     tokenSavingMode: false,
+    presenceEnabled: false,
     socialMaxAssessmentsPerHour: 60,
     llmProvider: process.env.LLM_PROVIDER || 'deepseek',
     apiKey: process.env.LLM_API_KEY || process.env.DEEPSEEK_API_KEY || '',

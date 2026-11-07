@@ -132,6 +132,7 @@ import { handleOwnerCommand } from './bot/ownerCommands.js';
 import { matchQuickCommand, handleQuickCommand } from './bot/quickRouter.js';
 import { cqImageFor, pickCodeSticker, pickSticker, withSticker } from './bot/stickers/index.js';
 import { rollRandomImage } from './bot/randomImages.js';
+import { observeMessage } from './bot/presence.js';
 import {
   beginLiveStickerDebug,
   stickerDebugShouldDryRun,
@@ -562,6 +563,9 @@ async function processIncomingInner(event, sendMessage = undefined) {
   event.socialNamed = mentioned && !isDirectBotMention(event, settings);
   event.socialDirect = event.type === 'private' || isDirectBotMention(event, settings)
     || settings.socialV2Enabled !== true && mentioned;
+  // Presence observes every eligible group message in the background. It never
+  // replies and never blocks the inbound path.
+  if (event.type === 'group') observeMessage(event);
   // On the first pass the message + decision are recorded and side effects
   // (memory, XP, pair/profile pending) run exactly once. Drained replays use
   // the stored decision and must NOT duplicate history or side effects.

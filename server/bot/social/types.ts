@@ -76,9 +76,74 @@ export interface OwnerDirective {
   active: boolean;
   createdAt: string;
 }
+export interface PresenceSelf {
+  mood: { label: string; reason: string; updatedAt: string };
+  valence: number;
+  energy: number;
+  interest: number;
+  focus: string[];
+  updatedAt: string;
+}
+
+export interface PresencePerson {
+  userId: string;
+  impression: string;
+  warmth: number;
+  familiarity: number;
+  lastSeenAt: string;
+  evidenceIds: string[];
+}
+
+export interface PresenceObservation {
+  id: string;
+  messageIds: string[];
+  topic: string;
+  sentiment: string;
+  salience: number;
+  noticed: string;
+  createdAt: string;
+}
+
+export interface PresenceThread {
+  id: string;
+  topic: string;
+  participants: string[];
+  status: 'open' | 'closed';
+  note: string;
+  evidenceIds: string[];
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface PresenceCulture {
+  phrase: string;
+  meaning: string;
+  strength: number;
+  evidenceIds: string[];
+  updatedAt: string;
+}
+
+export interface PresenceGroup {
+  groupId: string;
+  people: Record<string, PresencePerson>;
+  threads: PresenceThread[];
+  culture: PresenceCulture[];
+  observations: PresenceObservation[];
+  noticing: string[];
+  updatedAt: string;
+}
+
+export interface PresenceState {
+  version: 1;
+  self: PresenceSelf;
+  groups: Record<string, PresenceGroup>;
+  updatedAt: string;
+}
+
 export interface SocialState {
   self?: PippiSelf;
   activity?: PippiActivityState;
+  presence?: PresenceState;
   schemaVersion: 1;
   revision: number;
   people: Record<string, SocialPerson>;

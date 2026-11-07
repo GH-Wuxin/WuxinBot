@@ -22,6 +22,7 @@ import { getInboundAdmissionStats, stopInboundAdmission, waitForInboundTasks } f
 import { getLlmAdmissionStats } from './llmPolicy.js';
 import { getKbHealth } from './bot/knowledgeBase.js';
 import { randomImageDir, randomImageSnapshot } from './bot/randomImages.js';
+import { presenceSnapshot } from './bot/presence.js';
 import { getGroupProfile, updateGroupProfile, clearGroupProfile } from './bot/groupProfile.js';
 import { getRelationshipProfile, updateRelationshipProfile, clearRelationshipProfile, isSubstantiveRelationshipProfile } from './bot/relationshipProfile.js';
 import { getMemoryProfileQueueStatus, maybeUpdateMemoryProfile } from './bot/memory.js';
@@ -352,6 +353,10 @@ function compactDbResponse(db = readDb()) {
 }
 
 mountSocialApi(app);
+
+app.get('/api/presence', (_req, res) => {
+  res.json(ok(presenceSnapshot(readDb())));
+});
 
 app.get('/api/state', (_req, res) => {
   // Samples are only needed after opening a specific memory in the console.

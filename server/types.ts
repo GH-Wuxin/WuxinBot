@@ -44,6 +44,7 @@ export interface DbSettings {
   globalPaused: boolean;
   socialV2Enabled?: boolean;
   tokenSavingMode?: boolean;
+  presenceEnabled?: boolean;
   socialMaxAssessmentsPerHour?: number;
   apiKey: string;
   apiBaseUrl: string;
