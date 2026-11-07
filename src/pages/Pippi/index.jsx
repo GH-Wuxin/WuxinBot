@@ -197,7 +197,7 @@ export function PippiPage({ db, onNavigate }) {
             <div><h2>{person.nickname}</h2><small>{person.userId}</small></div>
             <strong>{score(person)}</strong>
           </div>
-          <p className="pippi-note">熟悉程度 {Number(person.familiarity || 0).toFixed(1)} · 好感 {score(person)} · 本群已有 {selected?.people?.length || 0} 位成员记录</p>
+          <p className="pippi-note">熟悉程度 {Number(person.familiarity || 0).toFixed(1)} · 好感 {score(person)} · 本群已有 {selected?.ranking?.total || 0} 位成员记录</p>
           <div className="pippi-mood-box">
             <span>最近情绪</span>
             <strong>{person.view?.mood?.label || '尚未判断'}</strong>
