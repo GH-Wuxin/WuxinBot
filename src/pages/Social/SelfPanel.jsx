@@ -26,6 +26,7 @@ export function SelfPanel({ db, scope, saveSettings, refreshState }) {
     finally { setBusy(false); }
   };
   const activity = data?.activity;
+  const unlimitedTokens = db.settings.presenceEnabled === true;
   return <Card className="pippi-self">
     <div className="pippi-self-heading"><div><h2>Pippi 的近况与经历</h2><p>她最近在意的事，来自实际阅读和交流。</p></div><Button disabled={busy} onClick={load}>刷新</Button></div>
     {error && <p className="social-error" role="alert">{error}</p>}
@@ -41,14 +42,17 @@ export function SelfPanel({ db, scope, saveSettings, refreshState }) {
       <section><h3>自主阅读</h3>
         <Switch checked={db.settings.pippiActivityEnabled === true} label="允许自主阅读" description="先取新资料，再由 Pippi 选择；关闭后保留已有经历。"
           disabled={busy} onChange={e => { const enabled = e.target.checked; void mutate(() => saveSettings({ pippiActivityEnabled: enabled })); }} />
-        <div className="pippi-activity-settings"><Input label="后台每日 Token 额度" type="number" min="1000" max="100000" value={budget} onChange={e => setBudget(e.target.value)} />
-          <Input label="每日最多唤醒" type="number" min="1" max="6" value={wakes} onChange={e => setWakes(e.target.value)} /></div>
+        <div className="pippi-activity-settings"><Input label={unlimitedTokens ? '后台每日 Token 额度（常驻感知下不设上限）' : '后台每日 Token 额度'} type="number" min="1000" max="2000000" value={budget} disabled={unlimitedTokens} onChange={e => setBudget(e.target.value)} />
+          <Input label="每日最多唤醒" type="number" min="1" max="144" value={wakes} onChange={e => setWakes(e.target.value)} /></div>
         <Input label="偏好论坛板块 ID（最多三个，可留空）" value={forums} onChange={e => setForums(e.target.value)} />
         <p className="social-note">留空时 Pippi 会从 osu! 完整论坛目录里自己选；填了则优先抓这些板块。</p>
+        <p className="social-note">{unlimitedTokens ? '常驻感知开启：自主阅读不设 Token 上限，保留每日唤醒次数和单次输出上限。' : '常驻感知关闭时，按上面的每日 Token 额度执行。'}</p>
         <Button disabled={busy} onClick={() => mutate(() => saveSettings({ pippiActivityDailyTokens: Number(budget), pippiActivityMaxWakes: Number(wakes),
           pippiActivityForumIds: forums.trim() ? forums.split(/[,，\s]+/).map(Number) : [] }))}>保存活动设置</Button>
         <p>{activity?.blockedReason || (activity?.busy ? '正在阅读或整理' : '等待合适的活动机会')}</p>
-        <p className="social-note">今日额度已用 {Number(activity?.tokens || 0).toLocaleString()} / {Number(activity?.dailyTokens || 30000).toLocaleString()} Token；
+        <p className="social-note">{unlimitedTokens
+          ? `常驻感知开启：不设 Token 上限，今日已用 ${Number(activity?.tokens || 0).toLocaleString()} Token`
+          : `今日额度已用 ${Number(activity?.tokens || 0).toLocaleString()} / ${Number(activity?.dailyTokens || 30000).toLocaleString()} Token`}；
           其中未知用量保守计入 {Number(activity?.unknownTokens || 0).toLocaleString()}，在途预留 {Number(activity?.reservedTokens || 0).toLocaleString()}。</p>
         <p className="social-note">唤醒 {activity?.wakes || 0} / {activity?.maxWakes || 3} 次 · 待看 {activity?.pending || 0} 条 · 最早再看：{date(activity?.nextWakeAt)}</p>
         <p className="social-note">{activity?.lastOutcome || '尚无自主活动'}。输入、输出、思考和重试均计入；前台聊天用量另计。</p>

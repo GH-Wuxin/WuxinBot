@@ -113,6 +113,17 @@ try {
     assert.equal(calls, 1); assert.ok(ledger().unknownTokens > 2048); assert.deepEqual(ledger().reservations, {});
     assert.equal(ledger().wakes, 1);
   });
+  await test('presence mode removes the autonomous reading token cap', async () => {
+    seed({ presenceEnabled: true, pippiActivityDailyTokens: 1000 });
+    updateDb(db => {
+      const key = activityDay(now);
+      const activity = readPippiActivity(db);
+      activity.days[key] = { tokens: 1000, unknownTokens: 0, wakes: 0, reservations: {}, shares: {} };
+    });
+    await runPippiActivityCycle({ search, execute, invoke: reading() }, now);
+    assert.equal(readPippiSelf(readDb()).experiences.length, 1);
+    assert.equal(pippiActivityStatus(readDb(), now).unlimitedTokens, true);
+  });
   await test('three calls and two tools bound a model that keeps requesting tools', async () => {
     seed({ pippiActivityDailyTokens: 100000 }); let calls = 0, tools = 0;
     await runPippiActivityCycle({ search, execute: async () => { tools++; return execute(); }, invoke: async () => {

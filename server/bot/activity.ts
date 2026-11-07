@@ -14,7 +14,7 @@ import { commitSelfProposal, markExperienceShared, normalizePippiSelf, readPippi
   SELF_PROPOSAL_GUIDANCE, type PippiActivityDay, type SelfEvidence } from './social/self.js';
 import type { SocialEvent } from './social/types.js';
 
-const POLL_MS = 30 * 60_000, WAKE_GAP_MS = 4 * 3600_000;
+const POLL_MS = 10 * 60_000, WAKE_GAP_MS = 10 * 60_000;
 const MAX_CALLS = 3, MAX_TOOLS = 2, COMPLETION_BUDGET = 2048;
 let timer: ReturnType<typeof setInterval> | undefined;
 let stopped = false, busy = false;
@@ -28,9 +28,10 @@ const reserved = (day: PippiActivityDay) => Object.values(day.reservations).redu
 const integer = (value: unknown, fallback: number, min: number, max: number) => Math.max(min, Math.min(max, Math.floor(Number(value) || fallback)));
 
 export function pippiActivityConfig(db: any) {
-  return { enabled: db.settings.pippiActivityEnabled === true,
-    dailyTokens: integer(db.settings.pippiActivityDailyTokens, 30000, 1000, 100000),
-    maxWakes: integer(db.settings.pippiActivityMaxWakes, 3, 1, 6),
+  const unlimitedTokens = db.settings.presenceEnabled === true;
+  return { enabled: db.settings.pippiActivityEnabled === true, unlimitedTokens,
+    dailyTokens: integer(db.settings.pippiActivityDailyTokens, 30000, 1000, 2_000_000),
+    maxWakes: integer(db.settings.pippiActivityMaxWakes, 3, 1, 144),
     forumIds: [...new Set<number>((db.settings.pippiActivityForumIds || []).filter(id => Number.isSafeInteger(id) && id > 0 && id <= 1_000_000))].slice(0, 3) };
 }
 function note(status: string, detail: string, extra: { tokens?: number; unknown?: boolean } = {}) {
@@ -60,7 +61,8 @@ export function reserveActivityTokens(amount: number, now = Date.now()) {
   const key = activityDay(now), id = crypto.randomUUID();
   updateDb(db => {
     const current = readPippiActivity(db).days[key] || emptyDay();
-    if (current.tokens + reserved(current) + amount > pippiActivityConfig(db).dailyTokens) throw new Error('ACTIVITY_DAILY_BUDGET');
+    const config = pippiActivityConfig(db);
+    if (!config.unlimitedTokens && current.tokens + reserved(current) + amount > config.dailyTokens) throw new Error('ACTIVITY_DAILY_BUDGET');
     ensureDay(db, key).reservations[id] = amount;
   });
   return { day: key, id, amount };
@@ -197,7 +199,7 @@ export async function runPippiActivityCycle(deps: Dependencies = {}, now = Date.
       const config = pippiActivityConfig(db), day = state.days[activityDay(now)] || emptyDay();
       if (!state.pending.length && !readPippiSelf(db).focus.some(f => f.scope === 'public')) { note('skipped', '没有新资料或待追踪的公开关注'); return; }
       if (day.wakes >= config.maxWakes || state.lastWakeAt && now - Date.parse(state.lastWakeAt) < WAKE_GAP_MS) return;
-      if (day.tokens + reserved(day) >= config.dailyTokens) { note('skipped', '今日后台 Token 额度已用完'); return; }
+      if (!config.unlimitedTokens && day.tokens + reserved(day) >= config.dailyTokens) { note('skipped', '今日后台 Token 额度已用完'); return; }
       const admission = getLlmAdmissionStats();
       if (admission.active || admission.waiting || Object.values(socialCoordinator.stats).some(room => room.locked || room.queued)) { note('skipped', '前台或其他后台任务正在使用模型，稍后再看'); return; }
       if (db.settings.llmProvider === 'codex-app-server') { note('skipped', '当前模型通道不支持本活动的单次输出上限'); return; }
