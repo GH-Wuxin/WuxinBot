@@ -157,7 +157,15 @@ try {
     });
     await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
     try {
-      updateDb(db => { db.settings.apiBaseUrl = `http://127.0.0.1:${server.address().port}/v1`; });
+      updateDb(db => {
+        const base = `http://127.0.0.1:${server.address().port}/v1`;
+        db.settings.apiBaseUrl = base;
+        // provider=deepseek resolves through the DeepSeek profile, so the
+        // fixture base must be set there too; otherwise the test would call
+        // the real endpoint with a fixture key.
+        db.settings.deepseekApiBaseUrl = base;
+        db.settings.deepseekApiKey = 'fixture';
+      });
       const options = { messages: [{ role: 'user', content: 'fixture' }], thinking: { type: 'enabled' }, reasoning_effort: 'low',
         completionBudget: 2048, requestMaxRetries: 0, retryOnEmpty: false };
       await completeChat(readDb(), options); assert.equal(bodies.length, 1);
