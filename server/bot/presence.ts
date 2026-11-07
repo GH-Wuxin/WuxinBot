@@ -722,6 +722,21 @@ export function presenceSnapshot(db: any = readDb()) {
       threads: group.threads.filter((thread) => thread.status === 'open').length,
       culture: group.culture.length,
       observations: group.observations.length,
+      peopleDetails: Object.values(group.people)
+        .sort((a, b) => b.warmth - a.warmth)
+        .slice(0, 8)
+        .map((person) => ({
+          userId: person.userId,
+          impression: person.impression,
+          warmth: Math.round(person.warmth),
+          familiarity: Math.round(person.familiarity),
+          lastSeenAt: person.lastSeenAt,
+        })),
+      cultureDetails: group.culture.slice(0, 6).map((item) => ({
+        phrase: item.phrase,
+        meaning: item.meaning,
+        strength: item.strength,
+      })),
       recent: group.observations.slice(-8).map((item) => ({
         messageIds: item.messageIds,
         noticed: item.noticed,

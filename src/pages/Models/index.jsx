@@ -51,6 +51,7 @@ export function ModelsPage({ db, saveSettings }) {
   const [section, setSection] = useState('account');
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState('');
+  const [presenceView, setPresenceView] = useState(null);
 
   useEffect(() => {
     if (!dirty) setDraft(db.settings);
@@ -76,6 +77,19 @@ export function ModelsPage({ db, saveSettings }) {
       });
     return () => { cancelled = true; };
   }, [draft.llmProvider, draft.apiBaseUrl]);
+
+  useEffect(() => {
+    if (draft.presenceEnabled !== true || section !== 'conversation') return;
+    let cancelled = false;
+    const load = () => {
+      api('/api/presence', { timeoutMs: 10000 })
+        .then((result) => { if (!cancelled) setPresenceView(result); })
+        .catch(() => { if (!cancelled) setPresenceView(null); });
+    };
+    load();
+    const timer = setInterval(load, 15000);
+    return () => { cancelled = true; clearInterval(timer); };
+  }, [draft.presenceEnabled, section]);
 
   const updateDraft = (next) => {
     setDirty(true);
@@ -203,6 +217,10 @@ export function ModelsPage({ db, saveSettings }) {
   const loginView = codexLoginView(codexStatus);
   const windows = quotaWindows(codexLimits);
   const setNumber = (field) => (event) => updateDraft({ [field]: Number(event.target.value) });
+  const presenceGroups = presenceView?.groups
+    ? Object.entries(presenceView.groups).filter(([, group]) => Number(group.observations || 0) > 0 || Number(group.people || 0) > 0)
+    : [];
+  const groupLabel = (groupId) => (db.groups || []).find((group) => String(group.groupId) === String(groupId))?.name || groupId;
 
   return <>
     <div className="page-head">
@@ -308,6 +326,23 @@ export function ModelsPage({ db, saveSettings }) {
             <div className="row-main"><div className="row-title">{title}</div><div className="row-sub">{sub}</div></div>
             <button type="button" className={'switch' + ((field === 'levelUpNotifyEnabled' ? draft[field] !== false : draft[field] === true) ? ' is-on' : '')} aria-label={title} onClick={() => updateDraft({ [field]: field === 'levelUpNotifyEnabled' ? draft[field] === false : draft[field] !== true })} />
           </div>)}
+        </div>}
+
+        {draft.presenceEnabled === true && section === 'conversation' && <div className="card" style={{ marginTop: 16 }}>
+          <div className="card-head"><span className="card-title">Pippi 最近看到了什么</span><span className="muted" style={{ fontSize: 12 }}>只读 · 不会直接发到群里</span></div>
+          {!presenceView ? <div className="note">正在读取常驻感知状态…</div> : <>
+            <div className="kv"><span>心情</span><b>{presenceView.self?.mood?.label || '平静'}</b></div>
+            <div className="kv"><span>精力 / 兴趣</span><b>{presenceView.self?.energy ?? '—'} / {presenceView.self?.interest ?? '—'}</b></div>
+            {presenceView.self?.focus?.length > 0 && <div className="kv"><span>最近在意</span><b>{presenceView.self.focus.join('；')}</b></div>}
+            {presenceGroups.length === 0 && <div className="note">还没有足够的群消息观察。</div>}
+            {presenceGroups.slice(0, 3).map(([groupId, group]) => <div key={groupId} style={{ marginTop: 12, paddingTop: 10, borderTop: '1px solid var(--line)' }}>
+              <div><b>{groupLabel(groupId)}</b> <span className="muted" style={{ fontSize: 12 }}>{group.people} 人 · {group.observations} 条观察</span></div>
+              {(group.recent || []).slice(-2).map((item, index) => <div className="note" key={index}>· {item.noticed}</div>)}
+              {(group.peopleDetails || []).slice(0, 2).filter((person) => person.impression).map((person) => <div className="muted" style={{ fontSize: 12 }} key={person.userId}>印象：{person.userId} · {person.impression}</div>)}
+              {(group.openThreads || []).slice(-2).map((thread) => <div className="muted" style={{ fontSize: 12 }} key={thread.id}>未完成：{thread.topic}{thread.note ? `（${thread.note}）` : ''}</div>)}
+              {(group.cultureDetails || []).slice(0, 2).map((item) => <div className="muted" style={{ fontSize: 12 }} key={item.phrase}>群梗：{item.phrase}{item.meaning ? `（${item.meaning}）` : ''}</div>)}
+            </div>)}
+          </>}
         </div>}
 
         {section === 'capabilities' && <>
