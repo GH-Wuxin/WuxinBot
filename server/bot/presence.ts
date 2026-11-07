@@ -204,20 +204,6 @@ function recentSelfMessages(db: any, groupId: string) {
     }));
 }
 
-function reconcileSelfThreads(group: PresenceGroup, selfMessages: { text: string; at: string }[]) {
-  if (!selfMessages.length) return;
-  const at = nowIso();
-  for (const thread of group.threads) {
-    if (thread.status !== 'open') continue;
-    const content = `${thread.topic} ${thread.note}`;
-    if (/pippi/i.test(content) && /(?:还没|没有|未).{0,8}(?:露面|出现|回应|说话|接)/.test(content)) {
-      thread.status = 'closed';
-      thread.note = 'Pippi 已经回应过。';
-      thread.updatedAt = at;
-    }
-  }
-}
-
 function shouldObserve(db: any, event: BotEvent): boolean {
   if (db?.settings?.presenceEnabled !== true) return false;
   if (db?.settings?.globalPaused) return false;
@@ -512,7 +498,6 @@ async function observeWithModel(db: any, state: PresenceState, group: PresenceGr
   });
   const parsed = parseObject(response?.text);
   applyObservations(state, group, parsed?.observations, batch);
-  reconcileSelfThreads(group, selfMessages);
   return Number(response?.usage?.total_tokens || 0);
 }
 
@@ -618,7 +603,6 @@ async function reflectWithModel(db: any, state: PresenceState, group: PresenceGr
       .filter((item): item is string => Boolean(item));
     group.noticing = [...new Set<string>(noticing)].slice(0, MAX_NOTICING);
   }
-  reconcileSelfThreads(group, selfMessages);
   group.observations = group.observations.slice(-80);
   group.updatedAt = at;
   state.updatedAt = at;

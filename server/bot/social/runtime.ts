@@ -134,18 +134,6 @@ async function assessSavingTurn(event: SocialEvent, invoke: typeof completeChat)
   }
 }
 
-function neutralizeCapabilityClaims(assessment: SocialAssessment): SocialAssessment {
-  // The assessment runs before tools and has no tool surface. It must not turn
-  // "I cannot see a data source here" into a durable relationship fact that is
-  // later injected into the reply prompt. Capability and data truth belong to
-  // the reply/tool stage; keep only the social judgment here.
-  const claim = (value: unknown) => /(?:没有|缺少|不具备|找不到)[^。；\n]{0,12}(?:接口|工具|数据源|数据来源)|无(?:接口|工具|数据源|数据来源)|查不到|无法(?:查询|查到)|不能(?:查询|查到)|需要[^。；\n]{0,10}(?:链接|主页)/.test(String(value || ''));
-  if (claim(assessment.reason)) assessment.reason = '本轮是明确请求；具体能力和数据由回复阶段处理。';
-  if (assessment.summary && claim(assessment.summary)) assessment.summary = null;
-  if (assessment.mood && (claim(assessment.mood.label) || claim(assessment.mood.reason))) assessment.mood = null;
-  return assessment;
-}
-
 export async function assessSocialTurn(event: SocialEvent, phase: 'initial' | 'resumed' = 'initial', invoke = completeChat) {
   const db = readDb();
   if (!socialEntryAllowed(db, event, Boolean(event.socialDirect)) || isReplyProcessAborted()) return null;
@@ -179,7 +167,7 @@ export async function assessSocialTurn(event: SocialEvent, phase: 'initial' | 'r
     ...thinkingParamsForLevel('low', reasoningEnabledFor(db)),
     responseFormat: { type: 'json_object' }, label: 'V2 社交评估', tracePurpose: 'social_assessment', traceRole: 'social' });
     tokens = Number(result.usage?.total_tokens || 0);
-    const assessment = neutralizeCapabilityClaims(parseSocialAssessment(result.text, [...new Set([...ids, ...timeline.map((m) => m.messageId)])], isSystemOwner(db, event), ids));
+    const assessment = parseSocialAssessment(result.text, [...new Set([...ids, ...timeline.map((m) => m.messageId)])], isSystemOwner(db, event), ids);
     if (event.socialNamed && assessment.addressee === 'bot') event.socialDirect = true;
     if (event.socialDirect && isSystemOwner(db, event)) assessment.action = 'reply';
     event.socialEngagement = event.socialDirect ? 'direct'

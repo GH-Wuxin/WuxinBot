@@ -175,7 +175,7 @@ try {
           text: JSON.stringify({
             self: { mood: { label: '平静', reason: '' }, energy: 60, interest: 50, valence: 50, focus: [] },
             people: [],
-            threads: [{ topic: 'pippi 的 LLM 功能怎么恢复', status: 'open', participants: ['10004'], note: '被点名的一方还没露面' }],
+            threads: [],
             culture: [], noticing: [],
           }),
           usage: { total_tokens: 1 },
@@ -187,9 +187,6 @@ try {
     assert.ok(captured.selfMessages.some(message => /我醒着呢/.test(message.text)));
     assert.match(system, /Pippi 就是你自己/);
     assert.match(system, /threads 里关于你的事/);
-    const stored = store.readDb().socialV2.presence.groups['20001'].threads.find(thread => /pippi/i.test(thread.topic));
-    assert.equal(stored.status, 'closed');
-    assert.match(stored.note, /已经回应/);
   });
 
   await test('prompt block is scoped, compact and forbids forced callbacks', async () => {

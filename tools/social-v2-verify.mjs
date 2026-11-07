@@ -253,27 +253,6 @@ await test('social prompt marks old mood as non-factual and defers to tool resul
   assert.match(prompt, /实际工具结果为准/);
   assert.match(prompt, /查不到/);
 });
-await test('assessment cannot turn a missing-tool guess into relationship state', async () => {
-  seed();
-  const e = event({ socialDirect: true, text: '我pp多少你帮我看看' });
-  const result = await runtime.assessSocialTurn(e, 'initial', async () => ({
-    text: JSON.stringify(assessment({
-      action: 'reply',
-      reason: '我没有 osu! 账号数据接口，需要如实说明查不到',
-      summary: '他让我查 pp，但我没有接口',
-      mood: { label: '想帮忙但确实查不到', reason: '手上没有 osu! 数据来源' },
-      evidenceIds: [e.messageId],
-    })),
-    usage: {},
-  }));
-  assert.equal(result.action, 'reply');
-  assert.doesNotMatch(result.reason, /查不到|没有.*接口/);
-  assert.equal(result.summary, null);
-  assert.equal(result.mood, null);
-  const view = state.readSocialView(store.readDb(), 'group:20001', e.userId);
-  assert.equal(view.mood.label, '尚未判断');
-  assert.doesNotMatch(view.lastReason, /查不到|没有.*接口/);
-});
 await test('bounded coordinator merges one speaker only and preserves async request identity', async () => {
   const queue = new SocialCoordinator(10), local = new AsyncLocalStorage(), seen = [];
   const run = async (e) => { seen.push({ userId: e.userId, text: e.text, context: local.getStore() }); await new Promise((r) => setTimeout(r, 10)); return { replied: true }; };
