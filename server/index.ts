@@ -23,6 +23,7 @@ import { getLlmAdmissionStats } from './llmPolicy.js';
 import { getKbHealth } from './bot/knowledgeBase.js';
 import { randomImageDir, randomImageSnapshot } from './bot/randomImages.js';
 import { presenceSnapshot } from './bot/presence.js';
+import { buildPippiOverview } from './bot/pippiOverview.js';
 import { getGroupProfile, updateGroupProfile, clearGroupProfile } from './bot/groupProfile.js';
 import { getRelationshipProfile, updateRelationshipProfile, clearRelationshipProfile, isSubstantiveRelationshipProfile } from './bot/relationshipProfile.js';
 import { getMemoryProfileQueueStatus, maybeUpdateMemoryProfile } from './bot/memory.js';
@@ -356,6 +357,13 @@ mountSocialApi(app);
 
 app.get('/api/presence', (_req, res) => {
   res.json(ok(presenceSnapshot(readDb())));
+});
+
+app.get('/api/pippi/overview', (req, res) => {
+  res.json(ok(buildPippiOverview(readDb(), {
+    groupId: String(req.query.groupId || ''),
+    userId: String(req.query.userId || ''),
+  })));
 });
 
 app.get('/api/state', (_req, res) => {

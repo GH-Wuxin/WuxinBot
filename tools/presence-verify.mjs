@@ -6,6 +6,7 @@ const directory = createTestDataDir('wuxin-presence');
 const store = await import('../server/store.ts');
 const socialState = await import('../server/bot/social/state.ts');
 const presence = await import('../server/bot/presence.ts');
+const overview = await import('../server/bot/pippiOverview.ts');
 
 store.ensureStore();
 const iso = () => new Date().toISOString();
@@ -243,6 +244,21 @@ try {
     assert.ok(stored.people['10003']);
     assert.equal(stored.people['99999'], undefined);
     assert.ok(stored.people['10003'].warmth < 51);
+  });
+  await test('pippi overview aggregates presence, self and relationship state', async () => {
+    seed();
+    presence.observeMessage(event({ messageId: 'm-overview', userId: '10003' }), { schedule: false });
+    await presence.flushPresence('20001', { invoke: observationInvoke });
+    const data = overview.buildPippiOverview(store.readDb(), { groupId: '20001', userId: '10003' });
+    assert.equal(data.ok, true);
+    assert.equal(data.identity.name, 'Pippi');
+    assert.equal(data.selected.groupId, '20001');
+    assert.equal(data.selected.scope, 'group:20001');
+    assert.ok(data.selected.presence);
+    assert.ok(Array.isArray(data.groups));
+    assert.ok(Array.isArray(data.selected.experiences));
+    assert.ok(Array.isArray(data.selected.ranking.entries));
+    assert.equal(data.self.energy, 60);
   });
 } finally {
   presence.resetPresenceRuntime();
