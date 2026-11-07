@@ -193,6 +193,31 @@ function presenceModel(db: any): string {
   return /-eco$/i.test(model) ? model.replace(/-eco$/i, '') : model;
 }
 
+function recentSelfMessages(db: any, groupId: string) {
+  return (db.messages || [])
+    .filter((message: any) => message.role === 'assistant'
+      && String(message.groupId) === String(groupId) && message.inContext !== false)
+    .slice(-4)
+    .map((message: any) => ({
+      text: String(message.content || '').slice(0, 240),
+      at: message.createdAt,
+    }));
+}
+
+function reconcileSelfThreads(group: PresenceGroup, selfMessages: { text: string; at: string }[]) {
+  if (!selfMessages.length) return;
+  const at = nowIso();
+  for (const thread of group.threads) {
+    if (thread.status !== 'open') continue;
+    const content = `${thread.topic} ${thread.note}`;
+    if (/pippi/i.test(content) && /(?:还没|没有|未).{0,8}(?:露面|出现|回应|说话|接)/.test(content)) {
+      thread.status = 'closed';
+      thread.note = 'Pippi 已经回应过。';
+      thread.updatedAt = at;
+    }
+  }
+}
+
 function shouldObserve(db: any, event: BotEvent): boolean {
   if (db?.settings?.presenceEnabled !== true) return false;
   if (db?.settings?.globalPaused) return false;
@@ -421,8 +446,10 @@ function applyObservations(state: PresenceState, group: PresenceGroup, observati
 }
 
 async function observeWithModel(db: any, state: PresenceState, group: PresenceGroup, batch: PendingMessage[], invoke: typeof completeChat) {
+  const selfMessages = recentSelfMessages(db, group.groupId);
   const payload = {
     now: nowIso(),
+    bot: { name: 'Pippi', userId: String(db.settings.selfQq || '').trim() || null },
     self: {
       mood: state.self.mood.label,
       valence: Math.round(state.self.valence),
@@ -430,6 +457,7 @@ async function observeWithModel(db: any, state: PresenceState, group: PresenceGr
       interest: Math.round(state.self.interest),
       focus: state.self.focus.slice(-4),
     },
+    selfMessages,
     group: {
       knownPeople: Object.values(group.people).slice(-12).map((person) => ({
         userId: person.userId,
@@ -459,8 +487,10 @@ async function observeWithModel(db: any, state: PresenceState, group: PresenceGr
         role: 'system',
         content: [
           '你是 Pippi 的后台观察层，不是回复者。只输出 JSON，不要写群聊回复。',
-          '你会看到一批群消息，以及 Pippi 当前的心情、精力、兴趣和本群已有印象。',
-          '记录她注意到了什么，以及这些消息对她和群友的微小影响。单条消息影响要小；没有值得注意的内容可以少输出或返回空数组。',
+          'Pippi 就是你自己，不是群里的第三个人。群友说「pippi」「叫你说话」「恢复 pippi 的 LLM」都是在说你；@ 的 QQ 等于 bot.userId 时也是在对你说。不要把关于 pippi 的话题记成别人的事。',
+          'selfMessages 是你（Pippi）最近在群里已经说过的话。判断话题有没有人接、谁还没露面时先看 selfMessages；你已经回应过就不要写「被点名的一方还没露面」。',
+          '你会看到一批群消息，以及你自己当前的心情、精力、兴趣和本群已有印象。',
+          '记录你自己注意到了什么，以及这些消息对你和群友的微小影响。单条消息影响要小；没有值得注意的内容可以少输出或返回空数组。',
           '只使用输入中真实存在的 messageId 和 userId；禁止编造事实、线下经历或输入中没有的信息。',
           '影响是缓慢累积的：moodDelta/energyDelta/interestDelta 在 -1..1，warmthDelta 在 -1..1，familiarityDelta 在 0..0.5。',
           '输出格式：{"observations":[{"messageIds":["..."],"topic":"","sentiment":"","salience":0.0,"noticed":"","moodDelta":0,"energyDelta":0,"interestDelta":0,"people":[{"userId":"","warmthDelta":0,"familiarityDelta":0,"impression":""}],"openThread":null,"culture":null}]}',
@@ -482,13 +512,16 @@ async function observeWithModel(db: any, state: PresenceState, group: PresenceGr
   });
   const parsed = parseObject(response?.text);
   applyObservations(state, group, parsed?.observations, batch);
+  reconcileSelfThreads(group, selfMessages);
   return Number(response?.usage?.total_tokens || 0);
 }
 
 async function reflectWithModel(db: any, state: PresenceState, group: PresenceGroup, invoke: typeof completeChat) {
   const observations = group.observations.slice(-40);
+  const selfMessages = recentSelfMessages(db, group.groupId);
   const payload = {
     now: nowIso(),
+    bot: { name: 'Pippi', userId: String(db.settings.selfQq || '').trim() || null },
     self: {
       mood: state.self.mood,
       valence: Math.round(state.self.valence),
@@ -496,6 +529,7 @@ async function reflectWithModel(db: any, state: PresenceState, group: PresenceGr
       interest: Math.round(state.self.interest),
       focus: state.self.focus.slice(-5),
     },
+    selfMessages,
     people: Object.values(group.people).slice(-20).map((person) => ({
       userId: person.userId,
       impression: person.impression,
@@ -524,7 +558,9 @@ async function reflectWithModel(db: any, state: PresenceState, group: PresenceGr
         role: 'system',
         content: [
           '你是 Pippi 的后台内化层，不是回复者。只输出 JSON。',
-          '根据最近的观察记录，缓慢更新 Pippi 的心情、精力、兴趣、对群友的印象、未完成话题和群文化。',
+          'Pippi 就是你自己，不是群里的第三个人。不要把关于 pippi 的话题记成别人的未完成话题。',
+          'selfMessages 是你（Pippi）最近在群里已经说过的话。threads 里关于你的事，如果 selfMessages 显示你已经回应过，应关闭或改写为已接上，不能保留「还没露面」。',
+          '根据最近的观察记录，缓慢更新你自己的心情、精力、兴趣、对群友的印象、未完成话题和群文化。',
           '变化必须缓慢、可衰减；不要因为一两条消息产生剧烈变化；没有证据不要新增事实。',
           '最多保留 8 个高显著性人物印象、6 个未完成话题、6 个群文化条目、5 条 noticing。',
           '输出格式：{"self":{"mood":{"label":"","reason":""},"energy":0,"interest":0,"valence":0,"focus":[""]},"people":[{"userId":"","impression":"","warmthDelta":0,"familiarityDelta":0}],"threads":[{"topic":"","status":"open|closed","participants":["userId"],"note":""}],"culture":[{"phrase":"","meaning":""}],"noticing":[""]}',
@@ -582,6 +618,7 @@ async function reflectWithModel(db: any, state: PresenceState, group: PresenceGr
       .filter((item): item is string => Boolean(item));
     group.noticing = [...new Set<string>(noticing)].slice(0, MAX_NOTICING);
   }
+  reconcileSelfThreads(group, selfMessages);
   group.observations = group.observations.slice(-80);
   group.updatedAt = at;
   state.updatedAt = at;
@@ -703,6 +740,7 @@ export function presencePromptBlock(db: any, event: BotEvent): string {
     threads.length ? `未完成话题：${threads.join('；')}` : '',
     culture.length ? `群里的梗/习惯：${culture.join('；')}` : '',
     '使用规则：只在当前话题真正相关时自然带出；不要为了证明你看到了而强行引用；不要每轮都提；不要解释记忆机制。',
+    '身份规则：Pippi 就是你自己；群里提到 pippi、叫你说话、恢复 pippi 的功能，都是在说你，不要当成第三个人。',
   ].filter(Boolean).join('\n');
 }
 

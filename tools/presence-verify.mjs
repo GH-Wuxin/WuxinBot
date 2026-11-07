@@ -126,6 +126,72 @@ try {
     assert.equal(snapshot.groups['20001'].people, 1);
   });
 
+  await test('presence knows Pippi is itself and sees its own recent replies', async () => {
+    seed();
+    store.updateDb(db => {
+      db.messages = (db.messages || []).filter(m => !(m.role === 'assistant' && String(m.groupId) === '20001'));
+      db.messages.push({
+        id: 'self-1', type: 'group', groupId: '20001', role: 'assistant', userId: 'bot',
+        nickname: '机器人', content: '嗯，我醒着呢', inContext: true, createdAt: new Date().toISOString(),
+      });
+    });
+    presence.observeMessage(event({
+      messageId: 'm-self-id', userId: '10004', nickname: 'Wuxin',
+      text: '所以我要在这个群恢复pippi的LLM功能了',
+    }), { schedule: false });
+    let captured; let system = '';
+    await presence.flushPresence('20001', {
+      invoke: async (_db, options) => {
+        captured = JSON.parse(options.messages.at(-1).content);
+        system = String(options.messages[0]?.content || '');
+        return { text: JSON.stringify({ observations: [] }), usage: { total_tokens: 1 } };
+      },
+    });
+    assert.equal(captured.bot.name, 'Pippi');
+    assert.equal(captured.bot.userId, '10002');
+    assert.ok(captured.selfMessages.some(message => /我醒着呢/.test(message.text)));
+    assert.match(system, /Pippi 就是你自己/);
+    assert.match(system, /selfMessages/);
+  });
+
+  await test('reflection also treats Pippi as self and sees its own replies', async () => {
+    seed();
+    store.updateDb(db => {
+      db.messages = (db.messages || []).filter(m => !(m.role === 'assistant' && String(m.groupId) === '20001'));
+      db.messages.push({
+        id: 'self-2', type: 'group', groupId: '20001', role: 'assistant', userId: 'bot',
+        nickname: '机器人', content: '嗯，我醒着呢', inContext: true, createdAt: new Date().toISOString(),
+      });
+    });
+    presence.observeMessage(event({ messageId: 'm-reflect-self' }), { schedule: false });
+    await presence.flushPresence('20001', { invoke: observationInvoke });
+    let captured; let system = '';
+    await presence.reflectPresence('20001', {
+      force: true,
+      invoke: async (_db, options) => {
+        captured = JSON.parse(options.messages.at(-1).content);
+        system = String(options.messages[0]?.content || '');
+        return {
+          text: JSON.stringify({
+            self: { mood: { label: '平静', reason: '' }, energy: 60, interest: 50, valence: 50, focus: [] },
+            people: [],
+            threads: [{ topic: 'pippi 的 LLM 功能怎么恢复', status: 'open', participants: ['10004'], note: '被点名的一方还没露面' }],
+            culture: [], noticing: [],
+          }),
+          usage: { total_tokens: 1 },
+        };
+      },
+    });
+    assert.equal(captured.bot.name, 'Pippi');
+    assert.equal(captured.bot.userId, '10002');
+    assert.ok(captured.selfMessages.some(message => /我醒着呢/.test(message.text)));
+    assert.match(system, /Pippi 就是你自己/);
+    assert.match(system, /threads 里关于你的事/);
+    const stored = store.readDb().socialV2.presence.groups['20001'].threads.find(thread => /pippi/i.test(thread.topic));
+    assert.equal(stored.status, 'closed');
+    assert.match(stored.note, /已经回应/);
+  });
+
   await test('prompt block is scoped, compact and forbids forced callbacks', async () => {
     seed();
     presence.observeMessage(event({ messageId: 'm-prompt' }), { schedule: false });
@@ -133,6 +199,7 @@ try {
     const block = presence.presencePromptBlock(store.readDb(), event({ messageId: 'm-current' }));
     assert.match(block, /你最近在群里注意到的/);
     assert.match(block, /不要为了证明/);
+    assert.match(block, /Pippi 就是你自己/);
     assert.match(block, /手感不错/);
     assert.doesNotMatch(block, /另一个群/);
     const other = presence.presencePromptBlock(store.readDb(), {
