@@ -24,6 +24,7 @@ import { getKbHealth } from './bot/knowledgeBase.js';
 import { randomImageDir, randomImageSnapshot } from './bot/randomImages.js';
 import { presenceSnapshot } from './bot/presence.js';
 import { buildPippiOverview } from './bot/pippiOverview.js';
+import { recoverInterruptedCommandLogs } from './bot/commands.js';
 import { getGroupProfile, updateGroupProfile, clearGroupProfile } from './bot/groupProfile.js';
 import { getRelationshipProfile, updateRelationshipProfile, clearRelationshipProfile, isSubstantiveRelationshipProfile } from './bot/relationshipProfile.js';
 import { getMemoryProfileQueueStatus, maybeUpdateMemoryProfile } from './bot/memory.js';
@@ -253,6 +254,7 @@ try {
 // Damage must never be answered by silently creating an empty database.
 try {
   openStore();
+  recoverInterruptedCommandLogs();
   // Restore the persisted pause state before OneBot can deliver new events.
   // This keeps the health snapshot and admission behavior consistent across
   // restarts while the operator is investigating a production incident.

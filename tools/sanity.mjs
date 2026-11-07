@@ -214,6 +214,7 @@ async function main() {
     const lastCommand = readDb().commandLogs.at(-1);
     assert(invalidRate.replied === true, 'invalid /w rate should reply');
     assert(lastCommand?.status === 'invalid', 'invalid /w rate should be logged as invalid');
+    assert(!readDb().commandLogs.some((log) => log.status === 'active'), 'completed commands should not leave active logs');
 
     console.log('sanity ok');
   } finally {

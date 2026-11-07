@@ -277,12 +277,18 @@ export interface CommandLogEntry {
   isWuxinCommand: boolean;
   userRoleId: string;
   userPolicy: string;
-  status: 'ok' | 'denied' | 'error' | 'ignored' | 'invalid';
+  status: 'active' | 'ok' | 'completed' | 'denied' | 'error' | 'ignored' | 'invalid' | 'timeout';
+  stage?: string;
+  outcome?: string;
   reason: string;
   errorMessage?: string;
   errorName?: string;
   errorStack?: string;
   latencyMs?: number;
+  startedAt?: string;
+  updatedAt?: string;
+  completedAt?: string;
+  progress?: { stage: string; at: string; detail?: string }[];
   createdAt: string;
 }
 

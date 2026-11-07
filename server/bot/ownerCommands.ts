@@ -8,6 +8,7 @@ import {
   userCommandRoleId,
   parseCommandMeta,
   writeCommandLog,
+  setCommandStage,
 } from './commands.js';
 import { readDb, updateDb } from '../store.js';
 import { getUserPolicy } from './gate.js';
@@ -59,6 +60,7 @@ function ownerCommandDeniedReply(db, permissionKey) {
 export async function handleOwnerCommand(event, sendMessage = undefined, permissions = { isOwner: true, isAdmin: false }) {
   const meta = parseCommandMeta(event, permissions);
   const startedAt = Date.now();
+  setCommandStage(event, 'running');
   try {
     const result: any = await runOwnerCommand(event, sendMessage, permissions);
     const reason = String(result?.reason || result?.text || result?.error || '').slice(0, 800);

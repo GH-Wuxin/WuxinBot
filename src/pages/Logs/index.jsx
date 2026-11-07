@@ -64,7 +64,12 @@ const avatarFor = (entry, botQq) => {
   return userAvatarUrl(entry?.userId || entry?.row?.message?.userId);
 };
 
-const entryStatusLabels = { replied: '已回复', active: '进行中', completed: '完成', failed: '失败', silent: '未回复', reply: '决定回复', unknown: '无状态', ok: '执行成功', denied: '权限拒绝', error: '执行失败', invalid: '参数有误', ignored: '已忽略' };
+const entryStatusLabels = { replied: '已回复', active: '进行中', completed: '完成', failed: '失败', silent: '未回复', reply: '决定回复', unknown: '无状态', ok: '执行成功', denied: '权限拒绝', error: '执行失败', invalid: '参数有误', ignored: '已忽略', timeout: '超时' };
+const commandStageLabels = {
+  received: '收到指令', parsed: '解析完成', permission: '权限检查', routing: '路由', running: '执行中',
+  waiting_external: '等待外部 Bot', waiting_model: '等待模型', sending: '发送结果',
+  completed: '完成', failed: '失败', error: '执行失败', denied: '权限拒绝', invalid: '参数有误', ignored: '已忽略', timeout: '超时', interrupted: '已中断',
+};
 const filters = [
   { value: 'all', label: '全部' },
   { value: 'replied', label: '已回复' },
@@ -87,6 +92,30 @@ const formatElapsed = (milliseconds) => {
   if (seconds < 60) return seconds + 's';
   return Math.floor(seconds / 60) + 'm ' + (seconds % 60) + 's';
 };
+
+function CommandProgress({ entry, now }) {
+  const log = entry?.log || {};
+  const active = entry?.status === 'active';
+  const startedAt = Date.parse(entry?.startedAt || log.startedAt || log.createdAt || '');
+  const elapsed = Number.isFinite(startedAt) ? Math.max(entry?.duration || 0, active ? now - startedAt : 0) : entry?.duration;
+  const progress = entry?.progress || log.progress || [];
+  return <>
+    <div className="note" style={{ marginTop: 12 }}>
+      <b>{active ? '正在执行' : (entryStatusLabels[entry?.status] || entry?.status || '状态未知')}</b>
+      {entry?.stage ? ` · ${commandStageLabels[entry.stage] || entry.stage}` : ''}
+      {elapsed != null ? ` · 已运行 ${formatElapsed(elapsed)}` : ''}
+    </div>
+    {progress.length > 0 && <div className="trace-timeline" style={{ marginTop: 10 }}>
+      {progress.map((step, index) => <div className="trace-event" key={`${step.stage}-${step.at}-${index}`}>
+        <div className="trace-event__head">
+          <strong>{commandStageLabels[step.stage] || step.stage}</strong>
+          <span>{stamp(step.at)}</span>
+        </div>
+        {step.detail && <div className="muted" style={{ fontSize: 12 }}>{step.detail}</div>}
+      </div>)}
+    </div>}
+  </>;
+}
 
 export function LogsPage({ db }) {
   const [logSearch, setLogSearch] = useState('');
@@ -182,6 +211,14 @@ export function LogsPage({ db }) {
       .finally(() => { if(alive) setHistoryLoading(false); });
     return () => { alive=false; controller.abort(); };
   }, [channel,filter,query,listPage,groupFilter,dateFilter,refreshKey]);
+  useEffect(() => {
+    if (channel !== 'commands') return undefined;
+    const timer = window.setInterval(() => {
+      snapshotRef.current = null;
+      setRefreshKey((value) => value + 1);
+    }, 2000);
+    return () => window.clearInterval(timer);
+  }, [channel]);
   const refreshHistory = () => { snapshotRef.current=null; setListPage(0); setRefreshKey(n=>n+1); };
   const traceResource = usePollingResource(
     async () => (await api('/api/request-traces?limit=80')).traces || [],
@@ -210,10 +247,10 @@ export function LogsPage({ db }) {
     || traces.some(trace=>Date.parse(trace.events?.at(-1)?.at || trace.startedAt)>history.asOf);
 
   useEffect(() => {
-    if (selected?.trace?.status !== 'active') return undefined;
+    if (selected?.trace?.status !== 'active' && selected?.status !== 'active') return undefined;
     const timer = window.setInterval(() => setNow(Date.now()), 1000);
     return () => window.clearInterval(timer);
-  }, [selected?.trace?.id, selected?.trace?.status]);
+  }, [selected?.id, selected?.trace?.id, selected?.trace?.status, selected?.status]);
 
   // 换一条记录就把阶段过滤清掉，免得看到上一个请求的筛选状态。
   useEffect(() => { setPhaseFilter(''); }, [selected?.id]);
@@ -296,7 +333,7 @@ export function LogsPage({ db }) {
         <div className="card-head">
           <span className="card-title">{channel === 'requests' ? '对话记录' : '指令记录'}</span>
           <div className="seg">
-            {filters.filter(item=>channel==='requests' || ['all','failed','slow'].includes(item.value)).map((item) => <button key={item.value} type="button" className={filter === item.value ? 'is-active' : ''} onClick={() => selectFilter(item.value)}>{item.label}</button>)}
+            {filters.filter(item=>channel==='requests' || ['all','active','failed','slow'].includes(item.value)).map((item) => <button key={item.value} type="button" className={filter === item.value ? 'is-active' : ''} onClick={() => selectFilter(item.value)}>{item.label}</button>)}
           </div>
         </div>
         <div className="muted" style={{ fontSize: 12, marginBottom: 8 }}>{history.total} 条 · 每页 {history.pageSize} 条 · 截至 {stamp(history.asOf)}</div>
@@ -338,6 +375,16 @@ export function LogsPage({ db }) {
             <span className={'chip' + (selected.blocked ? ' chip--amber' : selected.replied || selected.status === 'completed' || selected.status === 'ok' ? ' chip--mint' : selected.status === 'active' ? ' chip--amber' : '')}>{selected.blocked ? '阻断' : (entryStatusLabels[selected.status] || selected.status)}</span>
           </div>
           <div className="muted" style={{ fontSize: 12 }}>{stamp(selected.at)} · {groupLabel(selected.groupId)}{selected.row?.message?.userId ? ' · ' + selected.row.message.userId : ''}</div>
+          {channel === 'commands' && selected.log && <>
+            <CommandProgress entry={selected} now={now} />
+            <div className="note" style={{ marginTop: 8 }}>
+              <div><b>指令</b> {selected.log.command}{selected.log.subCommand ? ' ' + selected.log.subCommand : ''}</div>
+              <div>来源：{selected.log.source || '未知'} · 结果：{selected.log.outcome || selected.log.status || '未知'}</div>
+              {selected.log.reason && <div>原因：{selected.log.reason}</div>}
+              {selected.log.errorMessage && <div>错误：{selected.log.errorMessage}</div>}
+              {selected.log.rawText && <div>原文：{selected.log.rawText}</div>}
+            </div>
+          </>}
           <div className="log-conversation">
             {selected.row?.message ? <LogMessage message={selected.row.message} label="收到的消息" botQq={botQq}/> : <div className="note">{selected.row?.orphanReply ? '这条历史回复的原消息未保留，已保留回复正文；不会按时间猜测关联。' : selected.preview || '原消息未保留'}</div>}
             {(selected.row?.replies || []).map(reply=><LogMessage key={reply.id} message={reply} label="Pippi 回复" botQq={botQq}/>)}

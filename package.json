@@ -78,7 +78,7 @@
     "social:v2:verify": "node --import tsx --test tools/social-v2-verify.mjs tools/pippi-self-verify.mjs tools/pippi-activity-verify.mjs && node tools/pippi-self-ui-verify.mjs",
     "social:v2:replay": "node --import tsx tools/social-v2-replay.mjs",
     "osu:retirement:verify": "node --import tsx tools/osu-analyze-retirement-verify.mjs",
-    "logs:verify": "node --import tsx tools/logs-verify.mjs && node --import tsx tools/logs-ui-verify.mjs",
+    "logs:verify": "node --import tsx tools/command-progress-verify.mjs && node --import tsx tools/logs-verify.mjs && node --import tsx tools/logs-ui-verify.mjs",
     "presence:verify": "node --import tsx --test tools/presence-verify.mjs",
     "token-saving:verify": "node --import tsx --test tools/token-saving-verify.mjs && node tools/token-saving-ui-verify.mjs"
   },

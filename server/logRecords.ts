@@ -138,8 +138,15 @@ export function queryLogEntries(db: RecordLike, traces: RecordLike[], query: Rec
     tally.tokens += Number(u.totalTokens || 0); if(u.model)tally.models.add(u.model); usage.set(id,tally);
   }
   let entries: RecordLike[] = channel === 'commands'
-    ? (db.commandLogs || []).filter((l: RecordLike)=>before(l)).map((log: RecordLike)=>({id:'command:'+log.id,log,title:[log.command || '未知指令',log.subCommand].filter(Boolean).join(' '),
-      groupId:log.groupId,userId:log.userId,messageType:log.type,preview:log.reason || log.errorMessage || log.rawText,at:log.createdAt,status:log.status || 'unknown',duration:log.latencyMs ?? null,tokens:null}))
+    ? (db.commandLogs || []).filter((l: RecordLike)=>before(l)).map((log: RecordLike)=>{
+      const status = log.status || log.outcome || 'unknown';
+      const startedAt = log.startedAt || log.createdAt;
+      const duration = log.latencyMs ?? (status === 'active' ? Math.max(0, now - Date.parse(startedAt)) : null);
+      return { id:'command:'+log.id,log,title:[log.command || '未知指令',log.subCommand].filter(Boolean).join(' '),
+        groupId:log.groupId,userId:log.userId,messageType:log.type,preview:log.reason || log.errorMessage || log.detail || log.rawText,
+        at:log.createdAt,startedAt,updatedAt:log.updatedAt || log.createdAt,completedAt:log.completedAt || null,
+        stage:log.stage || '',progress:log.progress || [],status,duration,tokens:null };
+    })
     : buildRequestEntries(correlateChatRecords(messages,decisions),snapshotTraces).filter(entry=>entry.row);
   entries=entries.map((e):RecordLike=>{const u=usage.get(key(e.groupId,e.requestId));return {...e,groupName:groups.get(String(e.groupId)) || '',...(u?{tokens:u.tokens,models:[...u.models]}:{})};})
     .filter(e=>millis(e.at)>=from && millis(e.at)<=to && (!query.group || (query.group==='__private' ? e.messageType==='private' : String(e.groupId)===query.group)));

@@ -7,7 +7,7 @@
 // LLM pipeline so the group experience never regresses.
 import { updateDb } from '../store.js';
 import { getGroup, getUserPolicy } from './gate.js';
-import { commandDeniedReply, writeCommandLog } from './commands.js';
+import { commandDeniedReply, writeCommandLog, setCommandStage } from './commands.js';
 import { withSticker } from './stickers/index.js';
 import {
   executeInternalBotCommand,
@@ -460,6 +460,7 @@ async function handleQuickCommandInner(
   traceId?: string | null,
 ): Promise<{ handled: boolean; replied?: boolean; reason?: string }> {
   const { def } = match;
+  setCommandStage(event, 'permission');
   // BP commands accept an @ target in several shapes. OneBot commonly leaves a
   // literal CQ at segment in args; if it is parsed as a username, the bridge
   // sends that code to Yumu and the real target is lost. Normalize it before
@@ -494,13 +495,6 @@ async function handleQuickCommandInner(
 
   // Admin-gated commands.
   const meta = finalizeQuickDef(def);
-  if ((meta.permission === 'group_admin' || def.kind === 'admin') && !permissions.isOwner && !permissions.isAdmin) {
-    const reply = commandDeniedReply(db, 'admin');
-    // 权限拒绝：附 no_permission 表情。图由代码直接触发，不经过 LLM。
-    if (sendMessage) await sendMessage(event, withSticker(reply, 'no_permission'));
-    return { handled: true, replied: true, reason: '权限不足' };
-  }
-
   const log = (outcome: string, detail = '') => {
     try {
       writeCommandLog(event, {
@@ -514,6 +508,14 @@ async function handleQuickCommandInner(
       }, { outcome, detail, source: def.source, implemented: meta.execution.kind !== 'documentation_only' });
     } catch { /* logging is non-fatal */ }
   };
+  if ((meta.permission === 'group_admin' || def.kind === 'admin') && !permissions.isOwner && !permissions.isAdmin) {
+    const reply = commandDeniedReply(db, 'admin');
+    // 权限拒绝：附 no_permission 表情。图由代码直接触发，不经过 LLM。
+    if (sendMessage) await sendMessage(event, withSticker(reply, 'no_permission'));
+    log('denied', '权限不足');
+    return { handled: true, replied: true, reason: '权限不足' };
+  }
+  setCommandStage(event, 'running', def.id);
 
   // Context memory: quick replies bypass the LLM pipeline and are normally
   // invisible to pippi. Record the query + a compact factual summary into
@@ -716,6 +718,7 @@ async function handleQuickCommandInner(
       const bridgeTimeout = def.source === 'lazybot' ? 30_000 : def.source === 'hydrant' ? 25_000 : 60_000;
       if (traceId) markLatencySpan(traceId, 'bridge_request_start', { source: def.source });
       bridgeAlreadyAttemptedFor = def.source;
+      setCommandStage(event, 'waiting_external', def.source);
       const reply = await callLocalBot(def.source, bridgeCommand, bridgeContext, bridgeTimeout);
       if (traceId) markLatencySpan(traceId, 'bridge_response', { source: def.source, frames: reply?.frames });
       // Bridge replies are the original bot's own output: keep text and images
@@ -745,6 +748,7 @@ async function handleQuickCommandInner(
         }
         try {
           if (traceId) markLatencySpan(traceId, 'send_start', { channel: 'bridge' });
+          setCommandStage(event, 'sending');
           if (sendMessage) await sendMessage(event, payload);
           if (traceId) markLatencySpan(traceId, 'send_resolved', { channel: 'bridge' });
         } catch (deliveryError: any) {

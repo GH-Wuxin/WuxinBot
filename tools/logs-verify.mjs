@@ -50,5 +50,13 @@ db.messages.push(user('private','private',{type:'private',createdAt:iso(200)}));
 assert.equal(queryLogEntries(db,[],{group:'__private'},time+2000).total,1);
 db.commandLogs.push({id:'cmd',command:'/w',subCommand:'info',groupId:'g',status:'error',rawText:'command fixture',createdAt:iso(100)});
 assert.equal(queryLogEntries(db,[],{channel:'commands',filter:'failed'},time+2000).total,1);
+db.commandLogs.push({id:'cmd-live',command:'quick:p',groupId:'g',status:'active',stage:'waiting_external',startedAt:iso(2000),createdAt:iso(2000),
+  progress:[{stage:'received',at:iso(2000)},{stage:'waiting_external',at:iso(2500)}]});
+const live=queryLogEntries(db,[],{channel:'commands',filter:'active'},time+8000);
+assert.equal(live.total,1);
+assert.equal(live.entries[0].status,'active');
+assert.equal(live.entries[0].stage,'waiting_external');
+assert.ok(live.entries[0].duration>=6000);
+assert.equal(live.entries[0].progress.length,2);
 for(const q of [{page:-1},{pageSize:1000},{asOf:'nope'},{from:500,to:1},{q:'x'.repeat(201)},{channel:'other'},{filter:'bogus'},{group:['g']}]) assert.throws(()=>queryLogEntries(db,[],q,time+2000));
 console.log('PASS retained-history search, reply-text search, stable pages, date/group filters, ledger deduplication and validation');

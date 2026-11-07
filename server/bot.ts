@@ -32,7 +32,10 @@ import {
   hasCommandPermission,
   commandDeniedReply,
   parseCommandMeta,
-  writeCommandLog
+  writeCommandLog,
+  beginCommandLog,
+  setCommandStage,
+  completeCommandLog
 } from './bot/commands.js';
 import {
   buildPrompt,
@@ -465,6 +468,8 @@ async function processIncomingInner(event, sendMessage = undefined) {
     const privateQuick = matchQuickCommand(event);
     const isLazyQuick = privateQuick?.def.source === 'lazybot' && privateQuick.def.id !== 'help';
     if (!isLazyQuick) {
+      beginCommandLog(event, parseCommandMeta(event, { isOwner: true, isAdmin: true }), 'received');
+      setCommandStage(event, 'running');
       return handleOwnerCommand(event, sendMessage);
     }
   }
@@ -540,6 +545,8 @@ async function processIncomingInner(event, sendMessage = undefined) {
   }
 
   if (event.type === 'group' && isWuxinCommandText) {
+    beginCommandLog(event, parseCommandMeta(event, { isOwner: isGroupOwner, isAdmin: isGroupAdmin }), 'received');
+    setCommandStage(event, 'running');
     return handleOwnerCommand(event, sendMessage, { isOwner: isGroupOwner, isAdmin: isGroupAdmin });
   }
 
@@ -549,12 +556,29 @@ async function processIncomingInner(event, sendMessage = undefined) {
   // `查 @某人 的 BP 类型` must not be consumed as Hydrant's generic 查@资料.
   const quickMatch = detectedQuickMatch;
   if (quickMatch) {
-    const quickResult = await handleQuickCommand(event, sendMessage, db, quickMatch, {
-      isOwner: isGroupOwner || isPrivateOwner,
-      isAdmin: isGroupAdmin,
-    });
-    if (quickResult?.handled) {
-      return quickResult;
+    beginCommandLog(event, {
+      prefix: quickMatch.prefix,
+      command: `quick:${quickMatch.def.id}`,
+      subCommand: '',
+      isWuxinCommand: false,
+      rawText: String(event.text || '').slice(0, 600),
+      userRoleId: '',
+      userPolicy: groupUserPolicy.policy || 'normal',
+    }, 'received');
+    setCommandStage(event, 'running');
+    try {
+      const quickResult = await handleQuickCommand(event, sendMessage, db, quickMatch, {
+        isOwner: isGroupOwner || isPrivateOwner,
+        isAdmin: isGroupAdmin,
+      });
+      if (quickResult?.handled) {
+        completeCommandLog(event, 'ok', quickResult.reason || '已处理');
+        return quickResult;
+      }
+      completeCommandLog(event, 'ignored', quickResult?.reason || '转为普通对话');
+    } catch (error: any) {
+      completeCommandLog(event, 'error', String(error?.message || error).slice(0, 1200));
+      throw error;
     }
   }
 
