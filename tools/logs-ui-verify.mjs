@@ -46,9 +46,10 @@ try{
  assert.equal(await page.locator('.log-item').count(),8);assert.equal(await page.locator('.log-item .log-reply-preview').count(),8);
  assert.equal(await page.getByText('收到的消息',{exact:true}).count(),1);assert.equal(await page.getByText('Pippi 回复',{exact:true}).count(),1);
  await page.waitForFunction(()=>{const b=[...document.querySelectorAll('button')].find(x=>x.textContent.trim()==='下一页');return b&&!b.disabled;});
+ const nextResponse=page.waitForResponse(response=>{const url=new URL(response.url());return url.pathname==='/api/logs'&&url.searchParams.get('page')==='1';},{timeout:60000});
  await page.getByRole('button',{name:'下一页',exact:true}).click();
- await page.waitForFunction(()=>document.querySelector('.rows')?.getAttribute('aria-busy')==='false');
- await page.getByText('2 / 8',{exact:true}).waitFor({timeout:60000});
+ await nextResponse;
+ await page.waitForFunction(()=>document.body.innerText.includes('2 / 8'),null,{timeout:60000});
  const ids=await page.locator('.log-item').evaluateAll(items=>items.map(e=>e.dataset.entryId));await page.locator('.log-item').nth(2).click();
  const selected=await page.locator('.log-item.is-active').getAttribute('data-entry-id'),requestCount=requests.length;
  const fresh=new Date().toISOString();current.messages.push({id:'new',sourceMessageId:'new',requestId:'new-request',role:'user',type:'group',groupId:'g1',userId:'fresh',nickname:'新消息',content:'刚来的消息',createdAt:fresh},
@@ -59,9 +60,10 @@ try{
  assert.deepEqual(await page.locator('.log-item').evaluateAll(items=>items.map(e=>e.dataset.entryId)),ids);
  assert.equal(await page.locator('.log-item.is-active').getAttribute('data-entry-id'),selected);assert.equal(requests.length,requestCount,'Live messages must not refetch or reorder history');
  await page.waitForFunction(()=>{const b=[...document.querySelectorAll('button')].find(x=>x.textContent.trim()==='上一页');return b&&!b.disabled;});
+ const previousResponse=page.waitForResponse(response=>{const url=new URL(response.url());return url.pathname==='/api/logs'&&url.searchParams.get('page')==='0';},{timeout:60000});
  await page.getByRole('button',{name:'上一页',exact:true}).click();
- await page.waitForFunction(()=>document.querySelector('.rows')?.getAttribute('aria-busy')==='false');
- await page.getByText('1 / 8',{exact:true}).waitFor({timeout:60000});
+ await previousResponse;
+ await page.waitForFunction(()=>document.body.innerText.includes('1 / 8'),null,{timeout:60000});
  assert.ok(!await page.locator('.log-item[data-entry-id="chat:message:new"]').count());
  await page.getByRole('button',{name:'有新记录 · 点击更新',exact:true}).click();await page.waitForFunction(()=>document.querySelector('.log-item')?.getAttribute('data-entry-id')==='chat:message:new');
  assert.equal(await page.locator('.log-item').first().getAttribute('data-entry-id'),'chat:message:new');
