@@ -82,7 +82,6 @@ export function ModelsPage({ db, saveSettings }) {
     setDraft((current) => typeof next === 'function' ? next(current) : { ...current, ...next });
   };
 
-  const isDeepSeekModel = (value) => /^deepseek-/i.test(String(value || ''));
   const withProviderDefaults = (patch) => {
     const next = { ...draft, ...patch };
     if (patch.llmProvider === 'codex-app-server') {
@@ -92,9 +91,6 @@ export function ModelsPage({ db, saveSettings }) {
       }
       next.codexModel ||= 'gpt-5.6-luna';
       next.codexReasoningEffort ||= 'low';
-    } else if (patch.model !== undefined && isDeepSeekModel(next.model)) {
-      next.llmProvider = 'deepseek';
-      next.apiBaseUrl = 'https://api.deepseek.com';
     } else if (patch.llmProvider === 'deepseek') {
       next.apiBaseUrl = 'https://api.deepseek.com';
     }

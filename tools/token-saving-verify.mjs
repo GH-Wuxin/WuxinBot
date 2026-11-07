@@ -50,7 +50,8 @@ function seed(extra = {}) {
   store.updateDb(db => {
     Object.assign(db.settings, { tokenSavingMode: true, socialV2Enabled: true, reasoningEnabled: true, socialMaxAssessmentsPerHour: 60, globalPaused: false,
       ownerQq: '10001', selfQq: '10002', memoryEnabled: true, memoryMinMessages: 5, memoryUpdateEvery: 30,
-      groupProfileThreshold: 80, apiBaseUrl: base, apiKey: crypto.randomUUID(), llmProvider: 'openai-compatible', model: 'saving-fixture', osuClientId:'fixture-id', osuClientSecret:'fixture-secret', ...extra });
+      groupProfileThreshold: 80, apiBaseUrl: base, apiKey: crypto.randomUUID(), deepseekApiKey: 'fixture-key', deepseekApiBaseUrl: base,
+      llmProvider: 'openai-compatible', model: 'saving-fixture', osuClientId:'fixture-id', osuClientSecret:'fixture-secret', ...extra });
     db.socialV2 = state.emptySocialState(); state.normalizeSocialState(db); db.profileAutoAttempts = {};
     db.groups = [{ groupId: '20001', enabled: true, mode: 'natural', cooldownSec: 0, maxPerHour: 100 }]; db.users = [];
     db.groupProfiles = []; db.relationshipProfiles = []; db.pendingPairCounts = {}; db.memories = [memory()];

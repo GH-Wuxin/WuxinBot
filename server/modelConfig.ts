@@ -28,7 +28,11 @@ export function modelFamily(value: unknown): ModelFamily {
 }
 
 export function providerFamily(settings: Record<string, any>): ModelFamily {
-  if (String(settings.llmProvider || '') === 'deepseek') return 'deepseek';
+  const provider = String(settings.llmProvider || '').trim();
+  if (provider === 'deepseek') return 'deepseek';
+  // An explicit non-DeepSeek provider owns the connection even when the
+  // upstream exposes model ids that start with "deepseek-".
+  if (provider === 'openai-compatible' || provider === 'codex-app-server') return null;
   return modelFamily(settings.model);
 }
 
@@ -74,16 +78,20 @@ export function ensureProviderProfiles(settings: Record<string, any>) {
 export function activateModelProfile(settings: Record<string, any>, requestedModel?: unknown) {
   const next = ensureProviderProfiles(settings);
   const model = clean(requestedModel === undefined ? next.model : requestedModel);
-  const family = modelFamily(model);
   if (model) next.model = model;
+
+  const provider = clean(next.llmProvider) || 'deepseek';
+  next.llmProvider = provider;
 
   // Codex App Server has its own `codexModel`. Keep the existing API model and
   // credentials untouched as a rollback/fallback profile instead of letting a
   // deepseek- model name silently switch this provider back off.
-  if (clean(next.llmProvider) === 'codex-app-server') return next;
+  if (provider === 'codex-app-server') return next;
 
-  if (family === 'deepseek') {
-    next.llmProvider = 'deepseek';
+  // Only an explicit DeepSeek provider uses the DeepSeek profile. Third-party
+  // OpenAI-compatible endpoints may expose the same "deepseek-*" model ids;
+  // the chosen provider must win over the model-name prefix.
+  if (provider === 'deepseek') {
     next.apiBaseUrl = next.deepseekApiBaseUrl || DEEPSEEK_BASE_URL;
     next.apiKey = next.deepseekApiKey || '';
   }
@@ -96,7 +104,8 @@ export function recoverProviderProfiles(settings: Record<string, any>, snapshots
     const candidate = snapshot?.settings || snapshot || {};
     const key = clean(candidate.apiKey);
     if (!key || isPlaceholder(key)) continue;
-    const isDeepSeek = candidate.llmProvider === 'deepseek' || modelFamily(candidate.model) === 'deepseek';
+    const isDeepSeek = candidate.llmProvider === 'deepseek'
+      || (!candidate.llmProvider && modelFamily(candidate.model) === 'deepseek');
     if (isDeepSeek && !next.deepseekApiKey) {
       next.deepseekApiKey = key;
       if (candidate.apiBaseUrl) next.deepseekApiBaseUrl = clean(candidate.apiBaseUrl);
@@ -126,10 +135,10 @@ export function updateProviderSettings(current: Record<string, any>, incoming: R
     return ensureProviderProfiles(next);
   }
 
+  const requestedProvider = clean(incoming.llmProvider) || clean(saved.llmProvider) || 'deepseek';
+  next.llmProvider = requestedProvider;
   const requestedModel = clean(incoming.model === undefined ? saved.model : incoming.model);
-  const requestedFamily = modelFamily(requestedModel) ||
-    (incoming.llmProvider === 'deepseek' ? 'deepseek' : null) ||
-    providerFamily(saved);
+  const requestedFamily = requestedProvider === 'deepseek' ? 'deepseek' : null;
   const suppliedKey = clean(incoming.apiKey);
   const hasNewKey = !keepSecret(incoming.apiKey);
   const suppliedBase = clean(incoming.apiBaseUrl);
@@ -137,17 +146,18 @@ export function updateProviderSettings(current: Record<string, any>, incoming: R
   if (requestedFamily === 'deepseek') {
     if (hasNewKey) next.deepseekApiKey = suppliedKey;
     if (suppliedBase) next.deepseekApiBaseUrl = suppliedBase;
+  } else {
+    next.apiKey = hasNewKey ? suppliedKey : saved.apiKey;
   }
 
-  // Unknown custom models keep the explicitly selected provider. Known model
-  // families always activate their own complete connection profile.
-  if (modelFamily(requestedModel)) return activateModelProfile(next, requestedModel);
-  next.apiKey = hasNewKey ? suppliedKey : saved.apiKey;
-  return ensureProviderProfiles(next);
+  // The chosen provider is authoritative. Model ids are opaque strings from
+  // the upstream and must not switch the connection profile by prefix.
+  return activateModelProfile(next, requestedModel);
 }
 
 export function activeProviderLabel(settings: Record<string, any>) {
-  if (clean(settings.llmProvider) === 'codex-app-server') return 'ChatGPT / Codex App Server';
-  const family = modelFamily(settings.model) || providerFamily(settings);
-  return family === 'deepseek' ? 'DeepSeek' : 'OpenAI 兼容接口';
+  const provider = clean(settings.llmProvider);
+  if (provider === 'codex-app-server') return 'ChatGPT / Codex App Server';
+  if (provider === 'openai-compatible') return 'OpenAI 兼容接口';
+  return providerFamily(settings) === 'deepseek' ? 'DeepSeek' : 'OpenAI 兼容接口';
 }
