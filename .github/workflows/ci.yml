@@ -18,4 +18,17 @@ jobs:
       - name: Install dependencies
         run: npm ci
       - name: Run offline checks
-        run: npm run check
+        run: |
+          set -o pipefail
+          npm run check 2>&1 | tee check.log
+      - name: Publish failing check tail
+        if: failure()
+        run: |
+          if [ -f check.log ]; then
+            {
+              echo '## Failing check tail'
+              echo '```text'
+              tail -n 160 check.log
+              echo '```'
+            } >> "$GITHUB_STEP_SUMMARY"
+          fi
