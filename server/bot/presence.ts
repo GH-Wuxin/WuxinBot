@@ -57,6 +57,10 @@ interface GroupRuntime {
   lastPersistAt: number;
   failureUntil: number;
   failureReason: string;
+  batchWindowStart: number;
+  batchCount: number;
+  reflectionWindowStart: number;
+  reflectionCount: number;
 }
 
 let cachedState: PresenceState | null = null;
@@ -161,6 +165,10 @@ function runtimeFor(groupId: string): GroupRuntime {
       lastPersistAt: 0,
       failureUntil: 0,
       failureReason: '',
+      batchWindowStart: 0,
+      batchCount: 0,
+      reflectionWindowStart: 0,
+      reflectionCount: 0,
     };
     runtimes.set(id, runtime);
   }
@@ -592,7 +600,14 @@ function persistState(state: PresenceState) {
 export async function flushPresence(groupId: string, options: { invoke?: typeof completeChat } = {}): Promise<void> {
   const runtime = runtimeFor(groupId);
   if (runtime.batchInflight || !runtime.pending.length) return;
-  if (Date.now() < runtime.failureUntil) return;
+  const now = Date.now();
+  if (now < runtime.failureUntil) return;
+  if (now - runtime.batchWindowStart >= 3600_000) {
+    runtime.batchWindowStart = now;
+    runtime.batchCount = 0;
+  }
+  if (runtime.batchCount >= 30) return;
+  runtime.batchCount += 1;
   const db = readDb();
   if (db.settings.presenceEnabled !== true) return;
   const state = stateFor(db);
@@ -629,14 +644,21 @@ export async function flushPresence(groupId: string, options: { invoke?: typeof 
 export async function reflectPresence(groupId: string, options: { invoke?: typeof completeChat; force?: boolean } = {}): Promise<void> {
   const runtime = runtimeFor(groupId);
   if (runtime.reflectInflight) return;
+  const now = Date.now();
+  if (now - runtime.reflectionWindowStart >= 3600_000) {
+    runtime.reflectionWindowStart = now;
+    runtime.reflectionCount = 0;
+  }
+  if (runtime.reflectionCount >= 3) return;
   const db = readDb();
   if (db.settings.presenceEnabled !== true) return;
   const state = stateFor(db);
   const group = groupFor(state, groupId);
   if (!options.force) {
     if (group.observations.length < REFLECTION_MIN_OBSERVATIONS) return;
-    if (Date.now() - runtime.lastReflectionAt < REFLECTION_DELAY_MS) return;
+    if (now - runtime.lastReflectionAt < REFLECTION_DELAY_MS) return;
   }
+  runtime.reflectionCount += 1;
   runtime.reflectInflight = true;
   try {
     const invoke = options.invoke || completeChat;

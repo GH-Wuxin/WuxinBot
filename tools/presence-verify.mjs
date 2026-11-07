@@ -142,6 +142,18 @@ try {
     assert.equal(other, '');
   });
 
+  await test('the real saving prompt receives the presence block', async () => {
+    seed({ tokenSavingMode: true });
+    presence.observeMessage(event({ messageId: 'm-prompt-build' }), { schedule: false });
+    await presence.flushPresence('20001', { invoke: observationInvoke });
+    const { buildPrompt } = await import('../server/bot/prompt.ts');
+    const db = store.readDb();
+    const prompt = buildPrompt(db, db.groups[0], event({ messageId: 'm-prompt-build-current' }), { policy: 'normal' });
+    const serialized = JSON.stringify(prompt);
+    assert.match(serialized, /你最近在群里注意到的/);
+    assert.match(serialized, /不要为了证明/);
+  });
+
   await test('fabricated message ids and users are ignored', async () => {
     seed();
     presence.observeMessage(event({ messageId: 'm-safe' }), { schedule: false });
