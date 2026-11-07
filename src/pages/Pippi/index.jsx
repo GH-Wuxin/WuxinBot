@@ -65,9 +65,11 @@ export function PippiPage({ db, onNavigate }) {
   const ranking = selected?.ranking?.entries || [];
   const experiences = selected?.experiences || [];
   const decisions = selected?.decisions || [];
+  const overviewDecisions = decisions.filter((decision) => decision.stage !== 'guard').slice(0, 5);
   const transitions = selected?.transitions || [];
   const directives = selected?.directives || [];
   const person = selected?.person;
+  const peopleNames = { ...(selected?.names || {}), ...Object.fromEntries((selected?.people || []).map((entry) => [entry.userId, entry.nickname])) };
 
   const chooseGroup = (value) => {
     setGroupId(value);
@@ -94,10 +96,13 @@ export function PippiPage({ db, onNavigate }) {
 
     {error && <div className="pippi-error" role="alert">{error}</div>}
 
+    {!data && <Card className="pippi-card"><p className="pippi-note">正在读取 Pippi 的状态…</p></Card>}
+
+    {data && <>
     <Card className="pippi-now">
       <div className="pippi-now-main">
         <div className="pippi-mood">
-          <span>此刻心情</span>
+          <span>全局心情</span>
           <strong>{self?.mood?.label || '平静'}</strong>
           <p>{self?.mood?.reason || '还没有新的心情记录。'}</p>
           <small>{date(self?.mood?.updatedAt)}</small>
@@ -161,7 +166,7 @@ export function PippiPage({ db, onNavigate }) {
 
       <Card className="pippi-card pippi-span-2">
         <h2><MessageCircle size={18} /> 最近接话</h2>
-        {decisions.slice(0, 5).map((decision) => <div className="pippi-event" key={decision.id}>
+        {(overviewDecisions.length ? overviewDecisions : decisions.slice(0, 3)).map((decision) => <div className="pippi-event" key={decision.id}>
           <div className="pippi-event-head">
             <span className={`pippi-action pippi-action-${decision.action}`}>{actions[decision.action] || decision.action}</span>
             <small>{date(decision.createdAt)}</small>
@@ -281,7 +286,7 @@ export function PippiPage({ db, onNavigate }) {
       <Card className="pippi-card">
         <h2>人物印象</h2>
         {(presence?.peopleDetails || []).map((entry) => <div className="pippi-event" key={entry.userId}>
-          <div className="pippi-event-head"><strong>{entry.userId}</strong><small>温暖 {entry.warmth} · 熟悉 {entry.familiarity}</small></div>
+          <div className="pippi-event-head"><strong>{peopleNames[entry.userId] || entry.userId}</strong><small>温暖 {entry.warmth} · 熟悉 {entry.familiarity}</small></div>
           <p>{entry.impression || '还没有形成印象。'}</p>
         </div>)}
         {!presence?.peopleDetails?.length && <Empty>还没有人物印象。</Empty>}
@@ -296,7 +301,7 @@ export function PippiPage({ db, onNavigate }) {
         {decisions.map((decision) => <div className="pippi-event" key={decision.id}>
           <div className="pippi-event-head">
             <span className={`pippi-action pippi-action-${decision.action}`}>{actions[decision.action] || decision.action}</span>
-            <small>{date(decision.createdAt)} · {decision.userId}</small>
+            <small>{date(decision.createdAt)} · {peopleNames[decision.userId] || decision.userId}</small>
           </div>
           <p>{decision.reason}</p>
           <small>{stages[decision.stage] || decision.stage} · {decision.durationMs} ms · {decision.totalTokens} tokens</small>
@@ -309,7 +314,7 @@ export function PippiPage({ db, onNavigate }) {
         <h2>关系变化</h2>
         {transitions.slice(0, 8).map((transition) => <div className="pippi-event" key={transition.id}>
           <div className="pippi-event-head">
-            <strong>{transition.userId}</strong>
+            <strong>{peopleNames[transition.userId] || transition.userId}</strong>
             <small>{date(transition.createdAt)}</small>
           </div>
           <p>{transition.reason}</p>
@@ -326,5 +331,6 @@ export function PippiPage({ db, onNavigate }) {
         {!directives.length && <Empty>本群没有长期指令。</Empty>}
       </Card>
     </div>}
+    </>}
   </div>;
 }

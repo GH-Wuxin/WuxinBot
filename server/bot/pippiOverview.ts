@@ -96,6 +96,7 @@ export function buildPippiOverview(db: any, options: { groupId?: string; userId?
       participation: selectedDbGroup ? participationStatus(db, selectedDbGroup) : null,
       person: selectedPerson,
       people,
+      names: Object.fromEntries(names),
       ranking: scope ? readAffinityRanking(db, scope, 200) : { scope: 'global', total: 0, entries: [], owner: null },
       decisions,
       transitions,
