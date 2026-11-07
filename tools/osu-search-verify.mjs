@@ -36,6 +36,7 @@ const server = http.createServer(async (req, res) => {
   if (url.pathname.startsWith('/api/v2/changelog/')) return json(build);
   if (url.pathname === '/api/v2/beatmapsets/search') return json({ beatmapsets: [map] });
   if (url.pathname === '/api/v2/beatmapsets/123') return json(map);
+  if (url.pathname === '/api/v2/forums') return json({ forums: [{ id: 1, name: 'osu!', description: 'osu! specific', subforums: [{ id: 2, name: 'Development', description: 'Projects and news' }] }, { id: 13, name: 'Gameplay & Rankings', description: 'Scores and strategies' }] });
   if (url.pathname === '/api/v2/forums/2') return json({ forum: { name: 'General Discussion' }, topics: [{ id: 123, title: 'Reading practice', post_count: 12, last_post_id: 12, updated_at: '2026-10-26T00:00:00Z' }] });
   if (url.pathname === '/api/v2/forums/topics/123') return json({ topic: { title: 'Reading practice', post_count: 12 }, posts:
     (url.searchParams.get('sort') === 'id_desc' ? [12, 11] : [1, 2]).map(id => ({ id, user_id: 42, created_at: '2026-10-26T00:00:00Z', body: { raw: `Player opinion ${id}` } })) });
@@ -96,6 +97,10 @@ try {
   assert.ok((await readOsuArticle(changes.results[0].url)).text.includes('scoring'));
   const forums = await searchOsu({ kind: 'forum', forumId: 2, query: 'reading' });
   assert.equal(forums.results[0].url, 'https://osu.ppy.sh/community/forums/topics/123');
+  const forumCatalog = await searchOsu({ kind: 'forums' });
+  assert.ok(forumCatalog.results.some(result => result.forumId === 2));
+  assert.ok(forumCatalog.results.some(result => result.forumId === 13));
+  assert.match(forumCatalog.coverage, /完整目录/);
   const first = await readOsuArticle(forums.results[0].url), latest = await readOsuArticle(forums.results[0].url, true);
   assert.ok(first.text.includes('Player opinion 1')); assert.equal(first.truncated, true);
   assert.ok(latest.text.indexOf('opinion 11') < latest.text.indexOf('opinion 12')); assert.match(latest.coverage, /最近/);

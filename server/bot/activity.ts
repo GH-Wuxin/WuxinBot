@@ -185,6 +185,11 @@ export async function runPippiActivityCycle(deps: Dependencies = {}, now = Date.
   return runBackgroundTask('pippi.activity', async () => {
     try {
       const search = deps.search || searchOsu, execute = deps.execute || executeOsuSearchTool;
+      let forumCatalog: any[] = [];
+      try {
+        const catalog = await search({ kind: 'forums' });
+        forumCatalog = (catalog?.results || []).slice(0, 80);
+      } catch { /* The catalog is optional; news/changelog and configured boards still work. */ }
       let db = readDb(), state = readPippiActivity(db);
       if (!state.lastPollAt || now - Date.parse(state.lastPollAt) >= POLL_MS) await collectCandidates(search, now);
       if (!allowed(readDb())) return;
@@ -224,8 +229,9 @@ export async function runPippiActivityCycle(deps: Dependencies = {}, now = Date.
       const selfRevision = readPippiSelf(db).revision, pending = [...state.pending], sources: SelfEvidence[] = [];
       const messages: any[] = [
         { role: 'system', content: activityPersona(db) + '\n' + SELF_PROPOSAL_GUIDANCE
-          + '\n先从候选资料或自己已有公开关注中决定是否阅读，可以完全跳过。论坛是玩家观点；可用 latest=true 看已关注帖子的后续。最多2次工具调用。只有实际读成功的来源可作为新经历依据。结束时仅输出 JSON {"self":null或状态提案,"share":false或true}。share=true 仅表示有个适合群聊的短想法，宿主仍会判断是否适合开口；不能声称已经分享。' },
-        { role: 'user', content: JSON.stringify({ now: new Date(now).toISOString(), candidates: pending, selfContext: selfContext(db, 'public') }) },
+          + '\n先从候选资料或自己已有公开关注中决定是否阅读，可以完全跳过。论坛是玩家观点；可用 latest=true 看已关注帖子的后续。最多2次工具调用。只有实际读成功的来源可作为新经历依据。结束时仅输出 JSON {"self":null或状态提案,"share":false或true}。share=true 仅表示有个适合群聊的短想法，宿主仍会判断是否适合开口；不能声称已经分享。'
+          + '\nforums 是 osu! 完整公开板块目录；你可以从里面选任何板块，用 search_osu(kind=forum, forumId=...) 查看近期主题，不必只限于候选资料或配置的偏好板块。' },
+        { role: 'user', content: JSON.stringify({ now: new Date(now).toISOString(), candidates: pending, forums: forumCatalog, selfContext: selfContext(db, 'public') }) },
       ];
       let toolsUsed = 0, final: any = null;
       for (let round = 0; round < MAX_CALLS; round++) {

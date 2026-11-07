@@ -27,7 +27,9 @@ const seed = (settings = {}) => updateDb(db => {
 const ledger = (at = now) => readPippiActivity(readDb()).days[activityDay(at)];
 const response = (value, usage = { total_tokens: 100 }) => ({ text: JSON.stringify(value), usage });
 const article = 'https://osu.ppy.sh/home/news/fixture';
-const search = async args => ({ kind: args.kind, results: [{ title: 'A real article', url: article, snippet: 'New reading practice discussion' }] });
+const search = async args => args.kind === 'forums'
+  ? { kind: 'forums', results: [{ title: 'Gameplay & Rankings', url: 'https://osu.ppy.sh/community/forums/13', snippet: 'Scores and play', forumId: 13 }] }
+  : { kind: args.kind, results: [{ title: 'A real article', url: article, snippet: 'New reading practice discussion' }] };
 const readCall = { id: 'read', type: 'function', function: { name: 'read_osu', arguments: JSON.stringify({ url: article }) } };
 const execute = async () => ({ ok: true, content: 'Actual published text', metadata: { reading: { id: 'reading:fixture', url: article, title: 'Fixture', at: iso } } });
 const self = { evidenceIds: ['reading:fixture'], remember: { fact: '读了练习方法的讨论', impression: '对慢速读图的效果有点好奇' },
@@ -72,6 +74,19 @@ try {
     const slot = await reserveLlmInvocation();
     try { await runPippiActivityCycle({ search, invoke }, now + 3600000); } finally { slot.release(); }
     assert.equal(calls, 0);
+  });
+  await test('activity gives Pippi the complete osu forum catalog', async () => {
+    seed();
+    let captured;
+    await runPippiActivityCycle({
+      search,
+      invoke: async (_db, options) => {
+        captured = JSON.parse(options.messages.at(-1).content);
+        return response({ self: null, share: false });
+      },
+    }, now);
+    assert.ok(captured.forums.some((forum) => forum.forumId === 13));
+    assert.match(captured.forums[0].title, /Gameplay/);
   });
   await test('one actual reading commits once; wake gap, source versions and state reload prevent duplicate work', async () => {
     seed(); await runPippiActivityCycle({ search, execute, invoke: reading() }, now);

@@ -43,7 +43,8 @@ export function SelfPanel({ db, scope, saveSettings, refreshState }) {
           disabled={busy} onChange={e => { const enabled = e.target.checked; void mutate(() => saveSettings({ pippiActivityEnabled: enabled })); }} />
         <div className="pippi-activity-settings"><Input label="后台每日 Token 额度" type="number" min="1000" max="100000" value={budget} onChange={e => setBudget(e.target.value)} />
           <Input label="每日最多唤醒" type="number" min="1" max="6" value={wakes} onChange={e => setWakes(e.target.value)} /></div>
-        <Input label="公开论坛板块 ID（最多三个）" value={forums} onChange={e => setForums(e.target.value)} />
+        <Input label="偏好论坛板块 ID（最多三个，可留空）" value={forums} onChange={e => setForums(e.target.value)} />
+        <p className="social-note">留空时 Pippi 会从 osu! 完整论坛目录里自己选；填了则优先抓这些板块。</p>
         <Button disabled={busy} onClick={() => mutate(() => saveSettings({ pippiActivityDailyTokens: Number(budget), pippiActivityMaxWakes: Number(wakes),
           pippiActivityForumIds: forums.trim() ? forums.split(/[,，\s]+/).map(Number) : [] }))}>保存活动设置</Button>
         <p>{activity?.blockedReason || (activity?.busy ? '正在阅读或整理' : '等待合适的活动机会')}</p>
