@@ -109,6 +109,16 @@ export function filterLogEntries(entries: RecordLike[], filter: string, query = 
   });
 }
 
+function commandStatus(log: RecordLike) {
+  if (log.status) return String(log.status);
+  const outcome = String(log.outcome || '').toLowerCase();
+  if (!outcome) return 'unknown';
+  if (['ok', 'completed', 'denied', 'error', 'ignored', 'invalid', 'timeout', 'active'].includes(outcome)) return outcome;
+  if (outcome === 'unbound' || outcome === 'unimplemented') return 'invalid';
+  if (outcome === 'disabled') return 'ignored';
+  return 'ok';
+}
+
 /** An as-of boundary freezes incoming messages, replies, decisions and recorded usage across pages. */
 export function queryLogEntries(db: RecordLike, traces: RecordLike[], query: RecordLike = {}, now = Date.now()) {
   const integer = (name:string, fallback:number, max:number, min=0) => {
@@ -139,7 +149,7 @@ export function queryLogEntries(db: RecordLike, traces: RecordLike[], query: Rec
   }
   let entries: RecordLike[] = channel === 'commands'
     ? (db.commandLogs || []).filter((l: RecordLike)=>before(l)).map((log: RecordLike)=>{
-      const status = log.status || log.outcome || 'unknown';
+      const status = commandStatus(log);
       const startedAt = log.startedAt || log.createdAt;
       const duration = log.latencyMs ?? (status === 'active' ? Math.max(0, now - Date.parse(startedAt)) : null);
       return { id:'command:'+log.id,log,title:[log.command || '未知指令',log.subCommand].filter(Boolean).join(' '),
