@@ -27,6 +27,7 @@ import { markLatencySpan } from '../perf/latencyTrace.js';
 
 export interface PendingQuickObservation {
   id: string;
+  recordId?: string;
   key: string;
   visibleAt: number;
   promise: Promise<void>;
@@ -60,6 +61,7 @@ function sweepExpiredEntries(now: number): void {
 export function registerPendingQuickObservation(
   event: any,
   work: () => Promise<void>,
+  recordId?: string,
 ): Promise<void> {
   const key = quickContextPendingKey(event);
   const id = `qobs-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
@@ -81,7 +83,7 @@ export function registerPendingQuickObservation(
       }
     }
   })();
-  entry = { id, key, visibleAt: Date.now(), promise };
+  entry = { id, key, visibleAt: Date.now(), promise, recordId };
 
   const list = pendingByKey.get(key) || [];
   list.push(entry);
@@ -99,13 +101,14 @@ export function registerPendingQuickObservation(
 export async function settlePendingQuickObservations(
   event: any,
   traceId?: string | null,
+  options?: {recordId: string; timeoutMs: number},
 ): Promise<{ waitedMs: number; pendingCount: number }> {
   const key = quickContextPendingKey(event);
-  const entries = [...(pendingByKey.get(key) || [])];
+  const entries = [...(pendingByKey.get(key) || [])].filter(entry=>!options||entry.recordId===options.recordId);
   if (entries.length === 0) return { waitedMs: 0, pendingCount: 0 };
   if (traceId) markLatencySpan(traceId, 'quick_context_drain_start', { pendingCount: entries.length });
   const startedAt = Date.now();
-  const waitMs = positiveEnvMs('QUICK_CONTEXT_PENDING_WAIT_MS', 30_000);
+  const waitMs = options ? Math.max(1,Math.min(5000,options.timeoutMs)) : positiveEnvMs('QUICK_CONTEXT_PENDING_WAIT_MS', 30_000);
   let timeoutTimer: NodeJS.Timeout | undefined;
   const timeout = new Promise<'timeout'>((resolve) => {
     timeoutTimer = setTimeout(() => resolve('timeout'), waitMs);

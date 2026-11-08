@@ -18,12 +18,19 @@ export interface BotEvent {
   atTargets: string[];
   images?: { type: 'image'; url?: string; file?: string }[];
   replyMessageId?: string;
+  receivedAtMs?: number;
   quotedMessage?: {
     messageId: string;
     text: string;
     images: { type: 'image'; url?: string; file?: string }[];
     userId?: string;
     nickname?: string;
+    verified?: boolean;
+    isSelf?: boolean;
+    scope?: string;
+    accountId?: string;
+    originModule?: string;
+    deliveryOutcome?: string;
   };
   senderRole?: 'owner' | 'admin' | 'member';
   raw?: Record<string, unknown>;
@@ -236,6 +243,16 @@ export interface StickerHistory {
 
 export interface MessageRecord {
   id: string;
+  accountId?: string;
+  senderId?: string;
+  peerId?: string;
+  originModule?: string;
+  triggerMessageId?: string;
+  deliveryOutcome?: string;
+  confirmedAt?: string;
+  receivedAtMs?: number;
+  deliveryLatencyMs?: number;
+  contextSummary?: string;
   requestId?: string;
   sourceMessageId?: string;
   replyToMessageId?: string;

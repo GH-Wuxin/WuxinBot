@@ -42,7 +42,7 @@ const server = http.createServer(async (req, res) => {
     (url.searchParams.get('sort') === 'id_desc' ? [12, 11] : [1, 2]).map(id => ({ id, user_id: 42, created_at: '2026-10-26T00:00:00Z', body: { raw: `Player opinion ${id}` } })) });
   if (url.pathname === '/v1/chat/completions') {
     const input = JSON.parse(raw);
-    if (String(input.messages?.[0]?.content).includes('社交判断器')) return json({ choices: [{ message: { role: 'assistant', content: JSON.stringify({
+    if (String(input.messages?.[0]?.content).includes('社交判断器') && !String(input.messages?.[0]?.content).includes('同一轮完成社交理解与回复')) return json({ choices: [{ message: { role: 'assistant', content: JSON.stringify({
       action: 'reply', addressee: 'bot', reason: '正常资料查询', evidenceIds: [], affinityDelta: 0, familiarityDelta: 0,
       summary: null, preferredNames: null, style: null, mood: null }) }, finish_reason: 'stop' }], usage: { total_tokens: 10 } });
     llmCalls++;
@@ -57,6 +57,7 @@ const server = http.createServer(async (req, res) => {
     else {
       const evidence = body.messages.map(r => r.content).join('\n').match(/reading:[a-f0-9]{32}/)?.[0];
       content = JSON.stringify({ reply: '准确率按判定加权计算。来源：https://osu.ppy.sh/wiki/zh/Gameplay/Accuracy',
+        social: { action:'reply',addressee:'bot',reason:'按真实来源回答',evidenceIds:[],affinityDelta:0,familiarityDelta:0,summary:null,preferredNames:null,style:null,mood:null },
         self: evidence ? { evidenceIds: [evidence], remember: { fact: '读了准确率的官方说明', impression: '权重差别挺直观' } } : null });
     }
     return json({ id: `model-${llmCalls}`, model: 'fixture-model', choices: [{ index: 0, message: { role: 'assistant', content, ...(calls.length ? { tool_calls: calls } : {}) }, finish_reason: calls.length ? 'tool_calls' : 'stop' }], usage: { prompt_tokens: 10, completion_tokens: 5, total_tokens: 15 } });

@@ -1,4 +1,7 @@
 import { tokenSaving } from '../tokenSaving.js';
+import { capabilityContext } from '../introspection.js';
+import { applyModulePersonality } from '../../promptStudio.js';
+import { messageInConversation, messageAccount, messageContextText } from '../../messageFacts.js';
 import { readDb, updateDb } from '../../store.js';
 import { completeChat, thinkingParamsForLevel } from '../llm.js';
 import { reasoningEnabledFor } from '../reasoningRouter.js';
@@ -22,12 +25,11 @@ export function socialDeliveryGuard(db: any, event: SocialEvent): string {
 }
 
 export function socialTimeline(db: any, event: SocialEvent, limit = 24) {
-  return db.messages.filter((m) => m.inContext !== false && m.type === event.type
-    && (event.type === 'group' ? String(m.groupId) === event.groupId : String(m.userId) === event.userId || String(m.replyToUserId) === event.userId))
-    .slice(-limit).map((m) => ({ messageId: String(m.sourceMessageId || m.id), senderId: String(m.userId),
-      role: m.role, nickname: String(m.nickname || ''), text: String(m.content || '').slice(0, 1000),
+  return db.messages.filter((m) => m.inContext !== false && messageInConversation(m, event, messageAccount(db, event)))
+    .slice(-limit).map((m) => ({ messageId: String(m.sourceMessageId || m.messageId || m.id), senderId: String(m.senderId || m.userId),
+      role: m.role, nickname: String(m.nickname || ''), text: messageContextText(m).slice(0, 1000),
       atTargets: m.atTargets || [], replyTo: m.replyMessageId || m.replyToMessageId || '',
-      replyToUserId: m.replyToUserId || '', at: m.createdAt }));
+      replyToUserId: m.replyToUserId || '', originModule: m.originModule || '', at: m.createdAt }));
 }
 
 function parseObject(text: string): any {
@@ -159,8 +161,11 @@ export async function assessSocialTurn(event: SocialEvent, phase: 'initial' | 'r
       { role: 'user', content: JSON.stringify({ phase, now: new Date().toISOString(), direct: Boolean(event.socialDirect), nameMentioned: Boolean(event.socialNamed),
         bot: { userId: String(db.settings.selfQq || '').trim() || null },
         capabilities: callableCapabilityNames('text'),
+        runtimeCapabilities: capabilityContext(db, event),
         conversation, mode: db.groups.find((g) => String(g.groupId) === String(event.groupId))?.mode || 'private', target: { userId: event.userId,
           messageIds: ids, text: event.text, atTargets: event.atTargets || [], replyTo: event.replyMessageId || '' },
+        quote: event.quotedMessage ? { messageId: event.quotedMessage.messageId, userId: event.quotedMessage.userId,
+          text: event.quotedMessage.text, imageCount: event.quotedMessage.images?.length || 0 } : null,
         batch: event.socialMessages || [], relationship: person, currentConversation: view,
         selfContext: selfContext(db, scope, event.userId), timeline }) },
     ], maxTokens: 1200, timeoutMs: 15_000, temperature: 0.2,
@@ -210,6 +215,39 @@ export async function waitForSocialContinuation(event: SocialEvent) {
   recordSocialDecision(event, { stage: 'wait', action: 'wait', reason: '短暂等待结束，最多重新判断一次', evidenceIds: [], durationMs: 1400, totalTokens: 0 });
 }
 
+/** The same relationship contract can travel with a direct answer in one model call. */
+export function prepareCombinedSocialTurn(event: SocialEvent) {
+  const db = readDb(), scope = socialScope(event), ids = event.socialMessageIds || [event.messageId];
+  const timeline = socialTimeline(db, event, 40);
+  const person = readSocialPerson(db, event.userId), view = readSocialView(db, scope, event.userId);
+  const assessmentRules = applyModulePersonality([{role:'system',content:SOCIAL_ASSESSMENT_PROMPT}], 'general', db.settings.personaModulePrompts || {})[0].content;
+  return { scope, ids, timeline, personRevision: person?.revision || 0, viewRevision: view?.revision || 0,
+    selfRevision: readPippiSelf(db).revision,
+    instruction: `【同一轮完成社交理解与回复】\n沿用上文全部人格、语气、身份和事实规则。最终只输出 JSON，reply 为实际给群友的回复；可选表情字段仍遵循原契约，另外增加 social 对象。以下评估规范中的“只评估、不直接说话”仅约束 social 字段，不约束 reply。social 和内部数值绝不能放进 reply。若需要工具，先正常调用工具，完成后再给最终 JSON。\n${assessmentRules}\n${SELF_PROPOSAL_GUIDANCE}\n本轮为明确对话，social.action 可为 pass/react/reply；保持普通成员可选择不回应的权利，Owner 正常明确请求仍需 reply。reply 的长度仍按原人格约束，不因增加内部字段而变长。根据本次互动产生的感受调整 reply，不必等待另一次评估。\n本轮评估数据：${JSON.stringify({phase:'initial',direct:true,bot:{userId:db.settings.selfQq},target:{userId:event.userId,messageIds:ids,text:event.text,atTargets:event.atTargets||[],replyTo:event.replyMessageId||''},conversation:conversationContext(db,event),relationship:person,currentConversation:view,timeline})}\n最终格式是 {"reply":"实际回复或空串","social":{上面的完整评估字段},"mode":"none|text_image|image_only","sticker_id":null或已有可用表情ID}，保留已有 sticker_caption/sticker_use/self 字段。social.action=pass 时 reply 为空且不选表情。reply 保持 pippi 原本的身份和说话方式，不扮演判断器，不复述评估过程。不要在 JSON 外解释。`,
+  };
+}
+
+export function applyCombinedSocialTurn(event: SocialEvent, raw: string, prepared: ReturnType<typeof prepareCombinedSocialTurn>) {
+  let envelope: any;
+  try { envelope = parseObject(raw); } catch { return null; }
+  if (!envelope?.social || typeof envelope.reply !== 'string') return null;
+  const ids = prepared.ids;
+  const assessment = parseSocialAssessment(JSON.stringify(envelope.social), [...new Set([...ids,...prepared.timeline.map(m=>m.messageId)])], isSystemOwner(readDb(),event), ids);
+  if (event.socialDirect && isSystemOwner(readDb(),event)) assessment.action='reply';
+  if (assessment.action==='wait') assessment.action='pass';
+  if (isReplyProcessAborted() || !socialEntryAllowed(readDb(),event,true)) return {allow:false,assessment};
+  updateDb(draft=>{
+    const committed=commitSocialAssessment(draft,{event,messageIds:ids,assessment,expectedPersonRevision:prepared.personRevision,expectedViewRevision:prepared.viewRevision});
+    if(committed.reason!=='duplicate')commitSelfProposal(draft,assessment.self,{scope:prepared.scope,expectedRevision:prepared.selfRevision,requiredEvidenceIds:ids,
+      sources:prepared.timeline.map(m=>({id:m.messageId,kind:'message' as const,scope:prepared.scope,at:m.at,userId:m.senderId}))});
+    for(const decision of draft.decisions)if(decision.groupId===event.groupId&&decision.userId===event.userId&&ids.includes(decision.messageId))decision.shouldReply=assessment.action!=='pass';
+  });
+  event.socialAction=assessment.action;
+  recordSocialDecision(event,{stage:'assessment',phase:'initial',action:assessment.action,reason:assessment.reason,evidenceIds:assessment.evidenceIds,durationMs:0,totalTokens:0});
+  traceEvent('GATE','social_combined_with_reply',{status:'ok',action:assessment.action});
+  return {allow:assessment.action!=='pass',assessment};
+}
+
 export async function revalidateSocialReply(event: SocialEvent, reply: string, options: { protectedOutput?: boolean; expressionPrompt?: string } = {}, invoke = completeChat): Promise<string | null> {
   const db = readDb();
   const blocked = socialDeliveryGuard(db, event);
@@ -219,6 +257,11 @@ export async function revalidateSocialReply(event: SocialEvent, reply: string, o
   if (!event.socialDirect && socialCoordinator.hasPriorityRequest(event)) return skip('优先处理排队中的明确请求');
   const timeline = socialTimeline(db, event, 40);
   let fresh = timeline.filter((m) => m.role === 'user' && !(event.socialContextIds || []).includes(m.messageId));
+  // Only skip messages with explicit evidence that they address somebody else.
+  // Ambiguous or unaddressed corrections still receive the existing semantic check.
+  fresh = fresh.filter(m => m.senderId === event.userId || m.replyTo === event.messageId
+    || m.atTargets.some(id=>String(id)===String(db.settings.selfQq)||String(id)===event.userId)
+    || !m.atTargets.length && (!m.replyTo || (event.socialContextIds||[]).includes(m.replyTo)));
   // Outsiders never get a vote on an explicit Owner request, including by "cancelling on their behalf".
   if (isSystemOwner(db, event) && event.socialDirect) fresh = fresh.filter((m) => m.senderId === event.userId);
   if (!fresh.length) return reply;

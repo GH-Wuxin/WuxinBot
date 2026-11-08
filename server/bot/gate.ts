@@ -1,5 +1,6 @@
 // Conversation context and message-participation helpers. Type-checked module.
 import { readDb } from '../store.js';
+import { messageInConversation, messageAccount } from '../messageFacts.js';
 import {
   mentionsBot,
   asksToInspectVisual,
@@ -126,9 +127,7 @@ export function recentGroupMessages(db, groupId, limit) {
 export function ownerPrivateMessages(db) {
   const ownerQq = db.settings.ownerQq;
   return db.messages.filter((message) =>
-    message.type === 'private' &&
-    message.inContext !== false &&
-    (String(message.userId) === String(ownerQq) || message.userId === 'bot')
+    message.inContext !== false && messageInConversation(message,{type:'private',userId:String(ownerQq)},messageAccount(db,{}))
   );
 }
 
@@ -149,7 +148,7 @@ export function limitMessagesByCharBudget(messages, budget) {
 export function lastAssistantMessage(db, groupId) {
   return [...db.messages]
     .reverse()
-    .find((message) => String(message.groupId) === String(groupId) && message.role === 'assistant');
+    .find((message) => String(message.groupId) === String(groupId) && message.role === 'assistant' && !['random_image','notice'].includes(message.originModule));
 }
 
 export function recentBotConversation(db, groupId, seconds = 120) {

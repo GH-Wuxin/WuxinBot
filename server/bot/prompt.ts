@@ -21,6 +21,8 @@ import { toPromptBlocks } from './kbPrompt.js';
 import { selectAdaptiveGroupContext } from './contextSearch.js';
 import { traceEvent } from '../requestTrace.js';
 import { buildCapabilitySummary } from './capabilitySummary.js';
+import { messageContextText, messageInConversation, messageAccount } from '../messageFacts.js';
+import { capabilityContext } from './introspection.js';
 import { selfContext, selfContextPrompt } from './social/self.js';
 import { activeOwnerDirectives, isSystemOwner, readSocialPerson, readSocialView, socialScope } from './social/state.js';
 import { presencePromptBlock } from './presence.js';
@@ -87,7 +89,9 @@ export function describeQuotedMessage(quoted, selfQq = '') {
   const body = text
     ? (imageCount ? `${text} [图片 ×${imageCount}]` : text)
     : (imageCount ? `[图片 ×${imageCount}]` : '（引用内容不可用）');
-  return `【所回复的 QQ 消息｜${speaker}${idSuffix}】${body}`;
+  const origin = quoted.originModule === 'random_image' ? '（通过随机图片功能自动发送）' : '';
+  const uncertain = ['unknown', 'accepted_unknown'].includes(quoted.deliveryOutcome) ? '（发送结果尚未确认）' : '';
+  return `【所回复的 QQ 消息｜${speaker}${idSuffix}】${body}${origin}${uncertain}`;
 }
 
 export function visualCapabilityNotice(db, event = {}) {
@@ -95,7 +99,8 @@ export function visualCapabilityNotice(db, event = {}) {
   const ownImages = Array.isArray(event.images) ? event.images.length : 0;
   const quotedImages = Array.isArray(event.quotedMessage?.images) ? event.quotedMessage.images.length : 0;
   if (modelSupportsVision(db)) {
-    if (ownImages > 0) return '本轮已附带图片给你。请基于实际图片回答；图片不可读时诚实说明。';
+    if (ownImages > 0) return '本轮已附带图片给你。请基于实际图片回答；图片不可读时诚实说明。'
+      + (quotedImages > 0 ? ` 当前消息的 ${ownImages} 张图来自当前发言者；另外 ${quotedImages} 张来自引用消息，原发送者是${quotedSpeakerLabel(event.quotedMessage, db?.settings?.selfQq || '')}，两组图片不可混淆归属。` : '');
     // 图片只来自引用：那是原发送者发的，不是当前发言者刚发的。
     // 这两句原先共用一句"本轮已附带图片"，模型就把引用里的图算到了说话人头上。
     if (quotedImages > 0) {
@@ -181,7 +186,7 @@ function renderMentions(text, mentions, selfQq) {
 
 function groupHistoryLine(db, message) {
   const canSee = modelSupportsVision(db);
-  const rawContent = canSee ? String(message.content || '') : stripMediaPlaceholders(message.content);
+  const rawContent = canSee ? messageContextText(message) : stripMediaPlaceholders(messageContextText(message));
   const rendered = renderMentions(rawContent, message.mentions, String(db?.settings?.selfQq || ''));
   const content = `${rendered}${stickerHistoryNotice(message)}`.replace(/\r?\n/g, '\n  ');
   if (message.role === 'assistant') {
@@ -209,7 +214,7 @@ function formatHistoryForModel(db, historyMessages, isGroup) {
   const canSee = modelSupportsVision(db);
   return historyMessages.map((message) => {
     const content = message.role === 'assistant'
-      ? `${message.content || ''}${stickerHistoryNotice(message)}`
+      ? `${messageContextText(message)}${stickerHistoryNotice(message)}`
       : `[${messageTimeLabel(message)}] ${message.nickname || message.userId || '群友'}（QQ:${message.userId || 'unknown'}）：${message.content}`;
     return {
       role: message.role === 'assistant' ? 'assistant' : 'user',
@@ -302,8 +307,7 @@ export function responseOptionsFor(event, db, userPolicy) {
 function ownerPrivateMessages(db) {
   const ownerQq = db.settings.ownerQq;
   return db.messages.filter((message) =>
-    message.type === 'private' && message.inContext !== false &&
-    (String(message.userId) === String(ownerQq) || message.userId === 'bot')
+    message.inContext !== false && messageInConversation(message, {type:'private',userId:String(ownerQq)}, messageAccount(db,{}))
   );
 }
 
@@ -570,6 +574,7 @@ export function buildPrompt(db, group, event, userPolicy, options = {}) {
   const factualCtx = [
     `当前群：${group.name || group.groupId}`,
     buildCapabilitySummary({ stickerState, searchAvailable: canSearch }),
+    capabilityContext(db, event),
     // 「刚才为什么没开口」。只在本群近一小时真的失败过时才有一行，否则是空串。
     replyFailureNotice(db.replyFailures, group.groupId),
     `系统 owner QQ：${db.settings.ownerQq || '未设置'}。`,

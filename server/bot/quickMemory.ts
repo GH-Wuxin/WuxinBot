@@ -7,6 +7,7 @@
 // the long-term memory/profile store.
 import crypto from 'node:crypto';
 import { updateDb, nowIso } from '../store.js';
+import { recordAssistantContext } from '../messageFacts.js';
 import { textWithoutControlPlaceholders } from './cleaning.js';
 import {
   getUser,
@@ -76,10 +77,11 @@ export function hydrateQuickContextPending(
         (m: any) => m.role === 'assistant' && m.pendingQuickId === pendingId,
       );
       if (!target) return;
-      target.content = cleanContent;
-      target.media = images.length > 0
-        ? { images: images.slice(0, ASSISTANT_IMAGES_LIMIT) }
-        : undefined;
+      if (target.deliveryOutcome) target.contextSummary = cleanContent;
+      else {
+        target.content = cleanContent;
+        target.media = images.length > 0 ? { images: images.slice(0, ASSISTANT_IMAGES_LIMIT) } : undefined;
+      }
       delete target.pendingQuickId;
     });
     if (traceId) markLatencySpan(traceId, 'observation_hydrate_done');
@@ -139,6 +141,9 @@ function persistQuickContext(
           groupId: event.groupId,
           userId: 'bot',
           nickname: '机器人',
+          replyToMessageId: messageId,
+          replyToUserId: String(event.userId),
+          replyToNickname: String(event.nickname || ''),
           content: cleanContent,
           media:
             images.length > 0
@@ -148,7 +153,7 @@ function persistQuickContext(
           createdAt,
         };
         if (pendingQuickId) assistant.pendingQuickId = pendingQuickId;
-        draft.messages.push(assistant);
+        recordAssistantContext(draft, assistant);
       }
     });
     if (traceId) markLatencySpan(traceId, 'observation_persist_done');

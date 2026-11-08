@@ -1,10 +1,12 @@
 // @ts-nocheck -- legacy runtime module; new typed modules remain checked by tsc.
 import { tokenSaving } from './bot/tokenSaving.js';
+import { resolveLocalQuote, recordAssistantContext, messageAccount } from './messageFacts.js';
+import { buildIntrospectionTools, executeIntrospection, INTROSPECTION_TOOL_NAMES } from './bot/introspection.js';
 import { pathToFileURL } from 'node:url';
 import { socialCoordinator } from './bot/social/coordinator.js';
 import { chatAdmissionReason, replyLimitReason, conversationContext } from './bot/social/policy.js';
 import { isSystemOwner } from './bot/social/state.js';
-import { assessSocialTurn, revalidateSocialReply, socialDeliveryGuard, socialEntryAllowed, socialTimeline, waitForSocialContinuation, recordSocialDecision } from './bot/social/runtime.js';
+import { assessSocialTurn, revalidateSocialReply, socialDeliveryGuard, socialEntryAllowed, socialTimeline, waitForSocialContinuation, recordSocialDecision, prepareCombinedSocialTurn, applyCombinedSocialTurn } from './bot/social/runtime.js';
 import { sendOptionalNotice } from './bot/notice.js';
 import { withLlmTurnPolicy, assertLlmTurnActive } from './llmPolicy.js';
 import { defaultPrompt, readDb, updateDb, nowIso } from './store.js';
@@ -165,7 +167,6 @@ import {
 import { appendReplyFailure } from './bot/replyFailures.js';
 import { resolveMemberNames } from './bot/memberDirectory.js';
 import { classifyLlmFailure } from './bot/llmFailure.js';
-import { settlePendingQuickObservations } from './bot/quickContext.js';
 
 let stickerReplyCapabilityWarningLogged = false;
 
@@ -327,24 +328,17 @@ export function oneBotToInternal(event) {
 
   // If the user quoted a message, try to include images from the quoted message.
   // This handles: user replies to an image message and @bots.
-  if (replyMessageId && images.length === 0) {
+  if (replyMessageId) {
     try {
       const db = readDb();
-      const quoted = db.messages.find((m) => String(m.sourceMessageId || m.messageId || m.id) === replyMessageId);
-      if (quoted) {
-        quotedMessage = {
-          messageId: replyMessageId,
-          text: String(quoted.content || ''),
-          images: quoted.media?.images || [],
-          userId: String(quoted.userId || ''),
-          nickname: String(quoted.nickname || ''),
-        };
-      }
+      quotedMessage = resolveLocalQuote(db, { type: event.message_type || 'group',
+        groupId: String(event.group_id || 'private'), userId: String(event.user_id || ''), replyMessageId, raw: event });
     } catch { /* DB read failure is non-fatal */ }
   }
 
   return {
     source: 'onebot',
+    receivedAtMs: Date.now(),
     type: event.message_type || 'group',
     messageId: String(event.message_id || crypto.randomUUID()),
     groupId: event.group_id ? String(event.group_id) : 'private',
@@ -395,6 +389,7 @@ export function processIncoming(event, sendMessage = undefined) {
 }
 
 export async function processIncomingAdmitted(event, sendMessage = undefined) {
+  event.receivedAtMs ||= Date.now();
   const requestId = requestTraceIdFor(event);
   startRequestTrace(event, requestId);
   return withRequestTrace(requestId, async () => {
@@ -501,7 +496,7 @@ async function processIncomingInner(event, sendMessage = undefined) {
     const roll = rollRandomImage(event.groupId, group.randomImageRate);
     if (roll.file) {
       // 不 await：发图失败不该影响正常回复，也不该拖慢这一轮。
-      Promise.resolve(sendMessage(event, cqImageFor(roll.file))).catch(() => undefined);
+      Promise.resolve(sendMessage(event, cqImageFor(roll.file), { originModule: 'random_image', suppressReply: true })).catch(() => undefined);
     }
   }
 
@@ -567,7 +562,8 @@ async function processIncomingInner(event, sendMessage = undefined) {
     }, 'received');
     setCommandStage(event, 'running');
     try {
-      const quickResult = await handleQuickCommand(event, sendMessage, db, quickMatch, {
+      const quickSend = sendMessage ? (e, body, options) => sendMessage(e, body, { ...options, originModule: 'quick_command' }) : undefined;
+      const quickResult = await handleQuickCommand(event, quickSend, db, quickMatch, {
         isOwner: isGroupOwner || isPrivateOwner,
         isAdmin: isGroupAdmin,
       });
@@ -583,9 +579,11 @@ async function processIncomingInner(event, sendMessage = undefined) {
   }
 
   const userPolicy = getUserPolicy(db, event.groupId, event.userId);
-  const mentioned = isDirectBotMention(event, settings) || mentionsBot(event.text, settings);
+  const replyingToSelf = conversationContext(db,event).repliesToBot
+    && !(event.atTargets || []).some(id=>String(id)!==String(settings.selfQq));
+  const mentioned = isDirectBotMention(event, settings) || mentionsBot(event.text, settings) || replyingToSelf;
   event.socialNamed = mentioned && !isDirectBotMention(event, settings);
-  event.socialDirect = event.type === 'private' || isDirectBotMention(event, settings)
+  event.socialDirect = event.type === 'private' || isDirectBotMention(event, settings) || replyingToSelf
     || settings.socialV2Enabled !== true && mentioned;
   // Presence observes every eligible group message in the background. It never
   // replies and never blocks the inbound path.
@@ -637,6 +635,7 @@ async function processIncomingInner(event, sendMessage = undefined) {
         id: crypto.randomUUID(),
         requestId: currentRequestTraceId(),
         sourceMessageId: event.messageId,
+        accountId: messageAccount(db, event),
         role: 'user',
         type: event.type,
         groupId: event.groupId,
@@ -749,7 +748,9 @@ async function processIncomingInner(event, sendMessage = undefined) {
     const entryBlock = chatAdmissionReason(readDb(), merged, merged.socialDirect || merged.socialNamed);
     if (isReplyProcessAborted() || entryBlock) return { replied: false, reason: entryBlock || '请求已取消' };
     let assessment;
-    if (socialCandidate) {
+    const combinedSocial = socialCandidate && merged.socialDirect && !tokenSaving(readDb())
+      && readDb().settings.pippiFastReplies !== false && process.env.PIPPI_FAST_REPLIES !== '0';
+    if (socialCandidate && !combinedSocial) {
       assessment = await assessSocialTurn(merged);
       if (assessment?.action === 'wait') {
         await waitForSocialContinuation(merged);
@@ -781,8 +782,8 @@ async function processIncomingInner(event, sendMessage = undefined) {
     merged.socialAction = action;
     merged.socialContextIds ||= socialTimeline(readDb(), merged, 40).map((m) => m.messageId);
     const output = await generateConversationReply(merged, sendMessage, { shouldReply: true, reason,
-      socialReady: socialCandidate, visualLimitation: decision.visualLimitation });
-    if (socialCandidate) recordSocialDecision(merged, { stage: 'delivery', action: output.replied ? action : 'pass',
+      socialReady: socialCandidate, combinedSocial, visualLimitation: decision.visualLimitation });
+    if (socialCandidate) recordSocialDecision(merged, { stage: 'delivery', action: output.replied ? merged.socialAction || action : 'pass',
       reason: output.replied ? '已发送' : output.error ? '生成或发送失败' : output.reason,
       evidenceIds: [], durationMs: 0, totalTokens: 0 });
     return output;
@@ -819,23 +820,21 @@ async function generateConversationReply(event, sendMessage, decision) {
       deliveryStarted = true;
       const segments = await sendReplySegments(sendMessage, event, text);
       updateDb((draft) => {
-        draft.messages.push({ id: crypto.randomUUID(), requestId: currentRequestTraceId(), ...replyTargetMetadata(event),
+        recordAssistantContext(draft, { id: crypto.randomUUID(), requestId: currentRequestTraceId(), ...replyTargetMetadata(event),
           role: 'assistant', type: event.type, groupId: event.groupId, userId: 'bot', nickname: '机器人', content: text, inContext: true, createdAt: nowIso() });
         draft.usage.replies += Math.max(1, segments.length);
       });
       return { replied: true, text, segments, reason: decision.reason };
     }
-    // QUICK_CONTEXT_FIX_QB08: before building this conversational turn's
-    // context, drain any pending quick observation whose visible reply already
-    // completed for THIS group+user. Bounded by QUICK_CONTEXT_PENDING_WAIT_MS;
-    // no pending work means zero added latency.
-    await settlePendingQuickObservations(event);
+    // Confirmed sends are already visible. Only an explicit inspect_message
+    // request for unfinished semantic detail waits on that specific observation.
     const liveDb = readDb();
     readingRevision = readPippiSelf(liveDb).revision;
     const liveGroup = getGroup(liveDb, event.groupId) || { groupId: event.groupId, name: '私聊' };
     const liveUserPolicy = getUserPolicy(liveDb, event.groupId, event.userId);
     const savingMode = tokenSaving(liveDb);
     const messages = buildPrompt(liveDb, liveGroup, event, liveUserPolicy);
+    const combined = decision.combinedSocial ? prepareCombinedSocialTurn(event) : null;
     const socialExpressionContext = messages[0]?.content;
     traceEvent('PROMPT', 'prompt_built', {
       messageCount: messages.length,
@@ -844,6 +843,7 @@ async function generateConversationReply(event, sendMessage, decision) {
       includesVision: Boolean(event?.images?.length),
     });
     const responseOptions = responseOptionsFor(event, liveDb, liveUserPolicy);
+    if (combined) responseOptions.maxTokens = Math.max(1200, responseOptions.maxTokens || 0);
     if (event.socialAction === 'react') responseOptions.maxTokens = Math.min(responseOptions.maxTokens || 250, 250);
     const turnId = String(event.messageId || crypto.randomUUID());
     const reasoningRouter = createShadowReasoningRouter(undefined, undefined, tokenSaving(liveDb) ? 'low' : 'max');
@@ -907,7 +907,7 @@ async function generateConversationReply(event, sendMessage, decision) {
     if (namedBotDowngradeNotice) {
       if (sendMessage) await sendMessage(event, namedBotDowngradeNotice);
       updateDb((draft) => {
-        draft.messages.push({ id: crypto.randomUUID(), ...replyTargetMetadata(event), role: 'assistant', type: event.type, groupId: event.groupId, userId: 'bot', nickname: '机器人', content: namedBotDowngradeNotice, inContext: true, createdAt: nowIso() });
+        recordAssistantContext(draft, { id: crypto.randomUUID(), ...replyTargetMetadata(event), role: 'assistant', type: event.type, groupId: event.groupId, userId: 'bot', nickname: '机器人', content: namedBotDowngradeNotice, inContext: true, createdAt: nowIso() });
         draft.usage.replies += 1;
       });
     }
@@ -920,7 +920,7 @@ async function generateConversationReply(event, sendMessage, decision) {
       const replyText = `${namedBotRequest.botName}目前没有接入 Harness 的真实调用通道。无心内部 osu! 查询可以提供类似数据。`;
       if (sendMessage) await sendMessage(event, replyText);
       updateDb((draft) => {
-        draft.messages.push({ id: crypto.randomUUID(), ...replyTargetMetadata(event), role: 'assistant', type: event.type, groupId: event.groupId, userId: 'bot', nickname: '机器人', content: replyText, inContext: true, createdAt: nowIso() });
+        recordAssistantContext(draft, { id: crypto.randomUUID(), ...replyTargetMetadata(event), role: 'assistant', type: event.type, groupId: event.groupId, userId: 'bot', nickname: '机器人', content: replyText, inContext: true, createdAt: nowIso() });
         draft.usage.replies += 1;
       });
       return { replied: true, text: replyText, reason: 'named_bot_no_adapter' };
@@ -955,6 +955,7 @@ async function generateConversationReply(event, sendMessage, decision) {
     const toolsForTurn = [
       ...botTools,
       ...(osuSearchEnabled ? buildOsuSearchTools() : []),
+      ...(!savingMode ? buildIntrospectionTools() : []),
     ];
     const useTools = toolsForTurn.length > 0;
     traceEvent('ROUTER', 'execution_path_selected', {
@@ -977,7 +978,7 @@ async function generateConversationReply(event, sendMessage, decision) {
       if (thinkingSent || !sendMessage) return;
       thinkingSent = true;
       const picked = pickCodeSticker(stickerKey);
-      await sendMessage(event, picked ? withSticker(text, picked.id) : text);
+      await sendMessage(event, picked ? withSticker(text, picked.id) : text, { originModule: 'notice' });
     };
 
     if (thinkingMode === 'simple') {
@@ -1031,7 +1032,7 @@ async function generateConversationReply(event, sendMessage, decision) {
       const noticeSticker = pickCodeSticker('service_down');
       if (sendMessage) await sendMessage(event, noticeSticker ? withSticker(errorText, noticeSticker.id) : errorText);
       updateDb((draft) => {
-        draft.messages.push({
+        recordAssistantContext(draft, {
           id: crypto.randomUUID(), ...replyTargetMetadata(event), role: 'assistant', type: event.type,
           groupId: event.groupId, userId: 'bot', nickname: '机器人',
           content: errorText, inContext: true, createdAt: nowIso()
@@ -1080,7 +1081,7 @@ async function generateConversationReply(event, sendMessage, decision) {
           const noticeSticker = pickCodeSticker('service_down');
           if (sendMessage) await sendMessage(event, noticeSticker ? withSticker(errorText, noticeSticker.id) : errorText);
           updateDb((draft) => {
-            draft.messages.push({
+            recordAssistantContext(draft, {
               id: crypto.randomUUID(), ...replyTargetMetadata(event), role: 'assistant', type: event.type,
               groupId: event.groupId, userId: 'bot', nickname: '机器人',
               content: errorText, inContext: true, createdAt: nowIso()
@@ -1121,6 +1122,7 @@ async function generateConversationReply(event, sendMessage, decision) {
       let osuSearchCalls = 0;
       const executeConversationTool = async (toolCall, context) => {
         assertLlmTurnActive();
+        if (INTROSPECTION_TOOL_NAMES.includes(toolCall?.function?.name)) return executeIntrospection(readDb(), event, toolCall);
         if ([OSU_SEARCH_TOOL, OSU_READ_TOOL].includes(toolCall?.function?.name)) {
           if (!osuSearchEnabled) return { toolCallId: toolCall.id, ok: false, content: '当前未开放 osu! 官方搜索', error: 'osu_search_unavailable' };
           if (osuSearchCalls >= 4) return { toolCallId: toolCall.id, ok: false, content: '本轮 osu! 检索与阅读已达到 4 次上限', error: 'osu_search_call_limit' };
@@ -1153,6 +1155,7 @@ async function generateConversationReply(event, sendMessage, decision) {
         messages,
         tools,
         imageTools,
+        lightweightToolsOnly: botTools.length === 0 && !osuSearchEnabled,
         userId: event.userId,
         groupId: event.groupId,
         sendMessage,
@@ -1171,8 +1174,8 @@ async function generateConversationReply(event, sendMessage, decision) {
         continueAfterDirectPayload: modelFirstRuntime,
         deduplicateToolCalls: modelFirstRuntime,
         structuredToolResults: modelFirstRuntime,
-        finalResponseFormat: () => stickerReplyEnabled || readingSources.length ? STICKER_REPLY_RESPONSE_FORMAT : undefined,
-        finalResponseInstruction: () => [stickerReplyInstruction || '', ...(readingSources.length ? [
+        finalResponseFormat: () => combined || stickerReplyEnabled || readingSources.length ? STICKER_REPLY_RESPONSE_FORMAT : undefined,
+        finalResponseInstruction: () => [stickerReplyInstruction || '', combined?.instruction || '', ...(readingSources.length ? [
           '结束本轮时输出 JSON，reply 为实际回复；可选 self 用于保留本次阅读的经历，不必每次都记。保留已有表情字段（若开放）。回复尚未送出，self 只写已完成的阅读与感受，不记为已向群友分享。',
           SELF_PROPOSAL_GUIDANCE, '本次实际读取成功的来源：' + JSON.stringify(readingSources),
         ] : [])].filter(Boolean).join('\n'),
@@ -1233,8 +1236,8 @@ async function generateConversationReply(event, sendMessage, decision) {
         : reasoningRouter.resolve(convInput, convTurn);
       convTurn = reasoningRouter.mergeTurn(convTurn, convDecision);
       const convWire = thinkingParamsForLevel(convDecision.level, reasoningEnabledFor(liveDb));
-      const finalMessages = stickerReplyEnabled && stickerReplyInstruction
-        ? withStickerReplyInstruction(messages, stickerReplyInstruction)
+      const finalMessages = combined || stickerReplyEnabled && stickerReplyInstruction
+        ? withStickerReplyInstruction(messages, [stickerReplyInstruction || '',combined?.instruction || ''].filter(Boolean).join('\n'))
         : messages;
       ai = await callLLM(liveDb, finalMessages, {
         maxTokens: responseOptions.maxTokens,
@@ -1258,7 +1261,19 @@ async function generateConversationReply(event, sendMessage, decision) {
       });
     }
 
-    const stickerReply = stickerReplyEnabled || readingSources.length
+    if (combined) {
+      let participation;
+      try { participation = applyCombinedSocialTurn(event, ai.text, combined); } catch { /* invalid proposals never alter state */ }
+      if (!participation) {
+        // Older/provider-specific output can omit the new envelope. Preserve
+        // participation semantics through the existing evaluator, without exposing internals.
+        const fallback = await assessSocialTurn(event);
+        if (fallback) { event.socialAction=fallback.action; participation={allow:['reply','react'].includes(fallback.action)}; }
+        if (/"social"\s*:/.test(ai.text) && !parseStickerReply(ai.text).structured) throw new Error('Invalid combined reply envelope');
+      }
+      if (participation && !participation.allow) return {replied:false,reason:'本轮不参与'};
+    }
+    const stickerReply = combined || stickerReplyEnabled || readingSources.length
       ? parseStickerReply(ai.text)
       : { reply: String(ai.text || ''), stickerCaption: '', stickerIntent: 'none' as const, captionSplit: false, stickerId: null, mode: 'none' as const, structured: false };
     ai.text = stickerReply.reply;
@@ -1739,7 +1754,7 @@ async function generateConversationReply(event, sendMessage, decision) {
     });
 
     updateDb((draft) => {
-      draft.messages.push({
+      recordAssistantContext(draft, {
         id: crypto.randomUUID(),
         requestId: currentRequestTraceId(),
         ...replyTargetMetadata(event),

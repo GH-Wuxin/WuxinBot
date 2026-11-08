@@ -1,0 +1,40 @@
+import assert from 'node:assert/strict';
+import {createTestDataDir,cleanupTestDir} from './test-isolation.mjs';
+const directory=createTestDataDir('pippi-introspection');process.env.NODE_ENV='test';
+const {ensureStore,readDb}=await import('../server/store.ts');ensureStore();
+await import('../server/bot/randomImages.ts');
+const api=await import('../server/bot/introspection.ts');
+const {registerPublicFeature}=await import('../server/bot/features.ts');
+try{
+ const db=structuredClone(readDb());
+ db.settings.ownerQq='owner';db.settings.selfQq='self';db.settings.globalPaused=false;db.settings.tokenSavingMode=false;
+ db.settings.osuClientSecret='SECRET_MUST_NOT_LEAK';db.settings.oneBotAccessToken='TOKEN_MUST_NOT_LEAK';
+ db.settings.osuSearchEnabled=false;db.groups=[{groupId:'a',enabled:true,mode:'natural',randomImageEnabled:true},{groupId:'b',enabled:true,mode:'natural',randomImageEnabled:false}];
+ const event={source:'onebot',type:'group',groupId:'a',userId:'member',messageId:'m',text:'你都有什么功能',senderRole:'member'};
+ let catalog=api.runtimeCapabilities(db,event);
+ assert.equal(catalog.find(c=>c.id==='feature.random_image').state,'automatic');
+ assert.equal(api.runtimeCapabilities(db,{...event,groupId:'b'}).find(c=>c.id==='feature.random_image').state,'disabled');
+ assert.equal(catalog.some(c=>c.permission==='仅 owner 可用'),false);
+ const groupOwner=api.runtimeCapabilities(db,{...event,userId:'owner'});
+ const privateOwner=api.runtimeCapabilities(db,{...event,userId:'owner',type:'private',groupId:'private'});
+ assert.ok(privateOwner.length>groupOwner.length,'Owner private entries never enter group projection');
+ assert.deepEqual(api.runtimeCapabilities(db,{...event,type:'private',groupId:'private'}),[]);
+ assert.equal(api.inspectCapabilities(db,event,{groupId:'b'}).ok,false);
+ const before=api.inspectCapabilities(db,event).version;
+ registerPublicFeature({id:'fixture_new',description:'新注册功能自动出现',trigger:'automatic',visibility:'public',state:()=> 'automatic'});
+ assert.equal(api.inspectCapabilities(db,event,{id:'feature.fixture_new'}).items.length,1);
+ assert.notEqual(api.inspectCapabilities(db,event).version,before);
+ registerPublicFeature({id:'fixture_bad_state',description:'错误的状态函数不能泄露配置',trigger:'automatic',visibility:'public',state:()=>db.settings});
+ assert.equal(api.inspectCapabilities(db,event,{id:'feature.fixture_bad_state'}).items[0].state,'unknown');
+ assert.throws(()=>registerPublicFeature({id:'no_policy',description:'missing',state:()=> 'automatic'}));
+ const safe=JSON.stringify(api.runtimeCapabilities(db,event))+api.capabilityContext(db,event);
+ for(const forbidden of ['SECRET_MUST_NOT_LEAK','TOKEN_MUST_NOT_LEAK','implementationRefs','server/','baseUrl'])assert.ok(!safe.includes(forbidden),forbidden);
+ assert.equal(api.runtimeCapabilities(db,event).find(c=>c.id==='feature.osu_search').state,'disabled');
+ db.settings.tokenSavingMode=true;assert.equal(api.runtimeCapabilities(db,event).find(c=>c.id==='tool.profile').state,'disabled');
+ db.messages=[{id:'local',sourceMessageId:'same',accountId:'self',role:'assistant',type:'group',groupId:'b',content:'other room secret',deliveryOutcome:'confirmed_success'},
+ {id:'visible',sourceMessageId:'own',accountId:'self',role:'assistant',type:'group',groupId:'a',content:'[CQ:image,file=G:\\private\\image.png]',media:{images:[{file:'G:\\private\\image.png'}]},deliveryOutcome:'confirmed_success'}];
+ assert.deepEqual(api.inspectMessage(db,event,{message_id:'same'}).messages,[]);
+ assert.equal(api.inspectMessage(db,event,{message_id:'own',groupId:'b'}).ok,false);
+ const view=api.inspectMessage(db,event,{recent_self:true});assert.equal(view.messages.length,1);assert.ok(!JSON.stringify(view).includes('G:'));assert.equal(view.messages[0].imageCount,1);
+ console.log('PASS introspection: automatic registration, current group state, private Owner scope, secret/path projection, scoped messages, no side effects');
+}finally{cleanupTestDir(directory);}

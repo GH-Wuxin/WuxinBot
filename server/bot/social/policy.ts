@@ -2,6 +2,7 @@ import { tokenSaving } from '../tokenSaving.js';
 import { getUserPolicy } from '../gate.js';
 import { textWithoutControlPlaceholders } from '../cleaning.js';
 import { isSystemOwner } from './state.js';
+import { isVerifiedSelfQuote, messageInConversation, messageAccount } from '../../messageFacts.js';
 import type { SocialEvent } from './types.js';
 
 /**
@@ -41,13 +42,11 @@ export function chatAdmissionReason(db: any, event: SocialEvent, direct: boolean
 }
 
 export function conversationContext(db: any, event: SocialEvent) {
-  const timeline = db.messages.filter((m) => m.inContext !== false && m.type === event.type
-    && (event.type === 'group' ? String(m.groupId) === String(event.groupId)
-      : String(m.userId) === event.userId || String(m.replyToUserId) === event.userId));
-  const last = timeline.filter((m) => m.role === 'assistant').at(-1);
+  const timeline = db.messages.filter((m) => m.inContext !== false && messageInConversation(m, event, messageAccount(db, event)));
+  const last = timeline.filter((m) => m.role === 'assistant' && !['random_image','notice'].includes(m.originModule)).at(-1);
   const secondsSinceLastReply = last ? Math.max(0, (Date.now() - Date.parse(last.createdAt)) / 1000) : null;
-  const repliesToBot = Boolean(event.replyMessageId && timeline.some((m) => m.role === 'assistant'
-    && String(m.sourceMessageId || m.id) === String(event.replyMessageId)));
+  const repliesToBot = isVerifiedSelfQuote(db, event) || Boolean(event.replyMessageId && timeline.some((m) => m.role === 'assistant'
+    && String(m.sourceMessageId || m.messageId || '') === String(event.replyMessageId)));
   const addressesAnother = (event.atTargets || []).some((id) => String(id) !== String(db.settings.selfQq));
   const quotesAnother = Boolean(event.replyMessageId && !repliesToBot);
   // This is a scheduling hint, not a semantic verdict that the user is continuing.
@@ -63,7 +62,7 @@ export function replyLimitReason(db: any, event: SocialEvent, continuation = fal
   if (event.socialDirect && (isSystemOwner(db, event) || policy.policy === 'admin' || policy.allowCommands)) return '';
   const ownIds = new Set(event.socialMessageIds || [event.messageId]);
   const attempts = new Map<string, number>();
-  for (const m of db.messages || []) if (m.role === 'assistant' && String(m.groupId) === String(event.groupId)) {
+  for (const m of db.messages || []) if (m.role === 'assistant' && !['random_image','notice'].includes(m.originModule) && String(m.groupId) === String(event.groupId)) {
     attempts.set(String(m.replyToMessageId || m.id), Date.parse(m.createdAt));
   }
   for (const d of db.decisions || []) if (d.shouldReply && String(d.groupId) === String(event.groupId)) {

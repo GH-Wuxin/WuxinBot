@@ -96,3 +96,16 @@ assert.ok(roundTools[1].includes('osu_get_beatmap'), '文本工具仍可用来�
 assert.deepEqual(result.images, ['[CQ:image,file=file:///bp1.png]'], '图片进入交付集合');
 
 console.log('tool phases: text batch parallel + image phase PASS');
+
+// Duplicate suppression must happen before parallel prefetch, including failures.
+for (const ok of [true, false]) {
+  let requests=0, iterations=0;
+  await runToolLoop(async()=>++iterations===1?{text:'',usage:{},raw:{choices:[{message:{content:'',tool_calls:[
+    {id:'same-a',type:'function',function:{name:'osu_get_player',arguments:'{}'}},
+    {id:'same-b',type:'function',function:{name:'osu_get_player',arguments:'{}'}},
+    {id:'different',type:'function',function:{name:'osu_get_best_score',arguments:'{"bp_rank":1}'}}
+  ]}}]}}:{text:'完成',usage:{}},{db:{settings:{}},messages:[{role:'user',content:'查询'}],tools:textTools,userId:'test',deduplicateToolCalls:true,maxIterations:2,
+    executeToolCallFn:async call=>{requests++;await new Promise(r=>setTimeout(r,10));return {toolCallId:call.id,ok,content:ok?'事实':'失败'};}});
+  assert.equal(requests,2,'duplicate must not start a hidden network call before being skipped');
+}
+console.log('tool phases: pre-dispatch duplicate suppression PASS');

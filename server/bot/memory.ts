@@ -2,6 +2,10 @@
 // Long-term memory: sample collection, classification, profile updates.
 // Extracted from bot.ts.
 import { tokenSaving, savingMemoryThresholds, savingMemoryDue } from './tokenSaving.js';
+import { registerPublicFeature } from './features.js';
+
+registerPublicFeature({id:'conversation_memory',description:'按既有设置整理对话记忆和画像，在后台更新；这不是查询他群或他人私聊记录的入口。',trigger:'automatic',visibility:'public',
+  state:(db)=>db.settings?.memoryEnabled===true?'automatic':'disabled'});
 import { readDb, updateDb, nowIso } from '../store.js';
 import { applyUsageTotals, usageEventFields } from '../usage.js';
 import { recordDecisionError } from '../health.js';

@@ -1,7 +1,7 @@
 // 随机表情包：群里每有一条消息就掷一次骰子，命中就单独甩一张图。
 //
-// 为什么是代码而不是 LLM：这是"群友偶尔没理由地发张图"，不是对话的一部分。
-// 走 LLM 既没有理由，也会把成本和延迟搭进去。模型完全不知道这个机制存在。
+// 由代码独立触发，不等待 LLM。功能目录说明来源，统一发送层记录真实回执，
+// 后续对话能识别自己发过的图片；这里的 hits/sentCounts 仍是抽选计数。
 //
 // 图池是**目录**而不是清单：往目录里丢文件就生效，不用改代码、不用重打包、
 // 不用同步安装版。目录 mtime 变了就重扫，所以加图不需要重启。
@@ -9,6 +9,10 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { updateDb } from '../store.js';
+import { registerPublicFeature } from './features.js';
+
+registerPublicFeature({id:'random_image',description:'pippi 自己的随机发图功能，由 pippi 账号按本群开关自动发送；手动选表情使用聊天表情入口。',trigger:'automatic',visibility:'public',
+  state:(db,event)=>event.type==='group'&&randomImageConfig(db).enabled&&(db.groups||[]).some(g=>String(g.groupId)===String(event.groupId)&&g.randomImageEnabled===true)?'automatic':'disabled'});
 
 /** 只认这些后缀（字面比较，不做模式匹配）。 */
 const IMAGE_EXTENSIONS = ['.png', '.jpg', '.jpeg', '.gif'];

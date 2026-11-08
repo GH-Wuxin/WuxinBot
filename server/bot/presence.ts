@@ -9,6 +9,10 @@
 import crypto from 'node:crypto';
 import { getDataDir, readDb, updateDb } from '../store.js';
 import { runBackgroundTask } from '../backgroundTasks.js';
+import { registerPublicFeature } from './features.js';
+
+registerPublicFeature({id:'presence',description:'在已开启的群聊中理解上下文、氛围和正在讨论的事情，相关整理在后台进行；不会公开其他会话的记录。',trigger:'automatic',visibility:'public',
+  state:(db,event)=>shouldObserve(db,event)?'automatic':'disabled'});
 import { completeChat } from './llm.js';
 import type { BotEvent } from '../types.js';
 import type {

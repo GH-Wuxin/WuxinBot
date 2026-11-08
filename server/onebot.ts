@@ -20,6 +20,7 @@ import {
 import { createConnectionStatus } from './onebotStatus.js';
 import { tryResolveBotResponse } from './bots/executor.js';
 import { runInboundTask } from './bot/inboundGate.js';
+import { beginOutboundMessage, finishOutboundMessage, observeSelfMessage, conversationKey, messageAccount } from './messageFacts.js';
 
 let ws;
 let reconnectTimer = null;
@@ -278,9 +279,9 @@ export async function hydrateQuotedMessage(event) {
   if (event?.quotedMessage) return event;
 
   // A message NapCat cannot serve now will not become servable seconds later.
-  if (quotedMessageFailureCached(replyMessageId)) return event;
-
   const db = readDb();
+  const cacheKey = `${messageAccount(db, event)}:${conversationKey(event)}:${replyMessageId}`;
+  if (quotedMessageFailureCached(cacheKey)) return event;
   const baseUrl = String(db.settings.oneBotHttpUrl || '').replace(/\/$/, '');
   if (!baseUrl) return event;
 
@@ -293,6 +294,18 @@ export async function hydrateQuotedMessage(event) {
     }, QUOTED_MESSAGE_TIMEOUT_MS);
     const payload = await assertOneBotSuccess(response, '读取 QQ 引用消息失败');
     const data = payload?.data || {};
+    // A platform lookup by ID alone is not permission to disclose another room.
+    const senderId = String(data.sender?.user_id || data.user_id || '');
+    const account = messageAccount(db, event);
+    const sameScope = event.type === 'group'
+      ? String(data.group_id || '') === String(event.groupId)
+      : !data.group_id && data.message_type === 'private'
+        && (senderId === String(event.userId) || senderId === account
+          && String(data.target_id || data.peer_id || '') === String(event.userId));
+    if (!sameScope || data.message_id != null && String(data.message_id) !== replyMessageId) {
+      rememberQuotedMessageFailure(cacheKey);
+      return event;
+    }
     const structured = data.message;
     const raw = data.raw_message;
     const text = normalizeMessage(structured ?? raw ?? '');
@@ -306,12 +319,14 @@ export async function hydrateQuotedMessage(event) {
         messageId: replyMessageId,
         text,
         images,
-        userId: String(data.sender?.user_id || data.user_id || ''),
+        userId: senderId,
         nickname: String(data.sender?.card || data.sender?.nickname || data.nickname || ''),
+        verified: true, scope: conversationKey(event), accountId: account,
+        isSelf: Boolean(account && senderId === account),
       },
     };
   } catch (error) {
-    rememberQuotedMessageFailure(replyMessageId);
+    rememberQuotedMessageFailure(cacheKey);
     console.warn('[onebot] 无法读取引用消息，保留本地回退内容:', error?.message || error);
     return event;
   }
@@ -369,8 +384,10 @@ async function sendOneBotMessageInner(event, text, options = {}) {
 
 export async function sendOneBotMessage(event, text, options = {}) {
   const startedAt = Date.now();
+  const outboundId = beginOutboundMessage(readDb(), event, text, options);
   try {
     const result = await sendOneBotMessageInner(event, text, options);
+    finishOutboundMessage(outboundId, result?.outcome || 'unknown', result?.messageId);
     const latencyMs = Date.now() - startedAt;
     if (result?.outcome === 'accepted_unknown') {
       recordSendAcceptedUnknown(latencyMs);
@@ -383,6 +400,7 @@ export async function sendOneBotMessage(event, text, options = {}) {
   } catch (error) {
     const latencyMs = Date.now() - startedAt;
     const deliveryOutcome = error?.deliveryOutcome === 'confirmed_failure' ? 'confirmed_failure' : 'unknown';
+    finishOutboundMessage(outboundId, deliveryOutcome);
     if (deliveryOutcome === 'confirmed_failure') recordSendError(error, latencyMs);
     else recordSendUnknown(error, latencyMs);
     connectionStatus.recordEvent(deliveryOutcome === 'confirmed_failure' ? 'send_failed' : 'send_unknown', {
@@ -475,6 +493,7 @@ function ensureStatusProbe() {
 }
 
 export async function handleOneBotEvent(event, sendMessage = sendOneBotMessage) {
+  if (observeSelfMessage(event)) return { consumed: true, selfMessage: true };
   if (event?.post_type !== 'message') {
     return { consumed: false, ignored: true };
   }

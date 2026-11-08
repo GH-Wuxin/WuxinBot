@@ -2460,6 +2460,8 @@ export interface ToolLoopOptions {
    * 后续规划轮会切换成它；不提供就保持单层行为。
    */
   imageTools?: LlmTool[];
+  /** Local self-inspection must not force a higher reasoning tier than plain chat. */
+  lightweightToolsOnly?: boolean;
   userId: string;
   groupId?: string;
   sendMessage?: (event: any, text: string, extra?: any) => Promise<any>;
@@ -3122,9 +3124,9 @@ export async function runToolLoop(
     const previousToolFailed = lastToolFailed;
     lastToolFailed = false;
 
-    const plannerInput = reasoningInput(directPayloadIsTerminal ? 'decorative_lead' : 'tool_planner', {
+    const plannerInput = reasoningInput(directPayloadIsTerminal ? 'decorative_lead' : options.lightweightToolsOnly ? 'conversation' : 'tool_planner', {
       requiredTool: false,
-      toolSelectionRequired: !directPayloadIsTerminal && Array.isArray(tools) && tools.length > 0,
+      toolSelectionRequired: !options.lightweightToolsOnly && !directPayloadIsTerminal && Array.isArray(tools) && tools.length > 0,
       toolCallsMade,
       iterations,
       maxIterations,
@@ -3158,6 +3160,7 @@ export async function runToolLoop(
         maxTokens,
         model,
         label: label ? `${label} [工具循环 ${iterations}]` : undefined,
+        ...(options.lightweightToolsOnly && !thinkingOn ? { responseFormat: typeof finalResponseFormat === 'function' ? finalResponseFormat() : finalResponseFormat } : {}),
         traceRole: plannerInput.callRole,
         tracePurpose: directPayloadIsTerminal ? 'tool_result_lead' : 'tool_planning',
         retainToolsOnEmpty: Boolean(evidenceRequirement && !evidenceRequirementSatisfied),
@@ -3313,10 +3316,20 @@ export async function runToolLoop(
     // 只读的 osu 工具在一批里互不依赖，先并发发出去，循环里按顺序消费。
     // 记账、去重、证据判定、final 短路仍然只发生在下面这一个单点上。
     const prefetchedResults = new Map<string, Promise<any>>();
+    const batchDuplicateIds = new Set<string>();
+    if (deduplicateToolCalls) {
+      const seen = new Set<string>();
+      for (const call of toolCalls.slice(0, executableThisResponse)) {
+        const signature = toolCallSignature(call);
+        if (seen.has(signature) || successfulToolCallSignatures.has(signature)) batchDuplicateIds.add(call.id);
+        seen.add(signature);
+      }
+    }
     {
       const candidates = toolCalls
         .slice(0, executableThisResponse)
         .filter((call) => {
+          if (batchDuplicateIds.has(call.id)) return false;
           const capability = String(osuCapabilityForToolCall(call) || '');
           // 发图工具必须串行：渲染服务是单客户端管道，并发只会互相排队。
           const isImageCapability = capability === 'score_image' || capability.endsWith('_image');
@@ -3353,13 +3366,13 @@ export async function runToolLoop(
       }
 
       const callSignature = toolCallSignature(tc);
-      if (deduplicateToolCalls && successfulToolCallSignatures.has(callSignature)) {
+      if (deduplicateToolCalls && (successfulToolCallSignatures.has(callSignature) || batchDuplicateIds.has(tc.id))) {
         traceEvent('TOOL', 'tool_call_duplicate_skipped', {
           status: 'skipped',
           toolCallId: tc.id,
           toolName: tc.function?.name || '',
         });
-        const content = '[系统] 完全相同的工具调用本轮已经成功执行；本次未重复执行。请使用已有结果继续判断，或修改参数后再调用。';
+        const content = '[系统] 完全相同的工具调用本轮已经派发；本次未重复执行。请使用对应结果继续判断，或修改参数后再调用。';
         currentMessages.push({
           role: 'tool',
           tool_call_id: tc.id,

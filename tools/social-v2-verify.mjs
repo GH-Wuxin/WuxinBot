@@ -28,6 +28,9 @@ const assessment = (patch = {}) => ({ action: 'pass', addressee: 'bot', reason: 
   evidenceIds: [], affinityDelta: 0, familiarityDelta: 0, summary: null, preferredNames: null, style: null, mood: null, ...patch });
 const seed = () => store.updateDb((db) => {
   db.settings.ownerQq = '10001'; db.settings.selfQq = '10002'; db.settings.socialV2Enabled = true;
+  // This suite retains the separate-assessment rollback path. The combined
+  // direct path is exercised end-to-end by reply-fast-path-verify.mjs.
+  db.settings.pippiFastReplies = false;
   db.settings.globalPaused = false; db.settings.onlyMentionMode = false; db.settings.socialMaxAssessmentsPerHour = 60;
   db.settings.memoryEnabled = false; db.settings.osuSearchEnabled = false; db.settings.enableAutoModel = false;
   db.settings.thinkingNoticeMode = 'off'; db.settings.levelUpNotifyEnabled = false;

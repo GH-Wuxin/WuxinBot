@@ -98,10 +98,6 @@ export function splitReplySegments(text) {
   ].filter(Boolean);
 }
 
-function wait(ms) {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
 /**
  * Only an actual @mention of Pippi should produce a QQ native reply. Natural
  * unsolicited group participation must stay as an ordinary group message;
@@ -134,7 +130,6 @@ export async function sendReplySegments(sendMessage, event, replyText) {
       segments[index],
       index === 0 ? replyToCurrentMessageOptions(event) : { suppressReply: true },
     );
-    if (index < segments.length - 1) await wait(700 + Math.floor(Math.random() * 600));
   }
   return segments;
 }

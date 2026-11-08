@@ -1,4 +1,8 @@
 import { tokenSaving } from './tokenSaving.js';
+import { registerPublicFeature } from './features.js';
+
+registerPublicFeature({id:'autonomous_reading',description:'可在后台阅读 osu! 官方资料；是否向群里分享仍按群聊参与规则判断。',trigger:'automatic',visibility:'public',
+  state:(db)=>pippiActivityConfig(db).enabled&&db.settings.socialV2Enabled===true&&!db.settings.globalPaused&&!tokenSaving(db)&&isOsuSearchAvailable(db)?'automatic':'disabled'});
 import crypto from 'node:crypto';
 import { readDb, updateDb } from '../store.js';
 import { runBackgroundTask } from '../backgroundTasks.js';

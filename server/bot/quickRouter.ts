@@ -569,7 +569,7 @@ async function handleQuickCommandInner(
         // pending entry always settles so a later turn can never hang.
         hydrateQuickContextPending(event, pendingId, placeholder, images, traceId);
       }
-    }));
+    }, pendingId));
   };
 
   // Per-group bot toggle: when a specific bot is disabled for this group, its
