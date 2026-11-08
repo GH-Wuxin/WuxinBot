@@ -103,6 +103,8 @@ aborts optional sends. Progress records use `originModule=notice`, so they do no
 consume reply quotas or become ordinary conversation context. Set
 `settings.pippiProgressReplies=false` or `PIPPI_PROGRESS_REPLIES=0` to disable this
 feature. Existing thinking-notice settings remain available for other requests.
+The explicitly selected legacy token-saving flow retains its existing reply
+protocol and does not enable staged replies; ordinary mode is unaffected.
 
 Normal non-saving replies allow at least 8,192 generated tokens. The first
 completion keeps the existing request timeout; after a semantic opening, the

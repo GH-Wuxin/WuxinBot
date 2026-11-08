@@ -20,6 +20,7 @@ try{
  assert.equal(isReasoningBudgetExhaustion({finishReason:null,reasoningTokens:1200,completionTokens:1200,contentEmpty:true,hadToolCalls:false}),true);
  for(const text of ['晚安','对比这两个方案','你还会啥','复杂这个词是什么意思','x'.repeat(300)])assert.equal(shouldUseReplyProgress(readDb(),{...event,text}),true,'eligibility does not classify semantics');
  for(const patch of [{atTargets:[]},{source:'gui'},{type:'private'}])assert.equal(shouldUseReplyProgress(readDb(),{...event,...patch}),false);
+ assert.equal(shouldUseReplyProgress({...readDb(),settings:{...readDb().settings,tokenSavingMode:true}},event),false,'an explicitly selected legacy saving flow retains its protocol');
  let progress=createReplyProgress(event,send,{intervalMs:25});
  let result=await completeWithReplyProgress(readDb(),options,progress,async(_db,request)=>{calls.push(request);return envelope();});
  assert.equal(calls.length,1);assert.equal(sent.length,0);assert.equal(parseStickerReply(result.text).reply,'晚安。');progress.stop();

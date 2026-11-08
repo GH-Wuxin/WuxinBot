@@ -5,6 +5,7 @@ import { isReplyProcessAborted, onReplyProcessAbort } from './replyProcesses.js'
 import { socialDeliveryGuard } from './social/runtime.js';
 import { sendOptionalNotice } from './notice.js';
 import { registerPublicFeature } from './features.js';
+import { tokenSaving } from './tokenSaving.js';
 import { parseStickerReply, withStickerReplyInstruction, STICKER_REPLY_RESPONSE_FORMAT } from './stickers/finalReply.js';
 import type { SocialEvent } from './social/types.js';
 
@@ -12,7 +13,7 @@ registerPublicFeature({
   id: 'progress_replies',
   description: '被 @ 时由模型根据语境决定直接回答，或先简短回应再完成复杂任务；可按真实进展补充并分段给出结果。',
   trigger: 'conversation', visibility: 'public',
-  state: (db, event) => db.settings.pippiProgressReplies === false || process.env.PIPPI_PROGRESS_REPLIES === '0'
+  state: (db, event) => tokenSaving(db) || db.settings.pippiProgressReplies === false || process.env.PIPPI_PROGRESS_REPLIES === '0'
     || db.settings.globalPaused || event.type !== 'group'
     || (db.groups || []).some(g => String(g.groupId) === String(event.groupId) && ['silent', 'osu'].includes(g.mode))
     ? 'disabled' : 'available',
@@ -20,7 +21,7 @@ registerPublicFeature({
 
 /** Eligibility is protocol metadata. Only the model chooses response strategy. */
 export function shouldUseReplyProgress(db: any, event: SocialEvent): boolean {
-  return db.settings.pippiProgressReplies !== false && process.env.PIPPI_PROGRESS_REPLIES !== '0'
+  return !tokenSaving(db) && db.settings.pippiProgressReplies !== false && process.env.PIPPI_PROGRESS_REPLIES !== '0'
     && isDirectBotMention(event, db.settings);
 }
 
