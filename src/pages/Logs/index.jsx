@@ -192,9 +192,12 @@ export function LogsPage({ db }) {
   }, []);
 
   useEffect(() => {
+    // Mounting with the already selected query must not schedule a later page
+    // reset: a fast first-page navigation can complete before the debounce.
+    if (logSearch.trim() === query) return undefined;
     const timer = window.setTimeout(() => { setQuery(logSearch.trim()); setListPage(0); setSelectedId(null); }, 250);
     return () => window.clearTimeout(timer);
-  }, [logSearch]);
+  }, [logSearch, query]);
   useEffect(() => {
     const controller = new AbortController(); let alive = true;
     const params = new URLSearchParams({ channel, filter, q:query, page:String(listPage), pageSize:'8', group:groupFilter });
