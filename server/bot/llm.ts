@@ -610,7 +610,7 @@ export async function completeChat(db, options = {}) {
       tools: nextParams.tools || [],
     });
     if (promptCallId) traceEvent('PROMPT', 'prompt_snapshot_created', { promptCallId, moduleId: promptModule.id, messageCount: nextParams.messages?.length || 0, toolCount: nextParams.tools?.length || 0 });
-    const streaming = (provider === 'deepseek' || Boolean(options.onPublicOutput) && /^deepseek/i.test(String(nextParams.model)))
+    const streaming = provider === 'deepseek'
       && Boolean(currentRequestTraceId())
       && options.traceStreaming !== false;
     // These are the wire request, not a claim about the provider's execution.
@@ -682,11 +682,6 @@ export async function completeChat(db, options = {}) {
         response = await withTimeout(
           collectChatCompletionStream(stream, nextParams.model, (progress) => {
             latestProgress = progress;
-            // Only public output is exposed to staged delivery. Provider
-            // reasoning remains confined to the existing local trace viewer.
-            if (typeof options.onPublicOutput === 'function') {
-              try { options.onPublicOutput(progress.content); } catch { /* optional progress cannot fail a reply */ }
-            }
             publishProgress(false);
           }),
           remainingMs,

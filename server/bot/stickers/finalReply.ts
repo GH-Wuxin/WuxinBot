@@ -1,6 +1,9 @@
 import { listModelStickers } from './index.js';
 
 export interface ParsedStickerReply {
+  responsePhase?: 'acknowledge' | 'final';
+  presentation?: 'chat' | 'document';
+  participation?: 'pass' | 'wait' | 'react' | 'reply';
   self?: unknown;
   /** 独立正文：不依赖图片是否发得出去，图片失败时应当完整保留。 */
   reply: string;
@@ -50,7 +53,8 @@ export function buildStickerReplyInstruction(): string {
   if (cachedInstruction) return cachedInstruction;
   cachedInstruction = [
     '【最终回复格式】',
-    '你现在处于最终回答阶段。决定结束本轮时，只输出一个 JSON 对象，不要输出 Markdown 代码块或额外解释。',
+    '按本轮表达策略输出 JSON；没有另行约定开场阶段时直接给最终回答。不要输出 Markdown 代码块或额外解释。',
+    'presentation 由你理解用户需要后选择：chat=聊天或分段讲解，document=完整文章、长文、代码或表格成品。不要根据固定关键词判断。',
     '如果仍需要工具取证，优先使用结构化 tool_calls；不要把工具调用写进 reply。工具结果返回后，再输出最终 JSON。',
     'reply 是真正要发给用户的自然语言回复，使用当前对话语言；选择 image_only 时填写空字符串。',
     'reply 必须独立成立：不依赖图片有没有发出去。任何「发给你了」「图在下面」这类跟发送结果绑定的话，写进 sticker_caption，不要写进 reply。',
@@ -176,6 +180,14 @@ export function parseStickerReply(value: unknown): ParsedStickerReply {
       if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed) || typeof parsed.reply !== 'string') {
         continue;
       }
+      const responseMetadata = {
+        ...(['acknowledge','final'].includes(parsed.response_phase) ? { responsePhase: parsed.response_phase as 'acknowledge'|'final' } : {}),
+        ...(['chat','document'].includes(parsed.presentation) ? { presentation: parsed.presentation as 'chat'|'document' } : {}),
+        ...(['pass','wait','react','reply'].includes(parsed.social?.action)
+          && ['bot','member','group','unclear'].includes(parsed.social?.addressee)
+          && typeof parsed.social?.reason === 'string' && parsed.social.reason.length <= 200
+          ? { participation: parsed.social.action as 'pass'|'wait'|'react'|'reply' } : {}),
+      };
       const requestedMode = parsed.mode === 'none' || parsed.mode === 'text_image' || parsed.mode === 'image_only'
         ? parsed.mode
         : null;
@@ -205,10 +217,11 @@ export function parseStickerReply(value: unknown): ParsedStickerReply {
         ? ''
         : parsed.sticker_caption.trim();
       if (mode === 'none' || !stickerId) {
-        return { reply: parsed.reply.trim(), stickerCaption: '', stickerIntent, captionSplit, stickerId: null, mode: 'none', structured: true,
+        return { ...responseMetadata, reply: parsed.reply.trim(), stickerCaption: '', stickerIntent, captionSplit, stickerId: null, mode: 'none', structured: true,
           ...(parsed.self !== undefined ? { self: parsed.self } : {}) };
       }
       return {
+        ...responseMetadata,
         reply: mode === 'image_only' ? '' : parsed.reply.trim(),
         stickerCaption,
         stickerIntent,

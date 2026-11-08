@@ -20,7 +20,7 @@ import {
 import { createConnectionStatus } from './onebotStatus.js';
 import { tryResolveBotResponse } from './bots/executor.js';
 import { runInboundTask } from './bot/inboundGate.js';
-import { beginOutboundMessage, finishOutboundMessage, observeSelfMessage, conversationKey, messageAccount } from './messageFacts.js';
+import { tryBeginOutboundMessage, finishOutboundMessage, observeSelfMessage, conversationKey, messageAccount } from './messageFacts.js';
 
 let ws;
 let reconnectTimer = null;
@@ -387,10 +387,10 @@ async function sendOneBotMessageInner(event, text, options = {}) {
 
 export async function sendOneBotMessage(event, text, options = {}) {
   const startedAt = Date.now();
-  const outboundId = beginOutboundMessage(readDb(), event, text, options);
+  const outboundId = tryBeginOutboundMessage(readDb(), event, text, options);
   try {
     const result = await sendOneBotMessageInner(event, text, options);
-    finishOutboundMessage(outboundId, result?.outcome || 'unknown', result?.messageId);
+    if (outboundId) finishOutboundMessage(outboundId, result?.outcome || 'unknown', result?.messageId);
     const latencyMs = Date.now() - startedAt;
     if (result?.outcome === 'accepted_unknown') {
       recordSendAcceptedUnknown(latencyMs);
@@ -403,7 +403,7 @@ export async function sendOneBotMessage(event, text, options = {}) {
   } catch (error) {
     const latencyMs = Date.now() - startedAt;
     const deliveryOutcome = error?.deliveryOutcome === 'confirmed_failure' ? 'confirmed_failure' : 'unknown';
-    finishOutboundMessage(outboundId, deliveryOutcome);
+    if (outboundId) finishOutboundMessage(outboundId, deliveryOutcome);
     if (deliveryOutcome === 'confirmed_failure') recordSendError(error, latencyMs);
     else recordSendUnknown(error, latencyMs);
     connectionStatus.recordEvent(deliveryOutcome === 'confirmed_failure' ? 'send_failed' : 'send_unknown', {

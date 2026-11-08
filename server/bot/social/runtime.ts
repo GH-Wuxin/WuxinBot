@@ -215,48 +215,74 @@ export async function waitForSocialContinuation(event: SocialEvent) {
   recordSocialDecision(event, { stage: 'wait', action: 'wait', reason: '短暂等待结束，最多重新判断一次', evidenceIds: [], durationMs: 1400, totalTokens: 0 });
 }
 
-function participationFromObject(value: any, event: SocialEvent) {
-  if (!value || !['pass','wait','react','reply'].includes(value.action)
-    || !['bot','member','group','unclear'].includes(value.addressee)
+function participationFromObject(input: unknown, event: SocialEvent): SocialAssessment | null {
+  if (!input || typeof input !== 'object' || Array.isArray(input)) return null;
+  const value = input as Record<string, unknown>;
+  if (typeof value.action !== 'string' || !['pass', 'wait', 'react', 'reply'].includes(value.action)
+    || typeof value.addressee !== 'string' || !['bot', 'member', 'group', 'unclear'].includes(value.addressee)
     || typeof value.reason !== 'string' || value.reason.length > 200) return null;
-  const assessment = { action:value.action, addressee:value.addressee, reason:value.reason,
-    evidenceIds:[], affinityDelta:0, familiarityDelta:0, summary:null, preferredNames:null, style:null, mood:null } as SocialAssessment;
-  if (event.socialDirect && isSystemOwner(readDb(),event)) assessment.action='reply';
+  const assessment: SocialAssessment = {
+    action: value.action as SocialAssessment['action'],
+    addressee: value.addressee as SocialAssessment['addressee'],
+    reason: value.reason,
+    evidenceIds: [], affinityDelta: 0, familiarityDelta: 0,
+    summary: null, preferredNames: null, style: null, mood: null,
+  };
+  if (event.socialDirect && isSystemOwner(readDb(), event)) assessment.action = 'reply';
   return assessment;
 }
 
 /** Ambient talk still needs a participation decision, without relationship writes. */
 export async function assessSocialParticipation(event: SocialEvent, phase: 'initial' | 'resumed' = 'initial', invoke = completeChat) {
-  const db=readDb();
-  if (!socialEntryAllowed(db,event,Boolean(event.socialDirect)) || isReplyProcessAborted()) return null;
-  if (tokenSaving(db)) return assessSavingTurn(event,invoke);
-  const conversation=conversationContext(db,event), candidate=event.socialNamed?{...event,socialDirect:true}:event;
-  const blocked=replyLimitReason(db,candidate,conversation.continuationCandidate)||assessmentBudgetReason(db,candidate,phase==='resumed');
-  if(blocked){recordSocialDecision(event,{stage:'guard',action:'pass',reason:blocked,evidenceIds:[],durationMs:0,totalTokens:0});return null;}
-  const timeline=socialTimeline(db,event,40), started=Date.now();
-  event.socialContextIds=timeline.map(m=>m.messageId);
-  try{
-    const result=await invoke(db,{messages:[
-      {role:'system',content:`${SOCIAL_PARTICIPATION_PROMPT}\n${ownerAuthorityPrompt(db,event)}\n只输出上述 social 对象本身，不生成正文。phase=resumed 时不能再 wait。`},
-      {role:'user',content:JSON.stringify({phase,direct:Boolean(event.socialDirect),nameMentioned:Boolean(event.socialNamed),
-        bot:db.settings.selfQq,mode:db.groups.find(g=>String(g.groupId)===String(event.groupId))?.mode||'private',conversation,
-        target:{userId:event.userId,text:event.text,atTargets:event.atTargets||[],replyTo:event.replyMessageId||''},
-        relationship:readSocialPerson(db,event.userId),currentConversation:readSocialView(db,socialScope(event),event.userId),
-        selfContext:selfContext(db,socialScope(event),event.userId),timeline})}],
-      maxTokens:350,timeoutMs:15_000,requestMaxRetries:0,retryOnEmpty:false,temperature:0.2,
-      ...thinkingParamsForLevel('low',reasoningEnabledFor(db)),responseFormat:{type:'json_object'},
-      label:'Pippi 接话判断',tracePurpose:'social_participation',traceRole:'social',promptModule:'general'});
-    const assessment=participationFromObject(parseObject(result.text),event);
-    if(!assessment)throw Error('无效的接话结果');
-    if(event.socialNamed&&assessment.addressee==='bot')event.socialDirect=true;
-    if(event.socialDirect&&isSystemOwner(db,event))assessment.action='reply';
-    if(phase==='resumed'&&assessment.action==='wait')assessment.action='pass';
-    if(isReplyProcessAborted()||!socialEntryAllowed(readDb(),event,Boolean(event.socialDirect)))return null;
-    event.socialEngagement=event.socialDirect?'direct':assessment.addressee==='bot'&&conversation.continuationCandidate?'continuation':'ambient';
-    recordSocialDecision(event,{stage:'assessment',phase,action:assessment.action,reason:assessment.reason,evidenceIds:[],durationMs:Date.now()-started,totalTokens:Number(result.usage?.total_tokens||0)});
+  const db = readDb();
+  if (!socialEntryAllowed(db, event, Boolean(event.socialDirect)) || isReplyProcessAborted()) return null;
+  if (tokenSaving(db)) return assessSavingTurn(event, invoke);
+  const conversation = conversationContext(db, event);
+  const candidate = event.socialNamed ? {...event, socialDirect: true} : event;
+  const blocked = replyLimitReason(db, candidate, conversation.continuationCandidate)
+    || assessmentBudgetReason(db, candidate, phase === 'resumed');
+  if (blocked) {
+    recordSocialDecision(event, {stage: 'guard', action: 'pass', reason: blocked, evidenceIds: [], durationMs: 0, totalTokens: 0});
+    return null;
+  }
+  const timeline = socialTimeline(db, event, 40);
+  const started = Date.now();
+  event.socialContextIds = timeline.map(m => m.messageId);
+  try {
+    const result = await invoke(db, {
+      messages: [
+        {role: 'system', content: `${SOCIAL_PARTICIPATION_PROMPT}\n${ownerAuthorityPrompt(db,event)}\n只输出上述 social 对象本身，不生成正文。phase=resumed 时不能再 wait。`},
+        {role: 'user', content: JSON.stringify({
+          phase, direct: Boolean(event.socialDirect), nameMentioned: Boolean(event.socialNamed),
+          bot: db.settings.selfQq,
+          mode: db.groups.find(g => String(g.groupId) === String(event.groupId))?.mode || 'private',
+          conversation,
+          target: {userId: event.userId, text: event.text, atTargets: event.atTargets || [], replyTo: event.replyMessageId || ''},
+          relationship: readSocialPerson(db, event.userId),
+          currentConversation: readSocialView(db, socialScope(event), event.userId),
+          selfContext: selfContext(db, socialScope(event), event.userId),
+          capabilities: capabilityContext(db, event), timeline,
+        })},
+      ],
+      maxTokens: 2048, timeoutMs: 15_000, requestMaxRetries: 0, retryOnEmpty: false, temperature: 0.2,
+      ...thinkingParamsForLevel('low', reasoningEnabledFor(db)), responseFormat: {type: 'json_object'},
+      label: 'Pippi 接话判断', tracePurpose: 'social_participation', traceRole: 'social', promptModule: 'general',
+    });
+    const assessment = participationFromObject(parseObject(result.text), event);
+    if (!assessment) throw Error('无效的接话结果');
+    if (event.socialNamed && assessment.addressee === 'bot') event.socialDirect = true;
+    if (event.socialDirect && isSystemOwner(db, event)) assessment.action = 'reply';
+    if (phase === 'resumed' && assessment.action === 'wait') assessment.action = 'pass';
+    if (isReplyProcessAborted() || !socialEntryAllowed(readDb(), event, Boolean(event.socialDirect))) return null;
+    event.socialEngagement = event.socialDirect ? 'direct'
+      : assessment.addressee === 'bot' && conversation.continuationCandidate ? 'continuation' : 'ambient';
+    recordSocialDecision(event, {stage: 'assessment', phase, action: assessment.action, reason: assessment.reason,
+      evidenceIds: [], durationMs: Date.now() - started, totalTokens: Number(result.usage?.total_tokens || 0)});
     return assessment;
-  }catch(error){
-    recordSocialDecision(event,{stage:'failure',phase,action:event.socialDirect?'reply':'pass',reason:'接话判断失败：'+String(error.message||error).slice(0,100),evidenceIds:[],durationMs:Date.now()-started,totalTokens:0});
+  } catch (error) {
+    const reason = '接话判断失败：' + String(error instanceof Error ? error.message : error).slice(0, 100);
+    recordSocialDecision(event, {stage: 'failure', phase, action: event.socialDirect ? 'reply' : 'pass',
+      reason, evidenceIds: [], durationMs: Date.now() - started, totalTokens: 0});
     return null;
   }
 }
@@ -269,7 +295,7 @@ export function prepareCombinedSocialTurn(event: SocialEvent) {
   const assessmentRules = applyModulePersonality([{role:'system',content:SOCIAL_PARTICIPATION_PROMPT}], 'general', db.settings.personaModulePrompts || {})[0].content;
   return { scope, ids, timeline, personRevision: person?.revision || 0, viewRevision: view?.revision || 0,
     selfRevision: readPippiSelf(db).revision,
-    instruction: `【同一轮完成社交理解与回复】\n沿用上文全部人格、关系、语气和事实依据。若需要工具先正常调用。最终输出 JSON：先写 social，再写 reply（实际给群友的正文），保留已有表情字段。\n${assessmentRules}\n本轮为明确对话，只可 pass/react/reply。根据本次互动的感受直接调整措辞，普通成员仍可不回应；Owner 正常明确请求要回应。social.action=pass 时 reply 为空且不选表情。reply 绝不包含内部判断、数值或 JSON。关系和记忆由后台更新，本轮不输出它们。\n最终格式：{"social":{"action":"reply","addressee":"bot","reason":"简短依据"},"reply":"实际正文","mode":"none|text_image|image_only","sticker_id":null或可用表情ID}。`,
+    instruction: `【同一轮完成社交理解与回复】\n沿用上文全部人格、关系、语气和事实依据。若需要工具先正常调用。输出 JSON：social 和 reply（实际给群友的正文），保留已有表情字段。\n${assessmentRules}\n本轮为明确对话，只可 pass/react/reply。根据本次互动的感受直接调整措辞，普通成员仍可不回应；Owner 正常明确请求要回应。social.action=pass 时 reply 为空且不选表情。reply 绝不包含内部判断、数值或 JSON。关系和记忆由后台更新，本轮不输出它们。\npresentation 由你按用户需求选择 chat（聊天/分段讲解）或 document（完整文章、代码或表格成品），不按词表或字数猜测。\n默认格式：{"social":{"action":"reply","addressee":"bot","reason":"简短依据"},"presentation":"chat","reply":"实际正文","mode":"none|text_image|image_only","sticker_id":null或可用表情ID}。若另有本轮表达策略，遵守 response_phase 的约定。`,
   };
 }
 

@@ -1,7 +1,8 @@
 import assert from 'node:assert/strict';
 import {createTestDataDir,cleanupTestDir} from './test-isolation.mjs';
 const directory=createTestDataDir('pippi-introspection');process.env.NODE_ENV='test';
-const {ensureStore,readDb}=await import('../server/store.ts');ensureStore();
+const {ensureStore,readDb,updateDb}=await import('../server/store.ts');ensureStore();
+const {registerPendingQuickObservation}=await import('../server/bot/quickContext.ts');
 await import('../server/bot/randomImages.ts');
 const api=await import('../server/bot/introspection.ts');
 const {registerPublicFeature}=await import('../server/bot/features.ts');
@@ -12,6 +13,10 @@ try{
  db.settings.osuSearchEnabled=false;db.groups=[{groupId:'a',enabled:true,mode:'natural',randomImageEnabled:true},{groupId:'b',enabled:true,mode:'natural',randomImageEnabled:false}];
  const event={source:'onebot',type:'group',groupId:'a',userId:'member',messageId:'m',text:'你都有什么功能',senderRole:'member'};
  let catalog=api.runtimeCapabilities(db,event);
+ for(const syntax of ['!help','!ping']){
+   const entries=catalog.filter(c=>c.entry===syntax);assert.ok(entries.length,syntax);
+   assert.ok(entries.every(c=>c.state==='command_only'),syntax+' must match the executable public quick route');
+ }
  assert.equal(catalog.find(c=>c.id==='feature.random_image').state,'automatic');
  assert.equal(api.runtimeCapabilities(db,{...event,groupId:'b'}).find(c=>c.id==='feature.random_image').state,'disabled');
  assert.equal(catalog.some(c=>c.permission==='仅 owner 可用'),false);
@@ -21,6 +26,9 @@ try{
  assert.deepEqual(api.runtimeCapabilities(db,{...event,type:'private',groupId:'private'}),[]);
  assert.equal(api.inspectCapabilities(db,event,{groupId:'b'}).ok,false);
  const before=api.inspectCapabilities(db,event).version;
+ const overview=api.inspectCapabilities(db,event);
+ assert.equal(overview.view,'overview');assert.ok(overview.features.length);assert.ok(overview.commands.count>overview.commands.examples.length);
+ assert.ok(JSON.stringify(overview).length<3800,'overview survives executor result limit');
  registerPublicFeature({id:'fixture_new',description:'新注册功能自动出现',trigger:'automatic',visibility:'public',state:()=> 'automatic'});
  assert.equal(api.inspectCapabilities(db,event,{id:'feature.fixture_new'}).items.length,1);
  assert.notEqual(api.inspectCapabilities(db,event).version,before);
@@ -42,5 +50,20 @@ try{
  assert.deepEqual(api.inspectMessage(db,{...event,replyMessageId:'platform-only',quotedMessage:{...quote,scope:'group:b'}}).messages,[]);
  assert.deepEqual(api.inspectMessage(db,{...event,replyMessageId:'platform-only',quotedMessage:{...quote,accountId:'another'}}).messages,[]);
  assert.deepEqual(api.inspectMessage(db,{...event,replyMessageId:'platform-only',quotedMessage:quote},{message_id:'different'}).messages,[]);
+ const context=api.capabilityContext(db,event);
+ for(const text of ['你还会啥','你都有哪些能力','你发的这张图是什么','随便聊聊'])assert.equal(api.capabilityContext(db,{...event,text}),context);
+ assert.ok(context.length<1800,'fixed compact context, no full catalog injection');
+ const ids=[];let offset=0,pages=0;
+ do{const page=api.inspectCapabilities(db,event,{offset});assert.ok(JSON.stringify(page).length<=3800);ids.push(...page.items.map(i=>i.id));offset=page.nextOffset;pages++;}while(offset!==null);
+ assert.equal(ids.length,api.runtimeCapabilities(db,event).length);assert.equal(new Set(ids).size,ids.length);assert.ok(pages<=8,'full public directory fits the tool-call allowance');
+ updateDb(live=>{live.settings={...db.settings,tokenSavingMode:false};live.groups=db.groups;live.users=[];live.messages=[{id:'pending-row',sourceMessageId:'summary-target',accountId:'self',role:'assistant',type:'group',groupId:'a',replyToUserId:'member',pendingQuickId:'summary-record',content:'[图片]',deliveryOutcome:'confirmed_success'}];});
+ let releaseOther;
+ const other=registerPendingQuickObservation(event,()=>new Promise(r=>{releaseOther=r;}),'unrelated-record');
+ const pending=registerPendingQuickObservation(event,async()=>{await new Promise(r=>setTimeout(r,100));updateDb(live=>{live.messages[0].contextSummary='实际查询摘要';delete live.messages[0].pendingQuickId;});},'summary-record');
+ const beforeWait=Date.now();
+ const result=await api.executeIntrospection(readDb(),{...event,replyMessageId:'summary-target'},{id:'wait-summary',function:{name:'inspect_message',arguments:'{"include_summary":true}'}});
+ assert.ok(Date.now()-beforeWait>=70);assert.ok(Date.now()-beforeWait<4000,'must not wait for unrelated observations');
+ assert.equal(JSON.parse(result.content).messages[0].summaryStatus,'ready');assert.equal(JSON.parse(result.content).messages[0].summary,'实际查询摘要');
+ releaseOther();await Promise.all([pending,other]);
  console.log('PASS introspection: automatic registration, current group state, private Owner scope, secret/path projection, scoped messages, no side effects');
 }finally{cleanupTestDir(directory);}

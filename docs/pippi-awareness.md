@@ -41,6 +41,16 @@ documentation is available only in that Owner's private conversation. Capability
 knowledge never authorizes execution. Automatic random images belong to Pippi's
 own account; automatic triggering must not be described as a different sender.
 
+Every turn receives the same compact generated summary; no wording, keyword or
+regular expression decides whether to inject a full catalog. The tool defaults to
+an overview generated from current registrations, so ordinary capability questions
+do not require paging through every command. `view=entries` packs whole entries
+into bounded pages and returns `nextOffset`; specific queries retain the full
+entry. Quick commands use their actual declared permission, without an
+invented Owner-only fallback. A fresh snapshot of the last three scoped confirmed
+self actions is added immediately before each completion. It contains no media
+URLs or private paths; a later send can still be checked with `inspect_message`.
+
 `inspect_message` reads only the current conversation. It returns text/ownership,
 delivery outcome and image count, without media URLs or filesystem paths. By
 default it does not wait for image/query semantics. `include_summary=true` can
@@ -78,21 +88,29 @@ additional work stays persisted for later admission. Three failed attempts stay
 visible as exhausted jobs instead of retrying indefinitely. `/api/health` exposes
 queue counts only. Rollback code tolerates the additive queue field.
 
-Complex explicit @ requests can send short progress replies. An Owner request or
-an already accepted participation decision can acknowledge after about 1.2 s;
-ordinary members wait for actual tool dispatch or the model's public participation
-object. A pass stays silent. Provider reasoning is never forwarded. At most two
-progress messages are sent, with at least eight seconds between them. A subsequent
-update requires an actual tool result. Cancellation/final delivery aborts optional
-sends. Progress records use `originModule=notice`, so they do not consume reply
-quotas or become ordinary conversation context. Set
+Explicit @ requests expose a structured response strategy to the existing
+foreground model. The model decides `response_phase=final` for ordinary replies
+or `acknowledge` for work that benefits from a short natural opening. Simple
+replies still use one completion. A valid opening is sent immediately and permits
+one continuation to finish the original request; repeated openings are rejected.
+Real tool calls execute before that continuation. The host does not infer
+complexity from words, regexes or message length. A pass stays silent. Provider
+reasoning is never forwarded. Actual tools waiting longer than 1.2 seconds may
+report the operation in progress; quick local lookups remain quiet. At most two
+progress messages are sent, with at least eight seconds between them, and a
+subsequent update requires an actual tool result. Cancellation/final delivery
+aborts optional sends. Progress records use `originModule=notice`, so they do not
+consume reply quotas or become ordinary conversation context. Set
 `settings.pippiProgressReplies=false` or `PIPPI_PROGRESS_REPLIES=0` to disable this
 feature. Existing thinking-notice settings remain available for other requests.
 
-Detailed @ requests have an 8,192-token generation allowance and a 90-second call
-deadline, allowing reasoning plus the requested text on compatibility endpoints.
-Complete answers up to 1,800 characters use up to three paragraph-preserving
-messages; explicit long-form writing and larger/code-heavy answers retain
+Normal non-saving replies allow at least 8,192 generated tokens; explicit @
+requests have a 90-second call deadline, allowing reasoning plus the requested
+text on compatibility endpoints. These are completion/stability limits, not an
+API spending budget or an instruction to produce a long answer. The model
+declares `presentation=chat|document` according to the requested result.
+Chat answers up to 1,800 characters use up to three paragraph-preserving
+messages; documents and larger/code-heavy answers retain
 merged-forward delivery, including the existing separate sticker-failure handling. Text is still
 validated before sending; this does not stream unvalidated partial answers.
 
@@ -114,5 +132,8 @@ The legacy social suite explicitly selects the rollback path; the new fast-path
 suite exercises single-call generation, `pass`, relationship updates, tool lookup,
 persona preservation, malformed output and private-context isolation. Message
 tests include restart persistence, receipt races, account/group isolation, and
-random-image quota independence. Existing production-isolation tests must be
+random-image quota independence. Journal-write failure is traced without blocking
+the actual send; partial multi-segment failure keeps confirmed segments and never
+retries an unknown outcome. Summary-wait tests await only the matching quick
+record, not unrelated pending work. Existing production-isolation tests must be
 rerun with the live writer stopped when they report INCONCLUSIVE; this is not a pass.

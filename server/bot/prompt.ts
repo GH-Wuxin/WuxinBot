@@ -281,14 +281,9 @@ export function looksLikeQuestion(text) {
   return false;
 }
 
-export function isLongFormRequest(text) {
-  return /作文|文章|长文|写一篇|写个|续写|继续|补上|结尾|三百字|300字|[0-9０-９]{3,}\s*字|不少于|大约.*字|高考作文|议论文|小说|故事/.test(String(text || ''));
-}
-
 export function responseOptionsFor(event, db, userPolicy) {
   // 不再按"任务复杂度"换模型：评分、自动路由、owner 特判都删了。
   // 现在只有一条规则 —— 带图的一轮必须锁在视觉模型上，其余一律跟着 settings.model。
-  const longForm = isLongFormRequest(event.text);
   const visualTurn = modelSupportsVision(db) && (
     (Array.isArray(event.images) && event.images.length > 0) ||
     (Array.isArray(event.quotedMessage?.images) && event.quotedMessage.images.length > 0) ||
@@ -296,9 +291,9 @@ export function responseOptionsFor(event, db, userPolicy) {
     asksToInspectVisual(event.text || '')
   );
   const baseMax = Number(db.settings.maxTokens || 300);
-  const maxTokens = Math.max(baseMax, 760);
+  const maxTokens = Math.max(baseMax, tokenSaving(db) ? 760 : 8192);
   return {
-    longForm,
+    longForm: false, // The model declares document/chat in its response envelope.
     overrideModel: visualTurn ? activeModelName(db.settings) : null,
     maxTokens
   };
@@ -483,7 +478,6 @@ export function buildPrompt(db, group, event, userPolicy, options = {}) {
   const memoryBlock = includeMemory ? memoryPromptBlock(db, event.userId) : '';
   const provider = llmProvider(db);
   const canSearch = isOsuSearchAvailable(db);
-  const longForm = isLongFormRequest(event.text);
   const ownerContextNotice = ownerContext.truncated
     ? `\n【owner 私聊上下文预算】\nowner 私聊会尽量多带历史，但本次只带入最近 ${ownerContext.selected} 条，较早的 ${ownerContext.total - ownerContext.selected} 条因上下文预算被省略。不要声称自己拥有完整无限历史；如果需要更早内容，可以自然说明需要对方补一句。`
     : '';
@@ -584,7 +578,7 @@ export function buildPrompt(db, group, event, userPolicy, options = {}) {
     `当前发言者：${speakerIdentity}${isOwner ? '（是系统 owner）' : ''}`,
     groupSpeakerBoundary(event, speakerIdentity, selfQq),
     visualCapabilityNotice(db, event),
-    longForm ? '当前消息是长文/续写任务。尽量完整输出，首尾完整。' : '',
+    '按语义理解本轮需要：普通交流保持简短；用户需要完整长文、续写、代码或表格时完整交付，并在 JSON 中声明 presentation=document；聊天与分段讲解用 presentation=chat。',
     ownerContextNotice,
     groupContextNotice,
   ].filter(Boolean).join('\n');

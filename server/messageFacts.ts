@@ -81,6 +81,17 @@ export function beginOutboundMessage(db: any, event: any, body: unknown, options
   });
   return id;
 }
+
+/** Journal availability must not prevent an otherwise authorized delivery. */
+export function tryBeginOutboundMessage(db: any, event: any, body: unknown, options: any = {}): string | undefined {
+  try {
+    return beginOutboundMessage(db, event, body, options);
+  } catch {
+    traceEvent('ERROR', 'outbound_fact_begin_failed', { status: 'degraded' });
+    return undefined;
+  }
+}
+
 export function finishOutboundMessage(id: string, outcome: string, messageId?: unknown) {
   try {
     updateDb((db: any) => {

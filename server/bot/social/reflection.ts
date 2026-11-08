@@ -92,7 +92,7 @@ export function queueSocialReflection(snapshot: ReturnType<typeof captureSocialR
       {role:'system',content:`${SOCIAL_ASSESSMENT_PROMPT}\n${SELF_PROPOSAL_GUIDANCE}\n${ownerAuthorityPrompt(db,event)}\n【回复后的关系整理】本轮已经完成参与决定和发送处理。只根据本次真实互动提出关系、情绪和经历更新，不重新决定是否回复、不生成正文、不调用工具。action 保持给定 outcome.action。confirmedReplies 才是确认已发出的内容；空列表不能推断已发送。没有新证据就填 0/null。`},
       {role:'user',content:JSON.stringify({target:{userId:event.userId,messageIds:snapshot.ids,text:event.text,atTargets:event.atTargets,replyTo:event.replyMessageId},
         outcome,confirmedReplies:delivered,relationship:person,currentConversation:view,selfContext:selfContext(db,snapshot.scope,event.userId),timeline:snapshot.timeline})}],
-      maxTokens:1200,timeoutMs:30_000,requestMaxRetries:0,retryOnEmpty:false,temperature:0.2,
+      maxTokens:8192,timeoutMs:60_000,requestMaxRetries:0,retryOnEmpty:false,temperature:0.2,
       ...thinkingParamsForLevel('low',reasoningEnabledFor(db)),responseFormat:{type:'json_object'},
       promptModule:'general',label:'Pippi 后台关系整理',tracePurpose:'social_reflection',traceRole:'background'});
     const assessment=parseSocialAssessment(result.text,[...new Set([...snapshot.ids,...snapshot.timeline.map(m=>m.messageId)])],isSystemOwner(db,event),snapshot.ids);

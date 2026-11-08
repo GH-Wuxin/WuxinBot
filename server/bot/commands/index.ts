@@ -42,7 +42,6 @@ export function summaryDocumentId(family: string, audience: 'public' | 'group_ad
 
 function quickEntry(def: QuickCommandDef): CommandHelpEntry | null {
   if (def.status !== 'active' || def.visibility !== 'public' || !def.description) return null;
-  const domain = def.source === 'lazybot' ? '/' : def.source === 'hydrant' ? 'none' : '!';
   return {
     id: def.id,
     family: 'quick',
@@ -62,9 +61,8 @@ function quickEntry(def: QuickCommandDef): CommandHelpEntry | null {
       { path: 'server/bot/quickRouter.ts', symbol: 'handleQuickCommand' },
     ],
     availability: { contexts: ['group'], requiresBinding: def.capability !== undefined || def.handler !== undefined || def.bridge === true },
-    ...(domain === 'none'
-      ? {}
-      : { permissionKey: 'quick' }),
+    // Quick routes enforce their declared permission, not a configurable
+    // owner-command key. A synthetic "quick" key would fall back to Owner.
   };
 }
 

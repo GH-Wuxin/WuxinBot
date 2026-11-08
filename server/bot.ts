@@ -1,7 +1,7 @@
 // @ts-nocheck -- legacy runtime module; new typed modules remain checked by tsc.
 import { tokenSaving } from './bot/tokenSaving.js';
 import { resolveLocalQuote, recordAssistantContext, messageAccount } from './messageFacts.js';
-import { buildIntrospectionTools, executeIntrospection, INTROSPECTION_TOOL_NAMES } from './bot/introspection.js';
+import { buildIntrospectionTools, executeIntrospection, INTROSPECTION_TOOL_NAMES, recentSelfActionsContext } from './bot/introspection.js';
 import { pathToFileURL } from 'node:url';
 import { socialCoordinator } from './bot/social/coordinator.js';
 import { chatAdmissionReason, replyLimitReason, conversationContext } from './bot/social/policy.js';
@@ -9,7 +9,7 @@ import { isSystemOwner } from './bot/social/state.js';
 import { assessSocialTurn, assessSocialParticipation, revalidateSocialReply, socialDeliveryGuard, socialEntryAllowed, socialTimeline, waitForSocialContinuation, recordSocialDecision, prepareCombinedSocialTurn, applyCombinedSocialTurn } from './bot/social/runtime.js';
 import { captureSocialReflection, queueSocialReflection } from './bot/social/reflection.js';
 import { sendOptionalNotice } from './bot/notice.js';
-import { createReplyProgress, shouldUseReplyProgress, stagedReplySegments } from './bot/replyProgress.js';
+import { createReplyProgress, shouldUseReplyProgress, stagedReplySegments, completeWithReplyProgress } from './bot/replyProgress.js';
 import { withLlmTurnPolicy, assertLlmTurnActive } from './llmPolicy.js';
 import { defaultPrompt, readDb, updateDb, nowIso } from './store.js';
 import { applyUsageTotals, mergeLlmUsage, usageEventFields } from './usage.js';
@@ -47,7 +47,6 @@ import {
   describeModel,
   getPricing,
   calcCost,
-  isLongFormRequest,
   responseOptionsFor,
   ownerPrivateContextStats,
   promptContextMessages,
@@ -821,6 +820,7 @@ async function generateConversationReply(event, sendMessage, decision) {
   let thinkingTimer = null;
   let waitUpTimer = null;
   let progress;
+  let progressEligible = false;
   let stagedReply = false;
   let modelStageStarted = false;
   let deliveryStarted = false;
@@ -991,15 +991,14 @@ async function generateConversationReply(event, sendMessage, decision) {
       await sendMessage(event, picked ? withSticker(text, picked.id) : text, { originModule: 'notice' });
     };
 
-    stagedReply = shouldUseReplyProgress(liveDb,event,{longForm:responseOptions.longForm,requiresData:Boolean(osuDataIntent)});
-    if(stagedReply){
+    progressEligible = shouldUseReplyProgress(liveDb,event);
+    if(progressEligible){
       // Compatibility endpoints count reasoning inside max_tokens too. A
       // detailed answer needs room for both reasoning and the requested text.
       responseOptions.maxTokens=Math.max(8192,responseOptions.maxTokens||0);
-      progress=createReplyProgress(event,sendMessage,{requiresData:Boolean(osuDataIntent),
-        allowed:!decision.combinedSocial||isSystemOwner(liveDb,event)});
+      progress=createReplyProgress(event,sendMessage);
     }
-    if (stagedReply) {
+    if (progressEligible) {
       // Progress comes from the current task; do not add legacy timer stickers.
     } else if (thinkingMode === 'simple') {
       await sendOptionalNotice(() => sendThinking('正在思考…'));
@@ -1018,7 +1017,7 @@ async function generateConversationReply(event, sendMessage, decision) {
 
     // 二段提示：查询拖久了再发一张「别催·在算了」。一段（thinking）默认 3 秒，
     // 二段默认 25 秒 —— 让用户在长查询中途知道 bot 没死。thinkingNoticeMode 为 off 时两段都不发。
-    if (!stagedReply && thinkingMode !== 'off') {
+    if (!progressEligible && thinkingMode !== 'off') {
       waitUpTimer = setTimeout(() => {
         void sendOptionalNotice(async () => {
           if (!sendMessage) return;
@@ -1142,34 +1141,39 @@ async function generateConversationReply(event, sendMessage, decision) {
       let osuSearchCalls = 0;
       const executeConversationTool = async (toolCall, context) => {
         assertLlmTurnActive();
-        progress?.toolStarted(String(toolCall?.function?.name||''));
-        const finishTool = result => {progress?.toolFinished(Boolean(result?.ok));return result;};
-        if (INTROSPECTION_TOOL_NAMES.includes(toolCall?.function?.name)) return finishTool(await executeIntrospection(readDb(), event, toolCall));
-        if ([OSU_SEARCH_TOOL, OSU_READ_TOOL].includes(toolCall?.function?.name)) {
-          if (!osuSearchEnabled) return { toolCallId: toolCall.id, ok: false, content: '当前未开放 osu! 官方搜索', error: 'osu_search_unavailable' };
-          if (osuSearchCalls >= 4) return { toolCallId: toolCall.id, ok: false, content: '本轮 osu! 检索与阅读已达到 4 次上限', error: 'osu_search_call_limit' };
-          osuSearchCalls += 1;
-          const result = await executeOsuSearchTool(toolCall, context);
-          const reading = result.metadata?.reading as { id: string; url: string; title: string; at: string } | undefined;
-          if (result.ok && reading && liveDb.settings.socialV2Enabled === true && !tokenSaving(readDb())) {
-            if (!readingSources.some(s => s.id === reading.id)) readingSources.push({ ...reading, kind: 'reading', scope: readingScope, userId: event.userId });
+        const progressTool = progress?.toolStarted(String(toolCall?.function?.name || ''));
+        let succeeded = false;
+        const finishTool = result => { succeeded = Boolean(result?.ok); return result; };
+        try {
+          if (INTROSPECTION_TOOL_NAMES.includes(toolCall?.function?.name)) {
+            return finishTool(await executeIntrospection(readDb(), event, toolCall));
           }
-          return finishTool(result);
+          if ([OSU_SEARCH_TOOL, OSU_READ_TOOL].includes(toolCall?.function?.name)) {
+            if (!osuSearchEnabled) return { toolCallId: toolCall.id, ok: false, content: '当前未开放 osu! 官方搜索', error: 'osu_search_unavailable' };
+            if (osuSearchCalls >= 4) return { toolCallId: toolCall.id, ok: false, content: '本轮 osu! 检索与阅读已达到 4 次上限', error: 'osu_search_call_limit' };
+            osuSearchCalls += 1;
+            const result = await executeOsuSearchTool(toolCall, context);
+            const reading = result.metadata?.reading as { id: string; url: string; title: string; at: string } | undefined;
+            if (result.ok && reading && liveDb.settings.socialV2Enabled === true && !tokenSaving(readDb())) {
+              if (!readingSources.some(s => s.id === reading.id)) readingSources.push({ ...reading, kind: 'reading', scope: readingScope, userId: event.userId });
+            }
+            return finishTool(result);
+          }
+          return finishTool(await executeToolCall(toolCall, context));
+        } finally {
+          if (progressTool !== undefined) progress?.toolFinished(progressTool, succeeded);
         }
-        return finishTool(await executeToolCall(toolCall, context));
       };
 
       let toolLoopModel = '';
       let toolLoopProvider = '';
       const harnessChat = async (db: any, opts: any) => {
         updateReplyProcessStage('生成中');
-        const result = await completeChat(db, {
-          ...opts,
-          onPublicOutput: progress ? value => progress.observePublicOutput(value) : undefined,
-          ...(stagedReply ? {timeoutMs:90_000} : {}),
-          visionImages,
-          label: opts.label || 'Bot Harness'
-        });
+        const result = await completeWithReplyProgress(db,opts,progress,(current,request)=>completeChat(current,{
+          ...request,
+          messages:withStickerReplyInstruction(request.messages,recentSelfActionsContext(readDb(),event)),
+          visionImages,label:request.label||'Bot Harness',
+        }));
         toolLoopModel = String(result?.model || toolLoopModel || '');
         toolLoopProvider = String(result?.provider || toolLoopProvider || '');
         return result;
@@ -1185,7 +1189,7 @@ async function generateConversationReply(event, sendMessage, decision) {
         sendMessage,
         event,
         selfQq: liveDb.settings.selfQq,
-        maxIterations: tokenSaving(liveDb) ? 2 : 4,
+        maxIterations: tokenSaving(liveDb) ? 2 : 8,
         temperature: responseOptions.temperature,
         maxTokens: responseOptions.maxTokens,
         model: responseOptions.overrideModel,
@@ -1198,7 +1202,7 @@ async function generateConversationReply(event, sendMessage, decision) {
         continueAfterDirectPayload: modelFirstRuntime,
         deduplicateToolCalls: modelFirstRuntime,
         structuredToolResults: modelFirstRuntime,
-        finalResponseFormat: () => combined || stickerReplyEnabled || readingSources.length ? STICKER_REPLY_RESPONSE_FORMAT : undefined,
+        finalResponseFormat: () => combined || stickerReplyEnabled || readingSources.length || progressEligible ? STICKER_REPLY_RESPONSE_FORMAT : undefined,
         finalResponseInstruction: () => [stickerReplyInstruction || '', combined?.instruction || '', ...(readingSources.length ? [
           '结束本轮时输出 JSON，reply 为实际回复；可选 self 用于保留本次阅读的经历，不必每次都记。保留已有表情字段（若开放）。回复尚未送出，self 只写已完成的阅读与感受，不记为已向群友分享。',
           SELF_PROPOSAL_GUIDANCE, '本次实际读取成功的来源：' + JSON.stringify(readingSources),
@@ -1263,7 +1267,8 @@ async function generateConversationReply(event, sendMessage, decision) {
       const finalMessages = combined || stickerReplyEnabled && stickerReplyInstruction
         ? withStickerReplyInstruction(messages, [stickerReplyInstruction || '',combined?.instruction || ''].filter(Boolean).join('\n'))
         : messages;
-      ai = await callLLM(liveDb, finalMessages, {
+      ai = await completeWithReplyProgress(liveDb, {
+        messages:finalMessages,
         maxTokens: responseOptions.maxTokens,
         overrideModel: responseOptions.overrideModel,
         visionImages,
@@ -1272,11 +1277,9 @@ async function generateConversationReply(event, sendMessage, decision) {
         ...(!savingMode && stickerReplyEnabled && stickerReplyInstruction ? { responseFormat: STICKER_REPLY_RESPONSE_FORMAT } : {}),
         traceRole: 'conversation',
         tracePurpose: 'conversation_reply',
-        onPublicOutput: progress ? value => progress.observePublicOutput(value) : undefined,
-        ...(stagedReply ? {timeoutMs:90_000} : {}),
         ...(savingMode ? { promptModule: 'conversation_saving' } : {}),
         ...convWire
-      });
+      },progress,(current,request)=>callLLM(current,withStickerReplyInstruction(request.messages,recentSelfActionsContext(readDb(),event)),request));
       reasoningRouter.record({
         turnId,
         ts: Date.now(),
@@ -1315,10 +1318,9 @@ async function generateConversationReply(event, sendMessage, decision) {
       if(!String(parsedEnvelope.structured?parsedEnvelope.reply:ai.text).trim()&&!toolImages.length&&!toolDeliverImages.length&&!toolDirectContent
         &&!(parsedEnvelope.structured&&parsedEnvelope.mode==='image_only'&&parsedEnvelope.stickerId))throw new Error('模型没有返回可发送的正文');
     }
-    const stickerReply = combined || stickerReplyEnabled || readingSources.length
-      ? parseStickerReply(ai.text)
-      : { reply: String(ai.text || ''), stickerCaption: '', stickerIntent: 'none' as const, captionSplit: false, stickerId: null, mode: 'none' as const, structured: false };
+    const stickerReply = parseStickerReply(ai.text);
     ai.text = stickerReply.reply;
+    responseOptions.longForm = stickerReply.presentation === 'document';
     if (readingSources.length && 'self' in stickerReply && stickerReply.self && !tokenSaving(readDb())) {
       readingProposal = stickerReply.self;
     }
@@ -1632,6 +1634,7 @@ async function generateConversationReply(event, sendMessage, decision) {
     // message even if it is long; only explicit long-form tasks force the card.
     const segmentCount = splitReplySegments(deliveredText).length;
     const withinMergeFloor = deliveredText.length <= MERGE_FORWARD_MIN_CHARS;
+    stagedReply = progress?.hasStarted() === true || stickerReply.presentation === 'chat';
     const stagedSegments = stagedReply ? stagedReplySegments(deliveredText) : [];
     const isLongReply = responseOptions.longForm || (stagedReply
       ? deliveredText.length>1800||deliveredText.includes('```')

@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import http from 'node:http';
+import fs from 'node:fs';
 import {spawnSync} from 'node:child_process';
 import { createTestDataDir, cleanupTestDir } from './test-isolation.mjs';
 const directory=createTestDataDir('pippi-message-facts');
@@ -9,13 +10,15 @@ const {sendOneBotMessage,hydrateQuotedMessage,handleOneBotEvent}=await import('.
 const {oneBotToInternal}=await import('../server/bot.ts');
 const facts=await import('../server/messageFacts.ts');
 const {conversationContext,replyLimitReason}=await import('../server/bot/social/policy.ts');
+const {sendReplySegments}=await import('../server/bot/reply.ts');
 ensureStore();
-let seq=100,mode='ok',lookupGroup='room',lookupCalls=0;
+let seq=100,mode='ok',lookupGroup='room',lookupCalls=0,sendCalls=0,failAt=Infinity;
 const server=http.createServer(async(req,res)=>{
  let body='';for await(const chunk of req)body+=chunk;
  res.setHeader('Content-Type','application/json');
  if(req.url==='/get_msg'){lookupCalls++;return res.end(JSON.stringify({status:'ok',retcode:0,data:{message_id:JSON.parse(body).message_id,group_id:lookupGroup,message_type:'group',sender:{user_id:'self',nickname:'Pippi'},message:[{type:'text',data:{text:'old message'}}]}}));}
- res.end(JSON.stringify(mode==='fail'?{status:'failed',retcode:100}:{status:mode==='unknown'?'async':'ok',retcode:mode==='unknown'?1:0,data:{message_id:++seq}}));
+ sendCalls++;
+ res.end(JSON.stringify(mode==='fail'||sendCalls===failAt?{status:'failed',retcode:100}:{status:mode==='unknown'?'async':'ok',retcode:mode==='unknown'?1:0,data:{message_id:++seq}}));
 });
 await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));
 updateDb(db=>{db.settings.selfQq='self';db.settings.oneBotHttpUrl=`http://127.0.0.1:${server.address().port}`;db.settings.oneBotAccessToken='';db.messages=[];});
@@ -35,6 +38,18 @@ try{
  updateDb(db=>facts.recordAssistantContext(db,{id:'legacy-duplicate',role:'assistant',type:'group',groupId:'room',replyToMessageId:'request',replyToUserId:'alice',content:'reply one'}));
  assert.equal(readDb().messages.some(m=>m.id==='legacy-duplicate'),false);
  assert.equal(facts.findMessageFact(readDb(),event,reply.messageId).content,'reply one');
+ const beforeFault=sendCalls,write=fs.writeFileSync;let injected=false;
+ fs.writeFileSync=function(...args){if(!injected){injected=true;throw Object.assign(Error('fixture journal write failed'),{code:'ENOSPC'});}return write.apply(this,args);};
+ let withoutJournal;
+ try{withoutJournal=await sendOneBotMessage({...event,messageId:'journal-failure'},'still deliver');}finally{fs.writeFileSync=write;}
+ assert.equal(injected,true);assert.equal(sendCalls,beforeFault+1);assert.equal(withoutJournal.outcome,'confirmed_success','journal failure must not block or duplicate a send');
+ const multiEvent={...event,messageId:'multipart'};const beforeParts=sendCalls;failAt=sendCalls+2;
+ await assert.rejects(()=>sendReplySegments(sendOneBotMessage,multiEvent,'A'.repeat(50)+'。'+'B'.repeat(50)+'。'+'C'.repeat(50)));
+ failAt=Infinity;
+ assert.equal(sendCalls,beforeParts+2,'partial failure must not retry or send a third part');
+ const parts=readDb().messages.filter(m=>m.triggerMessageId==='multipart');assert.equal(parts.length,2);
+ assert.equal(parts[0].deliveryOutcome,'confirmed_success');assert.equal(parts[0].content,'A'.repeat(50)+'。');
+ assert.equal(parts[1].deliveryOutcome,'confirmed_failure');assert.equal(parts[1].inContext,false);
  mode='unknown';const unknown=await sendOneBotMessage(event,'pending');
  assert.equal(facts.findMessageFact(readDb(),event,unknown.messageId).inContext,false);
  mode='fail';await assert.rejects(()=>sendOneBotMessage(event,'failed'));
@@ -57,7 +72,7 @@ try{
  assert.equal(readDb().messages.filter(m=>m.sourceMessageId==='999').length,1);
  assert.equal(facts.findMessageFact(readDb(),event,999).originModule,'random_image');
  assert.equal(facts.findMessageFact(readDb(),event,999).deliveryOutcome,'confirmed_success','confirmed own event cannot be downgraded by a late async receipt');
- const policyDb=structuredClone(readDb());policyDb.groups=[{groupId:'room',maxPerHour:2,cooldownSec:0}];policyDb.decisions=[];
+ const policyDb=structuredClone(readDb());policyDb.groups=[{groupId:'room',maxPerHour:4,cooldownSec:0}];policyDb.decisions=[];
  assert.equal(conversationContext(policyDb,{...event,messageId:'next'}).continuationCandidate,true,'random image must not erase the actual reply target');
  assert.equal(replyLimitReason(policyDb,{...event,messageId:'next',socialDirect:true}), '', 'random images do not consume the text reply quota');
  updateDb(db=>db.messages.push({id:'internal-only',role:'assistant',type:'group',groupId:'room',inContext:true,createdAt:new Date().toISOString()}));

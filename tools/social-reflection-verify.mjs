@@ -48,5 +48,7 @@ try{
  const before=JSON.stringify(store.readDb().socialV2.people);
  const participation=await assessSocialParticipation({...event,socialDirect:false},'initial',async()=>({text:JSON.stringify({action:'pass',addressee:'member',reason:'别人正在对话'}),usage:{total_tokens:1}}));
  assert.equal(participation.action,'pass');assert.equal(JSON.stringify(store.readDb().socialV2.people),before,'foreground participation never writes relationships');
+ const malformed=await assessSocialParticipation({...event,socialDirect:false},'initial',async()=>({text:JSON.stringify({action:['reply'],addressee:'bot',reason:'invalid action type'})}));
+ assert.equal(malformed,null,'arrays must not be coerced into closed semantic enums');
  console.log('PASS background social: scope privacy, duplicate suppression, stale revision guard, pass updates, invalid evidence rejected, foreground participation read-only');
 }finally{await waitForBackgroundTasks(3000);cleanupTestDir(directory);}

@@ -29,7 +29,8 @@ const llmServer = http.createServer((req, res) => {
   req.on('end', () => {
     llmRequests += 1;
     const body = JSON.parse(raw || '{}');
-    const stickerProtocolEnabled = body.response_format?.type === 'json_object';
+    const stickerProtocolEnabled = body.response_format?.type === 'json_object'
+      && body.messages?.some(message=>message.role==='system'&&String(message.content).includes('【最终回复格式】'));
     const failureRewrite = !stickerProtocolEnabled
       && body.messages?.some((message) => message.role === 'user' && String(message.content).startsWith('失败原因：'));
     if (failureRewrite) failureRewriteRequests.push(body.messages);
@@ -175,7 +176,7 @@ try {
   // A long reply is delivered as a forward first. If only the optional sticker
   // send fails afterwards, the body must remain a successful reply and must be
   // written to history exactly once.
-  llmReplyEnvelope = { reply: '这是一段已经送达的长回复正文。', mode: 'text_image', sticker_id: 'hello' };
+  llmReplyEnvelope = { reply: '这是一段已经送达的长回复正文。', presentation:'document', mode: 'text_image', sticker_id: 'hello' };
   configurePolicy(['sticker-send-group']);
   const longSends = [];
   const longResult = await processIncoming(
