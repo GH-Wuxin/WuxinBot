@@ -362,6 +362,7 @@ export function callLocalBot(
     const startedAtNs = process.hrtime.bigint();
     const noReplyDeadlineNs = startedAtNs + BigInt(Math.max(1, Math.round(timeoutMs))) * 1_000_000n;
     const selfId = bridgeSelfId(botId, context.userId);
+    const completionRequestId = botId === 'kanon' ? crypto.randomUUID() : undefined;
     // QUICK_BRIDGE_QB05 (A'): allocate the yumu safe-slot BEFORE any socket
     // exists. Pool exhaustion or drift-cap violation rejects here as an
     // ordinary bridge failure; the caller's existing fallback consumes it and
@@ -390,6 +391,7 @@ export function callLocalBot(
       'X-Client-Role': 'Universal',
       'X-Self-ID': selfId,
     };
+    if (completionRequestId) headers['X-Wuxin-Completion'] = '1';
     if (endpoint.auth) {
       const token = hydrantToken();
       headers.Authorization = endpoint.auth === 'bearer' ? `Bearer ${token}` : token;
@@ -514,10 +516,13 @@ export function callLocalBot(
 
     ws.on('open', () => {
       if (timeline) timeline.mark('ws_open');
-      ws.send(JSON.stringify(buildEvent(endpoint, command, context, selfId, yumuEventTime)));
+      const event = buildEvent(endpoint, command, context, selfId, yumuEventTime);
+      if (completionRequestId) (event as any).wuxin_request_id = completionRequestId;
+      ws.send(JSON.stringify(event));
       if (timeline) timeline.mark('command_sent');
     });
     ws.on('message', (data) => {
+      if (settled) return;
       // Capture receive time BEFORE any parsing/extraction so a frame that
       // entered processing on time is not made late by Wuxin-side parsing.
       const receivedAtNs = process.hrtime.bigint();
@@ -530,6 +535,25 @@ export function callLocalBot(
         parsed = JSON.parse(frame);
         parseOk = parsed !== null && typeof parsed === 'object';
       } catch { /* non-JSON frames are classified below */ }
+
+      // Opt-in Kanon completion arrives only after the command has finished
+      // all reply sends and their ACKs. Correlation and an accepted reply are
+      // required; legacy peers and incomplete/foreign markers keep the normal
+      // settling/deadline behavior.
+      if (!settled && completionRequestId && parseOk
+        && parsed.post_type === 'meta_event'
+        && parsed.meta_event_type === 'wuxin_bridge'
+        && parsed.sub_type === 'command_complete'
+        && parsed.wuxin_request_id === completionRequestId) {
+        if (replyAccepted) {
+          endReason = 'command_complete';
+          if (timeline) timeline.mark('command_complete');
+          finish();
+        } else if (timeline) {
+          timeline.mark('completion_without_reply_ignored');
+        }
+        return;
+      }
 
       const action = parseOk ? String(parsed.action || '').toLowerCase() : '';
       const postType = parseOk ? String(parsed.post_type || '') : '';
