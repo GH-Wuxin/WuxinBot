@@ -333,6 +333,7 @@ export async function hydrateQuotedMessage(event) {
 }
 
 async function sendOneBotMessageInner(event, text, options = {}) {
+  if (options.signal?.aborted) throw new OneBotDeliveryError('发送已取消', 'confirmed_failure');
   const db = readDb();
   const baseUrl = db.settings.oneBotHttpUrl;
   if (!baseUrl) throw new Error('OneBot HTTP 地址未配置。');
@@ -349,6 +350,7 @@ async function sendOneBotMessageInner(event, text, options = {}) {
     const response = await fetchWithTimeout(`${baseUrl.replace(/\/$/, '')}${endpoint}`, {
       method: 'POST',
       headers,
+      signal: options.signal,
       body: JSON.stringify(body)
     });
     const payload = await assertOneBotSuccess(response, '发送 QQ 合并转发失败');
@@ -376,6 +378,7 @@ async function sendOneBotMessageInner(event, text, options = {}) {
   const response = await fetchWithTimeout(`${baseUrl.replace(/\/$/, '')}${endpoint}`, {
     method: 'POST',
     headers,
+    signal: options.signal,
     body: JSON.stringify(body)
   });
   const payload = await assertOneBotSuccess(response, '发送 QQ 消息失败');

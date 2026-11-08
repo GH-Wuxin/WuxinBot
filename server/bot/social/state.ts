@@ -18,6 +18,13 @@ export function validSocialState(value: unknown): value is SocialState {
   if (!plainObject(value) || value.schemaVersion !== 1 || !Number.isSafeInteger(value.revision) || value.revision < 0) return false;
   if (!plainObject(value.people) || !plainObject(value.views)) return false;
   if (!['transitions', 'decisions', 'processed', 'feedback'].every((key) => Array.isArray(value[key]))) return false;
+  if(value.reflectionQueue!==undefined&&(!Array.isArray(value.reflectionQueue)||!value.reflectionQueue.every((j:any)=>plainObject(j)
+    &&typeof j.key==='string'&&typeof j.scope==='string'&&typeof j.account==='string'&&typeof j.queuedAt==='string'
+    &&plainObject(j.event)&&['group','private'].includes(j.event.type)&&typeof j.event.userId==='string'&&typeof j.event.messageId==='string'
+    &&Array.isArray(j.ids)&&j.ids.length>0&&j.ids.every((id:unknown)=>typeof id==='string')
+    &&Array.isArray(j.timelineIds)&&j.timelineIds.length<=40&&j.timelineIds.every((id:unknown)=>typeof id==='string')
+    &&plainObject(j.outcome)&&['pass','wait','react','reply'].includes(j.outcome.action)&&typeof j.outcome.replied==='boolean'
+    &&Number.isInteger(j.attempts)&&j.attempts>=0)))return false;
   return Object.values(value.people).every((p: any) => plainObject(p) && typeof p.userId === 'string'
     && Number.isSafeInteger(p.revision) && Number.isFinite(p.familiarity) && p.familiarity >= 0 && p.familiarity <= 100
     && plainObject(p.affinity) && (p.affinity.kind === 'owner' ? p.affinity.label === '特殊' && !('score' in p.affinity)

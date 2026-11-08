@@ -78,6 +78,17 @@ export function inspectMessage(db: any, event: any, args: any = {}) {
   if (!identity(db,event).allowed || !args || Object.keys(args).some(k=>!['message_id','recent_self','include_summary'].includes(k))) return {ok:false,error:'not_available'};
   const rows=args.recent_self===true ? (db.messages||[]).filter((m:any)=>m.role==='assistant'&&m.deliveryOutcome==='confirmed_success'
     &&messageInConversation(m,event,messageAccount(db,event))).slice(-5) : [findMessageFact(db,event,args.message_id||event.replyMessageId)].filter(Boolean);
+  // The transport may have verified an older/directly sent quote through QQ
+  // even when the local journal has no row. Preserve that scoped author fact.
+  const quote=event.quotedMessage, wanted=String(args.message_id||event.replyMessageId||'');
+  if(!rows.length&&args.recent_self!==true&&quote?.verified===true&&quote.scope===conversationKey(event)
+    &&quote.accountId===messageAccount(db,event)&&String(quote.messageId)===wanted){
+    return {ok:true,messages:[{messageId:wanted,sender:quote.isSelf===true?'pippi':'participant',
+      nickname:quote.isSelf===true?'pippi':safeText(quote.nickname,80),text:safeText(quote.text,1200),
+      origin:quote.originModule||'unknown',imageCount:Array.isArray(quote.images)?quote.images.length:0,
+      delivery:'platform_verified',summaryStatus:'not_available'}],
+      boundary:'作者已通过本会话 QQ 引用核验。来源 unknown 表示没有触发原因记录；不能根据当前功能开关猜测历史发送原因。'};
+  }
   return {ok:true,messages:rows.map((m:any)=>({messageId:String(m.sourceMessageId||m.messageId||''),sender:m.role==='assistant'?'pippi':'participant',
     nickname:m.role==='assistant'?'pippi':safeText(m.nickname,80),text:safeText(m.content,1200),origin:m.originModule||'received',
     imageCount:m.media?.images?.length||0,delivery:m.deliveryOutcome||'received',summaryStatus:m.pendingQuickId?'pending':m.contextSummary?'ready':'not_available',

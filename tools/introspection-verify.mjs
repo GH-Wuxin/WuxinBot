@@ -36,5 +36,11 @@ try{
  assert.deepEqual(api.inspectMessage(db,event,{message_id:'same'}).messages,[]);
  assert.equal(api.inspectMessage(db,event,{message_id:'own',groupId:'b'}).ok,false);
  const view=api.inspectMessage(db,event,{recent_self:true});assert.equal(view.messages.length,1);assert.ok(!JSON.stringify(view).includes('G:'));assert.equal(view.messages[0].imageCount,1);
+ const quote={messageId:'platform-only',scope:'group:a',accountId:'self',verified:true,isSelf:true,text:'[图片]',images:[{file:'G:/private/image.png'}]};
+ const remote=api.inspectMessage(db,{...event,replyMessageId:'platform-only',quotedMessage:quote});
+ assert.equal(remote.messages[0].sender,'pippi');assert.equal(remote.messages[0].origin,'unknown');assert.ok(!JSON.stringify(remote).includes('G:'));
+ assert.deepEqual(api.inspectMessage(db,{...event,replyMessageId:'platform-only',quotedMessage:{...quote,scope:'group:b'}}).messages,[]);
+ assert.deepEqual(api.inspectMessage(db,{...event,replyMessageId:'platform-only',quotedMessage:{...quote,accountId:'another'}}).messages,[]);
+ assert.deepEqual(api.inspectMessage(db,{...event,replyMessageId:'platform-only',quotedMessage:quote},{message_id:'different'}).messages,[]);
  console.log('PASS introspection: automatic registration, current group state, private Owner scope, secret/path projection, scoped messages, no side effects');
 }finally{cleanupTestDir(directory);}

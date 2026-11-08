@@ -6,8 +6,10 @@ import { pathToFileURL } from 'node:url';
 import { socialCoordinator } from './bot/social/coordinator.js';
 import { chatAdmissionReason, replyLimitReason, conversationContext } from './bot/social/policy.js';
 import { isSystemOwner } from './bot/social/state.js';
-import { assessSocialTurn, revalidateSocialReply, socialDeliveryGuard, socialEntryAllowed, socialTimeline, waitForSocialContinuation, recordSocialDecision, prepareCombinedSocialTurn, applyCombinedSocialTurn } from './bot/social/runtime.js';
+import { assessSocialTurn, assessSocialParticipation, revalidateSocialReply, socialDeliveryGuard, socialEntryAllowed, socialTimeline, waitForSocialContinuation, recordSocialDecision, prepareCombinedSocialTurn, applyCombinedSocialTurn } from './bot/social/runtime.js';
+import { captureSocialReflection, queueSocialReflection } from './bot/social/reflection.js';
 import { sendOptionalNotice } from './bot/notice.js';
+import { createReplyProgress, shouldUseReplyProgress, stagedReplySegments } from './bot/replyProgress.js';
 import { withLlmTurnPolicy, assertLlmTurnActive } from './llmPolicy.js';
 import { defaultPrompt, readDb, updateDb, nowIso } from './store.js';
 import { applyUsageTotals, mergeLlmUsage, usageEventFields } from './usage.js';
@@ -748,14 +750,18 @@ async function processIncomingInner(event, sendMessage = undefined) {
     const entryBlock = chatAdmissionReason(readDb(), merged, merged.socialDirect || merged.socialNamed);
     if (isReplyProcessAborted() || entryBlock) return { replied: false, reason: entryBlock || '请求已取消' };
     let assessment;
-    const combinedSocial = socialCandidate && merged.socialDirect && !tokenSaving(readDb())
+    const fastSocial = socialCandidate && !tokenSaving(readDb())
       && readDb().settings.pippiFastReplies !== false && process.env.PIPPI_FAST_REPLIES !== '0';
+    const combinedSocial = fastSocial && merged.socialDirect;
+    let reflection = fastSocial ? captureSocialReflection(merged) : null;
+    const assessParticipation = fastSocial ? assessSocialParticipation : assessSocialTurn;
     if (socialCandidate && !combinedSocial) {
-      assessment = await assessSocialTurn(merged);
+      assessment = await assessParticipation(merged);
       if (assessment?.action === 'wait') {
         await waitForSocialContinuation(merged);
         socialCoordinator.takeContinuation(merged);
-        assessment = await assessSocialTurn(merged, 'resumed');
+        assessment = await assessParticipation(merged, 'resumed');
+        if(fastSocial)reflection=captureSocialReflection(merged);
       }
     }
     // Preserve name-call availability when assessment is unavailable, while
@@ -777,12 +783,14 @@ async function processIncomingInner(event, sendMessage = undefined) {
       if (assessment && ['react', 'reply'].includes(action)) recordSocialDecision(merged, {
         stage: 'guard', action: 'pass', reason: guard || '请求已取消', evidenceIds: [], durationMs: 0, totalTokens: 0,
       });
+      if(reflection&&!guard&&!isReplyProcessAborted())queueSocialReflection(reflection,{action:'pass',replied:false});
       return { replied: false, reason };
     }
     merged.socialAction = action;
     merged.socialContextIds ||= socialTimeline(readDb(), merged, 40).map((m) => m.messageId);
     const output = await generateConversationReply(merged, sendMessage, { shouldReply: true, reason,
       socialReady: socialCandidate, combinedSocial, visualLimitation: decision.visualLimitation });
+    if(reflection&&!isReplyProcessAborted())queueSocialReflection(reflection,{action:merged.socialAction||action,replied:Boolean(output.replied)});
     if (socialCandidate) recordSocialDecision(merged, { stage: 'delivery', action: output.replied ? merged.socialAction || action : 'pass',
       reason: output.replied ? '已发送' : output.error ? '生成或发送失败' : output.reason,
       evidenceIds: [], durationMs: 0, totalTokens: 0 });
@@ -801,7 +809,7 @@ async function generateConversationReply(event, sendMessage, decision) {
   const readingSources: SelfEvidence[] = [];
   const readingScope = event.type === 'group' ? `group:${event.groupId}` : `private:${event.userId}`;
   let readingRevision = readPippiSelf(readDb()).revision;
-  let rememberedReadingId: string | undefined;
+  let readingProposal;
   const confirmedReceipts: string[] = [];
   const originalSend = sendMessage;
   // Track the actual answer separately from thinking notices and optional stickers.
@@ -812,6 +820,8 @@ async function generateConversationReply(event, sendMessage, decision) {
   } : undefined;
   let thinkingTimer = null;
   let waitUpTimer = null;
+  let progress;
+  let stagedReply = false;
   let modelStageStarted = false;
   let deliveryStarted = false;
   try {
@@ -981,7 +991,17 @@ async function generateConversationReply(event, sendMessage, decision) {
       await sendMessage(event, picked ? withSticker(text, picked.id) : text, { originModule: 'notice' });
     };
 
-    if (thinkingMode === 'simple') {
+    stagedReply = shouldUseReplyProgress(liveDb,event,{longForm:responseOptions.longForm,requiresData:Boolean(osuDataIntent)});
+    if(stagedReply){
+      // Compatibility endpoints count reasoning inside max_tokens too. A
+      // detailed answer needs room for both reasoning and the requested text.
+      responseOptions.maxTokens=Math.max(8192,responseOptions.maxTokens||0);
+      progress=createReplyProgress(event,sendMessage,{requiresData:Boolean(osuDataIntent),
+        allowed:!decision.combinedSocial||isSystemOwner(liveDb,event)});
+    }
+    if (stagedReply) {
+      // Progress comes from the current task; do not add legacy timer stickers.
+    } else if (thinkingMode === 'simple') {
       await sendOptionalNotice(() => sendThinking('正在思考…'));
     } else if (thinkingMode === 'detail') {
       const currentModel = activeModelName(liveDb.settings);
@@ -998,7 +1018,7 @@ async function generateConversationReply(event, sendMessage, decision) {
 
     // 二段提示：查询拖久了再发一张「别催·在算了」。一段（thinking）默认 3 秒，
     // 二段默认 25 秒 —— 让用户在长查询中途知道 bot 没死。thinkingNoticeMode 为 off 时两段都不发。
-    if (thinkingMode !== 'off') {
+    if (!stagedReply && thinkingMode !== 'off') {
       waitUpTimer = setTimeout(() => {
         void sendOptionalNotice(async () => {
           if (!sendMessage) return;
@@ -1122,7 +1142,9 @@ async function generateConversationReply(event, sendMessage, decision) {
       let osuSearchCalls = 0;
       const executeConversationTool = async (toolCall, context) => {
         assertLlmTurnActive();
-        if (INTROSPECTION_TOOL_NAMES.includes(toolCall?.function?.name)) return executeIntrospection(readDb(), event, toolCall);
+        progress?.toolStarted(String(toolCall?.function?.name||''));
+        const finishTool = result => {progress?.toolFinished(Boolean(result?.ok));return result;};
+        if (INTROSPECTION_TOOL_NAMES.includes(toolCall?.function?.name)) return finishTool(await executeIntrospection(readDb(), event, toolCall));
         if ([OSU_SEARCH_TOOL, OSU_READ_TOOL].includes(toolCall?.function?.name)) {
           if (!osuSearchEnabled) return { toolCallId: toolCall.id, ok: false, content: '当前未开放 osu! 官方搜索', error: 'osu_search_unavailable' };
           if (osuSearchCalls >= 4) return { toolCallId: toolCall.id, ok: false, content: '本轮 osu! 检索与阅读已达到 4 次上限', error: 'osu_search_call_limit' };
@@ -1132,9 +1154,9 @@ async function generateConversationReply(event, sendMessage, decision) {
           if (result.ok && reading && liveDb.settings.socialV2Enabled === true && !tokenSaving(readDb())) {
             if (!readingSources.some(s => s.id === reading.id)) readingSources.push({ ...reading, kind: 'reading', scope: readingScope, userId: event.userId });
           }
-          return result;
+          return finishTool(result);
         }
-        return executeToolCall(toolCall, context);
+        return finishTool(await executeToolCall(toolCall, context));
       };
 
       let toolLoopModel = '';
@@ -1143,6 +1165,8 @@ async function generateConversationReply(event, sendMessage, decision) {
         updateReplyProcessStage('生成中');
         const result = await completeChat(db, {
           ...opts,
+          onPublicOutput: progress ? value => progress.observePublicOutput(value) : undefined,
+          ...(stagedReply ? {timeoutMs:90_000} : {}),
           visionImages,
           label: opts.label || 'Bot Harness'
         });
@@ -1248,6 +1272,8 @@ async function generateConversationReply(event, sendMessage, decision) {
         ...(!savingMode && stickerReplyEnabled && stickerReplyInstruction ? { responseFormat: STICKER_REPLY_RESPONSE_FORMAT } : {}),
         traceRole: 'conversation',
         tracePurpose: 'conversation_reply',
+        onPublicOutput: progress ? value => progress.observePublicOutput(value) : undefined,
+        ...(stagedReply ? {timeoutMs:90_000} : {}),
         ...(savingMode ? { promptModule: 'conversation_saving' } : {}),
         ...convWire
       });
@@ -1266,28 +1292,35 @@ async function generateConversationReply(event, sendMessage, decision) {
       if (!parsedEnvelope.structured && /^\s*(?:```(?:json)?\s*)?[\[{]/i.test(ai.text)) {
         throw new Error('Invalid combined reply envelope');
       }
+      if (!parsedEnvelope.structured && /"(?:social|affinityDelta|familiarityDelta|evidenceIds)"\s*:/.test(ai.text)) {
+        throw new Error('Invalid combined reply envelope');
+      }
       let participation;
       try { participation = applyCombinedSocialTurn(event, ai.text, combined); } catch { /* invalid proposals never alter state */ }
       if (!participation) {
-        // Older/provider-specific output can omit the new envelope. Preserve
-        // participation semantics through the existing evaluator, without exposing internals.
-        const fallback = await assessSocialTurn(event);
-        if (fallback) { event.socialAction=fallback.action; participation={allow:['reply','react'].includes(fallback.action)}; }
-        if (/"social"\s*:/.test(ai.text) && !parseStickerReply(ai.text).structured) throw new Error('Invalid combined reply envelope');
+        // A valid plain answer is itself the model choosing to participate under
+        // the same persona/relationship prompt. Never evaluate that choice again
+        // after generating the answer. Structured pass still wins above.
+        const content = parsedEnvelope.structured ? parsedEnvelope.reply : ai.text;
+        if(!String(content||'').trim()&&!toolImages.length&&!toolDeliverImages.length&&!toolDirectContent
+          &&!(parsedEnvelope.structured&&parsedEnvelope.mode==='image_only'&&parsedEnvelope.stickerId)){
+          throw new Error('模型没有返回可发送的正文');
+        }
+        participation={allow:true};
+        event.socialAction=participation.allow?'reply':'pass';
+        recordSocialDecision(event,{stage:'assessment',phase:'initial',action:event.socialAction,
+          reason:'本轮生成结果已表达参与选择',evidenceIds:[],durationMs:0,totalTokens:0});
       }
       if (participation && !participation.allow) return {replied:false,reason:'本轮不参与'};
+      if(!String(parsedEnvelope.structured?parsedEnvelope.reply:ai.text).trim()&&!toolImages.length&&!toolDeliverImages.length&&!toolDirectContent
+        &&!(parsedEnvelope.structured&&parsedEnvelope.mode==='image_only'&&parsedEnvelope.stickerId))throw new Error('模型没有返回可发送的正文');
     }
     const stickerReply = combined || stickerReplyEnabled || readingSources.length
       ? parseStickerReply(ai.text)
       : { reply: String(ai.text || ''), stickerCaption: '', stickerIntent: 'none' as const, captionSplit: false, stickerId: null, mode: 'none' as const, structured: false };
     ai.text = stickerReply.reply;
     if (readingSources.length && 'self' in stickerReply && stickerReply.self && !tokenSaving(readDb())) {
-      updateDb(draft => {
-        const result = commitSelfProposal(draft, stickerReply.self, { scope: readingScope, sources: readingSources,
-          expectedRevision: readingRevision, requiredEvidenceIds: readingSources.map(s => s.id) });
-        rememberedReadingId = result.experienceId;
-        traceEvent('GATE', 'pippi_self_reading', result);
-      });
+      readingProposal = stickerReply.self;
     }
     const stickerDecisionId = stickerReplyEnabled ? stickerReply.stickerId : null;
     const imageOnlySticker = stickerReplyEnabled && stickerReply.mode === 'image_only';
@@ -1599,11 +1632,14 @@ async function generateConversationReply(event, sendMessage, decision) {
     // message even if it is long; only explicit long-form tasks force the card.
     const segmentCount = splitReplySegments(deliveredText).length;
     const withinMergeFloor = deliveredText.length <= MERGE_FORWARD_MIN_CHARS;
-    const isLongReply = responseOptions.longForm || (!withinMergeFloor && segmentCount >= 2);
+    const stagedSegments = stagedReply ? stagedReplySegments(deliveredText) : [];
+    const isLongReply = stagedReply ? deliveredText.length>1800||deliveredText.includes('```')
+      : responseOptions.longForm || (!withinMergeFloor && segmentCount >= 2);
     let segments;
     let deliveryStatus = 'ok';
     if (thinkingTimer) { clearTimeout(thinkingTimer); thinkingTimer = null; }
     if (waitUpTimer) { clearTimeout(waitUpTimer); waitUpTimer = null; }
+    progress?.stop();
     deliveryStarted = true;
     traceEvent('SEND', 'qq_delivery_started', {
       contentLength: deliveredText.length,
@@ -1748,14 +1784,21 @@ async function generateConversationReply(event, sendMessage, decision) {
     } else if (isLongReply && sendMessage) {
       await sendForwardText(sendReadingReply, event, 'Wuxin 回复', deliveredText);
       segments = [deliveredText];
+    } else if(stagedReply&&sendMessage){
+      for(let index=0;index<stagedSegments.length;index++)await sendReadingReply(event,stagedSegments[index],index===0?replyToCurrentMessageOptions(event):{suppressReply:true});
+      segments=stagedSegments;
     } else {
       segments = await sendReplySegments(sendReadingReply, event, deliveredText);
     }
     traceEvent('SEND', 'qq_delivery_completed', { status: deliveryStatus, segmentCount: segments.length });
 
-    if (rememberedReadingId && confirmedReceipts.length) updateDb(draft => {
-      markExperienceShared(draft, rememberedReadingId!, readingScope, confirmedReceipts.at(-1)!);
-    });
+    if (readingProposal) void runBackgroundTask('self.reading',()=>updateDb(draft=>{
+      if(tokenSaving(draft)||draft.settings.socialV2Enabled!==true)return;
+      const result=commitSelfProposal(draft,readingProposal,{scope:readingScope,sources:readingSources,
+        expectedRevision:readingRevision,requiredEvidenceIds:readingSources.map(s=>s.id)});
+      if(result.experienceId&&confirmedReceipts.length)markExperienceShared(draft,result.experienceId,readingScope,confirmedReceipts.at(-1)!);
+      traceEvent('GATE','pippi_self_reading',result);
+    }));
 
     updateDb((draft) => {
       recordAssistantContext(draft, {
@@ -1803,6 +1846,7 @@ async function generateConversationReply(event, sendMessage, decision) {
       reason: decision.reason
     };
   } catch (error) {
+    progress?.stop();
     if (thinkingTimer) { clearTimeout(thinkingTimer); thinkingTimer = null; }
     if (waitUpTimer) { clearTimeout(waitUpTimer); waitUpTimer = null; }
     traceEvent(deliveryStarted ? 'SEND' : 'ERROR', deliveryStarted ? 'qq_delivery_failed_or_unknown' : 'reply_generation_failed', { status: 'error', error: String(error) });
@@ -1861,6 +1905,7 @@ async function generateConversationReply(event, sendMessage, decision) {
     });
     return { replied: false, error: error.message, reason: decision.reason };
   } finally {
+    progress?.stop();
     if (thinkingTimer) clearTimeout(thinkingTimer);
     if (waitUpTimer) clearTimeout(waitUpTimer);
   }

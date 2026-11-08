@@ -7,16 +7,26 @@ const {processIncoming}=await import('../server/bot.ts');
 const {emptySocialState,readSocialPerson}=await import('../server/bot/social/state.ts');
 const {registerPendingQuickObservation}=await import('../server/bot/quickContext.ts');
 const {sendOneBotMessage}=await import('../server/onebot.ts');
+const {waitForBackgroundTasks}=await import('../server/backgroundTasks.ts');
 let active,calls=[],variant='reply',sent=[],nextId=1000;
+let releaseReflection,holdReflection=false,reflectionFinished=false;
+const foregroundCalls=()=>calls.filter(c=>!String(c.messages[0]?.content||'').includes('【回复后的关系整理】')).length;
 const assessment=(patch={})=>({action:'reply',addressee:'bot',reason:'对当前真实说话人的正常交流',evidenceIds:[active.messageId],affinityDelta:1,familiarityDelta:1,summary:null,preferredNames:null,style:null,mood:{label:'温和',reason:'当前互动'},...patch});
 const server=http.createServer(async(req,res)=>{
  let raw='';for await(const part of req)raw+=part;const body=JSON.parse(raw||'{}');res.setHeader('Content-Type','application/json');
  if(req.url!=='/v1/chat/completions'){sent.push(body);return res.end(JSON.stringify({status:'ok',retcode:0,data:{message_id:++nextId}}));}
  const system=String(body.messages[0]?.content||'');calls.push(body);await new Promise(r=>setTimeout(r,50));
  let content,toolCalls;
- if(system.includes('同一轮完成社交理解与回复')){
+ if(system.includes('【回复后的关系整理】')){
+   if(holdReflection)await new Promise(resolve=>{releaseReflection=resolve;});
+   reflectionFinished=true;
+   content=JSON.stringify(assessment({affinityDelta:variant==='pass'?-1:1}));
+ }else if(system.includes('同一轮完成社交理解与回复')){
    assert.match(system,/人格保持标记：温和且简洁/);
-   if(variant==='tool'&&calls.length===1){content='';toolCalls=[{id:'inspect',type:'function',function:{name:'inspect_capabilities',arguments:'{"query":"随机"}'}}];}
+   if(variant==='tool'&&foregroundCalls()===1){content='';toolCalls=[{id:'inspect',type:'function',function:{name:'inspect_capabilities',arguments:'{"query":"随机"}'}}];}
+   else if(variant==='plain')content='我在，慢慢说就好。';
+   else if(variant==='empty')content='';
+   else if(variant==='prefixed-internal')content='内部结果：{"social":{"action":"reply","private":"PRIVATE_INTERNAL"}}';
    else if(variant==='malformed')content='{"social":{"affinityDelta":5,"internal_note":"PRIVATE_INTERNAL"},"reply":';
    else if(variant==='unwrapped-internal')content='{"affinityDelta":5,"evidenceIds":["PRIVATE_INTERNAL"],"reply":';
    else content=JSON.stringify({reply:variant==='pass'?'':'我在，慢慢说就好。',social:assessment({action:variant==='pass'?'pass':'reply',affinityDelta:variant==='pass'?-1:1}),mode:'none'});
@@ -40,20 +50,27 @@ function seed(fast=true){
 }
 try{
  seed(false);await processIncoming(active,sendOneBotMessage);const baseline=calls.length;assert.equal(baseline,2);
- seed();let result=await processIncoming(active,sendOneBotMessage);assert.equal(result.replied,true);assert.equal(calls.length,1);assert.equal(sent.length,1);
+ seed();let result=await processIncoming(active,sendOneBotMessage);assert.equal(result.replied,true);assert.equal(foregroundCalls(),1);assert.equal(sent.length,1);await waitForBackgroundTasks(3000);
  assert.equal(readSocialPerson(store.readDb(),'10003').affinity.score,51);
  assert.equal(store.readDb().messages.filter(m=>m.role==='assistant').length,1);assert.ok(store.readDb().messages.at(-1).sourceMessageId);
  assert.ok(!JSON.stringify(sent).includes('affinityDelta'));assert.ok(!JSON.stringify(calls).includes('fixture-private-secret'));
  seed();store.updateDb(db=>{db.settings.botRegistry={bots:[{id:'disabled-fixture',enabled:false,channel:'internal'}]};db.settings.personaModulePrompts={conversation:'CONVERSATION_ONLY_MODULE',agent_tools:'TOOLS_ONLY_MODULE'};});
- await processIncoming(active,sendOneBotMessage);assert.equal(calls.length,1);assert.ok(calls[0].messages[0].content.includes('CONVERSATION_ONLY_MODULE'));assert.ok(!calls[0].messages[0].content.includes('TOOLS_ONLY_MODULE'));
- seed();variant='pass';result=await processIncoming(active,sendOneBotMessage);assert.equal(result.replied,false);assert.equal(sent.length,0);assert.equal(calls.length,1);assert.equal(readSocialPerson(store.readDb(),'10003').affinity.score,49);
- seed();variant='tool';active.text='[CQ:at,qq=10002] 你会随机发图吗';result=await processIncoming(active,sendOneBotMessage);assert.equal(result.replied,true);assert.equal(calls.length,2);assert.ok(calls[1].messages.some(m=>m.role==='tool'&&m.content.includes('random_image')));
+ await processIncoming(active,sendOneBotMessage);assert.equal(foregroundCalls(),1);assert.ok(calls[0].messages[0].content.includes('CONVERSATION_ONLY_MODULE'));assert.ok(!calls[0].messages[0].content.includes('TOOLS_ONLY_MODULE'));await waitForBackgroundTasks(3000);
+ seed();variant='pass';result=await processIncoming(active,sendOneBotMessage);assert.equal(result.replied,false);assert.equal(sent.length,0);assert.equal(foregroundCalls(),1);await waitForBackgroundTasks(3000);assert.equal(readSocialPerson(store.readDb(),'10003').affinity.score,49);
+ seed();variant='tool';active.text='[CQ:at,qq=10002] 你会随机发图吗';result=await processIncoming(active,sendOneBotMessage);assert.equal(result.replied,true);assert.equal(foregroundCalls(),2);assert.ok(calls[1].messages.some(m=>m.role==='tool'&&m.content.includes('random_image')));await waitForBackgroundTasks(3000);
+ seed();variant='plain';holdReflection=true;reflectionFinished=false;
+ result=await Promise.race([processIncoming(active,sendOneBotMessage),new Promise((_,reject)=>setTimeout(()=>reject(Error('Background reflection blocked delivery')),3000))]);
+ assert.equal(result.replied,true);assert.equal(sent.length,1);assert.equal(foregroundCalls(),1);assert.equal(reflectionFinished,false);
+ for(let i=0;!releaseReflection&&i<100;i++)await new Promise(r=>setTimeout(r,10));assert.ok(releaseReflection);releaseReflection();holdReflection=false;
+ assert.equal((await waitForBackgroundTasks(3000)).drained,true);assert.equal(readSocialPerson(store.readDb(),'10003').affinity.score,51);
  seed();let release;const pending=registerPendingQuickObservation(active,()=>new Promise(r=>{release=r;}),'unrelated');
- result=await Promise.race([processIncoming(active,sendOneBotMessage),new Promise((_,reject)=>setTimeout(()=>reject(Error('Unrelated summary blocked reply')),3000))]);release();await pending;assert.equal(result.replied,true);
+ result=await Promise.race([processIncoming(active,sendOneBotMessage),new Promise((_,reject)=>setTimeout(()=>reject(Error('Unrelated summary blocked reply')),3000))]);release();await pending;assert.equal(result.replied,true);await waitForBackgroundTasks(3000);
  seed();active={...active,type:'private',groupId:'private',userId:'10001',atTargets:[],text:'今天有点累'};
  store.updateDb(db=>db.messages.push({id:'foreign',type:'private',role:'assistant',groupId:'private',userId:'bot',replyToUserId:'other',inContext:true,content:'OTHER_PRIVATE_MUST_NOT_LEAK',createdAt:new Date().toISOString()}));
- await processIncoming(active,sendOneBotMessage);assert.equal(calls.length,1);assert.ok(!JSON.stringify(calls).includes('OTHER_PRIVATE_MUST_NOT_LEAK'));
- seed();variant='malformed';result=await processIncoming(active,sendOneBotMessage);assert.ok(!JSON.stringify(sent).includes('PRIVATE_INTERNAL'));assert.ok(!JSON.stringify(sent).includes('affinityDelta'));
- seed();variant='unwrapped-internal';result=await processIncoming(active,sendOneBotMessage);assert.ok(!JSON.stringify(sent).includes('PRIVATE_INTERNAL'));assert.ok(!JSON.stringify(sent).includes('affinityDelta'));
+ await processIncoming(active,sendOneBotMessage);assert.equal(foregroundCalls(),1);await waitForBackgroundTasks(3000);assert.ok(!JSON.stringify(calls).includes('OTHER_PRIVATE_MUST_NOT_LEAK'));
+ seed();variant='malformed';result=await processIncoming(active,sendOneBotMessage);assert.ok(!JSON.stringify(sent).includes('PRIVATE_INTERNAL'));assert.ok(!JSON.stringify(sent).includes('affinityDelta'));await waitForBackgroundTasks(3000);
+ seed();variant='unwrapped-internal';result=await processIncoming(active,sendOneBotMessage);assert.ok(!JSON.stringify(sent).includes('PRIVATE_INTERNAL'));assert.ok(!JSON.stringify(sent).includes('affinityDelta'));await waitForBackgroundTasks(3000);
+ seed();variant='prefixed-internal';result=await processIncoming(active,sendOneBotMessage);assert.ok(!JSON.stringify(sent).includes('PRIVATE_INTERNAL'));await waitForBackgroundTasks(3000);
+ seed();variant='empty';result=await processIncoming(active,sendOneBotMessage);assert.equal(result.replied,false);assert.match(result.error,/没有返回/);assert.ok(sent.length,'failed direct request gets a closing failure notice');await waitForBackgroundTasks(3000);
  console.log(JSON.stringify({ok:true,ordinaryCalls:{baseline,combined:1},toolLookupCalls:2,personaRetained:true,passAndRelationshipPreserved:true,privateIsolation:true,unrelatedPendingDoesNotBlock:true,malformedEnvelopeNeverSent:true}));
-}finally{await new Promise(r=>server.close(r));cleanupTestDir(directory);}
+}finally{releaseReflection?.();await waitForBackgroundTasks(3000);server.closeAllConnections();await new Promise(r=>server.close(r));cleanupTestDir(directory);}

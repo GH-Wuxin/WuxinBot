@@ -141,6 +141,10 @@ export interface PresenceState {
 }
 
 export interface SocialState {
+  reflectionQueue?: {
+    key:string;event:SocialEvent;scope:string;account:string;ids:string[];timelineIds:string[];
+    outcome:{action:SocialAction;replied:boolean};queuedAt:string;attempts:number;lastAttemptAt?:string;
+  }[];
   self?: PippiSelf;
   activity?: PippiActivityState;
   presence?: PresenceState;

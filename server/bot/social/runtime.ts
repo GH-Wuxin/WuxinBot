@@ -9,7 +9,7 @@ import { isReplyProcessAborted } from '../replyProcesses.js';
 import { traceEvent } from '../../requestTrace.js';
 import { chatAdmissionReason, conversationContext, replyLimitReason, assessmentBudgetReason } from './policy.js';
 import { commitSocialAssessment, isSystemOwner, readSocialPerson, readSocialView, socialScope } from './state.js';
-import { ownerAuthorityPrompt, SOCIAL_ASSESSMENT_PROMPT } from './prompts.js';
+import { ownerAuthorityPrompt, SOCIAL_ASSESSMENT_PROMPT, SOCIAL_PARTICIPATION_PROMPT } from './prompts.js';
 import { socialCoordinator } from './coordinator.js';
 import { commitSelfProposal, readPippiSelf, selfContext, SELF_PROPOSAL_GUIDANCE } from './self.js';
 import { callableCapabilityNames } from '../../bots/capabilityCatalog.js';
@@ -215,32 +215,74 @@ export async function waitForSocialContinuation(event: SocialEvent) {
   recordSocialDecision(event, { stage: 'wait', action: 'wait', reason: '短暂等待结束，最多重新判断一次', evidenceIds: [], durationMs: 1400, totalTokens: 0 });
 }
 
-/** The same relationship contract can travel with a direct answer in one model call. */
+function participationFromObject(value: any, event: SocialEvent) {
+  if (!value || !['pass','wait','react','reply'].includes(value.action)
+    || !['bot','member','group','unclear'].includes(value.addressee)
+    || typeof value.reason !== 'string' || value.reason.length > 200) return null;
+  const assessment = { action:value.action, addressee:value.addressee, reason:value.reason,
+    evidenceIds:[], affinityDelta:0, familiarityDelta:0, summary:null, preferredNames:null, style:null, mood:null } as SocialAssessment;
+  if (event.socialDirect && isSystemOwner(readDb(),event)) assessment.action='reply';
+  return assessment;
+}
+
+/** Ambient talk still needs a participation decision, without relationship writes. */
+export async function assessSocialParticipation(event: SocialEvent, phase: 'initial' | 'resumed' = 'initial', invoke = completeChat) {
+  const db=readDb();
+  if (!socialEntryAllowed(db,event,Boolean(event.socialDirect)) || isReplyProcessAborted()) return null;
+  if (tokenSaving(db)) return assessSavingTurn(event,invoke);
+  const conversation=conversationContext(db,event), candidate=event.socialNamed?{...event,socialDirect:true}:event;
+  const blocked=replyLimitReason(db,candidate,conversation.continuationCandidate)||assessmentBudgetReason(db,candidate,phase==='resumed');
+  if(blocked){recordSocialDecision(event,{stage:'guard',action:'pass',reason:blocked,evidenceIds:[],durationMs:0,totalTokens:0});return null;}
+  const timeline=socialTimeline(db,event,40), started=Date.now();
+  event.socialContextIds=timeline.map(m=>m.messageId);
+  try{
+    const result=await invoke(db,{messages:[
+      {role:'system',content:`${SOCIAL_PARTICIPATION_PROMPT}\n${ownerAuthorityPrompt(db,event)}\n只输出上述 social 对象本身，不生成正文。phase=resumed 时不能再 wait。`},
+      {role:'user',content:JSON.stringify({phase,direct:Boolean(event.socialDirect),nameMentioned:Boolean(event.socialNamed),
+        bot:db.settings.selfQq,mode:db.groups.find(g=>String(g.groupId)===String(event.groupId))?.mode||'private',conversation,
+        target:{userId:event.userId,text:event.text,atTargets:event.atTargets||[],replyTo:event.replyMessageId||''},
+        relationship:readSocialPerson(db,event.userId),currentConversation:readSocialView(db,socialScope(event),event.userId),
+        selfContext:selfContext(db,socialScope(event),event.userId),timeline})}],
+      maxTokens:350,timeoutMs:15_000,requestMaxRetries:0,retryOnEmpty:false,temperature:0.2,
+      ...thinkingParamsForLevel('low',reasoningEnabledFor(db)),responseFormat:{type:'json_object'},
+      label:'Pippi 接话判断',tracePurpose:'social_participation',traceRole:'social',promptModule:'general'});
+    const assessment=participationFromObject(parseObject(result.text),event);
+    if(!assessment)throw Error('无效的接话结果');
+    if(event.socialNamed&&assessment.addressee==='bot')event.socialDirect=true;
+    if(event.socialDirect&&isSystemOwner(db,event))assessment.action='reply';
+    if(phase==='resumed'&&assessment.action==='wait')assessment.action='pass';
+    if(isReplyProcessAborted()||!socialEntryAllowed(readDb(),event,Boolean(event.socialDirect)))return null;
+    event.socialEngagement=event.socialDirect?'direct':assessment.addressee==='bot'&&conversation.continuationCandidate?'continuation':'ambient';
+    recordSocialDecision(event,{stage:'assessment',phase,action:assessment.action,reason:assessment.reason,evidenceIds:[],durationMs:Date.now()-started,totalTokens:Number(result.usage?.total_tokens||0)});
+    return assessment;
+  }catch(error){
+    recordSocialDecision(event,{stage:'failure',phase,action:event.socialDirect?'reply':'pass',reason:'接话判断失败：'+String(error.message||error).slice(0,100),evidenceIds:[],durationMs:Date.now()-started,totalTokens:0});
+    return null;
+  }
+}
+
+/** Only participation travels with the answer; relationship work is detached. */
 export function prepareCombinedSocialTurn(event: SocialEvent) {
   const db = readDb(), scope = socialScope(event), ids = event.socialMessageIds || [event.messageId];
   const timeline = socialTimeline(db, event, 40);
   const person = readSocialPerson(db, event.userId), view = readSocialView(db, scope, event.userId);
-  const assessmentRules = applyModulePersonality([{role:'system',content:SOCIAL_ASSESSMENT_PROMPT}], 'general', db.settings.personaModulePrompts || {})[0].content;
+  const assessmentRules = applyModulePersonality([{role:'system',content:SOCIAL_PARTICIPATION_PROMPT}], 'general', db.settings.personaModulePrompts || {})[0].content;
   return { scope, ids, timeline, personRevision: person?.revision || 0, viewRevision: view?.revision || 0,
     selfRevision: readPippiSelf(db).revision,
-    instruction: `【同一轮完成社交理解与回复】\n沿用上文全部人格、语气、身份和事实规则。最终只输出 JSON，reply 为实际给群友的回复；可选表情字段仍遵循原契约，另外增加 social 对象。以下评估规范中的“只评估、不直接说话”仅约束 social 字段，不约束 reply。social 和内部数值绝不能放进 reply。若需要工具，先正常调用工具，完成后再给最终 JSON。\n${assessmentRules}\n${SELF_PROPOSAL_GUIDANCE}\n本轮为明确对话，social.action 可为 pass/react/reply；保持普通成员可选择不回应的权利，Owner 正常明确请求仍需 reply。reply 的长度仍按原人格约束，不因增加内部字段而变长。根据本次互动产生的感受调整 reply，不必等待另一次评估。\n本轮评估数据：${JSON.stringify({phase:'initial',direct:true,bot:{userId:db.settings.selfQq},target:{userId:event.userId,messageIds:ids,text:event.text,atTargets:event.atTargets||[],replyTo:event.replyMessageId||''},conversation:conversationContext(db,event),relationship:person,currentConversation:view,timeline})}\n最终格式是 {"reply":"实际回复或空串","social":{上面的完整评估字段},"mode":"none|text_image|image_only","sticker_id":null或已有可用表情ID}，保留已有 sticker_caption/sticker_use/self 字段。social.action=pass 时 reply 为空且不选表情。reply 保持 pippi 原本的身份和说话方式，不扮演判断器，不复述评估过程。不要在 JSON 外解释。`,
+    instruction: `【同一轮完成社交理解与回复】\n沿用上文全部人格、关系、语气和事实依据。若需要工具先正常调用。最终输出 JSON：先写 social，再写 reply（实际给群友的正文），保留已有表情字段。\n${assessmentRules}\n本轮为明确对话，只可 pass/react/reply。根据本次互动的感受直接调整措辞，普通成员仍可不回应；Owner 正常明确请求要回应。social.action=pass 时 reply 为空且不选表情。reply 绝不包含内部判断、数值或 JSON。关系和记忆由后台更新，本轮不输出它们。\n最终格式：{"social":{"action":"reply","addressee":"bot","reason":"简短依据"},"reply":"实际正文","mode":"none|text_image|image_only","sticker_id":null或可用表情ID}。`,
   };
 }
 
 export function applyCombinedSocialTurn(event: SocialEvent, raw: string, prepared: ReturnType<typeof prepareCombinedSocialTurn>) {
   let envelope: any;
   try { envelope = parseObject(raw); } catch { return null; }
-  if (!envelope?.social || typeof envelope.reply !== 'string') return null;
-  const ids = prepared.ids;
-  const assessment = parseSocialAssessment(JSON.stringify(envelope.social), [...new Set([...ids,...prepared.timeline.map(m=>m.messageId)])], isSystemOwner(readDb(),event), ids);
-  if (event.socialDirect && isSystemOwner(readDb(),event)) assessment.action='reply';
+  if (!prepared || !envelope?.social || typeof envelope.reply !== 'string') return null;
+  const assessment = participationFromObject(envelope.social,event);
+  if(!assessment)return null;
   if (assessment.action==='wait') assessment.action='pass';
   if (isReplyProcessAborted() || !socialEntryAllowed(readDb(),event,true)) return {allow:false,assessment};
   updateDb(draft=>{
-    const committed=commitSocialAssessment(draft,{event,messageIds:ids,assessment,expectedPersonRevision:prepared.personRevision,expectedViewRevision:prepared.viewRevision});
-    if(committed.reason!=='duplicate')commitSelfProposal(draft,assessment.self,{scope:prepared.scope,expectedRevision:prepared.selfRevision,requiredEvidenceIds:ids,
-      sources:prepared.timeline.map(m=>({id:m.messageId,kind:'message' as const,scope:prepared.scope,at:m.at,userId:m.senderId}))});
-    for(const decision of draft.decisions)if(decision.groupId===event.groupId&&decision.userId===event.userId&&ids.includes(decision.messageId))decision.shouldReply=assessment.action!=='pass';
+    for(const decision of draft.decisions)if(decision.groupId===event.groupId&&decision.userId===event.userId&&prepared.ids.includes(decision.messageId))decision.shouldReply=assessment.action!=='pass';
   });
   event.socialAction=assessment.action;
   recordSocialDecision(event,{stage:'assessment',phase:'initial',action:assessment.action,reason:assessment.reason,evidenceIds:assessment.evidenceIds,durationMs:0,totalTokens:0});

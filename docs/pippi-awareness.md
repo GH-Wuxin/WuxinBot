@@ -48,12 +48,12 @@ wait up to five seconds for that specific pending quick observation, then return
 an explicit pending/ready state. Ordinary conversation no longer drains every
 pending summary for up to thirty seconds.
 
-Direct social V2 turns combine the existing social assessment contract with the
-normal persona reply in one model completion. Relationship deltas still pass the
-same evidence/revision validation; ordinary members can still receive a `pass`,
-and Owner rules remain enforced. Ambient participation keeps the existing
-assessment flow. Malformed combined envelopes use the old assessment fallback
-and cannot be emitted as raw internal JSON. The core persona, configured model,
+Direct social V2 turns combine a small participation decision with the normal
+persona reply. Ordinary members can still receive a `pass`; Owner rules remain
+enforced. A valid plain answer is an implicit choice to reply, so it never waits
+for a second social assessment after generation. Empty responses are failures,
+not implicit passes. Internal JSON cannot be emitted as ordinary prose. Ambient
+talk uses a separate participation-only decision where necessary. The core persona, configured model,
 custom personality sections and permission boundaries are unchanged. Optional
 tool inspection does not force a higher reasoning tier than plain conversation.
 When self-inspection is the only tool surface, the conversation module's custom
@@ -67,6 +67,37 @@ happens before parallel dispatch, including duplicates within one model response
 Unambiguously other-directed messages do not trigger a full sending-time model
 review; ambiguous corrections still do. Existing foreground priority and background
 concurrency limits remain in effect.
+
+Relationship, mood and experience updates run after delivery or a deliberate pass.
+`social/reflection.ts` keeps evidence/revision validation and serializes reflection
+calls in the existing background lane. Pending work is saved in
+`socialV2.reflectionQueue`; restart recovery and bounded retries reuse only the
+original scoped message IDs. Deleted evidence cannot recreate memories. Failed
+responses never mutate relationship data. There are at most 128 in-memory jobs;
+additional work stays persisted for later admission. Three failed attempts stay
+visible as exhausted jobs instead of retrying indefinitely. `/api/health` exposes
+queue counts only. Rollback code tolerates the additive queue field.
+
+Complex explicit @ requests can send short progress replies. An Owner request or
+an already accepted participation decision can acknowledge after about 1.2 s;
+ordinary members wait for actual tool dispatch or the model's public participation
+object. A pass stays silent. Provider reasoning is never forwarded. At most two
+progress messages are sent, with at least eight seconds between them. A subsequent
+update requires an actual tool result. Cancellation/final delivery aborts optional
+sends. Progress records use `originModule=notice`, so they do not consume reply
+quotas or become ordinary conversation context. Set
+`settings.pippiProgressReplies=false` or `PIPPI_PROGRESS_REPLIES=0` to disable this
+feature. Existing thinking-notice settings remain available for other requests.
+
+Detailed @ requests have an 8,192-token generation allowance and a 90-second call
+deadline, allowing reasoning plus the requested text on compatibility endpoints.
+Complete answers up to 1,800 characters use up to three paragraph-preserving
+messages; larger/code-heavy answers retain merged-forward delivery. Text is still
+validated before sending; this does not stream unvalidated partial answers.
+
+The interaction follows OpenAI's [tool preamble guidance](https://developers.openai.com/cookbook/examples/gpt-5/gpt-5_prompting_guide#tool-preambles):
+brief intent first and truthful progress during longer work, adapted to Pippi's
+group-chat tone without adding a separate model call for every update.
 
 Validation commands:
 

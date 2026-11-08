@@ -12,6 +12,7 @@ import { connectOneBot, getOneBotStatus, handleOneBotEvent, sendOneBotMessage, s
 import { processIncoming } from './bot.js';
 import { mountSocialApi } from './bot/social/api.js';
 import { startPippiActivity, stopPippiActivity } from './bot/activity.js';
+import { startSocialReflections, stopSocialReflections, getSocialReflectionQueueStats } from './bot/social/reflection.js';
 import { participationStatus } from './bot/social/policy.js';
 import { runSandboxPreview } from './sandboxPreview.js';
 import { getReplyQueueStats } from './bot/queue.js';
@@ -124,6 +125,7 @@ async function emergencyShutdown(): Promise<void> {
   crashCleanupPromise = (async () => {
     stopInboundAdmission();
     stopPippiActivity();
+    stopSocialReflections();
     try { shutdownOneBot(); } catch (error) {
       console.error('[crash] shutdownOneBot failed:', String(error?.message || error));
     }
@@ -180,6 +182,7 @@ async function gracefulShutdown(signal) {
     console.log(`[shutdown] ${signal} received, stopping ingress and draining background work`);
     stopInboundAdmission();
     stopPippiActivity();
+    stopSocialReflections();
     try {
       // Stop new QQ events/reconnects before closing the local HTTP and render
       // endpoints. The instance lock stays held until all bounded cleanup is
@@ -1508,6 +1511,7 @@ app.get('/api/health', (_req, res) => {
   health.storeWrites = getStoreWriteStats();
   health.storeLocks = getStoreLockStats();
   health.backgroundTasks = getBackgroundTaskStats();
+  health.socialReflectionQueue = getSocialReflectionQueueStats();
   health.inboundAdmission = getInboundAdmissionStats();
   health.llmAdmission = getLlmAdmissionStats();
   res.json(health);
@@ -1895,6 +1899,7 @@ httpServer = app.listen(port, '127.0.0.1', async () => {
   console.log(`QQ AI ChatBot server running at http://127.0.0.1:${port}`);
   connectOneBot();
   startPippiActivity(sendOneBotMessage);
+  startSocialReflections();
   // Start Wuxin's local yumu-image endpoint on 8389. The renderer keeps its
   // original 8388 connection and opens this second connection independently.
   startRenderServer(Number(process.env.WUXIN_RENDER_PORT || 8389));
