@@ -92,7 +92,8 @@ feature. Existing thinking-notice settings remain available for other requests.
 Detailed @ requests have an 8,192-token generation allowance and a 90-second call
 deadline, allowing reasoning plus the requested text on compatibility endpoints.
 Complete answers up to 1,800 characters use up to three paragraph-preserving
-messages; larger/code-heavy answers retain merged-forward delivery. Text is still
+messages; explicit long-form writing and larger/code-heavy answers retain
+merged-forward delivery, including the existing separate sticker-failure handling. Text is still
 validated before sending; this does not stream unvalidated partial answers.
 
 The interaction follows OpenAI's [tool preamble guidance](https://developers.openai.com/cookbook/examples/gpt-5/gpt-5_prompting_guide#tool-preambles):

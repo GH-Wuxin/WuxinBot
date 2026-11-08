@@ -1633,8 +1633,9 @@ async function generateConversationReply(event, sendMessage, decision) {
     const segmentCount = splitReplySegments(deliveredText).length;
     const withinMergeFloor = deliveredText.length <= MERGE_FORWARD_MIN_CHARS;
     const stagedSegments = stagedReply ? stagedReplySegments(deliveredText) : [];
-    const isLongReply = stagedReply ? deliveredText.length>1800||deliveredText.includes('```')
-      : responseOptions.longForm || (!withinMergeFloor && segmentCount >= 2);
+    const isLongReply = responseOptions.longForm || (stagedReply
+      ? deliveredText.length>1800||deliveredText.includes('```')
+      : !withinMergeFloor && segmentCount >= 2);
     let segments;
     let deliveryStatus = 'ok';
     if (thinkingTimer) { clearTimeout(thinkingTimer); thinkingTimer = null; }
