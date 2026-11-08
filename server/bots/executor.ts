@@ -3161,6 +3161,7 @@ export async function runToolLoop(
         model,
         label: label ? `${label} [工具循环 ${iterations}]` : undefined,
         ...(options.lightweightToolsOnly && !thinkingOn ? { responseFormat: typeof finalResponseFormat === 'function' ? finalResponseFormat() : finalResponseFormat } : {}),
+        ...(options.lightweightToolsOnly ? { promptModule: 'conversation' } : {}),
         traceRole: plannerInput.callRole,
         tracePurpose: directPayloadIsTerminal ? 'tool_result_lead' : 'tool_planning',
         retainToolsOnEmpty: Boolean(evidenceRequirement && !evidenceRequirementSatisfied),

@@ -18,6 +18,7 @@ const server=http.createServer(async(req,res)=>{
    assert.match(system,/人格保持标记：温和且简洁/);
    if(variant==='tool'&&calls.length===1){content='';toolCalls=[{id:'inspect',type:'function',function:{name:'inspect_capabilities',arguments:'{"query":"随机"}'}}];}
    else if(variant==='malformed')content='{"social":{"affinityDelta":5,"internal_note":"PRIVATE_INTERNAL"},"reply":';
+   else if(variant==='unwrapped-internal')content='{"affinityDelta":5,"evidenceIds":["PRIVATE_INTERNAL"],"reply":';
    else content=JSON.stringify({reply:variant==='pass'?'':'我在，慢慢说就好。',social:assessment({action:variant==='pass'?'pass':'reply',affinityDelta:variant==='pass'?-1:1}),mode:'none'});
  }else if(system.includes('社交判断器'))content=JSON.stringify(assessment());
  else if(system.includes('检查草稿'))content=JSON.stringify({action:'keep',reason:'不影响当前回答'});
@@ -43,6 +44,8 @@ try{
  assert.equal(readSocialPerson(store.readDb(),'10003').affinity.score,51);
  assert.equal(store.readDb().messages.filter(m=>m.role==='assistant').length,1);assert.ok(store.readDb().messages.at(-1).sourceMessageId);
  assert.ok(!JSON.stringify(sent).includes('affinityDelta'));assert.ok(!JSON.stringify(calls).includes('fixture-private-secret'));
+ seed();store.updateDb(db=>{db.settings.botRegistry={bots:[{id:'disabled-fixture',enabled:false,channel:'internal'}]};db.settings.personaModulePrompts={conversation:'CONVERSATION_ONLY_MODULE',agent_tools:'TOOLS_ONLY_MODULE'};});
+ await processIncoming(active,sendOneBotMessage);assert.equal(calls.length,1);assert.ok(calls[0].messages[0].content.includes('CONVERSATION_ONLY_MODULE'));assert.ok(!calls[0].messages[0].content.includes('TOOLS_ONLY_MODULE'));
  seed();variant='pass';result=await processIncoming(active,sendOneBotMessage);assert.equal(result.replied,false);assert.equal(sent.length,0);assert.equal(calls.length,1);assert.equal(readSocialPerson(store.readDb(),'10003').affinity.score,49);
  seed();variant='tool';active.text='[CQ:at,qq=10002] 你会随机发图吗';result=await processIncoming(active,sendOneBotMessage);assert.equal(result.replied,true);assert.equal(calls.length,2);assert.ok(calls[1].messages.some(m=>m.role==='tool'&&m.content.includes('random_image')));
  seed();let release;const pending=registerPendingQuickObservation(active,()=>new Promise(r=>{release=r;}),'unrelated');
@@ -51,5 +54,6 @@ try{
  store.updateDb(db=>db.messages.push({id:'foreign',type:'private',role:'assistant',groupId:'private',userId:'bot',replyToUserId:'other',inContext:true,content:'OTHER_PRIVATE_MUST_NOT_LEAK',createdAt:new Date().toISOString()}));
  await processIncoming(active,sendOneBotMessage);assert.equal(calls.length,1);assert.ok(!JSON.stringify(calls).includes('OTHER_PRIVATE_MUST_NOT_LEAK'));
  seed();variant='malformed';result=await processIncoming(active,sendOneBotMessage);assert.ok(!JSON.stringify(sent).includes('PRIVATE_INTERNAL'));assert.ok(!JSON.stringify(sent).includes('affinityDelta'));
+ seed();variant='unwrapped-internal';result=await processIncoming(active,sendOneBotMessage);assert.ok(!JSON.stringify(sent).includes('PRIVATE_INTERNAL'));assert.ok(!JSON.stringify(sent).includes('affinityDelta'));
  console.log(JSON.stringify({ok:true,ordinaryCalls:{baseline,combined:1},toolLookupCalls:2,personaRetained:true,passAndRelationshipPreserved:true,privateIsolation:true,unrelatedPendingDoesNotBlock:true,malformedEnvelopeNeverSent:true}));
 }finally{await new Promise(r=>server.close(r));cleanupTestDir(directory);}

@@ -1262,6 +1262,10 @@ async function generateConversationReply(event, sendMessage, decision) {
     }
 
     if (combined) {
+      const parsedEnvelope = parseStickerReply(ai.text);
+      if (!parsedEnvelope.structured && /^\s*(?:```(?:json)?\s*)?[\[{]/i.test(ai.text)) {
+        throw new Error('Invalid combined reply envelope');
+      }
       let participation;
       try { participation = applyCombinedSocialTurn(event, ai.text, combined); } catch { /* invalid proposals never alter state */ }
       if (!participation) {

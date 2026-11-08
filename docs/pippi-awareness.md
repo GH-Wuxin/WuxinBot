@@ -56,6 +56,9 @@ assessment flow. Malformed combined envelopes use the old assessment fallback
 and cannot be emitted as raw internal JSON. The core persona, configured model,
 custom personality sections and permission boundaries are unchanged. Optional
 tool inspection does not force a higher reasoning tier than plain conversation.
+When self-inspection is the only tool surface, the conversation module's custom
+personality supplement is preserved. Incomplete or unwrapped JSON is rejected
+before delivery, including output that omitted the expected `social` field.
 
 `settings.pippiFastReplies=false` or `PIPPI_FAST_REPLIES=0` selects the old separate
 assessment path. There is no database migration or historical rewrite required
