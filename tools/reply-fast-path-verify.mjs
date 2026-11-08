@@ -10,6 +10,7 @@ const {sendOneBotMessage}=await import('../server/onebot.ts');
 const {waitForBackgroundTasks}=await import('../server/backgroundTasks.ts');
 let active,calls=[],variant='reply',sent=[],nextId=1000;
 let releaseReflection,holdReflection=false,reflectionFinished=false;
+const commandReply='常用指令：`!s <BID>` 查指定谱面，`!pp` 看 PP+，`!bp 1-10` 看 BP。链接 https://osu.ppy.sh/community/forums/topics/1?start=2';
 const foregroundCalls=()=>calls.filter(c=>!String(c.messages[0]?.content||'').includes('【回复后的关系整理】')).length;
 const assessment=(patch={})=>({action:'reply',addressee:'bot',reason:'对当前真实说话人的正常交流',evidenceIds:[active.messageId],affinityDelta:1,familiarityDelta:1,summary:null,preferredNames:null,style:null,mood:{label:'温和',reason:'当前互动'},...patch});
 const server=http.createServer(async(req,res)=>{
@@ -25,6 +26,7 @@ const server=http.createServer(async(req,res)=>{
    assert.match(system,/人格保持标记：温和且简洁/);
    if(variant==='tool'&&foregroundCalls()===1){content='';toolCalls=[{id:'inspect',type:'function',function:{name:'inspect_capabilities',arguments:'{"query":"随机"}'}}];}
    else if(variant==='plain')content='我在，慢慢说就好。';
+   else if(variant==='commands')content=JSON.stringify({reply:commandReply,social:assessment(),mode:'none'});
    else if(variant==='empty')content='';
    else if(variant==='prefixed-internal')content='内部结果：{"social":{"action":"reply","private":"PRIVATE_INTERNAL"}}';
    else if(variant==='malformed')content='{"social":{"affinityDelta":5,"internal_note":"PRIVATE_INTERNAL"},"reply":';
@@ -54,6 +56,10 @@ try{
  assert.equal(readSocialPerson(store.readDb(),'10003').affinity.score,51);
  assert.equal(store.readDb().messages.filter(m=>m.role==='assistant').length,1);assert.ok(store.readDb().messages.at(-1).sourceMessageId);
  assert.ok(!JSON.stringify(sent).includes('affinityDelta'));assert.ok(!JSON.stringify(calls).includes('fixture-private-secret'));
+ seed();variant='commands';active.atTargets=[];active.text='我想知道常用功能';active.replyMessageId='real-bot-receipt';active.quotedMessage={isSelf:true,verified:true,scope:'group:20001',accountId:'10002',messageId:'real-bot-receipt',text:'请问'};
+ result=await processIncoming(active,sendOneBotMessage);assert.equal(result.replied,true);
+ assert.equal(sent.length,1,'missing optional presentation must not split inline command punctuation');
+ assert.ok(String(sent[0].message).includes(commandReply));await waitForBackgroundTasks(3000);
  seed();store.updateDb(db=>{db.settings.botRegistry={bots:[{id:'disabled-fixture',enabled:false,channel:'internal'}]};db.settings.personaModulePrompts={conversation:'CONVERSATION_ONLY_MODULE',agent_tools:'TOOLS_ONLY_MODULE'};});
  await processIncoming(active,sendOneBotMessage);assert.equal(foregroundCalls(),1);assert.ok(calls[0].messages[0].content.includes('CONVERSATION_ONLY_MODULE'));assert.ok(!calls[0].messages[0].content.includes('TOOLS_ONLY_MODULE'));await waitForBackgroundTasks(3000);
  seed();variant='pass';result=await processIncoming(active,sendOneBotMessage);assert.equal(result.replied,false);assert.equal(sent.length,0);assert.equal(foregroundCalls(),1);await waitForBackgroundTasks(3000);assert.equal(readSocialPerson(store.readDb(),'10003').affinity.score,49);

@@ -70,7 +70,6 @@ import {
   rewriteNormalReply,
   visualLimitationReply,
   sendForwardText,
-  splitReplySegments,
   isIdentityQuestion,
   neutralIdentityReply,
   normalReplyRewriteSkipReason
@@ -306,7 +305,6 @@ export function compactDirectToolLead(text, directContent = '', hasImages = fals
 }
 
 /** Replies at or below this length are never merged into a forward card. */
-const MERGE_FORWARD_MIN_CHARS = 200;
 
 // Console preview reports admission; only the social model decides ambient participation.
 export async function decideReply({ db, group, userPolicy, text, mentioned, userId, images = [] }) {
@@ -1627,18 +1625,12 @@ async function generateConversationReply(event, sendMessage, decision) {
     let deliveredText = [replyText, toolDirectContent].filter(Boolean).join('\n\n');
     const deliveredMediaImages = toolImages.map(toolImageToMediaInput).filter(Boolean);
 
-    // Merged-forward cards require BOTH: the output would actually split into
-    // two or more messages (as judged by the same segmenter used for normal
-    // delivery) AND it exceeds the character floor. Replies within 200 chars
-    // never use the forward card; a single-speech output stays a normal
-    // message even if it is long; only explicit long-form tasks force the card.
-    const segmentCount = splitReplySegments(deliveredText).length;
-    const withinMergeFloor = deliveredText.length <= MERGE_FORWARD_MIN_CHARS;
-    stagedReply = progress?.hasStarted() === true || stickerReply.presentation === 'chat';
+    // Missing optional presentation metadata is still ordinary chat. Preserve
+    // model-authored paragraphs so !commands and URL punctuation stay intact.
+    stagedReply = stickerReply.presentation !== 'document';
     const stagedSegments = stagedReply ? stagedReplySegments(deliveredText) : [];
-    const isLongReply = responseOptions.longForm || (stagedReply
-      ? deliveredText.length>1800||deliveredText.includes('```')
-      : !withinMergeFloor && segmentCount >= 2);
+    // Documents and physically large/code-heavy payloads retain full forwarding.
+    const isLongReply = responseOptions.longForm || deliveredText.length > 1800 || deliveredText.includes('```');
     let segments;
     let deliveryStatus = 'ok';
     if (thinkingTimer) { clearTimeout(thinkingTimer); thinkingTimer = null; }
