@@ -113,7 +113,7 @@ export type ReplyProgress = ReturnType<typeof createReplyProgress>;
 /** Simple requests use one completion; a semantic opening permits one continuation. */
 export async function completeWithReplyProgress(db: any, options: any, progress: ReplyProgress | undefined, invoke: Invoke): Promise<Completion> {
   if (!progress) return invoke(db, options);
-  const firstOptions = { ...options, timeoutMs: 90_000, responseFormat: STICKER_REPLY_RESPONSE_FORMAT,
+  const firstOptions = { ...options, responseFormat: STICKER_REPLY_RESPONSE_FORMAT,
     messages: withStickerReplyInstruction(options.messages, progress.instruction()) };
   const first = await invoke(db, firstOptions);
   const parsed = parseStickerReply(first.text);

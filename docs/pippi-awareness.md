@@ -104,8 +104,9 @@ consume reply quotas or become ordinary conversation context. Set
 `settings.pippiProgressReplies=false` or `PIPPI_PROGRESS_REPLIES=0` to disable this
 feature. Existing thinking-notice settings remain available for other requests.
 
-Normal non-saving replies allow at least 8,192 generated tokens; explicit @
-requests have a 90-second call deadline, allowing reasoning plus the requested
+Normal non-saving replies allow at least 8,192 generated tokens. The first
+completion keeps the existing request timeout; after a semantic opening, the
+continuation has a 90-second call deadline, allowing reasoning plus the requested
 text on compatibility endpoints. These are completion/stability limits, not an
 API spending budget or an instruction to produce a long answer. The model
 declares `presentation=chat|document` according to the requested result.
