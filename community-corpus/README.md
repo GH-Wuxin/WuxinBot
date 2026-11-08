@@ -14,6 +14,8 @@ V0 只做四件事：
 
 ## 目录结构
 
+`reports/` 是脚本生成的本地结果，不纳入版本控制；需要时从管线重新生成。运行时的精选短语保存在 `server/bot/banterBank.ts`，不会读取这些报告文件。
+
 ```text
 community-corpus/
   community_corpus/       # 管线代码
