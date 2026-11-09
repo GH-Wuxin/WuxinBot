@@ -353,11 +353,16 @@ function ok(data = {}) {
 // by the memory detail endpoint. Keeping this response contract compact also
 // prevents a settings save or context cleanup from blocking the UI on a
 // multi-megabyte JSON parse.
+function publicStateRevision() {
+  // Time-window statistics must roll forward even when the database is idle.
+  return `${currentStorageRevision()}:${Math.floor(Date.now() / 60_000)}`;
+}
+
 function compactDbResponse(db = readDb()) {
   const exposed = publicDb(db, { includeMemorySamples: false });
   exposed.groups = exposed.groups.map((group) => ({ ...group, participation: participationStatus(db, group) }));
   return {
-    revision: currentStorageRevision(),
+    revision: publicStateRevision(),
     db: exposed,
   };
 }
@@ -383,7 +388,7 @@ app.get('/api/state', (_req, res) => {
 });
 
 app.get('/api/state/revision', (_req, res) => {
-  res.json(ok({ revision: currentStorageRevision() }));
+  res.json(ok({ revision: publicStateRevision() }));
 });
 
 app.get('/api/codex/status', async (_req, res) => {

@@ -405,6 +405,7 @@ export interface Db {
   adminActions: Record<string, unknown>[];
   usageEvents: UsageEvent[];
   usage: {
+    history?: import('./usage.js').UsageHistory;
     totalTokens: number;
     promptTokens: number;
     cachedTokens: number;

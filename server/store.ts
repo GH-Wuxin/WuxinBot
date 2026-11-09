@@ -4,7 +4,7 @@ import { fileURLToPath } from 'node:url';
 import { activeModelName, activateModelProfile, DEEPSEEK_BASE_URL, recoverProviderProfiles } from './modelConfig.js';
 import { DEFAULT_BOTS } from './bots/registry.js';
 import { DEFAULT_KB_SETTINGS } from './bot/knowledgeTypes.js';
-import { cacheUsageSummary, usageEventHasCacheDetails, eventMeasuredPromptTokens } from './usage.js';
+import { cacheUsageSummary, initializeUsageHistory, buildUsageStats, usageDayStart } from './usage.js';
 import { emptySocialState, normalizeSocialState, validSocialState } from './bot/social/state.js';
 import { pruneBackupFiles, resolveBackupRetention } from './backupFiles.js';
 import { OWN_ARCHIVE_FILE, snapshotOwnArchive, recoverOwnArchive } from './messageArchiveStorage.js';
@@ -750,6 +750,7 @@ export function normalizeDb(db) {
     }
   }
 
+  db.usage.history = initializeUsageHistory(db.usage, db.usageEvents);
   return applyRetention(db);
 }
 
@@ -1467,79 +1468,10 @@ export function publicDb(db = readDb(), options: { includeMemorySamples?: boolea
     && cachedPublicDb.minute === minute
     && cachedPublicDb.includeMemorySamples === includeMemorySamples
   ) return cachedPublicDb.value;
-  const now = new Date();
-  const localDayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
-  const currentHourStart = new Date(now.getFullYear(), now.getMonth(), now.getDate(), now.getHours()).getTime();
-  const hourlyUsage = Array.from({ length: 24 }, (_, index) => {
-    const start = currentHourStart - (23 - index) * 60 * 60 * 1000;
-    const date = new Date(start);
-    return {
-      start,
-      label: `${String(date.getHours()).padStart(2, '0')}:00`,
-      totalTokens: 0,
-      promptTokens: 0,
-      cachedTokens: 0,
-      cacheWriteTokens: 0,
-      completionTokens: 0,
-      reasoningTokens: 0,
-      cacheMeasuredPromptTokens: 0,
-      cacheMeasuredRequests: 0,
-      requests: 0
-    };
-  });
-  const dailyUsage = Array.from({ length: 7 }, (_, index) => {
-    const date = new Date(now.getFullYear(), now.getMonth(), now.getDate() - (6 - index));
-    return {
-      start: date.getTime(),
-      label: `${date.getMonth() + 1}/${date.getDate()}`,
-      totalTokens: 0,
-      promptTokens: 0,
-      cachedTokens: 0,
-      cacheWriteTokens: 0,
-      completionTokens: 0,
-      reasoningTokens: 0,
-      cacheMeasuredPromptTokens: 0,
-      cacheMeasuredRequests: 0,
-      requests: 0
-    };
-  });
-  const hourlyByStart = new Map(hourlyUsage.map((bucket) => [bucket.start, bucket]));
-  const dailyByStart = new Map(dailyUsage.map((bucket) => [bucket.start, bucket]));
-  const todayUsage = { totalTokens: 0, promptTokens: 0, cachedTokens: 0, cacheWriteTokens: 0, completionTokens: 0, reasoningTokens: 0, cacheMeasuredPromptTokens: 0, cacheMeasuredRequests: 0, requests: 0 };
-  for (const event of db.usageEvents || []) {
-    if (!event || event.accountingExcluded || event.kind === 'rewrite-reply') continue;
-    const time = new Date(event.createdAt || 0);
-    const timestamp = time.getTime();
-    if (!Number.isFinite(timestamp)) continue;
-    const values = {
-      totalTokens: Number(event.totalTokens || 0),
-      promptTokens: Number(event.promptTokens || 0),
-      cachedTokens: Number(event.cachedTokens || 0),
-      cacheWriteTokens: Number(event.cacheWriteTokens || 0),
-      completionTokens: Number(event.completionTokens || 0),
-      reasoningTokens: Number(event.reasoningTokens || 0),
-      cacheMetricsAvailable: usageEventHasCacheDetails(event)
-    };
-    const add = (bucket) => {
-      if (!bucket) return;
-      bucket.totalTokens += values.totalTokens;
-      bucket.promptTokens += values.promptTokens;
-      bucket.cachedTokens += values.cachedTokens;
-      bucket.cacheWriteTokens += values.cacheWriteTokens;
-      bucket.completionTokens += values.completionTokens;
-      bucket.reasoningTokens += values.reasoningTokens;
-      if (values.cacheMetricsAvailable) {
-        bucket.cacheMeasuredPromptTokens += eventMeasuredPromptTokens(event);
-        bucket.cacheMeasuredRequests += 1;
-      }
-      bucket.requests += 1;
-    };
-    if (timestamp >= localDayStart) add(todayUsage);
-    const hourStart = new Date(time.getFullYear(), time.getMonth(), time.getDate(), time.getHours()).getTime();
-    const dayStart = new Date(time.getFullYear(), time.getMonth(), time.getDate()).getTime();
-    add(hourlyByStart.get(hourStart));
-    add(dailyByStart.get(dayStart));
-  }
+  const now = Date.now();
+  const localDayStart = usageDayStart(now);
+  const usageStats = buildUsageStats(db.usage, db.usageEvents, now);
+  const {history: _usageHistory, ...publicUsage} = db.usage || initialDb.usage;
   const messages = (db.messages || []).slice(-500);
   const decisions = (db.decisions || []).slice(-300);
   const commandLogs = (db.commandLogs || []).slice(-300);
@@ -1576,19 +1508,8 @@ export function publicDb(db = readDb(), options: { includeMemorySamples?: boolea
     messages,
     decisions,
     commandLogs,
-    usage: db.usage || initialDb.usage,
-    usageStats: {
-      today: todayUsage,
-      hourly24: hourlyUsage,
-      daily7: dailyUsage,
-      cacheMeasuredAll: {
-        promptTokens: Number(db.usage?.cacheMeasuredPromptTokens || 0),
-        cachedTokens: Number(db.usage?.cachedTokens || 0),
-        cacheWriteTokens: Number(db.usage?.cacheWriteTokens || 0),
-        requests: Number(db.usage?.cacheMeasuredRequests || 0),
-        startedAt: String(db.usage?.cacheMetricsStartedAt || '')
-      }
-    },
+    usage: publicUsage,
+    usageStats,
     stateStats: {
       totalMessages: (db.messages || []).length,
       todayMessages: (db.messages || []).filter((message) => {

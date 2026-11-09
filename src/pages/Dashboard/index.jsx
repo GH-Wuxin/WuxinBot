@@ -3,14 +3,11 @@ import { usePollingResource } from '../../app/polling.js';
 import { api } from '../../lib/api.js';
 import { Avatar, groupAvatarUrl, userAvatarUrl } from '../../components/Avatar.jsx';
 import { RefreshButton } from '../../components/ui/RefreshButton.jsx';
+import { usagePeriods, periodLabels, usageSummary, shortNumber, usageTime, usagePointLabel, usageAxis } from './usageView.js';
 
 // 结构与 class 名对齐原型 PAGES.overview，数据换成本地真实字段。
 const num = (value) => Number(value || 0).toLocaleString('en-US');
 const wan = (value) => (Number(value || 0) / 10000).toFixed(1);
-const shortWan = (value) => {
-  const n = Number(value || 0);
-  return n >= 10000 ? (n / 10000).toFixed(1) + '万' : num(n);
-};
 const modeLabel = (mode) => ({ mention: '@ 回复', natural: '自然群友', light: '轻度参与', osu: '仅 osu! 指令' }[mode] || mode || '未设置');
 const timeOf = (iso) => {
   const date = new Date(iso || '');
@@ -20,6 +17,7 @@ const timeOf = (iso) => {
 
 
 export function DashboardPage({ db, oneBot, saveSettings, refreshState, onNavigate }) {
+  const [period, setPeriod] = useState('hourly24');
   const [hovered, setHovered] = useState(null);
   const [savingEnergy, setSavingEnergy] = useState(false), [energyError, setEnergyError] = useState('');
   const toggleEnergy = async () => {
@@ -38,10 +36,16 @@ export function DashboardPage({ db, oneBot, saveSettings, refreshState, onNaviga
   const enabledGroups = groups.filter((group) => group.enabled).length;
   const experienceCount = Object.keys(db.experience || {}).length;
   const today = db.usageStats?.today || {};
-  const hourly = db.usageStats?.hourly24 || [];
-  const points = hourly.map((point) => Number(point.totalTokens || 0));
+  const selected = usageSummary(db.usageStats, db.usage, period);
+  const rows = selected.points;
+  const points = rows.map((point) => Number(point.totalTokens || 0));
   const maximum = Math.max(1, ...points);
-  const total24h = points.reduce((sum, value) => sum + value, 0);
+  const total = Number(selected.totals.totalTokens || 0);
+  const displayTotal = shortNumber(total);
+  const axis = usageAxis(rows);
+  const rangeStart = selected.coverage?.start ?? rows[0]?.start;
+  const rangeEnd = selected.coverage?.end ?? rows.at(-1)?.end ?? rows.at(-1)?.start;
+  const rangeLabel = period === 'all' ? '全部累计' : [usageTime(rangeStart, selected.timeZone), usageTime(rangeEnd, selected.timeZone)].filter(Boolean).join(' – ');
   const cacheRate = today.cacheMeasuredPromptTokens
     ? (Number(today.cachedTokens || 0) / Number(today.cacheMeasuredPromptTokens)) * 100
     : null;
@@ -88,39 +92,49 @@ export function DashboardPage({ db, oneBot, saveSettings, refreshState, onNaviga
     </div>
 
     <div className="grid grid-main" style={{ marginBottom: 16 }}>
-      <div className="card">
-        <div className="card-head"><span className="card-title">Token 用量 · 24 小时</span><span className="muted" style={{ fontSize: 12 }}>{num(today.requests)} 次请求</span></div>
-        <div style={{ font: '800 44px/1 var(--num)', letterSpacing: '-.04em', fontVariantNumeric: 'tabular-nums' }}>{wan(total24h)}<span style={{ fontSize: 18, color: 'var(--muted)', marginLeft: 6 }}>万</span></div>
-        <div className={'chart' + (hovered ? ' is-hovering' : '')} onMouseLeave={() => setHovered(null)}>
-          {points.map((tokens, index) => <i
-            key={hourly[index]?.start || index}
-            className={hovered?.index === index ? 'is-hot' : undefined}
-            style={{ height: Math.max(3, Math.round((tokens / maximum) * 100)) + '%', animationDelay: index * 16 + 'ms' }}
-            data-hour={hourly[index]?.label || String(index).padStart(2, '0') + ':00'}
-            data-tokens={tokens}
-            onPointerEnter={(event) => setHovered({
-              index,
-              tokens,
-              label: hourly[index]?.label || String(index).padStart(2, '0') + ':00',
-              x: event.currentTarget.offsetLeft + event.currentTarget.offsetWidth / 2,
-              y: event.currentTarget.offsetTop,
-            })}
-            onPointerLeave={() => setHovered(null)}
-          />)}
-          <span className={'chart-guide' + (hovered ? ' is-on' : '')} style={hovered ? { left: hovered.x } : undefined} />
-          <div className={'chart-tip' + (hovered ? ' is-on' : '')} style={hovered ? { left: hovered.x, top: hovered.y } : undefined}>
-            {hovered && <>
-              <b>{num(hovered.tokens)}</b>
-              <small>{hovered.label} · 占 {total24h > 0 ? ((hovered.tokens / total24h) * 100).toFixed(1) : '0.0'}%</small>
-            </>}
+      <div className="card usage-card" data-period={period}>
+        <div className="card-head usage-card-head">
+          <span className="card-title">Token 用量</span>
+          <div className="usage-periods" role="group" aria-label="Token 用量时间范围">
+            {usagePeriods.map(option => <button type="button" key={option.value} aria-pressed={period === option.value}
+              onClick={() => { setPeriod(option.value); setHovered(null); }}>{option.label}</button>)}
           </div>
         </div>
-        <div className="chart-axis"><span>00:00</span><span>06:00</span><span>12:00</span><span>18:00</span><span>24:00</span></div>
-        <div className="legend">
-          <div><span>输入</span><strong>{num(today.promptTokens)}</strong></div>
-          <div><span>输出</span><strong>{num(today.completionTokens)}</strong></div>
-          <div><span>缓存命中</span><strong>{num(today.cachedTokens)}</strong></div>
-          <div><span>命中率</span><strong className="mint">{cacheRate == null ? '—' : cacheRate.toFixed(1) + '%'}</strong></div>
+        <div className="usage-value-row">
+          <div className="usage-total" data-value={total} title={num(total) + ' Token'}>{displayTotal.value}<span>{displayTotal.unit}</span></div>
+          <span className="usage-requests">{num(selected.totals.requests)} 次请求</span>
+        </div>
+        <div className="usage-range">{rangeLabel || periodLabels[period]}{period !== 'all' && ' · 北京时间'}</div>
+        {period !== 'all' ? <>
+          <div className={'usage-chart' + (hovered != null ? ' is-hovering' : '')} aria-label={periodLabels[period] + ' Token 用量图'}
+            onPointerLeave={() => setHovered(null)}>
+            {rows.map((point, index) => {
+              const tokens = points[index], active = hovered === index;
+              const label = usagePointLabel(point, period, selected.timeZone);
+              return <div className={'usage-bar-slot' + (active ? ' is-active' : '')} key={point.start ?? index}
+                style={{'--bar-height': Math.max(2, tokens / maximum * 100) + '%'}}>
+                <button type="button" className={'usage-bar' + (!tokens ? ' is-zero' : '') + (point.partial ? ' is-partial' : '')}
+                  data-start={point.start} data-label={point.label} data-tokens={tokens}
+                  aria-label={`${label}，${num(tokens)} Token${point.partial ? '，记录不完整' : ''}`}
+                  onPointerEnter={() => setHovered(index)} onFocus={() => setHovered(index)} onBlur={() => setHovered(null)} />
+                {active && <div role="tooltip" className={'usage-tooltip' + (index < rows.length / 4 ? ' at-start' : index > rows.length * 3 / 4 ? ' at-end' : '')}>
+                  <b>{num(tokens)} Token</b><span>{label}</span>
+                  <small>{num(point.requests)} 次请求 · 占 {total > 0 ? (tokens / total * 100).toFixed(1) : '0.0'}%{point.partial ? ' · 记录不完整' : ''}</small>
+                </div>}
+              </div>;
+            })}
+            {!points.some(Boolean) && <span className="usage-empty">所选时段暂无已记录用量</span>}
+          </div>
+          <div className="usage-axis" style={{gridTemplateColumns: `repeat(${Math.max(1, rows.length)}, minmax(0, 1fr))`}}>
+            {axis.map(tick => <span key={tick.index} data-start={tick.start} style={{gridColumn: tick.index + 1}}>{tick.label}</span>)}
+          </div>
+        </> : <div className="usage-lifetime-note">累计数包含全部已保存用量，也包含分时明细过期前的记录。</div>}
+        {selected.coverage?.partial && <p className="usage-note">分时记录保留自 {usageTime(selected.coverage.availableSince, selected.timeZone)}；较早部分缺失，本范围显示已记录用量。累计总量仍保留。</p>}
+        <div className="legend usage-legend">
+          <div><span>输入</span><strong data-usage="input">{num(selected.totals.promptTokens)}</strong></div>
+          <div><span>输出</span><strong data-usage="output">{num(selected.totals.completionTokens)}</strong></div>
+          <div><span>缓存命中</span><strong data-usage="cached">{num(selected.cached)}</strong></div>
+          <div><span>命中率</span><strong data-usage="cache-rate" className="mint">{selected.cacheRate == null ? '—' : selected.cacheRate.toFixed(1) + '%'}</strong></div>
         </div>
       </div>
       <div className="stack">

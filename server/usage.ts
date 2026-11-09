@@ -60,7 +60,7 @@ export function usageBreakdown(usage: any = {}): UsageBreakdown {
   };
 }
 
-export function applyUsageTotals(target: any, usage: any = {}): UsageBreakdown {
+export function applyUsageTotals(target: any, usage: any = {}, at = Date.now()): UsageBreakdown {
   if (usage?.accounted === true) return usageBreakdown(usage);
   usage = usage?.unaccounted_usage ?? usage;
   const values = usageBreakdown(usage);
@@ -74,6 +74,13 @@ export function applyUsageTotals(target: any, usage: any = {}): UsageBreakdown {
     target.cacheMeasuredPromptTokens = nonNegative(target.cacheMeasuredPromptTokens) + measuredPromptTokens(usage);
     target.cacheMeasuredRequests = nonNegative(target.cacheMeasuredRequests) + 1;
     if (!target.cacheMetricsStartedAt) target.cacheMetricsStartedAt = new Date().toISOString();
+  }
+  if (target.history?.version === 1) {
+    recordUsageBucket(target.history, {
+      ...values, requests: 1,
+      cacheMeasuredPromptTokens: measuredPromptTokens(usage),
+      cacheMeasuredRequests: hasCacheUsageDetails(usage) ? 1 : 0,
+    }, at);
   }
   return values;
 }
@@ -169,4 +176,98 @@ export function mergeLlmUsage(...items: any[]): Record<string, any> {
       ? { unaccounted_usage: mergeLlmUsage(...items.filter(item => !item?.accounted).map(item => item?.unaccounted_usage ?? item)) }
       : {}),
   };
+}
+
+export const USAGE_TIME_ZONE = 'Asia/Shanghai';
+const HOUR_MS = 3600_000;
+const DAY_MS = 24 * HOUR_MS;
+const SHANGHAI_OFFSET_MS = 8 * HOUR_MS;
+const PERIOD_KEYS = ['totalTokens', 'promptTokens', 'completionTokens', 'cachedTokens',
+  'cacheWriteTokens', 'reasoningTokens', 'cacheMeasuredPromptTokens', 'cacheMeasuredRequests', 'requests'] as const;
+export type PeriodUsage = Record<typeof PERIOD_KEYS[number], number>;
+export interface UsageHistory {
+  version: 1;
+  timeZone: typeof USAGE_TIME_ZONE;
+  completeSince: string;
+  hasEarlierUsage: boolean;
+  hours: Record<string, PeriodUsage>;
+  days: Record<string, PeriodUsage>;
+}
+export function usageDayStart(at: number): number {
+  return Math.floor((at + SHANGHAI_OFFSET_MS) / DAY_MS) * DAY_MS - SHANGHAI_OFFSET_MS;
+}
+export function emptyPeriodUsage(): PeriodUsage {
+  return Object.fromEntries(PERIOD_KEYS.map(key => [key, 0])) as PeriodUsage;
+}
+function addedUsage(previous: Partial<PeriodUsage> | undefined, values: Partial<PeriodUsage>): PeriodUsage {
+  return Object.fromEntries(PERIOD_KEYS.map(key => [key, nonNegative(previous?.[key]) + nonNegative(values[key])])) as PeriodUsage;
+}
+function recordUsageBucket(history: UsageHistory, values: Partial<PeriodUsage>, at: number, prune = true) {
+  if (!Number.isFinite(at)) return;
+  const hour = Math.floor(at / HOUR_MS) * HOUR_MS;
+  const day = usageDayStart(at);
+  // Assign complete values so the store's write proxy observes new buckets too.
+  history.hours[hour] = addedUsage(history.hours[hour], values);
+  history.days[day] = addedUsage(history.days[day], values);
+  if (prune) pruneUsageBuckets(history, at);
+}
+function pruneUsageBuckets(history: UsageHistory, now: number) {
+  const oldestHour = Math.floor(now / HOUR_MS) * HOUR_MS - 71 * HOUR_MS;
+  const oldestDay = usageDayStart(now) - 399 * DAY_MS;
+  for (const key of Object.keys(history.hours)) if (Number(key) < oldestHour) delete history.hours[key];
+  for (const key of Object.keys(history.days)) if (Number(key) < oldestDay) delete history.days[key];
+}
+
+/** One-time import of retained telemetry; never reset lifetime counters or guess missing days. */
+export function initializeUsageHistory(usage: any = {}, events: any[] = [], now = Date.now()): UsageHistory {
+  if (usage.history?.version === 1) return usage.history;
+  if (usage.history !== undefined) throw new Error('Unsupported or invalid usage history');
+  const history: UsageHistory = {version: 1, timeZone: USAGE_TIME_ZONE,
+    completeSince: new Date(now).toISOString(), hasEarlierUsage: false, hours: {}, days: {}};
+  let imported = emptyPeriodUsage();
+  for (const event of events) {
+    if (!event || event.accountingExcluded || event.kind === 'rewrite-reply') continue;
+    const at = Date.parse(event.createdAt);
+    if (!Number.isFinite(at) || at > now) continue;
+    const values = {...event, requests: 1, cacheMeasuredPromptTokens: eventMeasuredPromptTokens(event),
+      cacheMeasuredRequests: usageEventHasCacheDetails(event) ? 1 : 0};
+    imported = addedUsage(imported, values);
+    recordUsageBucket(history, values, at, false);
+    if (at < Date.parse(history.completeSince)) history.completeSince = new Date(at).toISOString();
+  }
+  history.hasEarlierUsage = nonNegative(usage.totalTokens) > imported.totalTokens || nonNegative(usage.requests) > imported.requests;
+  pruneUsageBuckets(history, now);
+  return history;
+}
+
+/** A bounded view from persistent aggregates, independent of the 5,000-row event window. */
+export function buildUsageStats(usage: any = {}, events: any[] = [], now = Date.now()) {
+  const history = initializeUsageHistory(usage, events, now);
+  const hour = Math.floor(now / HOUR_MS) * HOUR_MS;
+  const day = usageDayStart(now);
+  const local = new Date(now + SHANGHAI_OFFSET_MS);
+  const monthStart = Date.UTC(local.getUTCFullYear(), local.getUTCMonth(), 1) - SHANGHAI_OFFSET_MS;
+  const point = (start: number, unit: 'hour' | 'day') => {
+    const date = new Date(start + SHANGHAI_OFFSET_MS);
+    return {start, end: Math.min(now, start + (unit === 'hour' ? HOUR_MS : DAY_MS)),
+      partial: history.hasEarlierUsage && start < Date.parse(history.completeSince),
+      label: unit === 'hour' ? `${String(date.getUTCHours()).padStart(2, '0')}:00` : `${date.getUTCMonth() + 1}/${date.getUTCDate()}`,
+      ...addedUsage(undefined, (unit === 'hour' ? history.hours : history.days)[start] || {})};
+  };
+  const hourly24 = Array.from({length: 24}, (_, i) => point(hour - (23 - i) * HOUR_MS, 'hour'));
+  const daily7 = Array.from({length: 7}, (_, i) => point(day - (6 - i) * DAY_MS, 'day'));
+  const daily30 = Array.from({length: 30}, (_, i) => point(day - (29 - i) * DAY_MS, 'day'));
+  const month = Array.from({length: local.getUTCDate()}, (_, i) => point(monthStart + i * DAY_MS, 'day'));
+  const coverage = Object.fromEntries(Object.entries({hourly24, daily7, daily30, month}).map(([key, rows]) => [key, {
+    start: rows[0].start, end: now,
+    partial: history.hasEarlierUsage && rows[0].start < Date.parse(history.completeSince),
+    availableSince: history.completeSince,
+  }]));
+  return {timeZone: USAGE_TIME_ZONE, generatedAt: now, coverage,
+    today: point(day, 'day'), hourly24, daily7, daily30, month,
+    cacheMeasuredAll: {
+      promptTokens: nonNegative(usage.cacheMeasuredPromptTokens), cachedTokens: nonNegative(usage.cachedTokens),
+      cacheWriteTokens: nonNegative(usage.cacheWriteTokens), requests: nonNegative(usage.cacheMeasuredRequests),
+      startedAt: String(usage.cacheMetricsStartedAt || ''),
+    }};
 }
