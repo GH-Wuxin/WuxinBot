@@ -7,6 +7,7 @@ import { DEFAULT_KB_SETTINGS } from './bot/knowledgeTypes.js';
 import { cacheUsageSummary, usageEventHasCacheDetails, eventMeasuredPromptTokens } from './usage.js';
 import { emptySocialState, normalizeSocialState, validSocialState } from './bot/social/state.js';
 import { pruneBackupFiles, resolveBackupRetention } from './backupFiles.js';
+import { OWN_ARCHIVE_FILE, snapshotOwnArchive, recoverOwnArchive } from './messageArchiveStorage.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const rootDir = path.resolve(__dirname, '..');
@@ -65,7 +66,7 @@ function isTrustedServerEntry(): boolean {
   return resolved === serverIndex;
 }
 
-function assertWriteTargetSafe() {
+export function assertWriteTargetSafe() {
   if (!isProductionDb()) return;
   if (process.env.NODE_ENV === 'test') {
     throw new Error(
@@ -300,7 +301,11 @@ function autoBackupIfDue(db) {
     fs.mkdirSync(backupDir, { recursive: true });
     const stamp = new Date(now).toISOString().replace(/[:.]/g, '-');
     const dest = path.join(backupDir, `auto-${stamp}.json`);
-    if (!fs.existsSync(dest)) writeJsonAtomic(dest, db, false);
+    if (!fs.existsSync(dest)) {
+      const ownMessageArchive = snapshotOwnArchive(getDataDir(), dest);
+      writeJsonAtomic(dest, db, false);
+      writeJsonAtomic(dest + '.meta.json', {type:'auto',ownMessageArchive}, false);
+    }
     const result = pruneBackupFiles(backupDir, resolveBackupRetention(db), { types: ['auto'] });
     if (result.failed.length) console.error('[store] auto backup cleanup failed:', result.failed);
     lastAutoBackupAt = now;
@@ -982,6 +987,7 @@ function readCoreFile(): CoreRead {
 // surviving data (finding F03).
 function hasSideData(): boolean {
   const dataDir = getDataDir();
+  if (statIfPresent(path.join(dataDir, OWN_ARCHIVE_FILE), '自发消息档案')) return true;
   for (const spec of ALL_SHARD_SPECS) {
     if (statIfPresent(path.join(dataDir, spec.file), `数据库分片 ${spec.file}`)) return true;
   }
@@ -1220,6 +1226,7 @@ function recoverStorageFromBackups(reasonError: unknown): any {
         );
       }
       try {
+        recoverOwnArchive(getDataDir(), candidate);
         writeAllShards(normalizeDb(parsed));
       } catch (writeError) {
         // A valid candidate that cannot be written is not an invalid

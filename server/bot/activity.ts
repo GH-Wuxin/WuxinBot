@@ -23,7 +23,7 @@ const MAX_CALLS = 3, MAX_TOOLS = 2, COMPLETION_BUDGET = 2048;
 let timer: ReturnType<typeof setInterval> | undefined;
 let stopped = false, busy = false;
 let controller: AbortController | undefined;
-let sendFromHost: ((event: any, text: string) => Promise<any>) | undefined;
+let sendFromHost: ((event: any, text: string, options?: any) => Promise<any>) | undefined;
 type Dependencies = { invoke?: typeof completeChat; search?: typeof searchOsu; execute?: typeof executeOsuSearchTool; send?: typeof sendFromHost };
 const hash = (value: string) => crypto.createHash('sha256').update(value).digest('hex').slice(0, 32);
 export const activityDay = (now = Date.now()) => new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Shanghai', year: 'numeric', month: '2-digit', day: '2-digit' }).format(now);
@@ -169,7 +169,10 @@ async function maybeShare(experienceId: string, invoke: (options: any) => Promis
     if (!allowed(readDb()) || !stillNatural() || socialDeliveryGuard(readDb(), current) || socialCoordinator.hasPriorityRequest(current)
       || !readPippiSelf(readDb()).experiences.some(e => e.id === experienceId && e.revision === experienceRevision)
       || socialTimeline(readDb(), current, 8).at(-1)?.messageId !== snapshot) { note('skipped', '群聊已有新动向，本次不发送旧的开场草稿'); return; }
-    const receipt = await send(current, result.text.trim());
+    const receipt = await send(current, result.text.trim(), {messageSource:{version:1,certainty:'recorded',
+      chain:[{module:'pippi_activity',operation:'share_public_reading',producer:'pippi'}],
+      cause:{code:'autonomous_reading_share',description:'自主阅读形成了公开经历，模型判断当前群聊适合分享一个短想法。',audience:'conversation'},
+      trigger:{kind:'scheduled',scope,eventId:experienceId}}});
     if (receipt?.outcome !== 'confirmed_success') { note('delivery_unknown', '自主分享未取得明确发送确认，本日不重复尝试'); return; }
     const id = String(receipt.messageId || crypto.randomUUID());
     updateDb(draft => {

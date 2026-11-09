@@ -1,10 +1,34 @@
 import crypto from 'node:crypto';
-import { readDb, updateDb, nowIso } from './store.js';
+import { readDb, updateDb, nowIso, getDataDir } from './store.js';
 import { extractImageInputs, normalizeMessage } from './bot/cleaning.js';
 import { currentRequestTraceId, traceEvent } from './requestTrace.js';
+import { resolveMessageSource, legacyMessageSource, type MessageDeliveryFacts } from './messageProvenance.js';
+import { saveOwnArchive, readOwnArchiveById, readOwnArchive, finishOwnArchiveMigration, ownArchiveMigrationDone, forgottenOwnReceipt } from './messageArchiveStorage.js';
+import { runBackgroundTask } from './backgroundTasks.js';
 
 const ORIGINS = new Set(['reply', 'random_image', 'quick_command', 'notice', 'forward', 'self_event']);
 const text = (value: unknown) => String(value ?? '');
+const archiveDiagnostics = {writeFailures: 0, missingSources: 0, importing: false};
+let archiveRecovery: ReturnType<typeof setInterval> | undefined;
+let reconciledFailures = 0;
+export function ownMessageArchiveStatus() { return {...archiveDiagnostics}; }
+export function startOwnMessageArchive(): void {
+  if (archiveRecovery) return;
+  const reconcile = () => runBackgroundTask('own_message_archive.reconcile', async () => {
+    const before = archiveDiagnostics.writeFailures;
+    await reconcileOwnMessageArchive();
+    if (archiveDiagnostics.writeFailures === before) reconciledFailures = before;
+  });
+  void reconcile();
+  archiveRecovery = setInterval(() => {if(archiveDiagnostics.writeFailures > reconciledFailures)void reconcile();}, 60_000);
+  archiveRecovery.unref();
+}
+export function stopOwnMessageArchive(): void {if(archiveRecovery)clearInterval(archiveRecovery);archiveRecovery=undefined;}
+
+function archiveRecord(record: any): boolean {
+  try { saveOwnArchive(getDataDir(), record); return true; }
+  catch { archiveDiagnostics.writeFailures++; traceEvent('ERROR', 'own_message_archive_write_failed', {status: 'degraded'}); return false; }
+}
 export function messageContextText(record: any): string {
   const source = record.originModule === 'random_image' ? '（pippi 通过自己的随机图片功能自动发送）' : '';
   const summary = record.contextSummary ? `（查询事实摘要：${record.contextSummary}）` : '';
@@ -26,9 +50,21 @@ export function findMessageFact(db: any, event: any, messageId: unknown) {
   if (!wanted) return null;
   const account = messageAccount(db, event);
   // Legacy UUIDs are never treated as platform IDs. Older inbound rows used messageId.
-  return [...(db.messages || [])].reverse().find(m =>
+  const local = [...(db.messages || [])].reverse().find(m =>
     text(m.sourceMessageId || m.messageId) === wanted && messageInConversation(m, event, account)
-    && !['confirmed_failure', 'pending'].includes(m.deliveryOutcome)) || null;
+    && !['confirmed_failure', 'pending'].includes(m.deliveryOutcome));
+  if (local) {
+    if (local.role === 'assistant' && local.provenanceRef) {
+      try { return {...readOwnArchive(getDataDir(),account,conversationKey(event),{id:local.provenanceRef}),...local}; }
+      catch { /* The rolling ledger still proves scoped authorship. */ }
+    }
+    return local;
+  }
+  try {
+    const archived = readOwnArchive(getDataDir(), account, conversationKey(event), {messageId: wanted});
+    return archived && !['confirmed_failure','pending'].includes(archived.deliveryOutcome) ? archived : null;
+  }
+  catch { return null; } // Transport quote verification can still supply the author.
 }
 export function quoteFromRecord(record: any, event: any, account: string) {
   return {
@@ -65,20 +101,36 @@ export function beginOutboundMessage(db: any, event: any, body: unknown, options
     text: normalizeMessage(node.data?.content || '').slice(0, 2000),
   })) : undefined;
   const content = nodes?.length ? '[合并转发]\n' + nodes.map((n: any) => `${n.nickname || '原作者'}：${n.text}`).join('\n') : normalizeMessage(body);
-  const images = imageFacts(body);
-  updateDb((draft: any) => {
-    draft.messages.push({ id, requestId: currentRequestTraceId(), role: 'assistant',
+  const mediaBodies = options.forwardNodes?.length ? options.forwardNodes.map((node: any) => node.data?.content || '') : [body];
+  const images = mediaBodies.flatMap(imageFacts).slice(0,12);
+  const mediaImageCount = mediaBodies.reduce((count: number,value: unknown) => count + extractImageInputs(value).length,0);
+  const messageSource = resolveMessageSource(event, options);
+  if (messageSource.certainty !== 'recorded' && options.originModule !== 'self_event') {
+    archiveDiagnostics.missingSources++;
+    traceEvent('ERROR','outbound_source_missing',{status:'degraded'});
+  }
+  const record = { id, requestId: currentRequestTraceId(), role: 'assistant',
       type: event.type, groupId: text(event.groupId || 'private'), peerId: event.type === 'private' ? text(event.userId) : '',
       userId: 'bot', senderId: messageAccount(db, event), accountId: messageAccount(db, event), nickname: 'pippi',
       originModule: origin, triggerMessageId: text(event.messageId),
+      messageSource, deliveryFacts: options.deliveryFacts as MessageDeliveryFacts | undefined,
       receivedAtMs: Number(event.receivedAtMs) || Date.now(),
       replyToMessageId: origin === 'random_image' ? '' : text(options.replyToMessageId || event.messageId),
       replyToUserId: origin === 'random_image' ? '' : text(event.userId),
       replyToNickname: origin === 'random_image' ? '' : text(event.nickname),
-      content: content.slice(0, 16000), media: images.length ? { images } : undefined, forwardAuthors: nodes,
-      deliveryOutcome: 'pending', inContext: false, createdAt: nowIso(),
-    });
-  });
+      content: content.slice(0, 16000), media: images.length ? { images } : undefined, mediaImageCount, forwardAuthors: nodes,
+      deliveryOutcome: 'pending', inContext: false, createdAt: options.observedSentAt || nowIso(),
+    };
+  const archived = archiveRecord(record);
+  // Keep detailed provenance out of the frequently rewritten chat shard. If
+  // the archive is unavailable, the normal ledger retains a recovery copy.
+  const {messageSource: source, deliveryFacts: addressing, ...chatRecord} = record;
+  try { updateDb((draft: any) => { draft.messages.push(archived ? {...chatRecord,provenanceRef:id}
+    : {...chatRecord,messageSource:source,deliveryFacts:addressing}); }); }
+  catch (error) {
+    traceEvent('ERROR', 'outbound_fact_begin_failed', {status: 'degraded', archiveAvailable: archived});
+    if (!archived) throw error;
+  }
   return id;
 }
 
@@ -93,12 +145,23 @@ export function tryBeginOutboundMessage(db: any, event: any, body: unknown, opti
 }
 
 export function finishOutboundMessage(id: string, outcome: string, messageId?: unknown) {
+  // Persist the same attempt independently of the rolling chat window. A chat
+  // write failure cannot lose the detailed origin or make us resend a message.
+  try {
+    const archived = readOwnArchiveById(getDataDir(), id);
+    if (archived) archiveRecord({...archived,
+      deliveryOutcome: archived.deliveryOutcome === 'confirmed_success' ? 'confirmed_success' : outcome,
+      ...(messageId != null && text(messageId).trim() ? {sourceMessageId: text(messageId)} : {}),
+      ...(outcome === 'confirmed_success' ? {confirmedAt: archived.confirmedAt || nowIso()} : {})});
+  } catch { archiveDiagnostics.writeFailures++; }
   try {
     updateDb((db: any) => {
       const record = db.messages.find((m: any) => m.id === id);
       if (!record) return;
       const duplicates = messageId == null ? [] : db.messages.filter((m: any) => m.id !== id && m.role === 'assistant' && m.sourceMessageId === text(messageId)
-        && m.accountId === record.accountId && m.type === record.type && m.groupId === record.groupId && m.peerId === record.peerId);
+        && m.accountId === record.accountId && m.type === record.type && m.groupId === record.groupId && m.peerId === record.peerId
+        && record.originModule !== 'self_event' && m.originModule === 'self_event'
+        && Math.abs(Date.parse(m.createdAt) - Date.parse(record.createdAt)) <= 120_000);
       const confirmed = record.deliveryOutcome === 'confirmed_success' || duplicates.some((m: any) => m.deliveryOutcome === 'confirmed_success');
       record.deliveryOutcome = confirmed ? 'confirmed_success' : outcome;
       if (messageId !== undefined && messageId !== null && text(messageId).trim()) record.sourceMessageId = text(messageId);
@@ -128,8 +191,34 @@ export function recordAssistantContext(db: any, record: any) {
     if (record.sticker) target.sticker = record.sticker;
     if (record.pendingQuickId) target.pendingQuickId = record.pendingQuickId;
     if (target.originModule === 'quick_command') target.contextSummary = text(record.content).slice(0, 1200);
+    archiveRecord(target);
   }
   return target?.id || existing.at(-1).id;
+}
+
+/** Import only account-attributed records. Missing historical facts stay unknown. */
+export async function reconcileOwnMessageArchive(db = readDb()): Promise<void> {
+  if (archiveDiagnostics.importing) return;
+  archiveDiagnostics.importing = true;
+  const failuresBefore = archiveDiagnostics.writeFailures;
+  try {
+    const firstImport = !ownArchiveMigrationDone(getDataDir());
+    const rows = (db.messages || []).filter((record: any) => record.role === 'assistant' && record.accountId);
+    for (let index = 0; index < rows.length; index++) {
+      const record = rows[index];
+      const archived = readOwnArchiveById(getDataDir(), record.id);
+      if (!archived || archived.sourceMessageId !== record.sourceMessageId
+        || record.deliveryOutcome === 'confirmed_success' && archived.deliveryOutcome !== 'confirmed_success'
+        || record.messageSource?.certainty === 'recorded' && archived.messageSource?.certainty !== 'recorded') {
+        archiveRecord({...record, messageSource: record.messageSource || legacyMessageSource(record)});
+      }
+      if (index % 25 === 24) await new Promise<void>(resolve => setImmediate(resolve));
+    }
+    if (firstImport && archiveDiagnostics.writeFailures === failuresBefore) finishOwnArchiveMigration(getDataDir());
+  } catch (error) {
+    archiveDiagnostics.writeFailures++;
+    throw error;
+  } finally { archiveDiagnostics.importing = false; }
 }
 
 /** Trusted own-account events are receipts, never new conversational input. */
@@ -143,9 +232,19 @@ export function observeSelfMessage(raw: any): boolean {
   const peer = text(raw.target_id || raw.peer_id);
   if (type !== 'group' && (type !== 'private' || !peer || peer === account)) return true;
   const event = { type, groupId: text(raw.group_id || 'private'), userId: type === 'private' ? peer : account };
+  const sentAt = Number(raw.time);
+  const sentDate = new Date(sentAt * 1000);
+  const observedSentAt = sentAt > 0 && Number.isFinite(sentDate.getTime()) ? sentDate.toISOString() : undefined;
+  let archiveAvailable = true;
+  try {if(forgottenOwnReceipt(getDataDir(),account,conversationKey(event),text(raw.message_id),observedSentAt))return true;} catch {archiveAvailable=false;}
   const existing = findMessageFact(db, event, raw.message_id);
-  if (existing?.role === 'assistant') { finishOutboundMessage(existing.id, 'confirmed_success', raw.message_id); return true; }
-  const id = beginOutboundMessage(db, event, raw.message || raw.raw_message || '', { originModule: 'self_event' });
+  const sameTime = existing && Math.abs((observedSentAt ? Date.parse(observedSentAt) : Date.now()) - Date.parse(existing.createdAt)) <= 120_000;
+  if (existing?.role === 'assistant' && sameTime) { finishOutboundMessage(existing.id, 'confirmed_success', raw.message_id); return true; }
+  // If deletion markers cannot be checked, retain known sends in the main
+  // ledger but do not resurrect an unmatched historical echo.
+  if (!archiveAvailable) return true;
+  const id = beginOutboundMessage(db, event, raw.message || raw.raw_message || '', { originModule: 'self_event',
+    ...(observedSentAt?{observedSentAt}:{}) });
   finishOutboundMessage(id, 'confirmed_success', raw.message_id);
   return true;
 }

@@ -21,6 +21,7 @@ import { createConnectionStatus } from './onebotStatus.js';
 import { tryResolveBotResponse } from './bots/executor.js';
 import { runInboundTask } from './bot/inboundGate.js';
 import { tryBeginOutboundMessage, finishOutboundMessage, observeSelfMessage, conversationKey, messageAccount } from './messageFacts.js';
+import { deliveryFacts, resolveMessageSource } from './messageProvenance.js';
 
 let ws;
 let reconnectTimer = null;
@@ -332,13 +333,7 @@ export async function hydrateQuotedMessage(event) {
   }
 }
 
-async function sendOneBotMessageInner(event, text, options = {}) {
-  if (options.signal?.aborted) throw new OneBotDeliveryError('发送已取消', 'confirmed_failure');
-  const db = readDb();
-  const baseUrl = db.settings.oneBotHttpUrl;
-  if (!baseUrl) throw new Error('OneBot HTTP 地址未配置。');
-  const headers = oneBotHeaders(db);
-
+export function prepareOneBotDelivery(event, text, options = {}) {
   // Long command output, such as /w help and /w prompt show, is sent as a QQ
   // merged-forward card so it does not occupy the whole group chat screen.
   if (options.forwardNodes?.length) {
@@ -347,14 +342,7 @@ async function sendOneBotMessageInner(event, text, options = {}) {
       ? { user_id: Number(event.userId), messages: options.forwardNodes }
       : { group_id: Number(event.groupId), messages: options.forwardNodes };
 
-    const response = await fetchWithTimeout(`${baseUrl.replace(/\/$/, '')}${endpoint}`, {
-      method: 'POST',
-      headers,
-      signal: options.signal,
-      body: JSON.stringify(body)
-    });
-    const payload = await assertOneBotSuccess(response, '发送 QQ 合并转发失败');
-    return deliveryResult(payload);
+    return {endpoint, body, facts: deliveryFacts(event, options.forwardNodes, true, resolveMessageSource(event, options))};
   }
 
   const endpoint = event.type === 'private' ? '/send_private_msg' : '/send_group_msg';
@@ -375,11 +363,19 @@ async function sendOneBotMessageInner(event, text, options = {}) {
     ? { user_id: Number(event.userId), message }
     : { group_id: Number(event.groupId), message };
 
-  const response = await fetchWithTimeout(`${baseUrl.replace(/\/$/, '')}${endpoint}`, {
+  return {endpoint, body, facts: deliveryFacts(event, message, false, resolveMessageSource(event, options))};
+}
+
+async function sendOneBotMessageInner(event, text, options = {}, prepared = prepareOneBotDelivery(event, text, options)) {
+  if (options.signal?.aborted) throw new OneBotDeliveryError('发送已取消', 'confirmed_failure');
+  const db = readDb();
+  const baseUrl = db.settings.oneBotHttpUrl;
+  if (!baseUrl) throw new Error('OneBot HTTP 地址未配置。');
+  const response = await fetchWithTimeout(`${baseUrl.replace(/\/$/, '')}${prepared.endpoint}`, {
     method: 'POST',
-    headers,
+    headers: oneBotHeaders(db),
     signal: options.signal,
-    body: JSON.stringify(body)
+    body: JSON.stringify(prepared.body)
   });
   const payload = await assertOneBotSuccess(response, '发送 QQ 消息失败');
   return deliveryResult(payload);
@@ -387,9 +383,10 @@ async function sendOneBotMessageInner(event, text, options = {}) {
 
 export async function sendOneBotMessage(event, text, options = {}) {
   const startedAt = Date.now();
-  const outboundId = tryBeginOutboundMessage(readDb(), event, text, options);
+  const prepared = prepareOneBotDelivery(event, text, options);
+  const outboundId = tryBeginOutboundMessage(readDb(), event, text, {...options, deliveryFacts: prepared.facts});
   try {
-    const result = await sendOneBotMessageInner(event, text, options);
+    const result = await sendOneBotMessageInner(event, text, options, prepared);
     if (outboundId) finishOutboundMessage(outboundId, result?.outcome || 'unknown', result?.messageId);
     const latencyMs = Date.now() - startedAt;
     if (result?.outcome === 'accepted_unknown') {

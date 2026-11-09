@@ -6,6 +6,7 @@
 // internal engine, while not-yet-migrated commands fall through to the normal
 // LLM pipeline so the group experience never regresses.
 import { updateDb } from '../store.js';
+import { sourceSender, sourceDetails, messageTrigger, collectMessageProducers, producerFacts, recordMessageProducer } from '../messageProvenance.js';
 import { getGroup, getUserPolicy } from './gate.js';
 import { commandDeniedReply, writeCommandLog, setCommandStage } from './commands.js';
 import { withSticker } from './stickers/index.js';
@@ -434,7 +435,7 @@ export async function handleQuickCommand(
   });
   if (traceId) markLatencySpan(traceId, 'route_start', { parseAlreadyCompleted: true });
   try {
-    const result = await handleQuickCommandInner(event, sendMessage, db, match, permissions, traceId);
+    const {value: result} = await collectMessageProducers(() => handleQuickCommandInner(event, sendMessage, db, match, permissions, traceId));
     if (traceId) {
       markLatencySpan(traceId, 'route_done', {
         handled: Boolean(result?.handled),
@@ -460,6 +461,8 @@ async function handleQuickCommandInner(
   traceId?: string | null,
 ): Promise<{ handled: boolean; replied?: boolean; reason?: string }> {
   const { def } = match;
+  sendMessage = sourceSender(sendMessage, () => [{module:'quick_command',operation:def.id,producer:'wuxin'}, ...producerFacts()],
+    {code:'quick_command_requested',description:`执行当前发言者输入的快捷指令 ${match.prefix}${match.alias}。`,audience:'requester'},messageTrigger(event));
   setCommandStage(event, 'permission');
   // BP commands accept an @ target in several shapes. OneBot commonly leaves a
   // literal CQ at segment in args; if it is parsed as a username, the bridge
@@ -749,7 +752,8 @@ async function handleQuickCommandInner(
         try {
           if (traceId) markLatencySpan(traceId, 'send_start', { channel: 'bridge' });
           setCommandStage(event, 'sending');
-          if (sendMessage) await sendMessage(event, payload);
+          if (sendMessage) await sendMessage(event, payload, sourceDetails({module:'local_bot',operation:def.id,producer:def.source,outcome:'success'},
+            {code:'external_bot_result',description:'指定外部 Bot 已返回结果，由 Pippi 转发到发起请求的会话。',audience:'requester'},event));
           if (traceId) markLatencySpan(traceId, 'send_resolved', { channel: 'bridge' });
         } catch (deliveryError: any) {
           console.error(`[quick] bridge ${def.source} 发送失败（面板可能已发出）:`, deliveryError?.message || deliveryError);
@@ -758,9 +762,11 @@ async function handleQuickCommandInner(
         return { handled: true, replied: true, reason: `bridge:${def.source}` };
       }
       bridgeFailure = 'empty';
+      recordMessageProducer({module:'local_bot',operation:def.id,producer:def.source,outcome:'failed'});
       console.error(`[quick] bridge ${def.source} 返回空回复，使用 Wuxin 备用卡片`);
     } catch (error: any) {
       if (traceId) markLatencySpan(traceId, 'bridge_failed', { source: def.source });
+      recordMessageProducer({module:'local_bot',operation:def.id,producer:def.source,outcome:'failed'});
       bridgeFailure = 'failed';
       console.error(`[quick] bridge ${def.source} 失败，使用 Wuxin 备用卡片:`, error?.message || error);
     }
@@ -912,7 +918,9 @@ async function handleQuickCommandInner(
           : 'yumu';
     if (def.capability === 'recommend' && sendMessage) {
       try {
-        await sendMessage(event, '（正在翻同分段玩家的成绩单…可能要等半分钟）');
+        await sendMessage(event, '（正在翻同分段玩家的成绩单…可能要等半分钟）',
+          {originModule:'notice',...sourceDetails({module:'recommendation',operation:'progress_notice'},
+            {code:'recommendation_started',description:'推图指令已开始查询候选成绩，发送查询进度。',audience:'requester'},event)});
       } catch {
         // Hint is non-fatal.
       }
@@ -961,6 +969,7 @@ async function handleQuickCommandInner(
   // A failed external operation must not become a different guessed query.
   if (def.bridge) {
     const result = await renderWuxinFallbackFailure(fallbackContext(), Object.assign(new Error(), {code:'FALLBACK_UNSUPPORTED'}), bridgeUser ? {username:bridgeUser} : undefined);
+    recordMessageProducer({module:'wuxin_fallback',operation:def.id,producer:'wuxin',outcome:'fallback'});
     try { if (sendMessage) await sendMessage(event, quickPayload(result)); }
     catch (error: any) { console.error('[quick] Wuxin 备用卡片发送失败:', error?.message || error); }
     record(result.content, result.images);

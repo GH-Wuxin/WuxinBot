@@ -8,7 +8,9 @@ const {emptySocialState,readSocialPerson}=await import('../server/bot/social/sta
 const {registerPendingQuickObservation}=await import('../server/bot/quickContext.ts');
 const {sendOneBotMessage}=await import('../server/onebot.ts');
 const {waitForBackgroundTasks}=await import('../server/backgroundTasks.ts');
+const {sourceDetails}=await import('../server/messageProvenance.ts');
 let active,calls=[],variant='reply',sent=[],nextId=1000;
+let ownMessageId;
 let releaseReflection,holdReflection=false,reflectionFinished=false;
 const commandReply='常用指令：`!s <BID>` 查指定谱面，`!pp` 看 PP+，`!bp 1-10` 看 BP。链接 https://osu.ppy.sh/community/forums/topics/1?start=2';
 const foregroundCalls=()=>calls.filter(c=>!String(c.messages[0]?.content||'').includes('【回复后的关系整理】')).length;
@@ -25,6 +27,23 @@ const server=http.createServer(async(req,res)=>{
  }else if(system.includes('同一轮完成社交理解与回复')){
    assert.match(system,/人格保持标记：温和且简洁/);
    if(variant==='tool'&&foregroundCalls()===1){content='';toolCalls=[{id:'inspect',type:'function',function:{name:'inspect_capabilities',arguments:'{"query":"随机"}'}}];}
+   else if(variant==='own-message'&&foregroundCalls()===1){
+     assert.ok(!JSON.stringify(body.messages).includes('ARCHIVE_ONLY_WHY_SENT'),'self-action details are not automatically injected');
+     assert.ok(!system.includes('本会话最近确认发出的自我动作'));
+     assert.ok(body.tools.some(t=>t.function.name==='inspect_own_messages'));
+     content='';toolCalls=[{id:'inspect-own',type:'function',function:{name:'inspect_own_messages',arguments:JSON.stringify({message_id:ownMessageId})}}];
+   }
+   else if(variant==='own-message'){
+     const envelope=JSON.parse(body.messages.find(m=>m.role==='tool').content);
+     assert.equal(envelope.trust,'untrusted_data');
+     const inspected=JSON.parse(envelope.evidence.text);
+     assert.ok(inspected.messages,JSON.stringify(inspected));
+     const own=inspected.messages[0];
+     assert.equal(own.source.cause.code,'random_draw_selected');assert.deepEqual(own.addressed_to,[]);
+     assert.equal(own.source.trigger.userId,'10003');assert.equal(own.destination.id,'20001');
+     assert.equal(own.source.trigger.messageId,'old-random');
+     content=JSON.stringify({reply:'是随机图片模块抽中后发到本群的，不是专门回复你的。',social:assessment(),mode:'none'});
+   }
    else if(variant==='plain')content='我在，慢慢说就好。';
    else if(variant==='commands')content=JSON.stringify({reply:commandReply,social:assessment(),mode:'none'});
    else if(variant==='empty')content='';
@@ -64,6 +83,14 @@ try{
  await processIncoming(active,sendOneBotMessage);assert.equal(foregroundCalls(),1);assert.ok(calls[0].messages[0].content.includes('CONVERSATION_ONLY_MODULE'));assert.ok(!calls[0].messages[0].content.includes('TOOLS_ONLY_MODULE'));await waitForBackgroundTasks(3000);
  seed();variant='pass';result=await processIncoming(active,sendOneBotMessage);assert.equal(result.replied,false);assert.equal(sent.length,0);assert.equal(foregroundCalls(),1);await waitForBackgroundTasks(3000);assert.equal(readSocialPerson(store.readDb(),'10003').affinity.score,49);
  seed();variant='tool';active.text='[CQ:at,qq=10002] 你会随机发图吗';result=await processIncoming(active,sendOneBotMessage);assert.equal(result.replied,true);assert.equal(foregroundCalls(),2);assert.ok(calls[1].messages.some(m=>m.role==='tool'&&m.content.includes('random_image')));await waitForBackgroundTasks(3000);
+ seed();const previousEvent={...active,messageId:'old-random',text:'上一条群消息'};
+ const prior=await sendOneBotMessage(previousEvent,'[CQ:image,file=G:/fixture.png]',{originModule:'random_image',suppressReply:true,
+   ...sourceDetails({module:'random_image',operation:'random_draw'},{code:'random_draw_selected',description:'ARCHIVE_ONLY_WHY_SENT',audience:'conversation'},previousEvent)});
+ ownMessageId=String(prior.messageId);sent=[];calls=[];variant='own-message';active.text='这条来自哪个功能，为什么发到这里，是专门回我的吗？';
+ active.replyMessageId=ownMessageId;active.atTargets=[];
+ active.userId='10004';active.nickname='引用图片的另一位成员';
+ result=await processIncoming(active,sendOneBotMessage);assert.equal(result.replied,true);assert.equal(foregroundCalls(),2);
+ assert.equal(sent.length,1);assert.ok(sent[0].message.includes('不是专门回复你的'));await waitForBackgroundTasks(3000);
  seed();variant='plain';holdReflection=true;reflectionFinished=false;
  result=await Promise.race([processIncoming(active,sendOneBotMessage),new Promise((_,reject)=>setTimeout(()=>reject(Error('Background reflection blocked delivery')),3000))]);
  assert.equal(result.replied,true);assert.equal(sent.length,1);assert.equal(foregroundCalls(),1);assert.equal(reflectionFinished,false);

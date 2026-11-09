@@ -1,4 +1,7 @@
 import { queryLogEntries } from './logRecords.js';
+import { ownMessageArchiveStatus, startOwnMessageArchive, stopOwnMessageArchive } from './messageFacts.js';
+import { clearOwnArchive } from './messageArchiveStorage.js';
+import { getDataDir } from './store.js';
 import 'dotenv/config';
 import crypto from 'node:crypto';
 import net from 'node:net';
@@ -126,6 +129,7 @@ async function emergencyShutdown(): Promise<void> {
     stopInboundAdmission();
     stopPippiActivity();
     stopSocialReflections();
+    stopOwnMessageArchive();
     try { shutdownOneBot(); } catch (error) {
       console.error('[crash] shutdownOneBot failed:', String(error?.message || error));
     }
@@ -1269,6 +1273,7 @@ app.post('/api/groups', (req, res) => {
 
 app.delete('/api/groups/:groupId', (req, res) => {
   const groupId = String(req.params.groupId || '');
+  clearOwnArchive(getDataDir(), `group:${groupId}`);
   updateDb((db) => {
     db.groups = db.groups.filter((group) => String(group.groupId) !== groupId);
     db.users = (db.users || []).filter((user) => String(user.groupId) !== groupId);
@@ -1474,6 +1479,8 @@ app.post('/api/sandbox', async (req, res) => {
 });
 
 app.post('/api/clear-context/:groupId', (req, res) => {
+  if (String(req.params.groupId) === 'private') clearOwnArchive(getDataDir(), 'private:*');
+  else clearOwnArchive(getDataDir(), `group:${String(req.params.groupId)}`);
   updateDb((db) => {
     // Context cleanup only removes message memory and decision logs. It keeps
     // prompts, model settings, groups, members, and usage counters intact.
@@ -1485,6 +1492,7 @@ app.post('/api/clear-context/:groupId', (req, res) => {
 });
 
 app.post('/api/clear-context', (_req, res) => {
+  clearOwnArchive(getDataDir());
   updateDb((db) => {
     db.messages = [];
     db.decisions = [];
@@ -1512,6 +1520,7 @@ app.get('/api/health', (_req, res) => {
   health.storeLocks = getStoreLockStats();
   health.backgroundTasks = getBackgroundTaskStats();
   health.socialReflectionQueue = getSocialReflectionQueueStats();
+  health.ownMessageArchive = ownMessageArchiveStatus();
   health.inboundAdmission = getInboundAdmissionStats();
   health.llmAdmission = getLlmAdmissionStats();
   res.json(health);
@@ -1900,6 +1909,7 @@ httpServer = app.listen(port, '127.0.0.1', async () => {
   connectOneBot();
   startPippiActivity(sendOneBotMessage);
   startSocialReflections();
+  startOwnMessageArchive();
   // Start Wuxin's local yumu-image endpoint on 8389. The renderer keeps its
   // original 8388 connection and opens this second connection independently.
   startRenderServer(Number(process.env.WUXIN_RENDER_PORT || 8389));

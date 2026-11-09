@@ -160,9 +160,10 @@ try {
   }
   const invoke = async (text, userId = '10001', atTargets = []) => {
     const event = { source: 'gui', type: 'group', messageId: `fixture-${passed}`, groupId: '991337', userId, nickname: 'Fixture', text, atTargets, raw: {} };
-    const sent = [];
-    const result = await handleQuickCommand(event, async (_event, content) => sent.push(content), db, matchQuickCommand(event), { isOwner: false, isAdmin: false });
-    return { result, sent };
+    const sent = [], sources=[];
+    const result = await handleQuickCommand(event, async (_event, content, options) => {sources.push(options?.messageSource);sent.push(content);}, db, matchQuickCommand(event), { isOwner: false, isAdmin: false });
+    assert.ok(sources.every(source=>source?.certainty==='recorded'&&source.trigger.userId===userId));
+    return { result, sent, sources };
   };
   for (const text of ['!help', '/help', '帮助']) {
     const output = await invoke(text);
@@ -199,6 +200,8 @@ try {
     check(`bridge ${text} (${userId})`, () => {
       assert.equal(output.result.reason, 'bridge:kanon');
       assert.deepEqual(output.sent, ['Kanon fixture card']);
+      assert.ok(output.sources[0].chain.some(step=>step.module==='local_bot'&&step.producer==='kanon'&&step.outcome==='success'));
+      assert.equal(output.sources[0].cause.code,'external_bot_result');
       assert.equal(bridgeEvents.at(-1).raw_message, expected);
       assert(bridgeEvents.at(-1).message.every((segment) => segment.type !== 'at'));
       assert.equal(requests.length, 0, 'bridge path must not look up +mods as a player');
@@ -220,6 +223,7 @@ try {
     const output = await invoke(text, '10001', atTargets);
     check(`bp at bridge ${text}`, () => {
       assert.equal(output.result.reason, 'bridge:yumu');
+      assert.ok(output.sources[0].chain.some(step=>step.module==='local_bot'&&step.producer==='yumu'&&step.outcome==='success'));
       assert.equal(bridgeEvents.at(-1).raw_message, expected);
       const message = bridgeEvents.at(-1).message;
       assert.equal(
@@ -285,6 +289,9 @@ try {
       assert(requests.slice(before).every((url) => !decodeURIComponent(url.pathname).includes('+hdda')));
       if (parse(text).match.def.bridge) assert.match(output.sent[0], /\[CQ:image,file=.*wuxin-query-cards/);
       else assert.match(output.sent[0], /\+HDDA.*没有查到成绩/);
+      const producers=output.sources[0].chain;
+      assert.ok(producers.some(step=>['wuxin_fallback','internal_engine'].includes(step.module)&&step.producer==='wuxin'));
+      assert.ok(!producers.some(step=>step.module==='local_bot'&&step.outcome==='success'),'failed original bot must not be presented as the actual producer');
     });
   }
   const kbBuild = spawnSync(process.execPath, [

@@ -22,6 +22,7 @@ import { stickerPath } from '../bot/stickers/index.js';
 import { runStickerDryRun } from '../bot/stickers/debug.js';
 import { withStickerReplyInstruction } from '../bot/stickers/finalReply.js';
 import { traceEvent } from '../requestTrace.js';
+import { collectMessageProducers, producerFacts, recordMessageProducer, sourceSender, sourceDetails, messageTrigger } from '../messageProvenance.js';
 import { getRenderServer } from './renderServer.js';
 import { scoreStarRating } from '../osu/scoreMetrics.js';
 import { enrichScoreStarRatings } from '../osu/starRating.js';
@@ -816,7 +817,9 @@ async function executeToolCallInner(
 
       if (capability === 'recommend' && context.sendMessage && context.event && !pendingRecommend) {
         try {
-          await context.sendMessage(context.event, '（正在翻同分段玩家的成绩单…可能要等半分钟）');
+          await context.sendMessage(context.event, '（正在翻同分段玩家的成绩单…可能要等半分钟）',
+            {originModule:'notice',...sourceDetails({module:'recommendation',operation:'progress_notice'},
+              {code:'recommendation_started',description:'推图工具已经开始查找候选成绩，发送查询进度。',audience:'requester'},context.event)});
         } catch {
           // Hint is non-fatal; the tool result still arrives through the loop.
         }
@@ -947,7 +950,8 @@ async function executeToolCallInner(
           },
         });
         const botEvent = { ...context.event, type: extBot.channel === 'qq_group' ? 'group' : 'private', userId: extBot.channel === 'qq_group' ? undefined : extBot.qq, groupId: extBot.channel === 'qq_group' ? String(extBot.groupId || context.groupId || '') : undefined, text: extCommand, messageId: `bot_cmd_${Date.now()}`, raw: context.event.raw || {} };
-        await context.sendMessage(botEvent, extCommand);
+        await context.sendMessage(botEvent, extCommand, {suppressReply:true,...sourceDetails({module:'external_bot_relay',operation:'query_external_bot',producer:extBot.id,outcome:'requested'},
+          {code:'relay_query',description:'为了完成原会话的查询，向已配置的外部 Bot 发送指令。',audience:'specified',addressedTo:[extBot.qq]},context.event)});
         const response = await responsePromise;
         if (response.ok) {
           return {
@@ -1170,7 +1174,8 @@ async function executeToolCallInner(
           };
 
           try {
-            await context.sendMessage(botEvent, fullCommand);
+            await context.sendMessage(botEvent, fullCommand, {suppressReply:true,...sourceDetails({module:'external_bot_relay',operation:cmd.name,producer:bot.id,outcome:'requested'},
+              {code:'relay_query',description:'为了完成原会话的查询，向已配置的外部 Bot 发送指令。',audience:'specified',addressedTo:[bot.qq]},context.event)});
           } catch (error) {
             cancelPendingBotCall(correlationId);
             throw error;
@@ -1332,7 +1337,12 @@ export async function executeToolCall(
   const startedAt = Date.now();
   let result: ToolResult;
   try {
-    result = await executeToolCallInner(canonicalToolCall, context);
+    const scopedContext = {...context, sendMessage: sourceSender(context.sendMessage,
+      {module:'tool',operation:canonicalToolCall.function.name},
+      {code:'tool_execution',description:'执行模型实际选择的查询或操作。',audience:'requester'},messageTrigger(context.event || {type:'group',groupId:context.groupId,userId:context.userId}))};
+    const collected = await collectMessageProducers(() => executeToolCallInner(canonicalToolCall, scopedContext));
+    result = collected.value;
+    if (collected.producers.length) result.metadata = {...result.metadata,messageSources:collected.producers};
   } catch (error: any) {
     result = {
       toolCallId: toolCall.id,
@@ -1707,7 +1717,22 @@ export function formatInternalInfoText(user: OsuUser, ppPlusNote = ''): string {
   ].filter(Boolean).join('\n');
 }
 
-export async function executeInternalBotCommand(
+export async function executeInternalBotCommand(...args: Parameters<typeof executeInternalBotCommandInner>): Promise<string | InternalBotCommandResult> {
+  const first = producerFacts().length;
+  try {
+    const result = await executeInternalBotCommandInner(...args);
+    if (!producerFacts().slice(first).some(step => step.outcome === 'success')) {
+      const fallback = typeof result !== 'string' && result.renderer === 'wuxin_card';
+      recordMessageProducer({module:fallback?'wuxin_fallback':'internal_engine',operation:normalizeCapabilityName(args[1]),producer:'wuxin',outcome:fallback?'fallback':'success'});
+    }
+    return result;
+  } catch (error) {
+    recordMessageProducer({module:'internal_engine',operation:normalizeCapabilityName(args[1]),producer:'wuxin',outcome:'failed'});
+    throw error;
+  }
+}
+
+async function executeInternalBotCommandInner(
   botId: string,
   commandName: string,
   username: string,
@@ -1843,6 +1868,7 @@ export async function executeInternalBotCommand(
           );
           if (traceId) markLatencySpan(traceId, 'recent_bridge_done', { bot: bridgeBot });
           if (bridgeReply && (bridgeReply.text || bridgeReply.images.length > 0)) {
+            recordMessageProducer({module:'local_bot',operation:'recent',producer:bridgeBot,outcome:'success'});
             // A rendered third-party panel is useful presentation, but its
             // prose/image may omit the beatmap ID. Re-fetch one structured
             // score so the Agent can chain recent -> beatmap/skill tools
@@ -1869,6 +1895,7 @@ export async function executeInternalBotCommand(
             };
           }
         } catch {
+          recordMessageProducer({module:'local_bot',operation:'recent',producer:bridgeBot,outcome:'failed'});
           if (traceId) markLatencySpan(traceId, 'recent_bridge_failed', { bot: bridgeBot });
           // Fall through to the internal renderer.
         }
@@ -2075,8 +2102,13 @@ export async function executeInternalBotCommand(
               nickname: 'WuxinBridge',
               atTargets: [],
             }, 60_000);
-            if (reply && Array.isArray(reply.images) && reply.images.length > 0) return reply;
-          } catch { /* try next spelling */ }
+            if (reply && Array.isArray(reply.images) && reply.images.length > 0) {
+              recordMessageProducer({module:'local_bot',operation:'score_image',producer:'kanon',outcome:'success'});
+              return reply;
+            }
+          } catch {
+            recordMessageProducer({module:'local_bot',operation:'score_image',producer:'kanon',outcome:'failed'});
+          }
         }
         return null;
       };
@@ -2940,7 +2972,7 @@ export async function runToolLoop(
       };
     }
 
-    const safeContent = sanitizeToolResult(result.content, result.metadata?.provider === 'osu-official' ? 40000 : 4000);
+    const safeContent = sanitizeToolResult(result.content, result.metadata?.provider === 'osu-official' ? 40000 : result.metadata?.provider === 'pippi-self-inspection' ? 12000 : 4000);
     evidenceRequirementSatisfied = toolResultSatisfiesEvidence(
       evidenceRequirement,
       syntheticCall,
@@ -3397,7 +3429,7 @@ export async function runToolLoop(
         recommendToolCalled = osuCapabilityForToolCall(tc) === 'recommend';
       }
 
-      const safeContent = sanitizeToolResult(result.content, result.metadata?.provider === 'osu-official' ? 40000 : 4000);
+      const safeContent = sanitizeToolResult(result.content, result.metadata?.provider === 'osu-official' ? 40000 : result.metadata?.provider === 'pippi-self-inspection' ? 12000 : 4000);
       if (toolResultSatisfiesEvidence(evidenceRequirement, tc, result)) {
         evidenceRequirementSatisfied = true;
       }

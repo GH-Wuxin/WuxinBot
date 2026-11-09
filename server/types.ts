@@ -4,6 +4,7 @@
 // the high-traffic structures that have caused bugs when mis-assumed.
 import type { KnowledgeBaseSettings } from './bot/knowledgeTypes.js';
 import type { OwnerDirective, SocialState } from './bot/social/types.js';
+import type { MessageSource, MessageDeliveryFacts } from './messageProvenance.js';
 
 // ── Incoming event (produced by oneBotToInternal) ──
 
@@ -243,6 +244,10 @@ export interface StickerHistory {
 
 export interface MessageRecord {
   id: string;
+  messageSource?: MessageSource;
+  deliveryFacts?: MessageDeliveryFacts;
+  provenanceRef?: string;
+  mediaImageCount?: number;
   accountId?: string;
   senderId?: string;
   peerId?: string;

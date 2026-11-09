@@ -6,6 +6,7 @@ import { socialDeliveryGuard } from './social/runtime.js';
 import { sendOptionalNotice } from './notice.js';
 import { registerPublicFeature } from './features.js';
 import { tokenSaving } from './tokenSaving.js';
+import { sourceDetails } from '../messageProvenance.js';
 import { parseStickerReply, withStickerReplyInstruction, STICKER_REPLY_RESPONSE_FORMAT } from './stickers/finalReply.js';
 import type { SocialEvent } from './social/types.js';
 
@@ -52,13 +53,16 @@ export function createReplyProgress(event: SocialEvent, send: Sender | undefined
   const permitted = () => !closed && !isReplyProcessAborted()
     && !socialDeliveryGuard(readDb(), event) && readDb().settings.pippiProgressReplies !== false;
 
-  function emit(value: string): void {
+  function emit(value: string, stage: 'opening' | 'tool_wait' | 'tool_result'): void {
     const text = sanitizeReply(value, readDb().settings);
     if (!send || !permitted() || !text || inFlight || count >= 2 || text === lastText
       || count > 0 && Date.now() - lastAt < interval) return;
     count++; lastAt = Date.now(); lastText = text; inFlight = true;
     void sendOptionalNotice(() => send(event, text, {
       originModule: 'notice', suppressReply: true, signal: controller.signal,
+      ...sourceDetails({module:'reply_progress',operation:stage},
+        {code:stage,description:stage==='opening'?'模型选择先简短确认复杂请求，再继续完成正文。'
+          :stage==='tool_wait'?'已经启动的工具仍在执行，发送等待进度。':'工具已实际返回结果，发送整理进度。',audience:'requester'},event),
     })).finally(() => { inFlight = false; });
   }
 
@@ -75,7 +79,7 @@ export function createReplyProgress(event: SocialEvent, send: Sender | undefined
     instruction: () => started ? CONTINUATION_INSTRUCTION : OPENING_INSTRUCTION,
     begin(value: string): boolean {
       if (started || !permitted()) return false;
-      started = true; emit(value); return true;
+      started = true; emit(value, 'opening'); return true;
     },
     toolStarted(name: string): number {
       const id = ++toolSequence;
@@ -90,7 +94,7 @@ export function createReplyProgress(event: SocialEvent, send: Sender | undefined
           if (!current || !permitted()) return;
           started = true;
           emit(current === 'inspect_message' ? '我核对一下这条消息。'
-            : current === 'inspect_capabilities' ? '我看看现在能用哪些功能。' : '我先查一下，等结果回来。');
+            : current === 'inspect_capabilities' ? '我看看现在能用哪些功能。' : '我先查一下，等结果回来。', 'tool_wait');
         }, options.toolDelayMs ?? 1200);
         toolTimer.unref?.();
       }
@@ -102,7 +106,7 @@ export function createReplyProgress(event: SocialEvent, send: Sender | undefined
       if (activeTools.size === 0) {
         if (toolTimer) clearTimeout(toolTimer);
         toolTimer = undefined;
-        if (started && toolSucceeded) emit('有结果了，我再整理一下。');
+        if (started && toolSucceeded) emit('有结果了，我再整理一下。', 'tool_result');
       }
     },
     stop,

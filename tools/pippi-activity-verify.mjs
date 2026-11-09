@@ -141,10 +141,14 @@ try {
   });
   for (const confirmed of [false, true]) await test(`sharing records actual confirmation: ${confirmed}`, async () => {
     seed(); const sent = [];
-    await runPippiActivityCycle({ search, execute, invoke: reading(true), send: async (event, text) => {
-      sent.push({ event, text }); return { outcome: confirmed ? 'confirmed_success' : 'unknown', messageId: 'receipt' };
+    await runPippiActivityCycle({ search, execute, invoke: reading(true), send: async (event, text, options) => {
+      sent.push({ event, text, options }); return { outcome: confirmed ? 'confirmed_success' : 'unknown', messageId: 'receipt' };
     } }, now);
     assert.equal(sent.length, 1); assert.equal(sent[0].event.source, 'pippi-activity');
+    assert.equal(sent[0].options.messageSource.chain[0].module,'pippi_activity');
+    assert.equal(sent[0].options.messageSource.trigger.kind,'scheduled');
+    assert.equal(sent[0].options.messageSource.trigger.userId,undefined,'autonomous activity must not invent a human requester');
+    assert.equal(sent[0].options.messageSource.cause.audience,'conversation');
     assert.equal(readPippiSelf(readDb()).experiences[0].shared.length, confirmed ? 1 : 0);
     assert.equal(readDb().messages.filter(m => m.role === 'assistant').length, confirmed ? 1 : 0);
     assert.equal(ledger().shares['group:room'], 1); assert.equal(ledger().tokens, 300);

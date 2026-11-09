@@ -19,6 +19,7 @@ import { OWNER_HANDLER_REGISTRY } from './owner/registry.js';
 import { withSticker } from './stickers/index.js';
 import { resolveOwnerRoute } from './owner/router.js';
 import type { OwnerHandlerContext } from './owner/types.js';
+import { sourceSender, messageTrigger } from '../messageProvenance.js';
 
 const policyMap = {
   '/op': 'admin',
@@ -59,6 +60,8 @@ function ownerCommandDeniedReply(db, permissionKey) {
 
 export async function handleOwnerCommand(event, sendMessage = undefined, permissions = { isOwner: true, isAdmin: false }) {
   const meta = parseCommandMeta(event, permissions);
+  sendMessage = sourceSender(sendMessage, {module:'command_router',operation:meta.command || 'parse_command'},
+    {code:'command_requested',description:'处理当前发言者明确输入的功能指令。',audience:'requester'},messageTrigger(event));
   const startedAt = Date.now();
   setCommandStage(event, 'running');
   try {
@@ -83,7 +86,9 @@ export async function handleOwnerCommand(event, sendMessage = undefined, permiss
   } catch (error) {
     const message = error?.message || String(error);
     const reply = `指令执行失败：${message}`;
-    if (sendMessage) await sendMessage(event, reply);
+    const failedSend = sourceSender(sendMessage, {module:'command_router',operation:'failure_notice'},
+      {code:'command_failed',description:'指令处理抛出错误，向请求者反馈执行失败。',audience:'requester'},messageTrigger(event));
+    if (failedSend) await failedSend(event, reply);
     updateDb((draft) => {
       draft.usage.errors += 1;
     });
@@ -132,6 +137,8 @@ async function runOwnerCommand(event, sendMessage, permissions = { isOwner: true
   const route = resolveOwnerRoute(context);
 
   if (route.kind === 'reply') {
+    sendMessage = sourceSender(sendMessage, {module:'command_router',operation:route.denyStickerId?'permission_denied':'help_or_usage'},
+      {code:route.denyStickerId?'permission_denied':'command_guidance',description:route.denyStickerId?'指令权限检查未通过，发送权限提示。':'根据指令路由返回帮助或用法。',audience:'requester'},messageTrigger(event));
     if (route.reply !== undefined && sendMessage) {
       // 只有被显式标成权限拒绝的回复才附图：这个分支同时承载 /help、用法提示等正常回复。
       const text = route.denyStickerId ? withSticker(route.reply, route.denyStickerId) : route.reply;
@@ -149,9 +156,13 @@ async function runOwnerCommand(event, sendMessage, permissions = { isOwner: true
     const denyReplyKey = route.denyReplyKey || route.permissionKey;
     const reason = ownerCommandDeniedReply(commandDb, denyReplyKey);
     // 走到这里必然是权限不足，直接附图（图由代码触发，不依赖 LLM）。
-    if (sendMessage) await sendMessage(event, withSticker(reason, 'no_permission'));
+    const deniedSend = sourceSender(sendMessage, {module:'command_router',operation:'permission_denied'},
+      {code:'permission_denied',description:'实际指令权限检查未通过，发送权限提示。',audience:'requester'},messageTrigger(event));
+    if (deniedSend) await deniedSend(event, withSticker(reason, 'no_permission'));
     return { replied: Boolean(sendMessage), reason };
   }
 
+  context.sendMessage = sourceSender(sendMessage, {module:'command',operation:route.handlerKey},
+    {code:'command_handler',description:'执行已匹配的功能指令并返回结果或处理进度。',audience:'requester'},messageTrigger(event));
   return handler(context);
 }

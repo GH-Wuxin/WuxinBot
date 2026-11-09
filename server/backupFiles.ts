@@ -71,6 +71,13 @@ export function removeBackupFile(directory: string, name: string) {
   catch (error: any) {
     if (error.code !== 'ENOENT') console.error('[backup] metadata cleanup failed:', name, error.code || 'UNKNOWN');
   }
+  // Adjacent own-message snapshots follow the same retention/deletion as JSON.
+  const archive = file + '.own-messages.sqlite';
+  try {
+    const archiveStat = fs.lstatSync(archive);
+    if (!archiveStat.isFile() || archiveStat.isSymbolicLink()) throw Error('自发消息备份不是普通文件');
+    fs.unlinkSync(archive);
+  } catch (error: any) { if (error.code !== 'ENOENT') throw error; }
 }
 
 export function pruneBackupFiles(directory: string, retention: ReturnType<typeof resolveBackupRetention>, options: { olderThanDays?: number; types?: readonly BackupType[] } = {}) {

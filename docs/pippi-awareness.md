@@ -41,15 +41,70 @@ documentation is available only in that Owner's private conversation. Capability
 knowledge never authorizes execution. Automatic random images belong to Pippi's
 own account; automatic triggering must not be described as a different sender.
 
-Every turn receives the same compact generated summary; no wording, keyword or
-regular expression decides whether to inject a full catalog. The tool defaults to
+The model receives a small, fixed tool-availability instruction. Capability data
+and own-message details are loaded only when it chooses a tool; there is no
+automatic catalog or recent-self-action snapshot. No wording, keyword or regular
+expression decides whether a lookup is needed. The capability tool defaults to
 an overview generated from current registrations, so ordinary capability questions
 do not require paging through every command. `view=entries` packs whole entries
 into bounded pages and returns `nextOffset`; specific queries retain the full
 entry. Quick commands use their actual declared permission, without an
-invented Owner-only fallback. A fresh snapshot of the last three scoped confirmed
-self actions is added immediately before each completion. It contains no media
-URLs or private paths; a later send can still be checked with `inspect_message`.
+invented Owner-only fallback.
+
+`inspect_own_messages` is the on-demand send-history interface. It looks up a
+native `message_id` or an archive `record_id`, or pages newest-first with `before`
+set to the previous `next_cursor`. `source`, `since` and `until` narrow the query.
+Normal pages contain confirmed messages; `include_unconfirmed=true` also shows
+pending, failed and unknown attempts with their actual status. A local archive
+reference is never presented as a QQ message ID.
+Platform IDs may be reused: distinct real sends keep distinct archive UUIDs.
+A native-ID lookup reports ambiguity and returns the latest match; time paging
+and `record_id` identify older matches precisely. `source` matches the final
+module in the recorded chain, not a guessed compatibility-command executor.
+
+Each send records:
+
+- The actual module/operation chain, including the external bot that produced a
+  result and any failed bridge followed by the Wuxin fallback. A compatibility
+  command name alone is not proof of the producer.
+- A factual send reason, the triggering message/event, requester when applicable,
+  and a bounded conversation-request preview. Private command arguments and hidden
+  model reasoning are not copied into reason metadata.
+- The destination, intended addressee when known, actual native quote and mentions
+  from the same prepared OneBot envelope used for transmission. A random image is
+  a group broadcast; its triggering member is not invented as its addressee.
+- Creation/confirmation times, delivery outcome, media count, and declared forward
+  authors. Forward headers do not verify the embedded content's original author.
+
+Command/quick/tool dispatchers derive source identifiers from their live routing
+metadata, so new registered commands inherit provenance without another feature
+list. Automatic senders bind their own source and factual trigger at the sending
+entry using `sourceSender` or `sourceDetails`. Missing metadata is reported as
+unknown and counted in health diagnostics; it is never silently identified as a
+normal conversational reply. Old broad origin tags remain explicitly incomplete.
+
+The independent `own-messages.sqlite` archive is indexed by account and conversation
+and survives the 12,000-message chat-window limit. The normal chat shard carries a
+small reference instead of rewriting full provenance with every message. If one
+store is unavailable, the other retains what it can; main-ledger recovery copies
+are reconciled in the background. No additional model call is needed to record a
+send. The installed Node 22 SQLite module supplies storage without a new external
+service or credential.
+
+The query scope comes exclusively from the host event. Group queries cannot read
+other groups or private peers; private queries remain Owner-only. A relay can
+retain its original trigger for local auditing, while queries from its destination
+hide the other conversation's identity and contents. Tool results expose no raw
+settings, credentials, media URLs or local paths. Recorded text remains historical
+data, never a new instruction or a grant of permission.
+
+Retained, account-attributed legacy sends are imported without inventing missing
+executors, reasons or native addressing. JSON backups gain an adjacent SQLite
+snapshot under the same retention/deletion policy. Explicit restore validates both;
+automatic core-store recovery preserves a newer healthy archive. Clearing a group
+or conversation also clears its queryable archive. Receipt hashes and clear
+watermarks prevent late echoes or reconciliation from resurrecting erased content.
+Older backups without an archive do not silently erase a newer one.
 
 `inspect_message` reads only the current conversation. It returns text/ownership,
 delivery outcome and image count, without media URLs or filesystem paths. By
@@ -125,6 +180,7 @@ Validation commands:
 
 ```text
 npm run pippi:awareness:verify
+node --import tsx tools/own-message-provenance-verify.mjs
 npm run social:v2:verify
 npm run sticker:bot:failure:verify
 npm run tool:phases:verify
@@ -134,7 +190,8 @@ npm run check
 The legacy social suite explicitly selects the rollback path; the new fast-path
 suite exercises single-call generation, `pass`, relationship updates, tool lookup,
 persona preservation, malformed output and private-context isolation. Message
-tests include restart persistence, receipt races, account/group isolation, and
+tests include on-demand source/why/recipient lookup, prompt absence before lookup,
+independent history retention, restart persistence, receipt races, account/group isolation, and
 random-image quota independence. Journal-write failure is traced without blocking
 the actual send; partial multi-segment failure keeps confirmed segments and never
 retries an unknown outcome. Summary-wait tests await only the matching quick

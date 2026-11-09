@@ -82,7 +82,7 @@
     "presence:verify": "node --import tsx --test tools/presence-verify.mjs",
     "token-saving:verify": "node --import tsx --test tools/token-saving-verify.mjs && node tools/token-saving-ui-verify.mjs",
     "kanon:completion:verify": "node --import tsx tools/kanon-completion-verify.mjs",
-    "pippi:awareness:verify": "node --import tsx tools/message-facts-verify.mjs && node --import tsx tools/introspection-verify.mjs && node --import tsx tools/reply-fast-path-verify.mjs && node --import tsx tools/social-reflection-verify.mjs && node --import tsx tools/reply-progress-verify.mjs",
+    "pippi:awareness:verify": "node --import tsx tools/message-facts-verify.mjs && node --import tsx tools/own-message-provenance-verify.mjs && node --import tsx tools/introspection-verify.mjs && node --import tsx tools/reply-fast-path-verify.mjs && node --import tsx tools/social-reflection-verify.mjs && node --import tsx tools/reply-progress-verify.mjs",
     "pippi:load:verify": "node --import tsx tools/reply-load-verify.mjs"
   },
   "keywords": [],

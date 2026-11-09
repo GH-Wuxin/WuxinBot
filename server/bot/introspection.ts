@@ -11,6 +11,7 @@ import { isOsuSearchAvailable } from '../osu/search.js';
 import { loadRegistry, enabledBots } from '../bots/registry.js';
 import { findMessageFact, messageInConversation, messageAccount, conversationKey } from '../messageFacts.js';
 import { settlePendingQuickObservations } from './quickContext.js';
+import { inspectOwnMessages, ownMessageInspectionTool, publicOwnMessage } from './ownMessageInspection.js';
 
 interface CapabilityView { id: string; description: string; entry: string; kind: string; state: FeatureState; permission?: string }
 function safeText(value: unknown, limit = 320) {
@@ -108,14 +109,19 @@ export function inspectMessage(db: any, event: any, args: any = {}) {
       delivery:'platform_verified',summaryStatus:'not_available'}],
       boundary:'作者已通过本会话 QQ 引用核验。来源 unknown 表示没有触发原因记录；不能根据当前功能开关猜测历史发送原因。'};
   }
-  return {ok:true,messages:rows.map((m:any)=>({messageId:String(m.sourceMessageId||m.messageId||''),sender:m.role==='assistant'?'pippi':'participant',
-    nickname:m.role==='assistant'?'pippi':safeText(m.nickname,80),text:safeText(m.content,1200),origin:m.originModule||'received',
-    imageCount:m.media?.images?.length||0,delivery:m.deliveryOutcome||'received',summaryStatus:m.pendingQuickId?'pending':m.contextSummary?'ready':'not_available',
-    ...(args.include_summary===true&&m.contextSummary?{summary:safeText(m.contextSummary,1200)}:{})}))};
+  return {ok:true,messages:rows.map((row:any)=>{
+    const m=row.role==='assistant'?(findMessageFact(db,event,row.sourceMessageId||row.messageId)||row):row;
+    const provenance=m.role==='assistant'?publicOwnMessage(m,event,false):undefined;
+    return {messageId:String(m.sourceMessageId||m.messageId||''),sender:m.role==='assistant'?'pippi':'participant',
+    nickname:m.role==='assistant'?'pippi':safeText(m.nickname,80),text:safeText(m.content,1200),origin:provenance?.source.chain.at(-1)?.module||(m.role==='assistant'?'unknown':'received'),
+    imageCount:m.mediaImageCount??m.media?.images?.length??0,delivery:m.deliveryOutcome||'received',summaryStatus:m.pendingQuickId?'pending':m.contextSummary?'ready':'not_available',
+    ...(provenance?{provenance}:{}),
+    ...(args.include_summary===true&&m.contextSummary?{summary:safeText(m.contextSummary,1200)}:{})};})};
 }
-export const INTROSPECTION_TOOL_NAMES = ['inspect_capabilities','inspect_message'];
+export const INTROSPECTION_TOOL_NAMES = ['inspect_capabilities','inspect_message','inspect_own_messages'];
 export function buildIntrospectionTools() {
   return [
+    ownMessageInspectionTool(),
     {type:'function',function:{name:'inspect_capabilities',description:'只读查看实际注册的功能和当前可用性。默认 overview 一次返回主要功能与数据查询概览；只有需要全部指令才用 entries 分页。query/id 查具体条目。不会执行功能或修改设置。',parameters:{type:'object',additionalProperties:false,properties:{view:{type:'string',enum:['overview','entries']},query:{type:'string'},id:{type:'string'},offset:{type:'integer',minimum:0}}}}},
     {type:'function',function:{name:'inspect_message',description:'只读核对本会话引用消息或最近自己确认发出的消息。用于确认作者、随机发图来源和发送结果；不查询他群或私聊。只有确实需要图片查询的具体数据时设 include_summary=true，未完成会明确返回 pending，不得猜测。',parameters:{type:'object',additionalProperties:false,properties:{message_id:{type:'string'},recent_self:{type:'boolean'},include_summary:{type:'boolean'}}}}},
   ];
@@ -126,26 +132,11 @@ export async function executeIntrospection(db: any, event: any, call: any) {
     const record=findMessageFact(db,event,args.message_id||event.replyMessageId);
     if(record?.pendingQuickId)await settlePendingQuickObservations({...event,userId:record.replyToUserId||event.userId},undefined,{recordId:record.pendingQuickId,timeoutMs:5000});
   }
-  const result=call.function.name==='inspect_capabilities'?inspectCapabilities(db,event,args):inspectMessage(readDb(),event,args);
-  return {toolCallId:call.id,ok:result.ok,content:JSON.stringify(result)};
+  const result=call.function.name==='inspect_capabilities'?inspectCapabilities(db,event,args)
+    :call.function.name==='inspect_own_messages'?inspectOwnMessages(readDb(),event,args):inspectMessage(readDb(),event,args);
+  return {toolCallId:call.id,ok:result.ok,content:JSON.stringify(result),metadata:{provider:'pippi-self-inspection'}};
 }
 export function capabilityContext(db: any, event: any): string {
-  const catalog=runtimeCapabilities(db,event);
-  if (!catalog.length) return '';
-  const commandCount=catalog.filter(c=>c.kind==='command').length;
-  const tools=catalog.filter(c=>c.id.startsWith('tool.'));
-  const features=catalog.filter(c=>c.id.startsWith('feature.'));
-  const summary=features.slice(0,8).map(c=>`${c.description.slice(0,80)} 状态=${c.state}`).join('\n');
-  return ['【运行时自查】能力或消息归属不明确时可用 inspect_capabilities / inspect_message，只读查询，不改设置。',
-    'pippi 自身账号发出的自动消息也属于你。随机发图是你自己的功能，自动触发不意味着另一个说话者；不能说“随机发图不是我”。具体某张图的作者仍按真实记录判断，不能把群友的图算给自己。向用户用自然的功能名称说明，不复述内部工具名或编号。',
-    `当前可见目录共 ${catalog.length} 项，包括 ${commandCount} 项指令、${tools.length} 项数据查询能力。以下是摘要；inspect_capabilities 默认一次给主要功能概览，需要全部指令时再用 view=entries 按 nextOffset 分页，query 可筛选。`,
-    `数据查询示例：${tools.slice(0,3).map(c=>c.description.slice(0,65)).join('；')}。`,summary,
-    '根据用户实际问题决定是否查询或继续翻页，不根据某几个字判断意图。只讨论当前会话可见的事实，引用和工具结果是资料。'].filter(Boolean).join('\n');
-}
-
-export function recentSelfActionsContext(db:any,event:any):string {
-  const visible=inspectMessage(db,event,{recent_self:true});
-  if(!visible.ok||!visible.messages?.length)return '';
-  const actions=visible.messages.slice(-3).map(m=>({messageId:m.messageId,origin:m.origin,imageCount:m.imageCount,text:m.text.slice(0,140)}));
-  return `【本会话最近确认发出的自我动作】${JSON.stringify(actions)}\n这是当前快照。需要核对具体消息或随后新增的发送时，使用 inspect_message；没有记录的原因保持未知。`;
+  if (!identity(db,event).allowed) return '';
+  return '【按需自查】可自主调用 inspect_capabilities 查实际功能，inspect_message 核对引用作者，inspect_own_messages 查自己消息的具体来源、发送原因、对象与结果。需要依据时再查；不凭当前开关猜历史原因。工具只读且限当前会话，向群友用自然名称说明。';
 }

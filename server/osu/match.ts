@@ -508,20 +508,20 @@ class MatchManager {
 
     if (type === 'matchEnd') {
       const text = `比赛监听结束：${entry.matchName || matchId}（${stopTypeText(data?.type)}）。`;
-      for (const g of groups) await this.deliver(g.groupId, text);
+      for (const g of groups) await this.deliver(g, text, matchId, type);
       this.cleanup(matchId, data?.type === 'MATCH_END' ? 'ended' : 'stopped');
       return;
     }
 
     if (type === 'error') {
       const text = `比赛监听（${entry.matchName || matchId}）查询失败：${String((data?.error as Error)?.message || data?.error || '').slice(0, 120)}，下轮重试。`;
-      for (const g of groups) await this.deliver(g.groupId, text);
+      for (const g of groups) await this.deliver(g, text, matchId, type);
       return;
     }
 
     if (type === 'gameAbort') {
       const text = `比赛 ${entry.matchName || matchId}：本回合被中止（beatmap ${data?.beatmapId}）。`;
-      for (const g of groups) await this.deliver(g.groupId, text);
+      for (const g of groups) await this.deliver(g, text, matchId, type);
       return;
     }
 
@@ -530,7 +530,7 @@ class MatchManager {
         await this.renderGameStart(matchId, data, groups);
       } catch (error) {
         const text = `比赛 ${entry.matchName || matchId} 开局渲染失败：${String((error as Error)?.message || error).slice(0, 120)}`;
-        for (const g of groups) await this.deliver(g.groupId, text);
+        for (const g of groups) await this.deliver(g, text, matchId, 'gameStart_render_failure');
       }
       return;
     }
@@ -540,7 +540,7 @@ class MatchManager {
         await this.renderGameEnd(matchId, data, groups);
       } catch (error) {
         const text = `比赛 ${entry.matchName || matchId} 回合成绩渲染失败：${String((error as Error)?.message || error).slice(0, 120)}`;
-        for (const g of groups) await this.deliver(g.groupId, text);
+        for (const g of groups) await this.deliver(g, text, matchId, 'gameEnd_render_failure');
       }
       return;
     }
@@ -583,7 +583,7 @@ class MatchManager {
     const buffer = await renderPanel('panel_E7', payload);
     const { saveAndGetCqCode } = await import('../bots/render.js');
     const cqCode = saveAndGetCqCode(buffer, 'bp');
-    for (const g of groups) await this.deliver(g.groupId, cqCode);
+    for (const g of groups) await this.deliver(g, cqCode, matchId, 'gameStart_panel');
   }
 
   private async renderGameEnd(matchId: number, data: any, groups: MatchBind[]): Promise<void> {
@@ -606,7 +606,7 @@ class MatchManager {
     const buffer = await renderPanel('panel_F3', payload);
     const { saveAndGetCqCode } = await import('../bots/render.js');
     const cqCode = saveAndGetCqCode(buffer, 'bp');
-    for (const g of groups) await this.deliver(g.groupId, cqCode);
+    for (const g of groups) await this.deliver(g, cqCode, matchId, 'gameEnd_panel');
   }
 
   private listListeners(db: any, groupId: string): MatchCommandResult {
@@ -659,12 +659,15 @@ class MatchManager {
     this.listeners.delete(matchId);
   }
 
-  private async deliver(groupId: string, content: string): Promise<void> {
+  private async deliver(group: MatchBind, content: string, matchId: number, eventType: string): Promise<void> {
     // Event delivery goes through the same OneBot channel Wuxin uses for all
     // outbound messages; callers provide a sendMessage that resolves groupId.
     const sender = (globalThis as any).__matchSender;
     if (!sender) return;
-    await sender({ type: 'group', groupId, userId: '' }, content);
+    await sender({ type: 'group', groupId:group.groupId, userId:'' }, content, {messageSource:{version:1,certainty:'recorded',
+      chain:[{module:'match_watch',operation:eventType,producer:'wuxin'}],
+      cause:{code:'match_subscription_event',description:'该群登记的比赛观战订阅产生事件，向订阅群推送通知或结果。',audience:'conversation'},
+      trigger:{kind:'event',scope:`group:${group.groupId}`,eventId:`match:${matchId}:${eventType}`,userId:group.userId,nickname:'观战订阅发起人'}}});
   }
 
   async restore(db: any): Promise<void> {

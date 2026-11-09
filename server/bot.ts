@@ -1,7 +1,8 @@
 // @ts-nocheck -- legacy runtime module; new typed modules remain checked by tsc.
 import { tokenSaving } from './bot/tokenSaving.js';
 import { resolveLocalQuote, recordAssistantContext, messageAccount } from './messageFacts.js';
-import { buildIntrospectionTools, executeIntrospection, INTROSPECTION_TOOL_NAMES, recentSelfActionsContext } from './bot/introspection.js';
+import { buildIntrospectionTools, executeIntrospection, INTROSPECTION_TOOL_NAMES } from './bot/introspection.js';
+import { sourceSender, sourceDetails, messageTrigger, type SourceStep } from './messageProvenance.js';
 import { pathToFileURL } from 'node:url';
 import { socialCoordinator } from './bot/social/coordinator.js';
 import { chatAdmissionReason, replyLimitReason, conversationContext } from './bot/social/policy.js';
@@ -495,7 +496,10 @@ async function processIncomingInner(event, sendMessage = undefined) {
     const roll = rollRandomImage(event.groupId, group.randomImageRate);
     if (roll.file) {
       // 不 await：发图失败不该影响正常回复，也不该拖慢这一轮。
-      Promise.resolve(sendMessage(event, cqImageFor(roll.file), { originModule: 'random_image', suppressReply: true })).catch(() => undefined);
+      Promise.resolve(sendMessage(event, cqImageFor(roll.file), { originModule: 'random_image', suppressReply: true,
+        ...sourceDetails({module:'random_image',operation:'random_draw'},
+          {code:'random_draw_selected',description:'本群随机图片功能在收到这条群消息后抽中了图片；不是针对触发者的文字回复。',audience:'conversation'},event),
+      })).catch(() => undefined);
     }
   }
 
@@ -561,7 +565,7 @@ async function processIncomingInner(event, sendMessage = undefined) {
     }, 'received');
     setCommandStage(event, 'running');
     try {
-      const quickSend = sendMessage ? (e, body, options) => sendMessage(e, body, { ...options, originModule: 'quick_command' }) : undefined;
+      const quickSend = sendMessage ? (e, body, options) => sendMessage(e, body, { originModule: 'quick_command', ...options }) : undefined;
       const quickResult = await handleQuickCommand(event, quickSend, db, quickMatch, {
         isOwner: isGroupOwner || isPrivateOwner,
         isAdmin: isGroupAdmin,
@@ -803,6 +807,11 @@ async function processIncomingInner(event, sendMessage = undefined) {
 }
 
 async function generateConversationReply(event, sendMessage, decision) {
+  const replySources: SourceStep[] = [{module:'conversation',operation:decision.visualLimitation?'visual_limitation':'generate_reply'}];
+  sendMessage = sourceSender(sendMessage, () => replySources,
+    {code:event.socialDirect?'direct_reply':event.socialEngagement==='continuation'?'conversation_followup':'ambient_participation',
+      description:event.socialDirect?'回应当前发言者的明确请求。':'模型根据本会话交流决定接话。',
+      audience:event.socialDirect?'requester':'conversation'},messageTrigger(event,true));
   const readingSources: SelfEvidence[] = [];
   const readingScope = event.type === 'group' ? `group:${event.groupId}` : `private:${event.userId}`;
   let readingRevision = readPippiSelf(readDb()).revision;
@@ -913,7 +922,8 @@ async function generateConversationReply(event, sendMessage, decision) {
     // Surface the degradation immediately instead of silently executing a
     // plain internal query_osu. The internal result still follows this notice.
     if (namedBotDowngradeNotice) {
-      if (sendMessage) await sendMessage(event, namedBotDowngradeNotice);
+      if (sendMessage) await sendMessage(event, namedBotDowngradeNotice, sourceDetails({module:'conversation',operation:'executor_fallback_notice'},
+        {code:'requested_executor_unavailable',description:'点名的外部 Bot 不支持本次查询，实际切换到备用处理前告知请求者。',audience:'requester'},event));
       updateDb((draft) => {
         recordAssistantContext(draft, { id: crypto.randomUUID(), ...replyTargetMetadata(event), role: 'assistant', type: event.type, groupId: event.groupId, userId: 'bot', nickname: '机器人', content: namedBotDowngradeNotice, inContext: true, createdAt: nowIso() });
         draft.usage.replies += 1;
@@ -986,7 +996,9 @@ async function generateConversationReply(event, sendMessage, decision) {
       if (thinkingSent || !sendMessage) return;
       thinkingSent = true;
       const picked = pickCodeSticker(stickerKey);
-      await sendMessage(event, picked ? withSticker(text, picked.id) : text, { originModule: 'notice' });
+      await sendMessage(event, picked ? withSticker(text, picked.id) : text, { originModule: 'notice',
+        ...sourceDetails({module:'thinking_notice',operation:stickerKey},
+          {code:'generation_in_progress',description:'回复任务仍在生成或查询，按当前提示设置发送过程状态。',audience:'requester'},event)});
     };
 
     progressEligible = shouldUseReplyProgress(liveDb,event);
@@ -1021,7 +1033,9 @@ async function generateConversationReply(event, sendMessage, decision) {
           if (!sendMessage) return;
           const picked = pickSticker('wait_up');
           const text = useTools ? '还在查，稍等一下…' : '还在处理，稍等一下…';
-          await sendMessage(event, picked ? withSticker(text, picked.id) : text);
+          await sendMessage(event, picked ? withSticker(text, picked.id) : text, {originModule:'notice',
+            ...sourceDetails({module:'thinking_notice',operation:'wait_up'},
+              {code:'task_still_running',description:'任务仍未结束，等待计时器触发了进度提示。',audience:'requester'},event)});
         });
       }, Number(liveDb.settings.waitUpNoticeDelayMs || 25000));
     }
@@ -1141,7 +1155,14 @@ async function generateConversationReply(event, sendMessage, decision) {
         assertLlmTurnActive();
         const progressTool = progress?.toolStarted(String(toolCall?.function?.name || ''));
         let succeeded = false;
-        const finishTool = result => { succeeded = Boolean(result?.ok); return result; };
+        const finishTool = result => {
+          succeeded = Boolean(result?.ok);
+          replySources.push({module:'tool',operation:String(toolCall?.function?.name||'unknown'),
+            producer:String(result?.metadata?.actualExecutor||result?.metadata?.provider||'wuxin'),
+            outcome:succeeded?'success':'failed'});
+          if (Array.isArray(result?.metadata?.messageSources)) replySources.push(...result.metadata.messageSources);
+          return result;
+        };
         try {
           if (INTROSPECTION_TOOL_NAMES.includes(toolCall?.function?.name)) {
             return finishTool(await executeIntrospection(readDb(), event, toolCall));
@@ -1169,7 +1190,6 @@ async function generateConversationReply(event, sendMessage, decision) {
         updateReplyProcessStage('生成中');
         const result = await completeWithReplyProgress(db,opts,progress,(current,request)=>completeChat(current,{
           ...request,
-          messages:withStickerReplyInstruction(request.messages,recentSelfActionsContext(readDb(),event)),
           visionImages,label:request.label||'Bot Harness',
         }));
         toolLoopModel = String(result?.model || toolLoopModel || '');
@@ -1277,7 +1297,7 @@ async function generateConversationReply(event, sendMessage, decision) {
         tracePurpose: 'conversation_reply',
         ...(savingMode ? { promptModule: 'conversation_saving' } : {}),
         ...convWire
-      },progress,(current,request)=>callLLM(current,withStickerReplyInstruction(request.messages,recentSelfActionsContext(readDb(),event)),request));
+      },progress,(current,request)=>callLLM(current,request.messages,request));
       reasoningRouter.record({
         turnId,
         ts: Date.now(),
@@ -1650,6 +1670,9 @@ async function generateConversationReply(event, sendMessage, decision) {
       if (sendReadingReply) await sendReadingReply(event, outboundText, replyToCurrentMessageOptions(event));
       segments = [outboundText];
     } else if (modelStickerCqCode && sendMessage) {
+      const stickerSource = sourceDetails({module:'reply_sticker',operation:stickerExplicitRequest?'requested_image':'model_reaction',producer:'pippi'},
+        {code:stickerExplicitRequest?'sticker_requested':'sticker_selected',
+          description:stickerExplicitRequest?'回应用户的图片请求，发送本轮模型选择且通过交付检查的表情。':'本轮模型按交流语境选择表情，作为自己的回应。',audience:event.socialDirect?'requester':'conversation'},event);
       const completeModelStickerOutcome = (stickerOutcome: StickerDeliveryOutcome, error?: unknown) => {
         if (modelStickerReservationId) {
           completeStickerDelivery(modelStickerReservationId, stickerOutcome);
@@ -1686,7 +1709,7 @@ async function generateConversationReply(event, sendMessage, decision) {
           // cause the long body to be sent a second time.
           segments = [deliveredText];
           try {
-            stickerResult = await sendMessage(event, [stickerCaption, modelStickerCqCode].filter(Boolean).join('\n'), replyToCurrentMessageOptions(event));
+            stickerResult = await sendMessage(event, [stickerCaption, modelStickerCqCode].filter(Boolean).join('\n'), replyToCurrentMessageOptions(event,stickerSource));
             segments = [deliveredText, [stickerCaption, modelStickerCqCode].filter(Boolean).join('\n')];
             const rawOutcome = stickerResult?.outcome;
             const stickerOutcome: StickerDeliveryOutcome = rawOutcome === 'confirmed_success'
@@ -1706,14 +1729,16 @@ async function generateConversationReply(event, sendMessage, decision) {
             if (confirmedFailure) {
               const notice = stickerFailureNotice({ explicitRequest: stickerExplicitRequest, bodyDelivered: true });
               if (notice && sendMessage) {
-                await sendOptionalNotice(() => sendMessage(event, notice, replyToCurrentMessageOptions(event)));
+                await sendOptionalNotice(() => sendMessage(event, notice, replyToCurrentMessageOptions(event,
+                  sourceDetails({module:'reply_sticker',operation:'failure_notice'},
+                    {code:'image_delivery_failed',description:'图片明确发送失败，告知请求者；已成功的正文不会重发。',audience:'requester'},event))));
               }
             }
           }
         } else {
           // 附文只在这一条里出现 —— 它跟图片同生共死，于是图片失败时天然不会被重发。
           const outboundText = [deliveredText, stickerCaption, modelStickerCqCode].filter(Boolean).join('\n');
-          stickerResult = await (deliveredText.trim() ? sendReadingReply! : sendMessage)(event, outboundText, replyToCurrentMessageOptions(event));
+          stickerResult = await (deliveredText.trim() ? sendReadingReply! : sendMessage)(event, outboundText, replyToCurrentMessageOptions(event,stickerSource));
           segments = [outboundText];
           const rawOutcome = stickerResult?.outcome;
           const stickerOutcome: StickerDeliveryOutcome = rawOutcome === 'confirmed_success'
@@ -1745,7 +1770,9 @@ async function generateConversationReply(event, sendMessage, decision) {
         const outboundFallback = [notice && placeholderOnly ? '' : fallbackText, notice].filter(Boolean).join('\n');
         if (outboundFallback && sendMessage) {
           try {
-            await sendReadingReply!(event, outboundFallback, replyToCurrentMessageOptions(event));
+            await sendReadingReply!(event, outboundFallback, replyToCurrentMessageOptions(event,
+              sourceDetails({module:'reply_sticker',operation:'text_fallback'},
+                {code:'image_delivery_failed',description:'图片明确发送失败，保留可独立交付的正文并说明情况。',audience:'requester'},event)));
             deliveredText = outboundFallback;
             segments = [outboundFallback];
             fallbackSent = true;
@@ -1863,7 +1890,9 @@ async function generateConversationReply(event, sendMessage, decision) {
       const failureNotice = '[系统] 这次查询或回复未能完成，请稍后重试。';
       const noticeSticker = pickCodeSticker('service_down');
       await sendOptionalNotice(() => sendMessage(event,
-        noticeSticker ? withSticker(failureNotice, noticeSticker.id) : failureNotice));
+        noticeSticker ? withSticker(failureNotice, noticeSticker.id) : failureNotice,
+        sourceDetails({module:'conversation',operation:'failure_notice'},
+          {code:'generation_failed',description:'本轮查询或生成未能完成，向明确请求的发言者反馈失败。',audience:'requester'},event)));
     }
     // 只记「回复根本没生成出来」这一种 —— 也就是她压根没开口的那种。发图失败、
     // 权限拒绝、冷却拦截各有自己的结果记录，不进这里。分开是有意的：这样这行字

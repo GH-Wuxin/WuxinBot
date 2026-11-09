@@ -19,7 +19,7 @@ const PRODUCTION_DIR = process.env.WUXIN_PRODUCTION_DATA_DIR || path.join(
 // be changed by a business operation.  Cache contents are deliberately not
 // part of this scope: a cache miss must not turn an otherwise isolated test
 // into a false failure.
-const PERSISTED_FILE_RE = /^(?:db\.json|db-[^/\\]+\.json|osu-console-profiles\.json)$/i;
+const PERSISTED_FILE_RE = /^(?:db\.json|db-[^/\\]+\.json|osu-console-profiles\.json|own-messages\.sqlite(?:-(?:wal|shm|journal))?)$/i;
 const PERSISTED_SUBTREES = new Set(['backups', 'knowledge']);
 
 let lastIsolationResult = null;

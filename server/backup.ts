@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { readDb, writeDb, isValidLogicalDbShape, getDataDir } from './store.js';
 import { listBackupFiles, pruneBackupFiles, removeBackupFile, resolveBackupRetention, safeBackupPath, type BackupType } from './backupFiles.js';
+import { snapshotOwnArchive, validateOwnArchiveBackup, restoreOwnArchive } from './messageArchiveStorage.js';
 export { DEFAULT_BACKUP_RETENTION } from './backupFiles.js';
 
 // The data root is resolved per call (not at import time) so tests and tools
@@ -28,8 +29,11 @@ export function createBackup(type = 'manual') {
   if (!BACKUP_TYPES.has(safeType)) {
     throw new Error(`不支持的备份类型: ${safeType || '(空)'}`);
   }
-  const ts = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
-  const name = `${safeType}-${ts}.json`;
+  let stampMs = Date.now();
+  let name = `${safeType}-${new Date(stampMs).toISOString().replace(/[:.]/g, '-')}.json`;
+  while (fs.existsSync(path.join(backupDir(),name)) || fs.existsSync(path.join(backupDir(),name)+'.own-messages.sqlite')) {
+    name = `${safeType}-${new Date(++stampMs).toISOString().replace(/[:.]/g, '-')}.json`;
+  }
   const dest = path.resolve(backupDir(), name);
   if (!dest.startsWith(path.resolve(backupDir()) + path.sep)) {
     throw new Error('备份路径越界');
@@ -38,9 +42,10 @@ export function createBackup(type = 'manual') {
   // remain one complete logical JSON document so they are portable and can be
   // restored without knowing the on-disk shard layout.
   const db = readDb();
+  const ownMessageArchive = snapshotOwnArchive(getDataDir(), dest);
   fs.writeFileSync(dest, JSON.stringify(db), 'utf8');
   // Write a tiny meta file
-  const meta = { type: safeType, name, createdAt: new Date().toISOString(), size: fs.statSync(dest).size };
+  const meta = { type: safeType, name, createdAt: new Date().toISOString(), size: fs.statSync(dest).size, ownMessageArchive };
   fs.writeFileSync(dest + '.meta.json', JSON.stringify(meta, null, 2), 'utf8');
   const result = pruneBackupFiles(backupDir(), resolveBackupRetention(db), { types: [safeType as BackupType] });
   if (result.failed.length) console.error('[backup] cleanup failed:', result.failed);
@@ -71,10 +76,15 @@ export function restoreBackup(name) {
   if (!isValidLogicalDbShape(json)) {
     return { ok: false, error: '备份缺少核心数据结构（settings 或主要集合），不是完整的逻辑数据库，已拒绝恢复' };
   }
+  try { validateOwnArchiveBackup(filePath); }
+  catch { return {ok:false,error:'自发消息档案备份缺失或损坏，已拒绝不完整恢复'}; }
   // Auto-backup current DB before restore (pre-restore safety)
   createBackup('pre-restore');
+  const before = structuredClone(readDb());
   // Write restored data
   writeDb(json);
+  try { restoreOwnArchive(getDataDir(), filePath); }
+  catch (error) { writeDb(before); throw error; }
   return { ok: true, name };
 }
 
