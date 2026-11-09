@@ -1,160 +1,86 @@
-# WuxinBot 外部集成指南
+# OneBot、模型与 osu! 集成
 
-本文档说明 WuxinBot 与 NapCat / OneBot、LLM、osu! API 以及可选的
-Yumu / Kanon / Hydrant / LazyBot 四台外部 Bot 的集成方式。所有部署相关路径
-都可以通过环境变量或 `.env` 覆盖，仓库内不包含本机路径。
+WuxinBot 的 QQ 连接、模型和外部 Bot 分别配置。基础启动步骤见 [README](../README.md#开始使用)，组件启停见 [Desktop 使用说明](DESKTOP_CLIENT.md)。
 
-## 1. 总览
+## OneBot v11
 
-```text
-QQ 群消息
-  → NapCat / OneBot v11（HTTP + WebSocket）
-  → Wuxin server（server/onebot.ts → server/bot.ts）
-  → LLM（DeepSeek / OpenAI 兼容接口）
-  → 回复：直接发送，或经 yumu-image 渲染成图片
+安装并登录 [NapCatQQ](https://github.com/NapNeko/NapCatQQ)，或使用兼容 OneBot v11 的客户端。WuxinBot 通过 WebSocket 接收事件，通过 HTTP 发送消息和查询回执。
 
-可选：
-  Yumu / Kanon / Hydrant / LazyBot
-    → 各自 OneBot WebSocket server
-    → Wuxin 作为第二客户端直连调用（server/bots/localBridge.ts）
+在控制台“集成”页填写 Bot QQ、Owner QQ、HTTP 地址、WebSocket 地址及访问令牌。本机默认地址为 `http://127.0.0.1:3000` 和 `ws://127.0.0.1:3001`，须与 OneBot 客户端一致。
+
+已有 NapCat Shell 实例可以使用仓库脚本配置本地接口。先登录目标 QQ，再在仓库根目录执行，替换目录和账号：
+
+```powershell
+.\tools\enable-napcat-local-onebot.ps1 -NapCatDir 'D:\NapCat' -QQ '机器人QQ号' -HttpPort 3000 -WsPort 3001
 ```
 
-## 2. 最小配置（.env）
+脚本会备份并修改对应的 `config/onebot11_<QQ>.json`。Desktop 的 NapCat 启动路径、工作目录和 QQ 数据目录仍需在“运行控制”中核对。
 
-复制 `.env.example` 为 `.env`，至少配置：
+## 模型
+
+在“模型 → 账号与模型”中设置供应商、API 地址、模型名和密钥。源码首次启动也可通过仓库根目录的 `.env` 初始化：
 
 ```dotenv
-LLM_PROVIDER=deepseek
-LLM_API_KEY=你的Key
-ADMIN_PASSWORD=控制台密码
-OSU_CLIENT_ID=你的osu客户端ID
-OSU_CLIENT_SECRET=你的osu客户端Secret
+LLM_PROVIDER=openai-compatible
+LLM_API_BASE_URL=https://你的模型服务地址/v1
+LLM_MODEL=供应商提供的模型名
+LLM_API_KEY=你的密钥
+ADMIN_PASSWORD=你的管理密码
 ```
 
-`server/index.ts` 启动时会通过 `dotenv` 读取仓库根目录的 `.env`。
-`tools/*.ps1` 运维脚本也会读取同一个 `.env`（参数 > 环境变量 > `.env`）。
+DeepSeek 通道使用 `LLM_PROVIDER=deepseek`。模型名称、图片输入和推理参数是否可用，取决于所选服务与模型；保存后用实际对话验证。项目内的模型别名由代码维护，见 [模型配置](../server/bot/llm.ts)。
 
-## 3. NapCat / OneBot
+Codex App Server 使用独立的登录和模型配置，见 [Codex 接入](CODEX_CHATGPT_PROVIDER.md)。
 
-1. 安装 [NapCat](https://github.com/NapNeko/NapCatQQ)（或任意兼容 OneBot v11 的客户端），
-   登录机器人 QQ 小号。
-2. 运行 `tools/enable-napcat-local-onebot.ps1` 写入本机 OneBot 配置：
+`.env` 中的模型和管理密码是新数据库的初始值。已有数据库保留保存过的设置，修改配置后应在控制台核对实际值。远程模型会接收本轮所需上下文，密钥及真实配置不应提交到仓库。
 
-   ```powershell
-   .\tools\enable-napcat-local-onebot.ps1 -NapCatDir <NapCat目录> -QQ <机器人QQ> -HttpPort 3000 -WsPort 3001
-   ```
+## osu! API 与分析服务
 
-3. 在控制台「QQ连接」页面填写 HTTP `http://127.0.0.1:3000` 与
-   WebSocket `ws://127.0.0.1:3001`，保存并连接。
-
-### 运维入口
-
-组件的启动、停止、重启与就绪检查现在统一由 **WuxinBot Desktop 的「运行控制」页**负责，NapCat、yumu-image、Wuxin 与四个外部 Bot 都在同一处管理，自带端口归属校验（见 [`DESKTOP_CLIENT.md`](./DESKTOP_CLIENT.md)）。NapCat 的 `NAPCAT_SHELL_DIR`、`NAPCAT_USER_DATA_DIR`、`NAPCAT_LAUNCHER_NAME` 改为在 Desktop 的组件参数里配置。
-
-早期版本提供的 `tools/start-napcat.ps1`、`tools/wuxin-guard.ps1`、`tools/restart-wuxin.ps1` 已随该页面上线而移除，不要再按旧文档调用。`tools/` 下当前只保留 `tools/enable-napcat-local-onebot.ps1`。
-
-## 4. LLM
-
-默认 DeepSeek，支持任意 OpenAI 兼容端点：
+在“osu!”页填写 OAuth Client ID 和 Secret，或首次启动前配置：
 
 ```dotenv
-LLM_PROVIDER=deepseek
-LLM_API_KEY=
-LLM_API_BASE_URL=https://api.deepseek.com
-LLM_MODEL=deepseek-v4-flash
+OSU_CLIENT_ID=你的客户端ID
+OSU_CLIENT_SECRET=你的客户端Secret
 ```
 
-`deepseek-v4-flash` 是 WuxinBot 的稳定配置名；实际请求会映射到
-`deepseek-v4-flash-vision-exp`，因此已有设置与固定模型调用无需迁移即可获得图片输入能力。
+玩家和成绩查询使用 osu! API v2。PP+、Skill Profiler、外部 Bot 及渲染器是独立服务，启用相应功能前需配置并确认它们可用。官方资料搜索的开关和覆盖范围见 [搜索说明](OSU_SEARCH.md)。
 
-可选 `MIMO_API_KEY` / `MIMO_API_BASE_URL` 作为第二供应商。注意「自动模型切换」
-开启时，复杂任务可能调用更强（也更贵）的模型。
+## 外部 Bot
 
-## 5. osu! API
+WuxinBot 通过本地 WebSocket 调用外部 Bot，取得文字或图片后，再由自己的 QQ 账号发送结果。当前集成的默认端点如下；部署时以各组件实际配置为准。
 
-Analyze / Recent / Recommend / Match 等功能使用 osu! API v2 的
-client credentials 授权：
-
-```dotenv
-OSU_CLIENT_ID=
-OSU_CLIENT_SECRET=
-OSU_API_BASE_URL=https://osu.ppy.sh/api/v2
-OSU_TOKEN_URL=https://osu.ppy.sh/oauth/token
-```
-
-在 osu! 官网 OAuth 页面创建应用并填入客户端 ID/Secret。PP+（pp+ 相关面板）
-是可选的本机服务，可在控制台单独配置。
-
-## 6. 外部 Bot 桥接（可选）
-
-四个原始 Bot 各自运行一个 OneBot WebSocket server，Wuxin 以第二客户端身份
-直连并转发指令、取回渲染结果，不经过 QQ 转发：
-
-| Bot | Bridge 端点 | 说明 |
+| 组件 | 默认端点 | 相关依赖 |
 | --- | --- | --- |
-| Yumu（雨沐） | `ws://127.0.0.1:8388/pub/onebotSocket` | 渲染经 yumu-image |
-| Kanon（猫猫） | `ws://127.0.0.1:7700/` | messageArray |
-| Hydrant（消防栓） | `ws://127.0.0.1:8800/` | 需要 ServerAccessToken |
-| LazyBot | `ws://127.0.0.1:1145/lazybot` | 绑定同步需要 MariaDB |
+| Yumu | `ws://127.0.0.1:8388/pub/onebotSocket` | yumu-image 渲染器 |
+| Kanon | `ws://127.0.0.1:7700/` | Kanon 的配置与图片资源 |
+| Hydrant | `ws://127.0.0.1:8800/` | `Hydrant.ServerAccessToken` |
+| LazyBot | `ws://127.0.0.1:1145/lazybot` | 绑定同步所用的 MariaDB |
 
-### 相关环境变量
+后端通过以下变量定位外部组件配置：
 
-```dotenv
-# 外部 Bot 部署根目录（默认 ./external-bots）
-BOTS_ROOT=
+| 变量 | 用途 |
+| --- | --- |
+| `BOTS_ROOT` | 外部 Bot 部署根目录；独立启动后端时默认取当前工作目录下的 `external-bots` |
+| `LAZYBOT_CONFIG_PATH` | LazyBot 的数据库配置 |
+| `HYDRANT_CONFIG_PATH` | Hydrant 的访问令牌配置 |
+| `GROUP_BOT_CONFIG_PATH` | 各群外部 Bot 开关文件 |
+| `BRIDGE_SELF_ID` | 非 Yumu 桥接会话使用的账号标识 |
 
-# 单独覆盖某个配置文件
-LAZYBOT_CONFIG_PATH=
-HYDRANT_CONFIG_PATH=
-GROUP_BOT_CONFIG_PATH=
+默认配置相对 `BOTS_ROOT` 存放于 `configs/private/lazybot/application.yaml`、`configs/private/hydrant/appsettings.json` 和 `configs/group-bot-config.json`。Desktop 会向自己启动的后端传入部署根目录及部分配置路径，因此也要检查“运行控制”中的环境变量覆盖项。
 
-# 非 yumu 桥接会话使用的 self id（默认是公开占位号）
-BRIDGE_SELF_ID=
-```
+在“群聊”页分别设置各群使用的 Bot。绑定指令 `/w osu bind` 会尝试同步 LazyBot；同步依赖不可用时，WuxinBot 自身的绑定仍保留。
 
-默认目录布局（可用 `BOTS_ROOT` 整体替换）：
+部署后检查各服务实际监听的地址，限制在本机或受控网络，并按组件要求配置令牌。
 
-```text
-<BOTS_ROOT>/
-  configs/
-    group-bot-config.json          # 控制台写入的群级开关
-    private/hydrant/appsettings.json
-    private/lazybot/application.yaml
-  runtime/mariadb-*/bin/mysql.exe  # LazyBot 绑定同步用
-  sources/yumu-image/              # 渲染器
-```
+## 结果和失败处理
 
-行为说明：
+外部 Bot 成功返回时保留它的原始结果。支持的查询可以在外部调用失败后使用 Wuxin 自己的备用卡片；其他情况返回实际错误。适用范围和图片预览方法见 [备用卡片说明](wuxin-fallback-cards.md)。
 
-- **群级开关**：控制台「osu」页面的群 Bot 开关写入 `GROUP_BOT_CONFIG_PATH`
-  （默认 `<BOTS_ROOT>/configs/group-bot-config.json`），外部 Bot 读取同一文件。
-- **LazyBot 绑定同步**：`/w osu bind` 会同时把绑定镜像进 LazyBot 的
-  MariaDB `token` 表。MariaDB CLI 或配置不可用时静默跳过，Wuxin 自身绑定不受影响。
-- **Hydrant 鉴权**：`hydrantToken()` 从 `HYDRANT_CONFIG_PATH` 读取
-  `Hydrant.ServerAccessToken`；文件不存在时按空 token 处理。
-- **降级**：外部 Bot 不在线时，桥接调用超时并回退到 Wuxin 内部实现
-  （例如 !ml 的内部 MatchListener）。没有外部 Bot 时大部分功能仍可使用，
-  但原始渲染面板（yumu-image 图片）不可用。
+图片发送失败时，先区分外部查询、图片生成和 QQ 发送哪个环节失败，再检查对应服务。OneBot 的 HTTP 成功不代表消息业务成功，WuxinBot 还会核对 `status/retcode` 和消息回执。
 
-### 安全提示
+本仓库包含两项可选组件维护说明：
 
-- 所有 Bridge 端点都只监听 `127.0.0.1`，不要暴露到公网。
-- `HYDRANT_CONFIG_PATH` / `LAZYBOT_CONFIG_PATH` 指向的文件含访问令牌或数据库
-  密码，注意文件权限，不要提交到 git。
-- `ADMIN_PASSWORD` 保护所有本地管理 API；生产环境务必设置。
+- [PP+ 聚合服务补丁](../patches/README.md)：首次查询任务接口与客户端兼容关系。
+- [Kanon Mod 图标](../patches/kanon-mod-icons/README.md)：资源覆盖方式和来源声明。
 
-## 7. 第三方许可证
-
-- WuxinBot 主体：MIT（见根目录 `LICENSE`）。
-- `server/osu/matchRating.ts`、`server/osu/match.ts`：派生自
-  [yumu-bot/yumu-bot](https://github.com/yumu-bot/yumu-bot)（Apache-2.0），
-  来源与修改说明见 `THIRD_PARTY_NOTICES.md`，全文见 `LICENSE.yumu-bot`。
-
-## 8. 常见问题
-
-- **Node 版本**：请使用项目自带 `portable-node`（Node 22）。系统 Node 20 存在
-  happy-eyeballs 并发连接崩溃问题。
-- **数据目录**：默认 `%APPDATA%\Wuxin\db.json`，可用 `DATA_DIR` 覆盖；
-  `server/store.ts` 在非 test 模式下要求 `DATA_DIR` 指向明确目录。
-- **推送图片失败**：确认 yumu-image 已启动，且 `YUMU_NODE` / `YUMU_DIR` 正确；
-  图片输出缓存在 `data/` 下，属运行时数据。
+相关检查可运行 `npm run onebot:delivery:verify`、`npm run score:command:verify` 和 `npm run pplus:verify`。许可证见 [第三方声明](../THIRD_PARTY_NOTICES.md)。

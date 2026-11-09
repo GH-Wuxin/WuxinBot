@@ -1,18 +1,13 @@
-# WuxinBot desktop icon
+# 应用图标
 
-The master artwork is `build/icon-source.png`. It follows the circular pink / white-rim design of the [official osu!lazer logo](https://github.com/ppy/osu/blob/master/assets/lazer.png), with WuxinBot's existing `w!` lettering.
+源图为 [icon-source.png](icon-source.png)。图案参考 [osu!lazer 标志](https://github.com/ppy/osu/blob/master/assets/lazer.png)的粉色圆形和白色边缘，使用 WuxinBot 的 `w!` 字样。该源图于 2026-10-22 使用图像生成工具制作，透明背景版本保存在仓库中。
 
-Generated using the built-in imagegen tool on 2026-10-22. The transparent master is kept in this repository so builds do not depend on the generation tool or a user profile directory.
+在仓库根目录运行以下命令可重新导出图标：
 
-Run `node tools/build-desktop-icons.mjs` to export the matching build/public PNG and multi-resolution Windows ICO resources. `npm run build` runs this automatically. The ICO contains 16, 20, 24, 32, 40, 48, 64, 96, 128 and 256 pixel entries. Windows executable / installer assets and the web favicon use this same source.
-
-## Generation prompt
-
-```text
-Use case: text-localization / logo-brand.
-Input image 1 is the official osu!lazer logo and is the visual reference/edit target.
-Create the WuxinBot desktop application icon by closely preserving this reference, changing only the central wordmark from "osu!" to exactly "w!" (a lowercase w followed by an exclamation mark).
-Preserve the circular silhouette, thick clean white outer rim, vivid pink-to-rose vertical gradient, subtle overlapping outlined triangles inside the pink disc, gentle inner-edge shading, and very soft shadow outside the rim.
-The new "w!" must use the same friendly, very round white lettering with rounded terminals and the same restrained soft letter shadow. Upright, not italic. Center it optically inside the disc. Let the lowercase w and exclamation mark together occupy about 58 percent of the disc width, with generous space around the letters and a clear separate round exclamation dot.
-Keep the reference composition and finish: a flat front-facing circular logo, not a perspective object, not a 3D badge. No new ornaments, no neon, no dark square tile, no extra text. Smooth crisp app-icon edges. Square high resolution canvas, approximately 90 percent occupied by the circle. Truly transparent background outside the circular logo and its soft shadow; no white or checkerboard background.
+```powershell
+node tools/build-desktop-icons.mjs
 ```
+
+`npm run build` 也会执行这一步。生成结果为 `build/icon.ico`、`build/icon.png`、`public/icon.ico` 和 `public/icon.png`，供程序、安装包和控制台使用。
+
+ICO 包含 16、20、24、32、40、48、64、96、128、256 像素版本，PNG 为 512 像素。修改源图后重新生成这些文件即可，构建不依赖图像生成工具或本机用户目录。

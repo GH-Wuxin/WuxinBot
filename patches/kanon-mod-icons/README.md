@@ -1,23 +1,12 @@
-# Kanon lazer Mod icons
+# Kanon Mod 图标
 
-Resource overlay for the deployed KanonBot score-card renderer:
+本目录提供 Kanon 成绩卡片使用的 DC、DA、CL 和 Unknown 图标资源。DC、DA、CL 各有一张 257 × 77 主标牌和两张 60 × 60、118 × 118 方形图标；Unknown 为一张灰色问号主标牌。
 
-- DC (Daycore), DA (Difficulty Adjust), CL (Classic): main badges at 257×77,
-  square icons at 60×60 and 118×118.
-- `mods/Unknown.png`: a 257×77 grey badge with a question mark. The existing
-  renderer places an unknown Mod's acronym on its right. This replaces the
-  old 1×1 bright green fallback.
+[work](work)包含十张部署用 PNG，[svg](svg)保留可编辑源文件，尺寸、颜色和文字位置见 [design-spec.json](design-spec.json)。配色参考 Kanon 已有资源，具体图片来源和修改方式见 [ATTRIBUTION.md](ATTRIBUTION.md)。
 
-`work/` contains the ten deployment PNGs. `svg/` contains their editable SVG
-masters, including embedded official symbols and outlined text. Sizes, colours,
-symbol bounds and text placement are recorded in `design-spec.json`.
-The palette adapts the existing HT, RX/AP and V2 assets; it is not an official
-osu! colour assignment.
+## 安装
 
-## Install
-
-Back up the target files, then merge the contents of `work/` into the Kanon
-installation's `work/` directory, retaining the directory structure:
+备份目标资源后，将这里 `work/` 的内容合并到 Kanon 安装目录的 `work/` 中，保持以下层级：
 
 ```text
 work/mods/{DC,DA,CL,Unknown}.png
@@ -25,20 +14,12 @@ work/mods_v2/1x/{DC,DA,CL}.png
 work/mods_v2/2x/{DC,DA,CL}.png
 ```
 
-Copy `ATTRIBUTION.md` and `osu-resources-LICENCE.md` alongside the resource
-overlay. If a deployment keeps a separate source resource directory, apply the
-same overlay there so a later reinstall retains the icons.
+同时保留 [ATTRIBUTION.md](ATTRIBUTION.md) 和 [osu-resources-LICENCE.md](osu-resources-LICENCE.md)。如果部署另有源资源目录，也应同步对应文件，避免重新安装后丢失修改。
 
-This overlay needs no Kanon executable changes. The deployed renderer
-invalidates its local image cache using file size and modification time;
-new cards pick up the changed files. Previously sent cards stay unchanged.
+这组文件只替换图片。支持按文件变化失效缓存的渲染器会在后续卡片中使用新图片；其他版本需按其缓存机制刷新或重启。已经发送的卡片不会改变。
 
-The main score-card path was verified through the deployed assembly and
-original template, including mixed old/new badges, parameter labels and
-unknown two/three-character acronyms. A real HD+DA score on beatmap 3648544
-also rendered successfully. The two square sizes were checked for dimensions,
-alpha, appearance and file loading; full list/dev-card rendering was not tested.
-Other missing Mod icons and those paths' existing skip-on-missing behaviour
-are outside this overlay.
+## 范围与检查
 
-See [ATTRIBUTION.md](ATTRIBUTION.md) for asset provenance and licensing.
+检查主成绩卡片中的新旧图标混排、Mod 参数及未知缩写，并核对两个方形尺寸的透明背景和加载结果。使用列表或开发卡片的部署还需验证对应模板；不能由主卡片结果推断所有模板都兼容。
+
+本资源包只覆盖列出的 Mod。图形、字体来源和上游许可证按随附声明保留，仓库主许可证不替代这些资源的许可。

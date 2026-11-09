@@ -1,57 +1,41 @@
-# PP+ first-query fix
+# PP+ 聚合服务补丁
 
-`ppplus-first-info.patch` contains the source changes and JUnit tests for the
-locally installed `lazybot-ppplus` 0.1.15 aggregate. Deploy it together with the
-Wuxin client in `server/osu/pplus.ts`; that client uses the new task endpoints.
+[ppplus-first-info.patch](ppplus-first-info.patch)为 `lazybot-ppplus` 0.1.15 增加首次查询的任务接口及对应测试。Wuxin 的 [pplus.ts](../server/osu/pplus.ts)使用这些接口，部署时需要匹配的聚合服务版本。
 
-Apply from an unpatched aggregate source directory:
+## 应用与构建
+
+在尚未应用补丁的聚合服务源码目录中执行，替换补丁路径：
 
 ```powershell
-git apply --check --ignore-space-change 'G:\QQ-AI-ChatBot\patches\ppplus-first-info.patch'
-git apply --ignore-space-change 'G:\QQ-AI-ChatBot\patches\ppplus-first-info.patch'
+$patchFile = 'D:\WuxinBot\patches\ppplus-first-info.patch'
+git apply --check --ignore-space-change $patchFile
+git apply --ignore-space-change $patchFile
 mvn '-Dmaven.compiler.enablePreview=true' '-DargLine=--enable-preview' package
 ```
 
-Use JDK 21. The `me.zhjk:rosu-ppplus:0.2.2` dependency is not on Maven Central;
-reuse `BOOT-INF/lib/rosu-ppplus-0.2.2.jar` from the existing installed aggregate,
-and install that unchanged jar with Maven `install:install-file` under the same
-coordinates. The current installation already has this dependency in its local
-Maven repository. No calculator algorithm was changed.
+该补丁的目标构建使用 JDK 21。依赖 `me.zhjk:rosu-ppplus:0.2.2`；若本地仓库没有它，可从已有聚合服务包的 `BOOT-INF/lib/rosu-ppplus-0.2.2.jar` 取得原始依赖，再按相同 Maven 坐标安装。补丁没有修改计算器算法。
 
-The deployment order is aggregate first, then Wuxin. Back up the old jar and
-the three Wuxin files (`server/osu/pplus.ts`, `server/bots/playerSkillProfile.ts`,
-`server/index.ts`), stop only the aggregate, replace its jar, and start it. Copy
-the Wuxin files and restart only Wuxin. Keep the database and other bots running.
-Rollback must restore both the client and aggregate to their corresponding
-backups. Validate the settings through the authenticated Wuxin settings API;
-never put credentials in this repository or build commands.
+应用检查失败时先核对目标源码和是否已应用，避免重复覆盖。构建会执行补丁包含的 JUnit 测试。
 
-## Contract
+## 接口约定
 
-- `POST /player/jobs?id=<osuId>` creates or reuses one job per player. It returns
-  promptly with `queued`, `running`, `completed`, or `failed` in `data.status`.
-- `GET /player/jobs/status?id=<osuId>` only observes a job; it never initializes
-  a player. A missing job has business code 404. Both endpoints require the
-  existing bearer authentication.
-- A completed job has `data.result.performances`; a failed job has an error code
-  (`NO_SCORES`, `CALCULATION_FAILED`, or `QUEUE_FULL`). Internal errors stay in the
-  service log. Two workers and a bounded queue limit expensive work.
-- Legacy `/player/info` and `/player/update` remain supported. First-time
-  initialization is shared with legacy requests through player locks; network
-  downloads happen outside database transactions. The player marker and score
-  rows are committed atomically after calculation.
-- Download failures return their rate-limit permits after the usual delay.
-  Responses are written to a temporary file before replacing a cached resource.
-- Wuxin uses 15-second HTTP requests to poll up to 30 minutes, shares concurrent
-  requests for a player, and persists valid six-dimensional results for 24 hours.
-  It never substitutes an automatic recent-score refresh for initialization.
-- Authentication and calculation errors propagate through `/w info` instead of
-  generating an incomplete card and a successful command log. Missing scores
-  receive a separate explanation. Changed configured credentials must validate
-  before `/api/settings` persists them, including stale GUI submissions.
+- `POST /player/jobs?id=<osuId>` 创建或复用该玩家的任务，返回 queued、running、completed 或 failed。
+- `GET /player/jobs/status?id=<osuId>` 只查询任务状态，不初始化玩家。任务不存在时返回业务错误。
+- 成功任务通过 `data.result.performances` 返回结果；失败区分无成绩、计算失败和队列已满。两个接口沿用原有 Bearer 认证。
+- 旧 `/player/info` 和 `/player/update` 保留，与新接口共享玩家任务锁。下载在数据库事务之外进行，完成后一起保存玩家标记和成绩。
 
-Run `npm run pplus:verify` for the Wuxin lifecycle/integration checks. The Maven
-build runs the aggregate job-concurrency and failed-download-permit tests.
-For a live cold test, select a player absent from `player_summary`; do not delete
-production rows to manufacture a cold cache. Use isolated Wuxin test data and
-render the normal profile pipeline without sending a QQ message.
+Wuxin 轮询任务并缓存有效 PP+ 结果。认证、计算失败和缺少成绩会向上返回实际状态，不会把缺失结果包装成完整成功卡片。
+
+## 部署与验证
+
+先备份现有程序，部署匹配的聚合服务，再更新 Wuxin 客户端。回滚时也应恢复配套版本，保留当前业务数据库。各服务启停使用实际部署的进程管理方式。
+
+在 Wuxin 仓库中执行：
+
+```powershell
+npm run pplus:verify
+```
+
+真实首次查询测试应选择尚未在聚合服务缓存中的公开玩家，并使用隔离的 Wuxin 数据。无需删除生产玩家记录来制造首次查询。
+
+其他资源覆盖包见 [Kanon Mod 图标](kanon-mod-icons/README.md)。

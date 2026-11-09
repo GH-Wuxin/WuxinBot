@@ -132,11 +132,15 @@ npm run pippi:awareness:verify   # 功能查询、发送记录与回复流程检
 
 `npm start` 和 `npm run server` 用于单独调试后端，Desktop 的“运行控制”也能启动后端；同一个数据目录只运行一个实例。测试使用独立临时数据目录，保留生产路径保护。隔离检查如果报告生产数据仍在变化，应停下对应的生产写入进程再验证。
 
+本地聊天语料的导入与审阅工具见 [community-corpus](community-corpus/README.md)，外部组件补丁见 [patches](patches/README.md)。
+
 ## 详细文档
 
 - [Desktop 使用与进程管理](docs/DESKTOP_CLIENT.md)
 - [OneBot、模型、osu! 与外部 Bot 集成](docs/EXTERNAL_INTEGRATION.md)
 - [人格、关系与经历](docs/PIPPI_PERSONALITY.md)
+- [常驻感知](docs/PRESENCE_MODE.md)
+- [节能模式](docs/TOKEN_SAVING.md)
 - [功能查询、消息归属与回复流程](docs/pippi-awareness.md)
 - [osu! 官方资料搜索](docs/OSU_SEARCH.md)
 - [知识库配置](docs/KNOWLEDGE_BASE_V41.md)
