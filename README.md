@@ -1,156 +1,148 @@
 # WuxinBot
 
-面向 QQ 群聊、基于 OneBot v11 的可扩展 AI Agent。
+WuxinBot 是一个用于 QQ 的聊天机器人，默认人格为 pippi。它支持群聊对话、osu! 数据查询和图片卡片，并提供 Windows Desktop 客户端管理连接、群设置和本地服务。
 
-WuxinBot 把开放式对话、确定性消息路由和有边界的工具调用放进同一个运行时：明确命令与高置信度数据查询由代码直接处理，需要理解上下文或选择工具时才交给 LLM。它不是一个会无限规划和执行任务的 autonomous agent，也不只是把群消息原样转发给模型的聊天 Bot。
+机器人通过 OneBot v11 收发 QQ 消息。聊天模型可以使用 DeepSeek、OpenAI 兼容 API，或项目支持的 Codex App Server 通道。Kanon、Yumu、Hydrant、LazyBot 是可选的外部 Bot，需要单独部署。
 
-当前发行版默认使用 **pippi** 作为交互 persona；pippi 是表现层的人格设定，不是 WuxinBot 的项目定义。
+## 功能
 
-V2.0 加入按群协调的自然接话，以及由 LLM 决定变化的好感、近期情绪和称呼语气。Owner 永久显示为“特殊”，指令权限按真实身份和来源校验，不依靠关键词判断。
+### 聊天与图片
 
-在控制台“更多 → 接话与好感”查看状态、排名、决策、用量和纠正记录；升级后的总开关默认关闭，启用后沿用原有群开关与参与模式。仅 Owner 可用 `/w 好感度 [@成员或 QQ]` 查询关系、`/w 好感榜` 看本群排名、`/w 好感榜 全局` 看全局排名（私聊默认全局）；同分并列，Owner 单列“特殊”。使用 `/w 指令 set 名称 内容`、`/w 指令 revoke 名称`、`/w 指令 list` 管理当前会话的长期指令。现行行为与隐私边界见 [`人格、关系与经历`](docs/PIPPI_PERSONALITY.md)，功能自查、消息归属与后台整理见 [`运行时自我认知`](docs/pippi-awareness.md)。
+pippi 可以结合当前对话、已保存的记忆和关系状态决定是否接话。每个群可以选择自然聊天、仅在被提及时回应、仅 osu! 指令等模式，并分别设置成员权限。社交功能在“接话与好感”页启用，新安装默认关闭；人格和表达偏好可在“人设”页调整。
 
-## Desktop 客户端
+关系整理和记忆更新在后台进行。被 @ 的请求需要较长处理时，模型可以先发一句简短回应，再继续完成答案。群内随机发图和聊天中选择表情是两个独立功能，可以分别配置。
 
-WuxinBot 现在提供原生 Electron Desktop 客户端，沿用现有控制台 UI，并在“运行控制”页面管理 WuxinBot、NapCat、PP+ 和其他本地组件。客户端支持 Windows 登录自启、单项进程启停、批量重启，以及关闭窗口时结束已管理进程。
+### osu! 查询
+
+支持账号绑定、玩家资料、BP 与最近成绩、PP+、谱面分析、玩家能力画像和能力对比，也可以监听多人房间并推送比赛事件。玩家与成绩查询使用 osu! API；PP+、Skill Profiler 和外部 Bot 卡片需要配置对应服务。
+
+明确的快捷指令由程序处理。自然语言问题可以由模型选择已注册的工具，再根据查询结果回答。工具执行时仍会检查权限和群设置。
+
+### 功能与消息查询
+
+可以直接问 pippi 有哪些功能，也可以引用她发过的消息，问它来自哪个模块、为什么发送、由谁触发、回应谁、发到了哪里。她会按需调用查询工具，读取当前权限和开关下的功能目录，或实际保存的发送记录。
+
+目录来自已注册的指令、工具和公共功能。消息档案还记录外部 Bot 的实际执行结果、失败后的替代实现、引用、@ 和发送回执。模型自行决定何时查询，完整目录和最近自发消息不会在每轮对话中自动加载。
+
+## 使用示例
+
+在已启用的群里，可以这样使用：
+
+| 输入 | 用途 |
+| --- | --- |
+| `@pippi 你现在能做什么？` | 查询当前会话可用的功能 |
+| 引用她的图片，问“这张图为什么发，是回复谁的？” | 查询这条消息的来源和发送原因 |
+| `/w help` | 查看当前身份可见的指令 |
+| `/w osu bind <你的用户名>` | 绑定自己的 osu! 账号 |
+| `/w info peppy` | 查询玩家资料和 Skill Profiler 能力画像 |
+| `/w update peppy` | 刷新玩家资料、能力画像和 PP+ |
+| `!info peppy` | 调用 Kanon 玩家卡片，需要启用对应集成 |
+
+这里的 `@pippi` 指 QQ 中实际选择机器人账号进行 @。完整语法与权限以 `/w help` 为准，具体功能还取决于模型、API 和本地组件配置。
+
+具有管理权限的用户可以用 `/w mode osu` 将群设为仅 osu! 指令模式。该模式下，普通消息不进入模型、聊天上下文或画像更新；随机图片仍由它自己的群开关控制。
+
+## 开始使用
+
+### 准备组件
+
+- Windows：Desktop 客户端和仓库中的开发启动命令面向 Windows。
+- Node.js 22.14 或更新版本：源码运行和开发需要 Node；发送档案使用内置的 `node:sqlite`。
+- OneBot v11 客户端：例如 [NapCatQQ](https://github.com/NapNeko/NapCatQQ)，用于登录机器人 QQ 并提供 HTTP 和 WebSocket 接口。
+- 模型连接：为 AI 对话配置所用供应商、模型名称、API 地址和密钥。Codex 通道见[接入说明](docs/CODEX_CHATGPT_PROVIDER.md)。
+
+使用 osu! 查询时，还需配置 osu! OAuth 客户端凭据。外部 Bot、图片渲染器、PP+ 和 Skill Profiler 的部署方式见[集成指南](docs/EXTERNAL_INTEGRATION.md)。
+
+### 使用 Desktop
+
+已有安装包时，安装并打开 WuxinBot Desktop，然后完成以下配置：
+
+1. 在“运行控制”中核对组件路径，只启用已经安装、准备使用的组件，启动 WuxinBot 服务。NapCat 可以由 Desktop 启动，也可以使用已经运行的实例。
+2. 在“模型”页填写模型连接信息，在“集成”页填写 Bot QQ、Owner QQ（机器人所有者）、OneBot 地址和相应访问令牌。本机默认 HTTP 地址为 `http://127.0.0.1:3000`，WebSocket 地址为 `ws://127.0.0.1:3001`。
+3. 在“群聊”页启用需要使用的群，选择回复模式并设置权限。
+4. 确认 QQ 已连接，在测试群发送 `/w help`，再 @ 机器人测试对话。
+
+Desktop 可以单独启停组件、查看就绪状态和日志，也可以配置登录自启及关闭窗口时的处理方式。路径和进程管理细节见 [Desktop 文档](docs/DESKTOP_CLIENT.md)。
+
+### 从源码运行 Desktop
+
+在 PowerShell 中执行：
 
 ```powershell
-npm run desktop:dev       # 开发模式
-npm run desktop:build     # 生成 Windows 安装包
-```
-
-详细说明见 [`docs/DESKTOP_CLIENT.md`](docs/DESKTOP_CLIENT.md)。
-
-## 为什么不只是普通 LLM Bot
-
-- **确定性优先**：快捷命令和明确的 osu! 数据意图先经过代码路由，开放式问题再进入模型规划，避免把可验证操作交给提示词碰运气。
-- **有界工具循环**：LLM 可以选择并连续调用结构化工具，但循环有明确的迭代上限；到达边界后会关闭工具并完成最终综合。
-- **完整的工具续接**：工具结果会回到当前处理流程，模型可以依据真实结果继续分析和回复；可信的确定性结果也可以不经模型改写直接交付。
-- **Adaptive Reasoning**：简单对话保持轻量；遇到上下文依赖、工具选择、目标歧义或失败恢复时，运行时可以提高推理强度，也可以通过总开关关闭。
-- **可验证的 Agent Runtime**：Replay 与 Stateful Fuzz Harness 直接驱动生产使用的工具循环，检查有界执行、终态隔离、调用次数和确定性交付。
-
-## 核心架构
-
-```mermaid
-flowchart LR
-    QQ["QQ 群聊 / 私聊"] --> OB["OneBot v11"]
-    OB --> RT["消息运行时"]
-    RT --> ROUTE["确定性路由"]
-    RT --> LOOP["有界 Agent 工具循环"]
-    LOOP <--> LLM["OpenAI-compatible API / Codex App Server"]
-    RT --> CONTEXT["Context / Memory / Knowledge"]
-    CONTEXT --> LOOP
-    ROUTE --> TOOLS["Tool Runtime"]
-    LOOP --> TOOLS
-    TOOLS --> OSU["osu! Workflows"]
-    TOOLS --> EXT["External Integrations"]
-    ROUTE --> DELIVERY["OneBot HTTP 交付"]
-    LOOP --> DELIVERY
-    RT <--> STORE["本地持久化"]
-```
-
-消息由 OneBot WebSocket 进入运行时，经确定性路由或有界工具流程处理，再通过 OneBot HTTP 返回 QQ。运行配置、群聊状态、记忆和 osu! 绑定默认持久化到本地数据目录。
-
-## 主要能力
-
-### 群聊中的持续对话
-
-WuxinBot 支持按群和成员设置交互策略，并把近期上下文、长期用户记忆、群聊关系以及可选知识库检索组装进对话上下文。persona 与这些运行时能力分离：默认是 pippi，也可以继续调整其交互风格，而无需改动消息路由和工具执行层。
-
-对于只需要 osu! 功能的群，可以使用 `/w mode osu` 启用硬隔离模式：普通消息不会进入 LLM、聊天上下文、群画像或玩家画像，只处理 osu! 确定性指令和退出该模式所需的管理命令。
-
-### Tool-backed workflows
-
-工具以明确的输入格式和允许操作范围接入。模型负责在开放问题中选择工具和组织回复；运行时决定哪些工具可以使用、何时停止以及交付什么结果。当前工具面以查询和 osu! 工作流为主，不提供任意文件、Shell 或电脑控制能力。
-
-### osu! workflows
-
-osu! 是当前最完整的垂直能力：
-
-- QQ 与 osu! 账号绑定和玩家档案；
-- BP、Recent、PP+ 与谱面类型分析；
-- 单图九维 Skill Profiler，以及经过成绩质量和名次衰减修正的 BP50 长期玩家画像；
-- `/w update [玩家名或 p:[完整玩家名或ID]]` 向所有成员开放，强制更新 `/w info` 的 Skill Profile 与 PP+；省略玩家时使用自己的绑定，刷新结果分项报告，失败保留已有数据；
-- `/w skill recent` 近期状态画像与 `/w compare <玩家A> <玩家B>` 玩家能力对比（兼容 `/w skill compare`）；对比图与 `/w info` 共用玩家信息、Tier 配色，同 Tier 时高 Skill Rating 一方使用更鲜明的颜色；
-- 基于实际游玩数据的谱面推荐；
-- multiplayer 监听、回合事件推送与比赛 rating。
-
-LLM 负责解释和表达，玩家数据、成绩、星数与工具结果来自实际接口或确定性计算。外部 Bot 和图片渲染属于可选集成，不是核心运行时的前置条件。
-
-## Quick Start
-
-### 1. 准备运行环境
-
-- Node.js 22 或更高版本（当前验证基线为 Node.js 22；本地存在 portable Node 时优先使用它）
-- 一个 OneBot v11 实现，例如 [NapCatQQ](https://github.com/NapNeko/NapCatQQ)
-- DeepSeek / 其他 OpenAI-compatible endpoint，或已登录个人 ChatGPT 的 Codex CLI
-- 可选：osu! OAuth Client Credentials，用于 osu! 工作流
-
-### 2. 安装与配置
-
-```bash
 git clone https://github.com/GH-Wuxin/WuxinBot.git
 cd WuxinBot
 npm ci
+Copy-Item .env.example .env
 ```
 
-复制 [`.env.example`](./.env.example) 为 `.env`，按所用供应商配置 provider、endpoint 与 model。传统 API 模式填写：
+编辑 `.env` 填写配置，或启动服务后在控制台设置。常用配置项如下：
 
-```env
-LLM_API_KEY=your_api_key
-```
+| 配置项 | 用途 |
+| --- | --- |
+| `LLM_PROVIDER`、`LLM_API_BASE_URL`、`LLM_MODEL`、`LLM_API_KEY` | 模型供应商、地址、名称与密钥 |
+| `ADMIN_PASSWORD` | 首次创建数据目录时设置管理接口密码 |
+| `DATA_DIR` | 业务数据目录 |
+| `OSU_CLIENT_ID`、`OSU_CLIENT_SECRET` | osu! API 凭据，使用对应功能时填写 |
 
-也可以在管理界面的“模型与推理设置”中选择“个人 ChatGPT / Codex 额度”，完成官方 ChatGPT 登录后直接使用 Codex 配额；无需把登录令牌写入 WuxinBot。该模式会保留当前 API 模型作为自动降级通道。详见 [`docs/CODEX_CHATGPT_PROVIDER.md`](./docs/CODEX_CHATGPT_PROVIDER.md)。
-
-如需 osu! 功能，再填写 `OSU_CLIENT_ID` 与 `OSU_CLIENT_SECRET`。不要把 `.env` 或任何真实凭据提交到 Git。
-
-### 3. 启动
-
-```bash
-npm run build
-npm start
-```
-
-管理控制台由 WuxinBot Desktop 提供；启动客户端后在控制台中配置 OneBot WebSocket / HTTP 地址并连接。默认值分别为 `ws://127.0.0.1:3001` 和 `http://127.0.0.1:3000`。
-
-Windows 下组件的启动、停止与重启统一由 WuxinBot Desktop 的「运行控制」页负责：单项启停、批量重启、就绪探测与进程归属校验都在那里，见 [`docs/DESKTOP_CLIENT.md`](./docs/DESKTOP_CLIENT.md)。
-
-早期版本提供的 `tools/restart-wuxin.ps1`、`tools/start-napcat.ps1`、`tools/wuxin-guard.ps1` 已随该页面上线而移除，不要再按旧文档调用。仓库内仍可用 `启动Wuxin.bat` / `停止Wuxin.bat` 启停开发态服务；正式运行请走 Desktop，避免同时存在两个 Wuxin 后端（同一 `DATA_DIR` 只允许一个实例）。
-
-如需为已有 NapCat 实例启用本地 OneBot HTTP/WS，可运行：
+其余配置见 [`.env.example`](.env.example)。然后构建界面并打开 Desktop：
 
 ```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File .\tools\enable-napcat-local-onebot.ps1
+npm run build
+npm run desktop
 ```
 
-所有 QQ 指令及当前权限可见范围以群内 `/w help` 输出为准。
+打开客户端后，按上一节完成组件启动与连接配置。`npm run desktop:build` 可以生成 Windows 安装包，输出位于 `release/`。
 
-## 配置与文档
+## 数据与隐私
 
-- [`.env.example`](./.env.example)：最小环境变量入口
-- [`docs/EXTERNAL_INTEGRATION.md`](./docs/EXTERNAL_INTEGRATION.md)：OneBot、LLM、osu! OAuth、外部 Bot 与渲染器集成
-- [`docs/KNOWLEDGE_BASE_V41.md`](./docs/KNOWLEDGE_BASE_V41.md)：知识库构建、开关、路由与验证
+Windows 默认业务数据目录为 `%APPDATA%\Wuxin`，可通过 `DATA_DIR` 指定其他目录；安装版也支持部署路径配置。`db.json` 保存核心设置，消息、记忆、画像等数据分别保存在其他 JSON 文件中。Desktop 自身的启动配置另存于它的用户数据目录，详见 [Desktop 数据目录说明](docs/DESKTOP_CLIENT.md#迁移后的固定数据目录)。
 
-运行数据默认位于 Windows 的 `%APPDATA%\Wuxin`。`db.json` 保存小型核心状态，消息、画像、决策、遥测与 Skill Profiler 记录分别写入独立 shard；可通过 `DATA_DIR` 改到其他目录。备份接口仍导出一份完整的逻辑数据库 JSON。
+配置、聊天和记忆保存在本机。使用远程模型时，本轮需要的对话上下文会发送到配置的模型服务；osu! 查询和外部集成也会访问各自的接口。密钥、QQ 登录资料、聊天数据和备份不应提交到仓库。
 
-## 开发与验证
+功能和发送记录查询按当前身份、账号与会话过滤，群聊无法通过这些工具读取其他群或私聊的内容。过去没有记录的详细来源和发送原因会保留为未知。
 
-```bash
-npm run desktop:dev  # 启动 Desktop 开发模式
-npm run typecheck    # TypeScript 检查
-npm run check        # 类型、构建、基础与安全验证
-npm run verify-all   # 运行整库 verifier
-npm run agent:replay # 重放 Agent runtime scenario
+自发消息档案保存在 `own-messages.sqlite`，独立于普通聊天窗口；聊天历史超过窗口容量后，仍可分页查询已保存的发送记录。清空会话会同时清理对应的可查询档案。
+
+数据库备份包含合并后的 JSON 和元数据；已有发送档案时，还会生成同名的 `.own-messages.sqlite` 快照。复制备份时应保留这一组文件。图片池、QQ 登录资料和外部组件数据库需要另行备份。
+
+## 开发
+
+```mermaid
+flowchart LR
+    QQ[QQ] <--> OB[OneBot v11]
+    OB <--> BOT[WuxinBot]
+    BOT <--> LLM[模型]
+    BOT <--> TOOLS[osu! 与外部 Bot]
+    BOT <--> DATA[本地数据与消息档案]
+    DESKTOP[Desktop 控制台] --> BOT
 ```
 
-Replay Harness 使用 scripted LLM 和隔离 executor 驱动真实工具循环。它验证当前模型空间内的 runtime invariants，但不等价于真实 LLM 输出质量评估，也不证明生产环境不存在其他 race 或副作用问题。
+`server/` 包含消息处理、工具调用和数据存储，`src/` 是控制台界面，`desktop/` 管理桌面窗口和本地进程。模型只能使用程序开放的工具，调用次数、超时、权限和发送结果由程序检查。
 
-## 项目边界
+安装依赖后，常用命令如下：
 
-WuxinBot 属于 conversational agent，而非 autonomous agent。它不会在 QQ 对话之外自行设定目标，也不会无上限地规划、重试或执行任务。默认 persona 属于产品表现层；LLM 供应商可配置，知识库和外部 Bot 可选。OneBot 消息运行时与 bounded tool loop 才是项目的核心。
+```powershell
+npm run desktop:dev             # 开发界面和 Desktop
+npm run server                  # 单独运行后端，修改代码后自动重启
+npm start                       # 单独运行后端
+npm run typecheck               # TypeScript 检查
+npm run check                   # 类型、构建与主要回归检查
+npm run pippi:awareness:verify   # 功能查询、发送记录与回复流程检查
+```
 
-## License
+`npm start` 和 `npm run server` 用于单独调试后端，Desktop 的“运行控制”也能启动后端；同一个数据目录只运行一个实例。测试使用独立临时数据目录，保留生产路径保护。隔离检查如果报告生产数据仍在变化，应停下对应的生产写入进程再验证。
 
-WuxinBot 主体代码采用 [MIT License](./LICENSE)。
+## 详细文档
 
-`server/osu/matchRating.ts` 与 `server/osu/match.ts` 包含派生自 [yumu-bot](https://github.com/yumu-bot/yumu-bot) 的 Apache-2.0 代码。来源、修改说明与许可证全文见 [THIRD_PARTY_NOTICES.md](./THIRD_PARTY_NOTICES.md) 和 [LICENSE.yumu-bot](./LICENSE.yumu-bot)。
+- [Desktop 使用与进程管理](docs/DESKTOP_CLIENT.md)
+- [OneBot、模型、osu! 与外部 Bot 集成](docs/EXTERNAL_INTEGRATION.md)
+- [人格、关系与经历](docs/PIPPI_PERSONALITY.md)
+- [功能查询、消息归属与回复流程](docs/pippi-awareness.md)
+- [osu! 官方资料搜索](docs/OSU_SEARCH.md)
+- [知识库配置](docs/KNOWLEDGE_BASE_V41.md)
+
+## 许可证
+
+WuxinBot 主体代码采用 [MIT License](LICENSE)。
+
+`server/osu/matchRating.ts` 和 `server/osu/match.ts` 包含派生自 [yumu-bot](https://github.com/yumu-bot/yumu-bot) 的 Apache-2.0 代码。来源与修改说明见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)，许可证全文见 [LICENSE.yumu-bot](LICENSE.yumu-bot)。
