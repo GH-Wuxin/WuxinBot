@@ -30,6 +30,7 @@ check(quotedSpeakerLabel({ userId: '3117086599', nickname: '[SHK]2369' }, SELF) 
 // 2. 引用块要带上说话人和图片张数
 const selfQuote = describeQuotedMessage({ userId: SELF, text: 'gimmick 图读不明白', images: [{ url: 'a' }] }, SELF);
 check(selfQuote.includes('你自己'), '引用块写明是自己发的', selfQuote);
+check(selfQuote.includes('pippi 之前发的'), '引用块标明是 pippi 之前发的', selfQuote);
 check(selfQuote.includes('图片 ×1'), '引用块写明有几张图', selfQuote);
 check(!selfQuote.includes('QQ:'), '自己发的引用不重复标 QQ 号', selfQuote);
 
@@ -47,6 +48,7 @@ const quotedOnly = visualCapabilityNotice(visionDb, {
 });
 check(quotedOnly.includes('被引用的那条消息'), '引用图片单独说明来源', quotedOnly);
 check(quotedOnly.includes('你自己'), '引用图片指明原发送者是自己', quotedOnly);
+check(quotedOnly.includes('当前发言者只是引用了它'), '引用图片明确当前发言者只是引用', quotedOnly);
 check(quotedOnly.includes('不是当前发言者刚发的'), '明确否掉"你发的"这个归因', quotedOnly);
 check(!quotedOnly.startsWith('本轮已附带图片给你'), '不能沿用"本轮已附带图片"那一句', quotedOnly);
 

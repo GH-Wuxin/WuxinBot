@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
 import {createTestDataDir,cleanupTestDir} from './test-isolation.mjs';
 const directory=createTestDataDir('pippi-introspection');process.env.NODE_ENV='test';
 const {ensureStore,readDb,updateDb}=await import('../server/store.ts');ensureStore();
@@ -52,7 +53,17 @@ try{
  assert.deepEqual(api.inspectMessage(db,{...event,replyMessageId:'platform-only',quotedMessage:quote},{message_id:'different'}).messages,[]);
  const context=api.capabilityContext(db,event);
  for(const text of ['你还会啥','你都有哪些能力','你发的这张图是什么','随便聊聊'])assert.equal(api.capabilityContext(db,{...event,text}),context);
+ assert.ok(context.includes('inspect_self_appearance'));
  assert.ok(context.length<1800,'fixed compact context, no full catalog injection');
+ assert.ok(api.INTROSPECTION_TOOL_NAMES.includes('inspect_self_appearance'));
+ assert.ok(api.buildIntrospectionTools().some(t=>t.function?.name==='inspect_self_appearance'));
+ const selfResult=await api.executeIntrospection(db,event,{id:'self-appearance',function:{name:'inspect_self_appearance',arguments:'{}'}},{canSee:true});
+ assert.equal(selfResult.ok,true);
+ assert.ok(selfResult.metadata.visionImages.length===1);
+ assert.ok(fs.existsSync(selfResult.metadata.visionImages[0].file));
+ const textOnly=await api.executeIntrospection(db,event,{id:'self-text',function:{name:'inspect_self_appearance',arguments:'{}'}},{canSee:false});
+ assert.equal(textOnly.metadata.visionImages,undefined);
+ assert.ok(textOnly.content.includes('黑粉双色'));
  const ids=[];let offset=0,pages=0;
  do{const page=api.inspectCapabilities(db,event,{offset});assert.ok(JSON.stringify(page).length<=3800);ids.push(...page.items.map(i=>i.id));offset=page.nextOffset;pages++;}while(offset!==null);
  assert.equal(ids.length,api.runtimeCapabilities(db,event).length);assert.equal(new Set(ids).size,ids.length);assert.ok(pages<=8,'full public directory fits the tool-call allowance');

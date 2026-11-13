@@ -12,6 +12,7 @@ import { loadRegistry, enabledBots } from '../bots/registry.js';
 import { findMessageFact, messageInConversation, messageAccount, conversationKey } from '../messageFacts.js';
 import { settlePendingQuickObservations } from './quickContext.js';
 import { inspectOwnMessages, ownMessageInspectionTool, publicOwnMessage } from './ownMessageInspection.js';
+import { SELF_APPEARANCE_TOOL, selfAppearanceResult, selfAppearanceTool } from './selfAppearance.js';
 
 interface CapabilityView { id: string; description: string; entry: string; kind: string; state: FeatureState; permission?: string }
 function safeText(value: unknown, limit = 320) {
@@ -118,16 +119,20 @@ export function inspectMessage(db: any, event: any, args: any = {}) {
     ...(provenance?{provenance}:{}),
     ...(args.include_summary===true&&m.contextSummary?{summary:safeText(m.contextSummary,1200)}:{})};})};
 }
-export const INTROSPECTION_TOOL_NAMES = ['inspect_capabilities','inspect_message','inspect_own_messages'];
+export const INTROSPECTION_TOOL_NAMES = ['inspect_capabilities','inspect_message','inspect_own_messages', SELF_APPEARANCE_TOOL];
 export function buildIntrospectionTools() {
   return [
     ownMessageInspectionTool(),
+    selfAppearanceTool(),
     {type:'function',function:{name:'inspect_capabilities',description:'只读查看实际注册的功能和当前可用性。默认 overview 一次返回主要功能与数据查询概览；只有需要全部指令才用 entries 分页。query/id 查具体条目。不会执行功能或修改设置。',parameters:{type:'object',additionalProperties:false,properties:{view:{type:'string',enum:['overview','entries']},query:{type:'string'},id:{type:'string'},offset:{type:'integer',minimum:0}}}}},
     {type:'function',function:{name:'inspect_message',description:'只读核对本会话引用消息或最近自己确认发出的消息。用于确认作者、随机发图来源和发送结果；不查询他群或私聊。只有确实需要图片查询的具体数据时设 include_summary=true，未完成会明确返回 pending，不得猜测。',parameters:{type:'object',additionalProperties:false,properties:{message_id:{type:'string'},recent_self:{type:'boolean'},include_summary:{type:'boolean'}}}}},
   ];
 }
-export async function executeIntrospection(db: any, event: any, call: any) {
+export async function executeIntrospection(db: any, event: any, call: any, options: { canSee?: boolean } = {}) {
   let args:any;try{args=JSON.parse(call.function.arguments||'{}');}catch{return {toolCallId:call.id,ok:false,content:'参数格式无效'};}
+  if(call.function.name===SELF_APPEARANCE_TOOL){
+    return selfAppearanceResult(call.id,{canSee:options.canSee===true});
+  }
   if(call.function.name==='inspect_message'&&args?.include_summary===true&&identity(db,event).allowed){
     const record=findMessageFact(db,event,args.message_id||event.replyMessageId);
     if(record?.pendingQuickId)await settlePendingQuickObservations({...event,userId:record.replyToUserId||event.userId},undefined,{recordId:record.pendingQuickId,timeoutMs:5000});
@@ -138,5 +143,5 @@ export async function executeIntrospection(db: any, event: any, call: any) {
 }
 export function capabilityContext(db: any, event: any): string {
   if (!identity(db,event).allowed) return '';
-  return '【按需自查】可自主调用 inspect_capabilities 查实际功能，inspect_message 核对引用作者，inspect_own_messages 查自己消息的具体来源、发送原因、对象与结果。需要依据时再查；不凭当前开关猜历史原因。工具只读且限当前会话，向群友用自然名称说明。';
+  return '【按需自查】可自主调用 inspect_capabilities 查实际功能，inspect_message 核对引用作者，inspect_own_messages 查自己消息的具体来源、发送原因、对象与结果，inspect_self_appearance 查看自己的外观参考图。需要依据时再查；不凭当前开关猜历史原因。工具只读且限当前会话，向群友用自然名称说明。';
 }

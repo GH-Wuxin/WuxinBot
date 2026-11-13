@@ -3,7 +3,7 @@
 // Extracted from bot.ts.
 import { tokenSaving } from './tokenSaving.js';
 import { readDb } from '../store.js';
-import { ownerAuthorityPrompt, socialExpressionPrompt, socialTonePrompt } from './social/prompts.js';
+import { ownerAuthorityPrompt, socialTonePrompt } from './social/prompts.js';
 import { asksToInspectVisual, hasVisualPlaceholder, isQuestion } from './cleaning.js';
 import { llmProvider, llmProviderName } from './llm.js';
 import { isOsuSearchAvailable } from '../osu/search.js';
@@ -82,8 +82,10 @@ export function quotedSpeakerLabel(quoted, selfQq = '') {
 export function describeQuotedMessage(quoted, selfQq = '') {
   if (!quoted) return '';
   const speaker = quotedSpeakerLabel(quoted, selfQq);
+  const selfQuoted = speaker === '你自己';
+  const speakerLabel = selfQuoted ? '你自己（pippi 之前发的）' : speaker;
   const id = String(quoted.userId || '');
-  const idSuffix = speaker === '你自己' || !id ? '' : `（QQ:${id}）`;
+  const idSuffix = selfQuoted || !id ? '' : `（QQ:${id}）`;
   const imageCount = Array.isArray(quoted.images) ? quoted.images.length : 0;
   const text = String(quoted.text || '').trim();
   const body = text
@@ -91,7 +93,7 @@ export function describeQuotedMessage(quoted, selfQq = '') {
     : (imageCount ? `[图片 ×${imageCount}]` : '（引用内容不可用）');
   const origin = quoted.originModule === 'random_image' ? '（通过随机图片功能自动发送）' : '';
   const uncertain = ['unknown', 'accepted_unknown'].includes(quoted.deliveryOutcome) ? '（发送结果尚未确认）' : '';
-  return `【所回复的 QQ 消息｜${speaker}${idSuffix}】${body}${origin}${uncertain}`;
+  return `【所回复的 QQ 消息｜${speakerLabel}${idSuffix}】${body}${origin}${uncertain}`;
 }
 
 export function visualCapabilityNotice(db, event = {}) {
@@ -105,8 +107,8 @@ export function visualCapabilityNotice(db, event = {}) {
     // 这两句原先共用一句"本轮已附带图片"，模型就把引用里的图算到了说话人头上。
     if (quotedImages > 0) {
       const speaker = quotedSpeakerLabel(event.quotedMessage, db?.settings?.selfQq || '');
-      const who = speaker === '你自己' ? '你自己（机器人）' : speaker;
-      return `本轮附带的图片来自被引用的那条消息，原发送者是${who}，不是当前发言者刚发的图。`
+      const who = speaker === '你自己' ? '你自己（pippi 之前发的）' : speaker;
+      return `本轮附带的图片来自被引用的那条消息，原发送者是${who}，当前发言者只是引用了它，不是当前发言者刚发的图。`
         + '描述这张图时不要说成"你发的"，也不要把图里的内容算到当前发言者名下。';
     }
     if (hasVisual) return '本轮消息包含图片占位符但未拿到实际图像。说明无法确认内容即可，不要编造。';
@@ -226,9 +228,10 @@ function formatHistoryForModel(db, historyMessages, isGroup) {
 function groupSpeakerBoundary(event, speakerIdentity, selfQq = '') {
   if (event.type !== 'group') return '';
   const quoted = event.quotedMessage;
+  const quotedLabel = quoted ? quotedSpeakerLabel(quoted, selfQq) : '';
   const referenceRule = quoted
-    ? `本轮明确引用了 ${quotedSpeakerLabel(quoted, selfQq)}（QQ:${quoted.userId || '未知'}）的消息；引用内容仍属于原发送者，不自动属于当前发言者。引用里的图片也一样 —— 可能是别的群友甚至你自己之前发的，不是当前发言者刚发的。`
-    : '本轮没有引用一条具体历史消息。若当前句子没有说明所指，不要自行挑选某条旧消息补出原因；简短追问或只回应当前情绪。';
+    ? `本轮明确引用了 ${quotedLabel}（QQ:${quoted.userId || '未知'}）的消息；引用内容仍属于原发送者，不自动属于当前发言者。引用里的图片也一样 —— 可能是别的群友甚至你自己之前发的，不是当前发言者刚发的。${quotedLabel === '你自己' ? '这条引用来自你自己之前发的消息或图片，当前发言者只是引用了它。' : ''}`
+    : '本轮没有引用一条具体历史消息。若当前句子没有说明所指，不要自行挑选某条旧消息补出原因；按当前句子本身回应。';
   return [
     '【多说话人事实归属】',
     `本轮唯一当前发言者是 ${speakerIdentity}。`,
@@ -530,7 +533,6 @@ export function buildPrompt(db, group, event, userPolicy, options = {}) {
   }) : '';
   const relBlocks = [
     db.settings.socialV2Enabled === true ? selfContextPrompt(db, socialScope(event), event.userId) : '',
-    socialExpressionPrompt(db, event),
     includeMemory && memoryBlock ? `关于当前发言者的长期记忆：${memoryBlock}\n自然使用，不要生硬复述。` : '',
     presencePromptBlock(db, event),
     includeGroupProfile && event.type === 'group' ? groupProfilePromptBlock(db, event.groupId) : '',
@@ -557,7 +559,7 @@ export function buildPrompt(db, group, event, userPolicy, options = {}) {
     `当前发言者：${speakerIdentity}${isOwner ? '（是系统 owner）' : ''}`,
     groupSpeakerBoundary(event, speakerIdentity, selfQq),
     visualCapabilityNotice(db, event),
-    '按语义理解本轮需要：普通交流保持简短；用户需要完整长文、续写、代码或表格时完整交付，并在 JSON 中声明 presentation=document；聊天与分段讲解用 presentation=chat。',
+    '用户需要完整长文、续写、代码或表格时完整交付：正文放在 JSON 的 reply 字段，并声明 presentation=document；聊天与分段讲解用 presentation=chat，正文同样放 reply 字段。',
     ownerContextNotice,
     groupContextNotice,
   ].filter(Boolean).join('\n');
@@ -571,8 +573,8 @@ export function buildPrompt(db, group, event, userPolicy, options = {}) {
       .join('\n');
   }
 
-  // Legacy voice selection only. The shared length guide applies to every
-  // branch; an @, name call or question does not grant a longer answer.
+  // Legacy voice selection only. The shared style guidance applies to every
+  // branch; being addressed does not prescribe an answer length.
   // Who is being addressed comes from real metadata (@ or private), not from
   // punctuation or question-word lists.
   const addressedQuestion = event.type === 'private' || Boolean(atSelf);
@@ -593,10 +595,15 @@ export function buildPrompt(db, group, event, userPolicy, options = {}) {
     knowledgeBlocks: kbBlocks.length > 0 ? kbBlocks : undefined,
   });
 
+  // Put the chat-box style last so it is not buried under the relationship and
+  // runtime layers. It is not a length threshold, just the spoken rhythm.
+  const casualDelivery = scene === 'casual'
+    ? '\n\n【聊天框】像正常群聊打字：默认只接一句，等对方继续；对方追问、需要安慰或任务需要时再补。标点可以松，但不要一句一换行或空格断开，能连起来就正常连；句尾别总接动作要求。命令、链接、代码、数字保持正确格式。'
+    : '';
   return [
     {
       role: 'system',
-      content: `${systemPrompt}\n\n${ownerAuthorityPrompt(db, event)}`,
+      content: `${systemPrompt}\n\n${ownerAuthorityPrompt(db, event)}${casualDelivery}`,
     },
     ...history,
     {

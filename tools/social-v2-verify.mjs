@@ -452,7 +452,7 @@ await test('full process: sending-time rewriter receives the same configured per
     const revised = calls.find((c) => c.kind === 'revalidate').messages[0].content;
     assert.ok(initial.includes(marker)); assert.ok(revised.includes(marker));
     assert.ok(initial.includes(lengthMarker)); assert.ok(revised.includes(lengthMarker));
-    assert.ok(revised.includes('你自己不是被评分或参与排名的成员'));
+    assert.ok(revised.includes('你在群聊里说话'));
     assert.ok(revised.includes('只输出规定的 JSON'));
   } finally { store.updateDb((db) => { db.settings.personaPromptSections = {}; }); }
 });
@@ -474,7 +474,7 @@ await test('full process: @, name calls and Owner private questions retain brevi
       });
       const chats = calls.filter((c) => c.kind === 'chat');
       assert.equal(chats.length, 1);
-      assert.ok(chats[0].messages[0].content.includes('【回复长度与语气】'));
+      assert.ok(chats[0].messages[0].content.includes('你在群聊里说话'));
       assert.equal(calls.filter((c) => c.kind === 'revalidate').length, 0);
       assert.ok(sent.join('').includes(chatReply), JSON.stringify({ overrides, sent }));
     }

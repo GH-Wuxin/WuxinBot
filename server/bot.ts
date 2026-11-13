@@ -1157,6 +1157,22 @@ async function generateConversationReply(event, sendMessage, decision) {
         let succeeded = false;
         const finishTool = result => {
           succeeded = Boolean(result?.ok);
+          // Tool-provided reference images are for the model's next turn, not
+          // for QQ delivery. Self-appearance uses this to look at its own art
+          // without sending the reference into the group.
+          const vision = result?.metadata?.visionImages;
+          if (Array.isArray(vision)) {
+            for (const image of vision) {
+              const key = typeof image === 'string'
+                ? image
+                : String(image?.url || image?.file || '');
+              if (!key) continue;
+              const exists = visionImages.some((existing) => (
+                typeof existing === 'string' ? existing : String(existing?.url || existing?.file || '')
+              ) === key);
+              if (!exists) visionImages.push(image);
+            }
+          }
           replySources.push({module:'tool',operation:String(toolCall?.function?.name||'unknown'),
             producer:String(result?.metadata?.actualExecutor||result?.metadata?.provider||'wuxin'),
             outcome:succeeded?'success':'failed'});
@@ -1165,7 +1181,7 @@ async function generateConversationReply(event, sendMessage, decision) {
         };
         try {
           if (INTROSPECTION_TOOL_NAMES.includes(toolCall?.function?.name)) {
-            return finishTool(await executeIntrospection(readDb(), event, toolCall));
+            return finishTool(await executeIntrospection(readDb(), event, toolCall, { canSee: modelSupportsVision(liveDb) }));
           }
           if ([OSU_SEARCH_TOOL, OSU_READ_TOOL].includes(toolCall?.function?.name)) {
             if (!osuSearchEnabled) return { toolCallId: toolCall.id, ok: false, content: '当前未开放 osu! 官方搜索', error: 'osu_search_unavailable' };
