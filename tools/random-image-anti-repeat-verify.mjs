@@ -14,7 +14,7 @@
  *   3. 先改成 4 倍权重，仍不够：73 次发送还有 12 次重复。池子比发送次数还多的时候，
  *      「别重复」应当是保证而不是倾向，所以第一期改成了硬规则。
  */
-import { pickWeighted } from '../server/bot/randomImages.ts';
+import { pickWeighted, resetCountsForNewImages } from '../server/bot/randomImages.ts';
 
 const POOL = 77;
 const WINDOW = 8;
@@ -137,6 +137,60 @@ const check = (ok, label, detail) => {
   const half = files.filter((_, index) => index < POOL / 2).map((f) => f.split('/').pop());
   check([...draws].every((name) => !half.includes(name)),
     '发过 2 次的那一半在补平之前不会出现', '出现了 ' + [...draws].filter((n) => half.includes(n)).length + ' 张');
+  console.log('');
+}
+
+// ── 6. 加新图：老图计数压回 1，每张新图只补发一次 ──
+//
+// 旧规则让新图从 0 次开始，会一直占据「最少发送」这一层：老图最低 m 次时，
+// 5 张新图要各发 m 次才轮到老图。m 随每个完整轮次增长，越成熟的池子加图后
+// 老图被冻结得越久。新规则在检测到新图时把所有发过一次以上的老图计数重置为 1，
+// 新图各补发一次后就和老图同层。
+{
+  const OLD = 178;
+  const oldFiles = Array.from({ length: OLD }, (_, i) => '/pool/pippi-' + String(i + 1).padStart(3, '0') + '.png');
+  const newFiles = Array.from({ length: 5 }, (_, i) => '/pool/pippi-new-' + (i + 1) + '.png');
+  const allFiles = [...oldFiles, ...newFiles];
+  for (const mature of [2, 20]) {
+    const sentCounts = {};
+    oldFiles.forEach((file) => { sentCounts[file.split('/').pop()] = mature; });
+    let state = { recent: [], everSent: oldFiles, sentCounts };
+    const reset = resetCountsForNewImages(state, allFiles);
+    check(reset !== null, '检测到新图并触发重置');
+    if (reset) state = { ...state, sentCounts: reset };
+    check(oldFiles.every((file) => state.sentCounts[file.split('/').pop()] === 1),
+      '发过的老图计数全部压回 1');
+    const picked = [];
+    for (let i = 0; i < 40; i += 1) {
+      // 与 rollRandomImage 一致：每轮先检查是否需要重置，再选图。
+      const resetEach = resetCountsForNewImages(state, allFiles);
+      if (resetEach) state = { ...state, sentCounts: resetEach };
+      const file = pickWeighted(allFiles, state, WINDOW, DECAY);
+      const name = file.split('/').pop();
+      picked.push(name);
+      const counts = { ...state.sentCounts };
+      counts[name] = (counts[name] || 0) + 1;
+      state = {
+        recent: [...state.recent.slice(-(WINDOW - 1)), { at: String(i), file }],
+        everSent: state.everSent.includes(file) ? state.everSent : [...state.everSent, file],
+        sentCounts: counts,
+      };
+    }
+    const isNew = (name) => name.startsWith('pippi-new-');
+    const introduction = picked.slice(0, 5);
+    const firstOld = picked.findIndex((name) => !isNew(name));
+    console.log('  成熟池 m=' + mature + '，加 5 张新图');
+    check(introduction.every(isNew) && new Set(introduction).size === 5,
+      '前 5 次每张新图各补发一次', introduction.join(', '));
+    check(firstOld >= 5 && firstOld < 10,
+      '老图在 10 次命中内回归', '实际第 ' + (firstOld + 1) + ' 次');
+    check(picked.slice(10).filter((name) => !isNew(name)).length >= 5,
+      '回归后老图继续正常出现');
+  }
+  const fresh = resetCountsForNewImages({ sentCounts: {} }, allFiles);
+  check(fresh === null, '首轮未完成时不重置');
+  const steady = resetCountsForNewImages({ sentCounts: { [oldFiles[0].split('/').pop()]: 3 } }, [oldFiles[0]]);
+  check(steady === null, '没有新图时不重置');
   console.log('');
 }
 

@@ -157,6 +157,46 @@ function sentCountsOf(previous: any): Record<string, number> {
   return seeded;
 }
 
+/**
+ * 新图加入时，把老图的发送次数压回 1。
+ *
+ * 旧规则里新图从 0 次开始，会一直占据「最少发送」这一层：老图最低 m 次时，
+ * 5 张新图要各发 m 次才轮到老图。m 随每个完整轮次增长，越成熟的池子加图后
+ * 老图被冻结得越久。
+ *
+ * 这里在检测到池子里出现「还没有计数」的图、且老图已经完成过至少一轮
+ * （最低已知计数 > 0）时，把所有发过一次以上的老图计数重置为 1。
+ * 新图仍是 0：各补发一次后就和老图同层，老图立即回到候选池。
+ * 首轮（最低计数为 0）不重置，否则会破坏「没发过的图先铺满」的零重复保证。
+ *
+ * 返回 null 表示这次不需要重置；返回对象时由调用方持久化。
+ */
+export function resetCountsForNewImages(previous: any, files: string[]): Record<string, number> | null {
+  const counts = { ...sentCountsOf(previous) };
+  let lowestKnown = Infinity;
+  let hasUnknown = false;
+  for (const file of files) {
+    const name = path.basename(file);
+    if (!Object.prototype.hasOwnProperty.call(counts, name)) {
+      hasUnknown = true;
+      continue;
+    }
+    const value = Number(counts[name]);
+    if (Number.isFinite(value) && value < lowestKnown) lowestKnown = value;
+  }
+  // 没有新图，或者池子还没完成第一轮（最低为 0）：保持原样。
+  if (!hasUnknown || !Number.isFinite(lowestKnown) || lowestKnown <= 0) return null;
+  let changed = false;
+  for (const name of Object.keys(counts)) {
+    const value = Number(counts[name]);
+    if (value > 1) {
+      counts[name] = 1;
+      changed = true;
+    }
+  }
+  return changed ? counts : null;
+}
+
 export function pickWeighted(files: string[], previous: any, window: number, decay: number): string {
   const nameOf = (file: unknown) => path.basename(String(file || ''));
   const suppress = new Map<string, number>();
@@ -245,9 +285,13 @@ export function rollRandomImage(groupId: string, rate: string | undefined): Rand
     if (!files.length) return;
 
     const previous = (db.randomImageState && db.randomImageState[groupId]) || {};
+    // 池子里出现新图时，先把老图的发送次数压回 1，再按正常分层选图。
+    // 新图从 0 开始，各补发一次后就和老图同层，不会独占 m 轮。
+    const resetCounts = resetCountsForNewImages(previous, files);
+    const before = resetCounts ? { ...previous, sentCounts: resetCounts } : previous;
     const chance = Number.isFinite(previous.chance) ? Number(previous.chance) : rates.base;
     const hit = Math.random() < chance;
-    const picked = hit ? pickWeighted(files, previous, config.recentWindow, config.recentDecay) : null;
+    const picked = hit ? pickWeighted(files, before, config.recentWindow, config.recentDecay) : null;
     // 未命中时必须**继承**上次命中的记录。早先只在命中那一支里写这两个字段，
     // 结果命中后只要再掷一次骰子，lastFile / lastHitAt 就被抹掉了 —— 于是
     // 「刚才发出去的是哪张」变得无从查证（发出的图不进消息库）。
@@ -273,7 +317,8 @@ export function rollRandomImage(groupId: string, rate: string | undefined): Rand
       next.everSent = name && !everSent.includes(name) ? [...everSent, name] : everSent;
       // 分层的依据：每张图发了多少次。只在命中时加一，未命中时整体继承。
       if (name) {
-        const counts = { ...sentCountsOf(previous) };
+        // 新图加入时已经重置过老图计数；这里直接在重置后的基础上加一。
+        const counts = { ...(resetCounts || sentCountsOf(previous)) };
         counts[name] = (counts[name] || 0) + 1;
         next.sentCounts = counts;
       }
@@ -281,8 +326,12 @@ export function rollRandomImage(groupId: string, rate: string | undefined): Rand
       if (history.length) next.recent = history;
       if (everSent.length) next.everSent = everSent;
       // 未命中也要继承，否则「发过几次」会随一次没命中就归零。
-      const inherited = previous?.sentCounts;
-      if (inherited && typeof inherited === 'object' && Object.keys(inherited).length) next.sentCounts = inherited;
+      // 如果本轮刚重置过，则持久化重置后的计数（即使这次没命中）。
+      if (resetCounts) next.sentCounts = resetCounts;
+      else {
+        const inherited = previous?.sentCounts;
+        if (inherited && typeof inherited === 'object' && Object.keys(inherited).length) next.sentCounts = inherited;
+      }
     }
     // 必须整体赋值。store 在赋值那一刻对值做快照：先赋一个空对象、之后再往
     // 同一个对象上加属性，那些属性不会落盘（实测 db.x = {}; db.x.a = 1 得到 {}）。
