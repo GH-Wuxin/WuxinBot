@@ -11,6 +11,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import { describeQuotedMessage, quotedSpeakerLabel, visualCapabilityNotice } from '../server/bot/prompt.ts';
+import { resolveConversationVisionImages } from '../server/bot/inboundContext.ts';
 
 let failed = 0;
 function check(ok, label, detail = '') {
@@ -51,6 +52,25 @@ check(quotedOnly.includes('你自己'), '引用图片指明原发送者是自己
 check(quotedOnly.includes('当前发言者只是引用了它'), '引用图片明确当前发言者只是引用', quotedOnly);
 check(quotedOnly.includes('不是当前发言者刚发的'), '明确否掉"你发的"这个归因', quotedOnly);
 check(!quotedOnly.startsWith('本轮已附带图片给你'), '不能沿用"本轮已附带图片"那一句', quotedOnly);
+
+// Vision selection is separate from the prompt wording: a quoted image must
+// become the model's input, duplicates must collapse, and vision-off must
+// select nothing even when the event carries images.
+const quotedSelected = resolveConversationVisionImages(
+  { settings: { visionMode: 'on', llmProvider: 'openai-compatible', model: 'fixture' } },
+  { images: [], quotedMessage: { images: [{ url: 'quoted' }] } },
+);
+check(quotedSelected.length === 1 && quotedSelected[0].url === 'quoted', '引用图片会被选为视觉输入', JSON.stringify(quotedSelected));
+const dedupedSelected = resolveConversationVisionImages(
+  { settings: { visionMode: 'on', llmProvider: 'openai-compatible', model: 'fixture' } },
+  { images: [{ url: 'same' }], quotedMessage: { images: [{ url: 'same' }] } },
+);
+check(dedupedSelected.length === 1, '当前消息与引用中的同一张图只选一次', JSON.stringify(dedupedSelected));
+const visionOffSelected = resolveConversationVisionImages(
+  { settings: { visionMode: 'off', llmProvider: 'openai-compatible', model: 'fixture' } },
+  { images: [{ url: 'current' }], quotedMessage: { images: [{ url: 'quoted' }] } },
+);
+check(visionOffSelected.length === 0, '视觉关闭时不选择任何图片', JSON.stringify(visionOffSelected));
 
 const ownImage = visualCapabilityNotice(visionDb, { text: '看图', images: [{ url: 'a' }], quotedMessage: undefined });
 check(ownImage.includes('本轮已附带图片给你'), '当前消息自己的图仍按原样说明', ownImage);

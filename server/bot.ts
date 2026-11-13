@@ -1,9 +1,8 @@
 // @ts-nocheck -- legacy runtime module; new typed modules remain checked by tsc.
 import { tokenSaving } from './bot/tokenSaving.js';
-import { resolveLocalQuote, recordAssistantContext, messageAccount } from './messageFacts.js';
+import { recordAssistantContext, messageAccount } from './messageFacts.js';
 import { buildIntrospectionTools, executeIntrospection, INTROSPECTION_TOOL_NAMES } from './bot/introspection.js';
 import { sourceSender, sourceDetails, messageTrigger, type SourceStep } from './messageProvenance.js';
-import { pathToFileURL } from 'node:url';
 import { socialCoordinator } from './bot/social/coordinator.js';
 import { chatAdmissionReason, replyLimitReason, conversationContext } from './bot/social/policy.js';
 import { isSystemOwner } from './bot/social/state.js';
@@ -13,7 +12,7 @@ import { sendOptionalNotice } from './bot/notice.js';
 import { createReplyProgress, shouldUseReplyProgress, stagedReplySegments, completeWithReplyProgress } from './bot/replyProgress.js';
 import { withLlmTurnPolicy, assertLlmTurnActive } from './llmPolicy.js';
 import { defaultPrompt, readDb, updateDb, nowIso } from './store.js';
-import { applyUsageTotals, mergeLlmUsage, usageEventFields } from './usage.js';
+import { mergeLlmUsage } from './usage.js';
 import {
   normalizeMessage,
   extractImageInputs,
@@ -82,7 +81,7 @@ import { getRelationshipProfile, updateRelationshipProfile, clearRelationshipPro
 import { processTrustSignal, evaluateTrustScores, isTrustedMember } from './bot/trust.js';
 import { abortReplyProcess, isReplyProcessAborted, runReplyProcess, updateReplyProcessStage } from './bot/replyProcesses.js';
 import { processXpGain, getExperience, getXpBonus, formatXpBar, getUnlockedFeatures, getLevelInfo, getNextLevelInfo, levelToPp, decayInactiveUsers } from './bot/experience.js';
-import { setBotPaused, getRecalcProgress, startRecalc, tickRecalc, finishRecalc, markActiveProcessing, recordDecisionError } from './health.js';
+import { setBotPaused, getRecalcProgress, startRecalc, tickRecalc, finishRecalc, markActiveProcessing } from './health.js';
 import { runBackgroundTask } from './backgroundTasks.js';
 import { runInboundTask } from './bot/inboundGate.js';
 import {
@@ -95,8 +94,8 @@ import {
 } from './requestTrace.js';
 import { activeModelName, activateModelProfile, activeProviderLabel } from './modelConfig.js';
 import { handleOsuCommand } from './osu/commands.js';
-import { OSU_SEARCH_TOOL, OSU_READ_TOOL, buildOsuSearchTools, executeOsuSearchTool, isOsuSearchAvailable, osuSearchGuidance } from './osu/search.js';
-import { commitSelfProposal, readPippiSelf, SELF_PROPOSAL_GUIDANCE, markExperienceShared, type SelfEvidence } from './bot/social/self.js';
+import { OSU_SEARCH_TOOL, OSU_READ_TOOL, buildOsuSearchTools, executeOsuSearchTool, isOsuSearchAvailable } from './osu/search.js';
+import { readPippiSelf, SELF_PROPOSAL_GUIDANCE, type SelfEvidence } from './bot/social/self.js';
 import { loadRegistry, buildBotToolSchemas, enabledBots, findBot } from './bots/registry.js';
 import {
   detectRequiredOsuTool,
@@ -109,10 +108,8 @@ import {
 import { validateOperation, looksLikeToolCallMarkup } from './bots/guard.js';
 import { RECENT_BOT_SELECTOR_IDS } from './bots/capabilityCatalog.js';
 import { executeToolCall, runToolLoop, mergeToolLoopResults, tryResolveBotResponse } from './bots/executor.js';
-import { buildToolGuidance } from './bots/toolGuidance.js';
 import {
   agentRuntimeModeFor,
-  buildAgentAutonomyGuidance,
   rewriteLegacyToolReferencesForV2,
 } from './bots/agentToolContracts.js';
 import {
@@ -131,7 +128,6 @@ import {
   recentGroupMessages,
   ownerPrivateMessages,
   limitMessagesByCharBudget,
-  recentVisionImageMessages,
   shouldUseRecentVisionImage
 } from './bot/gate.js';
 import { handleOwnerCommand } from './bot/ownerCommands.js';
@@ -165,224 +161,27 @@ import {
   stickerFailureInstruction,
   stickerFailureNotice,
 } from './bot/stickers/replyDelivery.js';
-import { appendReplyFailure } from './bot/replyFailures.js';
 import { resolveMemberNames } from './bot/memberDirectory.js';
-import { classifyLlmFailure } from './bot/llmFailure.js';
+import { conversationGuidance } from './bot/conversationPreparation.js';
+import { recordConversationFailure } from './bot/conversationFailure.js';
+import { recordConversationSuccess } from './bot/conversationSuccess.js';
 
-let stickerReplyCapabilityWarningLogged = false;
 
-function recordStickerReplyCapabilityWarning(error) {
-  if (stickerReplyCapabilityWarningLogged) return;
-  stickerReplyCapabilityWarningLogged = true;
-  console.warn('[sticker] optional model-reply catalogue unavailable; continuing without sticker protocol:', String(error?.message || error).slice(0, 240));
-}
-
-function replyTargetMetadata(event) {
-  return {
-    replyToMessageId: String(event.messageId || ''),
-    replyToUserId: String(event.userId || ''),
-    replyToNickname: String(event.nickname || event.userId || ''),
-  };
-}
-
-function escapeCqParam(value) {
-  return String(value || '')
-    .replace(/&/g, '&amp;')
-    .replace(/\[/g, '&#91;')
-    .replace(/\]/g, '&#93;')
-    .replace(/,/g, '&#44;');
-}
-
-function toolImageToCq(image) {
-  const value = String(image || '').trim();
-  if (!value) return '';
-  if (/^\[CQ:image,[^\]]+\]$/i.test(value)) return value;
-
-  let source = value;
-  const dataUri = value.match(/^data:image\/[^;,]+;base64,(.+)$/is);
-  if (dataUri) {
-    source = `base64://${dataUri[1].replace(/\s+/g, '')}`;
-  } else if (/^[a-zA-Z]:[\\/]/.test(value)) {
-    source = pathToFileURL(value).href;
-  }
-
-  return `[CQ:image,file=${escapeCqParam(source)}]`;
-}
-
-function toolImageToMediaInput(image) {
-  const value = String(image || '').trim();
-  // Message history is durable JSON. Never duplicate a large inline/base64
-  // image into it; rendered panels normally arrive as a short file URL and QQ
-  // images as a short HTTPS URL.
-  if (!value || value.length > 16_384 || /^base64:\/\//i.test(value)) return null;
-  const parsed = extractImageInputs(value)[0];
-  if (parsed) return parsed;
-  if (/^(?:https?:|data:image\/)/i.test(value)) {
-    return { type: 'image', url: value };
-  }
-  return { type: 'image', file: value };
-}
-
-// ── Level-up phrase generation ──
-// Levels are named by pp value (level N = N*100pp). The phrase compares the
-// level pp with the player's real osu! pp and teases accordingly; it never
-// mentions "level", "title" or "unlock".
-
-const LEVEL_UP_FALLBACK_LOW = [
-  '你 {pp}pp 了！什么？比这 pp 还高？这是我这的等级 pp，不用太在意啦！',
-  '你 {pp}pp 了！什么？你真实水平比这高多了？这是我这的等级 pp，随便看看就好。',
-  '你 {pp}pp 了！嗯？明明真实 pp 比这高？这是我这的等级 pp，不用当真啦。',
-];
-const LEVEL_UP_FALLBACK_HIGH = [
-  '你 {pp}pp 了！什么？你没那么多 pp？这是我这的等级 pp，不用太在意啦！',
-  '你 {pp}pp 了！什么？真实 pp 还没到？这是我这的等级 pp，先记着这个数就行。',
-  '你 {pp}pp 了！哦？真没那么多 pp？这是我这的等级 pp，别太当真。',
-];
-const LEVEL_UP_FALLBACK_NONE = [
-  '你 {pp}pp 了！这是我这的等级 pp，不用太在意啦。',
-  '你 {pp}pp 了！我这儿的等级 pp，随便看看就好。',
-  '你 {pp}pp 了！这是我这的等级 pp，别太当真。',
-];
-
-function levelUpFallback(oldPp, newPp, realPp) {
-  const pick = (arr) => arr[Math.floor(Math.random() * arr.length)];
-  const pool = realPp == null ? LEVEL_UP_FALLBACK_NONE
-    : realPp < newPp ? LEVEL_UP_FALLBACK_HIGH
-    : LEVEL_UP_FALLBACK_LOW;
-  return pick(pool).replace('{pp}', String(newPp));
-}
-
-function buildLevelUpPrompt(nickname, oldPp, newPp, realPp, contextLines) {
-  const compare = realPp == null
-    ? '他的真实 osu! pp 未知（未绑定账号）。'
-    : realPp < newPp
-      ? `他的真实 osu! pp 只有 ${realPp}pp，低于新等级对应的 ${newPp}pp。`
-      : `他的真实 osu! pp 高达 ${realPp}pp，远高于新等级对应的 ${newPp}pp。`;
-  const hint = realPp == null
-    ? '按格式说：宣告等级 pp 后，直接说“这是我这的等级 pp，不用太在意啦”。'
-    : realPp < newPp
-      ? '在宣告后加一句惊讶：“什么？你没那么多 pp？”（因为真实 pp 低于等级 pp）。'
-      : '在宣告后加一句惊讶：“什么？比这 pp 还高？”（因为真实 pp 高于等级 pp）。';
-  return [
-    `你是 pippi。群友 ${nickname} 的等级刚提升：${oldPp}pp → ${newPp}pp。`,
-    compare,
-    `最近群聊：${contextLines}`,
-    `对 ${nickname} 说一句升级短语，格式是这样：“你 {新等级 pp}pp 了！${realPp == null ? '' : realPp < newPp ? '什么？你没那么多 pp？' : '什么？比这 pp 还高？'}这是我这的等级 pp，不用太在意啦！”`,
-    hint,
-    '可以在“不用太在意”后面加半句轻松的收尾（比如“先记着这个数就行”），但不要加更多解释。',
-    '禁止出现“Lv.”“等级”“称号”“升级”“解锁”字样；禁止复述规则或任何括号说明；不要用“装萌新”“少废话”“谁有意见”“别狡辩”这类带挑衅或贬低的说法；只输出一句对玩家说的话，不要解释。',
-  ].join('\n');
-}
-
-export function compactDirectToolLead(text, directContent = '', hasImages = false) {
-  const fallback = hasImages
-    ? '查好了，结果在图里。'
-    : '查好了，完整结果放在下面。';
-  const cleaned = String(text || '')
-    // The model writes only a human lead. It must never be able to emit a QQ
-    // control segment alongside the system-owned direct payload.
-    .replace(/\[CQ:[^\]]+\]/gi, ' ')
-    .replace(/\[(?:图片|表情|表情包|视频|文件|语音)\]/g, ' ')
-    .replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/g, '')
-    .replace(/^```[^\n]*\n?/i, '')
-    .replace(/```$/i, '')
-    .trim();
-  if (!cleaned) return fallback;
-  if (looksLikeToolCallMarkup(cleaned)) return fallback;
-
-  // Must contain at least one letter or digit — pure punctuation/emoji → fallback
-  if (!/[\p{L}\p{N}]/u.test(cleaned)) return fallback;
-
-  // Data-like fragments (starts with #N or contains dense numbers/pipes) → fallback
-  if (/^(?:#\d+\b|[-•]\s)/u.test(cleaned)) return fallback;
-
-  // Let the LLM's full evaluation through — just check it's not raw data regurgitation
-  const normalizedCleaned = cleaned.replace(/\s+/g, '');
-  const normalizedDirect = String(directContent || '').replace(/\s+/g, '');
-  if (normalizedCleaned.length >= 8 && normalizedDirect.startsWith(normalizedCleaned)) {
-    return fallback;
-  }
-  return cleaned;
-}
-
-/** Replies at or below this length are never merged into a forward card. */
-
-// Console preview reports admission; only the social model decides ambient participation.
-export async function decideReply({ db, group, userPolicy, text, mentioned, userId, images = [] }) {
-  const event = { type: 'group', groupId: String(group?.groupId || ''), userId: String(userId || ''), text, messageId: '', socialDirect: mentioned };
-  const preview = { ...db, groups: [group].filter(Boolean), users: [{ ...userPolicy, groupId: event.groupId, userId: event.userId }] };
-  const blocked = chatAdmissionReason(preview, event, mentioned) || replyLimitReason(preview, event);
-  if (blocked) return { shouldReply: false, reason: blocked };
-  if (!mentioned) return { shouldReply: false, pendingAssessment: true, reason: '等待 LLM 根据对话判断参与，不按字数或标点评分' };
-  if (asksToInspectVisual(text) && !modelSupportsVision(db)) return { shouldReply: true, reason: '当前模型不支持视觉识别', visualLimitation: true };
-  return { shouldReply: true, reason: '有人 @ 或叫到了机器人' };
-}
-
-export function oneBotToInternal(event) {
-  // Internal event shape used by the bot engine. Keep fields stringified because
-  // QQ ids can exceed safe integer habits and are easier to compare as strings.
-  const text = normalizeMessage(event.raw_message || event.message);
-  let images = extractImageInputs(event.message || event.raw_message);
-  const replyMessageId = extractReplyMessageId(event.message || event.raw_message);
-  let quotedMessage;
-
-  // If the user quoted a message, try to include images from the quoted message.
-  // This handles: user replies to an image message and @bots.
-  if (replyMessageId) {
-    try {
-      const db = readDb();
-      quotedMessage = resolveLocalQuote(db, { type: event.message_type || 'group',
-        groupId: String(event.group_id || 'private'), userId: String(event.user_id || ''), replyMessageId, raw: event });
-    } catch { /* DB read failure is non-fatal */ }
-  }
-
-  return {
-    source: 'onebot',
-    receivedAtMs: Date.now(),
-    type: event.message_type || 'group',
-    messageId: String(event.message_id || crypto.randomUUID()),
-    groupId: event.group_id ? String(event.group_id) : 'private',
-    userId: String(event.user_id || ''),
-    nickname: event.sender?.card || event.sender?.nickname || String(event.user_id || ''),
-    text,
-    images,
-    replyMessageId,
-    quotedMessage,
-    senderRole: event.sender?.role || 'member',
-    atTargets: extractAtTargets(event.message || event.raw_message),
-    raw: event
-  };
-}
-
-export function collectEventVisionImages(event) {
-  const all = [
-    ...(Array.isArray(event?.images) ? event.images : []),
-    ...(Array.isArray(event?.quotedMessage?.images) ? event.quotedMessage.images : []),
-  ];
-  const seen = new Set();
-  return all.filter((image) => {
-    const key = String(image?.url || image?.file || '');
-    if (!key || seen.has(key)) return false;
-    seen.add(key);
-    return true;
-  });
-}
-
-/**
- * The `osu` group mode is a hard ingress boundary, not a reply preference.
- * `/w mode` is the sole non-osu escape hatch so an administrator can leave the
- * mode after enabling it. Natural-language osu! questions are intentionally not
- * accepted because answering them would require the LLM.
- */
-export function allowedByOsuCommandOnlyMode(event, quickMatch = null) {
-  const text = String(event?.text || '').trim();
-  const ownerCommand = /^\/w(?:uxin)?\s+([^\s]+)/i.exec(text)?.[1]?.toLowerCase() || '';
-  // `/w info` is the deterministic player Skill Profiler command. It must
-  // remain reachable in osu-only groups just like `/w skill`; otherwise the
-  // hard ingress gate discards it before the owner dispatcher can run.
-  if (ownerCommand) return ['osu', 'skill', 'info', 'update', 'compare', 'cd', 'mode'].includes(ownerCommand);
-  return quickMatch?.def?.kind === 'osu';
-}
+import {
+  buildLevelUpPrompt,
+  compactDirectToolLead,
+  decideReply,
+  escapeCqParam,
+  levelUpFallback,
+  oneBotToInternal,
+  recordStickerReplyCapabilityWarning,
+  replyTargetMetadata,
+  resolveConversationVisionImages,
+  toolImageToCq,
+  toolImageToMediaInput,
+  allowedByOsuCommandOnlyMode,
+} from './bot/inboundContext.js';
+export { collectEventVisionImages, compactDirectToolLead, decideReply, oneBotToInternal, allowedByOsuCommandOnlyMode } from './bot/inboundContext.js';
 
 export function processIncoming(event, sendMessage = undefined) {
   return runInboundTask('onebot.message', () => processIncomingAdmitted(event, sendMessage));
@@ -1043,13 +842,7 @@ async function generateConversationReply(event, sendMessage, decision) {
     // If user asks to look at images but none attached, attach only the most
     // recent relevant image. This keeps vision on-demand and avoids paying for
     // every image posted in an active group.
-    let visionImages = modelSupportsVision(liveDb) ? collectEventVisionImages(event) : [];
-    if (visionImages.length === 0 && shouldUseRecentVisionImage(liveDb, event)) {
-      const contextImages = recentVisionImageMessages(liveDb, event, 10);
-      if (contextImages.length > 0) {
-        visionImages = contextImages[0].media.images.slice(0, 1);
-      }
-    }
+    let visionImages = resolveConversationVisionImages(liveDb, event);
 
     // ── osu! data intent with no tools available ──
     // osuDataIntent is computed above (before search interception). If the user
@@ -1134,20 +927,13 @@ async function generateConversationReply(event, sendMessage, decision) {
         if (modelFirstRuntime) {
           messages[0].content = rewriteLegacyToolReferencesForV2(messages[0].content);
         }
-        const guidanceBlocks = [];
-        if (modelFirstRuntime) {
-          guidanceBlocks.push(buildAgentAutonomyGuidance({ osuSearchEnabled }));
-        } else {
-          if (botTools.length > 0) {
-            guidanceBlocks.push(requiredCapability
-              ? buildToolGuidance({ exposedCapabilities: [requiredCapability] })
-              : buildToolGuidance());
-          }
-        }
-        if (osuSearchEnabled) guidanceBlocks.push(osuSearchGuidance());
-        if (guidanceBlocks.filter(Boolean).length > 0) {
-          messages[0].content += '\n\n' + guidanceBlocks.filter(Boolean).join('\n\n');
-        }
+        const guidance = conversationGuidance({
+          modelFirstRuntime,
+          osuSearchEnabled,
+          hasBotTools: botTools.length > 0,
+          requiredCapability,
+        });
+        if (guidance) messages[0].content += '\n\n' + guidance;
       }
 
       let osuSearchCalls = 0;
@@ -1832,120 +1618,36 @@ async function generateConversationReply(event, sendMessage, decision) {
     }
     traceEvent('SEND', 'qq_delivery_completed', { status: deliveryStatus, segmentCount: segments.length });
 
-    if (readingProposal) void runBackgroundTask('self.reading',()=>updateDb(draft=>{
-      if(tokenSaving(draft)||draft.settings.socialV2Enabled!==true)return;
-      const result=commitSelfProposal(draft,readingProposal,{scope:readingScope,sources:readingSources,
-        expectedRevision:readingRevision,requiredEvidenceIds:readingSources.map(s=>s.id)});
-      if(result.experienceId&&confirmedReceipts.length)markExperienceShared(draft,result.experienceId,readingScope,confirmedReceipts.at(-1)!);
-      traceEvent('GATE','pippi_self_reading',result);
-    }));
-
-    updateDb((draft) => {
-      recordAssistantContext(draft, {
-        id: crypto.randomUUID(),
-        requestId: currentRequestTraceId(),
-        ...replyTargetMetadata(event),
-        role: 'assistant',
-        type: event.type,
-        groupId: event.groupId,
-        userId: 'bot',
-        nickname: '机器人',
-        content: deliveredText,
-        media: deliveredMediaImages.length > 0 ? { images: deliveredMediaImages } : undefined,
-        sticker: modelStickerHistory || undefined,
-        inContext: true,
-        createdAt: nowIso()
-      });
-      applyUsageTotals(draft.usage, ai.usage);
-      if (!ai.usage?.accounted) draft.usage.requests += 1;
-      draft.usage.replies += Math.max(1, segments.length);
-      if (!draft.usageEvents) draft.usageEvents = [];
-      draft.usageEvents.push({
-        id: crypto.randomUUID(),
-        kind: 'reply-delivery',
-        requestId: currentRequestTraceId(),
-        status: 'completed',
-        groupId: event.groupId,
-        userId: event.userId,
-        model: ai.model || activeModelName(liveDb.settings),
-        provider: ai.provider || liveDb.settings.llmProvider,
-        ...usageEventFields(ai.usage),
-        createdAt: nowIso()
-      });
-      draft.usageEvents = draft.usageEvents.slice(-5000);
-    });
-
-    return {
-      replied: true,
-      text: deliveredText,
-      images: toolImages,
-      stickers: [...toolDeliverImages, ...(modelStickerPath ? [modelStickerPath] : [])],
+    return recordConversationSuccess({
+      event,
+      settings: liveDb.settings,
+      decision,
+      ai,
+      deliveredText,
       segments,
-      usage: ai.usage,
-      latencyMs: ai.latencyMs,
-      reason: decision.reason
-    };
+      toolImages,
+      toolDeliverImages,
+      modelStickerPath,
+      modelStickerHistory,
+      deliveredMediaImages,
+      readingProposal,
+      readingScope,
+      readingRevision,
+      readingSources,
+      confirmedReceipts,
+    });
   } catch (error) {
     progress?.stop();
     if (thinkingTimer) { clearTimeout(thinkingTimer); thinkingTimer = null; }
     if (waitUpTimer) { clearTimeout(waitUpTimer); waitUpTimer = null; }
-    traceEvent(deliveryStarted ? 'SEND' : 'ERROR', deliveryStarted ? 'qq_delivery_failed_or_unknown' : 'reply_generation_failed', { status: 'error', error: String(error) });
-    // Once QQ delivery starts, timeout may mean accepted-but-unacknowledged.
-    // Do not resend the answer or a contradictory failure notice in that case.
-    // Natural group participation is opportunistic. If its model turn fails,
-    // do not create a second unsolicited group message just to announce the
-    // failure. Direct @mentions explicitly asked for a response and may still
-    // receive the existing failure notice.
-    const directConversation = event.type === 'private';
-    if (modelStageStarted && !deliveryStarted && sendMessage
-      && (event.replyToCurrentMessage === true || directConversation)) {
-      // 这是最该配图的一条：回复内容没生成出来，但「服务挂了、举白旗认输」这个意思
-      // 是确定的，而 service_down 正是 gate=code 的状态图 —— 走 withSticker 不经过 LLM，
-      // 所以 LLM 超时/挂掉时它照样发得出去。
-      // service_down 现在是一组 8 张差分（跪地举旗 / 站立举旗 / 摊手 / 趴桌 …），
-      // 由代码随机取一张。取不到时退回纯文字 —— 兜底提示本身不能因为贴纸发不出去。
-      const failureNotice = '[系统] 这次查询或回复未能完成，请稍后重试。';
-      const noticeSticker = pickCodeSticker('service_down');
-      await sendOptionalNotice(() => sendMessage(event,
-        noticeSticker ? withSticker(failureNotice, noticeSticker.id) : failureNotice,
-        sourceDetails({module:'conversation',operation:'failure_notice'},
-          {code:'generation_failed',description:'本轮查询或生成未能完成，向明确请求的发言者反馈失败。',audience:'requester'},event)));
-    }
-    // 只记「回复根本没生成出来」这一种 —— 也就是她压根没开口的那种。发图失败、
-    // 权限拒绝、冷却拦截各有自己的结果记录，不进这里。分开是有意的：这样这行字
-    // 只能解释她的缺席，没法拿来解释她做过的事，也就堵住了「拿它当理由」。
-    if (!deliveryStarted) {
-      updateDb((draft) => {
-        draft.replyFailures = appendReplyFailure(draft.replyFailures, {
-          at: nowIso(),
-          groupId: String(event.groupId || ''),
-          kind: classifyLlmFailure(error),
-        });
-      });
-    }
-    recordDecisionError(`回复失败：${String(error?.message || error).slice(0, 500)}`);
-    updateDb((draft) => {
-      draft.usage.errors += 1;
-      draft.usageEvents ||= [];
-      draft.usageEvents.push({
-        id: crypto.randomUUID(), kind: 'reply-delivery', requestId: currentRequestTraceId(),
-        groupId: event.groupId, userId: event.userId,
-        status: deliveryStarted ? 'failed_or_unknown' : 'generation_failed',
-        accountingExcluded: true, createdAt: nowIso(),
-      });
-      draft.usageEvents = draft.usageEvents.slice(-5000);
-      draft.decisions.push({
-        id: crypto.randomUUID(),
-        requestId: currentRequestTraceId(),
-        messageId: event.messageId,
-        groupId: event.groupId,
-        userId: event.userId,
-        shouldReply: false,
-        reason: `调用失败：${error.message}`,
-        createdAt: nowIso()
-      });
+    return await recordConversationFailure({
+      event,
+      sendMessage,
+      decision,
+      error,
+      deliveryStarted,
+      modelStageStarted,
     });
-    return { replied: false, error: error.message, reason: decision.reason };
   } finally {
     progress?.stop();
     if (thinkingTimer) clearTimeout(thinkingTimer);

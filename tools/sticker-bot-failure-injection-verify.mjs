@@ -1,6 +1,5 @@
 import assert from 'node:assert/strict';
 import http from 'node:http';
-import { readFileSync } from 'node:fs';
 import { createTestDataDir, assertNotProduction, cleanupTestDir } from './test-isolation.mjs';
 
 const dataDir = createTestDataDir('wuxin-sticker-bot-failure');
@@ -110,6 +109,13 @@ function configurePolicy(groupIds, mode = 'live') {
   });
 }
 
+function assistantMessagesFor(messageId) {
+  return readDb().messages.filter((message) =>
+    message.role === 'assistant'
+    && (String(message.replyToMessageId || '') === String(messageId)
+      || String(message.triggerMessageId || '') === String(messageId)));
+}
+
 try {
   // Gate rejection: the model selected image_only, but the source group is not
   // allowlisted. The normal text reply must still be delivered.
@@ -175,9 +181,11 @@ try {
 
   // A long reply is delivered as a forward first. If only the optional sticker
   // send fails afterwards, the body must remain a successful reply and must be
-  // written to history exactly once.
+  // written to history exactly once. This case intentionally has no
+  // sticker_use=requested: it covers the optional/reaction path.
   llmReplyEnvelope = { reply: '这是一段已经送达的长回复正文。', presentation:'document', mode: 'text_image', sticker_id: 'hello' };
   configurePolicy(['sticker-send-group']);
+  assert.equal(assistantMessagesFor('sticker-long-message').length, 0, '长正文测试开始前不应有同名历史');
   const longSends = [];
   const longResult = await processIncoming(
     event('sticker-send-group', 'sticker-long-message', true, '写一篇长文，说明刚才的结果'),
@@ -196,11 +204,57 @@ try {
   assert.equal(longSends.length, 2);
   assert.equal(longSends[0], 'Wuxin 回复');
   assert.equal(longSends[1].includes('[CQ:image'), true);
-  const longHistory = readDb().messages.at(-1);
-  assert.equal(longHistory.content, '这是一段已经送达的长回复正文。');
-  assert.equal(longHistory.sticker?.outcome, 'confirmed_failure');
+  const longHistory = assistantMessagesFor('sticker-long-message');
+  assert.equal(longHistory.length, 1, '长正文本轮只能新增一条 assistant 历史');
+  assert.equal(longHistory[0].content, '这是一段已经送达的长回复正文。');
+  assert.equal(longHistory[0].sticker?.outcome, 'confirmed_failure');
   llmReplyEnvelope = { reply: '', mode: 'image_only', sticker_id: 'hello' };
 
+  // Requested long reply: body forward succeeds, then only the requested image
+  // fails. This is the bodyDelivered=true branch: the notice must refer to the
+  // image only, and the body must never be sent a second time.
+  const requestedLongBody = '这是一段已经单独送达的长回复正文，用来验证长正文先发、图片后发失败时的分支。';
+  llmReplyEnvelope = {
+    reply: requestedLongBody,
+    sticker_caption: '给你这张',
+    sticker_use: 'requested',
+    presentation: 'document',
+    mode: 'text_image',
+    sticker_id: 'hello',
+  };
+  configurePolicy(['sticker-send-group']);
+  assert.equal(assistantMessagesFor('sticker-long-requested-message').length, 0, '长正文索图测试开始前不应有同名历史');
+  const requestedLongSends = [];
+  let requestedLongImageAttempts = 0;
+  const requestedLongResult = await processIncoming(
+    event('sticker-send-group', 'sticker-long-requested-message', true, '写一篇长文，并给我一张图'),
+    async (_event, text) => {
+      const value = String(text || '');
+      requestedLongSends.push(value);
+      if (value.includes('[CQ:image')) {
+        requestedLongImageAttempts += 1;
+        const error = new Error('fixture requested long-reply image failure');
+        error.deliveryOutcome = 'confirmed_failure';
+        throw error;
+      }
+      return { outcome: 'confirmed_success', messageId: 41 };
+    },
+  );
+  assert.equal(requestedLongResult.replied, true);
+  assert.equal(requestedLongImageAttempts, 1, '明确索图只尝试一次');
+  assert.equal(requestedLongSends.length, 3, '只应有：正文转发、一次图片尝试、一次图片失败提示');
+  assert.equal(requestedLongSends[0], 'Wuxin 回复', '正文先走 forward 路径');
+  assert.equal(requestedLongSends[1].includes('[CQ:image'), true);
+  assert.equal(requestedLongSends[1].includes('给你这张'), true);
+  assert.equal(requestedLongSends[2], '表情那张没发出去', '正文已送达时只能提示图片没发出去');
+  assert.equal(requestedLongSends.filter((text) => text === 'Wuxin 回复').length, 1, '正文转发不能重发');
+  assert.equal(requestedLongSends.filter((text) => text.includes(requestedLongBody)).length, 0, '正文不能出现在任何补发里');
+  const requestedLongHistory = assistantMessagesFor('sticker-long-requested-message');
+  assert.equal(requestedLongHistory.length, 1, '长正文索图本轮只能新增一条 assistant 历史');
+  assert.equal(requestedLongHistory[0].content, requestedLongBody);
+  assert.equal(requestedLongHistory[0].sticker?.outcome, 'confirmed_failure');
+  assert.equal(getStickerDeliveryState().records.at(-1).outcome, 'confirmed_failure');
+  llmReplyEnvelope = { reply: '', mode: 'image_only', sticker_id: 'hello' };
   // Unknown outcome: never retry the image or invent a text resend, because
   // the first request may already have reached QQ. The reservation remains a
   // conservative budget record with outcome=unknown.
@@ -221,8 +275,10 @@ try {
   assert.equal(getStickerDeliveryState().counters.unknown, 1);
 
   // ── F1：附文不能被当成正文重发 ──
-  // 混合任务（正经正文 + 配图短句）在组合发送确认失败时：独立正文完整保留、
-  // 附文绝不能出现在回退里、明确索图要补一句实话。
+  // 短消息组合路径（正文 + 配图短句）在整条消息首次发送确认失败时：
+  // 这是 bodyDelivered=false 的分支，独立正文完整保留、附文不能出现在回退里、
+  // 明确索图要补“这张没发出去”。长正文先发、图片后发的 bodyDelivered=true
+  // 分支由下面的 requested-long-reply 用例覆盖。
   // 附文之所以进不了回退，是因为它只被拼进带图那条消息，从不进 deliveredText。
   llmReplyEnvelope = {
     reply: '先检查文件路径，再确认读取权限',
@@ -445,9 +501,12 @@ function assertFailureNotice(sends, label) {
     '正文未交付时说的是另一句');
   assert.equal(stickerFailureNoticeForTest({ explicitRequest: false, bodyDelivered: false }), '',
     '自己加的图失败不该打扰用户');
-  assert.ok(readFileSync(new URL('../server/bot.ts', import.meta.url), 'utf8')
-    .includes("explicitRequest: stickerExplicitRequest, bodyDelivered: true"),
-    'bot.ts 长正文分支必须调用这条通知 —— 缺了它这句文案就永远发不出去');
+  // The requested-long-reply case above is the behavioral guard for the
+  // explicit-request/body-delivered branch: bodyDelivered=true produces
+  // "表情那张没发出去". The earlier short mixed case is the bodyDelivered=false
+  // guard and produces "这张没发出去". Keep both as behavior rather than
+  // reading a source string, so moving either branch out of bot.ts does not
+  // weaken the proof.
 
   console.log(JSON.stringify({
     ok: true,

@@ -7,22 +7,26 @@
  *   3. 没被掐断的回复照常发出去 —— 别把一个正常功能一起掐了。
  */
 import assert from 'node:assert/strict';
-import fs from 'node:fs';
+import { createTestDataDir, assertNotProduction, cleanupTestDir } from './test-isolation.mjs';
 import http from 'node:http';
-import os from 'node:os';
-import path from 'node:path';
 
-const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'wuxin-reply-abort-'));
+
+
+const dataDir = createTestDataDir('wuxin-reply-abort');
+assertNotProduction(dataDir);
 process.env.DATA_DIR = dataDir;
 
 const OWNER = '30000001';
 const BOT = '30000002';
 const GROUP = '990001';
-const PORT = 19877;
+const THINKING_DELAY_MS = 400;
+const WAIT_UP_DELAY_MS = 700;
+let fixtureRequests = 0;
 
 const server = http.createServer((req, res) => {
   req.resume();
   req.on('end', () => {
+    fixtureRequests += 1;
     setTimeout(() => {
       res.writeHead(200, { 'content-type': 'application/json' });
       res.end(JSON.stringify({
@@ -34,8 +38,9 @@ const server = http.createServer((req, res) => {
     }, 1200);
   });
 });
-await new Promise((resolve) => server.listen(PORT, '127.0.0.1', resolve));
+await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
 
+const PORT = server.address().port;
 const store = await import('../server/store.ts');
 const { processIncoming } = await import('../server/bot.ts');
 const { listReplyProcesses, abortReplyProcess } = await import('../server/bot/replyProcesses.ts');
@@ -55,7 +60,10 @@ store.updateDb((db) => {
   db.settings.memoryEnabled = false;
   db.settings.osuSearchEnabled = false;
   db.settings.enableAutoModel = false;
-  db.settings.thinkingNoticeMode = 'off';
+  db.settings.thinkingNoticeMode = 'slow';
+  db.settings.thinkingNoticeDelayMs = THINKING_DELAY_MS;
+  db.settings.waitUpNoticeDelayMs = WAIT_UP_DELAY_MS;
+  db.settings.pippiProgressReplies = false; // Exercise the legacy notice timers, not progress envelopes.
   // mention 模式：被 @ 就一定进模型，不受自然接话阈值影响，测试才稳定。
   db.groups = [{ groupId: GROUP, name: 'AbortTest', enabled: true, mode: 'mention', maxPerHour: 100, cooldownSec: 0 }];
   db.messages = [];
@@ -108,23 +116,33 @@ try {
   check(typeof rows[0]?.elapsedMs === 'number', '登记项带上了已耗时');
 
   // 2. 掐断 → 一个字节都不发
+  assert.ok(await waitFor(() => fixtureRequests > 0), 'abort only after the model request starts');
+  assert.equal(sent.length, 0, 'cancel before either notice deadline');
   const abortResult = abortReplyProcess(rows[0].id);
   check(abortResult.ok === true, '掐断返回成功');
   await running;
-  check(sent.length === 0, '掐断后没有任何内容发出去', JSON.stringify(sent));
+  await new Promise((resolve) => setTimeout(resolve, WAIT_UP_DELAY_MS + 200));
+  check(sent.length === 0, '掐断后等待计时器窗口仍没有任何内容发出去', JSON.stringify(sent));
   check(listReplyProcesses().length === 0, '结束后登记表清空');
 
   // 3. 没被掐断的照常发
   const sent2 = [];
-  await processIncoming(event({ text: '小深 再问一次' }), async (_event, text) => { sent2.push(String(text || '')); });
+  const operations = [];
+  await processIncoming(event({ text: '小深 再问一次' }), async (_event, text, options) => { sent2.push(String(text || '')); operations.push(options); });
   check(sent2.length > 0, '没被掐断的回复照常发出', JSON.stringify(sent2.slice(0, 1)));
+
+  assert.ok(operations.some((options, i) => options?.originModule !== 'notice' && sent2[i].length > 0), 'uncancelled turn delivers an actual reply, not just notices');
+
+  // Positive control: the same fixture must actually send both timer notices.
+  assert.ok(operations.some((options) => options?.originModule === 'notice' && options?.messageSource?.chain?.some((step) => step.operation === 'thinking')), 'thinking timer fires without abort');
+  assert.ok(operations.some((options) => options?.originModule === 'notice' && options?.messageSource?.chain?.some((step) => step.operation === 'wait_up')), 'wait-up timer fires without abort');
 
   // 4. 掐一个已经结束的
   const missing = abortReplyProcess('rp-not-exist');
   check(missing.ok === false, '掐断不存在的进程返回失败');
 } finally {
   await new Promise((resolve) => server.close(resolve));
-  fs.rmSync(dataDir, { recursive: true, force: true });
+  cleanupTestDir(dataDir);
 }
 
 console.log('');
