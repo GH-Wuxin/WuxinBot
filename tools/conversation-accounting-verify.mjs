@@ -7,6 +7,7 @@ process.env.DATA_DIR = dataDir;
 process.env.NODE_ENV = 'test';
 assertNotProduction(dataDir);
 
+async function main() {
 const { ensureStore, readDb, updateDb } = await import('../server/store.ts');
 const { recordConversationSuccess } = await import('../server/bot/conversationSuccess.ts');
 const { recordConversationFailure } = await import('../server/bot/conversationFailure.ts');
@@ -286,6 +287,12 @@ try {
   assert.equal(deliveryEvents[0].observedUsage.totalTokens, 15);
 } finally {
   await new Promise((resolve) => llmServer.close(resolve));
+}
+}
+
+try {
+  await main();
+} finally {
   cleanupTestDir(dataDir);
 }
 
