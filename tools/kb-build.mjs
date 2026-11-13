@@ -346,6 +346,9 @@ function concreteCommandExample(entry) {
   }
   const byId = {
     // wuxin commands with multi-action syntax
+    affinity: '/w 好感度',
+    affinityRank: '/w 好感榜',
+    ownerDirective: '/w 指令 list',
     profile: '/w profile show',
     promptShow: '/w prompt show',
     promptEdit: '/w prompt add 内容',

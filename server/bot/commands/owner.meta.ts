@@ -212,22 +212,32 @@ const MEMBER_POLICY_PATHS = new Set([
   '/拉黑', '/取消拉黑', '/白名单', '/重点关注', '/少回应', '/正常', '/设管理员', '/取消管理员',
 ]);
 
+/** Relationship-command aliases handled by owner/router.ts. */
+const OWNER_COMMAND_ALIASES: Record<string, string> = {
+  '/affinity': '/好感度',
+  '/好感排名': '/好感榜',
+  '/affinity-top': '/好感榜',
+  '/directive': '/指令',
+};
+
 export function isMemberPolicyCommand(command: string): boolean {
   return MEMBER_POLICY_PATHS.has(command);
 }
 
 /**
  * Pure resolver for `/w ...` texts (owner commands). Used by kb-verify;
- * never calls handlers.
+ * never calls handlers. Supports the Chinese command names and relationship
+ * aliases handled by owner/router.ts, while rejecting unknown commands.
  */
 export function parseOwnerCommandText(text: string): { id: string; args: string } | null {
   const raw = String(text || '').trim();
-  const match = /^\/w(?:uxin)?\s+([a-zA-Z][\w-]*)(?:\s+(.*))?$/.exec(raw);
+  const match = /^\/w(?:uxin)?\s+([^\s]+)(?:\s+(.*))?$/.exec(raw);
   if (!match) return null;
   const command = match[1].toLowerCase();
+  const commandPath = OWNER_COMMAND_ALIASES[`/${command}`] || `/${command}`;
   const args = String(match[2] || '').trim();
-  if (MEMBER_POLICY_PATHS.has(`/${command}`)) return { id: 'memberPolicy', args };
-  const matches = OWNER_COMMANDS.filter((entry) => entry.commandPath === `/${command}`);
+  if (MEMBER_POLICY_PATHS.has(commandPath)) return { id: 'memberPolicy', args };
+  const matches = OWNER_COMMANDS.filter((entry) => entry.commandPath === commandPath);
   if (matches.length === 0) return null;
   if (matches.length === 1) return { id: matches[0].id, args };
   // Shared command paths (group/prompt/model): resolve by explicit
@@ -257,15 +267,21 @@ export function parseOwnerCommandText(text: string): { id: string; args: string 
         const entry = matches.find((item) => item.id === 'groupProfileShow');
         return entry ? { id: entry.id, args } : { id: matches[0].id, args };
       }
-      const entry = matches.find((item) => item.id === 'groupProfileEdit');
-      return entry ? { id: entry.id, args } : { id: matches[0].id, args };
+      if (['update', 'clear', 'on', 'off'].includes(sub2)) {
+        const entry = matches.find((item) => item.id === 'groupProfileEdit');
+        return entry ? { id: entry.id, args } : { id: matches[0].id, args };
+      }
+      return null;
     }
-    return { id: matches[0].id, args };
+    // `/w group` and unknown group branches are usage replies, not a
+    // concrete descriptor in the runtime router.
+    return null;
   }
   if (command === 'model') {
     const modelShow = matches.find((entry) => entry.id === 'modelShow');
     const modelSet = matches.find((entry) => entry.id === 'modelSet');
-    if (sub1 === 'list' || sub1 === 'show') return modelShow ? { id: modelShow.id, args } : { id: matches[0].id, args };
+    // Bare `/w model` and `show/list` resolve to modelShow in owner/router.ts.
+    if (!sub1 || sub1 === 'list' || sub1 === 'show') return modelShow ? { id: modelShow.id, args } : { id: matches[0].id, args };
     if (modelSet) return { id: modelSet.id, args };
   }
   return { id: matches[0].id, args };
