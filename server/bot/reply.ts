@@ -68,34 +68,53 @@ export function splitReplySegments(text) {
   if (!cleaned) return [];
   if (cleaned.length <= 34 && !cleaned.includes('\n')) return [cleaned];
 
-  const rawParts = cleaned
-    .split(/\n+|(?<=[。！？!?])\s+|(?<=[。！？!?])/)
+  // Spans that must survive segmentation intact: fenced code, inline code,
+  // URLs and command invocations. Placeholders contain none of the punctuation
+  // used by the splitter, so they cannot be cut in half.
+  const protectedSpans = [];
+  const protect = (value, pattern) => value.replace(pattern, (match) => {
+    const token = `\u0000${protectedSpans.length}\u0000`;
+    protectedSpans.push(match);
+    return token;
+  });
+  let shielded = cleaned;
+  shielded = protect(shielded, /```[\s\S]*?```/g);
+  shielded = protect(shielded, /`[^`\n]+`/g);
+  shielded = protect(shielded, /https?:\/\/[^\s<>"'，。！？；）】]+/g);
+  shielded = protect(shielded, /![\w/]+(?:\s+[^\s，。！？；]+)?/g);
+  shielded = protect(shielded, /\/w(?:uxin)?[^\s，。！？；\n]*/gi);
+
+  let parts = shielded
+    .split(/\n+|(?<=[。！？!?])\s*|(?<=[。！？!?])/)
     .map((part) => part.trim())
     .filter(Boolean);
-
-  const parts = rawParts.length > 1 ? rawParts : cleaned
-    .split(/(?<=[，,；;])\s*/)
-    .map((part) => part.trim())
-    .filter(Boolean);
-
+  if (parts.length <= 1) {
+    parts = shielded
+      .split(/(?<=[，,；;])\s*/)
+      .map((part) => part.trim())
+      .filter(Boolean);
+  }
   if (parts.length <= 1) return [cleaned];
 
+  const restore = (value) => value.replace(/\u0000(\d+)\u0000/g, (_match, index) => (
+    protectedSpans[Number(index)] ?? ''
+  ));
   const segments = [];
   for (const part of parts) {
     const last = segments[segments.length - 1] || '';
-    if (!last || last.length + part.length > 42 || segments.length >= 3) {
+    if (!last || restore(last).length + restore(part).length > 42 || segments.length >= 3) {
       segments.push(part);
     } else {
       segments[segments.length - 1] = `${last}${part}`;
     }
   }
 
-  if (segments.length <= 3) return segments;
+  if (segments.length <= 3) return segments.map(restore);
   return [
     segments[0],
     segments[1],
     segments.slice(2).join('')
-  ].filter(Boolean);
+  ].filter(Boolean).map(restore);
 }
 
 /**
@@ -134,21 +153,15 @@ export async function sendReplySegments(sendMessage, event, replyText) {
   return segments;
 }
 
+/**
+ * Narrow identity guard. The legacy rewrite is no longer a style/length
+ * classifier: only a reply that denies its own @ / reply target gets corrected.
+ * Tone, punctuation, role-play and implementation wording are left to the
+ * persona prompt and sanitization instead of a hidden second writer.
+ */
 export function isWeirdReply(text) {
   const value = String(text || '');
   const patterns = [
-    /（[^）]{0,30}(伸手|要钱|阴暗|爬行|哭|怒|摊手|狗头|心虚|无奈|委屈|浮出|画圈|歪头)[^）]{0,30}）/,
-    /\([^)]{0,30}(伸手|要钱|阴暗|爬行|哭|怒|摊手|狗头|心虚|无奈|委屈|浮出|画圈|歪头)[^)]{0,30}\)/i,
-    /群主|大人|主人|老板|小的|遵命|鄙人|您老|大驾光临/,
-    /系统\s*owner|\bowner\b|后台|写死|配置|规则里写|源代码|内部推理逻辑|训练细节|参数规模/,
-    /收费|收钱|打钱|给钱|我要钱|伸手要钱/,
-    /被淹没|爬出来|阴暗地|浮出水面|急了|破防/,
-    /别骂|别在群里|不满意|我改|启动语气|没事爱唠嗑|主要工作是接梗/,
-    /又自我介绍|行吧|行行|哎哟|啧|咳[，,]/,
-    /还能是谁|查户口|你也别|你发图啊|腿毛都看不到|我只会看字|文字又看不了/,
-    /被灌了.*prompt|灌了.*提示词|人格模块|人设模块/,
-    /你不是.{1,24}吗(?:，|,)?(?:还|改名|能|又|怎么)/,
-    // Identity self-negation: bot denying it was @mentioned
     /(没有|没)回应.*(at|@).*(不是|不).*(自己|我)/,
     /(没有|没)回应.*(at|@).*(其他|别人|群友)/,
     /(at|@).*(不是|不).*(自己|我|本)/,
@@ -157,9 +170,7 @@ export function isWeirdReply(text) {
     /你.*(at|@).*(别人|其他)/,
     /我.*(不该|不应该|不能).*(回复|回应|说话|插话)/,
   ];
-  const manyParentheses = (value.match(/[（(]/g) || []).length >= 2;
-  const tooLong = value.length > 180;
-  return tooLong || manyParentheses || patterns.some((pattern) => pattern.test(value));
+  return patterns.some((pattern) => pattern.test(value));
 }
 
 export function isIdentityQuestion(text) {
@@ -201,18 +212,12 @@ export async function rewriteNormalReply(db, originalText, event, options = {}) 
       messages: [
         {
           role: 'system',
-          content: `把下面这句 QQ 群聊回复改写成正常、克制、自然的群友语气。
+          content: `只修正下面这句 QQ 群聊回复里的身份错误：否认自己收到 @、说自己不该回复，或把 @ 对象认错。
 要求：
-- 只输出改写后的回复
-- 1 到 2 句
-- 不要括号表演、颜文字、要钱、装委屈、阴阳怪气
-- 不要喊群主、大人、主人、老板
-- 不要用"还能是谁""查户口""你也别""行行""你发图啊""腿毛都看不到""我只会看字"这类带反冲或嫌弃的句子
-- 不要提"系统、后台、写死、配置、规则里写着、owner"等实现细节；问到源代码或内部推理逻辑时，改成"这个需要后台操作者自己决定是否分享"
-- 问到人格模块/提示词/内部设定时，改成"我按当前设定和聊天上下文回复，具体细节不在群里展开"
-- 如果是在回答"我是谁"，只平静说明昵称和 QQ，不要反问或调侃
-- 如果对方是 owner，也只是更稳重一点，不要谄媚
-- 保留大意即可`
+- 只输出修正后的回复，不要解释修改过程
+- 保留原回复的其他内容、语气和长度；不要顺便改写文风
+- 如果原回复没有身份错误，原样输出
+- 不要提系统、后台、owner 等实现细节`
         },
         {
           role: 'user',

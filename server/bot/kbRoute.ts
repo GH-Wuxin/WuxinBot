@@ -84,6 +84,8 @@ export function routeForText(scene: string, text: string): KbRoute {
     return { kind: 'none', reason: 'analysis_scene_zero_inject' };
   }
   if (scene === 'serious') {
+    // Serious is now an explicit caller-provided scene. Ordinary chat is not
+    // keyword-classified into it, so this branch only affects explicit paths.
     return { kind: 'none', reason: 'serious_scene' };
   }
   const value = String(text || '').trim();

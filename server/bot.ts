@@ -1356,8 +1356,9 @@ async function generateConversationReply(event, sendMessage, decision) {
     let replyText = sanitizeReply(ai.text, liveDb.settings);
     const imageCqCodes = [...toolImages, ...toolDeliverImages].map(toolImageToCq).filter(Boolean);
     const hasDirectToolDelivery = Boolean(toolDirectContent || imageCqCodes.length > 0);
-    // V2 delegates conversational meaning to the model. Legacy keyword-driven
-    // rewrites can otherwise replace a valid semantic answer with a stock line.
+    // V2 delegates conversational meaning to the model. The legacy path only
+    // corrects a reply that denies its own @/reply target; style and length are
+    // never classified or rewritten by that path.
     const rewriteEligible = !decision.socialReady && isWeirdReply(replyText);
     const rewriteSkipReason = normalReplyRewriteSkipReason({
       rewriteEligible,

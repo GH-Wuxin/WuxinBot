@@ -254,32 +254,9 @@ export function calcCost(inputTokens, outputTokens, pricing) {
   return (inputTokens / 1_000_000) * pricing.input + (outputTokens / 1_000_000) * pricing.output;
 }
 
-// Literal question markers.  This gate decides one thing only: whether the
-// group short-form guide is injected.  Getting it slightly wrong costs a
-// terser answer, not a broken one, so a plain word list beats a pattern --
-// and a false positive such as "没什么" is harmless at this granularity.
-const QUESTION_MARKERS = [
-  '为什么', '为啥', '如何', '是不是', '能不能', '可不可以',
-  '多少', '有没有', '要不要', '好不好', '对不对', '什么关系', '算什么', '怎么样',
-];
-
-export function looksLikeQuestion(text) {
-  const value = String(text || '').trim();
-  if (!value) return false;
-  if (value.endsWith('?') || value.endsWith('？')) return true;
-  if (value.endsWith('吗') || value.endsWith('呢')) return true;
-  if (QUESTION_MARKERS.some((marker) => value.includes(marker))) return true;
-  // Bare 「怎么」 is too broad to treat as a question on its own:
-  // 「这群怎么这么安静」and「今天怎么这么靠谱」are exclamations, and
-  // routing them to the answer path is what pushed casual punctuation
-  // back up from 2% to 21% in the first run of this rule.
-  const index = value.indexOf('怎么');
-  if (index >= 0) {
-    const after = value.slice(index + 2, index + 4);
-    if (after !== '这么' && after !== '那么') return true;
-  }
-  return false;
-}
+// Question-vs-statement is a semantic judgement, not a protocol check. The
+// prompt no longer selects a different casual guide from punctuation or keyword
+// lists; direct metadata (@ / private) is enough to know who is being addressed.
 
 export function responseOptionsFor(event, db, userPolicy) {
   // 不再按"任务复杂度"换模型：评分、自动路由、owner 特判都删了。
@@ -428,7 +405,7 @@ function buildSavingPrompt(db, group, event, userPolicy, options) {
   const presence = presencePromptBlock(db, event);
   const system = [
     '你是 Pippi，osu! 的吉祥物少女。灵动、自信、好奇，认真在意玩家的进步，偶尔轻轻逗人；Auto 般的操作是背景，不要逢事都提。你生活在电脑、网络和真实群聊中，不编造线下经历、已读资料或共同回忆。',
-    '像正在群里聊天：先接住对方真正表达的事，通常一两句短句就停。@你、叫名字、问问题都不自动需要长答案；只有问题确实需要步骤或解释时才展开。少用层层转折、总结和追加建议，不机械追问。标点随聊天节奏，短句可省句号，不必句句完整，也别刻意堆省略号或表情。',
+    '像正在群里聊天：先接住对方真正表达的事，自然简洁，长短由内容决定。@你、叫名字、问问题都不自动需要长答案；只有问题确实需要步骤或解释时才展开。少用层层转折、总结和追加建议；可以追问、表达情绪或普通地回应，不必每条都接。标点随聊天节奏，不追求作文式完整，也不故意省略必要标点。',
     '已有好感和熟悉程度只改变措辞与关注：疏远时礼貌简短，中间自然友好，亲近时明显更放松、关心。Owner 永久特殊、稳定亲近，不自动叫主人或变成恋人。称呼以已接受的名字为准，不每句喊人，不公开分数或内部机制。',
     '当前为节能对话：只能聊天、理解本轮图片并选择可用表情包。没有 osu! 查询、联网、其他机器人或修改数据的工具，不声称调用过；需要实时资料时简短说明当前无法查询。当前事实不够就说明或追问，不能把旧记忆当最新成绩。',
     '如果被问为什么以前能查、现在不能：是当前开启节能模式，为减少 Token 和 API 花费，暂时停用聊天里的自动查询与联网；不是功能永久删除，也不能据此猜测余额不足或 API 故障。/w info、/w compare、/w update 等直接指令仍可用；在控制台总览关闭节能模式可恢复自动查询，你不能自行切换。只在相关问题时简短解释，平常不主动播报。',
@@ -521,7 +498,9 @@ export function buildPrompt(db, group, event, userPolicy, options = {}) {
     ? `${selfNegationBan}${anchorText}\n\n${speakerIdentity}：${displayText}`
     : `${facts}\n\n${anchorText}\n\n${speakerIdentity}：${displayText}`;
 
-  const scene = detectScene(event);
+  // Ordinary chat is never keyword-classified as serious. An explicit caller
+  // (tests or a future operator path) can still request a scene via options.
+  const scene = detectScene(event, options.scene);
 
   // Optional KB v4.1 layer. When disabled (or analysis scene) it returns
   // empty blocks without loading anything, so `systemPrompt` below is
@@ -594,8 +573,10 @@ export function buildPrompt(db, group, event, userPolicy, options = {}) {
 
   // Legacy voice selection only. The shared length guide applies to every
   // branch; an @, name call or question does not grant a longer answer.
-  const addressedQuestion = looksLikeQuestion(event.text) && Boolean(atSelf);
-  // 群聊日常场景改用单段条件式形态规则：不再因为「没有问号 / 没有 @」就把用户的
+  // Who is being addressed comes from real metadata (@ or private), not from
+  // punctuation or question-word lists.
+  const addressedQuestion = event.type === 'private' || Boolean(atSelf);
+  // 群聊日常场景使用同一段条件式形态规则：不再因为「没有问号 / 没有 @」就把用户的
   // 任务当成闲聊压成短话。私聊、命令、严肃场景保持原路径。
   const groupCasual = event.type === 'group' && scene === 'casual';
   const systemPrompt = buildPippiPrompt({
