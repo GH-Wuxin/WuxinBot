@@ -9,7 +9,7 @@ import crypto from 'node:crypto';
 import OpenAI from 'openai';
 import { recordLlmSuccess, recordLlmError } from '../health.js';
 import { completeCodexAppServerChat, codexInvocationConfig } from '../codexAppServer.js';
-import { mergeLlmUsage } from '../usage.js';
+import { apiHostFromUrl, mergeLlmUsage, OPENAI_OFFICIAL_HOST } from '../usage.js';
 import { fetchBoundedBody } from '../httpBody.js';
 import { recordLlmInvocation } from '../llmLedger.js';
 import { waitForLlmInvocation, markTurnFallback, hasTurnFallback } from '../llmPolicy.js';
@@ -580,6 +580,8 @@ export async function completeChat(db, options = {}) {
 
   const requestedModel = options.model || options.overrideModel || db.settings.model;
   const { provider, client, baseURL, settings } = createLLMClient(db, requestedModel);
+  const apiHost = apiHostFromUrl(baseURL)
+    || (provider === 'openai-compatible' ? OPENAI_OFFICIAL_HOST : '');
   const resolvedDb = { ...db, settings };
   const started = Date.now();
   const messages = normalizeLlmMessages(
@@ -771,7 +773,7 @@ export async function completeChat(db, options = {}) {
       return {
         text: response.choices?.[0]?.message?.content?.trim() || '',
         usage: recordLlmInvocation({ invocationId, provider, model: response.model || nextParams.model,
-          purpose: options.tracePurpose || label, startedAt: invocationStarted, usage: response.usage,
+          purpose: options.tracePurpose || label, startedAt: invocationStarted, apiHost, usage: response.usage,
           fallbackFrom: options.fallbackFrom }),
         raw: response
       };
@@ -790,7 +792,7 @@ export async function completeChat(db, options = {}) {
         error: error?.message || String(error),
       });
       recordLlmInvocation({ invocationId, provider, model: nextParams.model,
-        purpose: options.tracePurpose || label, startedAt: invocationStarted, error,
+        purpose: options.tracePurpose || label, startedAt: invocationStarted, apiHost, error,
         fallbackFrom: options.fallbackFrom });
       // The abort fires at the same instant the outer timer rejects, so the
       // SDK usually settles first with APIUserAbortError. Normalize it back to

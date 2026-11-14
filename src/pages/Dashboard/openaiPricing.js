@@ -17,13 +17,16 @@ const count = (value) => {
 
 export function openAIPricingFor(settings, model) {
   if (settings?.llmProvider !== 'openai-compatible') return null;
-  let host = '';
-  try {
-    host = new URL(String(settings.apiBaseUrl || '')).hostname.toLowerCase();
-  } catch {
-    return null;
+  const raw = String(settings.apiBaseUrl || '').trim();
+  if (raw) {
+    let host = '';
+    try {
+      host = new URL(raw).hostname.toLowerCase();
+    } catch {
+      return null;
+    }
+    if (host !== 'api.openai.com') return null;
   }
-  if (host !== 'api.openai.com') return null;
   return OPENAI_MODEL_PRICING[String(model || '')] || null;
 }
 
@@ -45,6 +48,22 @@ export function estimateOpenAIUsageCost(model, usage = {}) {
     + cacheWrite * pricing.cacheWrite
     + output * pricing.output
   ) / 1_000_000;
+}
+
+export function estimateOpenAIModelsCost(models = {}) {
+  let total = 0;
+  let pricedModels = 0;
+  const unpricedModels = [];
+  for (const [model, usage] of Object.entries(models || {})) {
+    const cost = estimateOpenAIUsageCost(model, usage);
+    if (cost == null) {
+      unpricedModels.push(model);
+      continue;
+    }
+    total += cost;
+    pricedModels += 1;
+  }
+  return { cost: pricedModels ? total : null, pricedModels, unpricedModels };
 }
 
 export function formatUsd(value) {

@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { activeModelName } from './modelConfig.js';
-import { buildUsageStats, usageDayStart } from './usage.js';
+import { buildOpenAIUsageStats, buildUsageStats, usageDayStart } from './usage.js';
 import { validSocialState } from './bot/social/state.js';
 import { pruneBackupFiles, resolveBackupRetention } from './backupFiles.js';
 import { OWN_ARCHIVE_FILE, snapshotOwnArchive, recoverOwnArchive } from './messageArchiveStorage.js';
@@ -1111,8 +1111,11 @@ export function publicDb(db = readDb(), options: { includeMemorySamples?: boolea
   ) return cachedPublicDb.value;
   const now = Date.now();
   const localDayStart = usageDayStart(now);
-  const usageStats = buildUsageStats(db.usage, db.usageEvents, now);
-  const {history: _usageHistory, ...publicUsage} = db.usage || initialDb.usage;
+  const usageStats = {
+    ...buildUsageStats(db.usage, db.usageEvents, now),
+    openai: buildOpenAIUsageStats(db.usage?.openai, now),
+  };
+  const {history: _usageHistory, openai: _usageOpenAI, ...publicUsage} = db.usage || initialDb.usage;
   const messages = (db.messages || []).slice(-500);
   const decisions = (db.decisions || []).slice(-300);
   const commandLogs = (db.commandLogs || []).slice(-300);

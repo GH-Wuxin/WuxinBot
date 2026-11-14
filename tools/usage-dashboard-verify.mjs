@@ -15,6 +15,11 @@ events.push({createdAt:'2026-11-03T02:00:00Z',totalTokens:5000,promptTokens:4000
 const usage={totalTokens:212000000,promptTokens:200000000,completionTokens:12000000,requests:70000,cachedTokens:10000000,cacheMeasuredPromptTokens:20000000,cacheMeasuredRequests:800};
 usage.history=initializeUsageHistory(usage,events,now);
 const stats=buildUsageStats(usage,events,now);
+const hourlySum=key=>stats.hourly24.reduce((sum,point)=>sum+Number(point[key]||0),0);
+const openAIHourlyModel={promptTokens:hourlySum('promptTokens'),cachedTokens:hourlySum('cachedTokens'),cacheWriteTokens:hourlySum('cacheWriteTokens'),completionTokens:hourlySum('completionTokens'),requests:hourlySum('requests')};
+const openAIStats=model=>{const period={models:{[model]:openAIHourlyModel},totals:{...openAIHourlyModel},start:0,end:now,partial:false,availableSince:'2026-11-08T00:00:00Z'};return{timeZone:'Asia/Shanghai',completeSince:'2026-11-08T00:00:00Z',backfillSource:'usageEvents',hourly24:period,daily7:period,daily30:period,month:period,all:{...period,partial:true}};};
+stats.openai=openAIStats('gpt-6.1-terra');
+const lunaStats={...stats,openai:openAIStats('gpt-6-luna')};
 const initial={settings:{model:'fixture'},usage:{...usage,history:undefined},usageStats:stats,groups:[],messages:[],experience:{}};
 const bundle=await build({stdin:{resolveDir:root,loader:'jsx',contents:`
  import React from 'react';import {createRoot} from 'react-dom/client';import {DashboardPage} from './src/pages/Dashboard/index.jsx';
@@ -71,8 +76,8 @@ try{
  await page.evaluate(db=>window.updateUsage(db),openAIDb);
  await page.locator('[data-openai-cost]').waitFor();
  assert.equal(await page.locator('[data-openai-cost]').innerText(),'$0.0838');
- assert.ok((await page.locator('body').innerText()).includes('Terra 6.1'));
- await page.evaluate(db=>window.updateUsage(db),{...openAIDb,settings:{...openAISettings,model:'gpt-6-luna'}});
+ assert.ok((await page.locator('body').innerText()).includes('gpt-6.1-terra'));
+ await page.evaluate(db=>window.updateUsage(db),{...openAIDb,usageStats:lunaStats,settings:{...openAISettings,model:'gpt-6-luna'}});
  await page.waitForFunction(()=>document.querySelector('[data-openai-cost]')?.textContent==='$0.008424');
  await page.evaluate(db=>window.updateUsage(db),{...openAIDb,settings:{...openAISettings,apiBaseUrl:'https://relay.example/v1'}});
  await page.waitForFunction(()=>!document.querySelector('[data-openai-cost]'));

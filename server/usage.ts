@@ -42,21 +42,23 @@ export function usageEventHasCacheDetails(event: any = {}): boolean {
 
 export function usageBreakdown(usage: any = {}): UsageBreakdown {
   return {
-    totalTokens: nonNegative(usage?.total_tokens),
-    promptTokens: nonNegative(usage?.prompt_tokens ?? usage?.input_tokens),
+    totalTokens: nonNegative(usage?.total_tokens ?? usage?.totalTokens),
+    promptTokens: nonNegative(usage?.prompt_tokens ?? usage?.input_tokens ?? usage?.promptTokens),
     cachedTokens: nonNegative(
       usage?.prompt_tokens_details?.cached_tokens
       ?? usage?.input_tokens_details?.cached_tokens
       ?? usage?.cache_read_input_tokens
-      ?? usage?.prompt_cache_hit_tokens,
+      ?? usage?.prompt_cache_hit_tokens
+      ?? usage?.cachedTokens,
     ),
     cacheWriteTokens: nonNegative(
       usage?.prompt_tokens_details?.cache_write_tokens
       ?? usage?.input_tokens_details?.cache_write_tokens
-      ?? usage?.cache_write_input_tokens,
+      ?? usage?.cache_write_input_tokens
+      ?? usage?.cacheWriteTokens,
     ),
-    completionTokens: nonNegative(usage?.completion_tokens ?? usage?.output_tokens),
-    reasoningTokens: nonNegative(usage?.completion_tokens_details?.reasoning_tokens),
+    completionTokens: nonNegative(usage?.completion_tokens ?? usage?.output_tokens ?? usage?.completionTokens),
+    reasoningTokens: nonNegative(usage?.completion_tokens_details?.reasoning_tokens ?? usage?.reasoningTokens),
   };
 }
 
@@ -238,6 +240,274 @@ export function initializeUsageHistory(usage: any = {}, events: any[] = [], now 
   history.hasEarlierUsage = nonNegative(usage.totalTokens) > imported.totalTokens || nonNegative(usage.requests) > imported.requests;
   pruneUsageBuckets(history, now);
   return history;
+}
+
+export interface OpenAIUsageBucket {
+  promptTokens: number;
+  cachedTokens: number;
+  cacheWriteTokens: number;
+  completionTokens: number;
+  requests: number;
+}
+
+export interface OpenAIUsageHistory {
+  version: 1;
+  timeZone: typeof USAGE_TIME_ZONE;
+  completeSince: string;
+  backfillSource?: 'usageEvents' | 'none';
+  backfilledAt?: string;
+  hours: Record<string, Record<string, OpenAIUsageBucket>>;
+  days: Record<string, Record<string, OpenAIUsageBucket>>;
+  total: Record<string, OpenAIUsageBucket>;
+}
+
+export interface OpenAIUsagePeriodStats {
+  models: Record<string, OpenAIUsageBucket>;
+  totals: OpenAIUsageBucket;
+  start: number;
+  end: number;
+  partial: boolean;
+  availableSince: string;
+}
+
+export interface OpenAIUsageStats {
+  timeZone: typeof USAGE_TIME_ZONE;
+  completeSince: string;
+  backfillSource: string;
+  hourly24: OpenAIUsagePeriodStats;
+  daily7: OpenAIUsagePeriodStats;
+  daily30: OpenAIUsagePeriodStats;
+  month: OpenAIUsagePeriodStats;
+  all: OpenAIUsagePeriodStats;
+}
+
+export const OPENAI_OFFICIAL_HOST = 'api.openai.com';
+// Backfill allowlist; keep in sync with src/pages/Dashboard/openaiPricing.js.
+export const OPENAI_PRICED_MODELS = ['gpt-6.1-terra', 'gpt-6-luna', 'gpt-6.1-sol'] as const;
+
+export function apiHostFromUrl(value: unknown): string {
+  try {
+    return new URL(String(value || '')).hostname.toLowerCase();
+  } catch {
+    return '';
+  }
+}
+
+export function isOpenAIPricedModel(model: unknown): boolean {
+  return (OPENAI_PRICED_MODELS as readonly string[]).includes(String(model || ''));
+}
+
+function emptyOpenAIUsageBucket(): OpenAIUsageBucket {
+  return { promptTokens: 0, cachedTokens: 0, cacheWriteTokens: 0, completionTokens: 0, requests: 0 };
+}
+
+function addedOpenAIUsageBucket(
+  previous: Partial<OpenAIUsageBucket> | undefined,
+  values: Partial<OpenAIUsageBucket>,
+): OpenAIUsageBucket {
+  return {
+    promptTokens: nonNegative(previous?.promptTokens) + nonNegative(values.promptTokens),
+    cachedTokens: nonNegative(previous?.cachedTokens) + nonNegative(values.cachedTokens),
+    cacheWriteTokens: nonNegative(previous?.cacheWriteTokens) + nonNegative(values.cacheWriteTokens),
+    completionTokens: nonNegative(previous?.completionTokens) + nonNegative(values.completionTokens),
+    requests: nonNegative(previous?.requests) + nonNegative(values.requests),
+  };
+}
+
+function addOpenAIModelUsage(
+  target: Record<string, OpenAIUsageBucket>,
+  model: string,
+  values: Partial<OpenAIUsageBucket>,
+) {
+  target[model] = addedOpenAIUsageBucket(target[model], values);
+}
+
+function createOpenAIUsageHistory(at = Date.now()): OpenAIUsageHistory {
+  const timestamp = new Date(at).toISOString();
+  return {
+    version: 1,
+    timeZone: USAGE_TIME_ZONE,
+    completeSince: timestamp,
+    backfillSource: 'none',
+    backfilledAt: timestamp,
+    hours: {},
+    days: {},
+    total: {},
+  };
+}
+
+function normalizeOpenAIUsageHistory(stored: any, now: number): OpenAIUsageHistory {
+  if (stored?.version !== 1) return createOpenAIUsageHistory(now);
+  const history: OpenAIUsageHistory = {
+    ...stored,
+    version: 1,
+    timeZone: USAGE_TIME_ZONE,
+    completeSince: String(stored.completeSince || ''),
+    hours: stored.hours && typeof stored.hours === 'object' ? { ...stored.hours } : {},
+    days: stored.days && typeof stored.days === 'object' ? { ...stored.days } : {},
+    total: stored.total && typeof stored.total === 'object' ? { ...stored.total } : {},
+  };
+  pruneOpenAIUsageBuckets(history, now);
+  return history;
+}
+
+function pruneOpenAIUsageBuckets(history: OpenAIUsageHistory, now: number) {
+  const oldestHour = Math.floor(now / HOUR_MS) * HOUR_MS - 71 * HOUR_MS;
+  const oldestDay = usageDayStart(now) - 399 * DAY_MS;
+  for (const key of Object.keys(history.hours)) if (Number(key) < oldestHour) delete history.hours[key];
+  for (const key of Object.keys(history.days)) if (Number(key) < oldestDay) delete history.days[key];
+}
+
+/**
+ * Persist only calls that reached the official OpenAI endpoint. Relays and
+ * other providers keep the existing aggregate counters but never enter this
+ * ledger, so their tokens cannot be priced as OpenAI usage.
+ */
+export function recordOpenAIUsage(usage: any, call: {
+  provider?: string;
+  apiHost?: string;
+  model?: string;
+  usage?: any;
+  at?: number;
+} = {}): boolean {
+  if (call.provider !== 'openai-compatible') return false;
+  if (String(call.apiHost || '').toLowerCase() !== OPENAI_OFFICIAL_HOST) return false;
+  const model = String(call.model || '').trim();
+  if (!model) return false;
+  const at = Number.isFinite(call.at) ? Number(call.at) : Date.now();
+  const values = usageBreakdown(call.usage);
+  usage.openai = normalizeOpenAIUsageHistory(usage.openai, at);
+  const history = usage.openai as OpenAIUsageHistory;
+  const bucket = {
+    promptTokens: values.promptTokens,
+    cachedTokens: values.cachedTokens,
+    cacheWriteTokens: values.cacheWriteTokens,
+    completionTokens: values.completionTokens,
+    requests: 1,
+  };
+  const hourKey = String(Math.floor(at / HOUR_MS) * HOUR_MS);
+  const hour = history.hours[hourKey] || {};
+  addOpenAIModelUsage(hour, model, bucket);
+  history.hours[hourKey] = hour;
+  const dayKey = String(usageDayStart(at));
+  const day = history.days[dayKey] || {};
+  addOpenAIModelUsage(day, model, bucket);
+  history.days[dayKey] = day;
+  addOpenAIModelUsage(history.total, model, bucket);
+  if (!history.completeSince || at < Date.parse(history.completeSince)) {
+    history.completeSince = new Date(at).toISOString();
+  }
+  pruneOpenAIUsageBuckets(history, at);
+  return true;
+}
+
+/** One-time import of retained llm-call telemetry for the official endpoint. */
+export function initializeOpenAIUsage(
+  stored: any,
+  events: any[] = [],
+  settings: any = {},
+  now = Date.now(),
+): OpenAIUsageHistory {
+  if (stored?.version === 1) return normalizeOpenAIUsageHistory(stored, now);
+  const history = createOpenAIUsageHistory(now);
+  const configuredHost = apiHostFromUrl(settings?.apiBaseUrl);
+  const official = settings?.llmProvider === 'openai-compatible'
+    && (!String(settings?.apiBaseUrl || '').trim() || configuredHost === OPENAI_OFFICIAL_HOST);
+  if (!official) return history;
+  let earliest = Number.POSITIVE_INFINITY;
+  for (const event of events) {
+    if (!event || event.kind !== 'llm-call' || event.accountingExcluded) continue;
+    if (event.provider !== 'openai-compatible') continue;
+    if (!isOpenAIPricedModel(event.model)) continue;
+    const at = Date.parse(event.createdAt);
+    if (!Number.isFinite(at) || at > now) continue;
+    const values = {
+      promptTokens: nonNegative(event.promptTokens),
+      cachedTokens: nonNegative(event.cachedTokens),
+      cacheWriteTokens: nonNegative(event.cacheWriteTokens),
+      completionTokens: nonNegative(event.completionTokens),
+      requests: 1,
+    };
+    const hourKey = String(Math.floor(at / HOUR_MS) * HOUR_MS);
+    const hour = history.hours[hourKey] || {};
+    addOpenAIModelUsage(hour, event.model, values);
+    history.hours[hourKey] = hour;
+    const dayKey = String(usageDayStart(at));
+    const day = history.days[dayKey] || {};
+    addOpenAIModelUsage(day, event.model, values);
+    history.days[dayKey] = day;
+    addOpenAIModelUsage(history.total, event.model, values);
+    earliest = Math.min(earliest, at);
+  }
+  if (Number.isFinite(earliest)) {
+    history.completeSince = new Date(earliest).toISOString();
+    history.backfillSource = 'usageEvents';
+  }
+  pruneOpenAIUsageBuckets(history, now);
+  return history;
+}
+
+function sumOpenAIUsageBuckets(models: Record<string, OpenAIUsageBucket>): OpenAIUsageBucket {
+  return Object.values(models).reduce(
+    (total, bucket) => addedOpenAIUsageBucket(total, bucket),
+    emptyOpenAIUsageBucket(),
+  );
+}
+
+function openAIUsagePeriod(
+  history: OpenAIUsageHistory,
+  keys: string[],
+  source: 'hours' | 'days',
+  start: number,
+  end: number,
+): OpenAIUsagePeriodStats {
+  const models: Record<string, OpenAIUsageBucket> = {};
+  for (const key of keys) {
+    const bucket = history[source]?.[key] || {};
+    for (const [model, values] of Object.entries(bucket)) addOpenAIModelUsage(models, model, values);
+  }
+  const since = history.completeSince ? Date.parse(history.completeSince) : Number.NaN;
+  return {
+    models,
+    totals: sumOpenAIUsageBuckets(models),
+    start,
+    end,
+    partial: !Number.isFinite(since) || since > start,
+    availableSince: history.completeSince || '',
+  };
+}
+
+/** Per-period exact token totals for official OpenAI calls. */
+export function buildOpenAIUsageStats(stored: any, now = Date.now()): OpenAIUsageStats {
+  const history = normalizeOpenAIUsageHistory(stored, now);
+  const hour = Math.floor(now / HOUR_MS) * HOUR_MS;
+  const day = usageDayStart(now);
+  const local = new Date(now + SHANGHAI_OFFSET_MS);
+  const monthStart = Date.UTC(local.getUTCFullYear(), local.getUTCMonth(), 1) - SHANGHAI_OFFSET_MS;
+  const lastHours = Array.from({ length: 24 }, (_, i) => String(hour - (23 - i) * HOUR_MS));
+  const last7Days = Array.from({ length: 7 }, (_, i) => String(day - (6 - i) * DAY_MS));
+  const last30Days = Array.from({ length: 30 }, (_, i) => String(day - (29 - i) * DAY_MS));
+  const monthDays = Array.from({ length: local.getUTCDate() }, (_, i) => String(monthStart + i * DAY_MS));
+  const allModels = Object.fromEntries(
+    Object.entries(history.total || {}).map(([model, bucket]) => [model, { ...bucket }]),
+  );
+  return {
+    timeZone: USAGE_TIME_ZONE,
+    completeSince: history.completeSince || '',
+    backfillSource: history.backfillSource || 'none',
+    hourly24: openAIUsagePeriod(history, lastHours, 'hours', hour - 23 * HOUR_MS, now),
+    daily7: openAIUsagePeriod(history, last7Days, 'days', day - 6 * DAY_MS, now),
+    daily30: openAIUsagePeriod(history, last30Days, 'days', day - 29 * DAY_MS, now),
+    month: openAIUsagePeriod(history, monthDays, 'days', monthStart, now),
+    all: {
+      models: allModels,
+      totals: sumOpenAIUsageBuckets(allModels),
+      start: 0,
+      end: now,
+      partial: true,
+      availableSince: history.completeSince || '',
+    },
+  };
 }
 
 /** A bounded view from persistent aggregates, independent of the 5,000-row event window. */

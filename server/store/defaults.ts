@@ -2,7 +2,7 @@
 import { DEEPSEEK_BASE_URL, activateModelProfile, recoverProviderProfiles } from '../modelConfig.js';
 import { DEFAULT_BOTS } from '../bots/registry.js';
 import { DEFAULT_KB_SETTINGS } from '../bot/knowledgeTypes.js';
-import { cacheUsageSummary, initializeUsageHistory } from '../usage.js';
+import { cacheUsageSummary, initializeOpenAIUsage, initializeUsageHistory } from '../usage.js';
 import { emptySocialState, normalizeSocialState } from '../bot/social/state.js';
 import { MAX_ADMIN_ACTIONS, MAX_COMMAND_LOGS, MAX_DECISIONS, MAX_MESSAGES, MAX_TOOL_LOGS, MAX_UNMET_LOGS } from './limits.js';
 
@@ -351,6 +351,7 @@ export function normalizeDb(db) {
   }
 
   db.usage.history = initializeUsageHistory(db.usage, db.usageEvents);
+  db.usage.openai = initializeOpenAIUsage(storedUsage.openai, db.usageEvents, db.settings || {}, Date.now());
   return applyRetention(db);
 }
 

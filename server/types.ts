@@ -406,6 +406,7 @@ export interface Db {
   usageEvents: UsageEvent[];
   usage: {
     history?: import('./usage.js').UsageHistory;
+    openai?: import('./usage.js').OpenAIUsageHistory;
     totalTokens: number;
     promptTokens: number;
     cachedTokens: number;

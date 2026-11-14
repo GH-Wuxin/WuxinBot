@@ -1,5 +1,5 @@
-import { updateDb, nowIso } from './store.js';
-import { applyUsageTotals, usageEventFields } from './usage.js';
+import { updateDb } from './store.js';
+import { applyUsageTotals, recordOpenAIUsage, usageEventFields } from './usage.js';
 import { currentRequestIdentity, redactTraceValue, traceEvent } from './requestTrace.js';
 
 interface Invocation {
@@ -8,6 +8,7 @@ interface Invocation {
   model: string;
   purpose: string;
   startedAt: number;
+  apiHost?: string;
   usage?: any;
   error?: unknown;
   fallbackFrom?: string;
@@ -24,15 +25,23 @@ export function recordLlmInvocation(call: Invocation) {
     updateDb(db => {
       db.usageEvents ||= [];
       if (db.usageEvents.some(event => event?.id === call.invocationId)) return;
-      applyUsageTotals(db.usage, usage);
+      const at = Date.now();
+      applyUsageTotals(db.usage, usage, at);
+      recordOpenAIUsage(db.usage, {
+        provider: call.provider,
+        apiHost: call.apiHost,
+        model: call.model,
+        usage,
+        at,
+      });
       db.usage.requests = Number(db.usage.requests || 0) + 1;
       db.usageEvents.push({
         id: call.invocationId, kind: 'llm-call', ...currentRequestIdentity(),
-        provider: call.provider, model: call.model, purpose: call.purpose,
+        provider: call.provider, model: call.model, purpose: call.purpose, apiHost: call.apiHost,
         status: call.error ? 'failed' : 'completed', usageKnown,
         fallbackFrom: call.fallbackFrom,
         error: call.error ? redactTraceValue(String(call.error).slice(0, 500)) : undefined,
-        durationMs: Date.now() - call.startedAt, ...usageEventFields(usage), createdAt: nowIso(),
+        durationMs: at - call.startedAt, ...usageEventFields(usage), createdAt: new Date(at).toISOString(),
       });
       db.usageEvents = db.usageEvents.slice(-5000);
     });

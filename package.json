@@ -84,7 +84,7 @@
     "mention-length:verify": "node --import tsx tools/mention-length-verify.mjs",
     "chat-level-pp:verify": "node --import tsx tools/chat-level-pp-verify.mjs",
     "openai:params:verify": "node --import tsx tools/openai-params-verify.mjs",
-    "openai:pricing:verify": "node --import tsx tools/openai-pricing-verify.mjs",
+    "openai:pricing:verify": "node --import tsx tools/openai-pricing-verify.mjs && node --import tsx tools/openai-usage-verify.mjs",
     "affection:verify": "node --import tsx tools/affection-verify.mjs",
     "social:v2:replay": "node --import tsx tools/social-v2-replay.mjs",
     "osu:retirement:verify": "node --import tsx tools/osu-analyze-retirement-verify.mjs",

@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import {spawnSync} from 'node:child_process';
 import {createTestDataDir,cleanupTestDir} from './test-isolation.mjs';
 const directory=createTestDataDir('usage-periods');process.env.NODE_ENV='test';
-const {initializeUsageHistory,applyUsageTotals,buildUsageStats,usageDayStart}=await import('../server/usage.ts');
+const {initializeUsageHistory,applyUsageTotals,buildUsageStats,usageDayStart,recordOpenAIUsage}=await import('../server/usage.ts');
 const {usageSummary,usageAxis,usagePointLabel}=await import('../src/pages/Dashboard/usageView.js');
 const now=Date.parse('2026-11-09T05:20:00Z'); // 13:20 in Shanghai, regardless of host/browser timezone.
 const usage={totalTokens:9000,promptTokens:8000,completionTokens:1000,requests:40};
@@ -47,7 +47,10 @@ try{
   db.usageEvents=db.usageEvents.slice(-5000);
  });
  assert.equal(store.readDb().usageEvents.length,5000);
+ store.updateDb(db=>{recordOpenAIUsage(db.usage,{provider:'openai-compatible',apiHost:'api.openai.com',model:'gpt-6.1-terra',usage:{prompt_tokens:70,completion_tokens:10},at});});
  const publicState=store.publicDb();assert.equal(publicState.usage.history,undefined,'Do not expose the full persistent history in every state payload');
+ assert.equal(publicState.usage.openai,undefined,'Do not expose the OpenAI ledger raw in every state payload');
+ assert.equal(publicState.usageStats.openai.hourly24.models['gpt-6.1-terra'].promptTokens,70);
  assert.equal(publicState.usage.totalTokens,10080);
  assert.equal(usageSummary(publicState.usageStats,publicState.usage,'daily7').totals.totalTokens,10080,'Event pruning cannot shrink period totals');
  assert.equal(usageSummary(publicState.usageStats,publicState.usage,'hourly24').totals.requests,
@@ -56,7 +59,7 @@ try{
  store.updateDb(db=>{applyUsageTotals(db.usage,{total_tokens:200},at);db.usage.requests++;});
  assert.equal(restoreBackup(snapshot.name).ok,true);assert.equal(store.readDb().usage.totalTokens,10080);
  const child=spawnSync(process.execPath,['--import','tsx','--input-type=module','-e',
-  `const s=await import('./server/store.ts');const u=await import('./server/usage.ts');const d=s.readDb();if(d.usage.totalTokens!==10080||u.buildUsageStats(d.usage,[],${at}).today.totalTokens!==10010)process.exit(1);`],
+  `const s=await import('./server/store.ts');const u=await import('./server/usage.ts');const d=s.readDb();if(d.usage.totalTokens!==10080||u.buildUsageStats(d.usage,[],${at}).today.totalTokens!==10010||d.usage.openai?.total?.['gpt-6.1-terra']?.promptTokens!==70)process.exit(1);`],
   {cwd:process.cwd(),env:process.env,encoding:'utf8',windowsHide:true});
  assert.equal(child.status,0,child.stderr);
  console.log('PASS usage periods: real time labels, Shanghai boundaries, month/leap/year rollover, partial history, cache coverage, no duplicate accounting, 5000-row pruning, store proxy, backup and restart');
