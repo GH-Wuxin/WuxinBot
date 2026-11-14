@@ -12,6 +12,12 @@ import { completeCodexAppServerChat, codexInvocationConfig } from '../codexAppSe
 import { apiHostFromUrl, mergeLlmUsage, OPENAI_OFFICIAL_HOST } from '../usage.js';
 import { fetchBoundedBody } from '../httpBody.js';
 import { recordLlmInvocation } from '../llmLedger.js';
+import {
+  buildOpenAIResponsesParams,
+  normalizeOpenAIResponsesResponse,
+  openAIResponsesReasoningEffort,
+  shouldUseOpenAIResponses,
+} from './openaiResponses.js';
 import { waitForLlmInvocation, markTurnFallback, hasTurnFallback } from '../llmPolicy.js';
 import { applyModulePersonality, beginPromptCall, finishPromptCall, resolvePromptModule } from '../promptStudio.js';
 import {
@@ -438,14 +444,6 @@ export function shouldSetTemperature(provider: string, baseURL: unknown): boolea
   return !(provider === 'openai-compatible' && isOfficialOpenAIEndpoint(baseURL));
 }
 
-/** gpt-5+/o-series chat-completions tool calls require reasoning_effort=none. */
-export function shouldSetOpenAIReasoningNone(provider: string, baseURL: unknown, model: unknown, hasTools: boolean): boolean {
-  return Boolean(hasTools
-    && provider === 'openai-compatible'
-    && isOfficialOpenAIEndpoint(baseURL)
-    && /^(gpt-[5-9]|o[1-9])/i.test(String(model || '')));
-}
-
 export async function completeChat(db, options = {}) {
   assertSavingApiAvailable(db);
   options = savingLlmOptions(db, options);
@@ -587,9 +585,11 @@ export async function completeChat(db, options = {}) {
   const messages = normalizeLlmMessages(
     await attachVisionImages(resolvedDb, options.messages || [], options.visionImages || [], options)
   );
+  // Responses-only bookkeeping must never leak into Chat Completions requests.
+  const chatMessages = messages.map(({ responses_output, ...message }) => message);
   const params = {
     model: requestModelForProvider(resolvedDb, provider, baseURL, { ...options, model: requestedModel }),
-    messages,
+    messages: chatMessages,
   };
   if (shouldSetTemperature(provider, baseURL)) {
     params.temperature = Number(options.temperature ?? settings.temperature ?? 0.85);
@@ -620,9 +620,6 @@ export async function completeChat(db, options = {}) {
   if (options.tools?.length) {
     params.tools = options.tools;
     params.tool_choice = options.tool_choice || 'auto';
-    if (shouldSetOpenAIReasoningNone(provider, baseURL, params.model, true)) {
-      params.reasoning_effort = 'none';
-    }
   }
 
   if (options.responseFormat) {
@@ -652,10 +649,21 @@ export async function completeChat(db, options = {}) {
     const streaming = provider === 'deepseek'
       && Boolean(currentRequestTraceId())
       && options.traceStreaming !== false;
+    const useResponses = shouldUseOpenAIResponses(
+      provider,
+      baseURL,
+      nextParams.model,
+      Boolean(nextParams.tools?.length),
+    );
+    const responsesEffort = useResponses
+      ? openAIResponsesReasoningEffort(nextParams.model, options.reasoning_effort)
+      : null;
     // These are the wire request, not a claim about the provider's execution.
     const requestedReasoning = provider === 'deepseek' ? {
       thinkingEnabled: nextParams.thinking?.type === 'enabled',
       requestedReasoningEffort: nextParams.reasoning_effort || null,
+    } : responsesEffort ? {
+      requestedReasoningEffort: responsesEffort,
     } : {};
     traceEvent('MODEL', 'model_call_started', {
       status: 'running',
@@ -668,6 +676,7 @@ export async function completeChat(db, options = {}) {
       messageCount: nextParams.messages?.length || 0,
       toolCount: nextParams.tools?.length || 0,
       streaming,
+      transport: useResponses ? 'responses' : 'chat.completions',
       ...requestedReasoning,
     });
     // The outer timeout must do more than stop waiting: abort the SDK's
@@ -680,8 +689,20 @@ export async function completeChat(db, options = {}) {
     else options.signal?.addEventListener('abort', abortFromCaller, { once: true });
     const timer = setTimeout(() => controller.abort(), outerTimeoutMs);
     try {
-      let response;
-      if (streaming) {
+      let response: any;
+      if (useResponses) {
+        const responsesParams = buildOpenAIResponsesParams(nextParams, messages, options);
+        const rawResponse = await withTimeout(
+          client.responses.create(responsesParams, {
+            timeout: requestTimeoutMs,
+            maxRetries: requestMaxRetries,
+            signal: controller.signal,
+          }),
+          outerTimeoutMs,
+          label
+        );
+        response = normalizeOpenAIResponsesResponse(rawResponse, nextParams.model);
+      } else if (streaming) {
         let lastPublishedAt = 0;
         let latestProgress;
         let lastPublishedSignature = '';
@@ -762,6 +783,7 @@ export async function completeChat(db, options = {}) {
         model: nextParams.model,
         returnedModel: response.model || null,
         streaming,
+        transport: useResponses ? 'responses' : 'chat.completions',
         ...requestedReasoning,
         reasoningObserved: Boolean(responseTrace.reasoningExposed || responseTrace.usage?.reasoningTokens > 0),
         response: responseTrace,

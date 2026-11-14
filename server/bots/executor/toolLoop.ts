@@ -55,7 +55,14 @@ export const AGENT_MAX_TOOL_CALLS_PER_TURN = 8;
 
 export interface ToolLoopOptions {
   db: any;
-  messages: Array<{ role: string; content: string; tool_calls?: any[]; tool_call_id?: string }>;
+  messages: Array<{
+    role: string;
+    content: string;
+    tool_calls?: any[];
+    tool_call_id?: string;
+    responses_output?: any[];
+    reasoning_content?: string;
+  }>;
   tools: LlmTool[];
   /**
    * 第二层（发图）工具。第一层整批执行完后，如果提供了这个列表，
@@ -891,6 +898,9 @@ export async function runToolLoop(
       role: 'assistant',
       content: message?.content || '',
       tool_calls: toolCalls,
+      // Responses tool calls need their original output items (including
+      // encrypted reasoning) on the next request.
+      ...(Array.isArray(message?.responses_output) ? { responses_output: message.responses_output } : {}),
       // DeepSeek thinking contract: preserve reasoning_content on the
       // assistant tool_calls message so the next tool-result round carries it.
       ...(typeof message?.reasoning_content === 'string' && message.reasoning_content

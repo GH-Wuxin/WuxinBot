@@ -120,7 +120,8 @@ assert.match(shell, /id="pauseBtn"[^>]*>暂停<\/button>/);
 assert.match(render(AppShell, { page: 'overview', db: { ...db, settings: { ...db.settings, globalPaused: true } }, oneBot: {}, onNavigate: noop, onPauseToggle: noop }), /id="pauseBtn"[^>]*>恢复<\/button>/);
 assert.match(shell, /运行控制/);
 assert.match(overview, /Token 用量/);
-assert.match(overview, /API 通道计费与本地 Token 是两个口径/);
+assert.doesNotMatch(overview, /API 通道计费与本地 Token 是两个口径/);
+assert.doesNotMatch(overview, /标准短上下文价估算/);
 assert.doesNotMatch(overview, /osu-dashboard__intro|掌握每一拍|一眼看清|迹可循|选择这一拍|什么时候加入聊天/);
 for (const page of ['Agent', 'Dashboard', 'Groups', 'Integrations', 'Logs', 'Maintenance', 'Members', 'Memory', 'Models', 'Osu', 'Permissions', 'Persona', 'ProfileLogs', 'Relationships']) {
   const source = readFileSync(new URL(`../src/pages/${page}/index.jsx`, import.meta.url), 'utf8');

@@ -249,7 +249,14 @@ export async function runPippiActivityCycle(deps: Dependencies = {}, now = Date.
         const toolCalls = result.raw?.choices?.[0]?.message?.tool_calls;
         if (!toolCalls?.length) { final = parseFinal(result.text); break; }
         if (round === MAX_CALLS - 1) throw new Error('ACTIVITY_CALL_LIMIT');
-        messages.push({ role: 'assistant', content: result.text || '', tool_calls: toolCalls });
+        messages.push({
+          role: 'assistant',
+          content: result.text || '',
+          tool_calls: toolCalls,
+          ...(Array.isArray(result.raw?.choices?.[0]?.message?.responses_output)
+            ? { responses_output: result.raw.choices[0].message.responses_output }
+            : {}),
+        });
         for (const call of toolCalls) {
           if (!allowed(readDb())) throw new Error('ACTIVITY_STOPPED');
           if (++toolsUsed > MAX_TOOLS) { messages.push({ role: 'tool', tool_call_id: call.id, content: '资料工具次数已达上限，请结束本轮' }); continue; }
