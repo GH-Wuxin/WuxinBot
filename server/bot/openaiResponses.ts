@@ -186,6 +186,20 @@ function responsesTextFormat(format: any): any {
   return undefined;
 }
 
+function inputContainsJSON(items: any[]): boolean {
+  for (const item of items) {
+    if (!item || typeof item !== 'object') continue;
+    const content = item.content;
+    if (typeof content === 'string' && /json/i.test(content)) return true;
+    if (!Array.isArray(content)) continue;
+    for (const part of content) {
+      if (typeof part?.text === 'string' && /json/i.test(part.text)) return true;
+      if (typeof part?.refusal === 'string' && /json/i.test(part.refusal)) return true;
+    }
+  }
+  return false;
+}
+
 export function buildOpenAIResponsesParams(
   chatParams: AnyRecord,
   messages: any[],
@@ -210,6 +224,15 @@ export function buildOpenAIResponsesParams(
   const toolChoice = responsesToolChoice(chatParams?.tool_choice ?? options.tool_choice);
   if (toolChoice) params.tool_choice = toolChoice;
   const textFormat = responsesTextFormat(chatParams?.response_format ?? options.responseFormat);
+  if (textFormat?.type === 'json_object' && !inputContainsJSON(input)) {
+    // Responses validates json_object against input messages, not instructions.
+    // The app keeps its JSON schema in the system prompt, so add a minimal
+    // in-band reminder when the converted input would otherwise omit the word.
+    input.push({
+      role: 'developer',
+      content: [{ type: 'input_text', text: 'Return the final answer as a JSON object.' }],
+    });
+  }
   if (textFormat) params.text = { format: textFormat };
 
   const rawLimit = chatParams?.max_completion_tokens ?? chatParams?.max_tokens;

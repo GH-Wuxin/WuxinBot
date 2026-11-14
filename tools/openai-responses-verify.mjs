@@ -108,6 +108,14 @@ assert.equal(params.tool_choice, 'auto');
 assert.equal(params.parallel_tool_calls, true);
 assert.equal(params.max_output_tokens, 8192);
 assert.deepEqual(params.text, { format: { type: 'json_object' } });
+assert.ok(params.input.some((item) => item.role === 'developer'
+  && /json/i.test(item.content?.[0]?.text || '')), 'json_object needs an in-band JSON reminder');
+
+const jsonAlreadyPresent = buildOpenAIResponsesParams({
+  ...chatParams,
+  response_format: { type: 'json_object' },
+}, [{ role: 'user', content: 'Return JSON.' }], {});
+assert.equal(jsonAlreadyPresent.input.some((item) => item.role === 'developer'), false);
 
 const lowParams = buildOpenAIResponsesParams(chatParams, [{ role: 'user', content: 'x' }], {
   reasoning_effort: 'low',
