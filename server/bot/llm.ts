@@ -417,6 +417,35 @@ export function createLLMClient(db, requestedModel = db.settings.model) {
   };
 }
 
+/** OpenAI official endpoints use max_completion_tokens for newer chat models. */
+export function isOfficialOpenAIEndpoint(baseURL: unknown): boolean {
+  try {
+    return new URL(String(baseURL || '')).hostname.toLowerCase() === 'api.openai.com';
+  } catch {
+    return false;
+  }
+}
+
+/** Pick the provider-specific completion limit field without changing relays. */
+export function completionLimitField(provider: string, baseURL: unknown): 'max_completion_tokens' | 'max_tokens' {
+  return provider === 'openai-compatible' && isOfficialOpenAIEndpoint(baseURL)
+    ? 'max_completion_tokens'
+    : 'max_tokens';
+}
+
+/** Official OpenAI reasoning models reject custom temperature values. */
+export function shouldSetTemperature(provider: string, baseURL: unknown): boolean {
+  return !(provider === 'openai-compatible' && isOfficialOpenAIEndpoint(baseURL));
+}
+
+/** gpt-5+/o-series chat-completions tool calls require reasoning_effort=none. */
+export function shouldSetOpenAIReasoningNone(provider: string, baseURL: unknown, model: unknown, hasTools: boolean): boolean {
+  return Boolean(hasTools
+    && provider === 'openai-compatible'
+    && isOfficialOpenAIEndpoint(baseURL)
+    && /^(gpt-[5-9]|o[1-9])/i.test(String(model || '')));
+}
+
 export async function completeChat(db, options = {}) {
   assertSavingApiAvailable(db);
   options = savingLlmOptions(db, options);
@@ -559,8 +588,10 @@ export async function completeChat(db, options = {}) {
   const params = {
     model: requestModelForProvider(resolvedDb, provider, baseURL, { ...options, model: requestedModel }),
     messages,
-    temperature: Number(options.temperature ?? settings.temperature ?? 0.85)
   };
+  if (shouldSetTemperature(provider, baseURL)) {
+    params.temperature = Number(options.temperature ?? settings.temperature ?? 0.85);
+  }
 
   // Thinking is selected by each call site. Calls without a reasoning policy
   // stay explicitly disabled rather than inheriting the provider's default.
@@ -572,18 +603,24 @@ export async function completeChat(db, options = {}) {
       params.reasoning_effort = options.reasoning_effort;
     }
   }
-  // Thinking requests must not be capped by the chat-default max_tokens; the
+  // Thinking requests must not be capped by the chat-default token limit; the
   // reasoning content itself needs budget, so keep the provider's own limit.
-  if (Number(options.completionBudget) > 0) {
-    params.max_tokens = Math.max(128, Math.min(8192, Math.floor(Number(options.completionBudget))));
-  } else if (!thinkingEnabled) {
-    params.max_tokens = Number(options.maxTokens || settings.maxTokens || 420);
+  // OpenAI official endpoints use max_completion_tokens; DeepSeek and
+  // third-party OpenAI-compatible relays keep max_tokens.
+  const completionLimit = Number(options.completionBudget) > 0
+    ? Math.max(128, Math.min(8192, Math.floor(Number(options.completionBudget))))
+    : (!thinkingEnabled ? Number(options.maxTokens || settings.maxTokens || 420) : null);
+  if (completionLimit !== null) {
+    params[completionLimitField(provider, baseURL)] = completionLimit;
   }
 
   // Tool calling support (OpenAI function-calling format)
   if (options.tools?.length) {
     params.tools = options.tools;
     params.tool_choice = options.tool_choice || 'auto';
+    if (shouldSetOpenAIReasoningNone(provider, baseURL, params.model, true)) {
+      params.reasoning_effort = 'none';
+    }
   }
 
   if (options.responseFormat) {
@@ -784,6 +821,7 @@ export async function completeChat(db, options = {}) {
       // empty-reply retry below.
       const retryParams = { ...params };
       delete retryParams.max_tokens;
+      delete retryParams.max_completion_tokens;
       const second = await runCompletion(retryParams);
       return {
         text: second.text,
