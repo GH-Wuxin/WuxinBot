@@ -80,14 +80,33 @@ function ambientCooldownReason(db: any, scope: string, event: SocialEvent, resum
   if (event.socialDirect || resumed || conversationContext(db, event).continuationCandidate) return '';
   const now = Date.now();
   const cooling = (db.socialV2?.decisions || []).some((d: any) => d?.scope === scope
-    && d.engagement === 'ambient' && ['assessment', 'failure'].includes(d.stage)
+    && d.engagement === 'ambient' && d.stage === 'assessment'
     && d.phase !== 'revalidation' && now - Date.parse(d.createdAt) < AMBIENT_COOLDOWN_MS);
   return cooling ? `${tokenSaving(db) ? '节能模式：' : ''}自然接话冷却中（120 分钟）` : '';
 }
 
+/** Failed requests have a separate short cooldown, never consume normal assessment quota.
+ * Legacy failure records remain usable; success clears the consecutive-failure streak.
+ * Guard records do not extend the cooldown. No timer or automatic retries are created.
+ */
+export function assessmentFailureBackoffReason(db: any, scope: string, now = Date.now()): string {
+  const history = (db.socialV2?.decisions || []).filter((d: any) => d.scope === scope
+    && d.phase !== 'revalidation' && ['assessment', 'failure'].includes(d.stage)
+    && Number.isFinite(Date.parse(d.createdAt)) && Date.parse(d.createdAt) <= now)
+    .sort((a: any, b: any) => Date.parse(b.createdAt) - Date.parse(a.createdAt));
+  let failures = 0;
+  for (const entry of history) { if (entry.stage !== 'failure') break; failures++; }
+  if (!failures) return '';
+  const delay = Math.min(300_000, 30_000 * 2 ** Math.min(failures - 1, 4));
+  const remaining = delay - (now - Date.parse(history[0].createdAt));
+  return remaining > 0 ? '社交评估调用失败退避中；约 ' + Math.ceil(remaining / 1000) + ' 秒后可再次评估' : '';
+}
+
 export function assessmentBudgetReason(db: any, event: SocialEvent, resumed: boolean): string {
   const scope = event.type === 'private' ? `private:${event.userId}` : `group:${event.groupId}`;
-  const calls = db.socialV2.decisions.filter((d) => d.scope === scope && ['assessment', 'failure'].includes(d.stage)
+  const failureBackoff = assessmentFailureBackoffReason(db, scope);
+  if (failureBackoff) return failureBackoff;
+  const calls = db.socialV2.decisions.filter((d) => d.scope === scope && d.stage === 'assessment'
     && d.phase !== 'revalidation' && Date.now() - Date.parse(d.createdAt) < 3600_000);
   // The two-hour room cooldown is the primary ambient limiter; the hourly and
   // ten-minute checks below remain as defensive fallbacks.

@@ -93,9 +93,26 @@ export function levelUpFallback(oldPp, newPp, realPp) {
   return pick(pool).replace('{pp}', String(newPp));
 }
 
+/** Missing/invalid data is unknown, while a genuine zero is a valid osu! value. */
+export function normalizeRealOsuPp(value: unknown): number | null {
+  if (typeof value !== 'number' || !Number.isFinite(value) || value < 0) return null;
+  return Math.round(value);
+}
+
+export async function resolveLevelUpRealPp(binding, getUserById, records = []) {
+  if (!binding?.id) return null;
+  try {
+    const user = await getUserById(binding.id, 'osu');
+    const pp = normalizeRealOsuPp(user?.statistics?.pp);
+    if (pp !== null) return pp;
+  } catch { /* Fall back to an existing real-player snapshot, never chat XP. */ }
+  const record = records.find((r) => Number(r.osuUserId) === Number(binding.id));
+  return normalizeRealOsuPp(record?.pp);
+}
+
 export function buildLevelUpPrompt(nickname, oldPp, newPp, realPp, contextLines) {
   const compare = realPp == null
-    ? '他的真实 osu! pp 未知（未绑定账号）。'
+    ? '他的真实 osu! pp 未知（未绑定或查询没有有效数据），不能当作 0，也不能推断实力。'
     : realPp < newPp
       ? `他的真实 osu! pp 只有 ${realPp}pp，低于新等级对应的 ${newPp}pp。`
       : `他的真实 osu! pp 高达 ${realPp}pp，远高于新等级对应的 ${newPp}pp。`;
@@ -106,12 +123,13 @@ export function buildLevelUpPrompt(nickname, oldPp, newPp, realPp, contextLines)
       : '在宣告后加一句惊讶：“什么？比这 pp 还高？”（因为真实 pp 高于等级 pp）。';
   return [
     `你是 pippi。群友 ${nickname} 的等级刚提升：${oldPp}pp → ${newPp}pp。`,
+    '这里的等级 pp 只是 Wuxin 聊天经验展示名，不是 osu! 成绩；不能拿它评价玩家实力。',
     compare,
     `最近群聊：${contextLines}`,
     `对 ${nickname} 说一句升级短语，格式是这样：“你 {新等级 pp}pp 了！${realPp == null ? '' : realPp < newPp ? '什么？你没那么多 pp？' : '什么？比这 pp 还高？'}这是我这的等级 pp，不用太在意啦！”`,
     hint,
     '可以在“不用太在意”后面加半句轻松的收尾（比如“先记着这个数就行”），但不要加更多解释。',
-    '禁止出现“Lv.”“等级”“称号”“升级”“解锁”字样；禁止复述规则或任何括号说明；不要用“装萌新”“少废话”“谁有意见”“别狡辩”这类带挑衅或贬低的说法；只输出一句对玩家说的话，不要解释。',
+    '保留“这是我这的等级 pp”以区分聊天经验和 osu! 成绩；不要额外罗列 Lv.、称号或解锁功能；禁止复述规则或任何括号说明；不要用“装萌新”“少废话”“谁有意见”“别狡辩”这类带挑衅或贬低的说法；只输出一句对玩家说的话，不要解释。',
   ].join('\n');
 }
 

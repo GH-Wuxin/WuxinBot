@@ -32,6 +32,36 @@ export function socialTimeline(db: any, event: SocialEvent, limit = 24) {
       replyToUserId: m.replyToUserId || '', originModule: m.originModule || '', at: m.createdAt }));
 }
 
+/**
+ * Bounded recent relationship evidence for the model. Only transitions for
+ * this exact target and conversation scope are exposed; `before` bounds the
+ * history to the same DB snapshot used for person/view, so legitimate commits
+ * that completed while a reflection waited are included while genuinely
+ * future records are excluded.
+ */
+export function recentSocialChanges(db: any, scope: string, userId: string, limit = 6, before?: string) {
+  const cutoff = before ? Date.parse(before) : Number.POSITIVE_INFINITY;
+  const max = Math.max(1, Math.min(8, Number(limit) || 6));
+  return (db.socialV2?.transitions || [])
+    .filter((t: any) => t && t.userId === String(userId) && t.scope === scope
+      && (!Number.isFinite(cutoff) || Date.parse(t.createdAt) <= cutoff))
+    .sort((a: any, b: any) => Date.parse(a.createdAt) - Date.parse(b.createdAt))
+    .slice(-max)
+    .map((t: any) => {
+      const beforePerson = t.before?.person;
+      const afterPerson = t.after?.person;
+      const beforeScore = beforePerson?.affinity?.kind === 'ordinary' ? beforePerson.affinity.score : null;
+      const afterScore = afterPerson?.affinity?.kind === 'ordinary' ? afterPerson.affinity.score : null;
+      return {
+        at: t.createdAt,
+        messageIds: (t.messageIds || []).slice(0, 8),
+        reason: String(t.reason || '').slice(0, 200),
+        affinityDelta: beforeScore === null || afterScore === null ? 0 : afterScore - beforeScore,
+        familiarityDelta: Number(afterPerson?.familiarity || 0) - Number(beforePerson?.familiarity || 0),
+      };
+    });
+}
+
 function parseObject(text: string): any {
   const cleaned = String(text || '').trim().replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '');
   if (cleaned.length > 16000) throw new Error('社交评估输出过长');
@@ -61,6 +91,9 @@ export function parseSocialAssessment(text: string, allowedEvidence: string[], o
 }
 
 export function recordSocialDecision(event: SocialEvent, data: Omit<SocialDecision, 'id' | 'scope' | 'userId' | 'messageIds' | 'createdAt'>) {
+  if (data.phase !== 'revalidation' && ['assessment', 'guard', 'failure'].includes(data.stage)) {
+    event.socialAssessmentDiagnostic = {stage: data.stage as 'assessment' | 'guard' | 'failure', reason: data.reason};
+  }
   const entry: SocialDecision = { engagement: event.socialEngagement, ...data, id: crypto.randomUUID(), scope: socialScope(event), userId: event.userId,
     messageIds: event.socialMessageIds || [event.messageId], createdAt: new Date().toISOString() };
   updateDb((db) => {
@@ -137,6 +170,7 @@ async function assessSavingTurn(event: SocialEvent, invoke: typeof completeChat)
 }
 
 export async function assessSocialTurn(event: SocialEvent, phase: 'initial' | 'resumed' = 'initial', invoke = completeChat) {
+  delete event.socialAssessmentDiagnostic;
   const db = readDb();
   if (!socialEntryAllowed(db, event, Boolean(event.socialDirect)) || isReplyProcessAborted()) return null;
   if (tokenSaving(db)) return assessSavingTurn(event, invoke);
@@ -167,6 +201,7 @@ export async function assessSocialTurn(event: SocialEvent, phase: 'initial' | 'r
         quote: event.quotedMessage ? { messageId: event.quotedMessage.messageId, userId: event.quotedMessage.userId,
           text: event.quotedMessage.text, imageCount: event.quotedMessage.images?.length || 0 } : null,
         batch: event.socialMessages || [], relationship: person, currentConversation: view,
+        recentRelationshipChanges: recentSocialChanges(db, scope, event.userId, 6),
         selfContext: selfContext(db, scope, event.userId), timeline }) },
     ], maxTokens: 1200, timeoutMs: 15_000, temperature: 0.2,
     ...thinkingParamsForLevel('low', reasoningEnabledFor(db)),
@@ -234,6 +269,7 @@ function participationFromObject(input: unknown, event: SocialEvent): SocialAsse
 
 /** Ambient talk still needs a participation decision, without relationship writes. */
 export async function assessSocialParticipation(event: SocialEvent, phase: 'initial' | 'resumed' = 'initial', invoke = completeChat) {
+  delete event.socialAssessmentDiagnostic;
   const db = readDb();
   if (!socialEntryAllowed(db, event, Boolean(event.socialDirect)) || isReplyProcessAborted()) return null;
   if (tokenSaving(db)) return assessSavingTurn(event, invoke);
@@ -251,7 +287,7 @@ export async function assessSocialParticipation(event: SocialEvent, phase: 'init
   try {
     const result = await invoke(db, {
       messages: [
-        {role: 'system', content: `${SOCIAL_PARTICIPATION_PROMPT}\n${ownerAuthorityPrompt(db,event)}\n只输出上述 social 对象本身，不生成正文。phase=resumed 时不能再 wait。`},
+        {role: 'system', content: `${SOCIAL_PARTICIPATION_PROMPT}\n${ownerAuthorityPrompt(db,event)}\n只输出合法 JSON 对象，即上述 social 对象本身，不包裹 social 字段，不使用 Markdown，不生成正文。phase=resumed 时不能再 wait。`},
         {role: 'user', content: JSON.stringify({
           phase, direct: Boolean(event.socialDirect), nameMentioned: Boolean(event.socialNamed),
           bot: db.settings.selfQq,

@@ -158,6 +158,8 @@ export interface SocialState {
   feedback: { id: string; decisionId: string; verdict: 'should-reply' | 'should-pass'; note: string; createdAt: string }[];
 }
 export interface SocialEvent extends BotEvent {
+  /** Internal diagnostics only; never a reply body or a relationship update. */
+  socialAssessmentDiagnostic?: {stage: 'assessment' | 'guard' | 'failure'; reason: string};
   socialMessageIds?: string[];
   socialAction?: SocialAction;
   socialDirect?: boolean;

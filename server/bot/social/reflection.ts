@@ -6,7 +6,7 @@ import { reasoningEnabledFor } from '../reasoningRouter.js';
 import { tokenSaving } from '../tokenSaving.js';
 import { isReplyProcessAborted } from '../replyProcesses.js';
 import { messageAccount, messageInConversation } from '../../messageFacts.js';
-import { parseSocialAssessment, socialTimeline } from './runtime.js';
+import { parseSocialAssessment, recentSocialChanges, socialTimeline } from './runtime.js';
 import { ownerAuthorityPrompt, SOCIAL_ASSESSMENT_PROMPT } from './prompts.js';
 import { commitSocialAssessment, isSystemOwner, readSocialPerson, readSocialView, socialScope } from './state.js';
 import { commitSelfProposal, readPippiSelf, selfContext, SELF_PROPOSAL_GUIDANCE } from './self.js';
@@ -65,9 +65,10 @@ export function queueSocialReflection(snapshot: ReturnType<typeof captureSocialR
   if(snapshot.ids.some(id=>readDb().socialV2.processed.includes(`${snapshot.scope}/${event.userId}/${id}`)))return;
   const saved=readDb().socialV2.reflectionQueue?.find(j=>j.key===key);
   if(saved?.attempts>=3)return;
+  const queuedAt=saved?.queuedAt||new Date().toISOString();
   if(!saved)updateDb(db=>{
     db.socialV2.reflectionQueue=[...(db.socialV2.reflectionQueue||[]),{key,event:structuredClone(event),scope:snapshot.scope,account:snapshot.account,
-      ids:[...snapshot.ids],timelineIds:snapshot.timeline.map(m=>m.messageId),outcome:{...outcome},queuedAt:new Date().toISOString(),attempts:0}];
+      ids:[...snapshot.ids],timelineIds:snapshot.timeline.map(m=>m.messageId),outcome:{...outcome},queuedAt,attempts:0}];
   });
   if(pending.size>=MAX_PENDING){overflow++;traceEvent('GATE','social_reflection_deferred',{status:'busy',pending:pending.size});return;}
   pending.add(key);
@@ -77,6 +78,11 @@ export function queueSocialReflection(snapshot: ReturnType<typeof captureSocialR
   const job=runBackgroundTask('social.reflection',async()=>{
     await previous;
     const db=readDb();
+    // person/view and recent history must come from the same post-wait DB
+    // snapshot. A job queued earlier must still see legitimate commits that
+    // completed while it was waiting; only records created after this read are
+    // excluded as future anomalies.
+    const snapshotAt=new Date().toISOString();
     if(db.settings.socialV2Enabled!==true||db.settings.globalPaused||tokenSaving(db))return;
     if(!hasSources(db,snapshot)){removeSaved(key);return;}
     if(messageAccount(db,event)!==snapshot.account||event.type==='private'&&!isSystemOwner(db,event)){removeSaved(key);return;}
@@ -91,7 +97,9 @@ export function queueSocialReflection(snapshot: ReturnType<typeof captureSocialR
     const result=await invoke(db,{messages:[
       {role:'system',content:`${SOCIAL_ASSESSMENT_PROMPT}\n${SELF_PROPOSAL_GUIDANCE}\n${ownerAuthorityPrompt(db,event)}\n【回复后的关系整理】本轮已经完成参与决定和发送处理。只根据本次真实互动提出关系、情绪和经历更新，不重新决定是否回复、不生成正文、不调用工具。action 保持给定 outcome.action。confirmedReplies 才是确认已发出的内容；空列表不能推断已发送。没有新证据就填 0/null。`},
       {role:'user',content:JSON.stringify({target:{userId:event.userId,messageIds:snapshot.ids,text:event.text,atTargets:event.atTargets,replyTo:event.replyMessageId},
-        outcome,confirmedReplies:delivered,relationship:person,currentConversation:view,selfContext:selfContext(db,snapshot.scope,event.userId),timeline:snapshot.timeline})}],
+        outcome,confirmedReplies:delivered,relationship:person,currentConversation:view,
+        recentRelationshipChanges:recentSocialChanges(db,snapshot.scope,event.userId,6,snapshotAt),
+        selfContext:selfContext(db,snapshot.scope,event.userId),timeline:snapshot.timeline})}],
       maxTokens:8192,timeoutMs:60_000,requestMaxRetries:0,retryOnEmpty:false,temperature:0.2,
       ...thinkingParamsForLevel('low',reasoningEnabledFor(db)),responseFormat:{type:'json_object'},
       promptModule:'general',label:'Pippi 后台关系整理',tracePurpose:'social_reflection',traceRole:'background'});

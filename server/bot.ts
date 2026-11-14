@@ -169,6 +169,7 @@ import { recordConversationSuccess } from './bot/conversationSuccess.js';
 
 import {
   buildLevelUpPrompt,
+  resolveLevelUpRealPp,
   compactDirectToolLead,
   decideReply,
   escapeCqParam,
@@ -491,20 +492,11 @@ async function processIncomingInner(event, sendMessage = undefined) {
           try {
             const liveDb = readDb();
             // Real player pp (osu API has a 6h cache; skill snapshot as fallback).
-            let realPp = null;
             const binding = liveDb.osuBindings?.[String(event.userId)];
-            if (binding) {
-              try {
-                const { getUserById } = await import('./osu/api.js');
-                const user = await getUserById(binding.id, 'osu');
-                realPp = Math.round(Number(user.statistics?.pp || 0));
-              } catch {
-                const record = (liveDb.skillStore?.records || []).find(
-                  (r) => Number(r.osuUserId) === Number(binding.id),
-                );
-                if (record?.pp) realPp = Math.round(Number(record.pp));
-              }
-            }
+            const realPp = await resolveLevelUpRealPp(binding, async (id, mode) => {
+              const { getUserById } = await import('./osu/api.js');
+              return getUserById(id, mode);
+            }, liveDb.skillStore?.records || []);
             const contextLines = recentGroupMessages(liveDb, event.groupId, 5)
               .map((m) => `${m.nickname || m.userId}: ${String(m.content || '').slice(0, 60)}`)
               .join('\n') || '（暂无）';
@@ -571,7 +563,9 @@ async function processIncomingInner(event, sendMessage = undefined) {
     const action = assessment?.action || (merged.socialDirect ? 'reply' : 'pass');
     const guard = socialDeliveryGuard(readDb(), merged);
     const shouldReply = !isReplyProcessAborted() && !guard && ['react', 'reply'].includes(action);
-    const reason = guard || assessment?.reason || (merged.socialDirect ? '继续明确请求' : '本轮不参与');
+    const reason = guard || assessment?.reason || (merged.socialAssessmentDiagnostic
+      ? `${merged.socialAssessmentDiagnostic.stage === 'failure' ? '评估错误' : '评估阻断'}：${merged.socialAssessmentDiagnostic.reason}${shouldReply ? '；按既有明确请求回退继续回复' : '；未发送回复'}`
+      : (merged.socialDirect ? '继续明确请求' : '本轮不参与'));
     updateDb((draft) => {
       for (const item of draft.decisions) if (item.groupId === merged.groupId && item.userId === merged.userId
         && (merged.socialMessageIds || [merged.messageId]).includes(item.messageId)) {
@@ -588,7 +582,7 @@ async function processIncomingInner(event, sendMessage = undefined) {
     }
     merged.socialAction = action;
     merged.socialContextIds ||= socialTimeline(readDb(), merged, 40).map((m) => m.messageId);
-    const output = await generateConversationReply(merged, sendMessage, { shouldReply: true, reason,
+    const output = await generateConversationReply(merged, sendMessage, { shouldReply: true, reason: !assessment && merged.socialAssessmentDiagnostic ? '继续明确请求' : reason,
       socialReady: socialCandidate, combinedSocial, visualLimitation: decision.visualLimitation });
     if(reflection&&!isReplyProcessAborted())queueSocialReflection(reflection,{action:merged.socialAction||action,replied:Boolean(output.replied)});
     if (socialCandidate) recordSocialDecision(merged, { stage: 'delivery', action: output.replied ? merged.socialAction || action : 'pass',
