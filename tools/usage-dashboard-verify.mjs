@@ -65,6 +65,17 @@ try{
  if(process.env.WUXIN_USAGE_SCREENSHOT_DIR)await card.screenshot({path:path.join(process.env.WUXIN_USAGE_SCREENSHOT_DIR,'usage-mobile.png')});
  await page.evaluate(db=>window.updateUsage(db),{...initial,usage:{},usageStats:buildUsageStats({},[],now)});
  await page.getByText('所选时段暂无已记录用量',{exact:true}).waitFor();assert.equal(await card.locator('[data-usage="cache-rate"]').innerText(),'—');
- assert.ok(!(await card.innerText()).includes('NaN'));assert.deepEqual(errors,[]);
- console.log('PASS usage dashboard: five ranges, matching totals and details, real axes, live hover rollover, browser timezone independence, partial history, lifetime total, narrow layout and empty state');
+ assert.ok(!(await card.innerText()).includes('NaN'));
+ const openAISettings={...initial.settings,llmProvider:'openai-compatible',apiBaseUrl:'https://api.openai.com/v1',model:'gpt-6.1-terra'};
+ const openAIDb={...initial,settings:openAISettings};
+ await page.evaluate(db=>window.updateUsage(db),openAIDb);
+ await page.locator('[data-openai-cost]').waitFor();
+ assert.equal(await page.locator('[data-openai-cost]').innerText(),'$0.0838');
+ assert.ok((await page.locator('body').innerText()).includes('Terra 6.1'));
+ await page.evaluate(db=>window.updateUsage(db),{...openAIDb,settings:{...openAISettings,model:'gpt-6-luna'}});
+ await page.waitForFunction(()=>document.querySelector('[data-openai-cost]')?.textContent==='$0.008424');
+ await page.evaluate(db=>window.updateUsage(db),{...openAIDb,settings:{...openAISettings,apiBaseUrl:'https://relay.example/v1'}});
+ await page.waitForFunction(()=>!document.querySelector('[data-openai-cost]'));
+ assert.deepEqual(errors,[]);
+ console.log('PASS usage dashboard: five ranges, matching totals and details, real axes, live hover rollover, browser timezone independence, partial history, lifetime total, narrow layout, empty state and OpenAI cost visibility');
 }finally{await browser?.close();server.closeAllConnections();await new Promise(r=>server.close(r));}
