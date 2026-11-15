@@ -79,6 +79,17 @@ try{
  assert.ok((await page.locator('body').innerText()).includes('gpt-6.1-terra'));
  await page.evaluate(db=>window.updateUsage(db),{...openAIDb,usageStats:lunaStats,settings:{...openAISettings,model:'gpt-6-luna'}});
  await page.waitForFunction(()=>document.querySelector('[data-openai-cost]')?.textContent==='$0.008424');
+ const mixedStats={...openAIDb.usageStats,openai:{...openAIDb.usageStats.openai,hourly24:{...openAIDb.usageStats.openai.hourly24,partial:false,models:{'gpt-6.1-terra':{promptTokens:1000000},'gpt-unpriced':{promptTokens:1000000}}}}};
+ await page.evaluate(db=>window.updateUsage(db),{...openAIDb,usageStats:mixedStats});
+ await page.waitForFunction(()=>document.querySelector('[data-openai-cost]')?.textContent==='$1.00');
+ assert.ok((await page.locator('[data-openai-cost]').locator('..').innerText()).includes('部分'));
+ assert.ok((await page.locator('[data-openai-unpriced]').innerText()).includes('gpt-unpriced'));
+ await page.evaluate(db=>window.updateUsage(db),{...openAIDb,usageStats:mixedStats,settings:{...openAISettings,model:'gpt-unpriced'}});
+ assert.ok((await page.locator('[data-openai-unpriced]').innerText()).includes('gpt-unpriced'));
+ const unpricedStats={...mixedStats,openai:{...mixedStats.openai,hourly24:{...mixedStats.openai.hourly24,models:{'gpt-unpriced':{promptTokens:1000000}}}}};
+ await page.evaluate(db=>window.updateUsage(db),{...openAIDb,usageStats:unpricedStats});
+ await page.waitForFunction(()=>document.querySelector('[data-openai-cost]')?.textContent==='—');
+ assert.ok((await page.locator('[data-openai-unpriced]').innerText()).includes('gpt-unpriced'));
  await page.evaluate(db=>window.updateUsage(db),{...openAIDb,settings:{...openAISettings,apiBaseUrl:'https://relay.example/v1'}});
  await page.waitForFunction(()=>!document.querySelector('[data-openai-cost]'));
  assert.deepEqual(errors,[]);

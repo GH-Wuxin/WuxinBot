@@ -14,6 +14,7 @@ import { fetchBoundedBody } from '../httpBody.js';
 import { recordLlmInvocation } from '../llmLedger.js';
 import {
   buildOpenAIResponsesParams,
+  applyOpenAIChatReasoning,
   normalizeOpenAIResponsesResponse,
   openAIResponsesReasoningEffort,
   shouldUseOpenAIResponses,
@@ -587,7 +588,7 @@ export async function completeChat(db, options = {}) {
   );
   // Responses-only bookkeeping must never leak into Chat Completions requests.
   const chatMessages = messages.map(({ responses_output, ...message }) => message);
-  const params = {
+  let params = {
     model: requestModelForProvider(resolvedDb, provider, baseURL, { ...options, model: requestedModel }),
     messages: chatMessages,
   };
@@ -605,6 +606,7 @@ export async function completeChat(db, options = {}) {
       params.reasoning_effort = options.reasoning_effort;
     }
   }
+  params = applyOpenAIChatReasoning(params, provider, baseURL, options.reasoning_effort, options.thinking);
   // Thinking requests must not be capped by the chat-default token limit; the
   // reasoning content itself needs budget, so keep the provider's own limit.
   // OpenAI official endpoints use max_completion_tokens; DeepSeek and

@@ -4,7 +4,7 @@ import { api } from '../../lib/api.js';
 import { Avatar, groupAvatarUrl, userAvatarUrl } from '../../components/Avatar.jsx';
 import { RefreshButton } from '../../components/ui/RefreshButton.jsx';
 import { usagePeriods, periodLabels, usageSummary, shortNumber, usageTime, usagePointLabel, usageAxis } from './usageView.js';
-import { openAIPricingFor, estimateOpenAIModelsCost, formatUsd } from './openaiPricing.js';
+import { usesOfficialOpenAI, estimateOpenAIModelsCost, formatUsd } from './openaiPricing.js';
 
 // 结构与 class 名对齐原型 PAGES.overview，数据换成本地真实字段。
 const num = (value) => Number(value || 0).toLocaleString('en-US');
@@ -38,11 +38,12 @@ export function DashboardPage({ db, oneBot, saveSettings, refreshState, onNaviga
   const experienceCount = Object.keys(db.experience || {}).length;
   const today = db.usageStats?.today || {};
   const selected = usageSummary(db.usageStats, db.usage, period);
-  const openAIPricing = openAIPricingFor(settings, model);
+  const openAIPricing = usesOfficialOpenAI(settings);
   const openAIUsage = db.usageStats?.openai?.[period];
   const openAICost = openAIPricing && openAIUsage ? estimateOpenAIModelsCost(openAIUsage.models) : null;
   const openAICostValue = openAICost?.cost ?? null;
-  const openAICostPartial = openAIUsage?.partial === true;
+  const openAIUnpricedModels = openAICost?.unpricedModels || [];
+  const openAICostPartial = openAIUsage?.partial === true || openAIUnpricedModels.length > 0;
   const rows = selected.points;
   const points = rows.map((point) => Number(point.totalTokens || 0));
   const maximum = Math.max(1, ...points);
@@ -154,9 +155,11 @@ export function DashboardPage({ db, oneBot, saveSettings, refreshState, onNaviga
         <div className="card">
           <div className="card-head"><span className="card-title">模型通道</span><a className="card-more" href="#" onClick={(event) => { event.preventDefault(); onNavigate('model'); }}>管理 →</a></div>
           {openAIPricing ? <div className="kv">
-            <span>{period === 'all' ? 'OpenAI 累计成本' : periodLabels[period] + ' OpenAI 成本'}{openAICostPartial ? '（部分）' : ''}</span>
-            <b data-openai-cost title={openAICostPartial && openAIUsage?.availableSince ? '精确统计自 ' + usageTime(openAIUsage.availableSince, db.usageStats?.openai?.timeZone) : undefined}>{formatUsd(openAICostValue)}</b>
+            <span>{period === 'all' ? 'OpenAI 累计估算成本' : periodLabels[period] + ' OpenAI 估算成本'}{openAICostPartial ? '（部分）' : ''}</span>
+            <b data-openai-cost title={openAICostPartial && openAIUsage?.availableSince ? '用量记录自 ' + usageTime(openAIUsage.availableSince, db.usageStats?.openai?.timeZone) : undefined}>{formatUsd(openAICostValue)}</b>
           </div> : null}
+          {openAIPricing && openAIUnpricedModels.length > 0 ? <div className="note" data-openai-unpriced>尚未计价：{openAIUnpricedModels.join('、')}。以上金额仅包含已配置价格的模型。</div> : null}
+          {openAIPricing ? <div className="note">按本地标准价格表估算，不等同于官方账单。</div> : null}
           <div className="kv"><span>接口供应商</span><b>{settings.llmProvider === 'codex-app-server' ? 'Codex 配额' : 'OpenAI 兼容'}</b></div>
           <div className="kv"><span>今日请求</span><b>{num(today.requests)}</b></div>
         </div>

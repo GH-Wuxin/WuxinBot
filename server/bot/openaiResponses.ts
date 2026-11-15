@@ -74,6 +74,26 @@ export function openAIResponsesReasoningEffort(model: unknown, requested: unknow
   return effort;
 }
 
+/** Apply only to official reasoning models; never change relay/legacy requests.
+ * Only map an explicit enabled policy. Disabling reasoning is model-specific:
+ * absent/disabled policies retain the previous omitted-field behavior (provider
+ * default), NOT a promise that reasoning is disabled on the server.
+ * Do not forward Responses-only max/xhigh levels to Chat Completions.
+ */
+export function applyOpenAIChatReasoning(params: AnyRecord, provider: string, baseURL: unknown, requested: unknown, thinking?: { type?: string }) {
+  if (!shouldUseOpenAIResponses(provider, baseURL, params.model, true)) return params;
+  const model = String(params.model || '').toLowerCase();
+  // Pro variants can have fixed/high-only reasoning, and early o1 variants
+  // lack configurable effort. Do not infer capabilities from the family name.
+  if (/(?:^|-)pro(?:-|$)/.test(model) || /^o1-(?:mini|preview)(?:-|$)/.test(model)) return params;
+  const raw = String(requested || '').toLowerCase();
+  if (thinking?.type === 'disabled' || !raw || ['none', 'off', 'disabled'].includes(raw)) return params;
+  if (!['minimal', 'low', 'medium', 'high', 'xhigh', 'max'].includes(raw)) return params;
+  const effort = ['high', 'xhigh', 'max'].includes(raw) ? 'high'
+    : raw === 'medium' ? 'medium' : 'low';
+  return { ...params, reasoning_effort: effort };
+}
+
 export function buildResponsesInput(messages: any[] = []) {
   const instructions: string[] = [];
   const input: any[] = [];
@@ -299,7 +319,16 @@ function responsesUsage(usage: any) {
 }
 
 export function normalizeOpenAIResponsesResponse(response: any, fallbackModel = '') {
+  // The installed SDK declares Response.status optional. Preserve compatibility
+  // with omitted status, but never reinterpret an explicit failure as success.
+  if (response?.error || (response?.status != null && !['completed', 'incomplete'].includes(response.status))) {
+    throw new Error(`OPENAI_RESPONSES_UNSUCCESSFUL: ${String(response?.status || 'missing status')}`);
+  }
   const output = Array.isArray(response?.output) ? response.output : [];
+  if (output.some((item: any) => item?.type === 'function_call'
+    && (response.status === 'incomplete' || (item.status != null && item.status !== 'completed')))) {
+    throw new Error('OPENAI_RESPONSES_INCOMPLETE_FUNCTION_CALL');
+  }
   const text = outputText(output) || String(response?.output_text || '').trim();
   const toolCalls: any[] = [];
   for (const item of output) {

@@ -256,6 +256,7 @@ export interface OpenAIUsageHistory {
   completeSince: string;
   backfillSource?: 'usageEvents' | 'none';
   backfilledAt?: string;
+  backfillIncompleteBefore?: string;
   hours: Record<string, Record<string, OpenAIUsageBucket>>;
   days: Record<string, Record<string, OpenAIUsageBucket>>;
   total: Record<string, OpenAIUsageBucket>;
@@ -282,7 +283,7 @@ export interface OpenAIUsageStats {
 }
 
 export const OPENAI_OFFICIAL_HOST = 'api.openai.com';
-// Backfill allowlist; keep in sync with src/pages/Dashboard/openaiPricing.js.
+// Known pricing models; never use model names as proof of endpoint provenance.
 export const OPENAI_PRICED_MODELS = ['gpt-6.1-terra', 'gpt-6-luna', 'gpt-6.1-sol'] as const;
 
 export function apiHostFromUrl(value: unknown): string {
@@ -405,20 +406,29 @@ export function recordOpenAIUsage(usage: any, call: {
 export function initializeOpenAIUsage(
   stored: any,
   events: any[] = [],
-  settings: any = {},
+  _settings: any = {},
   now = Date.now(),
 ): OpenAIUsageHistory {
   if (stored?.version === 1) return normalizeOpenAIUsageHistory(stored, now);
   const history = createOpenAIUsageHistory(now);
-  const configuredHost = apiHostFromUrl(settings?.apiBaseUrl);
-  const official = settings?.llmProvider === 'openai-compatible'
-    && (!String(settings?.apiBaseUrl || '').trim() || configuredHost === OPENAI_OFFICIAL_HOST);
-  if (!official) return history;
+  // Current settings cannot prove where a historical call was sent.
+  // Keep unknown/relay events out of the official ledger. Existing ledgers
+  // are returned above without rebuilding or altering their historical totals.
   let earliest = Number.POSITIVE_INFINITY;
   for (const event of events) {
     if (!event || event.kind !== 'llm-call' || event.accountingExcluded) continue;
     if (event.provider !== 'openai-compatible') continue;
-    if (!isOpenAIPricedModel(event.model)) continue;
+    const eventHost = String(event.apiHost || '').trim().toLowerCase();
+    if (!eventHost) {
+      const unknownAt = Date.parse(event.createdAt);
+      if (Number.isFinite(unknownAt) && unknownAt <= now) {
+        const previous = Date.parse(history.backfillIncompleteBefore || '') || 0;
+        history.backfillIncompleteBefore = new Date(Math.max(previous, unknownAt + 1)).toISOString();
+      }
+      continue;
+    }
+    if (eventHost !== OPENAI_OFFICIAL_HOST) continue;
+    if (!String(event.model || '').trim()) continue;
     const at = Date.parse(event.createdAt);
     if (!Number.isFinite(at) || at > now) continue;
     const values = {
@@ -472,7 +482,8 @@ function openAIUsagePeriod(
     totals: sumOpenAIUsageBuckets(models),
     start,
     end,
-    partial: !Number.isFinite(since) || since > start,
+    partial: !Number.isFinite(since) || since > start
+      || Date.parse(history.backfillIncompleteBefore || '') > start,
     availableSince: history.completeSince || '',
   };
 }

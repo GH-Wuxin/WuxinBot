@@ -15,18 +15,23 @@ const count = (value) => {
   return Number.isFinite(number) && number > 0 ? number : 0;
 };
 
-export function openAIPricingFor(settings, model) {
-  if (settings?.llmProvider !== 'openai-compatible') return null;
+export function usesOfficialOpenAI(settings) {
+  if (settings?.llmProvider !== 'openai-compatible') return false;
   const raw = String(settings.apiBaseUrl || '').trim();
   if (raw) {
     let host = '';
     try {
       host = new URL(raw).hostname.toLowerCase();
     } catch {
-      return null;
+      return false;
     }
-    if (host !== 'api.openai.com') return null;
+    if (host !== 'api.openai.com') return false;
   }
+  return true;
+}
+
+export function openAIPricingFor(settings, model) {
+  if (!usesOfficialOpenAI(settings)) return null;
   return OPENAI_MODEL_PRICING[String(model || '')] || null;
 }
 

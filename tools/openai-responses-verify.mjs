@@ -192,4 +192,19 @@ const incomplete = normalizeOpenAIResponsesResponse({
 assert.equal(incomplete.choices[0].finish_reason, 'length');
 assert.equal(incomplete.choices[0].message.content, null);
 
+for (const status of ['failed', 'cancelled', 'queued', 'in_progress']) {
+  assert.throws(() => normalizeOpenAIResponsesResponse({ ...raw, status }), /OPENAI_RESPONSES_UNSUCCESSFUL/);
+}
+assert.equal(normalizeOpenAIResponsesResponse({ ...raw, status: undefined }).choices[0].message.tool_calls.length, 1);
+assert.throws(() => normalizeOpenAIResponsesResponse({ ...raw, error: { code: 'server_error' } }), /OPENAI_RESPONSES_UNSUCCESSFUL/);
+for (const status of ['incomplete', 'in_progress']) {
+  assert.throws(() => normalizeOpenAIResponsesResponse({ ...raw, output: [
+    { type: 'function_call', status, call_id: 'call_bad', name: 'query', arguments: '{}' },
+  ] }), /OPENAI_RESPONSES_INCOMPLETE_FUNCTION_CALL/);
+}
+assert.throws(() => normalizeOpenAIResponsesResponse({ ...raw, status: 'incomplete' }), /OPENAI_RESPONSES_INCOMPLETE_FUNCTION_CALL/);
+assert.equal(normalizeOpenAIResponsesResponse({ ...raw, output: [
+  { type: 'function_call', status: 'completed', call_id: 'call_ok', name: 'query', arguments: '{}' },
+] }).choices[0].message.tool_calls.length, 1);
+
 console.log('OpenAI Responses adapter: message/tool mapping, reasoning preservation, choices and usage normalization PASS');

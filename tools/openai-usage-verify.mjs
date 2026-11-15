@@ -81,19 +81,19 @@ assert.equal(fullStats.hourly24.totals.promptTokens, 200);
 assert.equal(fullStats.daily7.totals.promptTokens, 300);
 
 const events = [
-  { kind: 'llm-call', provider: 'openai-compatible', model: 'gpt-6.1-terra', promptTokens: 100, completionTokens: 10, createdAt: new Date(now - 3 * HOUR).toISOString() },
-  { kind: 'llm-call', provider: 'openai-compatible', model: 'gpt-6-luna', promptTokens: 200, completionTokens: 20, createdAt: new Date(now - 2 * HOUR).toISOString() },
-  { kind: 'llm-call', provider: 'openai-compatible', model: 'deepseek-v4.1-flash', promptTokens: 300, completionTokens: 30, createdAt: new Date(now - HOUR).toISOString() },
+  { kind: 'llm-call', provider: 'openai-compatible', apiHost: 'api.openai.com', model: 'gpt-6.1-terra', promptTokens: 100, completionTokens: 10, createdAt: new Date(now - 3 * HOUR).toISOString() },
+  { kind: 'llm-call', provider: 'openai-compatible', apiHost: 'api.openai.com', model: 'gpt-6-luna', promptTokens: 200, completionTokens: 20, createdAt: new Date(now - 2 * HOUR).toISOString() },
+  { kind: 'llm-call', provider: 'openai-compatible', apiHost: 'api.openai.com', model: 'gpt-unpriced', promptTokens: 300, completionTokens: 30, createdAt: new Date(now - HOUR).toISOString() },
   { kind: 'llm-call', provider: 'deepseek', model: 'gpt-6.1-terra', promptTokens: 400, completionTokens: 40, createdAt: new Date(now - HOUR).toISOString() },
   { kind: 'reply-delivery', provider: 'openai-compatible', model: 'gpt-6.1-terra', promptTokens: 500, completionTokens: 50, createdAt: new Date(now - HOUR).toISOString() },
 ];
 const officialSettings = { llmProvider: 'openai-compatible', apiBaseUrl: 'https://api.openai.com/v1' };
 const history = initializeOpenAIUsage(undefined, events, officialSettings, now);
 const backfilled = buildOpenAIUsageStats(history, now);
-assert.deepEqual(Object.keys(backfilled.hourly24.models).sort(), ['gpt-6-luna', 'gpt-6.1-terra']);
-assert.equal(backfilled.hourly24.totals.promptTokens, 300);
-assert.equal(backfilled.hourly24.totals.completionTokens, 30);
-assert.equal(backfilled.hourly24.totals.requests, 2);
+assert.deepEqual(Object.keys(backfilled.hourly24.models).sort(), ['gpt-6-luna', 'gpt-6.1-terra', 'gpt-unpriced']);
+assert.equal(backfilled.hourly24.totals.promptTokens, 600);
+assert.equal(backfilled.hourly24.totals.completionTokens, 60);
+assert.equal(backfilled.hourly24.totals.requests, 3);
 assert.equal(history.backfillSource, 'usageEvents');
 assert.equal(backfilled.completeSince, new Date(now - 3 * HOUR).toISOString());
 
@@ -109,8 +109,21 @@ const relayHistory = initializeOpenAIUsage(undefined, events, {
   llmProvider: 'openai-compatible',
   apiBaseUrl: 'https://relay.example/v1',
 }, now);
-assert.deepEqual(relayHistory.total, {});
-assert.equal(relayHistory.backfillSource, 'none');
+assert.deepEqual(relayHistory.total, history.total, 'Changing current endpoint must not change historical attribution');
+assert.equal(relayHistory.backfillSource, 'usageEvents');
+const excluded = initializeOpenAIUsage(undefined, [
+  {...events[0], apiHost: 'relay.example'},
+  {...events[1], apiHost: undefined},
+], officialSettings, now);
+assert.deepEqual(excluded.total, {}, 'Relay and unknown historical origins must not be guessed');
+const mixedOrigins = initializeOpenAIUsage(undefined, [
+  {...events[0], createdAt:new Date(now - 48 * HOUR).toISOString()},
+  {...events[1], apiHost:undefined},
+], officialSettings, now);
+assert.equal(buildOpenAIUsageStats(mixedOrigins, now).hourly24.partial, true, 'Unknown origin within period must disclose incomplete coverage');
+const original = JSON.stringify(history);
+initializeOpenAIUsage(history, [], {}, now);
+assert.equal(JSON.stringify(history), original, 'Existing ledger must remain unchanged');
 
 const oldStore = { usage: {} };
 recordOpenAIUsage(oldStore.usage, officialCall('gpt-6.1-sol', {
