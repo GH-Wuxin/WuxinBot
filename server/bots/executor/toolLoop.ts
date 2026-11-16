@@ -52,8 +52,11 @@ export type ToolExecutor = (
 // straight to safe synthesis, preserving any direct payload already collected.
 export const AGENT_MAX_TOOL_CALLS_PER_RESPONSE = 4;
 export const AGENT_MAX_TOOL_CALLS_PER_TURN = 8;
-/** Planning can legitimately exceed the generic 45s envelope on slower models. */
-export const TOOL_PLANNING_TIMEOUT_MS = 60_000;
+/**
+ * Planning can legitimately exceed the generic 45s envelope on slower models,
+ * but the user-visible failure fallback must still settle inside 60s.
+ */
+export const TOOL_PLANNING_TIMEOUT_MS = 55_000;
 
 export interface ToolLoopOptions {
   db: any;
