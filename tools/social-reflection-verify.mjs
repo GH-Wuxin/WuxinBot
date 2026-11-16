@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import {createTestDataDir,cleanupTestDir} from './test-isolation.mjs';
 const directory=createTestDataDir('pippi-reflection');process.env.NODE_ENV='test';
 const store=await import('../server/store.ts');store.ensureStore();
-const {captureSocialReflection,queueSocialReflection,resumeSocialReflections,getSocialReflectionQueueStats}=await import('../server/bot/social/reflection.ts');
+const {captureSocialReflection,queueSocialReflection,resumeSocialReflections,getSocialReflectionQueueStats,pruneExhaustedSocialReflections}=await import('../server/bot/social/reflection.ts');
 const {assessSocialParticipation}=await import('../server/bot/social/runtime.ts');
 const {emptySocialState,readSocialPerson,commitSocialAssessment}=await import('../server/bot/social/state.ts');
 const {waitForBackgroundTasks,getBackgroundTaskStats}=await import('../server/backgroundTasks.ts');
@@ -50,5 +50,9 @@ try{
  assert.equal(participation.action,'pass');assert.equal(JSON.stringify(store.readDb().socialV2.people),before,'foreground participation never writes relationships');
  const malformed=await assessSocialParticipation({...event,socialDirect:false},'initial',async()=>({text:JSON.stringify({action:['reply'],addressee:'bot',reason:'invalid action type'})}));
  assert.equal(malformed,null,'arrays must not be coerced into closed semantic enums');
- console.log('PASS background social: scope privacy, duplicate suppression, stale revision guard, pass updates, invalid evidence rejected, foreground participation read-only');
+ seed();
+ store.updateDb(db=>{db.socialV2.reflectionQueue=[{key:'stale',attempts:3},{key:'live',attempts:1}];});
+ assert.equal(pruneExhaustedSocialReflections(),1,'exhausted jobs must be pruned');
+ assert.deepEqual(store.readDb().socialV2.reflectionQueue.map(j=>j.key),['live']);
+ console.log('PASS background social: scope privacy, duplicate suppression, stale revision guard, pass updates, invalid evidence rejected, exhausted queue pruned, foreground participation read-only');
 }finally{await waitForBackgroundTasks(3000);cleanupTestDir(directory);}

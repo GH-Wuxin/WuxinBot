@@ -294,6 +294,22 @@ function isProbablyLocalUrl(url) {
   }
 }
 
+/**
+ * QQ image CDN links are short-lived and often require QQ-side context.
+ * OpenAI cannot reliably fetch them server-side, so auto transport downloads
+ * these hosts locally and sends inline data instead.
+ */
+function isQqImageHost(url) {
+  try {
+    const host = new URL(url).hostname.toLowerCase();
+    return host === 'qq.com' || host.endsWith('.qq.com')
+      || host === 'qq.com.cn' || host.endsWith('.qq.com.cn')
+      || host === 'qpic.cn' || host.endsWith('.qpic.cn');
+  } catch {
+    return false;
+  }
+}
+
 function normalizeLocalPath(ref) {
   const value = String(ref || '').trim();
   if (!value) return '';
@@ -358,6 +374,7 @@ export async function resolveVisionImageUrl(db, image, options = {}) {
   }
   if (url) {
     if (url.startsWith('data:')) return url;
+    if (isQqImageHost(url)) return fetchImageAsDataUrl(url, timeoutMs, maxBytes);
     if (!isProbablyLocalUrl(url)) return url;
     return fetchImageAsDataUrl(url, timeoutMs, maxBytes);
   }

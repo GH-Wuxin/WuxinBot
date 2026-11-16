@@ -52,6 +52,8 @@ export type ToolExecutor = (
 // straight to safe synthesis, preserving any direct payload already collected.
 export const AGENT_MAX_TOOL_CALLS_PER_RESPONSE = 4;
 export const AGENT_MAX_TOOL_CALLS_PER_TURN = 8;
+/** Planning can legitimately exceed the generic 45s envelope on slower models. */
+export const TOOL_PLANNING_TIMEOUT_MS = 60_000;
 
 export interface ToolLoopOptions {
   db: any;
@@ -768,6 +770,7 @@ export async function runToolLoop(
         ...plannerWire,
         temperature,
         maxTokens,
+        timeoutMs: TOOL_PLANNING_TIMEOUT_MS,
         model,
         label: label ? `${label} [工具循环 ${iterations}]` : undefined,
         ...(options.lightweightToolsOnly && !thinkingOn ? { responseFormat: typeof finalResponseFormat === 'function' ? finalResponseFormat() : finalResponseFormat } : {}),

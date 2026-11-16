@@ -22,6 +22,16 @@ export function getSocialReflectionQueueStats(){
   return {pending:pending.size,maxPending:MAX_PENDING,overflow,durablePending:saved.filter(j=>j.attempts<3).length,exhausted:saved.filter(j=>j.attempts>=3).length};
 }
 function removeSaved(key:string){updateDb(db=>{db.socialV2.reflectionQueue=(db.socialV2.reflectionQueue||[]).filter(j=>j.key!==key);});}
+
+/** Exhausted jobs are never retried; drop them at startup instead of reporting them forever. */
+export function pruneExhaustedSocialReflections(): number {
+  const saved=readDb().socialV2.reflectionQueue||[];
+  const stale=saved.filter(j=>Number(j?.attempts||0)>=3);
+  if(!stale.length)return 0;
+  updateDb(db=>{db.socialV2.reflectionQueue=(db.socialV2.reflectionQueue||[]).filter(j=>Number(j?.attempts||0)<3);});
+  traceEvent('GATE','social_reflection_pruned',{status:'ok',count:stale.length});
+  return stale.length;
+}
 function hasSources(db:any,snapshot:ReturnType<typeof captureSocialReflection>){
   return snapshot.ids.every(id=>db.messages.some(m=>String(m.sourceMessageId||m.messageId||m.id)===id&&m.role==='user'
     &&String(m.senderId||m.userId)===snapshot.event.userId&&messageInConversation(m,snapshot.event,snapshot.account)));
@@ -41,6 +51,7 @@ export function resumeSocialReflections(now=Date.now(),invoke=completeChat){
 }
 export function startSocialReflections(){
   if(recoveryTimer)return;
+  try{pruneExhaustedSocialReflections();}catch(error){traceEvent('ERROR','social_reflection_prune_failed',{error:String(error)});}
   recoveryTimer=setInterval(()=>{try{resumeSocialReflections();}catch(error){traceEvent('ERROR','social_reflection_recovery_failed',{error:String(error)});}},10_000);
   recoveryTimer.unref?.();resumeSocialReflections();
 }

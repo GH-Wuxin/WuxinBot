@@ -65,4 +65,27 @@ assert.equal(openAIResponsesReasoningEffort('gpt-6-astra', 'max'), 'xhigh');
 assert.equal(openAIResponsesReasoningEffort('gpt-6-astra', 'xhigh'), 'xhigh');
 assert.equal(openAIResponsesReasoningEffort('o3-mini', 'max'), 'high');
 
-console.log('OpenAI parameter adaptation: official tool calls use Responses, reasoning effort is model-clamped, Chat Completions keeps max_completion_tokens/default temperature, relays and DeepSeek keep existing behavior PASS');
+const { resolveVisionImageUrl } = await import('../server/bot/llm.ts');
+const originalFetch = globalThis.fetch;
+try {
+  globalThis.fetch = async () => new Response(Uint8Array.from([0xff, 0xd8, 0xff, 0xd9]), {
+    status: 200,
+    headers: { 'content-type': 'image/jpeg' },
+  });
+  const visionDb = { settings: {
+    llmProvider: 'openai-compatible',
+    visionImageTransport: 'auto',
+    visionMaxImageBytes: 1_000_000,
+    visionImageTimeoutMs: 1_000,
+  } };
+  const qqImage = await resolveVisionImageUrl(visionDb, { url: 'https://multimedia.nt.qq.com.cn/download?appid=1407&fileid=x' });
+  assert.ok(qqImage.startsWith('data:image/jpeg;base64,'), 'auto transport must inline QQ CDN images');
+  const publicImage = await resolveVisionImageUrl(visionDb, { url: 'https://example.com/a.jpg' });
+  assert.equal(publicImage, 'https://example.com/a.jpg', 'auto transport keeps public remote URLs');
+  const explicitUrl = await resolveVisionImageUrl({ settings: { ...visionDb.settings, visionImageTransport: 'url' } }, { url: 'https://multimedia.nt.qq.com.cn/download?appid=1407&fileid=x' });
+  assert.equal(explicitUrl, 'https://multimedia.nt.qq.com.cn/download?appid=1407&fileid=x', 'url transport stays explicit');
+} finally {
+  globalThis.fetch = originalFetch;
+}
+
+console.log('OpenAI parameter adaptation: official tool calls use Responses, reasoning effort is model-clamped, Chat Completions keeps max_completion_tokens/default temperature, QQ images inline under auto, relays and DeepSeek keep existing behavior PASS');
