@@ -85,11 +85,35 @@ if (mode === 'interrupt') {
         if (!bucketed && name === 'profiles') value.memories = db.memories;
         fs.writeFileSync(path.join(dir, shards[name]), JSON.stringify(value));
       }
+      core.settings.nickname = bucketed ? 'bucketed-v1' : 'original-v1';
       core._storage = { format: 'wuxin-sharded-v1', version: 1, revision: 'v1', shards };
       fs.writeFileSync(corePath, JSON.stringify(core));
       assert.equal(readDb().memories[0].userId, 'legacy-user');
-      updateDb(db => { db.settings.nickname = 'updated'; });
+      const backupDir = path.join(dir, 'backups');
+      const backups = () => fs.readdirSync(backupDir).filter(name => name.startsWith('pre-shard-v1-') && name.endsWith('.json') && !name.endsWith('.meta.json'));
+      const previousBackups = new Set(backups());
+      fs.renameSync = (source, destination) => {
+        if (path.dirname(destination) === backupDir) throw Object.assign(new Error('fixture'), { code: 'EIO' });
+        return rename(source, destination);
+      };
+      try {
+        assert.throws(() => updateDb(db => { db.settings.nickname = 'lost'; }), { code: 'EIO' });
+        assert.equal(readCore()._storage.version, 1);
+        assert.equal(readDb().settings.nickname, core.settings.nickname);
+      } finally { fs.renameSync = rename; }
+      if (bucketed) updateDb(db => { db.settings.nickname = 'updated'; });
+      else {
+        const next = structuredClone(readDb());
+        next.settings.nickname = 'updated';
+        writeDb(next);
+      }
       assert.equal(readCore()._storage.version, 2);
+      const created = backups().filter(name => !previousBackups.has(name));
+      assert.equal(created.length, 1);
+      const snapshot = JSON.parse(fs.readFileSync(path.join(backupDir, created[0]), 'utf8'));
+      assert.equal(snapshot.settings.nickname, core.settings.nickname);
+      assert.deepEqual(snapshot.memories, db.memories);
+      assert.ok(!Object.hasOwn(snapshot, '_storage'));
       openStore();
       assert.equal(readDb().memories[0].userId, 'legacy-user');
       assert.ok(!fs.existsSync(path.join(dir, 'db-profiles.json')));

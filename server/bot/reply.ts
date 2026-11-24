@@ -298,6 +298,21 @@ export function visualLimitationReply(event, db) {
   return '我是文字模式，看不了图片和表情包。你可以用文字描述一下内容，我继续接。';
 }
 
+async function sendForwardChunks(sendMessage, event, title, chunks) {
+  const nodes = chunks.map((content, index) => ({
+    type: 'node',
+    data: {
+      name: index === 0 ? title : `${title} ${index + 1}`,
+      uin: (event.raw?.self_id || 'REDACTED_QQ_005'),
+      content
+    }
+  }));
+
+  if (!sendMessage) return false;
+  await sendMessage(event, title, { forwardNodes: nodes });
+  return true;
+}
+
 export async function sendForwardText(sendMessage, event, title, text) {
   const lines = String(text || '').split('\n').map((line) => line.trim()).filter(Boolean);
   const chunks = [];
@@ -324,18 +339,7 @@ export async function sendForwardText(sendMessage, event, title, text) {
   }
   if (current) chunks.push(current);
 
-  const nodes = chunks.map((content, index) => ({
-    type: 'node',
-    data: {
-      name: index === 0 ? title : `${title} ${index + 1}`,
-      uin: (event.raw?.self_id || 'REDACTED_QQ_005'),
-      content
-    }
-  }));
-
-  if (!sendMessage) return false;
-  await sendMessage(event, title, { forwardNodes: nodes });
-  return true;
+  return sendForwardChunks(sendMessage, event, title, chunks);
 }
 
 export async function sendForwardBlocks(sendMessage, event, title, text) {
@@ -363,16 +367,5 @@ export async function sendForwardBlocks(sendMessage, event, title, text) {
     if (current) chunks.push(current);
   }
 
-  const nodes = chunks.map((content, index) => ({
-    type: 'node',
-    data: {
-      name: index === 0 ? title : `${title} ${index + 1}`,
-      uin: (event.raw?.self_id || 'REDACTED_QQ_005'),
-      content
-    }
-  }));
-
-  if (!sendMessage) return false;
-  await sendMessage(event, title, { forwardNodes: nodes });
-  return true;
+  return sendForwardChunks(sendMessage, event, title, chunks);
 }

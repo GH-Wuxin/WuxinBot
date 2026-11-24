@@ -34,7 +34,7 @@ function parseArgs(argv) {
   const args = {};
   for (let i = 0; i < argv.length; i += 1) {
     const key = argv[i];
-    if (key === '--data-dir' || key === '--out') {
+    if (key === '--data-dir' || key === '--out' || key === '--community-source') {
       args[key.slice(2)] = argv[i + 1];
       i += 1;
     } else {
@@ -547,7 +547,7 @@ const FORWARD_RE = /\[(?:转发消息|Forwarded Messages)\s*[:：]/;
 const EMOJI_PLACEHOLDER_RE = /\[表情\d+\]/g;
 
 function buildCommunityStyle() {
-  const sourcePath = path.join(root, 'community-corpus', 'reports', 'V2-style-ready-candidates.jsonl');
+  const sourcePath = args['community-source'] || path.join(root, 'community-corpus', 'reports', 'V2-style-ready-candidates.jsonl');
   const lines = fs.readFileSync(sourcePath, 'utf8').split(/\r?\n/).filter(Boolean);
   const entries = [];
   const skipped = [];

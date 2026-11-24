@@ -214,7 +214,7 @@ function recordUsageBucket(history: UsageHistory, values: Partial<PeriodUsage>, 
   history.days[day] = addedUsage(history.days[day], values);
   if (prune) pruneUsageBuckets(history, at);
 }
-function pruneUsageBuckets(history: UsageHistory, now: number) {
+function pruneUsageBuckets(history: UsageHistory | OpenAIUsageHistory, now: number) {
   const oldestHour = Math.floor(now / HOUR_MS) * HOUR_MS - 71 * HOUR_MS;
   const oldestDay = usageDayStart(now) - 399 * DAY_MS;
   for (const key of Object.keys(history.hours)) if (Number(key) < oldestHour) delete history.hours[key];
@@ -349,16 +349,10 @@ function normalizeOpenAIUsageHistory(stored: any, now: number): OpenAIUsageHisto
     days: stored.days && typeof stored.days === 'object' ? { ...stored.days } : {},
     total: stored.total && typeof stored.total === 'object' ? { ...stored.total } : {},
   };
-  pruneOpenAIUsageBuckets(history, now);
+  pruneUsageBuckets(history, now);
   return history;
 }
 
-function pruneOpenAIUsageBuckets(history: OpenAIUsageHistory, now: number) {
-  const oldestHour = Math.floor(now / HOUR_MS) * HOUR_MS - 71 * HOUR_MS;
-  const oldestDay = usageDayStart(now) - 399 * DAY_MS;
-  for (const key of Object.keys(history.hours)) if (Number(key) < oldestHour) delete history.hours[key];
-  for (const key of Object.keys(history.days)) if (Number(key) < oldestDay) delete history.days[key];
-}
 
 /**
  * Persist only calls that reached the official OpenAI endpoint. Relays and
@@ -399,7 +393,7 @@ export function recordOpenAIUsage(usage: any, call: {
   if (!history.completeSince || at < Date.parse(history.completeSince)) {
     history.completeSince = new Date(at).toISOString();
   }
-  pruneOpenAIUsageBuckets(history, at);
+  pruneUsageBuckets(history, at);
   return true;
 }
 
@@ -454,7 +448,7 @@ export function initializeOpenAIUsage(
     history.completeSince = new Date(earliest).toISOString();
     history.backfillSource = 'usageEvents';
   }
-  pruneOpenAIUsageBuckets(history, now);
+  pruneUsageBuckets(history, now);
   return history;
 }
 

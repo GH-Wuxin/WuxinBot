@@ -3,15 +3,14 @@
 // server/bot/owner/*.ts; routing and permission decisions are in
 // server/bot/owner/router.ts and registry.ts.
 import {
-  commandRoleLevel,
-  commandRoleName,
-  userCommandRoleId,
+  hasCommandPermission,
+  commandDeniedReply,
+  getUserPolicy,
   parseCommandMeta,
   writeCommandLog,
   setCommandStage,
 } from './commands.js';
 import { readDb, updateDb } from '../store.js';
-import { getUserPolicy } from './gate.js';
 import {
   OWNER_DEFAULT_COMMAND_PERMISSIONS,
 } from './commands/owner.meta.js';
@@ -39,24 +38,6 @@ const policyMap = {
   '/设管理员': 'admin',
   '/取消管理员': 'normal'
 };
-
-function ownerHasCommandPermission(db, userPolicy, permissions, permissionKey) {
-  if (permissions.isOwner || userPolicy.policy === 'owner') return true;
-  const requiredRoleId =
-    db.settings.commandPermissions?.[permissionKey] ||
-    OWNER_DEFAULT_COMMAND_PERMISSIONS[permissionKey] ||
-    'owner';
-  const userRoleId = userCommandRoleId(db, userPolicy, permissions);
-  return commandRoleLevel(db, userRoleId) >= commandRoleLevel(db, requiredRoleId);
-}
-
-function ownerCommandDeniedReply(db, permissionKey) {
-  const requiredRoleId =
-    db.settings.commandPermissions?.[permissionKey] ||
-    OWNER_DEFAULT_COMMAND_PERMISSIONS[permissionKey] ||
-    'owner';
-  return `这个指令需要 ${commandRoleName(db, requiredRoleId)} 或更高权限。`;
-}
 
 export async function handleOwnerCommand(event, sendMessage = undefined, permissions = { isOwner: true, isAdmin: false }) {
   const meta = parseCommandMeta(event, permissions);
@@ -152,9 +133,9 @@ async function runOwnerCommand(event, sendMessage, permissions = { isOwner: true
     throw new Error(`owner handler missing: ${route.handlerKey}`);
   }
 
-  if (route.permissionKey && !ownerHasCommandPermission(commandDb, commandUserPolicy, permissions, route.permissionKey)) {
+  if (route.permissionKey && !hasCommandPermission(commandDb, commandUserPolicy, permissions, route.permissionKey, OWNER_DEFAULT_COMMAND_PERMISSIONS)) {
     const denyReplyKey = route.denyReplyKey || route.permissionKey;
-    const reason = ownerCommandDeniedReply(commandDb, denyReplyKey);
+    const reason = commandDeniedReply(commandDb, denyReplyKey, OWNER_DEFAULT_COMMAND_PERMISSIONS);
     // 走到这里必然是权限不足，直接附图（图由代码触发，不依赖 LLM）。
     const deniedSend = sourceSender(sendMessage, {module:'command_router',operation:'permission_denied'},
       {code:'permission_denied',description:'实际指令权限检查未通过，发送权限提示。',audience:'requester'},messageTrigger(event));

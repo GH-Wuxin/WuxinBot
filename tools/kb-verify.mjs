@@ -26,11 +26,16 @@ console.log('[isolation] production db snapshot: ' + (prodBefore?.sha256 ? prodB
 // Launch through the current Node runtime: Windows Node 22 cannot spawn
 // npx.cmd directly with shell:false (EINVAL). Same approach as
 // run-all-verifies.mjs.
-const build = spawnSync(process.execPath, ['--import', 'tsx', 'tools/kb-build.mjs', '--data-dir', testDataDir], {
-  cwd: root,
-  encoding: 'utf8',
-  timeout: 120_000,
-});
+const localCorpus = path.join(root, 'community-corpus', 'reports', 'V2-style-ready-candidates.jsonl');
+const syntheticCorpus = !fs.existsSync(localCorpus);
+const communitySource = syntheticCorpus ? path.join(root, 'tools', 'fixtures', 'kb-community-synthetic.jsonl') : localCorpus;
+console.log('[kb] community corpus: ' + (syntheticCorpus ? 'synthetic fixture' : 'local approved samples'));
+function buildKnowledge(dataDir) {
+  return spawnSync(process.execPath, ['--import', 'tsx', 'tools/kb-build.mjs', '--data-dir', dataDir, '--community-source', communitySource], {
+    cwd: root, encoding: 'utf8', timeout: 120_000,
+  });
+}
+const build = buildKnowledge(testDataDir);
 if (build.status !== 0) {
   console.error(build.stdout || '');
   console.error(build.stderr || '');
@@ -55,8 +60,7 @@ const {
 const { toPromptBlocks, formatPromptKnowledgeBlocks, routeCollections, KB_TOTAL_TEXT_BUDGET } = await import('../server/bot/kbPrompt.ts');
 const { flagCommunityQuotes } = await import('./kbQuoteGuard.ts');
 const { routeForText } = await import('../server/bot/kbRoute.ts');
-const { ensureStore, updateDb, readDb } = await import('../server/store.ts');
-const { buildPrompt } = await import('../server/bot/prompt.ts');
+const { captureDisabledPromptHashes } = await import('./fixtures/kb-prompt-cases.mjs');
 const { matchQuickCommand } = await import('../server/bot/quickRouter.ts');
 const {
   getAllCommandHelpEntries,
@@ -72,8 +76,6 @@ const { parseOwnerCommandText, OWNER_COMMANDS } = await import('../server/bot/co
 const { resolveQuickCommand, QUICK_DEFS, finalizeQuickDef } = await import('../server/bot/commands/quick.meta.ts');
 const { RECOMMEND_COOLDOWN } = await import('../server/bot/commands/commandConstants.ts');
 const { quickCollisionKey } = await import('../server/bot/commands/alias.ts');
-
-ensureStore();
 
 let passed = 0;
 const failures = [];
@@ -94,42 +96,6 @@ const enabledSettings = {
   rollout: { mode: 'all', groupIds: [], privateMessagesEnabled: true },
 };
 
-const fixtureDbSetup = (db) => {
-  db.settings.ownerQq = 'REDACTED_QQ_001';
-  db.settings.selfQq = 'REDACTED_QQ_002';
-  db.settings.llmProvider = 'fixture';
-  db.settings.apiKey = 'fixture-key';
-  db.settings.visionMode = 'off';
-  db.settings.memoryEnabled = false;
-  db.settings.contextLimit = 30;
-  db.settings.enableAutoModel = false;
-  db.settings.thinkingNoticeMode = 'off';
-  db.groups = [
-    { groupId: '770001', name: 'KBTest', enabled: true, mode: 'natural', maxPerHour: 100, cooldownSec: 0 },
-  ];
-  db.messages = [];
-  db.groupProfiles = [];
-  db.relationshipProfiles = [];
-  db.memories = [];
-  db.skillStore = { records: [], updatedAt: '' };
-  db.experience = {};
-  db.users = [];
-};
-
-const fixtureEvent = (id, text, extra = {}) => ({
-  source: 'onebot',
-  type: 'group',
-  messageId: 'kb-' + id,
-  groupId: '770001',
-  userId: '10001',
-  nickname: 'Tester',
-  text,
-  atTargets: [],
-  images: [],
-  raw: {},
-  ...extra,
-});
-
 // ── Gate 1: osu_analysis zero load / zero injection ──
 
 resetKbForTests();
@@ -149,30 +115,12 @@ resetKbForTests();
 
 // ── Gate 2: A1 strict legacy equivalence (KB disabled) ──
 
-updateDb(fixtureDbSetup);
 {
-  const fixture = JSON.parse(fs.readFileSync(path.join(root, 'tools', 'fixtures', 'kb-legacy-prompts.json'), 'utf8'));
-  const scenarios = [
-    ['casual_osu_question', 'PP怎么算的？'],
-    ['casual_wuxin_question', '怎么绑定osu账号'],
-    ['casual_normal', '今天中午吃什么'],
-    ['short_reaction', '666'],
-    ['serious', '最近压力好大，有点想死'],
-    ['command', '/w osu help'],
-    ['analysis_command', '/w skill 123'],
-    ['dt_talk', '这把DT开得有点飘'],
-  ];
-  const group = { groupId: '770001', name: 'KBTest' };
-  const policy = { policy: 'normal', attentionLevel: 3, allowCommands: true };
-  let ok = true;
-  for (const [id, text] of scenarios) {
-    const messages = buildPrompt(readDb(), group, fixtureEvent(id, text), policy);
-    if (messages[0].content !== fixture[id]) {
-      ok = false;
-      console.error(`  A1 mismatch: ${id}`);
-    }
-  }
-  check(ok, 'g1 KB disabled prompt byte-identical to legacy fixture');
+  const expected = JSON.parse(fs.readFileSync(path.join(root, 'tools', 'fixtures', 'kb-legacy-prompts.json'), 'utf8'));
+  const actual = captureDisabledPromptHashes();
+  const keys = new Set([...Object.keys(expected), ...Object.keys(actual)]);
+  const mismatches = [...keys].filter(key => actual[key] !== expected[key]);
+  check(mismatches.length === 0, 'g1 KB disabled prompts match baseline SHA-256 byte for byte', mismatches.join(', '));
 }
 
 // ── Gate 3: deterministic routing (scenario set) ──
@@ -269,15 +217,18 @@ resetKbForTests();
 
   const communityQueries = ['aim比我强好多', '单戳练读图，会读了就能打', 'hd到底怎么玩', '我们S1大人已经10k了', '今天aim手感炸了'];
   let capOk = true;
+  let communityHits = 0;
   for (const text of communityQueries) {
     const r = retrieveKnowledgeForPrompt({ scene: 'casual', text, groupId: '770001', messageType: 'group', settings: enabledSettings });
     const communityBlocks = r.blocks.filter((b) => b.collection === 'community_style');
+    communityHits += communityBlocks.length;
     if (communityBlocks.length > 1) {
       capOk = false;
       console.error(`  community topK over cap for: ${text} (${communityBlocks.length})`);
     }
   }
   check(capOk, 'g5 community_style ≤1 block per query');
+  if (syntheticCorpus) check(communityHits > 0, 'g5 a synthetic community sample can be retrieved');
 
   const combined = retrieveKnowledgeForPrompt({ scene: 'casual', text: 'PP+怎么用', groupId: '770001', messageType: 'group', settings: enabledSettings });
   check(combined.route.kind === 'self_and_domain', 'g5 combined route explicit self_and_domain');
@@ -407,7 +358,7 @@ resetKbForTests();
   const dirB = createTestDataDir('wuxin-kb-repro-b');
   process.env.DATA_DIR = testDataDir;
   for (const dir of [dirA, dirB]) {
-    const b = spawnSync(process.execPath, ['--import', 'tsx', 'tools/kb-build.mjs', '--data-dir', dir], { cwd: root, encoding: 'utf8', timeout: 120_000 });
+    const b = buildKnowledge(dir);
     if (b.status !== 0) throw new Error('repro build failed: ' + (b.stderr || b.stdout));
   }
   const readManifest = (dir) => {

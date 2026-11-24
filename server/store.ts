@@ -278,6 +278,13 @@ export function lastDbReadFailureAtMs(): number {
   return lastDbReadFailureAt;
 }
 
+function writeBackupSnapshot(destination: string, db, type: string) {
+  const ownMessageArchive = snapshotOwnArchive(getDataDir(), destination);
+  writeJsonAtomic(destination + '.meta.json', { type, ownMessageArchive }, false);
+  // The logical JSON is the discoverable entry. Publish it after all sidecars.
+  writeJsonAtomic(destination, db, false);
+}
+
 function autoBackupIfDue(db) {
   const now = Date.now();
   if (now - lastAutoBackupAt < AUTO_BACKUP_INTERVAL_MS) return;
@@ -287,9 +294,7 @@ function autoBackupIfDue(db) {
     const stamp = new Date(now).toISOString().replace(/[:.]/g, '-');
     const dest = path.join(backupDir, `auto-${stamp}.json`);
     if (!fs.existsSync(dest)) {
-      const ownMessageArchive = snapshotOwnArchive(getDataDir(), dest);
-      writeJsonAtomic(dest, db, false);
-      writeJsonAtomic(dest + '.meta.json', {type:'auto',ownMessageArchive}, false);
+      writeBackupSnapshot(dest, db, 'auto');
     }
     const result = pruneBackupFiles(backupDir, resolveBackupRetention(db), { types: ['auto'] });
     if (result.failed.length) console.error('[store] auto backup cleanup failed:', result.failed);
@@ -483,8 +488,21 @@ function writeAllShards(db) {
   return commitShards(applyRetention(db), new Set(ALL_SHARD_SPECS.map(spec => spec.name)));
 }
 
+/** Called under the write lock. For v1 the cached object may already contain
+ * the caller's edits, so preserve the committed logical database from disk. */
+function writeReplacementShards(db) {
+  const core = readCoreFile();
+  if (core.kind === 'parsed' && isShardedCore(core.value) && core.value._storage.version === 1) {
+    const backupDir = path.join(getDataDir(), 'backups');
+    fs.mkdirSync(backupDir, { recursive: true });
+    const backup = path.join(backupDir, `pre-shard-v1-${crypto.randomUUID()}.json`);
+    writeBackupSnapshot(backup, readLogicalDbFromDisk(), 'pre-shard');
+  }
+  return writeAllShards(db);
+}
+
 function writeDirtyShards(db, dirtyKeys: Set<string>, dirtyMemoryBuckets: Set<string>, appends: Partial<Record<HistoryName, any[]>>) {
-  if (!committedManifest) return writeAllShards(db);
+  if (!committedManifest) return writeReplacementShards(db);
   const names = new Set<string>();
   for (const key of dirtyKeys) {
     if (key !== 'memories') names.add(shardNameForKey(key));
@@ -944,6 +962,12 @@ export function readDb() {
   return readDbUnlocked();
 }
 
+export function findGroupUser(db, groupId, userId) {
+  const group = String(groupId);
+  const member = String(userId);
+  return db.users?.find(user => String(user.groupId) === group && String(user.userId) === member);
+}
+
 export function currentStorageRevision() {
   readDb();
   return storageRevision;
@@ -953,7 +977,7 @@ export function writeDb(db) {
   assertWriteTargetSafe();
   ensureStore();
   return withDbLock(() => {
-    const result = writeAllShards(normalizeDb(db));
+    const result = writeReplacementShards(normalizeDb(db));
     autoBackupIfDue(result);
     return result;
   });

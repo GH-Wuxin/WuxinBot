@@ -1,7 +1,7 @@
 // Behavior-preserving decomposition of server/bot/ownerCommands.ts.
 // Handlers for /note, /profile, and /relation; command-level permission checks
 // are enforced by the owner-command dispatch before these handlers run.
-import { readDb, updateDb, nowIso } from '../../store.js';
+import { findGroupUser, readDb, updateDb, nowIso } from '../../store.js';
 import {
   getRelationshipProfile,
   updateRelationshipProfile,
@@ -30,7 +30,7 @@ export async function ownerNoteHandler(ctx: OwnerHandlerContext): Promise<OwnerC
 
   if (action === 'show') {
     const db = readDb();
-    const user = db.users.find((entry) => String(entry.groupId) === String(event.groupId) && String(entry.userId) === String(noteTarget));
+    const user = findGroupUser(db, event.groupId, noteTarget);
     const reply = user?.note ? `${noteTarget} 的备注：${user.note}` : `${noteTarget} 还没有备注。`;
     if (sendMessage) await sendMessage(event, reply);
     return { replied: Boolean(sendMessage), reason: reply };

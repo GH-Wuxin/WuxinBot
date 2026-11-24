@@ -1,5 +1,5 @@
 // Owner experience/nick/style/me handlers split from server/bot/ownerCommands.ts.
-import { readDb, updateDb, nowIso } from '../../store.js';
+import { findGroupUser, readDb, updateDb, nowIso } from '../../store.js';
 import {
   getExperience,
   getUnlockedFeatures,
@@ -19,11 +19,11 @@ function groupDisplayName(db: any, event: any, userId: string): string {
   if (target === String(event.userId) && String(event.nickname || '').trim()) {
     return String(event.nickname).trim();
   }
-  const groupUser = [...(db.users || [])].reverse().find((user: any) =>
+  const groupUser = (db.users || []).findLast((user: any) =>
     String(user.groupId) === groupId && String(user.userId) === target && String(user.nickname || '').trim()
   );
   if (groupUser?.nickname) return String(groupUser.nickname).trim();
-  const recentMessage = [...(db.messages || [])].reverse().find((message: any) =>
+  const recentMessage = (db.messages || []).findLast((message: any) =>
     String(message.groupId) === groupId && String(message.userId) === target && String(message.nickname || '').trim()
   );
   if (recentMessage?.nickname) return String(recentMessage.nickname).trim();
@@ -45,7 +45,7 @@ export async function ownerLvHandler(ctx: OwnerHandlerContext): Promise<OwnerCom
   const lines = [`${nickname} 的等级`, bar];
   if (features.length) lines.push('已解锁: ' + features.join(' · '));
   if (exp.level >= 2) {
-    const user = (db.users || []).find((u) => String(u.userId) === targetQq);
+    const user = findGroupUser(db, ctx.event.groupId, targetQq);
     if (user?.customName) lines.push(`称呼: ${user.customName}`);
   }
   const title = isSelf ? '我的等级' : `${nickname} 的等级`;
@@ -70,8 +70,7 @@ export async function ownerTopHandler(ctx: OwnerHandlerContext): Promise<OwnerCo
   for (let i = 0; i < groupEntries.length; i++) {
     const ge = groupEntries[i];
     const exp = getExperience(db, ge.userId);
-    const user = (db.users || []).find((u) => String(u.groupId) === groupId && String(u.userId) === String(ge.userId));
-    const name = groupDisplayName(db, ctx.event, ge.userId) || user?.customName || ge.userId;
+    const name = groupDisplayName(db, ctx.event, ge.userId);
     const currentPp = levelToPp(exp.level);
     const nextPp = levelToPp(exp.level + 1);
     const progress = Math.min(10, Math.max(0, Math.round(((exp.xp - currentPp) / (nextPp - currentPp)) * 10)));
@@ -82,144 +81,62 @@ export async function ownerTopHandler(ctx: OwnerHandlerContext): Promise<OwnerCo
   return { replied: Boolean(ctx.sendMessage), reason: '显示排行榜' };
 }
 
-export async function ownerNickHandler(ctx: OwnerHandlerContext): Promise<OwnerCommandResult> {
-  const db = ctx.commandDb;
-  const parsedTarget = parseTargetAndRest(ctx.commandArgs, ctx.event, { allowNumeric: false });
-  const targetQq = parsedTarget.targetQq;
-  const isTargetOther = targetQq && String(targetQq) !== String(ctx.event.userId);
+const personalSettings = {
+  nick: {
+    field: 'customName', label: '称呼', display: '称呼', filter: '称呼', minLevel: 2, maxLength: 20,
+    usage: '/w nick 称呼', invalid: '称呼长度需要 1-20 个字符。', invalidReason: '称呼长度不合规',
+    retry: '请换一个。', saved: (value: string) => `称呼已设置为：${value}`,
+  },
+  style: {
+    field: 'customStyle', label: '风格', display: '个人风格', filter: '交互风格', minLevel: 3, maxLength: 200,
+    usage: '/w style 内容', invalid: '个人风格长度上限 200 字。', invalidReason: '风格内容过长',
+    retry: '请修改。', saved: () => '个人风格已设置。Bot 回复你时会参考这个风格。',
+  },
+} as const;
 
-  if (isTargetOther && !ctx.permissions.isOwner && !ctx.permissions.isAdmin) {
-    if (ctx.sendMessage) await ctx.sendMessage(ctx.event, '只有管理员可以设置他人的称呼。');
-    return { replied: Boolean(ctx.sendMessage), reason: '权限不足' };
+async function personalSetting(ctx: OwnerHandlerContext, command: keyof typeof personalSettings): Promise<OwnerCommandResult> {
+  const setting = personalSettings[command];
+  const { targetQq, rest } = parseTargetAndRest(ctx.commandArgs, ctx.event, { allowNumeric: false });
+  const userId = String(targetQq || ctx.event.userId);
+  const groupId = String(ctx.event.groupId);
+  const value = targetQq ? rest : ctx.commandArgs.trim();
+  const reply = async (text: string, reason: string) => {
+    if (ctx.sendMessage) await ctx.sendMessage(ctx.event, text);
+    return { replied: Boolean(ctx.sendMessage), reason };
+  };
+  if (!ctx.permissions.isOwner && !ctx.permissions.isAdmin) {
+    if (userId !== String(ctx.event.userId)) return reply(`只有管理员可以设置他人的${setting.filter}。`, '权限不足');
+    const level = getExperience(ctx.commandDb, userId).level;
+    if (level < setting.minLevel) return reply(
+      `设置${setting.display}需要达到 ${levelToPp(setting.minLevel)}pp 等级（Lv.${setting.minLevel}）。你当前是 ${levelToPp(level)}pp（Lv.${level}）。`, '等级不足');
   }
-
-  const realTarget = targetQq || ctx.event.userId;
-  const exp = getExperience(db, realTarget);
-  if (!isTargetOther && exp.level < 2 && !ctx.permissions.isOwner && !ctx.permissions.isAdmin) {
-    if (ctx.sendMessage) await ctx.sendMessage(ctx.event, `设置称呼需要达到 200pp 等级（Lv.2）。你当前是 ${levelToPp(exp.level)}pp（Lv.${exp.level}）。`);
-    return { replied: Boolean(ctx.sendMessage), reason: '等级不足' };
+  if (!value) {
+    const current = findGroupUser(ctx.commandDb, groupId, userId)?.[setting.field];
+    return reply(current ? `当前${setting.display}：${current}` : `还未设置${setting.display}。用 ${setting.usage} 来设置。`, '查看' + setting.label);
   }
-
-  // Extract the name (after @mention or after /nick)
-  let name = '';
-  if (targetQq) {
-    name = parsedTarget.rest;
-  } else {
-    name = ctx.commandArgs.trim();
+  const clear = value === 'clear' || value === '清除';
+  if (!clear) {
+    if (value.length > setting.maxLength) return reply(setting.invalid, setting.invalidReason);
+    const result = await llmContentFilter(value, setting.filter);
+    if (!result.ok) return reply(`内容不合适：${result.reason}。${setting.retry}`, setting.label + '内容被过滤');
   }
-
-  if (name === 'clear' || name === '清除') {
-    updateDb((draft) => {
-      const u = (draft.users || []).find((u) => String(u.userId) === realTarget && String(u.groupId) === String(ctx.event.groupId));
-      if (u) { u.customName = ''; u.updatedAt = nowIso(); }
-    });
-    if (ctx.sendMessage) await ctx.sendMessage(ctx.event, '称呼已清除。');
-    return { replied: Boolean(ctx.sendMessage), reason: '清除称呼' };
-  }
-
-  if (!name) {
-    const user = (db.users || []).find((u) => String(u.userId) === realTarget);
-    const current = user?.customName;
-    if (ctx.sendMessage) await ctx.sendMessage(ctx.event, current ? `当前称呼：${current}` : '还未设置称呼。用 /w nick 称呼 来设置。');
-    return { replied: Boolean(ctx.sendMessage), reason: '查看称呼' };
-  }
-
-  // Content filter: basic safety
-  if (name.length > 20 || name.length < 1) {
-    if (ctx.sendMessage) await ctx.sendMessage(ctx.event, '称呼长度需要 1-20 个字符。');
-    return { replied: Boolean(ctx.sendMessage), reason: '称呼长度不合规' };
-  }
-
-  // LLM content filter
-  const nickFilter = await llmContentFilter(name, '称呼');
-  if (!nickFilter.ok) {
-    if (ctx.sendMessage) await ctx.sendMessage(ctx.event, `内容不合适：${nickFilter.reason}。请换一个。`);
-    return { replied: Boolean(ctx.sendMessage), reason: '称呼内容被过滤' };
-  }
-
-  updateDb((draft) => {
-    if (!draft.users) draft.users = [];
-    let u = draft.users.find((u) => String(u.userId) === realTarget && String(u.groupId) === String(ctx.event.groupId));
-    if (!u) {
-      u = { groupId: String(ctx.event.groupId), userId: String(realTarget), nickname: '', policy: 'normal', attentionLevel: 3, allowCommands: false, customName: name, createdAt: nowIso(), updatedAt: nowIso() };
-      draft.users.push(u);
-    } else {
-      u.customName = name;
-      u.updatedAt = nowIso();
+  updateDb(draft => {
+    const existing = findGroupUser(draft, groupId, userId);
+    if (existing) {
+      existing[setting.field] = clear ? '' : value;
+      existing.updatedAt = nowIso();
+    } else if (!clear) {
+      draft.users ??= [];
+      draft.users.push({ groupId, userId, nickname: '', policy: 'normal', attentionLevel: 3, allowCommands: false,
+        [setting.field]: value, createdAt: nowIso(), updatedAt: nowIso() });
     }
   });
-  if (ctx.sendMessage) await ctx.sendMessage(ctx.event, `称呼已设置为：${name}`);
-  return { replied: Boolean(ctx.sendMessage), reason: '设置称呼' };
+  if (clear) return reply(setting.display + '已清除。', '清除' + setting.label);
+  return reply(setting.saved(value), '设置' + setting.label);
 }
 
-export async function ownerStyleHandler(ctx: OwnerHandlerContext): Promise<OwnerCommandResult> {
-  const db = ctx.commandDb;
-  const parsedTarget = parseTargetAndRest(ctx.commandArgs, ctx.event, { allowNumeric: false });
-  const targetQq = parsedTarget.targetQq;
-  const isTargetOther = targetQq && String(targetQq) !== String(ctx.event.userId);
-
-  if (isTargetOther && !ctx.permissions.isOwner && !ctx.permissions.isAdmin) {
-    if (ctx.sendMessage) await ctx.sendMessage(ctx.event, '只有管理员可以设置他人的交互风格。');
-    return { replied: Boolean(ctx.sendMessage), reason: '权限不足' };
-  }
-
-  const realTarget = targetQq || ctx.event.userId;
-  const exp = getExperience(db, realTarget);
-  if (!isTargetOther && exp.level < 3 && !ctx.permissions.isOwner && !ctx.permissions.isAdmin) {
-    if (ctx.sendMessage) await ctx.sendMessage(ctx.event, `设置个人风格需要达到 300pp 等级（Lv.3）。你当前是 ${levelToPp(exp.level)}pp（Lv.${exp.level}）。`);
-    return { replied: Boolean(ctx.sendMessage), reason: '等级不足' };
-  }
-
-  let content = '';
-  if (targetQq) {
-    content = parsedTarget.rest;
-  } else {
-    content = ctx.commandArgs.trim();
-  }
-
-  if (content === 'clear' || content === '清除') {
-    updateDb((draft) => {
-      const u = (draft.users || []).find((u) => String(u.userId) === realTarget && String(u.groupId) === String(ctx.event.groupId));
-      if (u) { u.customStyle = ''; u.updatedAt = nowIso(); }
-    });
-    if (ctx.sendMessage) await ctx.sendMessage(ctx.event, '个人风格已清除。');
-    return { replied: Boolean(ctx.sendMessage), reason: '清除风格' };
-  }
-
-  if (!content) {
-    const user = (db.users || []).find((u) => String(u.userId) === realTarget);
-    const current = user?.customStyle;
-    if (ctx.sendMessage) await ctx.sendMessage(ctx.event, current ? `当前个人风格：${current}` : '还未设置个人风格。用 /w style 内容 来设置。');
-    return { replied: Boolean(ctx.sendMessage), reason: '查看风格' };
-  }
-
-  // Content filter: basic safety
-  if (content.length > 200) {
-    if (ctx.sendMessage) await ctx.sendMessage(ctx.event, '个人风格长度上限 200 字。');
-    return { replied: Boolean(ctx.sendMessage), reason: '风格内容过长' };
-  }
-
-  // LLM content filter
-  const styleFilter = await llmContentFilter(content, '交互风格');
-  if (!styleFilter.ok) {
-    if (ctx.sendMessage) await ctx.sendMessage(ctx.event, `内容不合适：${styleFilter.reason}。请修改。`);
-    return { replied: Boolean(ctx.sendMessage), reason: '风格内容被过滤' };
-  }
-
-  updateDb((draft) => {
-    if (!draft.users) draft.users = [];
-    let u = draft.users.find((u) => String(u.userId) === realTarget && String(u.groupId) === String(ctx.event.groupId));
-    if (!u) {
-      u = { groupId: String(ctx.event.groupId), userId: String(realTarget), nickname: '', policy: 'normal', attentionLevel: 3, allowCommands: false, customStyle: content, createdAt: nowIso(), updatedAt: nowIso() };
-      draft.users.push(u);
-    } else {
-      u.customStyle = content;
-      u.updatedAt = nowIso();
-    }
-  });
-  if (ctx.sendMessage) await ctx.sendMessage(ctx.event, '个人风格已设置。Bot 回复你时会参考这个风格。');
-  return { replied: Boolean(ctx.sendMessage), reason: '设置风格' };
-}
+export function ownerNickHandler(ctx: OwnerHandlerContext) { return personalSetting(ctx, 'nick'); }
+export function ownerStyleHandler(ctx: OwnerHandlerContext) { return personalSetting(ctx, 'style'); }
 
 export async function ownerMeHandler(ctx: OwnerHandlerContext): Promise<OwnerCommandResult> {
   const db = ctx.commandDb;
@@ -261,7 +178,7 @@ export async function ownerExpHandler(ctx: OwnerHandlerContext): Promise<OwnerCo
     return { replied: Boolean(ctx.sendMessage), reason: 'exp 用法' };
   }
   const exp = getExperience(db, targetQq);
-  const user = (db.users || []).find((u) => String(u.groupId) === String(ctx.event.groupId) && String(u.userId) === targetQq);
+  const user = findGroupUser(db, ctx.event.groupId, targetQq);
   const nickname = groupDisplayName(db, ctx.event, targetQq);
 
   // Parse subcommand after @mention

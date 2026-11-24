@@ -24,6 +24,14 @@ const modeLabel = (mode) => modeOptions.find((item) => item.value === mode)?.lab
 const hasProfileContent = (profile) => profileFields.some(([field]) => String(profile?.[field] || '').trim());
 const levelPpLabel = (entry) => `${Math.floor(Number(entry?.xp || 0) / 100) * 100}pp`;
 
+function GroupReplyMode({ form, setForm }) {
+  return <div className="field"><label>回复模式</label>
+    <select value={form.mode || 'mention'} onChange={event => setForm({ ...form, mode: event.target.value })}>
+      {modeOptions.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
+    </select>
+  </div>;
+}
+
 export function GroupsPage({ db, refreshState, saveSettings }) {
   const groups = db.groups || [];
   const [selectedId, setSelectedId] = useState(groups[0]?.groupId || '');
@@ -232,7 +240,7 @@ export function GroupsPage({ db, refreshState, saveSettings }) {
           <div className="card-head"><span className="card-title">添加白名单群</span></div>
           <div className="field"><label>QQ 群号</label><input value={form.groupId || ''} onChange={(event) => setForm({ ...form, groupId: event.target.value })} placeholder="例如 106717635" /></div>
           <div className="field"><label>群名称 / 备注</label><input value={form.name || ''} onChange={(event) => setForm({ ...form, name: event.target.value })} placeholder="不填会用活跃成员辅助辨认" /></div>
-          <div className="field"><label>回复模式</label><select value={form.mode || 'mention'} onChange={(event) => setForm({ ...form, mode: event.target.value })}>{modeOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select></div>
+          <GroupReplyMode form={form} setForm={setForm} />
           <div style={{ display: 'flex', gap: 8, marginTop: 16 }}>
             <button type="button" className="btn" style={{ flex: 1 }} onClick={() => { setCreating(false); setEditing(false); }}>取消</button>
             <button type="button" className="btn btn-primary" style={{ flex: 1 }} disabled={!String(form.groupId || '').trim() || pending === 'save-group'} onClick={() => saveGroup()}>{pending === 'save-group' ? '保存中…' : '创建群'}</button>
@@ -243,7 +251,7 @@ export function GroupsPage({ db, refreshState, saveSettings }) {
             <div className="note" style={{ marginBottom: 12 }}>{selectedGroup.groupId} · {selectedCounts.policies} 个成员策略 · {selectedCounts.memories} 个记忆成员</div>
             <div className="note" style={{ marginBottom: 12 }}>当前生效：{modeLabel(selectedGroup.participation?.mode || selectedGroup.mode)}{selectedGroup.participation?.reason ? ` · ${selectedGroup.participation.reason}（本群设置：${modeLabel(selectedGroup.mode)}）` : ''}</div>
             {editing ? <>
-              <div className="field"><label>回复模式</label><select value={form.mode || 'mention'} onChange={(event) => setForm({ ...form, mode: event.target.value })}>{modeOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select></div>
+              <GroupReplyMode form={form} setForm={setForm} />
               <div className="field"><label>每小时上限</label><input type="number" min="1" max="80" value={form.maxPerHour ?? 20} onChange={(event) => setForm({ ...form, maxPerHour: Number(event.target.value) })} /></div>
               <div className="field"><label>发言冷却（秒）</label><input type="number" min="0" max="180" value={form.cooldownSec ?? 30} onChange={(event) => setForm({ ...form, cooldownSec: Number(event.target.value) })} /></div>
               <div className="field"><label>群名称 / 备注</label><input value={form.name || ''} onChange={(event) => setForm({ ...form, name: event.target.value })} /></div>

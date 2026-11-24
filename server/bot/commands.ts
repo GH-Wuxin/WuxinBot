@@ -1,5 +1,5 @@
 // Command system: role helpers, permission checks, command logging.
-import { defaultCommandPermissions, readDb, updateDb, nowIso } from '../store.js';
+import { defaultCommandPermissions, findGroupUser, readDb, updateDb, nowIso } from '../store.js';
 import { messageAccount, messageInConversation } from '../messageFacts.js';
 
 export function commandRoles(db) {
@@ -23,15 +23,19 @@ export function userCommandRoleId(db, userPolicy, permissions) {
   return 'guest';
 }
 
-export function hasCommandPermission(db, userPolicy, permissions, permissionKey) {
+function requiredCommandRole(db, permissionKey, defaults) {
+  return db.settings.commandPermissions?.[permissionKey] || defaults[permissionKey] || 'owner';
+}
+
+export function hasCommandPermission(db, userPolicy, permissions, permissionKey, defaults = defaultCommandPermissions) {
   if (permissions.isOwner || userPolicy.policy === 'owner') return true;
-  const requiredRoleId = db.settings.commandPermissions?.[permissionKey] || defaultCommandPermissions[permissionKey] || 'owner';
+  const requiredRoleId = requiredCommandRole(db, permissionKey, defaults);
   const userRoleId = userCommandRoleId(db, userPolicy, permissions);
   return commandRoleLevel(db, userRoleId) >= commandRoleLevel(db, requiredRoleId);
 }
 
-export function commandDeniedReply(db, permissionKey) {
-  const requiredRoleId = db.settings.commandPermissions?.[permissionKey] || defaultCommandPermissions[permissionKey] || 'owner';
+export function commandDeniedReply(db, permissionKey, defaults = defaultCommandPermissions) {
+  const requiredRoleId = requiredCommandRole(db, permissionKey, defaults);
   return `这个指令需要 ${commandRoleName(db, requiredRoleId)} 或更高权限。`;
 }
 
@@ -64,7 +68,7 @@ export function getUserPolicy(db, groupId, userId) {
   }
 
   return (
-    db.users.find((user) => String(user.groupId) === String(groupId) && String(user.userId) === String(userId)) || {
+    findGroupUser(db, groupId, userId) || {
       policy: 'normal',
       attentionLevel: 3,
       allowCommands: false

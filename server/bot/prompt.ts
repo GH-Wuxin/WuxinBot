@@ -1,6 +1,7 @@
 // @ts-nocheck -- legacy runtime module; new typed modules remain checked by tsc.
 // System prompt: identity injection, complexity scoring, auto-model, pricing.
 // Extracted from bot.ts.
+import { findGroupUser } from '../store.js';
 import { tokenSaving } from './tokenSaving.js';
 import { ownerAuthorityPrompt, socialTonePrompt } from './social/prompts.js';
 import { asksToInspectVisual, hasVisualPlaceholder } from './cleaning.js';
@@ -362,7 +363,7 @@ function buildUserInfoLines(db, event) {
   }
   lines.push('聊天等级及其 pp 展示名只由聊天经验产生，不是 osu! performance points，不代表游戏成绩、段位、排名或实力。历史聊天和升级通知中的内部 pp 也不能作为真实 osu! pp 证据；真实游戏数据只能使用对应 osu! 查询结果，未知不能当作 0。');
   // Custom name (what the bot should call this user)
-  const user = (db.users || []).find((u) => String(u.userId) === userId && String(u.groupId) === String(event.groupId));
+  const user = findGroupUser(db, event.groupId, userId);
   if (user?.customName) {
     lines.push(`称呼当前发言者为"${user.customName}"，不要用 QQ 昵称。`);
   }
@@ -398,7 +399,7 @@ function buildSavingPrompt(db, group, event, userPolicy, options) {
   const scope = socialScope(event), owner = isSystemOwner(db, event), social = db.settings.socialV2Enabled === true;
   const person = social ? readSocialPerson(db, event.userId) : null, view = social ? readSocialView(db, scope, event.userId) : null;
   const self = social ? selfContext(db, scope, event.userId) : null;
-  const user = (db.users || []).find(u => String(u.userId) === String(event.userId) && String(u.groupId) === String(event.groupId));
+  const user = findGroupUser(db, event.groupId, event.userId);
   const brief = value => String(value || '').slice(0, 200);
   const relationship = { affinity: owner ? '特殊' : person?.affinity || null, familiarity: person?.familiarity || 0,
     names: user?.customName ? [brief(user.customName)] : (view?.preferredNames || []).slice(0, 3),

@@ -11,7 +11,7 @@ import { captureSocialReflection, queueSocialReflection } from './bot/social/ref
 import { sendOptionalNotice } from './bot/notice.js';
 import { createReplyProgress, shouldUseReplyProgress, stagedReplySegments, completeWithReplyProgress } from './bot/replyProgress.js';
 import { withLlmTurnPolicy, assertLlmTurnActive } from './llmPolicy.js';
-import { readDb, updateDb, nowIso } from './store.js';
+import { findGroupUser, readDb, updateDb, nowIso } from './store.js';
 import { mergeLlmUsage } from './usage.js';
 import { mentionsBot, asksToInspectVisual } from './bot/cleaning.js';
 import {
@@ -392,7 +392,7 @@ async function processIncomingInner(event, sendMessage = undefined) {
   // 渲染时也不必再查。查不到就留空，退回原来的号码，不影响别的。
   const mentionNames = socialCandidate
     ? new Map((event.atTargets || []).map((id) => {
-      const known = db.users.find((u) => String(u.groupId) === String(event.groupId) && String(u.userId) === String(id));
+      const known = findGroupUser(db, event.groupId, id);
       return [String(id), { qq: String(id), card: '', nickname: known?.nickname || String(id) }];
     }))
     : event.type === 'group' && event.atTargets?.length
@@ -570,6 +570,20 @@ async function processIncomingInner(event, sendMessage = undefined) {
     if (!seen) recordSocialDecision(event, { stage: 'guard', action: 'pass', reason: result.reason, evidenceIds: [], durationMs: 0, totalTokens: 0 });
   }
   return result;
+}
+
+async function replyOsuUnavailable(event, sendMessage, errorText, reason) {
+  const noticeSticker = pickCodeSticker('service_down');
+  if (sendMessage) await sendMessage(event, noticeSticker ? withSticker(errorText, noticeSticker.id) : errorText);
+  updateDb((draft) => {
+    recordAssistantContext(draft, {
+      id: crypto.randomUUID(), ...replyTargetMetadata(event), role: 'assistant', type: event.type,
+      groupId: event.groupId, userId: 'bot', nickname: '机器人',
+      content: errorText, inContext: true, createdAt: nowIso()
+    });
+    draft.usage.replies += 1;
+  });
+  return { replied: true, text: errorText, reason };
 }
 
 async function generateConversationReply(event, sendMessage, decision) {
@@ -816,21 +830,8 @@ async function generateConversationReply(event, sendMessage, decision) {
     // is clearly asking for osu! data but no bots are enabled, fail explicitly
     // instead of falling through to the LLM with no tool access.
     if (osuDataIntent && !hasEnabledBots) {
-      const errorText = '[系统] osu! 数据查询不可用：当前没有已启用的机器人，无法查询 osu! 数据。';
-      // 服务不可用 —— 附 service_down。图由代码触发，不经过 LLM，所以模型挂掉时也发得出。
-      // service_down 是一组差分，用 pickCodeSticker 从组里随机取一张；取不到就退回纯文字，
-      // 不让「故障提示」本身因为贴纸问题发不出去。记进库里的是纯文字：CQ 码进上下文只是噪音。
-      const noticeSticker = pickCodeSticker('service_down');
-      if (sendMessage) await sendMessage(event, noticeSticker ? withSticker(errorText, noticeSticker.id) : errorText);
-      updateDb((draft) => {
-        recordAssistantContext(draft, {
-          id: crypto.randomUUID(), ...replyTargetMetadata(event), role: 'assistant', type: event.type,
-          groupId: event.groupId, userId: 'bot', nickname: '机器人',
-          content: errorText, inContext: true, createdAt: nowIso()
-        });
-        draft.usage.replies += 1;
-      });
-      return { replied: true, text: errorText, reason: 'osu_intent_no_bots' };
+      return await replyOsuUnavailable(event, sendMessage,
+        '[系统] osu! 数据查询不可用：当前没有已启用的机器人，无法查询 osu! 数据。', 'osu_intent_no_bots');
     }
 
     // ── Bot harness tool loop ──
@@ -868,18 +869,7 @@ async function generateConversationReply(event, sendMessage, decision) {
           const reason = !internalBotsEnabled
             ? '内部 osu! 工具未启用'
             : `操作被安全策略拒绝: ${(opValid as any).reason || '未知原因'}`;
-          const errorText = `[系统] osu! 数据查询不可用：${reason}`;
-          const noticeSticker = pickCodeSticker('service_down');
-          if (sendMessage) await sendMessage(event, noticeSticker ? withSticker(errorText, noticeSticker.id) : errorText);
-          updateDb((draft) => {
-            recordAssistantContext(draft, {
-              id: crypto.randomUUID(), ...replyTargetMetadata(event), role: 'assistant', type: event.type,
-              groupId: event.groupId, userId: 'bot', nickname: '机器人',
-              content: errorText, inContext: true, createdAt: nowIso()
-            });
-            draft.usage.replies += 1;
-          });
-          return { replied: true, text: errorText, reason };
+          return await replyOsuUnavailable(event, sendMessage, `[系统] osu! 数据查询不可用：${reason}`, reason);
         }
       }
 

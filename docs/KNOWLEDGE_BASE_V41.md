@@ -63,10 +63,10 @@ knowledge/
 ## 验证与排查
 
 ```powershell
-npx tsx tools/kb-verify.mjs
+npm run kb:verify
 npm run typecheck
 ```
 
-验证覆盖构建、权限、检索、指令示例、禁用行为和内容校验。隔离结果为 `INCONCLUSIVE` 时，表示无法确认生产库未变化，不能当作通过。
+验证覆盖构建、权限、检索、指令示例、禁用行为和内容校验。存在本地审核语料时使用该文件，公开仓库使用四条合成样本。禁用知识库时，八个场景的系统提示词逐字节校验 SHA-256。隔离结果为 `INCONCLUSIVE` 时，表示无法确认生产库未变化，不能当作通过。
 
 状态中的 `KB_CURRENT_MISSING` 表示启动时没有找到有效构建。核对数据目录和 `CURRENT`，构建完成后重启后端。实现见 [knowledgeBase.ts](../server/bot/knowledgeBase.ts)，构建入口见 [kb-build.mjs](../tools/kb-build.mjs)。

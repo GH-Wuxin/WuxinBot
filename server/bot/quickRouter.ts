@@ -688,14 +688,7 @@ async function handleQuickCommandInner(
     return { handled: true, replied: true, reason: 'bind_hint' };
   }
 
-  // ── Hydrant profile/PP+ handlers ──
-  if (def.handler === 'self_profile' || def.handler === 'at_profile') {
-    const modeNote = stdOnlyNote((match as any).extraMode || '');
-    if (modeNote) {
-      if (sendMessage) await sendMessage(event, modeNote);
-      return { handled: true, replied: true, reason: '非 std 模式' };
-    }
-    const username = def.handler === 'at_profile' ? resolveAtBinding(db, atTargets) : '';
+  async function queryHydrantProfile(username: string, operation: 'profile' | 'where') {
     let result: Awaited<ReturnType<typeof executeInternalBotCommand>>;
     try {
       result = await executeInternalBotCommand('hydrant', 'profile', username, {
@@ -704,7 +697,7 @@ async function handleQuickCommandInner(
     } catch (error: any) {
       if (sendMessage) await sendMessage(event, String(error?.message || error));
       record(`查询失败：${String(error?.message || error)}`);
-      return { handled: true, replied: true, reason: 'profile_error' };
+      return { handled: true, replied: true, reason: operation + '_error' };
     }
     // Delivery failure after a successful command must not trigger a second,
     // confusing error message (panel may already have been sent).
@@ -713,13 +706,24 @@ async function handleQuickCommandInner(
     } catch (deliveryError: any) {
       console.error(`[quick] ${def.id} 发送失败（面板可能已发出）:`, deliveryError?.message || deliveryError);
     }
-    log('profile', username || '(self)');
+    log(operation, username || '(self)');
     const memContent = typeof result === 'string'
       ? result
-      : String((result as any).content || '');
-    const memImages = typeof result === 'string' ? [] : ((result as any).images || []);
+      : String(result.content || '');
+    const memImages = typeof result === 'string' ? [] : (result.images || []);
     record(memContent || `查询了 ${username || '绑定玩家'} 的玩家信息`, memImages);
-    return { handled: true, replied: true, reason: 'profile' };
+    return { handled: true, replied: true, reason: operation };
+  }
+
+  // ── Hydrant profile/PP+ handlers ──
+  if (def.handler === 'self_profile' || def.handler === 'at_profile') {
+    const modeNote = stdOnlyNote((match as any).extraMode || '');
+    if (modeNote) {
+      if (sendMessage) await sendMessage(event, modeNote);
+      return { handled: true, replied: true, reason: '非 std 模式' };
+    }
+    const username = def.handler === 'at_profile' ? resolveAtBinding(db, atTargets) : '';
+    return queryHydrantProfile(username, 'profile');
   }
   if (def.handler === 'where') {
     const query = String(args || '').trim();
@@ -738,28 +742,7 @@ async function handleQuickCommandInner(
       if (sendMessage) await sendMessage(event, '用法：where <osu用户名> 或 where qq=<QQ号>');
       return { handled: true, replied: true, reason: 'where 缺参数' };
     }
-    let result: Awaited<ReturnType<typeof executeInternalBotCommand>>;
-    try {
-      result = await executeInternalBotCommand('hydrant', 'profile', query, {
-        db, userId: String(event.userId), groupId: event.groupId,
-      }, undefined, def.bridge ? { fallback: fallbackContext() } : undefined);
-    } catch (error: any) {
-      if (sendMessage) await sendMessage(event, String(error?.message || error));
-      record(`查询失败：${String(error?.message || error)}`);
-      return { handled: true, replied: true, reason: 'where_error' };
-    }
-    try {
-      if (sendMessage) await sendMessage(event, quickPayload(result));
-    } catch (deliveryError: any) {
-      console.error(`[quick] ${def.id} 发送失败（面板可能已发出）:`, deliveryError?.message || deliveryError);
-    }
-    log('where', query);
-    const memContent = typeof result === 'string'
-      ? result
-      : String((result as any).content || '');
-    const memImages = typeof result === 'string' ? [] : ((result as any).images || []);
-    record(memContent || `查询了 ${query} 的玩家信息`, memImages);
-    return { handled: true, replied: true, reason: 'where' };
+    return queryHydrantProfile(query, 'where');
   }
   // ── Internal engine capabilities ──
   if (def.capability) {

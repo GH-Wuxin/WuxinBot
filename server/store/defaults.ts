@@ -1,3 +1,4 @@
+import { editableCommandPermissions as defaultCommandPermissions } from '../bot/commands/owner.meta.js';
 // Factory defaults, schema normalization and retention for the logical DB.
 import { DEEPSEEK_BASE_URL, activateModelProfile, recoverProviderProfiles } from '../modelConfig.js';
 import { DEFAULT_BOTS } from '../bots/registry.js';
@@ -22,51 +23,7 @@ export const defaultCommandRoles = [
   { id: 'owner', name: '所有者', level: 100, locked: true }
 ];
 
-export const defaultCommandPermissions = {
-  help: 'guest',
-  my: 'guest',
-  ping: 'guest',
-  why: 'guest',
-  lv: 'guest',
-  top: 'guest',
-  me: 'trusted',
-  nick: 'trusted',
-  style: 'trusted',
-  profile: 'admin',
-  summarize: 'guest',
-  summarizeLarge: 'admin',
-  status: 'admin',
-  rate: 'admin',
-  cooldown: 'admin',
-  mode: 'admin',
-  modelShow: 'admin',
-  modelSet: 'admin',
-  pause: 'owner',
-  sysfacts: 'admin',
-  thinking: 'admin',
-  promptShow: 'admin',
-  promptEdit: 'admin',
-  promptSavebase: 'owner',
-  note: 'owner',
-  groupProfileShow: 'admin',
-  groupProfileEdit: 'admin',
-  relationshipShow: 'admin',
-  relationshipEdit: 'admin',
-  preset: 'owner',
-  profileRetry: 'admin',
-  recalc: 'guest',
-  groupAdd: 'owner',
-  memberPolicy: 'owner',
-  exp: 'owner',
-  osuBind: 'guest',
-  osuClearBind: 'guest',
-  osuClearCache: 'owner',
-  osuClearCooldown: 'owner',
-  osuClearRecommend: 'owner',
-  osuHelp: 'guest',
-  skill: 'guest',
-  skillFeedback: 'guest'
-};
+export { defaultCommandPermissions };
 
 export const initialDb = {
   settings: {

@@ -1323,6 +1323,21 @@ async function executeInternalBotCommandInner(
   traceId?: string | null,
 ): Promise<string | InternalBotCommandResult> {
   const { db, userId } = context;
+  function comparisonUsers(leftName: string, rightName: string, missing: string) {
+    const extra = {
+      nickname: String(context.event?.nickname || ''),
+      atTargets: context.event?.atTargets,
+      groupId: context.groupId,
+    };
+    const leftTarget = resolveInternalPlayerTarget(db, String(userId), leftName, extra);
+    const rightTarget = resolveInternalPlayerTarget(db, String(userId), rightName, extra);
+    if (!leftTarget || !rightTarget) throw new Error(missing);
+    return Promise.all([
+      loadInternalOsuUser(leftTarget),
+      loadInternalOsuUser(rightTarget),
+    ]);
+  }
+
   // Command-side alias normalization: quick.meta uses the legacy two-p alias
   // `pplus`; the canonical capability catalog and LLM enum use three-p
   // `ppplus`. Normalizing here keeps the two spellings behavior-identical.
@@ -1638,18 +1653,7 @@ async function executeInternalBotCommandInner(
       const leftName = String(toolArgs.left || '').trim();
       const rightName = String(toolArgs.right || '').trim();
       if (!leftName || !rightName) throw new Error('compare_skill 需要 left 和 right 两个玩家名。');
-      const extra = {
-        nickname: String(context.event?.nickname || ''),
-        atTargets: context.event?.atTargets,
-        groupId: context.groupId,
-      };
-      const leftTarget = resolveInternalPlayerTarget(db, String(userId), leftName, extra);
-      const rightTarget = resolveInternalPlayerTarget(db, String(userId), rightName, extra);
-      if (!leftTarget || !rightTarget) throw new Error('无法解析要对比的两个玩家：' + leftName + ' / ' + rightName);
-      const [leftUser, rightUser] = await Promise.all([
-        loadInternalOsuUser(leftTarget),
-        loadInternalOsuUser(rightTarget),
-      ]);
+      const [leftUser, rightUser] = await comparisonUsers(leftName, rightName, '无法解析要对比的两个玩家：' + leftName + ' / ' + rightName);
       if (leftUser.id === rightUser.id) throw new Error('请选择两个不同的玩家再对比。');
       return await runSkillCompareText(leftUser.id, rightUser.id);
     }
@@ -1779,15 +1783,7 @@ async function executeInternalBotCommandInner(
       const leftName = String(toolArgs.left || '').trim();
       const rightName = String(toolArgs.right || '').trim();
       if (!leftName || !rightName) throw new Error('对比图需要 left 和 right 两个玩家名');
-      const extra = {
-        nickname: String(context.event?.nickname || ''),
-        atTargets: context.event?.atTargets,
-        groupId: context.groupId,
-      };
-      const leftTarget = resolveInternalPlayerTarget(db, String(userId), leftName, extra);
-      const rightTarget = resolveInternalPlayerTarget(db, String(userId), rightName, extra);
-      if (!leftTarget || !rightTarget) throw new Error('无法解析要对比的两个玩家');
-      const [leftUser, rightUser] = await Promise.all([loadInternalOsuUser(leftTarget), loadInternalOsuUser(rightTarget)]);
+      const [leftUser, rightUser] = await comparisonUsers(leftName, rightName, '无法解析要对比的两个玩家');
       const { renderPlayerSkillComparison } = await import('./playerSkillProfile.js');
       const rendered = await renderPlayerSkillComparison(leftUser.id, rightUser.id, 50);
       if (!rendered) return { content: '对比图没画出来（渲染服务未连接）。', images: [] };
