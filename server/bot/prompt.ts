@@ -2,9 +2,8 @@
 // System prompt: identity injection, complexity scoring, auto-model, pricing.
 // Extracted from bot.ts.
 import { tokenSaving } from './tokenSaving.js';
-import { readDb } from '../store.js';
 import { ownerAuthorityPrompt, socialTonePrompt } from './social/prompts.js';
-import { asksToInspectVisual, hasVisualPlaceholder, isQuestion } from './cleaning.js';
+import { asksToInspectVisual, hasVisualPlaceholder } from './cleaning.js';
 import { llmProvider, llmProviderName } from './llm.js';
 import { isOsuSearchAvailable } from '../osu/search.js';
 import { activeModelName, isDeepSeekVisionModel } from '../modelConfig.js';

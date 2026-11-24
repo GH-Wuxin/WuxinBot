@@ -1,3 +1,4 @@
+import { startProfileRecalculation } from '../profileRecalculation.js';
 // Owner command handlers for /w system commands (why/pause/prompt/refresh/recalc/
 // ping/model/search/thinking/sysfacts/summarize). Decomposed from
 // server/bot/ownerCommands.ts; permission preambles are handled by dispatch.
@@ -5,19 +6,12 @@ import { defaultPrompt, readDb, updateDb, nowIso } from '../../store.js';
 import { applyUsageTotals, usageEventFields } from '../../usage.js';
 import {
   getRecalcProgress,
-  startRecalc,
-  tickRecalc,
-  finishRecalc,
   setBotPaused,
 } from '../../health.js';
-import { maybeUpdateMemoryProfile } from '../memory.js';
-import { updateGroupProfile } from '../groupProfile.js';
-import { updateRelationshipProfile } from '../relationshipProfile.js';
 import { completeChat } from '../llm.js';
 import { activeModelName, activateModelProfile, activeProviderLabel, updateProviderSettings } from '../../modelConfig.js';
 import { sanitizeReply, sendForwardText } from '../reply.js';
 import { OWNER_FALLBACK_HELP } from './help.js';
-import { runBackgroundTask } from '../../backgroundTasks.js';
 import type { OwnerHandlerContext, OwnerCommandResult } from './types.js';
 
 export async function ownerWhyHandler(ctx: OwnerHandlerContext): Promise<OwnerCommandResult> {
@@ -131,78 +125,11 @@ export async function ownerPromptHandler(ctx: OwnerHandlerContext): Promise<Owne
 }
 
 export async function ownerRefreshHandler(ctx: OwnerHandlerContext): Promise<OwnerCommandResult> {
+  const counts = startProfileRecalculation(ctx.event);
   const state = getRecalcProgress();
-  if (state.running) { const reply = `正在重算中：${state.done}/${state.total}（${state.label}）`; if (ctx.sendMessage) await ctx.sendMessage(ctx.event, reply); return { replied: Boolean(ctx.sendMessage), reason: reply }; }
-  const db = readDb();
-  const mems = (db.memories || []).filter((m) => m.enabled && (m.samples || []).filter((s) => s.usedForProfile).length >= 3);
-  const gps = (db.groups || []).filter((g) => g.enabled);
-  const rels = (db.relationshipProfiles || []).filter((r) => r.enabled !== false);
-  const total = mems.length + gps.length + rels.length;
-  startRecalc(total, 'QQ端重算');
-  // A full recalculation runs for minutes. Awaiting it here held the command's
-  // reply (and, before the budget fix, its model budget) for >4 minutes, so the
-  // QQ side saw no answer at all. Dispatch it as detached work and report
-  // progress through /w recalc.
-  void runBackgroundTask('recalc.qq', async () => {
-  let pCount = 0, gCount = 0, rCount = 0;
-  let pFailed = 0, gFailed = 0, rFailed = 0;
-  let failure = '';
-  try {
-    for (const mem of mems) {
-      if (getRecalcProgress().stopped) break;
-      try {
-        const outcome = await maybeUpdateMemoryProfile({
-          ...ctx.event,
-          userId: String(mem.userId),
-          nickname: mem.nickname || String(mem.userId),
-          messageId: `${ctx.event.messageId || 'memory-recalc'}:${mem.userId}`,
-        }, { force: true, kind: 'memory-recalc' });
-        if (outcome.ok) pCount++;
-      } catch (error) {
-        pFailed++;
-        console.error('[recalc] memory profile failed:', mem.userId, String(error?.message || error).slice(0, 200));
-      }
-      tickRecalc();
-    }
-    for (const g of gps) {
-      if (getRecalcProgress().stopped) break;
-      try {
-        const r = await updateGroupProfile(readDb(), g.groupId);
-        if (r.ok) gCount++;
-      } catch (error) {
-        gFailed++;
-        console.error('[recalc] group profile failed:', g.groupId, String(error?.message || error).slice(0, 200));
-      }
-      tickRecalc();
-    }
-    for (const rp of rels) {
-      if (getRecalcProgress().stopped) break;
-      try {
-        const r = await updateRelationshipProfile(readDb(), rp.groupId, rp.userA, rp.userB);
-        if (r?.ok !== false && !r?.skipped) rCount++;
-      } catch (error) {
-        rFailed++;
-        console.error('[recalc] relationship profile failed:', rp.groupId, String(error?.message || error).slice(0, 200));
-      }
-      tickRecalc();
-    }
-  } catch (error) {
-    failure = String(error?.message || error).slice(0, 300);
-    console.error('[recalc] QQ端重算异常结束:', failure);
-  } finally {
-    if (getRecalcProgress().running) {
-      const failed = pFailed + gFailed + rFailed;
-      const summary = failed
-        ? `QQ端重算完成：成功 ${pCount + gCount + rCount}/${total}，失败 ${failed}`
-        : 'QQ端全部重算完成';
-      finishRecalc(getRecalcProgress().stopped
-        ? 'QQ端已停止'
-        : (failure ? `QQ端重算失败：${failure}` : summary));
-    }
-  }
-  if (failure) console.error('[recalc] QQ端重算失败:', failure);
-  });
-  const reply = `已开始全局重算：个人画像 ${mems.length} 人、群画像 ${gps.length} 群、关系画像 ${rels.length} 对。用 /w recalc 查看进度。`;
+  const reply = counts
+    ? `已开始全局重算：个人画像 ${counts.memories} 人、群画像 ${counts.groups} 群、关系画像 ${counts.relationships} 对。用 /w recalc 查看进度。`
+    : `正在重算中：${state.done}/${state.total}（${state.label}）`;
   if (ctx.sendMessage) await ctx.sendMessage(ctx.event, reply);
   return { replied: Boolean(ctx.sendMessage), reason: reply };
 }

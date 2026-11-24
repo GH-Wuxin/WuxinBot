@@ -4,26 +4,16 @@ import { recordAssistantContext, messageAccount } from './messageFacts.js';
 import { buildIntrospectionTools, executeIntrospection, INTROSPECTION_TOOL_NAMES } from './bot/introspection.js';
 import { sourceSender, sourceDetails, messageTrigger, type SourceStep } from './messageProvenance.js';
 import { socialCoordinator } from './bot/social/coordinator.js';
-import { chatAdmissionReason, replyLimitReason, conversationContext } from './bot/social/policy.js';
+import { chatAdmissionReason, conversationContext } from './bot/social/policy.js';
 import { isSystemOwner } from './bot/social/state.js';
 import { assessSocialTurn, assessSocialParticipation, revalidateSocialReply, socialDeliveryGuard, socialEntryAllowed, socialTimeline, waitForSocialContinuation, recordSocialDecision, prepareCombinedSocialTurn, applyCombinedSocialTurn } from './bot/social/runtime.js';
 import { captureSocialReflection, queueSocialReflection } from './bot/social/reflection.js';
 import { sendOptionalNotice } from './bot/notice.js';
 import { createReplyProgress, shouldUseReplyProgress, stagedReplySegments, completeWithReplyProgress } from './bot/replyProgress.js';
 import { withLlmTurnPolicy, assertLlmTurnActive } from './llmPolicy.js';
-import { defaultPrompt, readDb, updateDb, nowIso } from './store.js';
+import { readDb, updateDb, nowIso } from './store.js';
 import { mergeLlmUsage } from './usage.js';
-import {
-  normalizeMessage,
-  extractImageInputs,
-  extractAtTargets,
-  extractReplyMessageId,
-  mentionsBot,
-  hasVisualPlaceholder,
-  asksToInspectVisual,
-  looksLikeVisualFollowup,
-  cardPlaceholder
-} from './bot/cleaning.js';
+import { mentionsBot, asksToInspectVisual } from './bot/cleaning.js';
 import {
   callLLM,
   completeChat,
@@ -31,29 +21,17 @@ import {
 } from './bot/llm.js';
 import {
   commandRoleLevel,
-  commandRoleName,
   userCommandRoleId,
-  hasCommandPermission,
-  commandDeniedReply,
   parseCommandMeta,
-  writeCommandLog,
   beginCommandLog,
   setCommandStage,
   completeCommandLog
 } from './bot/commands.js';
 import {
   buildPrompt,
-  describePolicy,
   describeModel,
-  getPricing,
-  calcCost,
   responseOptionsFor,
-  ownerPrivateContextStats,
-  promptContextMessages,
-  memoryPromptBlock,
-  modelSupportsVision,
-  sumUsageSince,
-  startOfLocalDayTime
+  modelSupportsVision
 } from './bot/prompt.js';
 import {
   createShadowReasoningRouter,
@@ -75,13 +53,12 @@ import {
   normalReplyRewriteSkipReason
 } from './bot/reply.js';
 import { buildRewriteEntry, recordRewriteTelemetry } from './bot/rewriteTelemetry.js';
-import { recordMemoryObservation, maybeUpdateMemoryProfile, maybeRecordImageMemorySummary, updateMemoryProfile, commitMemoryProfileResult, maybeSweepDueMemoryProfiles } from './bot/memory.js';
-import { getGroupProfile, updateGroupProfile, clearGroupProfile, incrementGroupProfilePending, hasGroupProfileContent } from './bot/groupProfile.js';
-import { getRelationshipProfile, updateRelationshipProfile, clearRelationshipProfile, incrementPairPending } from './bot/relationshipProfile.js';
-import { processTrustSignal, evaluateTrustScores, isTrustedMember } from './bot/trust.js';
-import { abortReplyProcess, isReplyProcessAborted, runReplyProcess, updateReplyProcessStage } from './bot/replyProcesses.js';
-import { processXpGain, getExperience, getXpBonus, formatXpBar, getUnlockedFeatures, getLevelInfo, getNextLevelInfo, levelToPp, decayInactiveUsers } from './bot/experience.js';
-import { setBotPaused, getRecalcProgress, startRecalc, tickRecalc, finishRecalc, markActiveProcessing } from './health.js';
+import { recordMemoryObservation, maybeUpdateMemoryProfile, maybeRecordImageMemorySummary, maybeSweepDueMemoryProfiles } from './bot/memory.js';
+import { incrementGroupProfilePending } from './bot/groupProfile.js';
+import { incrementPairPending } from './bot/relationshipProfile.js';
+import { isReplyProcessAborted, runReplyProcess, updateReplyProcessStage } from './bot/replyProcesses.js';
+import { processXpGain, levelToPp } from './bot/experience.js';
+import { markActiveProcessing } from './health.js';
 import { runBackgroundTask } from './backgroundTasks.js';
 import { runInboundTask } from './bot/inboundGate.js';
 import {
@@ -92,11 +69,10 @@ import {
   traceEvent,
   withRequestTrace,
 } from './requestTrace.js';
-import { activeModelName, activateModelProfile, activeProviderLabel } from './modelConfig.js';
-import { handleOsuCommand } from './osu/commands.js';
+import { activeModelName } from './modelConfig.js';
 import { OSU_SEARCH_TOOL, OSU_READ_TOOL, buildOsuSearchTools, executeOsuSearchTool, isOsuSearchAvailable } from './osu/search.js';
 import { readPippiSelf, SELF_PROPOSAL_GUIDANCE, type SelfEvidence } from './bot/social/self.js';
-import { loadRegistry, buildBotToolSchemas, enabledBots, findBot } from './bots/registry.js';
+import { loadRegistry, buildBotToolSchemas, enabledBots } from './bots/registry.js';
 import {
   detectRequiredOsuTool,
   detectNamedBotRequest,
@@ -105,9 +81,9 @@ import {
   hasFallbackRecommendIntent,
   looksLikeRecommendationReply,
 } from './bots/intent.js';
-import { validateOperation, looksLikeToolCallMarkup } from './bots/guard.js';
+import { validateOperation } from './bots/guard.js';
 import { RECENT_BOT_SELECTOR_IDS } from './bots/capabilityCatalog.js';
-import { executeToolCall, runToolLoop, mergeToolLoopResults, tryResolveBotResponse } from './bots/executor.js';
+import { executeToolCall, runToolLoop, mergeToolLoopResults } from './bots/executor.js';
 import {
   agentRuntimeModeFor,
   rewriteLegacyToolReferencesForV2,
@@ -118,16 +94,9 @@ import {
 } from './bot/queue.js';
 import {
   looksLikeExternalBotSender,
-  extractAtQq,
-  escapeRegExp,
-  stripAtQq,
-  parseTargetAndRest,
-  llmContentFilter,
   getGroup,
   getUserPolicy,
   recentGroupMessages,
-  ownerPrivateMessages,
-  limitMessagesByCharBudget,
   shouldUseRecentVisionImage
 } from './bot/gate.js';
 import { handleOwnerCommand } from './bot/ownerCommands.js';
@@ -171,16 +140,13 @@ import {
   buildLevelUpPrompt,
   resolveLevelUpRealPp,
   compactDirectToolLead,
-  decideReply,
-  escapeCqParam,
   levelUpFallback,
-  oneBotToInternal,
   recordStickerReplyCapabilityWarning,
   replyTargetMetadata,
   resolveConversationVisionImages,
   toolImageToCq,
   toolImageToMediaInput,
-  allowedByOsuCommandOnlyMode,
+  allowedByOsuCommandOnlyMode
 } from './bot/inboundContext.js';
 export { collectEventVisionImages, compactDirectToolLead, decideReply, oneBotToInternal, allowedByOsuCommandOnlyMode } from './bot/inboundContext.js';
 
@@ -242,11 +208,9 @@ async function processIncomingInner(event, sendMessage = undefined) {
   // 3. Handle deterministic visual-limitation replies (bot genuinely cannot see images).
   // 4. Call the configured LLM (with optional provider search), sanitize/rewrite, send, record usage.
   // Identity/model questions are handled by the model via the runtime-injected system prompt.
-  if (!claimInboundEvent(event)) {
-    return { replied: false, reason: '忽略重复投递的 OneBot message_id', duplicate: true };
-  }
-
   const db = readDb();
+  const duplicate = () => ({ replied: false, reason: '忽略重复投递的 OneBot message_id', duplicate: true });
+  if (!claimInboundEvent(event, db)) return duplicate();
   const settings = db.settings;
   // Preserve the distinction between a direct @mention and natural group
   // participation before command/quick routes can send anything. The reply
@@ -263,7 +227,7 @@ async function processIncomingInner(event, sendMessage = undefined) {
     const privateQuick = matchQuickCommand(event);
     const isLazyQuick = privateQuick?.def.source === 'lazybot' && privateQuick.def.id !== 'help';
     if (!isLazyQuick) {
-      beginCommandLog(event, parseCommandMeta(event, { isOwner: true, isAdmin: true }), 'received');
+      if (!beginCommandLog(event, parseCommandMeta(event, { isOwner: true, isAdmin: true }))) return duplicate();
       setCommandStage(event, 'running');
       return handleOwnerCommand(event, sendMessage);
     }
@@ -292,18 +256,21 @@ async function processIncomingInner(event, sendMessage = undefined) {
   // Random images are an independent module. Run this before the osu-only
   // text router can return, so a group may keep spontaneous images enabled
   // while restricting Pippi's text replies to osu! commands.
-  if (event.type === 'group' && sendMessage && group?.randomImageEnabled === true) {
-    const roll = rollRandomImage(event.groupId, group.randomImageRate);
-    if (roll.file) {
-      // 不 await：发图失败不该影响正常回复，也不该拖慢这一轮。
-      Promise.resolve(sendMessage(event, cqImageFor(roll.file), { originModule: 'random_image', suppressReply: true,
-        ...sourceDetails({module:'random_image',operation:'random_draw'},
-          {code:'random_draw_selected',description:'本群随机图片功能在收到这条群消息后抽中了图片；不是针对触发者的文字回复。',audience:'conversation'},event),
-      })).catch(() => undefined);
+  const drawGroupImage = () => {
+    if (event.type === 'group' && sendMessage && group?.randomImageEnabled === true) {
+      const roll = rollRandomImage(event.groupId, group.randomImageRate);
+      if (roll.file) {
+        // 不 await：发图失败不该影响正常回复，也不该拖慢这一轮。
+        Promise.resolve(sendMessage(event, cqImageFor(roll.file), { originModule: 'random_image', suppressReply: true,
+          ...sourceDetails({module:'random_image',operation:'random_draw'},
+            {code:'random_draw_selected',description:'本群随机图片功能在收到这条群消息后抽中了图片；不是针对触发者的文字回复。',audience:'conversation'},event),
+        })).catch(() => undefined);
+      }
     }
-  }
+  };
 
   if (event.type === 'group' && group?.mode === 'osu' && !allowedByOsuCommandOnlyMode(event, detectedQuickMatch)) {
+    drawGroupImage();
     traceEvent('GATE', 'osu_command_only_ignored', {
       status: 'silent',
       reason: '本群为仅 osu! 指令模式',
@@ -316,9 +283,11 @@ async function processIncomingInner(event, sendMessage = undefined) {
 
   if (event.type === 'group' && looksLikeExternalBotSender(event, settings) && !isGroupOwner) {
     const reason = '忽略疑似其他机器人账号的消息';
-    updateDb((draft) => {
+    const accepted = updateDb((draft) => {
+      if (persistedInboundDuplicate(draft, event)) return false;
       draft.messages.push({
         id: crypto.randomUUID(),
+        sourceMessageId: event.messageId, accountId: messageAccount(db, event),
         role: 'user',
         type: event.type,
         groupId: event.groupId,
@@ -338,12 +307,16 @@ async function processIncomingInner(event, sendMessage = undefined) {
         reason,
         createdAt: nowIso()
       });
+      return true;
     });
+    if (!accepted) return duplicate();
+    drawGroupImage();
     return { replied: false, reason };
   }
 
   if (event.type === 'group' && isWuxinCommandText) {
-    beginCommandLog(event, parseCommandMeta(event, { isOwner: isGroupOwner, isAdmin: isGroupAdmin }), 'received');
+    if (!beginCommandLog(event, parseCommandMeta(event, { isOwner: isGroupOwner, isAdmin: isGroupAdmin }))) return duplicate();
+    drawGroupImage();
     setCommandStage(event, 'running');
     return handleOwnerCommand(event, sendMessage, { isOwner: isGroupOwner, isAdmin: isGroupAdmin });
   }
@@ -354,7 +327,7 @@ async function processIncomingInner(event, sendMessage = undefined) {
   // `查 @某人 的 BP 类型` must not be consumed as Hydrant's generic 查@资料.
   const quickMatch = detectedQuickMatch;
   if (quickMatch) {
-    beginCommandLog(event, {
+    if (!beginCommandLog(event, {
       prefix: quickMatch.prefix,
       command: `quick:${quickMatch.def.id}`,
       subCommand: '',
@@ -362,7 +335,8 @@ async function processIncomingInner(event, sendMessage = undefined) {
       rawText: String(event.text || '').slice(0, 600),
       userRoleId: '',
       userPolicy: groupUserPolicy.policy || 'normal',
-    }, 'received');
+    })) return duplicate();
+    drawGroupImage();
     setCommandStage(event, 'running');
     try {
       const quickSend = sendMessage ? (e, body, options) => sendMessage(e, body, { originModule: 'quick_command', ...options }) : undefined;
@@ -463,9 +437,8 @@ async function processIncomingInner(event, sendMessage = undefined) {
         createdAt: nowIso()
       });
     });
-    if (persistedDuplicate) {
-      return { replied: false, reason: '忽略已持久化的重复 OneBot message_id', duplicate: true };
-    }
+    if (persistedDuplicate) return duplicate();
+    if (!quickMatch) drawGroupImage();
 
     const memoryRecord = recordMemoryObservation(event, userPolicy);
     if (memoryRecord.shouldUpdate) {

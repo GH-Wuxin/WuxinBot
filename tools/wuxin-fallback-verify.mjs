@@ -40,6 +40,7 @@ try {
     assert.equal(fallbackContextForQuick('lazybot','rp','','failed').recentSource,'recent_pass');
     assert.equal(fallbackContextForQuick('lazybot','r','','failed').recentSource,'recent_play');
   });
+  await assert.rejects(buildWuxinFallbackPayload(base, {...deps, api: {getUserRecentScores: async () => []}}), /没有第 1 条/);
   const play=await buildWuxinFallbackPayload(base,deps);
   check('recent play includes the latest failed play',()=>assert.equal(play.scores[0].score.id,1));
   const passed=await buildWuxinFallbackPayload({...base,fallback:{...base.fallback,recentSource:'recent_pass',recentIndex:2}},deps);

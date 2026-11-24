@@ -1,3 +1,4 @@
+import { useSocialMutation } from './useSocialMutation.js';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Heart, MessageCircle, RefreshCw, Trophy, Undo2 } from 'lucide-react';
 import { api } from '../../lib/api.js';
@@ -21,7 +22,6 @@ export function SocialPage({ db, saveSettings, refreshState }) {
   const [search, setSearch] = useState('');
   const [data, setData] = useState(null);
   const [error, setError] = useState('');
-  const [busy, setBusy] = useState(false);
   const [names, setNames] = useState('');
   const [style, setStyle] = useState('');
   const [editing, setEditing] = useState(false);
@@ -40,12 +40,8 @@ export function SocialPage({ db, saveSettings, refreshState }) {
   }, [scope, selected, rankScope]);
   useEffect(() => { void load(); return () => requestRef.current?.abort(); }, [load, db.socialV2Summary?.revision]);
   useEffect(() => { setEditing(false); }, [scope, selected]);
-  const mutate = async (work) => {
-    setBusy(true); setError('');
-    try { await work(); await load(); await refreshState(); }
-    catch (cause) { setError(cause.message); }
-    finally { setBusy(false); }
-  };
+  const { busy, mutate } = useSocialMutation(load, refreshState, setError);
+
   const person = data?.people.find((p) => p.userId === selected);
   const people = (data?.people || []).filter((p) => `${p.nickname} ${p.userId}`.toLowerCase().includes(search.toLowerCase()));
   const ranked = (data?.ranking?.entries || []).filter((p) => `${p.nickname} ${p.userId}`.toLowerCase().includes(search.toLowerCase()));

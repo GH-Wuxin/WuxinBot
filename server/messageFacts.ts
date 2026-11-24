@@ -35,7 +35,7 @@ export function messageContextText(record: any): string {
   return `${text(record.content)}${source}${summary}`;
 }
 export function messageAccount(db: any, event: any): string {
-  return text(db.settings?.selfQq || event?.raw?.self_id).trim();
+  return text(event?.raw?.self_id || db.settings?.selfQq).trim();
 }
 export function conversationKey(event: any): string {
   return event?.type === 'group' ? `group:${text(event.groupId)}` : `private:${text(event?.userId)}`;

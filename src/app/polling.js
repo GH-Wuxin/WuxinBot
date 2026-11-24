@@ -11,7 +11,10 @@ export function usePollingResource(loader, intervalMs, options = {}) {
   const [loading, setLoading] = useState(Boolean(immediate && enabled && initialData == null));
 
   useEffect(() => { loaderRef.current = loader; }, [loader]);
-  useEffect(() => () => { mountedRef.current = false; }, []);
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => { mountedRef.current = false; };
+  }, []);
 
   const refresh = useCallback(async () => {
     if (inFlightRef.current) return null;

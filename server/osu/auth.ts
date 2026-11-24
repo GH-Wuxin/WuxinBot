@@ -1,3 +1,4 @@
+import { isRetryableFetchError } from '../httpBody.js';
 // osu! OAuth Client Credentials token manager.
 // Token lives in process memory only — never persisted to disk or returned in APIs.
 
@@ -47,12 +48,6 @@ function readCredentials() {
   throw new Error('osu! OAuth 凭据未配置。请在环境变量 OSU_CLIENT_ID/OSU_CLIENT_SECRET 中设置，或在 GUI 中填写。');
 }
 
-function isRetryableTokenError(error: unknown): boolean {
-  const name = String((error as { name?: string } | undefined)?.name || '');
-  const message = String((error as { message?: string } | undefined)?.message || error || '');
-  return name === 'AbortError' || /aborted|fetch failed|network|socket|ECONNRESET|ETIMEDOUT/i.test(message);
-}
-
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, Math.max(0, ms)));
 }
@@ -89,7 +84,7 @@ async function fetchToken(): Promise<OsuToken> {
       };
     } catch (error) {
       lastError = error;
-      if (!isRetryableTokenError(error)) throw error;
+      if (!isRetryableFetchError(error)) throw error;
       if (attempt >= TOKEN_MAX_ATTEMPTS) break;
       await sleep(TOKEN_RETRY_BACKOFF_MS * attempt);
     } finally {

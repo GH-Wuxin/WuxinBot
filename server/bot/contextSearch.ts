@@ -1,3 +1,4 @@
+import { boundedInteger } from '../boundedInteger.js';
 // Bounded adaptive retrieval for QQ group history.
 //
 // Normal turns receive the recent tail configured by contextLimit. Turns that
@@ -28,12 +29,6 @@ const GENERIC_TOKENS = new Set([
   '记录', '继续', '接着', '补上', '再说', '那个', '这个', '这件', '那件', '这张',
   '那张', '这段', '那段', '什么', '怎么', '为什么', '一下', '一个', '还是', '关于',
 ]);
-
-function numberSetting(value: unknown, fallback: number, min: number, max: number): number {
-  const parsed = Number(value);
-  if (!Number.isFinite(parsed)) return fallback;
-  return Math.max(min, Math.min(max, Math.floor(parsed)));
-}
 
 function isCurrentEventMessage(message: MessageRecord, event: BotEvent): boolean {
   const sourceMessageId = String(message.sourceMessageId || '');
@@ -97,7 +92,7 @@ function addWithNeighbours(target: Set<number>, index: number, length: number): 
 }
 
 export function selectAdaptiveGroupContext(db: Db, event: BotEvent): GroupContextSelection {
-  const baseLimit = numberSetting(db.settings.contextLimit, 30, 5, 80);
+  const baseLimit = boundedInteger(db.settings.contextLimit, 30, 5, 80);
   const visible = (db.messages || []).filter((message) =>
     String(message.groupId) === String(event.groupId) &&
     message.type === 'group' &&
@@ -120,9 +115,9 @@ export function selectAdaptiveGroupContext(db: Db, event: BotEvent): GroupContex
     };
   }
 
-  const poolSize = numberSetting(db.settings.groupContextSearchPoolSize, 400, 50, 2000);
-  const maxExtra = numberSetting(db.settings.groupContextSearchMaxExtra, 24, 3, 80);
-  const charBudget = numberSetting(db.settings.groupContextSearchCharBudget, 12000, 2000, 40000);
+  const poolSize = boundedInteger(db.settings.groupContextSearchPoolSize, 400, 50, 2000);
+  const maxExtra = boundedInteger(db.settings.groupContextSearchMaxExtra, 24, 3, 80);
+  const charBudget = boundedInteger(db.settings.groupContextSearchCharBudget, 12000, 2000, 40000);
   const older = visible.slice(0, Math.max(0, visible.length - base.length));
   const pool = older.slice(-poolSize);
   const selectedIndexes = new Set<number>();

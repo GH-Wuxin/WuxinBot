@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { usePollingResource } from '../../app/polling.js';
 import { api } from '../../lib/api.js';
 import { Avatar, groupAvatarUrl, userAvatarUrl } from '../../components/Avatar.jsx';
+import { ReplyProcesses } from '../../components/ReplyProcesses.jsx';
 import { RefreshButton } from '../../components/ui/RefreshButton.jsx';
 import { usagePeriods, periodLabels, usageSummary, shortNumber, usageTime, usagePointLabel, usageAxis } from './usageView.js';
 import { usesOfficialOpenAI, estimateOpenAIModelsCost, formatUsd } from './openaiPricing.js';
@@ -76,6 +77,7 @@ export function DashboardPage({ db, oneBot, saveSettings, refreshState, onNaviga
       </div>
     </div>
 
+    <ReplyProcesses />
     {energyError && <div className="note" role="alert" style={{ color: 'var(--red)' }}>{energyError}</div>}
     {settings.tokenSavingMode && <div className="note" style={{ marginBottom: 12 }}>节能中：画像仍会更新，首次至少 50 条可用记录，后续至少 240 条新记录且间隔 12 小时；明确 @ 或私聊直接回复，名字提及仍由简短门控判断，暂不调整好感与心情。聊天使用精简提示词，仅保留表情包选择与发送；自主阅读和自动图片记忆暂停。</div>}
     <div className="hero">

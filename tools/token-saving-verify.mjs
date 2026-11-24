@@ -123,7 +123,8 @@ try {
     onRequest = () => store.updateDb(db => { db.groupProfiles[0].pendingMessageCount += 5; });
     await maybeAutoUpdateGroupProfile('20001'); assert.equal(calls.length, 1); assert.equal(store.readDb().groupProfiles[0].pendingMessageCount, 5);
     store.updateDb(db => { db.groupProfiles[0].pendingMessageCount = 400; }); await maybeAutoUpdateGroupProfile('20001'); assert.equal(calls.length, 1);
-    assert.ok(JSON.parse(fs.readFileSync(path.join(directory, 'db-profiles.json'), 'utf8')).profileAutoAttempts['group:20001']);
+    const { shards } = JSON.parse(fs.readFileSync(path.join(directory, 'db.json'), 'utf8'))._storage;
+    assert.ok(JSON.parse(fs.readFileSync(path.join(directory, shards.profiles), 'utf8')).profileAutoAttempts['group:20001']);
   });
   await test('failed relationship refresh does not rescan every other room or retry on every message', async () => {
     seed(); status = 402; store.updateDb(db => { db.pendingPairCounts = { '20001:10003:10004': 100, 'other:10005:10006': 100 }; });

@@ -5,8 +5,7 @@
 // They may only be recorded as boundaries ("避免起哄现实关系/避免调侃亲密关系").
 import { tokenSaving, pairProfileThreshold, claimProfileAttempt } from './tokenSaving.js';
 import { readDb, updateDb, nowIso } from '../store.js';
-import { applyUsageTotals, usageEventFields } from '../usage.js';
-import { activeModelName } from '../modelConfig.js';
+import { recordProfileUsage } from '../usage.js';
 import { completeChat } from './llm.js';
 import { findRecentInteractionPairs } from './signals.js';
 import { textWithoutControlPlaceholders } from './cleaning.js';
@@ -290,11 +289,7 @@ export async function updateRelationshipProfile(db, groupId, userA, userB) {
       else draft.relationshipProfiles.push(entry);
 
       // Track usage
-      if (!response.usage?.accounted) draft.usage.requests += 1;
-      applyUsageTotals(draft.usage, response.usage);
-      if (!draft.usageEvents) draft.usageEvents = [];
-      draft.usageEvents.push({ id: crypto.randomUUID(), groupId: String(groupId), userId: 'system', model: response.model || activeModelName(db.settings), provider: response.provider || db.settings.llmProvider, kind: 'relationship', ...usageEventFields(response.usage), createdAt: nowIso() });
-      draft.usageEvents = draft.usageEvents.slice(-5000);
+      recordProfileUsage(draft, db.settings, response, groupId, 'relationship');
     });
 
     return { ok: true, profile: cleaned.interactionStyle, sampleCount: samples.length };

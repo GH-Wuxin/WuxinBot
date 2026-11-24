@@ -1,3 +1,4 @@
+import { formatTimestamp } from '../../lib/formatTimestamp.js';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { ChevronLeft, ChevronRight, ExternalLink, RefreshCw, Search, Trash2, UserRound, X } from 'lucide-react';
 import { api } from '../../lib/api.js';
@@ -74,10 +75,6 @@ export function OsuPage({ db, refreshState }) {
     .filter((log) => /osu/i.test(String(log.command || '') + ' ' + String(log.subCommand || '')))
     .slice(-8)
     .reverse();
-  const stamp = (value) => {
-    const date = new Date(value || '');
-    return Number.isFinite(date.getTime()) ? date.toLocaleString('zh-CN', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false }) : '—';
-  };
   const elapsed = (ms) => (Number.isFinite(Number(ms)) && ms != null ? (Number(ms) / 1000).toFixed(1) + 's' : '—');
 
   return <>
@@ -117,7 +114,7 @@ export function OsuPage({ db, refreshState }) {
           <thead><tr><th>时间</th><th>工具</th><th>目标</th><th>耗时</th><th>结果</th></tr></thead>
           <tbody>
             {toolRows.map((log) => <tr key={log.id}>
-              <td className="muted">{stamp(log.createdAt)}</td>
+              <td className="muted">{formatTimestamp(log.createdAt)}</td>
               <td><b>{[log.command, log.subCommand].filter(Boolean).join(' ') || 'osu'}</b></td>
               <td className="muted">{log.nickname || log.userId || '—'}</td>
               <td>{elapsed(log.latencyMs)}</td>

@@ -28,7 +28,7 @@ export function migrateLegacyLevels() {
   let migrated = 0;
   updateDb((draft) => {
     if (!draft.experience) return;
-    for (const [userId, exp] of Object.entries(draft.experience)) {
+    for (const exp of Object.values(draft.experience)) {
       const correct = levelFromXp(exp.xp);
       if (Number(exp.level) !== correct) {
         exp.level = correct;
@@ -44,7 +44,6 @@ const MSG_XP = 1;
 const MSG_DAILY_CAP = 15;
 const MENTION_XP = 2;
 const MENTION_DAILY_CAP = 6;
-const DIVERSITY_XP = 3;
 const MILESTONE_XP = 5;
 const MILESTONE_EVERY_DAYS = 3;
 const DECAY_INACTIVE_DAYS = 30;
@@ -120,11 +119,14 @@ export function processXpGain(event, db) {
     if (!draft.groupExperience) draft.groupExperience = {};
 
     const key = userId;
-    let exp = draft.experience[key];
-    if (!exp) {
-      exp = { xp: 0, level: 0, dailyXp: 0, dailyDate: '', activeDays: 0, streakDays: 0, lastMsgDate: '', lastLevelUpAt: '', lastDecayCheck: '' };
-      draft.experience[key] = exp;
-    }
+    if (!draft.experience[key]) draft.experience[key] = getExperience(draft, userId);
+    const exp = draft.experience[key];
+    const isNewActiveDay = exp.lastMsgDate !== today;
+    const gKey = `${event.groupId}:${userId}`;
+    if (!draft.groupExperience[gKey]) draft.groupExperience[gKey] = getGroupExperience(draft, String(event.groupId), userId);
+    const gExp = draft.groupExperience[gKey];
+    gExp.msgCount += 1;
+    gExp.lastActiveAt = nowIso();
 
     // Daily reset
     if (exp.dailyDate !== today) {
@@ -139,8 +141,7 @@ export function processXpGain(event, db) {
       exp.dailyDate = today;
 
       // Active days
-      const lastDay = exp.lastMsgDate || '';
-      if (lastDay !== today) {
+      if (isNewActiveDay) {
         exp.activeDays = (exp.activeDays || 0) + 1;
       }
     }
@@ -148,14 +149,6 @@ export function processXpGain(event, db) {
     if (exp.dailyXp >= DAILY_XP_CAP) {
       // Still update group experience and lastMsgDate
       exp.lastMsgDate = today;
-      const gKey = `${event.groupId}:${userId}`;
-      let gExp = draft.groupExperience[gKey];
-      if (!gExp) {
-        gExp = { groupId: String(event.groupId), userId, msgCount: 0, xpInGroup: 0, lastActiveAt: '' };
-        draft.groupExperience[gKey] = gExp;
-      }
-      gExp.msgCount += 1;
-      gExp.lastActiveAt = nowIso();
       return; // Daily cap reached
     }
 
@@ -183,7 +176,7 @@ export function processXpGain(event, db) {
     }
 
     // Milestone XP (every N active days)
-    if (exp.activeDays > 0 && exp.activeDays % MILESTONE_EVERY_DAYS === 0) {
+    if (isNewActiveDay && exp.activeDays > 0 && exp.activeDays % MILESTONE_EVERY_DAYS === 0) {
       const room = DAILY_XP_CAP - exp.dailyXp;
       if (room > 0) {
         const actual = Math.min(MILESTONE_XP, room);
@@ -195,16 +188,7 @@ export function processXpGain(event, db) {
 
     exp.lastMsgDate = today;
 
-    // Group experience
-    const gKey = `${event.groupId}:${userId}`;
-    let gExp = draft.groupExperience[gKey];
-    if (!gExp) {
-      gExp = { groupId: String(event.groupId), userId, msgCount: 0, xpInGroup: 0, lastActiveAt: '' };
-      draft.groupExperience[gKey] = gExp;
-    }
-    gExp.msgCount += 1;
     gExp.xpInGroup += gained;
-    gExp.lastActiveAt = nowIso();
 
     // Level evaluation: level N requires N*100 total XP (unbounded).
     oldLevel = exp.level;
@@ -221,13 +205,12 @@ export function processXpGain(event, db) {
 
 // Decay XP for inactive users. Called periodically (e.g., every 6 hours).
 export function decayInactiveUsers() {
-  const db = readDb();
   const now = Date.now();
   const today = new Date().toISOString().slice(0, 10);
 
   updateDb((draft) => {
     if (!draft.experience) return;
-    for (const [userId, exp] of Object.entries(draft.experience)) {
+    for (const exp of Object.values(draft.experience)) {
       if (exp.level <= 0) continue;
       const lastMsg = exp.lastMsgDate || '';
       if (!lastMsg) continue;

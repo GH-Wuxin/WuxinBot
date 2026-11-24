@@ -357,9 +357,9 @@ export function normalizeDb(db) {
 
 // Bounded collections keep the newest entries. This is storage policy, not a
 // transaction boundary; each collection remains independently persisted.
-export function applyRetention(db) {
-  if ((db.messages || []).length > MAX_MESSAGES) db.messages = db.messages.slice(-MAX_MESSAGES);
-  if ((db.decisions || []).length > MAX_DECISIONS) db.decisions = db.decisions.slice(-MAX_DECISIONS);
+export function applyRetention(db, history = db) {
+  if ((history.messages || []).length > MAX_MESSAGES) history.messages = history.messages.slice(-MAX_MESSAGES);
+  if ((history.decisions || []).length > MAX_DECISIONS) history.decisions = history.decisions.slice(-MAX_DECISIONS);
   if ((db.commandLogs || []).length > MAX_COMMAND_LOGS) db.commandLogs = db.commandLogs.slice(-MAX_COMMAND_LOGS);
   if ((db.toolCallLogs || []).length > MAX_TOOL_LOGS) db.toolCallLogs = db.toolCallLogs.slice(-MAX_TOOL_LOGS);
   if ((db.unmetCapabilities || []).length > MAX_UNMET_LOGS) db.unmetCapabilities = db.unmetCapabilities.slice(-MAX_UNMET_LOGS);

@@ -295,75 +295,102 @@ interface QuickResolveResult {
   prefix: '!' | '/' | 'none';
 }
 
-function matchAliasPure(defs: RawQuickCommandDef[], rest: string): { def: RawQuickCommandDef; alias: string } | null {
+export interface QuickMatch {
+  def: RawQuickCommandDef;
+  /** The full normalized command text without the prefix. */
+  cmdText: string;
+  /** The matched alias (normalized), used to rebuild injected commands. */
+  alias: string;
+  /** Raw arguments after the matched alias. */
+  args: string;
+  prefix: '!' | '/' | 'none';
+  atTargets: string[];
+  /** Hydrant mode suffix (e.g. `,mania` after `~` / `查`). */
+  extraMode?: string;
+}
+
+function matchAlias(defs: RawQuickCommandDef[], rest: string): { def: RawQuickCommandDef; alias: string } | null {
   const normalized = normalizeAlias(rest);
   let best: { def: RawQuickCommandDef; alias: string; length: number } | null = null;
   for (const def of defs) {
     for (const alias of def.aliases) {
       const key = normalizeAlias(alias);
       if (normalized === key || normalized.startsWith(key + ' ')) {
-        if (!best || key.length > best.length) best = { def, alias: key, length: key.length };
+        if (!best || key.length > best.length) {
+          best = { def, alias: key, length: key.length };
+        }
       }
     }
   }
   return best ? { def: best.def, alias: best.alias } : null;
 }
 
-function argsAfterAliasPure(rawRest: string, alias: string): string {
+/** Rebuild raw args after a matched alias, preserving original casing. */
+function argsAfterAlias(rawRest: string, alias: string): string {
   const aliasTokens = alias.split(' ').filter(Boolean).length;
   const tokens = String(rawRest || '').trim().split(/\s+/).filter(Boolean);
   return tokens.slice(aliasTokens).join(' ');
 }
 
+function modeSuffix(value: string): { mode: string; rest: string } {
+  const match = /^(.*?)\s*[,，]\s*(\S*)\s*$/.exec(value);
+  if (match) return { mode: match[2], rest: match[1] };
+  return { mode: '', rest: value };
+}
+
 /**
- * Pure quick-command resolver (no db/fs/net/runtime). Mirrors
- * quickRouter.matchQuickCommand semantics: longest alias wins, ties keep
- * registry order; hydrant prefix-free triggers handled; `/w ...` is not a
- * quick command. kb-verify asserts this resolver and the runtime matcher
- * agree on every generated example.
+ * Match a message against the quick-command registry.
+ * Returns null when the message is not a quick command (LLM pipeline owns it).
  */
-export function resolveQuickCommand(text: string): QuickResolveResult | null {
-  const raw = String(text || '').trim();
+export function matchQuickCommand(event: { text: string; atTargets?: string[] }): QuickMatch | null {
+  const raw = String(event.text || '').trim();
   if (!raw) return null;
+  const atTargets = Array.isArray(event.atTargets) ? event.atTargets.map(String) : [];
 
-  if (raw.startsWith('!') || raw.startsWith('！')) {
+  const prefix = raw.startsWith('!') || raw.startsWith('！') ? '!'
+    : raw.startsWith('/') && !/^\/w(?:uxin)?(?:\s|$)/i.test(raw) ? '/' : null;
+  if (prefix) {
     const rest = raw.slice(1).trim();
-    const matched = matchAliasPure(EXCLAMATION_DEFS, normalizeAlias(rest));
+    const matched = matchAlias(prefix === '!' ? EXCLAMATION_DEFS : SLASH_DEFS, rest);
     if (!matched) return null;
-    return {
-      def: finalizeQuickDef(matched.def),
-      alias: matched.alias,
-      args: argsAfterAliasPure(rest, matched.alias),
-      prefix: '!',
-    };
+    return { ...matched, cmdText: rest, args: argsAfterAlias(rest, matched.alias), prefix, atTargets };
   }
 
-  if (raw.startsWith('/') && !/^\/w(?:uxin)?(?:\s|$)/i.test(raw)) {
-    const rest = raw.slice(1).trim();
-    const matched = matchAliasPure(SLASH_DEFS, normalizeAlias(rest));
-    if (!matched) return null;
-    return {
-      def: finalizeQuickDef(matched.def),
-      alias: matched.alias,
-      args: argsAfterAliasPure(rest, matched.alias),
-      prefix: '/',
-    };
-  }
-
+  // Hydrant: prefix-free triggers.
   const hydrant = normalizeAlias(raw);
   if (/^~/.test(hydrant)) {
-    const def = HYDRANT_DEFS.find((d) => d.handler === 'self_profile');
-    if (!def) return null;
-    return { def: finalizeQuickDef(def), alias: '~', args: hydrant.slice(1).trim(), prefix: 'none' };
+    const { mode, rest } = modeSuffix(hydrant.slice(1).trim());
+    const def = HYDRANT_DEFS.find((d) => d.handler === 'self_profile')!;
+    return { def, cmdText: hydrant, alias: '~', args: rest, prefix: 'none', atTargets, extraMode: mode };
   }
-  const prefixFree = matchAliasPure(HYDRANT_PREFIX_FREE, hydrant);
+  if (/^查/.test(raw)) {
+    const { mode, rest } = modeSuffix(raw.slice(1).trim());
+    if (atTargets.length > 0) {
+      const def = HYDRANT_DEFS.find((d) => d.handler === 'at_profile')!;
+      return { def, cmdText: raw, alias: '查', args: rest, prefix: 'none', atTargets, extraMode: mode };
+    }
+    return null;
+  }
+  const normalizedRaw = normalizeAlias(raw);
+  const prefixFree = matchAlias(HYDRANT_PREFIX_FREE, normalizedRaw);
   if (prefixFree) {
+    const def = prefixFree.def;
     return {
-      def: finalizeQuickDef(prefixFree.def),
+      def,
+      cmdText: raw,
       alias: prefixFree.alias,
-      args: argsAfterAliasPure(raw, prefixFree.alias),
+      args: argsAfterAlias(raw, prefixFree.alias),
       prefix: 'none',
+      atTargets,
+      extraMode: '',
     };
   }
   return null;
+}
+
+export function resolveQuickCommand(text: string): QuickResolveResult | null {
+  const match = matchQuickCommand({ text });
+  if (!match) return null;
+  const { def, alias, args, prefix } = match;
+  return { def: finalizeQuickDef(def), alias, args: alias === '~' ? normalizeAlias(text).slice(1).trim() : args, prefix };
 }

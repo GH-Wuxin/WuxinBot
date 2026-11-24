@@ -38,18 +38,23 @@ try {
   };
   fs.writeFileSync(path.join(dataDir, 'db.json'), JSON.stringify(legacy, null, 2), 'utf8');
 
+  // A previous migration stopped while the intact legacy core was authoritative.
+  fs.writeFileSync(path.join(dataDir, 'db-messages.json'), '{}');
   const store = await import('../server/store.ts');
   store.ensureStore();
 
-  const expectedFiles = ['db.json', 'db-profiles.json', 'db-messages.json', 'db-decisions.json', 'db-telemetry.json', 'db-osu.json'];
-  for (const file of expectedFiles) assert(fs.existsSync(path.join(dataDir, file)), `created:${file}`);
-  const memoryFiles = fs.readdirSync(dataDir)
-    .filter((file) => /^db-memories-[0-9a-f]{2}\.json$/.test(file))
-    .sort();
-  assert(memoryFiles.length === 16, 'created:memory-buckets', `expected 16, got ${memoryFiles.length}`);
-
-  const core = JSON.parse(fs.readFileSync(path.join(dataDir, 'db.json'), 'utf8'));
-  assert(core._storage?.format === 'wuxin-sharded-v1', 'core:marker');
+  const corePath = path.join(dataDir, 'db.json');
+  const core = JSON.parse(fs.readFileSync(corePath, 'utf8'));
+  const expectedNames = Object.keys(core._storage.shards);
+  const memoryNames = expectedNames.filter(name => name.startsWith('memories-'));
+  for (const file of Object.values(core._storage.shards)) assert(fs.existsSync(path.join(dataDir, file)), `created:${file}`);
+  assert(memoryNames.length === 16, 'created:memory-buckets');
+  assert(core._storage.format === 'wuxin-sharded-v2', 'core:marker');
+  function shardHashes() {
+    const marker = JSON.parse(fs.readFileSync(corePath, 'utf8'))._storage;
+    return Object.fromEntries(expectedNames.map(name => [name,
+      [marker.shards[name], ...(marker.history[name] || [])].map(file => hash(path.join(dataDir, file))).join('|')]));
+  }
   assert(!('messages' in core) && !('memories' in core) && !('osuBindings' in core), 'core:large-collections-removed');
   assert(core.futureField?.preserved === true, 'core:unknown-key-preserved');
   assert(fs.readdirSync(path.join(dataDir, 'backups')).some((name) => name.startsWith('pre-shard-')), 'migration:legacy-backup');
@@ -61,7 +66,7 @@ try {
   assert(first.commandLogs?.[0]?.id === 'c1', 'read:telemetry-merged');
   assert(first.osuBindings?.u1?.id === 123, 'read:osu-merged');
 
-  const before = Object.fromEntries(expectedFiles.map((file) => [file, hash(path.join(dataDir, file))]));
+  const before = shardHashes();
   store.updateDb((db) => {
     db.messages.push({ id: 'm2', role: 'assistant', content: 'world', createdAt: '2026-01-01T00:00:01.000Z' });
   });
@@ -69,22 +74,19 @@ try {
   assert(writeStats.dirtyWrites >= 1, 'write-telemetry:dirty-write-count');
   assert(writeStats.lastOperation === 'dirty' && writeStats.lastDataBytes > 0, 'write-telemetry:last-write');
   assert(writeStats.lastShards.some((shard) => shard.name === 'messages'), 'write-telemetry:messages-shard');
-  const after = Object.fromEntries(expectedFiles.map((file) => [file, hash(path.join(dataDir, file))]));
-  assert(before['db-messages.json'] !== after['db-messages.json'], 'selective-write:messages-changed');
-  assert(before['db.json'] !== after['db.json'], 'selective-write:core-revision-changed');
-  for (const file of expectedFiles.filter((name) => !['db.json', 'db-messages.json'].includes(name))) {
-    assert(before[file] === after[file], `selective-write:${file}-unchanged`);
+  const after = shardHashes();
+  assert(before.messages !== after.messages, 'selective-write:messages-changed');
+  assert(core._storage.revision !== store.currentStorageRevision(), 'selective-write:core-revision-changed');
+  for (const name of expectedNames.filter(name => name !== 'messages')) {
+    assert(before[name] === after[name], `selective-write:${name}-unchanged`);
   }
-
-  const beforeMemoryBuckets = Object.fromEntries(memoryFiles.map((file) => [file, hash(path.join(dataDir, file))]));
-  const beforeProfiles = hash(path.join(dataDir, 'db-profiles.json'));
   store.updateDb((db) => {
     db.memories.find((memory) => memory.userId === 'u1').samples.push({ content: 'sample-b', usedForProfile: true });
   });
-  const afterMemoryBuckets = Object.fromEntries(memoryFiles.map((file) => [file, hash(path.join(dataDir, file))]));
-  const changedMemoryBuckets = memoryFiles.filter((file) => beforeMemoryBuckets[file] !== afterMemoryBuckets[file]);
-  assert(changedMemoryBuckets.length === 1, 'memory-write:one-bucket-changed', `changed ${changedMemoryBuckets.join(', ')}`);
-  assert(beforeProfiles === hash(path.join(dataDir, 'db-profiles.json')), 'memory-write:profiles-unchanged');
+  const afterMemory = shardHashes();
+  const changedMemoryBuckets = memoryNames.filter(name => after[name] !== afterMemory[name]);
+  assert(changedMemoryBuckets.length === 1, 'memory-write:one-bucket-changed', changedMemoryBuckets.join(', '));
+  assert(after.profiles === afterMemory.profiles, 'memory-write:profiles-unchanged');
   assert(store.readDb().memories?.[0]?.samples?.some((sample) => sample.content === 'sample-b'), 'memory-write:sample-readable');
 
   const publicA = store.publicDb();

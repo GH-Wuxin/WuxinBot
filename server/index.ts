@@ -1,3 +1,4 @@
+import { startProfileRecalculation } from './bot/profileRecalculation.js';
 import { queryLogEntries } from './logRecords.js';
 import { ownMessageArchiveStatus, startOwnMessageArchive, stopOwnMessageArchive } from './messageFacts.js';
 import { clearOwnArchive } from './messageArchiveStorage.js';
@@ -21,8 +22,8 @@ import { participationStatus } from './bot/social/policy.js';
 import { runSandboxPreview } from './sandboxPreview.js';
 import { getReplyQueueStats } from './bot/queue.js';
 import { abortReplyProcess, listReplyProcesses } from './bot/replyProcesses.js';
-import { getHealth, getRecalcProgress, startRecalc, tickRecalc, stopRecalc, finishRecalc, setBotPaused } from './health.js';
-import { getBackgroundTaskStats, runBackgroundTask, waitForBackgroundTasks } from './backgroundTasks.js';
+import { getHealth, getRecalcProgress, stopRecalc, setBotPaused } from './health.js';
+import { getBackgroundTaskStats, waitForBackgroundTasks } from './backgroundTasks.js';
 import { getInboundAdmissionStats, stopInboundAdmission, waitForInboundTasks } from './bot/inboundGate.js';
 import { getLlmAdmissionStats } from './llmPolicy.js';
 import { getKbHealth } from './bot/knowledgeBase.js';
@@ -179,6 +180,7 @@ async function gracefulShutdown(signal) {
     stopInboundAdmission();
     stopPippiActivity();
     stopSocialReflections();
+    stopOwnMessageArchive();
     try {
       // Stop new QQ events/reconnects before closing the local HTTP and render
       // endpoints. The instance lock stays held until all bounded cleanup is
@@ -227,6 +229,9 @@ async function gracefulShutdown(signal) {
 }
 
 process.on('SIGINT', () => { void gracefulShutdown('SIGINT'); });
+if (process.send) process.on('message', message => {
+  if (message === 'wuxin:shutdown') void gracefulShutdown('Desktop');
+});
 process.on('SIGTERM', () => { void gracefulShutdown('SIGTERM'); });
 process.on('exit', releaseServerInstanceLock);
 
@@ -257,7 +262,6 @@ try {
   // Restore the persisted pause state before OneBot can deliver new events.
   // This keeps the health snapshot and admission behavior consistent across
   // restarts while the operator is investigating a production incident.
-  setBotPaused(Boolean(readDb().settings.globalPaused));
 } catch (error) {
   console.error('[store] 启动失败：存储无法打开，服务未启动。', String((error as Error)?.message || error));
   process.exit(1);
@@ -280,10 +284,12 @@ try {
 // Authentication is consulted on every API request. Keep this one scalar in
 // memory instead of synchronously parsing the entire (currently ~34 MB) JSON
 // store for health/state polling. Mutating restore/settings routes refresh it.
-let cachedAdminPassword = String(readDb().settings.adminPassword || '');
-function refreshCachedAdminPassword(db = readDb()) {
-  cachedAdminPassword = String(db?.settings?.adminPassword || '');
+let cachedAdminPassword = '';
+function syncRuntimeSettings(db = readDb()) {
+  cachedAdminPassword = String(db.settings.adminPassword || '');
+  setBotPaused(Boolean(db.settings.globalPaused));
 }
+syncRuntimeSettings();
 
 const app = express();
 app.use(express.json({ limit: '2mb' }));
@@ -711,7 +717,6 @@ app.post('/api/settings', async (req, res) => {
     // Keep the in-memory health snapshot aligned with GUI/API settings writes.
     // The persisted setting is the source of truth for message admission, but
     // a stale health flag makes an active pause look ineffective in the UI.
-    setBotPaused(Boolean(db.settings.globalPaused));
     db.settings.oneBotAccessToken = keepSecret('oneBotAccessToken') ? previousOneBotToken : incoming.oneBotAccessToken;
     db.settings.adminPassword = keepSecret('adminPassword') ? previousAdminPassword : incoming.adminPassword;
     db.settings.osuClientSecret = keepSecret('osuClientSecret') ? previousOsuSecret : incoming.osuClientSecret;
@@ -729,7 +734,7 @@ app.post('/api/settings', async (req, res) => {
       ));
     }
   });
-  refreshCachedAdminPassword(updatedDb);
+  syncRuntimeSettings(updatedDb);
   res.json(ok(compactDbResponse(updatedDb)));
 });
 
@@ -1210,7 +1215,7 @@ app.post('/api/backups', (req, res) => {
 app.post('/api/backups/:name/restore', (req, res) => {
   const result = restoreBackup(req.params.name);
   if (!result.ok) return res.status(400).json({ ok: false, error: result.error });
-  refreshCachedAdminPassword();
+  syncRuntimeSettings();
   res.json(ok({ restored: result.name }));
 });
 
@@ -1262,81 +1267,11 @@ setInterval(() => { decayInactiveUsers(); }, 6 * 60 * 60 * 1000);
 app.get('/api/recalc-status', (_req, res) => { res.json(ok(getRecalcProgress())); });
 
 app.post('/api/recalc', (_req, res) => {
-  const state = getRecalcProgress();
-  if (state.running) return res.json({ ok: false, error: '已经在重算中' });
-  // Start in background
-  void runBackgroundTask('recalc.api', async () => {
-    let started = false;
-    try {
-      const db = readDb();
-      const mems = (db.memories || []).filter((m) => m.enabled && (m.samples || []).filter((s) => s.usedForProfile).length >= 3);
-      const gps = (db.groups || []).filter((g) => g.enabled);
-      const rels = (db.relationshipProfiles || []).filter((r) => r.enabled !== false);
-      const total = mems.length + gps.length + rels.length;
-      startRecalc(total, '正在重算全部画像');
-      started = true;
-      const { maybeUpdateMemoryProfile } = await import('./bot/memory.js');
-      const { updateGroupProfile } = await import('./bot/groupProfile.js');
-      const { updateRelationshipProfile } = await import('./bot/relationshipProfile.js');
-      let memoryFailed = 0, groupFailed = 0, relationshipFailed = 0;
-      for (const mem of mems) {
-        if (getRecalcProgress().stopped) break;
-        try {
-          await maybeUpdateMemoryProfile({
-            type: 'private', groupId: '', userId: String(mem.userId), nickname: mem.nickname || String(mem.userId),
-            messageId: `memory-recalc:${mem.userId}:${Date.now()}`
-          }, { force: true, kind: 'memory-recalc' });
-        } catch (error) {
-          memoryFailed += 1;
-          console.error('[recalc] memory profile failed:', mem.userId, String(error?.message || error).slice(0, 200));
-        }
-        tickRecalc();
-      }
-      for (const g of gps) {
-        if (getRecalcProgress().stopped) break;
-        try {
-          await updateGroupProfile(readDb(), g.groupId);
-        } catch (error) {
-          groupFailed += 1;
-          console.error('[recalc] group profile failed:', g.groupId, String(error?.message || error).slice(0, 200));
-        }
-        tickRecalc();
-      }
-      for (const rp of rels) {
-        if (getRecalcProgress().stopped) break;
-        try {
-          await updateRelationshipProfile(readDb(), rp.groupId, rp.userA, rp.userB);
-        } catch (error) {
-          relationshipFailed += 1;
-          console.error('[recalc] relationship profile failed:', rp.groupId, String(error?.message || error).slice(0, 200));
-        }
-        tickRecalc();
-      }
-      const failed = memoryFailed + groupFailed + relationshipFailed;
-      finishRecalc(getRecalcProgress().stopped ? '已停止' : (failed ? `重算完成：成功 ${total - failed}/${total}，失败 ${failed}` : '全部重算完成'));
-    } catch (error) {
-      const message = String(error?.message || error).slice(0, 300);
-      console.error('[recalc] 后台重算异常结束:', message);
-      if (started && getRecalcProgress().running) {
-        finishRecalc(getRecalcProgress().stopped ? '已停止' : `重算失败：${message}`);
-      }
-    } finally {
-      // No background job may leave the GUI's singleton progress marker stuck
-      // at running after an unexpected exception or module-load failure.
-      if (started && getRecalcProgress().running) {
-        finishRecalc(getRecalcProgress().stopped ? '已停止' : '重算异常结束');
-      }
-    }
-  });
+  if (!startProfileRecalculation()) return res.json({ ok: false, error: '已经在重算中' });
   res.json({ ok: true });
 });
 
-app.post('/api/recalc/stop', (_req, res) => {
-  stopRecalc();
-  res.json({ ok: true });
-});
-
-app.post('/api/stop-all', (_req, res) => {
+app.post(['/api/recalc/stop', '/api/stop-all'], (_req, res) => {
   stopRecalc();
   res.json({ ok: true });
 });
@@ -1354,7 +1289,7 @@ app.post('/api/config-snapshots/:index/restore', (req, res) => {
     restored = restoreConfigSnapshot(db, index);
   });
   if (!restored) return res.status(400).json({ ok: false, error: '无效的快照索引' });
-  refreshCachedAdminPassword(updatedDb);
+  syncRuntimeSettings(updatedDb);
   res.json(ok({ restored: true }));
 });
 

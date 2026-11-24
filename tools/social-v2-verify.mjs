@@ -329,7 +329,8 @@ await test('backup and restart retain relationship records, names, moods and dir
   const expected = structuredClone(store.readDb().socialV2);
   const copy = structuredClone(store.readDb());
   assert.equal(store.isValidLogicalDbShape(copy), true);
-  assert.ok(JSON.parse(fs.readFileSync(path.join(directory, 'db-profiles.json'), 'utf8')).socialV2);
+  const { shards } = JSON.parse(fs.readFileSync(path.join(directory, 'db.json'), 'utf8'))._storage;
+  assert.ok(JSON.parse(fs.readFileSync(path.join(directory, shards.profiles), 'utf8')).socialV2);
   const child = spawnSync(process.execPath, ['--import', 'tsx', '--input-type=module', '-e',
     "const {readDb}=await import('./server/store.ts');const d=readDb(); console.log(JSON.stringify({s:d.socialV2,commands:d.ownerDirectives.length}));"],
   { cwd: process.cwd(), env: process.env, encoding: 'utf8', windowsHide: true });

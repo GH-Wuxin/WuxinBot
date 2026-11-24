@@ -20,7 +20,7 @@ import path from 'node:path';
 import crypto from 'node:crypto';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import { assertSafeBaseDir, assertSafeDeleteTarget } from '../server/fsSafe.ts';
+import { assertSafeBaseDir, assertSafeDeleteTarget } from './fsSafe.ts';
 
 // Pure quick resolver used to pick unambiguous, verifiable examples. Imported
 // before any collection builder runs so concreteQuickExample can reference it.

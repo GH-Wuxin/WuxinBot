@@ -1,3 +1,4 @@
+import { formatTimestamp } from '../../lib/formatTimestamp.js';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { usePollingResource } from '../../app/polling.js';
 import { api, subscribeRequestTraceStream } from '../../lib/api.js';
@@ -79,12 +80,6 @@ const filters = [
   { value: 'active', label: '进行中' },
   { value: 'slow', label: '慢请求' },
 ];
-const stamp = (value) => {
-  const date = new Date(value || '');
-  return Number.isFinite(date.getTime())
-    ? date.toLocaleString('zh-CN', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false })
-    : '—';
-};
 const formatElapsed = (milliseconds) => {
   if (!Number.isFinite(milliseconds)) return '—';
   if (milliseconds < 10_000) return (Math.max(0, milliseconds) / 1000).toFixed(1) + 's';
@@ -109,7 +104,7 @@ function CommandProgress({ entry, now }) {
       {progress.map((step, index) => <div className="trace-event" key={`${step.stage}-${step.at}-${index}`}>
         <div className="trace-event__head">
           <strong>{commandStageLabels[step.stage] || step.stage}</strong>
-          <span>{stamp(step.at)}</span>
+          <span>{formatTimestamp(step.at)}</span>
         </div>
         {step.detail && <div className="muted" style={{ fontSize: 12 }}>{step.detail}</div>}
       </div>)}
@@ -339,7 +334,7 @@ export function LogsPage({ db }) {
             {filters.filter(item=>channel==='requests' || ['all','active','failed','slow'].includes(item.value)).map((item) => <button key={item.value} type="button" className={filter === item.value ? 'is-active' : ''} onClick={() => selectFilter(item.value)}>{item.label}</button>)}
           </div>
         </div>
-        <div className="muted" style={{ fontSize: 12, marginBottom: 8 }}>{history.total} 条 · 每页 {history.pageSize} 条 · 截至 {stamp(history.asOf)}</div>
+        <div className="muted" style={{ fontSize: 12, marginBottom: 8 }}>{history.total} 条 · 每页 {history.pageSize} 条 · 截至 {formatTimestamp(history.asOf)}</div>
         <div className="rows" ref={rowsRef} aria-busy={historyLoading}>
           {pageEntries.map((entry) => <div
             key={entry.id}
@@ -360,7 +355,7 @@ export function LogsPage({ db }) {
             <div className="log-text log-preview">{entry.preview || '暂无正文'}</div>
             {entry.row?.replies?.length > 0 && <div className="log-reply-preview">Pippi · {entry.row.replies.map(reply=>reply.content || (reply.sticker?'[表情包]':'[图片]')).join(' / ')}</div>}
             {entry.blocked && entry.blockReason && <div className="log-time" style={{ color: 'var(--amber)' }}>闸门：{entry.blockReason}</div>}
-            <div className="log-time">{stamp(entry.at)} · {groupLabel(entry.groupId)} · {entry.tokens == null ? '— Token' : entry.tokens.toLocaleString() + ' Token'}{entry.duration == null ? '' : ' · ' + formatElapsed(entry.duration)}</div>
+            <div className="log-time">{formatTimestamp(entry.at)} · {groupLabel(entry.groupId)} · {entry.tokens == null ? '— Token' : entry.tokens.toLocaleString() + ' Token'}{entry.duration == null ? '' : ' · ' + formatElapsed(entry.duration)}</div>
           </div>)}
           {!pageEntries.length && <div className="note">没有匹配的记录。</div>}
         </div>
@@ -377,7 +372,7 @@ export function LogsPage({ db }) {
             <span className="card-title">{selected.title}</span>
             <span className={'chip' + (selected.blocked ? ' chip--amber' : selected.replied || selected.status === 'completed' || selected.status === 'ok' ? ' chip--mint' : selected.status === 'active' ? ' chip--amber' : '')}>{selected.blocked ? '阻断' : (entryStatusLabels[selected.status] || selected.status)}</span>
           </div>
-          <div className="muted" style={{ fontSize: 12 }}>{stamp(selected.at)} · {groupLabel(selected.groupId)}{selected.row?.message?.userId ? ' · ' + selected.row.message.userId : ''}</div>
+          <div className="muted" style={{ fontSize: 12 }}>{formatTimestamp(selected.at)} · {groupLabel(selected.groupId)}{selected.row?.message?.userId ? ' · ' + selected.row.message.userId : ''}</div>
           {channel === 'commands' && selected.log && <>
             <CommandProgress entry={selected} now={now} />
             <div className="note" style={{ marginTop: 8 }}>
@@ -456,7 +451,7 @@ function LogMessage({message,label,botQq}) {
   const assistant=message.role==='assistant';
   return <article className={'log-message'+(assistant?' log-message--reply':'')}>
     <div className="log-message-head"><Avatar name={assistant?'Pippi':message.nickname || message.userId} src={userAvatarUrl(assistant?botQq:message.userId)} size={24}/>
-      <strong>{label}</strong><span>{assistant?'Pippi':message.nickname || message.userId}</span><time>{stamp(message.createdAt)}</time></div>
+      <strong>{label}</strong><span>{assistant?'Pippi':message.nickname || message.userId}</span><time>{formatTimestamp(message.createdAt)}</time></div>
     <div className="log-message-text">{message.content || (message.sticker?'[表情包]':message.media?.images?.length?'[图片]':'（无文字内容）')}</div>
     {(message.media?.images?.length > 0 || message.sticker) && <div className="log-time">{message.media?.images?.length > 0 ? '图片 × '+message.media.images.length : ''}{message.sticker ? ' 表情：'+message.sticker.id : ''}</div>}
   </article>;

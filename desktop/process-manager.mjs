@@ -3,7 +3,6 @@ import fs from 'node:fs';
 import fsp from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
 import { isDeepStrictEqual } from 'node:util';
 import {
   collectOwnedProcesses, describeProcesses, findMatchingProcesses, isLiveChild, listPortListeners, listSystemProcesses,
@@ -36,12 +35,12 @@ function normalizeEnv(env) {
   return Object.fromEntries(Object.entries(env).map(([key, value]) => [String(key), String(value)]));
 }
 
-const DEFAULT_PROFILER_ALGORITHM = 'v041-formal';
+const DEFAULT_PROFILER_ALGORITHM = 'v110';
 
 function normalizeProfilerAlgorithm(value) {
   // Only migrate known retired formal launch arguments. A separately updated
   // or custom CLI owns validation of other selectors; never downgrade them.
-  return ['v040', 'v040-formal'].includes(value) ? DEFAULT_PROFILER_ALGORITHM : value;
+  return ['v040', 'v040-formal', 'v041-formal'].includes(value) ? DEFAULT_PROFILER_ALGORITHM : value;
 }
 
 function normalizeProfilerArgs(args) {
@@ -55,22 +54,6 @@ function normalizeProfilerArgs(args) {
     if (arg.startsWith('--algorithm=')) {
       const value = arg.slice('--algorithm='.length);
       normalized[index] = `--algorithm=${normalizeProfilerAlgorithm(value)}`;
-    }
-  }
-  return normalized;
-}
-
-function normalizeWuxinArgs(args, cwd = '') {
-  const normalized = normalizeArgs(args);
-  const base = isAbsoluteCommand(cwd) ? path.resolve(cwd) : '';
-  for (let index = 0; index < Math.min(normalized.length, 2); index += 1) {
-    let value = normalized[index] || '';
-    if (value.startsWith('file://')) {
-      try { value = fileURLToPath(value); } catch { /* leave malformed values for the normal error path */ }
-    }
-    if (base && isAbsoluteCommand(value)) {
-      const relative = path.relative(base, path.resolve(value));
-      if (relative && !relative.startsWith('..') && !path.isAbsolute(relative)) normalized[index] = relative;
     }
   }
   return normalized;
@@ -148,12 +131,9 @@ function buildDefaultDefinitions(projectRoot) {
     path.join(shellDir, 'NapCatWinBootMain.exe'),
   );
   const napcatUserData = envOr('NAPCAT_USER_DATA_DIR', 'D:\\PippiQQProfile');
-  const profilerRoot = envOr('SKILL_PROFILER_ROOT', 'G:\\My pack\\Agent Work\\codex_work\\osu-skill-profiler-v040-release');
+  const profilerRoot = envOr('SKILL_PROFILER_ROOT', 'G:\\My pack\\Agent Work\\osu-skill-profiler');
   const profilerCli = path.join(profilerRoot, 'tools', 'map_demand_v01', 'cli.py');
-  // The formal release worktree contains the current v0.41 runtime. Keep the large
-  // local manifest in the main checkout instead of the release worktree's
-  // placeholder manifest.
-  const profilerManifest = envOr('SKILL_PROFILER_MANIFEST', 'G:\\My pack\\Agent Work\\osu-skill-profiler\\training\\datasets\\std_manifest.json');
+  const profilerManifest = envOr('SKILL_PROFILER_MANIFEST', path.join(profilerRoot, 'training', 'datasets', 'std_manifest.json'));
   const profilerAlgorithm = normalizeProfilerAlgorithm(envOr('SKILL_PROFILER_ALGORITHM', DEFAULT_PROFILER_ALGORITHM));
   const yumuNode = firstExisting(envOr('YUMU_NODE', ''), path.join(runtime, 'node-v22.23.1-win-x64', 'node-v22.23.1-win-x64', 'node.exe'), node);
   const yumuDir = envOr('YUMU_DIR', path.join(localRoot, 'sources', 'yumu-image'));
@@ -190,7 +170,6 @@ function buildDefaultDefinitions(projectRoot) {
   const lazybotJar = path.join(localRoot, 'artifacts', 'lazybot', 'lazybot-1.2.0.jar');
   const lazybotConfig = path.join(localRoot, 'configs', 'private', 'lazybot', 'application.yaml');
   const wuxinEntry = path.join(projectRoot, 'server', 'index.ts');
-  const wuxinTsxCli = path.join(projectRoot, 'node_modules', 'tsx', 'dist', 'cli.mjs');
 
   const definition = (value) => ({
     stopOnClose: true,
@@ -276,7 +255,7 @@ function buildDefaultDefinitions(projectRoot) {
     definition({
       id: 'wuxin', label: 'WuxinBot', group: '核心服务', port: 8787, enabled: true, autoStart: true,
       command: node, cwd: projectRoot,
-      args: [path.relative(projectRoot, wuxinTsxCli), path.relative(projectRoot, wuxinEntry)],
+      args: ['--import', 'tsx', wuxinEntry],
       // The bridge reads Hydrant's token and LazyBot's config through the
       // deployment root.  Desktop knows this root; pass it explicitly instead
       // of relying on the process cwd (which is the Wuxin checkout).
@@ -368,7 +347,22 @@ function mergeDefinition(defaultDefinition, savedDefinition) {
       result.env.NODE_OPTIONS = stripLegacyTsxLoaderOption(result.env.NODE_OPTIONS);
     }
   }
-  if (result.id === 'skillProfiler') result.args = normalizeProfilerArgs(result.args);
+  if (result.id === 'skillProfiler') {
+    const oldRoot = 'G:\\My pack\\Agent Work\\codex_work\\osu-skill-profiler-v040-release';
+    const mainRoot = 'G:\\My pack\\Agent Work\\osu-skill-profiler';
+    const priorAlgorithm = result.args[7];
+    const priorManifest = result.args[4];
+    const generatedArgs = ['-u', path.join(result.cwd, 'tools', 'map_demand_v01', 'cli.py'), 'bid-review-ui',
+      '--manifest', priorManifest, '--no-open', '--algorithm', priorAlgorithm];
+    const knownManifest = [defaultDefinition.args[4], path.join(result.cwd, 'training', 'datasets', 'std_manifest.json'),
+      path.win32.join(mainRoot, 'training', 'datasets', 'std_manifest.json')].includes(priorManifest);
+    if ([oldRoot, mainRoot].includes(result.cwd) && knownManifest && isDeepStrictEqual(result.args, generatedArgs)
+      && ['v040', 'v040-formal', 'v041-formal'].includes(priorAlgorithm)) {
+      result.cwd = defaultDefinition.cwd;
+      result.args = [...defaultDefinition.args];
+      result.matcher = defaultDefinition.matcher;
+    } else result.args = normalizeProfilerArgs(result.args);
+  }
   // Old overrides may change the launch path without saving a matcher. Derive
   // its path fields on load as well as on edit; explicit custom rules survive.
   if (!savedDefinition?.matcher) result.matcher = relocateMatcher(defaultDefinition, result);
@@ -382,19 +376,30 @@ function normalizeWuxinRuntimeArgs(args, cwd) {
   const cliIndex = normalized.findIndex((arg) => /(?:^|[\\/])tsx[\\/]dist[\\/]cli\.mjs$/i.test(arg));
   const entryIndex = normalized.findIndex((arg) => /(?:^|[\\/])server[\\/]index\.ts$/i.test(arg));
 
-  // Older Desktop configs used a Windows-relative loader URL. Node treats it
-  // as a package name, so it fails before server/index.ts can run. Launch the
-  // current tsx CLI and entrypoint by absolute path, rooted at the selected
-  // Wuxin checkout, including when a v2 override still carries that old form.
-  if (usesTsxLoader || cliIndex >= 0 && entryIndex > cliIndex) {
-    const trailingArgs = entryIndex >= 0 ? normalized.slice(entryIndex + 1) : [];
+  // Keep Node as the IPC peer so Desktop can drain the actual backend on Windows.
+  if (entryIndex >= 0 && (usesTsxLoader || cliIndex >= 0 && entryIndex > cliIndex)) {
+    const trailingArgs = normalized.slice(entryIndex + 1);
     return [
-      path.join(root, 'node_modules', 'tsx', 'dist', 'cli.mjs'),
+      '--import', 'tsx',
       path.join(root, 'server', 'index.ts'),
       ...trailingArgs,
     ];
   }
   return normalized;
+}
+
+function requestBackendShutdown(child) {
+  return new Promise(resolve => {
+    const finished = () => {
+      clearTimeout(timer);
+      child.off('exit', finished);
+      resolve();
+    };
+    const timer = setTimeout(finished, 6_000);
+    child.once('exit', finished);
+    try { child.send('wuxin:shutdown', error => { if (error) finished(); }); }
+    catch { finished(); }
+  });
 }
 
 function stripLegacyTsxLoaderOption(value) {
@@ -425,25 +430,10 @@ function migrateLegacyDefinition(defaultDefinition, savedDefinition) {
   if (result.id === 'postgres' && isDeepStrictEqual(savedDefinition.matcher?.includes, ['postgres'])) {
     result.matcher = defaultDefinition.matcher;
   } else if (result.id === 'wuxin') {
-    result.args = normalizeWuxinArgs(result.args, result.cwd);
     const oldMatcher = savedDefinition.matcher?.includes;
     if (Array.isArray(oldMatcher) && oldMatcher.length === 1
       && [path.join(result.cwd, 'server', 'index.ts'), path.join('server', 'index.ts')].includes(oldMatcher[0])) {
       result.matcher = defaultDefinition.matcher;
-    }
-  } else if (result.id === 'skillProfiler') {
-    const savedRoot = text(savedDefinition.cwd);
-    const knownRoots = [defaultDefinition.cwd, 'G:\\My pack\\Agent Work\\osu-skill-profiler'];
-    const knownManifest = [defaultDefinition.args[4], path.join(savedRoot, 'training', 'datasets', 'std_manifest.json')].includes(result.args[4]);
-    const generatedArgs = ['-u', path.join(savedRoot, 'tools', 'map_demand_v01', 'cli.py'), 'bid-review-ui', '--manifest', result.args[4], '--no-open', '--algorithm', result.args[7]];
-    if (knownRoots.includes(savedRoot) && knownManifest && isDeepStrictEqual(result.args, generatedArgs)
-      && ['v100', 'v040', 'v040-formal', 'v041-formal'].includes(result.args[7])) {
-      result.cwd = defaultDefinition.cwd;
-      result.args = [...defaultDefinition.args];
-      result.matcher = defaultDefinition.matcher;
-    } else {
-      // Keep a deliberate alternate profiler/algorithm, including its root.
-      result.args = normalizeProfilerArgs(result.args);
     }
   } else if (result.id === 'ppplus') {
     const savedCommand = text(savedDefinition.command);
@@ -808,7 +798,7 @@ export class ProcessManager {
       windowsHide: true,
       detached: false,
       shell: false,
-      stdio: ['ignore', 'pipe', 'pipe'],
+      stdio: id === 'wuxin' ? ['ignore', 'pipe', 'pipe', 'ipc'] : ['ignore', 'pipe', 'pipe'],
     });
     let stderrTail = '';
     child.stderr?.on('data', (chunk) => {
@@ -857,7 +847,15 @@ export class ProcessManager {
       const failed = () => Boolean(child.lastError || child.intentionalStop || child.signalCode || child.exitCode !== null && child.exitCode !== 0);
       const ready = await waitForPort(definition.port, {
         timeoutMs: this.readinessTimeoutMs,
-        probe: this.runtime.probePort,
+        intervalMs: process.platform === 'linux' ? 95 : 250,
+        probe: async (port, timeout) => {
+          // Linux reparents daemon children as soon as their launcher exits.
+          // Capture ancestry during startup while the parent still proves it.
+          if (process.platform === 'linux' && isLiveChild(child) && launch.evidence.size === 1) {
+            this.ownedProcesses(id, await this.runtime.listProcesses());
+          }
+          return this.runtime.probePort(port, timeout);
+        },
         cancelled: () => this.closing || signal.aborted || failed(),
         verify: async () => {
           const current = await this.inspect();
@@ -916,7 +914,11 @@ export class ProcessManager {
     const originalPids = owned.map((item) => item.pid);
     const launchedDefinition = launch.definition;
     const port = await this.portStatus(launchedDefinition, snapshot, owned, { managedOnly: true });
-    if (port.ready && launchedDefinition.stopCommand && commandExists(launchedDefinition.stopCommand)) {
+    if (id === 'wuxin' && child.connected && !launchedDefinition.stopCommand) {
+      await requestBackendShutdown(child);
+      snapshot = await this.inspect();
+      owned = this.ownedProcesses(id, snapshot.processes);
+    } else if (port.ready && launchedDefinition.stopCommand && commandExists(launchedDefinition.stopCommand)) {
       try { await this.runtime.runFile(launchedDefinition.stopCommand, normalizeArgs(launchedDefinition.stopArgs)); } catch (error) {
         this.onLog({ level: 'warn', message: `${definition.label} 停止命令返回错误：${error?.message || error}`, id });
       }

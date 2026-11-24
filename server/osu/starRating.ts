@@ -19,7 +19,7 @@ interface StarAttributeTask {
   mods: string[];
 }
 
-function scoreModAcronyms(score: OsuScore): string[] {
+export function scoreModAcronyms(score: OsuScore): string[] {
   const rawMods: unknown[] = Array.isArray((score as any).mods)
     ? (score as any).mods
     : [];

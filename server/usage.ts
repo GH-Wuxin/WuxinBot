@@ -1,3 +1,4 @@
+import { activeModelName } from './modelConfig.js';
 export interface UsageBreakdown {
   totalTokens: number;
   promptTokens: number;
@@ -551,4 +552,16 @@ export function buildUsageStats(usage: any = {}, events: any[] = [], now = Date.
       cacheWriteTokens: nonNegative(usage.cacheWriteTokens), requests: nonNegative(usage.cacheMeasuredRequests),
       startedAt: String(usage.cacheMetricsStartedAt || ''),
     }};
+}
+
+export function recordProfileUsage(draft, settings, response, groupId, kind: 'group-profile' | 'relationship') {
+  if (!response.usage?.accounted) draft.usage.requests += 1;
+  applyUsageTotals(draft.usage, response.usage);
+  draft.usageEvents ??= [];
+  draft.usageEvents.push({
+    id: crypto.randomUUID(), groupId: String(groupId), userId: 'system', kind,
+    model: response.model || activeModelName(settings), provider: response.provider || settings.llmProvider,
+    ...usageEventFields(response.usage), createdAt: new Date().toISOString(),
+  });
+  if (draft.usageEvents.length > 5000) draft.usageEvents = draft.usageEvents.slice(-5000);
 }

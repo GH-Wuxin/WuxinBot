@@ -1,10 +1,11 @@
+import { useSocialMutation } from './useSocialMutation.js';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { api } from '../../lib/api.js';
 import { Button, Card, Input, Switch, Textarea } from '../../components/ui/index.jsx';
 
 const date = value => value ? new Date(value).toLocaleString('zh-CN') : '尚未发生';
 export function SelfPanel({ db, scope, saveSettings, refreshState }) {
-  const [data, setData] = useState(null), [error, setError] = useState(''), [busy, setBusy] = useState(false);
+  const [data, setData] = useState(null), [error, setError] = useState('');
   const [offset, setOffset] = useState(0), [editing, setEditing] = useState(null);
   const [budget, setBudget] = useState(db.settings.pippiActivityDailyTokens || 30000);
   const [wakes, setWakes] = useState(db.settings.pippiActivityMaxWakes || 3);
@@ -19,12 +20,8 @@ export function SelfPanel({ db, scope, saveSettings, refreshState }) {
   }, [scope, offset]);
   useEffect(() => { void load(); return () => pending.current?.abort(); }, [load, db.socialV2Summary?.revision]);
   useEffect(() => { setOffset(0); setEditing(null); }, [scope]);
-  const mutate = async work => {
-    setBusy(true); setError('');
-    try { await work(); await load(); await refreshState(); }
-    catch (cause) { setError(cause.message); }
-    finally { setBusy(false); }
-  };
+  const { busy, mutate } = useSocialMutation(load, refreshState, setError);
+
   const activity = data?.activity;
   const unlimitedTokens = db.settings.presenceEnabled === true;
   return <Card className="pippi-self">

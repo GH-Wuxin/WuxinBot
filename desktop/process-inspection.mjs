@@ -34,7 +34,13 @@ export async function listSystemProcesses() {
   return stdout.split(/\r?\n/).map((line) => {
     const match = line.trim().match(/^(\d+)\s+(\d+)\s+(\w+\s+\w+\s+\d+\s+[\d:]+\s+\d+)\s+(\S+)\s*(.*)$/);
     if (!match) return null;
-    return { pid: Number(match[1]), ppid: Number(match[2]), createdAt: Date.parse(match[3]), name: match[4], executablePath: match[4], commandLine: match[5] };
+    const pid = Number(match[1]);
+    let executablePath = match[4];
+    if (process.platform === 'linux') {
+      // Linux comm may be the main thread's name, e.g. "MainThread" for Node.
+      try { executablePath = fs.readlinkSync(`/proc/${pid}/exe`); } catch { /* exited or inaccessible */ }
+    }
+    return { pid, ppid: Number(match[2]), createdAt: Date.parse(match[3]), name: match[4], executablePath, commandLine: match[5] };
   }).filter(Boolean);
 }
 
@@ -93,7 +99,11 @@ export async function listPortListeners() {
       return listeners;
     }
   }
-  const { stdout } = await runFile('lsof', ['-nP', '-iTCP', '-sTCP:LISTEN', '-Fpn']);
+  const { stdout } = await runFile('lsof', ['-nP', '-iTCP', '-sTCP:LISTEN', '-Fpn']).catch(error => {
+    // lsof uses exit 1 and empty output when the selection has no matches.
+    if (error.code === 1 && !error.stdout?.trim() && !error.stderr?.trim()) return { stdout: '' };
+    throw error;
+  });
   let pid = null;
   const result = [];
   for (const line of stdout.split(/\r?\n/)) {

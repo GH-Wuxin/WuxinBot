@@ -53,7 +53,7 @@ const {
   kbKnowledgeDirForTests,
 } = await import('../server/bot/knowledgeBase.ts');
 const { toPromptBlocks, formatPromptKnowledgeBlocks, routeCollections, KB_TOTAL_TEXT_BUDGET } = await import('../server/bot/kbPrompt.ts');
-const { flagCommunityQuotes } = await import('../server/bot/kbQuoteGuard.ts');
+const { flagCommunityQuotes } = await import('./kbQuoteGuard.ts');
 const { routeForText } = await import('../server/bot/kbRoute.ts');
 const { ensureStore, updateDb, readDb } = await import('../server/store.ts');
 const { buildPrompt } = await import('../server/bot/prompt.ts');
