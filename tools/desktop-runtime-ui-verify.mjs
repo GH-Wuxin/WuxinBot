@@ -45,9 +45,19 @@ async function openRuntimePage(t) {
     }
   });
   await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
-  t.after(() => new Promise((resolve) => server.close(resolve)));
-  const browser = await chromium.launch({ executablePath: browserPath, headless: true });
-  t.after(() => browser.close());
+  let browser;
+  t.after(async () => {
+    try {
+      await browser?.close();
+    } finally {
+      // Chromium can preconnect without ever making a request. Drain those
+      // sockets as well so the HTTP fixture closes after every test.
+      const closed = new Promise(resolve => server.close(resolve));
+      server.closeAllConnections();
+      await closed;
+    }
+  });
+  browser = await chromium.launch({ executablePath: browserPath, headless: true });
   const page = await browser.newPage({ viewport: { width: 1440, height: 920 } });
   const browserErrors = [];
   page.on('pageerror', (error) => browserErrors.push(error.message));
