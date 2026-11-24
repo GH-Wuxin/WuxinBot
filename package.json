@@ -79,7 +79,7 @@
     "skill:text:verify": "node --import tsx tools/skill-text-tools-verify.mjs",
     "tool:phases:verify": "node --import tsx tools/tool-phases-verify.mjs",
     "score:fallback:verify": "node --import tsx tools/wuxin-fallback-verify.mjs",
-    "score:command:verify": "node --import tsx tools/score-command-verify.mjs",
+    "score:command:verify": "node --import tsx tools/score-command-verify.mjs && node --import tsx tools/yumu-bp-binding-verify.mjs",
     "runtime:paths:verify": "node --import tsx tools/runtime-paths-verify.mjs",
     "social:v2:verify": "node --import tsx --test tools/social-v2-verify.mjs tools/pippi-self-verify.mjs tools/pippi-activity-verify.mjs && node tools/pippi-self-ui-verify.mjs",
     "social:failure:verify": "node --import tsx tools/social-failure-verify.mjs",
@@ -94,7 +94,7 @@
     "presence:verify": "node --import tsx --test tools/presence-verify.mjs",
     "token-saving:verify": "node --import tsx --test tools/token-saving-verify.mjs && node tools/token-saving-ui-verify.mjs",
     "kanon:completion:verify": "node --import tsx tools/kanon-completion-verify.mjs",
-    "pippi:awareness:verify": "node --import tsx tools/message-facts-verify.mjs && node --import tsx tools/own-message-provenance-verify.mjs && node --import tsx tools/introspection-verify.mjs && node --import tsx tools/reply-fast-path-verify.mjs && node --import tsx tools/social-reflection-verify.mjs && node --import tsx tools/reply-progress-verify.mjs",
+    "pippi:awareness:verify": "node --import tsx tools/group-context-verify.mjs && node --import tsx tools/message-facts-verify.mjs && node --import tsx tools/own-message-provenance-verify.mjs && node --import tsx tools/introspection-verify.mjs && node --import tsx tools/reply-fast-path-verify.mjs && node --import tsx tools/social-reflection-verify.mjs && node --import tsx tools/reply-progress-verify.mjs",
     "pippi:load:verify": "node --import tsx tools/reply-load-verify.mjs"
   },
   "keywords": [],

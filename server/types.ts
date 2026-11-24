@@ -260,6 +260,8 @@ export interface MessageRecord {
   contextSummary?: string;
   requestId?: string;
   sourceMessageId?: string;
+  messageId?: string; // legacy platform ID
+  replyMessageId?: string;
   replyToMessageId?: string;
   replyToUserId?: string;
   replyToNickname?: string;
@@ -269,6 +271,7 @@ export interface MessageRecord {
   userId: string;
   nickname: string;
   content: string;
+  atTargets?: string[];
   media?: { images?: { type: 'image'; url?: string; file?: string }[] };
   sticker?: StickerHistory;
   inContext: boolean;

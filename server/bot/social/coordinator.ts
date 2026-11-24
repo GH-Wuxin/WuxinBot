@@ -1,4 +1,5 @@
 import type { SocialEvent } from './types.js';
+import { groupTurnParts } from '../contextSearch.js';
 import { AsyncResource } from 'node:async_hooks';
 
 interface Pending<T> {
@@ -69,8 +70,8 @@ export class SocialCoordinator {
       images: batch.flatMap((p) => p.event.images || []),
       atTargets: [...new Set(batch.flatMap((p) => p.event.atTargets || []))],
       socialMessageIds: batch.flatMap((p) => p.event.socialMessageIds || [p.event.messageId]),
-      socialMessages: batch.flatMap((p) => p.event.socialMessages || [{ messageId: p.event.messageId,
-        userId: p.event.userId, text: p.event.text, atTargets: p.event.atTargets || [], replyMessageId: p.event.replyMessageId || '' }]),
+      socialMessages: batch.flatMap(p => groupTurnParts(p.event)),
+      selectedGroupContext: undefined,
     };
   }
 

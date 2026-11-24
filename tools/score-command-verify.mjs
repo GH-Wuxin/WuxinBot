@@ -216,9 +216,9 @@ try {
   for (const [text, atTargets, expected] of [
     ['!bs [CQ:at,qq=10002]', [], '!bs Target Player'],
     ['!bs [CQ:at,qq=10002] 1-10', ['10002'], '!bs Target Player 1-10'],
-    ['!bs [CQ:at,qq=10002] mod=dt', [], '!bs Target Player mod=dt'],
-    ['!bs [CQ:at,qq=10002] :mania', [], '!bs :mania Target Player'],
-    ['!bs [CQ:at,qq=10002] :mania 1-10', [], '!bs :mania Target Player 1-10'],
+    ['!bs [CQ:at,qq=10002] mod=dt', [], '!bs uid=102 mod=dt'],
+    ['!bs [CQ:at,qq=10002] :mania', [], '!bs :mania uid=102'],
+    ['!bs [CQ:at,qq=10002] :mania 1-10', [], '!bs :mania uid=102 1-10'],
   ]) {
     const output = await invoke(text, '10001', atTargets);
     check(`bp at bridge ${text}`, () => {

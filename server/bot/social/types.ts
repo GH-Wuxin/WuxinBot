@@ -157,7 +157,10 @@ export interface SocialState {
   processed: string[];
   feedback: { id: string; decisionId: string; verdict: 'should-reply' | 'should-pass'; note: string; createdAt: string }[];
 }
+import type { GroupContextSelection, GroupTurnPart } from '../contextSearch.js';
+
 export interface SocialEvent extends BotEvent {
+  selectedGroupContext?: GroupContextSelection;
   /** Internal diagnostics only; never a reply body or a relationship update. */
   socialAssessmentDiagnostic?: {stage: 'assessment' | 'guard' | 'failure'; reason: string};
   socialMessageIds?: string[];
@@ -166,5 +169,5 @@ export interface SocialEvent extends BotEvent {
   socialNamed?: boolean;
   socialContextIds?: string[];
   socialEngagement?: SocialEngagement;
-  socialMessages?: { messageId: string; userId: string; text: string; atTargets: string[]; replyMessageId: string }[];
+  socialMessages?: GroupTurnPart[];
 }

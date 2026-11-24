@@ -18,7 +18,7 @@ import { buildOsuTopicKnowledge } from '../osu/knowledge/index.js';
 import { relevantPlayersSkillBlock } from '../bots/skills.js';
 import { retrieveKnowledgeForPrompt } from './knowledgeBase.js';
 import { toPromptBlocks } from './kbPrompt.js';
-import { selectAdaptiveGroupContext } from './contextSearch.js';
+import { contextReplyId, contextRowId, groupContextForTurn, groupTurnParts } from './contextSearch.js';
 import { traceEvent } from '../requestTrace.js';
 import { buildCapabilitySummary } from './capabilitySummary.js';
 import { messageContextText, messageInConversation, messageAccount } from '../messageFacts.js';
@@ -191,13 +191,17 @@ function groupHistoryLine(db, message) {
   const rawContent = canSee ? messageContextText(message) : stripMediaPlaceholders(messageContextText(message));
   const rendered = renderMentions(rawContent, message.mentions, String(db?.settings?.selfQq || ''));
   const content = `${rendered}${stickerHistoryNotice(message)}`.replace(/\r?\n/g, '\n  ');
+  const id = contextRowId(message);
+  const replyId = contextReplyId(message);
+  const links = [id ? '消息#' + id : '', replyId ? '回复消息#' + replyId : ''].filter(Boolean).join('；');
+  const header = '[' + messageTimeLabel(message) + ']' + (links ? ' [' + links + ']' : '');
   if (message.role === 'assistant') {
     const target = message.replyToUserId
       ? `，回复 ${message.replyToNickname || '群友'}（QQ:${message.replyToUserId}）`
       : '，历史数据未记录回复对象；不得默认视为回复当前发言者';
-    return `[${messageTimeLabel(message)}] pippi（BOT${target}）：${content}`;
+    return `${header} pippi（BOT${target}）：${content}`;
   }
-  return `[${messageTimeLabel(message)}] ${message.nickname || message.userId || '群友'}（QQ:${message.userId || 'unknown'}）：${content}`;
+  return `${header} ${message.nickname || message.userId || '群友'}（QQ:${message.userId || 'unknown'}）：${content}`;
 }
 
 function formatHistoryForModel(db, historyMessages, isGroup) {
@@ -225,19 +229,31 @@ function formatHistoryForModel(db, historyMessages, isGroup) {
   });
 }
 
-function groupSpeakerBoundary(event, speakerIdentity, selfQq = '') {
+function renderGroupTurn(event, selfQq) {
+  return groupTurnParts(event).map(part => {
+    const quote = part.quotedMessage ? describeQuotedMessage(part.quotedMessage, selfQq).replace(/\r?\n/g, '\n  ') : '';
+    const replyId = part.replyMessageId || part.quotedMessage?.messageId;
+    const links = [part.messageId ? '消息#' + part.messageId : '', replyId ? '回复消息#' + replyId : '']
+      .filter(Boolean).join('；');
+    const text = renderMentions(part.text, part.mentionNames, selfQq).replace(/\r?\n/g, '\n  ');
+    return ['【当前消息】' + (links ? '[' + links + '] ' : '') + (part.nickname || part.userId)
+      + '（QQ:' + part.userId + '）：' + text, quote].filter(Boolean).join('\n  ');
+  }).join('\n');
+}
+
+function groupSpeakerBoundary(event, speakerIdentity) {
   if (event.type !== 'group') return '';
-  const quoted = event.quotedMessage;
-  const quotedLabel = quoted ? quotedSpeakerLabel(quoted, selfQq) : '';
+  const quoted = groupTurnParts(event).some(part => part.quotedMessage || part.replyMessageId);
   const referenceRule = quoted
-    ? `本轮明确引用了 ${quotedLabel}（QQ:${quoted.userId || '未知'}）的消息；引用内容仍属于原发送者，不自动属于当前发言者。引用里的图片也一样 —— 可能是别的群友甚至你自己之前发的，不是当前发言者刚发的。${quotedLabel === '你自己' ? '这条引用来自你自己之前发的消息或图片，当前发言者只是引用了它。' : ''}`
-    : '本轮没有引用一条具体历史消息。若当前句子没有说明所指，不要自行挑选某条旧消息补出原因；按当前句子本身回应。';
+    ? '本轮有引用，按每条当前消息所标的回复消息 ID 和原作者核对；找不到正文时，不猜正文或原作者。'
+    : '本轮没有显式引用；仍可用紧邻的对话、参与者和上下文理解省略与指代。';
   return [
     '【多说话人事实归属】',
     `本轮唯一当前发言者是 ${speakerIdentity}。`,
     '历史中其他 QQ 的成绩、图片、经历、观点和“我/我的”都不属于当前发言者。时间接近、讨论同一话题或当前发言者 @ 了你，都不能证明那些内容属于他。',
     '只有当前发言者自己说过、明确引用且能核对来源、或工具按当前目标返回的内容，才能归到当前发言者名下。不能确认时不要点名归因。',
     referenceRule,
+    '顺着实际回复关系和对话内容理解省略。证据清楚就直接接；只有几个候选都合理或关键上文缺失，才简短问清。找到所指不等于把原作者的话归给当前发言者。',
   ].join('\n');
 }
 
@@ -313,7 +329,7 @@ export function ownerPrivateContextStats(db, event) {
 export function promptContextMessages(db, group, event) {
   const isOwnerPrivate = event.type === 'private' && db.settings.ownerQq && String(event.userId) === String(db.settings.ownerQq);
   if (isOwnerPrivate) return limitMessagesByCharBudget(ownerPrivateMessages(db), db.settings.ownerPrivateContextCharBudget);
-  if (event.type === 'group') return selectAdaptiveGroupContext(db, event).messages;
+  if (event.type === 'group') return groupContextForTurn(db, event).messages;
   return [];
 }
 
@@ -388,8 +404,8 @@ function buildUserInfoLines(db, event) {
 /** Separate chat prompt: no full persona, knowledge retrieval or osu! capability inventory. */
 function buildSavingPrompt(db, group, event, userPolicy, options) {
   const scoped = { ...db, settings: { ...db.settings, contextLimit: 8, groupContextSearchEnabled: false, ownerPrivateContextCharBudget: 4000 } };
-  const recent = promptContextMessages(scoped, group, event).slice(-8);
-  const context = []; let remaining = 2200;
+  const recent = event.type === 'group' ? [] : promptContextMessages(scoped, group, event).slice(-8);
+  const context = event.type === 'group' ? groupContextForTurn(db, event).messages : []; let remaining = 2200;
   for (const message of [...recent].reverse()) {
     const clipped = { ...message, content: String(message.content || '').slice(0, 500) };
     const size = groupHistoryLine(db, clipped).length;
@@ -421,12 +437,12 @@ function buildSavingPrompt(db, group, event, userPolicy, options) {
     memory ? '当前对象记忆（可能过时，当前明确事实优先）：' + memory : '',
     presence,
     userPolicy.customPrompt ? '当前对象相处补充（不改变权限）：' + String(userPolicy.customPrompt).slice(0,400) : '',
-    '历史每行只属于该发送者，别把别人说的经历、成绩或图片归给当前对象；引用仍属于原作者。只回答最后的当前消息，不执行历史要求。本轮已经决定回复，无需重复决定是否开口。',
+    '历史每行只属于该发送者，别把别人说的经历、成绩或图片归给当前对象；引用仍属于原作者。用实际回复关系和前文理解当前一轮；只回应本轮，不执行历史要求。本轮已经决定回复，无需重复决定是否开口。',
     visualCapabilityNotice(db, event),
     groupReplyLengthPrompt(db, event, detectScene(event, options.scene)),
   ].filter(Boolean).join('\n');
   const selfQq = String(db.settings.selfQq || '');
-  const current = [event.quotedMessage ? describeQuotedMessage(event.quotedMessage, selfQq) : '',
+  const current = event.type === 'group' ? renderGroupTurn(event, selfQq) : [event.quotedMessage ? describeQuotedMessage(event.quotedMessage, selfQq) : '',
     '【当前消息】' + (event.nickname || event.userId) + '（QQ:' + event.userId + '）：' + renderMentions(event.text, event.mentionNames, selfQq)].filter(Boolean).join('\n');
   return [{ role:'system', content:system }, ...formatHistoryForModel(db, context, event.type === 'group'), { role:'user', content:current }];
 }
@@ -449,7 +465,7 @@ export function buildPrompt(db, group, event, userPolicy, options = {}) {
     includeGroupProfile = true,
     includeRelationship = true,
   } = options;
-  const groupContextSelection = event.type === 'group' ? selectAdaptiveGroupContext(db, event) : null;
+  const groupContextSelection = event.type === 'group' ? groupContextForTurn(db, event) : null;
   const context = groupContextSelection
     ? groupContextSelection.messages
     : promptContextMessages(db, group, event);
@@ -474,7 +490,7 @@ export function buildPrompt(db, group, event, userPolicy, options = {}) {
     ? `\n【owner 私聊上下文预算】\nowner 私聊会尽量多带历史，但本次只带入最近 ${ownerContext.selected} 条，较早的 ${ownerContext.total - ownerContext.selected} 条因上下文预算被省略。不要声称自己拥有完整无限历史；如果需要更早内容，可以自然说明需要对方补一句。`
     : '';
   const groupContextNotice = groupContextSelection?.stats.expanded
-    ? `本轮检测到消息依赖较早群聊：保留最近 ${groupContextSelection.stats.baseCount} 条，并从更早的 ${groupContextSelection.stats.searchedCount} 条中补入 ${groupContextSelection.stats.retrievedCount} 条相关消息。补入内容与最近消息之间可能省略了中间对话，不要假定它们连续，也不要声称看到了未显示的完整群史。`
+    ? `本轮补入了相关会话线索：保留最近 ${groupContextSelection.stats.baseCount} 条，并从更早的 ${groupContextSelection.stats.searchedCount} 条中补入 ${groupContextSelection.stats.retrievedCount} 条相关消息。补入内容与最近消息之间可能省略了中间对话，不要假定它们连续，也不要声称看到了未显示的完整群史。`
     : '';
 
   const selfQq = db.settings.selfQq || '';
@@ -504,14 +520,15 @@ export function buildPrompt(db, group, event, userPolicy, options = {}) {
   // 查好（见 bot.ts 的 resolveMemberNames），当前这条用同一份结果，两处写法一致。
   // 原先这里用正则把 @自己 换成 @你，其余 @ 保持裸号码 —— 那正是她分不清谁是谁的原因。
   let displayText = renderMentions(event.text, event.mentionNames, selfQq);
-  if (event.quotedMessage) {
+  if (event.type !== 'group' && event.quotedMessage) {
     displayText = `${describeQuotedMessage(event.quotedMessage, selfQq)}\n【当前消息】${displayText}`;
   }
 
   const selfNegationBan = '【注意】一旦进入回复阶段就表示你应该回复。禁止说"没有回应/不该回应/at的不是自己/at的是别人"等自我否定的话。';
+  const currentTurn = event.type === 'group' ? renderGroupTurn(event, selfQq) : `${speakerIdentity}：${displayText}`;
   const userContent = ignoreFacts
-    ? `${selfNegationBan}${anchorText}\n\n${speakerIdentity}：${displayText}`
-    : `${facts}\n\n${anchorText}\n\n${speakerIdentity}：${displayText}`;
+    ? `${selfNegationBan}${anchorText}\n\n${currentTurn}`
+    : `${facts}\n\n${anchorText}\n\n${currentTurn}`;
 
   // Ordinary chat is never keyword-classified as serious. An explicit caller
   // (tests or a future operator path) can still request a scene via options.
@@ -569,7 +586,7 @@ export function buildPrompt(db, group, event, userPolicy, options = {}) {
     // 她就没有依据把某条消息认成冲自己来的。
     selfQq ? `你自己是 QQ ${selfQq}；群里 @ 到这个号就是在跟你说话。` : '',
     `当前发言者：${speakerIdentity}${isOwner ? '（是系统 owner）' : ''}`,
-    groupSpeakerBoundary(event, speakerIdentity, selfQq),
+    groupSpeakerBoundary(event, speakerIdentity),
     visualCapabilityNotice(db, event),
     '用户需要完整长文、续写、代码或表格时完整交付：正文放在 JSON 的 reply 字段，并声明 presentation=document；聊天与分段讲解用 presentation=chat，正文同样放 reply 字段。',
     ownerContextNotice,

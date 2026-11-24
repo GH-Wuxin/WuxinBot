@@ -6,7 +6,7 @@ import { sourceSender, sourceDetails, messageTrigger, type SourceStep } from './
 import { socialCoordinator } from './bot/social/coordinator.js';
 import { chatAdmissionReason, conversationContext } from './bot/social/policy.js';
 import { isSystemOwner } from './bot/social/state.js';
-import { assessSocialTurn, assessSocialParticipation, revalidateSocialReply, socialDeliveryGuard, socialEntryAllowed, socialTimeline, waitForSocialContinuation, recordSocialDecision, prepareCombinedSocialTurn, applyCombinedSocialTurn } from './bot/social/runtime.js';
+import { assessSocialTurn, assessSocialParticipation, revalidateSocialReply, socialDeliveryGuard, socialEntryAllowed, socialTurnTimeline, waitForSocialContinuation, recordSocialDecision, prepareCombinedSocialTurn, applyCombinedSocialTurn } from './bot/social/runtime.js';
 import { captureSocialReflection, queueSocialReflection } from './bot/social/reflection.js';
 import { sendOptionalNotice } from './bot/notice.js';
 import { createReplyProgress, shouldUseReplyProgress, stagedReplySegments, completeWithReplyProgress } from './bot/replyProgress.js';
@@ -554,7 +554,7 @@ async function processIncomingInner(event, sendMessage = undefined) {
       return { replied: false, reason };
     }
     merged.socialAction = action;
-    merged.socialContextIds ||= socialTimeline(readDb(), merged, 40).map((m) => m.messageId);
+    merged.socialContextIds ||= socialTurnTimeline(readDb(), merged).map(m => m.messageId);
     const output = await generateConversationReply(merged, sendMessage, { shouldReply: true, reason: !assessment && merged.socialAssessmentDiagnostic ? '继续明确请求' : reason,
       socialReady: socialCandidate, combinedSocial, visualLimitation: decision.visualLimitation });
     if(reflection&&!isReplyProcessAborted())queueSocialReflection(reflection,{action:merged.socialAction||action,replied:Boolean(output.replied)});

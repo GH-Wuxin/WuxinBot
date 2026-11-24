@@ -34,6 +34,7 @@ import {
   canonicalQuickSyntax,
   type RawQuickCommandDef,
 } from './commands/quick.meta.js';
+import { yumuBpSyntax } from './commands/yumuBpArgs.js';
 import {
   parseScoreArgs,
   buildKanonScoreCommand,
@@ -54,6 +55,7 @@ export { matchQuickCommand, EXCLAMATION_DEFS, SLASH_DEFS, HYDRANT_DEFS, ALL_QUIC
 
 interface ParsedOsuArgs extends ParsedScoreArgs {
   bpSelection?: BpQuerySelection;
+  yumuBp?: ReturnType<typeof yumuBpSyntax>;
 }
 
 export function parseBpArgs(args: string, compactDefault: boolean): ParsedOsuArgs {
@@ -104,6 +106,18 @@ export function parseBpArgs(args: string, compactDefault: boolean): ParsedOsuArg
 export function parseOsuArgs(def: RawQuickCommandDef, args: string, command?: string): ParsedOsuArgs {
   if (def.capability === 'score') {
     return parseScoreArgs(args, command || canonicalQuickTrigger(def));
+  }
+  if (def.source === 'yumu' && def.bpArgs) {
+    const yumuBp = yumuBpSyntax(args);
+    // Keep plain/rank-only semantics. Ranges alongside filters belong to
+    // Yumu (up to 200 candidates); never impose the local top-100 limit.
+    if (yumuBp.panelOnly) {
+      const residual = yumuBp.residual.replace(/[#＃]\s*(\d{1,3})(?:\s*[-~到至]\s*\d{1,3})?(?=\s|$)/gu, ' ').trim();
+      const player = yumuBp.filtered ? residual.replace(/(?:^|\s)\d{1,3}(?:\s*[-~到至]\s*\d{1,3})?\s*$/u, '').trim() : residual;
+      const parsed = parseBpArgs(player, def.id === 'bs');
+      return {...parsed, username: yumuBp.selector || parsed.username, yumuBp};
+    }
+    // Unmodified BP still goes through the shared legacy parser below.
   }
   if (def.bpArgs || def.capability === 'bp' || def.capability === 'bplist') {
     // Reuse the executor parser for canonical "bp 1-100" / "bs 10" forms.
@@ -357,8 +371,14 @@ async function handleQuickCommandInner(
   const atTargets = def.bpArgs
     ? [...new Set([...(match.atTargets || []).map(String), ...cqAtTargets])]
     : match.atTargets;
-  const args = def.bpArgs ? stripCqAtSegments(match.args) : match.args;
-  const cmdText = def.bpArgs ? stripCqAtSegments(match.cmdText) : match.cmdText;
+  // Use the wire spelling for Yumu: normalizing whitespace would also
+  // change quoted song titles. Remove only actual CQ mentions.
+  const yumuBp = def.source === 'yumu' && def.bpArgs;
+  const cmdText = yumuBp ? match.cmdText.replace(CQ_AT_SEGMENT, ' ').trim()
+    : def.bpArgs ? stripCqAtSegments(match.cmdText) : match.cmdText;
+  const args = yumuBp
+    ? match.alias.split(' ').reduce(text => text.replace(/^\S+\s*/u, ''), cmdText)
+    : def.bpArgs ? stripCqAtSegments(match.args) : match.args;
 
   // Global/group/user gates shared with the main pipeline.
   if (db?.settings?.globalPaused) return { handled: true, replied: false, reason: '全局暂停' };
@@ -557,17 +577,20 @@ async function handleQuickCommandInner(
         record(`参数错误：${parsed.error}`);
         return { handled: true, replied: true, reason: '参数错误' };
       }
-      // `!bs @某人 mod=dt` gives parseOsuArgs the condition as "username".
-      // When an @ target is present, the target must still win and the
-      // condition stays in args for the rebuilt bridge command.
-      const atTargetCondition = Boolean(parsed.username)
+      // Other providers still use their existing @ + condition convention.
+      // Yumu syntax has already separated selectors, names and conditions.
+      const atTargetCondition = !parsed.yumuBp && Boolean(parsed.username)
         && atTargets.length > 0
         && Boolean(def.bpArgs)
         && isBpCondition(parsed.username);
       if (!parsed.username || atTargetCondition) {
         const usesAt = atTargets.length > 0;
         const target = usesAt ? String(atTargets[0]) : String(event.userId);
-        const user = await resolveInjectionUser(db, target);
+        // Both installed and current Yumu accept uid=N before BP conditions.
+        // Never use an unqualified numeric token (it could be a rank or QQ).
+        const boundId = parsed.yumuBp?.panelOnly ? bindingParts(db?.osuBindings?.[target]).id : 0;
+        const uid = Number.isSafeInteger(boundId) && boundId > 0 ? boundId : 0;
+        const user = uid ? String(uid) : await resolveInjectionUser(db, target);
         if (!user) {
           log('unbound', usesAt ? `at:${target}` : 'self');
           try {
@@ -581,8 +604,10 @@ async function handleQuickCommandInner(
         bridgeUser = user;
         // Rebuild with the injected user before any BP range/condition. Yumu
         // puts the mode before the player, so keep `:mode` in front.
-        const bpMode = def.bpArgs ? splitBpMode(args) : { mode: '', rest: args };
-        bridgeCommand = `${match.prefix}${match.alias}${bpMode.mode ? ' ' + bpMode.mode : ''} ${user}${bpMode.rest ? ' ' + bpMode.rest : ''}`;
+        const bpMode = parsed.yumuBp ? {mode: parsed.yumuBp.mode, rest: parsed.yumuBp.argsWithoutMode}
+          : def.bpArgs ? splitBpMode(args) : { mode: '', rest: args };
+        const wireUser = uid ? 'uid=' + uid : user;
+        bridgeCommand = `${match.prefix}${match.alias}${bpMode.mode ? ' ' + bpMode.mode : ''} ${wireUser}${bpMode.rest ? ' ' + bpMode.rest : ''}`;
       } else {
         bridgeUser = parsed.username;
       }
@@ -609,17 +634,23 @@ async function handleQuickCommandInner(
       setCommandStage(event, 'waiting_external', def.source);
       const reply = await callLocalBot(def.source, bridgeCommand, bridgeContext, bridgeTimeout);
       if (traceId) markLatencySpan(traceId, 'bridge_response', { source: def.source, frames: reply?.frames });
-      // Bridge replies are the original bot's own output: keep text and images
-      // exactly as produced (the internal engine is the one that needed the
-      // image-only rule to avoid duplicating its panel text).
-      const payload = [reply.text, ...reply.images].filter(Boolean).join('\n');
+      // Forward the provider's reply unchanged except for this Yumu instruction:
+      // Wuxin intercepts !bi, so it cannot perform the authorization Yumu suggests.
+      const forwardedText = def.source === 'yumu' && reply.text === '你的令牌失效或是没有绑定。请授权。(!bi)'
+        ? '你的令牌失效或是没有绑定。请授权。'
+        : reply.text;
+      const payload = [forwardedText, ...reply.images].filter(Boolean).join('\n');
       if (payload) {
         // QUICK_CONTEXT_QB08 A1: the conversation record (text) or placeholder
         // + pending registration (image-only shadow) MUST exist BEFORE the
         // visible send can be observed by a follow-up. Never register after
         // await sendMessage.
-        const bridgeText = String(reply.text || '').trim();
-        if (bridgeText) {
+        const bridgeText = String(forwardedText || '').trim();
+        if (parsedArgs?.yumuBp?.panelOnly && reply.images.length) {
+          // The local shadow read is unfiltered std BP. Only the provider's
+          // panel (and any actual accompanying text) is evidence here.
+          record(`[雨沐 BP 面板] 查询对象：${bridgeUser}；请求：${cmdText}。${bridgeText || '结果见原图。'}`, reply.images);
+        } else if (bridgeText) {
           record(`[${def.source}] ${bridgeText}`, reply.images);
         } else {
           const whereUser = def.handler === 'where' ? String(args || '').trim() : '';
@@ -746,7 +777,7 @@ async function handleQuickCommandInner(
   }
   // ── Internal engine capabilities ──
   if (def.capability) {
-    const parsed = parseOsuArgs(def, args, `${match.prefix}${match.alias}`);
+    const parsed = parsedArgs ?? parseOsuArgs(def, args, `${match.prefix}${match.alias}`);
     if (parsed.error) {
       if (sendMessage) await sendMessage(event, parsed.error);
       record(`参数错误：${parsed.error}`);
@@ -776,6 +807,17 @@ async function handleQuickCommandInner(
       }
       record(UNBOUND_SELF_PROMPT);
       return { handled: true, replied: true, reason: 'unbound_self' };
+    }
+    if (parsed.yumuBp?.panelOnly) {
+      // Do not ask the std-only fallback for a different set of scores.
+      const text = parsed.yumuBp.filtered
+        ? '雨沐未返回筛选结果，Wuxin 备用查询不支持这组 BP 筛选条件。'
+        : '雨沐未返回结果，Wuxin 备用查询无法按这次指定的模式或玩家选择器查询 BP。';
+      recordMessageProducer({module:'wuxin_fallback',operation:def.id,producer:'wuxin',outcome:'fallback'});
+      record(text);
+      if (sendMessage) await sendMessage(event, text);
+      log('fallback_unavailable', 'yumu:bp');
+      return {handled:true, replied:true, reason:'yumu_bp_fallback_unavailable'};
     }
     const botId = def.source === 'kanon'
       ? 'kanon'

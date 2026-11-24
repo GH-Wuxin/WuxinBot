@@ -1,4 +1,5 @@
 import { tokenSaving } from '../tokenSaving.js';
+import { conversationBeforeTurn } from '../contextSearch.js';
 import { getUserPolicy } from '../gate.js';
 import { textWithoutControlPlaceholders } from '../cleaning.js';
 import { isSystemOwner } from './state.js';
@@ -42,7 +43,8 @@ export function chatAdmissionReason(db: any, event: SocialEvent, direct: boolean
 }
 
 export function conversationContext(db: any, event: SocialEvent) {
-  const timeline = db.messages.filter((m) => m.inContext !== false && messageInConversation(m, event, messageAccount(db, event)));
+  const timeline = event.type === 'group' ? conversationBeforeTurn(db, event)
+    : db.messages.filter((m) => m.inContext !== false && messageInConversation(m, event, messageAccount(db, event)));
   const last = timeline.filter((m) => m.role === 'assistant' && !['random_image','notice'].includes(m.originModule)).at(-1);
   const secondsSinceLastReply = last ? Math.max(0, (Date.now() - Date.parse(last.createdAt)) / 1000) : null;
   const repliesToBot = isVerifiedSelfQuote(db, event) || Boolean(event.replyMessageId && timeline.some((m) => m.role === 'assistant'
