@@ -113,6 +113,7 @@ export function App() {
     onNavigate={setTab}
     db={db}
     oneBot={state.oneBot}
+    onStopAll={async () => { await api('/api/stop-all', { method: 'POST', timeoutMs: 10000 }); refresh(); }}
     onPauseToggle={() => saveSettings({ globalPaused: !db.settings.globalPaused })}
   >
     {loadError && <div className="osu-inline-warning" role="alert">连接刷新失败，正在显示上一次数据：{loadError}</div>}

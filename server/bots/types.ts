@@ -156,6 +156,7 @@ export interface SkillStore {
 export type AllowedOperationType =
   | 'query_osu'
   | 'send_sticker'
+  | 'query_external_bot'
   | 'query_bot'
   | 'list_bots'
   | 'get_recent_score';

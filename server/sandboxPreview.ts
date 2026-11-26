@@ -3,7 +3,7 @@
 // process-wide cached object, so any field mutated here would leak into later
 // unrelated commits (finding F06). Everything taken from the store that the
 // preview overrides or passes to downstream helpers is copied first.
-import { findGroupUser, readDb } from './store.js';
+import { readDb } from './store.js';
 import { decideReply } from './bot.js';
 import { buildPrompt } from './bot/prompt.js';
 import { callLLM } from './bot/llm.js';
@@ -39,7 +39,7 @@ export async function runSandboxPreview(body: any = {}) {
   const foundGroup = db.groups.find((g) => String(g.groupId) === groupId);
   const group = foundGroup ? cloneGroup(foundGroup) : { groupId, name: `群 ${groupId}`, enabled: true, mode: 'mention', maxPerHour: 20, cooldownSec: 30 };
   if (modeOverride) group.mode = modeOverride;
-  let userPolicy = findGroupUser(db, groupId, userId) || { policy: 'normal', attentionLevel: 3, allowCommands: false };
+  let userPolicy = db.users.find((u) => String(u.groupId) === groupId && String(u.userId) === userId) || { policy: 'normal', attentionLevel: 3, allowCommands: false };
   if (policyOverride) userPolicy = { ...userPolicy, policy: policyOverride };
   if (String(userId) === String(db.settings.ownerQq)) userPolicy = { policy: 'owner', attentionLevel: 5, allowCommands: true };
 

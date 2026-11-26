@@ -1,5 +1,5 @@
 import crypto from 'node:crypto';
-import { findGroupUser, readDb } from '../store.js';
+import { readDb } from '../store.js';
 import { redactTraceValue } from '../requestTrace.js';
 import { getAllCommandHelpEntries, canViewCommand, canListCommand, permissionSentence } from './commands/index.js';
 import { CAPABILITY_CATALOG } from '../bots/capabilityCatalog.js';
@@ -22,7 +22,7 @@ function safeText(value: unknown, limit = 320) {
 }
 function identity(db: any, event: any) {
   const owner = Boolean(db.settings?.ownerQq && String(db.settings.ownerQq) === String(event.userId));
-  const user = findGroupUser(db, event.groupId, event.userId) || {};
+  const user = (db.users || []).find((u: any) => String(u.groupId) === String(event.groupId) && String(u.userId) === String(event.userId)) || {};
   const group = (db.groups || []).find((g: any) => String(g.groupId) === String(event.groupId));
   const admin = owner || ['owner', 'admin'].includes(event.senderRole) || user.policy === 'admin' || user.allowCommands === true;
   // Owner-only documentation is private, even when the Owner asks in a group.

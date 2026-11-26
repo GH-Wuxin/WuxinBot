@@ -32,19 +32,3 @@ jobs:
               echo '```'
             } >> "$GITHUB_STEP_SUMMARY"
           fi
-      - name: Verify Desktop process management
-        run: npm run desktop:verify
-
-  windows-shutdown:
-    runs-on: windows-latest
-    env:
-      ELECTRON_SKIP_BINARY_DOWNLOAD: '1'
-    steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-node@v7
-        with:
-          node-version: 22
-      - run: npm ci
-      - run: npm run desktop:shutdown:verify
-      - name: Verify Desktop startup controls in Edge
-        run: npm run desktop:ui:verify

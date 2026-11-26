@@ -1,5 +1,4 @@
-import React, { useState } from 'react';
-import { usePollingResource } from '../app/polling.js';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { api } from '../lib/api.js';
 
 function elapsedText(ms) {
@@ -15,37 +14,62 @@ function elapsedText(ms) {
  * 空闲时不占版面（原型里没有这一块）。
  */
 export function ReplyProcesses() {
-  const { data, error, refresh } = usePollingResource(() => api('/api/reply-processes', { timeoutMs: 8000 }), 2000);
-  const [actionError, setActionError] = useState('');
+  const [rows, setRows] = useState([]);
+  const [error, setError] = useState('');
   const [busy, setBusy] = useState('');
+  const [tick, setTick] = useState(0);
+  const mounted = useRef(true);
+
+  const refresh = useCallback(async () => {
+    try {
+      const data = await api('/api/reply-processes', { timeoutMs: 8000 });
+      if (!mounted.current) return;
+      setRows(Array.isArray(data?.processes) ? data.processes : []);
+      setError('');
+    } catch (cause) {
+      if (!mounted.current) return;
+      setError(cause?.message || String(cause));
+    }
+  }, []);
+
+  useEffect(() => {
+    mounted.current = true;
+    void refresh();
+    const poll = window.setInterval(() => void refresh(), 2000);
+    const clock = window.setInterval(() => setTick((value) => value + 1), 1000);
+    return () => {
+      mounted.current = false;
+      window.clearInterval(poll);
+      window.clearInterval(clock);
+    };
+  }, [refresh]);
 
   const abort = async (row) => {
     setBusy(row.id);
-    setActionError('');
     try {
       await api('/api/reply-processes/' + encodeURIComponent(row.id) + '/abort', { method: 'POST', timeoutMs: 8000 });
       await refresh();
     } catch (cause) {
-      setActionError(cause?.message || String(cause));
+      setError(cause?.message || String(cause));
     } finally {
       setBusy('');
     }
   };
 
-  const active = (data?.processes || []).filter((row) => !row.aborted);
-  if (!active.length && !error && !actionError) return null;
+  const active = rows.filter((row) => !row.aborted);
+  if (!active.length) return null;
 
   return <div className="card" style={{ marginBottom: 16 }}>
     <div className="card-head">
       <span className="card-title">正在回复</span>
       <span className="muted" style={{ fontSize: 12 }}>{active.length} 轮进行中</span>
     </div>
-    {(error || actionError) && <div className="note" style={{ color: 'var(--red)' }}>{actionError || error}</div>}
+    {error && <div className="note" style={{ color: 'var(--red)' }}>读取失败：{error}</div>}
     <div className="rows">
       {active.map((row) => <div className="row" key={row.id}>
         <div className="row-main">
           <div className="row-title">{row.nickname || row.userId || '未知'}</div>
-          <div className="row-sub">群 {row.groupId || '私聊'} · {row.stage} · {elapsedText(row.elapsedMs)}</div>
+          <div className="row-sub">群 {row.groupId || '私聊'} · {row.stage} · {elapsedText(Number(row.elapsedMs) + (tick % 2) * 2000)}</div>
         </div>
         <button type="button" className="btn btn-sm" disabled={busy === row.id} onClick={() => abort(row)}>掐断</button>
       </div>)}

@@ -1,4 +1,3 @@
-import { editableCommandPermissions as defaultCommandPermissions } from '../bot/commands/owner.meta.js';
 // Factory defaults, schema normalization and retention for the logical DB.
 import { DEEPSEEK_BASE_URL, activateModelProfile, recoverProviderProfiles } from '../modelConfig.js';
 import { DEFAULT_BOTS } from '../bots/registry.js';
@@ -23,7 +22,51 @@ export const defaultCommandRoles = [
   { id: 'owner', name: '所有者', level: 100, locked: true }
 ];
 
-export { defaultCommandPermissions };
+export const defaultCommandPermissions = {
+  help: 'guest',
+  my: 'guest',
+  ping: 'guest',
+  why: 'guest',
+  lv: 'guest',
+  top: 'guest',
+  me: 'trusted',
+  nick: 'trusted',
+  style: 'trusted',
+  profile: 'admin',
+  summarize: 'guest',
+  summarizeLarge: 'admin',
+  status: 'admin',
+  rate: 'admin',
+  cooldown: 'admin',
+  mode: 'admin',
+  modelShow: 'admin',
+  modelSet: 'admin',
+  pause: 'owner',
+  sysfacts: 'admin',
+  thinking: 'admin',
+  promptShow: 'admin',
+  promptEdit: 'admin',
+  promptSavebase: 'owner',
+  note: 'owner',
+  groupProfileShow: 'admin',
+  groupProfileEdit: 'admin',
+  relationshipShow: 'admin',
+  relationshipEdit: 'admin',
+  preset: 'owner',
+  profileRetry: 'admin',
+  recalc: 'guest',
+  groupAdd: 'owner',
+  memberPolicy: 'owner',
+  exp: 'owner',
+  osuBind: 'guest',
+  osuClearBind: 'guest',
+  osuClearCache: 'owner',
+  osuClearCooldown: 'owner',
+  osuClearRecommend: 'owner',
+  osuHelp: 'guest',
+  skill: 'guest',
+  skillFeedback: 'guest'
+};
 
 export const initialDb = {
   settings: {
@@ -314,9 +357,9 @@ export function normalizeDb(db) {
 
 // Bounded collections keep the newest entries. This is storage policy, not a
 // transaction boundary; each collection remains independently persisted.
-export function applyRetention(db, history = db) {
-  if ((history.messages || []).length > MAX_MESSAGES) history.messages = history.messages.slice(-MAX_MESSAGES);
-  if ((history.decisions || []).length > MAX_DECISIONS) history.decisions = history.decisions.slice(-MAX_DECISIONS);
+export function applyRetention(db) {
+  if ((db.messages || []).length > MAX_MESSAGES) db.messages = db.messages.slice(-MAX_MESSAGES);
+  if ((db.decisions || []).length > MAX_DECISIONS) db.decisions = db.decisions.slice(-MAX_DECISIONS);
   if ((db.commandLogs || []).length > MAX_COMMAND_LOGS) db.commandLogs = db.commandLogs.slice(-MAX_COMMAND_LOGS);
   if ((db.toolCallLogs || []).length > MAX_TOOL_LOGS) db.toolCallLogs = db.toolCallLogs.slice(-MAX_TOOL_LOGS);
   if ((db.unmetCapabilities || []).length > MAX_UNMET_LOGS) db.unmetCapabilities = db.unmetCapabilities.slice(-MAX_UNMET_LOGS);

@@ -39,6 +39,7 @@ const QUERY_OSU_PARAM_KEYS: ReadonlySet<string> = new Set([
 const PARAM_KEYS: Readonly<Record<AllowedOperationType, ReadonlySet<string>>> = {
   query_osu: QUERY_OSU_PARAM_KEYS,
   send_sticker: new Set(['sticker_id']),
+  query_external_bot: new Set(['bot', 'command']),
   query_bot: new Set(['bot', 'command', 'username', 'bp_rank', 'bp_start', 'bp_end']),
   list_bots: new Set(),
   get_recent_score: new Set(['player']),

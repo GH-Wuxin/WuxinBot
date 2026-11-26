@@ -45,13 +45,6 @@ function radarPoint(index:number,value:number,max:number,cx:number,cy:number,rad
   return {x:cx+Math.cos(angle)*r,y:cy+Math.sin(angle)*r,cos:Math.cos(angle),sin:Math.sin(angle)};
 }
 
-function radarLabelPosition(index: number, count: number, cx: number, cy: number, radius: number) {
-  const { x, y, cos, sin } = radarPoint(index, 1, 1, cx, cy, radius, count);
-  const anchor = cos > 0.22 ? 'start' : cos < -0.22 ? 'end' : 'middle';
-  const yOffset = sin < -0.65 ? -4 : sin > 0.65 ? 8 : 4;
-  return { x, y, anchor, yOffset };
-}
-
 function radarPolygon(values:number[],maxima:number[],cx:number,cy:number,radius:number,axisCount=allKeys.length){
   return values.map((value,index)=>{
     const point=radarPoint(index,value,maxima[index],cx,cy,radius,axisCount);
@@ -98,7 +91,11 @@ function pplusRadarSvg(source:any,accent:string,level=5):string{
     return `<circle cx="${point.x.toFixed(1)}" cy="${point.y.toFixed(1)}" r="${(4.8+energy*.8).toFixed(1)}" fill="${accent}" stroke="${panel}" stroke-width="2"/>`;
   }).join('');
   const labels=dimensions.map(([label],index)=>{
-    const { x, y, anchor, yOffset } = radarLabelPosition(index, count, cx, cy, labelRadius);
+    const angle=-Math.PI/2+index*Math.PI*2/count;
+    const x=cx+Math.cos(angle)*labelRadius;
+    const y=cy+Math.sin(angle)*labelRadius;
+    const anchor=Math.cos(angle)>.22?'start':Math.cos(angle)<-.22?'end':'middle';
+    const yOffset=Math.sin(angle)<-.65?-4:Math.sin(angle)>.65?8:4;
     const value=values[index];
     return `${text(Number(x.toFixed(1)),Number((y+yOffset).toFixed(1)),label,18,textColor,600,anchor)}${text(Number(x.toFixed(1)),Number((y+yOffset+23).toFixed(1)),value===null?'—':Number(value).toFixed(2),17,accent,650,anchor)}`;
   }).join('');
@@ -148,7 +145,11 @@ function radarSvg(source:any,mode:'player'|'map',accent:string,level=5,unified=f
     const rawFallback=mode==='map'&&displayKind==='raw';
     const candidateUnified=mode==='map'&&unified&&displayKind==='candidate';
     const missing=labelPrimary[index]===null;
-    const { x, y, anchor, yOffset } = radarLabelPosition(index, allKeys.length, cx, cy, labelRadius);
+    const angle=-Math.PI/2+index*Math.PI*2/allKeys.length;
+    const x=cx+Math.cos(angle)*labelRadius;
+    const y=cy+Math.sin(angle)*labelRadius;
+    const anchor=Math.cos(angle)>.22?'start':Math.cos(angle)<-.22?'end':'middle';
+    const yOffset=Math.sin(angle)<-.65?-4:Math.sin(angle)>.65?8:4;
     const valueText=mode==='player'
       ? `<tspan fill="${valueAccent}">${n(primary[index])}</tspan><tspan fill="${muted}"> / ${n(secondary[index])}</tspan>`
       : `<tspan fill="${valueAccent}">${rawFallback&&labelPrimary[index]!==null?'≈':''}${n(labelPrimary[index])}</tspan>`;

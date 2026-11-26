@@ -111,14 +111,14 @@ test('v1 generated Wuxin absolute args are normalized without freezing other fie
   const definitions = buildDefaultDefinitions(projectRoot).filter((definition) => definition.id === 'wuxin');
   const { manager } = await setup(t, definitions);
   const saved = structuredClone(definitions[0]);
-  saved.args = [path.join(saved.cwd, 'node_modules', 'tsx', 'dist', 'cli.mjs'), path.join(saved.cwd, 'server', 'index.ts')];
+  saved.args = saved.args.map((arg) => path.resolve(saved.cwd, arg));
   saved.matcher = { includes: [path.join(saved.cwd, 'server', 'index.ts')] };
   await fs.writeFile(manager.configFile, JSON.stringify({ version: 1, processes: [saved] }));
   await manager.initialize();
   assert.deepEqual((await readConfig(manager)).processOverrides, {});
 });
 
-test('Wuxin launch loads tsx in the backend process for legacy Desktop configurations', async (t) => {
+test('Wuxin launch normalizes legacy relative tsx loaders to absolute CLI paths', async (t) => {
   const root = path.join(projectRoot, 'wuxin-checkout');
   const definitions = buildDefaultDefinitions(root).filter((definition) => definition.id === 'wuxin');
   definitions[0].args = ['--loader', 'node_modules\\tsx\\dist\\loader.mjs', 'server\\index.ts'];
@@ -127,7 +127,7 @@ test('Wuxin launch loads tsx in the backend process for legacy Desktop configura
   await manager.initialize();
   const actual = manager.getDefinition('wuxin');
   assert.deepEqual(actual.args, [
-    '--import', 'tsx',
+    path.join(root, 'node_modules', 'tsx', 'dist', 'cli.mjs'),
     path.join(root, 'server', 'index.ts'),
   ]);
   assert.equal(actual.env.NODE_OPTIONS, '--enable-source-maps');

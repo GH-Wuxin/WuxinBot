@@ -1,4 +1,3 @@
-import { isRetryableFetchError } from '../httpBody.js';
 // osu! API v2 client. All calls go through getToken() and share the token manager.
 // 401 triggers automatic re-auth exactly once per call.
 
@@ -75,6 +74,12 @@ function extendRateLimitCooldown(delayMs: number): void {
 export interface OsuBeatmapAttributes {
   star_rating: number;
   max_combo?: number;
+}
+
+function isRetryableFetchError(error: unknown): boolean {
+  const name = String((error as { name?: string } | undefined)?.name || '');
+  const message = String((error as { message?: string } | undefined)?.message || error || '');
+  return name === 'AbortError' || /aborted|fetch failed|network|socket|ECONNRESET|ETIMEDOUT/i.test(message);
 }
 
 async function fetchWithTimeout(url: string, opts: RequestInit, timeoutMs: number = 15000): Promise<Response> {

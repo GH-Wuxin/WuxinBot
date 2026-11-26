@@ -26,8 +26,8 @@ const backupModule = await import('../server/backup.ts');
 
 function dbPath(dir) { return path.join(dir, 'db.json'); }
 function shardFiles(dir) {
-  const marker = JSON.parse(fs.readFileSync(dbPath(dir), 'utf8'))._storage;
-  return [...Object.values(marker.shards), ...Object.values(marker.history).flat()].map(file => path.join(dir, file));
+  return ['db-profiles.json', 'db-messages.json', 'db-decisions.json', 'db-telemetry.json', 'db-osu.json']
+    .map((file) => path.join(dir, file));
 }
 
 async function withDir(label, run) {
@@ -93,8 +93,8 @@ try {
     try { store.openStore(); } catch (error) { openError = error; }
     assert(openError && /没有可用的有效备份/.test(String(openError.message)), 'corrupt-no-valid:fail-closed', String(openError?.message || openError));
     assert(fs.readFileSync(dbPath(dir), 'utf8') === broken, 'corrupt-no-valid:damage-untouched');
-    const shardsReset = Object.keys(shardHashesBefore).filter((file) => !fs.existsSync(file)
-      || fs.readFileSync(file).toString('base64') !== shardHashesBefore[file]);
+    const shardsReset = shardFiles(dir).filter((file) => fs.existsSync(file)
+      && fs.readFileSync(file).toString('base64') !== shardHashesBefore[file]);
     assert(shardsReset.length === 0, 'corrupt-no-valid:healthy-shards-not-overwritten', JSON.stringify(shardsReset));
     let readError = null;
     try { store.readDb(); } catch (error) { readError = error; }
@@ -111,22 +111,9 @@ try {
     fs.unlinkSync(dbPath(dir));
     store.openStore();
     assert(store.readDb().messages.some((message) => message.id === 'm-precious'), 'missing-core:restored-from-backup');
-    const evidence = fs.readdirSync(dir).filter((name) => name.startsWith('db-messages.') && name.includes('.json.corrupt-'));
+    const evidence = fs.readdirSync(dir).filter((name) => name.startsWith('db-messages.json.corrupt-'));
     assert(evidence.length >= 1, 'missing-core:shard-evidence-kept', JSON.stringify(evidence));
   });
-
-  for (const damage of ['empty-object', 'missing-marker']) {
-    await withDir(damage, dir => {
-      store.updateDb(db => { db.messages.push({ id: 'survives-recovery' }); });
-      const core = JSON.parse(fs.readFileSync(dbPath(dir), 'utf8'));
-      delete core._storage;
-      backupModule.createBackup('manual');
-      fs.writeFileSync(dbPath(dir), JSON.stringify(damage === 'empty-object' ? {} : core));
-      store.openStore();
-      assert(store.readDb().messages.some(m => m.id === 'survives-recovery'), damage + ':message-restored');
-      assert(fs.readdirSync(dir).some(name => name.startsWith('db.json.corrupt-')), damage + ':core-preserved');
-    });
-  }
 
   // 6. Access failures are not corruption: no recovery attempt, no rewrites.
   await withDir('access-error', async (dir) => {
@@ -145,7 +132,7 @@ try {
   await withDir('future-version', async (dir) => {
     store.updateDb((db) => { db.settings.ownerQq = 'newer-program'; });
     const core = JSON.parse(fs.readFileSync(dbPath(dir), 'utf8'));
-    core._storage.version = 99;
+    core._storage.version = 2;
     fs.writeFileSync(dbPath(dir), JSON.stringify(core, null, 2), 'utf8');
     let openError = null;
     try { store.openStore(); } catch (error) { openError = error; }

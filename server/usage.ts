@@ -1,4 +1,3 @@
-import { activeModelName } from './modelConfig.js';
 export interface UsageBreakdown {
   totalTokens: number;
   promptTokens: number;
@@ -214,7 +213,7 @@ function recordUsageBucket(history: UsageHistory, values: Partial<PeriodUsage>, 
   history.days[day] = addedUsage(history.days[day], values);
   if (prune) pruneUsageBuckets(history, at);
 }
-function pruneUsageBuckets(history: UsageHistory | OpenAIUsageHistory, now: number) {
+function pruneUsageBuckets(history: UsageHistory, now: number) {
   const oldestHour = Math.floor(now / HOUR_MS) * HOUR_MS - 71 * HOUR_MS;
   const oldestDay = usageDayStart(now) - 399 * DAY_MS;
   for (const key of Object.keys(history.hours)) if (Number(key) < oldestHour) delete history.hours[key];
@@ -349,10 +348,16 @@ function normalizeOpenAIUsageHistory(stored: any, now: number): OpenAIUsageHisto
     days: stored.days && typeof stored.days === 'object' ? { ...stored.days } : {},
     total: stored.total && typeof stored.total === 'object' ? { ...stored.total } : {},
   };
-  pruneUsageBuckets(history, now);
+  pruneOpenAIUsageBuckets(history, now);
   return history;
 }
 
+function pruneOpenAIUsageBuckets(history: OpenAIUsageHistory, now: number) {
+  const oldestHour = Math.floor(now / HOUR_MS) * HOUR_MS - 71 * HOUR_MS;
+  const oldestDay = usageDayStart(now) - 399 * DAY_MS;
+  for (const key of Object.keys(history.hours)) if (Number(key) < oldestHour) delete history.hours[key];
+  for (const key of Object.keys(history.days)) if (Number(key) < oldestDay) delete history.days[key];
+}
 
 /**
  * Persist only calls that reached the official OpenAI endpoint. Relays and
@@ -393,7 +398,7 @@ export function recordOpenAIUsage(usage: any, call: {
   if (!history.completeSince || at < Date.parse(history.completeSince)) {
     history.completeSince = new Date(at).toISOString();
   }
-  pruneUsageBuckets(history, at);
+  pruneOpenAIUsageBuckets(history, at);
   return true;
 }
 
@@ -448,7 +453,7 @@ export function initializeOpenAIUsage(
     history.completeSince = new Date(earliest).toISOString();
     history.backfillSource = 'usageEvents';
   }
-  pruneUsageBuckets(history, now);
+  pruneOpenAIUsageBuckets(history, now);
   return history;
 }
 
@@ -546,16 +551,4 @@ export function buildUsageStats(usage: any = {}, events: any[] = [], now = Date.
       cacheWriteTokens: nonNegative(usage.cacheWriteTokens), requests: nonNegative(usage.cacheMeasuredRequests),
       startedAt: String(usage.cacheMetricsStartedAt || ''),
     }};
-}
-
-export function recordProfileUsage(draft, settings, response, groupId, kind: 'group-profile' | 'relationship') {
-  if (!response.usage?.accounted) draft.usage.requests += 1;
-  applyUsageTotals(draft.usage, response.usage);
-  draft.usageEvents ??= [];
-  draft.usageEvents.push({
-    id: crypto.randomUUID(), groupId: String(groupId), userId: 'system', kind,
-    model: response.model || activeModelName(settings), provider: response.provider || settings.llmProvider,
-    ...usageEventFields(response.usage), createdAt: new Date().toISOString(),
-  });
-  if (draft.usageEvents.length > 5000) draft.usageEvents = draft.usageEvents.slice(-5000);
 }

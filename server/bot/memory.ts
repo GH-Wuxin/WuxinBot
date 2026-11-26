@@ -175,8 +175,8 @@ function tripProfileLlmCircuit(db, error) {
   });
 }
 
-function thresholdsForMemory(db, memory, level = Number(memory?.importanceLevel || 2)) {
-  const thresholds = memoryThresholds(db, { level });
+function thresholdsForMemory(db, memory) {
+  const thresholds = memoryThresholds(db, { level: Number(memory?.importanceLevel || 2) });
   const trustMul = trustInteractionBonus(db, memory?.userId).memoryThresholdMul;
   thresholds.minMessages = Math.max(2, Math.round(thresholds.minMessages * trustMul));
   thresholds.updateEvery = Math.max(2, Math.round(thresholds.updateEvery * trustMul));
@@ -479,40 +479,6 @@ function captureContext(db, event) {
   };
 }
 
-function memberMemory(draft, event, importance) {
-  draft.memories ??= [];
-  const existing = draft.memories.find(entry => String(entry.userId) === String(event.userId));
-  if (existing) return existing;
-  draft.memories.push({
-    id: crypto.randomUUID(), userId: event.userId, nickname: event.nickname || event.userId,
-    enabled: true, importanceLevel: importance.level, importanceLabel: importance.label,
-    messageCount: 0, profileMessageCount: 0, pendingCount: 0, groupsSeen: [],
-    samples: [], summary: '', traits: '', speechStyle: '', behavior: '', preferences: '',
-    manualNotes: '', profilingRule: '', profileMeta: {}, recentDynamics: [], createdAt: nowIso(), updatedAt: nowIso(),
-  });
-  // Read back the attached proxy so later sample/counter changes are tracked.
-  return draft.memories.at(-1);
-}
-
-function appendMemberSample(draft, memory, event, importance, thresholds, sample) {
-  memory.nickname = event.nickname || memory.nickname || event.userId;
-  memory.enabled = memory.enabled !== false;
-  memory.importanceLevel = Math.max(Number(memory.importanceLevel || 0), importance.level);
-  memory.importanceLabel = importance.label;
-  memory.profileMessageCount = Number(memory.profileMessageCount || 0);
-  if (sample.usedForProfile) {
-    memory.profileMessageCount++;
-    memory.pendingCount = Number(memory.pendingCount || 0) + 1;
-  }
-  memory.samples ??= [];
-  memory.samples.push(sample);
-  const sampleRetention = Math.max(thresholds.maxSamples, Number(draft.settings.memorySampleRetain || 120));
-  if (memory.samples.length > sampleRetention) memory.samples = memory.samples.slice(-sampleRetention);
-  if (!memory.groupsSeen) memory.groupsSeen = [];
-  if (!memory.groupsSeen.includes(String(event.groupId))) memory.groupsSeen.push(String(event.groupId));
-  memory.updatedAt = nowIso();
-}
-
 export function recordMemoryObservation(event, userPolicy) {
   const db = readDb();
   if (db.settings.memoryEnabled === false) return { shouldUpdate: false, reason: '长期记忆已关闭' };
@@ -547,16 +513,48 @@ export function recordMemoryObservation(event, userPolicy) {
         contentPreview: (sample.content || '').slice(0, 80),
       },
     });
-    const memory = memberMemory(draft, event, importance);
-    const thresholds = thresholdsForMemory(draft, memory, importance.level);
+    if (!draft.memories) draft.memories = [];
+    let memory = draft.memories.find((entry) => String(entry.userId) === String(event.userId));
+    if (!memory) {
+      memory = {
+        id: crypto.randomUUID(), userId: event.userId, nickname: event.nickname || event.userId,
+        enabled: true, importanceLevel: importance.level, importanceLabel: importance.label,
+        messageCount: 0, profileMessageCount: 0, pendingCount: 0, groupsSeen: [],
+        samples: [], summary: '', traits: '', speechStyle: '', behavior: '', preferences: '',
+        manualNotes: '', profilingRule: '', profileMeta: {}, recentDynamics: [], createdAt: nowIso(), updatedAt: nowIso()
+      };
+      draft.memories.push(memory);
+      // The mutation proxy unwraps values inserted into arrays. Re-resolve the
+      // attached entry before changing counters/samples below.
+      memory = draft.memories.find((entry) => String(entry.userId) === String(event.userId));
+    }
+    const thresholds = memoryThresholds(draft, importance);
+    const trustMul = trustInteractionBonus(draft, event.userId).memoryThresholdMul;
+    thresholds.minMessages = Math.max(2, Math.round(thresholds.minMessages * trustMul));
+    thresholds.updateEvery = Math.max(2, Math.round(thresholds.updateEvery * trustMul));
+    Object.assign(thresholds, savingMemoryThresholds(draft, thresholds));
+    memory.nickname = event.nickname || memory.nickname || event.userId;
+    memory.enabled = memory.enabled !== false;
+    memory.importanceLevel = Math.max(Number(memory.importanceLevel || 0), importance.level);
+    memory.importanceLabel = importance.label;
     memory.messageCount = Number(memory.messageCount || 0) + 1;
+    memory.profileMessageCount = Number(memory.profileMessageCount || 0);
+    if (sample.usedForProfile) {
+      memory.profileMessageCount += 1;
+      memory.pendingCount = Number(memory.pendingCount || 0) + 1;
+    }
+    if (!memory.samples) memory.samples = [];
     const context = captureContext(draft, event);
-    appendMemberSample(draft, memory, event, importance, thresholds, {
+    memory.samples.push({
       content: sample.content, type: sample.type, usedForProfile: sample.usedForProfile,
       media: event.images?.length ? { images: compactMemoryImages(event.images) } : undefined,
       riskLevel: sample.riskLevel || 'normal', reason: sample.reason, context, createdAt: nowIso()
     });
-
+    const sampleRetention = Math.max(thresholds.maxSamples, Number(draft.settings.memorySampleRetain || 120));
+    memory.samples = memory.samples.slice(-sampleRetention);
+    if (!memory.groupsSeen) memory.groupsSeen = [];
+    if (!memory.groupsSeen.includes(String(event.groupId))) memory.groupsSeen.push(String(event.groupId));
+    memory.updatedAt = nowIso();
 
     const needsInitialProfile = !hasProfileContent(memory) && memory.profileMessageCount >= thresholds.minMessages;
     const retryBlockedMs = profileRetryRemainingMs(memory);
@@ -709,16 +707,41 @@ async function processImageMemorySummary(event, userPolicy) {
 
   let shouldUpdate = false;
   updateDb((draft) => {
-    const memory = memberMemory(draft, event, importance);
+    if (!draft.memories) draft.memories = [];
+    let memory = draft.memories.find((entry) => String(entry.userId) === String(event.userId));
+    if (!memory) {
+      memory = {
+        id: crypto.randomUUID(), userId: event.userId, nickname: event.nickname || event.userId,
+        enabled: true, importanceLevel: importance.level, importanceLabel: importance.label,
+        messageCount: 0, profileMessageCount: 0, pendingCount: 0, groupsSeen: [],
+        samples: [], summary: '', traits: '', speechStyle: '', behavior: '', preferences: '',
+        manualNotes: '', profilingRule: '', profileMeta: {}, recentDynamics: [], createdAt: nowIso(), updatedAt: nowIso()
+      };
+      draft.memories.push(memory);
+      // The mutation proxy unwraps values inserted into arrays. Re-resolve the
+      // attached entry before changing counters/samples below.
+      memory = draft.memories.find((entry) => String(entry.userId) === String(event.userId));
+    }
     if ((memory.samples || []).some((sample) => sample.type === 'image-summary' && sample.context?.messageId === event.messageId)) return;
 
-    const thresholds = thresholdsForMemory(draft, memory, importance.level);
+    const thresholds = memoryThresholds(draft, importance);
+    const trustMul = trustInteractionBonus(draft, event.userId).memoryThresholdMul;
+    thresholds.minMessages = Math.max(2, Math.round(thresholds.minMessages * trustMul));
+    thresholds.updateEvery = Math.max(2, Math.round(thresholds.updateEvery * trustMul));
+    Object.assign(thresholds, savingMemoryThresholds(draft, thresholds));
     const context = captureContext(draft, event);
     const content = caption
       ? `图片摘要：${summary}；用户配文：${caption}`
       : `图片摘要：${summary}`;
 
-    appendMemberSample(draft, memory, event, importance, thresholds, {
+    memory.nickname = event.nickname || memory.nickname || event.userId;
+    memory.enabled = memory.enabled !== false;
+    memory.importanceLevel = Math.max(Number(memory.importanceLevel || 0), importance.level);
+    memory.importanceLabel = importance.label;
+    memory.profileMessageCount = Number(memory.profileMessageCount || 0) + 1;
+    memory.pendingCount = Number(memory.pendingCount || 0) + 1;
+    if (!memory.samples) memory.samples = [];
+    memory.samples.push({
       content,
       type: 'image-summary',
       media: { images: compactMemoryImages(event.images) },
@@ -728,7 +751,11 @@ async function processImageMemorySummary(event, userPolicy) {
       context,
       createdAt: nowIso()
     });
-
+    const sampleRetention = Math.max(thresholds.maxSamples, Number(draft.settings.memorySampleRetain || 120));
+    memory.samples = memory.samples.slice(-sampleRetention);
+    if (!memory.groupsSeen) memory.groupsSeen = [];
+    if (!memory.groupsSeen.includes(String(event.groupId))) memory.groupsSeen.push(String(event.groupId));
+    memory.updatedAt = nowIso();
 
     if (!draft.usage) draft.usage = { totalTokens: 0, promptTokens: 0, completionTokens: 0, requests: 0, errors: 0 };
     const usage = response.usage || {};

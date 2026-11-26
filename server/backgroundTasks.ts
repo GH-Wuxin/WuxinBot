@@ -73,25 +73,23 @@ export function runBackgroundTask<T>(label: string, task: () => Promise<T> | T):
  * another task are included too. The timeout is deliberately finite: a stuck
  * model request must not prevent the desktop from restarting.
  */
-export async function drainTasks(active: Set<Promise<unknown>>, timeoutMs: number) {
+export async function waitForBackgroundTasks(timeoutMs = 1_200) {
   const deadline = Date.now() + Math.max(0, Number(timeoutMs) || 0);
-  let timer: ReturnType<typeof setTimeout>;
-  const timeout = new Promise<void>(resolve => {
-    timer = setTimeout(resolve, Math.max(0, deadline - Date.now()));
-    timer.unref();
-  });
-  try {
-    while (active.size && Date.now() < deadline) {
-      await Promise.race([Promise.allSettled([...active]), timeout]);
-    }
-    return { drained: active.size === 0, active: active.size };
-  } finally {
-    clearTimeout(timer);
+  while (activePromises.size > 0 && Date.now() < deadline) {
+    const pending = [...activePromises];
+    const remainingMs = Math.max(1, deadline - Date.now());
+    await Promise.race([
+      Promise.allSettled(pending),
+      new Promise((resolve) => {
+        const timer = setTimeout(resolve, remainingMs);
+        timer.unref?.();
+      }),
+    ]);
   }
-}
-
-export function waitForBackgroundTasks(timeoutMs = 1_200) {
-  return drainTasks(activePromises, timeoutMs);
+  return {
+    drained: activePromises.size === 0,
+    active: activePromises.size,
+  };
 }
 
 export function getBackgroundTaskStats() {

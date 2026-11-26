@@ -7,8 +7,6 @@ import { validSocialState } from './bot/social/state.js';
 import { pruneBackupFiles, resolveBackupRetention } from './backupFiles.js';
 import { OWN_ARCHIVE_FILE, snapshotOwnArchive, recoverOwnArchive } from './messageArchiveStorage.js';
 
-import { generationFile, HISTORY_LIMITS, HISTORY_NAMES, isGenerationFile, manifestFiles, MAX_HISTORY_DELTAS, newManifest, validateManifest } from './store/manifest.js';
-import type { Manifest, HistoryName } from './store/manifest.js';
 import { applyRetention, initialDb, normalizeDb } from './store/defaults.js';
 export { applyRetention, defaultCommandPermissions, defaultCommandRoles, defaultPrompt, normalizeDb } from './store/defaults.js';
 export { MAX_TOOL_LOGS, MAX_UNMET_LOGS } from './store/limits.js';
@@ -121,7 +119,9 @@ const ALL_SHARD_SPECS = [...SHARD_SPECS, ...MEMORY_BUCKET_SPECS];
 let cachedStore: { dataDir: string; db: any; coreSignature: string } | null = null;
 let cachedPublicDb: { db: any; minute: number; includeMemorySamples: boolean; value: any } | null = null;
 let storageRevision = '';
-let committedManifest: Manifest | undefined;
+let revisionSequence = 0;
+let storageMemoryBucketsEnabled = false;
+let storageMemoryBucketsDataDir = '';
 const STORE_SLOW_WRITE_MS = 500;
 const storeWriteStats = {
   since: new Date().toISOString(),
@@ -216,32 +216,24 @@ function shardNameForKey(key: string) {
   return 'core';
 }
 
-function isShardedCore(value) {
-  return value?._storage?.format === SHARDED_STORAGE_FORMAT || value?._storage?.format === 'wuxin-sharded-v2';
+function shardPath(name: string) {
+  if (name === 'core') return getDbPath();
+  const spec = ALL_SHARD_SPECS.find((candidate) => candidate.name === name);
+  if (!spec) throw new Error(`未知数据库分片: ${name}`);
+  return path.join(getDataDir(), spec.file);
 }
 
-function validateCore(core: any) {
-  if (!hasStorageMarker(core)) {
-    // Early single-file releases did not include a users collection.
-    if (!isLegacyDb(core)) {
-      throw new StoreUnreadableError('旧格式数据库核心数据结构不完整，已拒绝迁移。', 'anomaly');
-    }
-    return;
-  }
-  const marker = core._storage;
-  if (!isShardedCore(core)) throw unsupportedStorageMarker(core);
-  const version = marker.format === SHARDED_STORAGE_FORMAT ? 1 : 2;
-  if (marker.version !== version) {
-    throw new StoreUnreadableError(`数据库存储版本 ${marker.version} 高于当前支持的版本或与格式不符。`, 'future-version');
-  }
-  if (version === 2) {
-    try { validateManifest(marker, ALL_SHARD_SPECS); }
-    catch (error) { throw new StoreUnreadableError(errorMessage(error), 'corrupt'); }
-  } else {
-    const memoryEntries = MEMORY_BUCKET_SPECS.filter(spec => Object.hasOwn(marker.shards || {}, spec.name));
-    if (SHARD_SPECS.some(spec => marker.shards?.[spec.name] !== spec.file)
-      || (memoryEntries.length && !hasMemoryBucketMarker(marker))) throw new StoreUnreadableError('数据库分片清单损坏', 'corrupt');
-  }
+function storageMarker() {
+  return {
+    format: SHARDED_STORAGE_FORMAT,
+    version: 1,
+    revision: storageRevision,
+    shards: Object.fromEntries(ALL_SHARD_SPECS.map((spec) => [spec.name, spec.file]))
+  };
+}
+
+function isShardedCore(value) {
+  return value?._storage?.format === SHARDED_STORAGE_FORMAT;
 }
 
 function hasStorageMarker(value) {
@@ -263,26 +255,30 @@ function invalidateStoreCaches() {
   cachedPublicDb = null;
 }
 
+function nextStorageRevision() {
+  revisionSequence = (revisionSequence + 1) % 1000;
+  storageRevision = `${Date.now()}-${process.pid}-${revisionSequence}`;
+  return storageRevision;
+}
+
 function coreFileSignature() {
   try {
-    const stat = fs.statSync(getDbPath(), { bigint: true });
-    return `${stat.dev}:${stat.ino}:${stat.size}:${stat.mtimeNs}:${stat.ctimeNs}`;
-  } catch (error) {
-    if (isMissingFileError(error)) return '';
-    throw storageAccessError('核心数据库文件', error);
+    const stat = fs.statSync(getDbPath());
+    return `${stat.size}:${stat.mtimeMs}`;
+  } catch {
+    return '';
   }
 }
+
+/**
+ * Bound unbounded history arrays so db.json rewrites stay predictable.
+ * Keeps the newest entries (arrays are append-ordered). Existing bounded
+ * collections (usageEvents, profileLogs, configSnapshots) have their own caps.
+ */
 
 /** Milliseconds since epoch of the most recent corrupt-db recovery (0 = none). */
 export function lastDbReadFailureAtMs(): number {
   return lastDbReadFailureAt;
-}
-
-function writeBackupSnapshot(destination: string, db, type: string) {
-  const ownMessageArchive = snapshotOwnArchive(getDataDir(), destination);
-  writeJsonAtomic(destination + '.meta.json', { type, ownMessageArchive }, false);
-  // The logical JSON is the discoverable entry. Publish it after all sidecars.
-  writeJsonAtomic(destination, db, false);
 }
 
 function autoBackupIfDue(db) {
@@ -294,7 +290,9 @@ function autoBackupIfDue(db) {
     const stamp = new Date(now).toISOString().replace(/[:.]/g, '-');
     const dest = path.join(backupDir, `auto-${stamp}.json`);
     if (!fs.existsSync(dest)) {
-      writeBackupSnapshot(dest, db, 'auto');
+      const ownMessageArchive = snapshotOwnArchive(getDataDir(), dest);
+      writeJsonAtomic(dest, db, false);
+      writeJsonAtomic(dest + '.meta.json', {type:'auto',ownMessageArchive}, false);
     }
     const result = pruneBackupFiles(backupDir, resolveBackupRetention(db), { types: ['auto'] });
     if (result.failed.length) console.error('[store] auto backup cleanup failed:', result.failed);
@@ -420,99 +418,77 @@ function splitDb(db, requestedNames?: Set<string>) {
     const name = shardNameForKey(key);
     if (names.has(name)) (buckets.get(name) || buckets.get('core'))![key] = value;
   }
+  if (names.has('core')) buckets.get('core')!._storage = storageMarker();
   return buckets;
 }
 
-// Each snapshot and delta is immutable. Replacing db.json publishes the whole
-// transaction. A process that dies earlier leaves only unreferenced files.
-function removeRetiredFiles(files: Iterable<string>, live: Set<string>) {
-  for (const file of files) {
-    if (live.has(file)) continue;
-    try { fs.unlinkSync(path.join(getDataDir(), file)); }
-    catch (error) { if (!isMissingFileError(error)) console.warn('[store] 分片清理失败:', file, errorMessage(error)); }
-  }
-}
-
-function ownedShardFiles(): string[] {
-  return fs.readdirSync(getDataDir()).filter(file => {
-    const destination = file.replace(/\.\d+\.\d+\.tmp$/, '');
-    return (destination === 'db.json' && destination !== file) || ALL_SHARD_SPECS.some(spec =>
-      destination === spec.file || isGenerationFile(destination, spec.name));
-  });
-}
-
-function cleanupUnreferencedShards(marker: Manifest) {
-  try { removeRetiredFiles(ownedShardFiles(), manifestFiles(marker)); }
-  catch (error) { console.warn('[store] 无法清理历史分片:', errorMessage(error)); }
-}
-
-function commitShards(db, names: Set<string>, previous?: Manifest, appends: Partial<Record<HistoryName, any[]>> = {}) {
-  const started = Date.now();
-  const marker = newManifest(previous);
-  const buckets = splitDb(db, new Set([...names, 'core']));
-  const written = [];
-  const staged: string[] = [];
-  try {
-    for (const name of names) {
-      if (name === 'core') continue;
-      const file = generationFile(name, marker.revision);
-      const history = name as HistoryName;
-      let value = buckets.get(name);
-      if (previous && appends[history] && marker.history[history].length < MAX_HISTORY_DELTAS) {
-        value = { [name]: appends[history] };
-        marker.history[history].push(file);
-      } else {
-        marker.shards[name] = file;
-        if (Object.hasOwn(HISTORY_LIMITS, name)) marker.history[history] = [];
-      }
-      staged.push(file);
-      written.push({ name, bytes: writeJsonAtomic(path.join(getDataDir(), file), value, false) });
-    }
-    const core = { ...buckets.get('core'), _storage: marker };
-    written.push({ name: 'core', bytes: writeJsonAtomic(getDbPath(), core) });
-  } catch (error) {
-    removeRetiredFiles(staged, new Set());
-    throw error;
-  }
-  committedManifest = marker;
-  storageRevision = marker.revision;
-  cachedStore = { dataDir: getDataDir(), db, coreSignature: coreFileSignature() };
-  invalidateStoreCaches();
-  recordStoreWrite(previous ? 'dirty' : 'full', started, written);
-  if (previous) removeRetiredFiles(manifestFiles(previous), manifestFiles(marker));
-  else cleanupUnreferencedShards(marker);
-  return db;
+function writeShardValue(value: Record<string, any> | undefined, name: string) {
+  // Core stays formatted because it contains the small, hand-editable settings.
+  // Large append-heavy shards are compact to avoid wasting ~18 MB on whitespace.
+  return writeJsonAtomic(shardPath(name), value || {}, name === 'core');
 }
 
 function writeAllShards(db) {
-  return commitShards(applyRetention(db), new Set(ALL_SHARD_SPECS.map(spec => spec.name)));
-}
-
-/** Called under the write lock. For v1 the cached object may already contain
- * the caller's edits, so preserve the committed logical database from disk. */
-function writeReplacementShards(db) {
-  const core = readCoreFile();
-  if (core.kind === 'parsed' && isShardedCore(core.value) && core.value._storage.version === 1) {
-    const backupDir = path.join(getDataDir(), 'backups');
-    fs.mkdirSync(backupDir, { recursive: true });
-    const backup = path.join(backupDir, `pre-shard-v1-${crypto.randomUUID()}.json`);
-    writeBackupSnapshot(backup, readLogicalDbFromDisk(), 'pre-shard');
+  const startedAtMs = Date.now();
+  const normalized = applyRetention(db);
+  nextStorageRevision();
+  // Build the bucket map once. The previous implementation called splitDb()
+  // once per shard, repeatedly walking the complete in-memory database during
+  // startup migrations and full rewrites.
+  const buckets = splitDb(normalized);
+  const writtenShards = [];
+  for (const spec of SHARD_SPECS) {
+    writtenShards.push({ name: spec.name, bytes: writeShardValue(buckets.get(spec.name), spec.name) });
   }
-  return writeAllShards(db);
+  for (const spec of MEMORY_BUCKET_SPECS) {
+    writtenShards.push({ name: spec.name, bytes: writeShardValue(buckets.get(spec.name), spec.name) });
+  }
+  // Commit the marker last. A legacy db.json therefore remains authoritative if
+  // migration is interrupted before every shard has been written.
+  writtenShards.push({ name: 'core', bytes: writeShardValue(buckets.get('core'), 'core') });
+  recordStoreWrite('full', startedAtMs, writtenShards);
+  storageMemoryBucketsEnabled = true;
+  storageMemoryBucketsDataDir = getDataDir();
+  cachedStore = { dataDir: getDataDir(), db: normalized, coreSignature: coreFileSignature() };
+  invalidateStoreCaches();
+  return normalized;
 }
 
-function writeDirtyShards(db, dirtyKeys: Set<string>, dirtyMemoryBuckets: Set<string>, appends: Partial<Record<HistoryName, any[]>>) {
-  if (!committedManifest) return writeReplacementShards(db);
-  const names = new Set<string>();
+function writeDirtyShards(db, dirtyKeys: Set<string>, dirtyMemoryBuckets: Set<string> = new Set()) {
+  if (!storageMemoryBucketsEnabled || storageMemoryBucketsDataDir !== getDataDir()) {
+    // A legacy sharded store still keeps memories inside db-profiles.json.
+    // Convert it on the first trusted mutation so no sample data is lost.
+    writeAllShards(db);
+    return;
+  }
+  const startedAtMs = Date.now();
+  const dirtyShards = new Set<string>();
   for (const key of dirtyKeys) {
-    if (key !== 'memories') names.add(shardNameForKey(key));
-    else if (dirtyMemoryBuckets.has('*') || !dirtyMemoryBuckets.size) {
-      for (const spec of MEMORY_BUCKET_SPECS) names.add(spec.name);
+    if (key === 'memories') continue;
+    dirtyShards.add(shardNameForKey(key));
+  }
+  if (dirtyKeys.has('memories')) {
+    if (dirtyMemoryBuckets.has('*') || dirtyMemoryBuckets.size === 0) {
+      for (const spec of MEMORY_BUCKET_SPECS) dirtyShards.add(spec.name);
     } else {
-      for (const name of dirtyMemoryBuckets) names.add(name);
+      for (const name of dirtyMemoryBuckets) dirtyShards.add(name);
     }
   }
-  return commitShards(db, names, committedManifest, appends);
+  nextStorageRevision();
+  // Split once per committed mutation. This matters for the production store,
+  // where the profiles shard is tens of megabytes and updateDb is called for
+  // both user traffic and background profile work.
+  const buckets = splitDb(db, new Set([...dirtyShards, 'core']));
+  // Data shards are committed before the small core/revision file. Other
+  // processes use the core signature as their cache invalidation signal.
+  const writtenShards = [];
+  for (const name of dirtyShards) {
+    if (name !== 'core') writtenShards.push({ name, bytes: writeShardValue(buckets.get(name), name) });
+  }
+  writtenShards.push({ name: 'core', bytes: writeShardValue(buckets.get('core'), 'core') });
+  recordStoreWrite('dirty', startedAtMs, writtenShards);
+  cachedStore = { dataDir: getDataDir(), db, coreSignature: coreFileSignature() };
+  invalidateStoreCaches();
 }
 
 function parseJsonFile(filePath: string, label = '数据库文件') {
@@ -520,50 +496,58 @@ function parseJsonFile(filePath: string, label = '数据库文件') {
   try {
     raw = fs.readFileSync(filePath, 'utf8');
   } catch (error) {
-    if (isMissingFileError(error)) throw new StoreUnreadableError(`${label}缺失`, 'anomaly');
+    if (isMissingFileError(error)) throw error;
     throw storageAccessError(label, error);
   }
-  try { return JSON.parse(raw.replace(/^\uFEFF/, '')); }
-  catch (error) { throw new StoreUnreadableError(`${label}损坏: ${errorMessage(error)}`, 'corrupt'); }
+  return JSON.parse(raw.replace(/^\uFEFF/, ''));
 }
 
 function readLogicalDbFromDisk() {
   const core = parseJsonFile(getDbPath());
-  validateCore(core);
-  committedManifest = undefined;
+  if (hasStorageMarker(core) && !isShardedCore(core)) throw unsupportedStorageMarker(core);
+  storageMemoryBucketsEnabled = false;
+  storageMemoryBucketsDataDir = getDataDir();
   if (!isShardedCore(core)) return normalizeDb(core);
-  const marker = core._storage;
-  const versioned = marker.version === 2;
+  if (Number(core._storage?.version || 0) !== 1) {
+    throw new StoreUnreadableError(
+      `数据库存储版本 ${String(core._storage?.version ?? '<missing>')} 高于当前支持的版本 1，请升级程序后再使用该数据目录。`,
+      'future-version',
+    );
+  }
+  storageRevision = String(core._storage?.revision || '');
+  const useMemoryBuckets = hasMemoryBucketMarker(core._storage);
+  storageMemoryBucketsEnabled = useMemoryBuckets;
   const merged = { ...core };
   delete merged._storage;
-  const buckets = versioned || hasMemoryBucketMarker(marker);
-  if (buckets) merged.memories = [];
-  for (const spec of buckets ? ALL_SHARD_SPECS : SHARD_SPECS) {
-    const file = marker.shards[spec.name];
-    const data = parseJsonFile(path.join(getDataDir(), file), `数据库分片 ${file}`);
-    if (!data || typeof data !== 'object' || Array.isArray(data)) throw new StoreUnreadableError(`数据库分片 ${file} 损坏`, 'corrupt');
-    if (spec.name.startsWith('memories-')) {
-      if ('memories' in data) {
-        if (!Array.isArray(data.memories)) throw new StoreUnreadableError(`数据库分片 ${file} 中的 memories 不是数组`, 'corrupt');
-        for (const item of data.memories) merged.memories.push(item);
-      }
-    } else {
-      Object.assign(merged, data);
+  for (const spec of SHARD_SPECS) {
+    const filePath = shardPath(spec.name);
+    try {
+      Object.assign(merged, parseJsonFile(filePath, `数据库分片 ${spec.file}`));
+    } catch (error) {
+      if (isMissingFileError(error)) throw new Error(`数据库分片缺失: ${spec.file}`);
+      throw error;
     }
   }
-  if (versioned) {
-    for (const name of HISTORY_NAMES) {
-      if (!Array.isArray(merged[name])) throw new StoreUnreadableError('数据库历史分片损坏: ' + name, 'corrupt');
-      for (const file of marker.history[name]) {
-        const delta = parseJsonFile(path.join(getDataDir(), file), file);
-        if (!Array.isArray(delta?.[name])) throw new StoreUnreadableError('数据库历史增量损坏: ' + file, 'corrupt');
-        merged[name] = merged[name].concat(delta[name]).slice(-HISTORY_LIMITS[name]);
+  if (useMemoryBuckets) {
+    const memories = [];
+    for (const spec of MEMORY_BUCKET_SPECS) {
+      const filePath = shardPath(spec.name);
+      let parsed;
+      try {
+        parsed = parseJsonFile(filePath, `数据库分片 ${spec.file}`);
+      } catch (error) {
+        if (isMissingFileError(error)) throw new Error(`数据库分片缺失: ${spec.file}`);
+        throw error;
+      }
+      if (Object.prototype.hasOwnProperty.call(parsed, 'memories')) {
+        if (!Array.isArray(parsed.memories)) {
+          throw new Error(`数据库分片 ${spec.file} 中的 memories 不是数组`);
+        }
+        memories.push(...parsed.memories);
       }
     }
-    committedManifest = marker;
+    merged.memories = memories;
   }
-  if (!isLegacyDb(merged)) throw new StoreUnreadableError('数据库分片不完整，无法组装逻辑数据库。', 'corrupt');
-  storageRevision = marker.revision;
   return normalizeDb(merged);
 }
 
@@ -646,6 +630,9 @@ function readCoreFile(): CoreRead {
 function hasSideData(): boolean {
   const dataDir = getDataDir();
   if (statIfPresent(path.join(dataDir, OWN_ARCHIVE_FILE), '自发消息档案')) return true;
+  for (const spec of ALL_SHARD_SPECS) {
+    if (statIfPresent(path.join(dataDir, spec.file), `数据库分片 ${spec.file}`)) return true;
+  }
   const backupDir = path.join(dataDir, 'backups');
   if (statIfPresent(backupDir, '数据库备份目录')) {
     let names;
@@ -657,7 +644,7 @@ function hasSideData(): boolean {
     if (names.some((name) => name.endsWith('.json') && !name.endsWith('.meta.json'))) return true;
   }
   try {
-    if (ownedShardFiles().length || fs.readdirSync(dataDir).some((name) => name.includes('.corrupt-'))) return true;
+    if (fs.readdirSync(dataDir).some((name) => name.includes('.corrupt-'))) return true;
   } catch (error) {
     throw storageAccessError('数据库目录', error);
   }
@@ -665,16 +652,19 @@ function hasSideData(): boolean {
 }
 
 export function ensureStore() {
-  if (cachedStore?.dataDir === getDataDir() && cachedStore.coreSignature === coreFileSignature()) return;
   fs.mkdirSync(getDataDir(), { recursive: true });
   const core = readCoreFile();
   if (core.kind === 'missing') {
+    if (hasSideData()) {
+      throw new StoreUnreadableError(
+        '核心数据库文件缺失，但数据目录中仍存在分片或备份，不符合首次启动特征。'
+        + '已拒绝创建空数据库；请通过受信服务器入口（server/index.ts）启动以进入恢复流程。',
+        'anomaly',
+      );
+    }
     withDbLock(() => {
       if (fs.existsSync(getDbPath())) return;
-      if (hasSideData()) throw new StoreUnreadableError('核心数据库文件缺失，但数据目录仍存在分片或备份。', 'anomaly');
       assertWriteTargetSafe();
-      // A crash before the first manifest still leaves a complete logical DB.
-      writeJsonAtomic(getDbPath(), initialDb);
       writeAllShards(normalizeDb(JSON.parse(JSON.stringify(initialDb))));
     });
     return;
@@ -687,14 +677,21 @@ export function ensureStore() {
       core.reason,
     );
   }
-  validateCore(core.value);
-  if (isShardedCore(core.value)) return;
+  if (hasStorageMarker(core.value)) {
+    if (!isShardedCore(core.value)) throw unsupportedStorageMarker(core.value);
+    if (Number(core.value._storage?.version || 0) !== 1) {
+      throw new StoreUnreadableError(
+        `数据库存储版本 ${String(core.value._storage?.version ?? '<missing>')} 高于当前支持的版本 1，请升级程序后再使用该数据目录。`,
+        'future-version',
+      );
+    }
+    return;
+  }
   try {
     assertWriteTargetSafe();
     withDbLock(() => {
       const locked = readCoreFile();
       if (locked.kind !== 'parsed') return;
-      validateCore(locked.value);
       if (isShardedCore(locked.value)) return;
       const legacy = normalizeDb(locked.value);
       const backup = preserveLegacyDb();
@@ -765,10 +762,6 @@ const OPTIONAL_BACKUP_OBJECT_KEYS = [
   'usage',
 ];
 
-function isLegacyDb(value: any): boolean {
-  return value && !hasStorageMarker(value) && isValidLogicalDbShape({ users: [], ...value });
-}
-
 export function isValidLogicalDbShape(value: unknown): boolean {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
   const record = value as Record<string, any>;
@@ -793,7 +786,7 @@ export function isValidLogicalDbShape(value: unknown): boolean {
 }
 
 function authoritativeStoreFiles(): string[] {
-  return [getDbPath(), ...ownedShardFiles().map(file => path.join(getDataDir(), file))];
+  return [getDbPath(), ...ALL_SHARD_SPECS.map((spec) => path.join(getDataDir(), spec.file))];
 }
 
 function preserveAuthoritativeFiles(): { preserved: string[]; missing: string[] } {
@@ -846,13 +839,6 @@ function recoverStorageFromBackups(reasonError: unknown): any {
     // The recovery lock covers evidence capture, candidate selection and the
     // eventual write. No older writer can change the files between those
     // phases, and no nested writeDb()/withDbLock call is needed.
-    // A different opener may have recovered this store while we waited for the lock.
-    if (canWrite) {
-      try { return readDbUnlocked(); }
-      catch (error) {
-        if (!(error instanceof StoreUnreadableError) || !['anomaly', 'corrupt'].includes(error.reason)) throw error;
-      }
-    }
     const evidence = canWrite ? preserveAuthoritativeFiles() : { preserved: [], missing: [] };
     const candidates = listBackupCandidates();
     let inspected = 0;
@@ -870,7 +856,7 @@ function recoverStorageFromBackups(reasonError: unknown): any {
       try {
         parsed = JSON.parse(raw.replace(/^\uFEFF/, ''));
       } catch { /* malformed candidate; continue to an older candidate */ }
-      if (!isValidLogicalDbShape(parsed) && !(path.basename(candidate).startsWith('pre-shard-') && isLegacyDb(parsed))) {
+      if (!isValidLogicalDbShape(parsed)) {
         console.error(`[store] backup ${path.basename(candidate)} is not a complete logical database, skipping`);
         continue;
       }
@@ -917,55 +903,34 @@ function recoverStorageFromBackups(reasonError: unknown): any {
 // an implicit database reset (findings F01/F03).
 export function openStore(): void {
   fs.mkdirSync(getDataDir(), { recursive: true });
-  cachedStore = null;
+  let openError: unknown = null;
   try {
     ensureStore();
-    readDb();
+    readDbUnlocked();
   } catch (error) {
-    if (!(error instanceof StoreUnreadableError) || !['anomaly', 'corrupt'].includes(error.reason)) throw error;
-    recoverStorageFromBackups(error);
+    openError = error;
   }
-  if (committedManifest && (!isProductionDb() || isTrustedServerEntry())) {
-    withDbLock(() => {
-      readDbUnlocked();
-      if (committedManifest) cleanupUnreferencedShards(committedManifest);
-    });
+  if (!openError) return;
+  if (openError instanceof StoreUnreadableError
+    && (openError.reason === 'access' || openError.reason === 'future-version')) {
+    throw openError;
   }
+  recoverStorageFromBackups(openError);
 }
 
 function readDbUnlocked() {
   const dataDir = getDataDir();
   const signature = coreFileSignature();
   if (cachedStore?.dataDir === dataDir && cachedStore.coreSignature === signature) return cachedStore.db;
-  // A writer may retire files from an older manifest during an unlocked
-  // cold read. Retry against its new manifest before reporting corruption.
-  let before = signature;
-  for (let attempt = 0; ; attempt++) {
-    try {
-      const db = readLogicalDbFromDisk();
-      if (before === coreFileSignature()) {
-        cachedStore = { dataDir, db, coreSignature: before };
-        invalidateStoreCaches();
-        return db;
-      }
-    } catch (error) {
-      if (before === coreFileSignature()) throw error;
-    }
-    if (attempt >= 3) return withDbLock(readDbUnlocked);
-    before = coreFileSignature();
-  }
+  const db = readLogicalDbFromDisk();
+  cachedStore = { dataDir, db, coreSignature: signature };
+  invalidateStoreCaches();
+  return db;
 }
 
 export function readDb() {
-  if (cachedStore?.dataDir === getDataDir() && cachedStore.coreSignature === coreFileSignature()) return cachedStore.db;
   ensureStore();
   return readDbUnlocked();
-}
-
-export function findGroupUser(db, groupId, userId) {
-  const group = String(groupId);
-  const member = String(userId);
-  return db.users?.find(user => String(user.groupId) === group && String(user.userId) === member);
 }
 
 export function currentStorageRevision() {
@@ -977,7 +942,7 @@ export function writeDb(db) {
   assertWriteTargetSafe();
   ensureStore();
   return withDbLock(() => {
-    const result = writeReplacementShards(normalizeDb(db));
+    const result = writeAllShards(normalizeDb(db));
     autoBackupIfDue(result);
     return result;
   });
@@ -1009,21 +974,18 @@ function markMemoryBucketMutation(
   memoryBucket: string,
   object: any,
   property: PropertyKey,
-  value: any
+  value: any,
+  rawTargets: WeakMap<object, object>
 ) {
-  if (!dirtyMemoryBuckets) return;
-  if (!rootKey && property === 'memories') {
-    dirtyMemoryBuckets.add('*');
-    return;
-  }
-  if (rootKey !== 'memories') return;
+  if (!dirtyMemoryBuckets || rootKey !== 'memories') return;
 
   // Once a memory entry has been resolved, all nested mutations belong to
   // that entry's bucket. A userId edit also touches the destination bucket.
   if (memoryBucket) {
     dirtyMemoryBuckets.add(memoryBucket);
     if (property === 'userId') {
-      dirtyMemoryBuckets.add(memoryBucketName(value));
+      const nextValue = unwrapTrackedValue(value, rawTargets);
+      dirtyMemoryBuckets.add(memoryBucketName(nextValue));
     }
     return;
   }
@@ -1031,14 +993,10 @@ function markMemoryBucketMutation(
   // This is the top-level memories array. Array length changes do not identify
   // a bucket; index writes/deletes do, based on the old or new entry.
   if (Array.isArray(object)) {
-    if (property === 'length') {
-      if (Number(value) < object.length) dirtyMemoryBuckets.add('*');
-      return;
-    }
+    if (property === 'length') return;
     if (isArrayIndexProperty(property)) {
-      const old = object[property as any];
-      if (old) dirtyMemoryBuckets.add(memoryBucketName(old.userId));
-      if (value !== undefined) dirtyMemoryBuckets.add(memoryBucketName(value?.userId));
+      const nextValue = value === undefined ? object[property as any] : unwrapTrackedValue(value, rawTargets);
+      dirtyMemoryBuckets.add(memoryBucketName(nextValue?.userId));
       return;
     }
   }
@@ -1056,8 +1014,7 @@ function trackedMutationProxy(
   proxies = new WeakMap(),
   rawTargets = new WeakMap<object, object>(),
   dirtyMemoryBuckets?: Set<string>,
-  memoryBucket = '',
-  trackHistory?: (key: string, target: any, property: PropertyKey, value: any, deleted: boolean) => void
+  memoryBucket = ''
 ) {
   if (!target || typeof target !== 'object') return target;
   if (proxies.has(target)) return proxies.get(target);
@@ -1077,22 +1034,19 @@ function trackedMutationProxy(
         proxies,
         rawTargets,
         dirtyMemoryBuckets,
-        nextMemoryBucket,
-        trackHistory
+        nextMemoryBucket
       );
     },
     set(object, property, value, receiver) {
       const key = rootKey || (typeof property === 'string' ? property : '');
       if (key) dirtyKeys.add(key);
-      trackHistory?.(key, object, property, value, false);
-      markMemoryBucketMutation(dirtyMemoryBuckets, rootKey, memoryBucket, object, property, value);
+      markMemoryBucketMutation(dirtyMemoryBuckets, rootKey, memoryBucket, object, property, value, rawTargets);
       return Reflect.set(object, property, unwrapTrackedValue(value, rawTargets), receiver);
     },
     deleteProperty(object, property) {
       const key = rootKey || (typeof property === 'string' ? property : '');
       if (key) dirtyKeys.add(key);
-      trackHistory?.(key, object, property, undefined, true);
-      markMemoryBucketMutation(dirtyMemoryBuckets, rootKey, memoryBucket, object, property, undefined);
+      markMemoryBucketMutation(dirtyMemoryBuckets, rootKey, memoryBucket, object, property, undefined, rawTargets);
       return Reflect.deleteProperty(object, property);
     }
   });
@@ -1108,24 +1062,13 @@ export function updateDb(mutator) {
     const db = readDbUnlocked();
     const dirtyKeys = new Set<string>();
     const dirtyMemoryBuckets = new Set<string>();
-    const appendStarts = new Map(HISTORY_NAMES.map(name => [name, db[name].length]));
-    const trackedDb = trackedMutationProxy(db, dirtyKeys, '', new WeakMap(), new WeakMap(), dirtyMemoryBuckets, '',
-      (key: HistoryName, object, property, value, deleted) => {
-        if (!appendStarts.has(key)) return;
-        if (!deleted && object === db[key] && ((property === 'length' && value === object.length)
-          || (isArrayIndexProperty(property) && Number(property) === object.length))) return;
-        appendStarts.delete(key);
-      });
+    const trackedDb = trackedMutationProxy(db, dirtyKeys, '', new WeakMap(), new WeakMap(), dirtyMemoryBuckets);
     let result;
     try {
       result = mutator(trackedDb);
-      const appends: Partial<Record<HistoryName, any[]>> = {};
-      for (const [name, start] of appendStarts) {
-        if (dirtyKeys.has(name) && db[name].length > start) appends[name] = db[name].slice(Math.max(start, db[name].length - HISTORY_LIMITS[name]));
-      }
-      applyRetention(trackedDb, db);
+      applyRetention(trackedDb);
       if (dirtyKeys.size > 0) {
-        writeDirtyShards(db, dirtyKeys, dirtyMemoryBuckets, appends);
+        writeDirtyShards(db, dirtyKeys, dirtyMemoryBuckets);
         autoBackupIfDue(db);
       }
     } catch (error) {

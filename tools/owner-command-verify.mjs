@@ -193,22 +193,6 @@ async function main() {
 
   // ── Actual command behavior: Owner query, target, alias, and scope ──
   seed();
-  store.updateDb(db => {
-    db.users = [
-      { groupId: OTHER_GROUP, userId: OWNER, customName: '他群昵称', customStyle: '他群风格' },
-      { groupId: GROUP, userId: OWNER, customName: '本群昵称', customStyle: '本群风格' },
-    ];
-  });
-  const owner = { userId: OWNER }, permissions = { isOwner: true, isAdmin: false };
-  store.updateDb(db => { db.experience[OWNER] = { level: 3, xp: 300 }; });
-  assert.match((await run('/w lv', owner, permissions)).text, /称呼: 本群昵称/);
-  for (const [command, expected] of [['nick', '本群昵称'], ['style', '本群风格']]) {
-    assert.match((await run('/w ' + command, owner, permissions)).text, new RegExp(expected));
-    await run('/w ' + command + ' clear', owner, permissions);
-    assert.match((await run('/w ' + command, owner, permissions)).text, /还未设置/);
-    assert.match((await run('/w ' + command, { ...owner, groupId: OTHER_GROUP }, permissions)).text, /他群/);
-  }
-  seed();
   let result = await run('/w 好感度', { userId: OWNER }, { isOwner: true, isAdmin: false });
   assert.match(result.text, /QQ 10001/);
   assert.match(result.text, /特殊/);

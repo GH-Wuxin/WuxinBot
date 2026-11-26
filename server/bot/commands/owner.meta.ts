@@ -1,6 +1,10 @@
 // Wuxin (/w) command metadata — pure (v4 single-source plan).
 //
-// Help, dispatch and the editable settings defaults share the same role policy.
+// OWNER_PERMISSION_POLICY is the single local table for:
+//   - the normalized help/KB-facing permission/visibility/discoverability
+//   - OWNER_DEFAULT_COMMAND_PERMISSIONS mirrors the runtime role defaults
+//     (server/store.ts defaultCommandPermissions) without importing store.ts
+// so dispatch and help rendering can both derive from this module.
 import type {
   CommandDiscoverability,
   CommandExecution,
@@ -26,8 +30,7 @@ export interface OwnerCommandMeta {
 }
 
 interface OwnerPermissionPolicy {
-  dispatchOnly?: true;
-  /** Role used when no override has been saved. */
+  /** Runtime default role id, mirroring store.ts defaultCommandPermissions. */
   defaultPermissionRole: string;
   /** Help/KB-facing normalized permission. */
   permission: CommandPermission;
@@ -37,9 +40,9 @@ interface OwnerPermissionPolicy {
 
 /** Single source for owner-command permission/visibility derivation. */
 export const OWNER_PERMISSION_POLICY: Record<string, OwnerPermissionPolicy> = {
-  affinity: { dispatchOnly: true, defaultPermissionRole: 'owner', permission: 'owner', visibility: 'owner', discoverability: 'direct_only' },
-  affinityRank: { dispatchOnly: true, defaultPermissionRole: 'owner', permission: 'owner', visibility: 'owner', discoverability: 'direct_only' },
-  ownerDirective: { dispatchOnly: true, defaultPermissionRole: 'owner', permission: 'owner', visibility: 'owner', discoverability: 'direct_only' },
+  affinity: { defaultPermissionRole: 'owner', permission: 'owner', visibility: 'owner', discoverability: 'direct_only' },
+  affinityRank: { defaultPermissionRole: 'owner', permission: 'owner', visibility: 'owner', discoverability: 'direct_only' },
+  ownerDirective: { defaultPermissionRole: 'owner', permission: 'owner', visibility: 'owner', discoverability: 'direct_only' },
   help: { defaultPermissionRole: 'guest', permission: 'all', visibility: 'public', discoverability: 'listed' },
   my: { defaultPermissionRole: 'guest', permission: 'all', visibility: 'public', discoverability: 'listed' },
   ping: { defaultPermissionRole: 'guest', permission: 'all', visibility: 'public', discoverability: 'listed' },
@@ -78,8 +81,8 @@ export const OWNER_PERMISSION_POLICY: Record<string, OwnerPermissionPolicy> = {
   memberPolicy: { defaultPermissionRole: 'owner', permission: 'owner', visibility: 'owner', discoverability: 'direct_only' },
   exp: { defaultPermissionRole: 'owner', permission: 'owner', visibility: 'owner', discoverability: 'direct_only' },
   osuBind: { defaultPermissionRole: 'guest', permission: 'all', visibility: 'public', discoverability: 'listed' },
-  info: { dispatchOnly: true, defaultPermissionRole: 'guest', permission: 'all', visibility: 'public', discoverability: 'listed' },
-  osuUpdate: { dispatchOnly: true, defaultPermissionRole: 'guest', permission: 'all', visibility: 'public', discoverability: 'listed' },
+  info: { defaultPermissionRole: 'guest', permission: 'all', visibility: 'public', discoverability: 'listed' },
+  osuUpdate: { defaultPermissionRole: 'guest', permission: 'all', visibility: 'public', discoverability: 'listed' },
   osuClearBind: { defaultPermissionRole: 'guest', permission: 'all', visibility: 'public', discoverability: 'listed' },
   osuClearCache: { defaultPermissionRole: 'owner', permission: 'owner', visibility: 'owner', discoverability: 'direct_only' },
   osuClearCooldown: { defaultPermissionRole: 'owner', permission: 'owner', visibility: 'owner', discoverability: 'direct_only' },
@@ -89,14 +92,9 @@ export const OWNER_PERMISSION_POLICY: Record<string, OwnerPermissionPolicy> = {
   skillFeedback: { defaultPermissionRole: 'guest', permission: 'all', visibility: 'public', discoverability: 'listed' },
 };
 
-/** Includes internal defaults for commands without an editable settings entry. */
+/** Pure mirror of store.ts defaultCommandPermissions for owner dispatch. */
 export const OWNER_DEFAULT_COMMAND_PERMISSIONS: Record<string, string> = Object.fromEntries(
   Object.entries(OWNER_PERMISSION_POLICY).map(([key, policy]) => [key, policy.defaultPermissionRole]),
-);
-
-export const editableCommandPermissions: Record<string, string> = Object.fromEntries(
-  Object.entries(OWNER_PERMISSION_POLICY).filter(([, policy]) => !policy.dispatchOnly)
-    .map(([key, policy]) => [key, policy.defaultPermissionRole]),
 );
 
 function permFromKey(key: string): CommandPermission {

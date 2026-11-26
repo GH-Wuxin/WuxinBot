@@ -3,7 +3,8 @@
 // for the current group only.
 import { tokenSaving, groupProfileThreshold, claimProfileAttempt } from './tokenSaving.js';
 import { readDb, updateDb, nowIso } from '../store.js';
-import { recordProfileUsage } from '../usage.js';
+import { applyUsageTotals, usageEventFields } from '../usage.js';
+import { activeModelName } from '../modelConfig.js';
 import { completeChat } from './llm.js';
 import { textWithoutControlPlaceholders } from './cleaning.js';
 import { runBackgroundTask } from '../backgroundTasks.js';
@@ -93,7 +94,18 @@ export async function updateGroupProfile(db, groupId) {
 
     // Track usage
     updateDb((draft) => {
-      recordProfileUsage(draft, db.settings, response, groupId, 'group-profile');
+      if (!response.usage?.accounted) draft.usage.requests += 1;
+      applyUsageTotals(draft.usage, response.usage);
+      if (!draft.usageEvents) draft.usageEvents = [];
+      draft.usageEvents.push({
+        id: crypto.randomUUID(), groupId: String(groupId), userId: 'system',
+        model: response.model || activeModelName(db.settings),
+        provider: response.provider || db.settings.llmProvider,
+        kind: 'group-profile',
+        ...usageEventFields(response.usage),
+        createdAt: nowIso()
+      });
+      draft.usageEvents = draft.usageEvents.slice(-5000);
     });
 
     if (!hasGroupProfileContent(normalized)) {

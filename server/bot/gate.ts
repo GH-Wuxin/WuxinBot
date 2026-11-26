@@ -1,5 +1,6 @@
 // Conversation context and message-participation helpers. Type-checked module.
 import { readDb } from '../store.js';
+import { messageInConversation, messageAccount } from '../messageFacts.js';
 import {
   mentionsBot,
   asksToInspectVisual,
@@ -97,12 +98,51 @@ export function getGroup(db, groupId) {
   return db.groups.find((group) => String(group.groupId) === String(groupId));
 }
 
-export { getUserPolicy } from './commands.js';
+export function getUserPolicy(db, groupId, userId) {
+  // Owner is global and comes from settings, so it overrides per-group entries.
+  if (db.settings.ownerQq && String(userId) === String(db.settings.ownerQq)) {
+    return {
+      policy: 'owner',
+      attentionLevel: 5,
+      allowCommands: true,
+      commandRoleId: 'owner'
+    };
+  }
+
+  return (
+    db.users.find((user) => String(user.groupId) === String(groupId) && String(user.userId) === String(userId)) || {
+      policy: 'normal',
+      attentionLevel: 3,
+      allowCommands: false
+    }
+  );
+}
 
 export function recentGroupMessages(db, groupId, limit) {
   return db.messages
     .filter((message) => String(message.groupId) === String(groupId) && message.inContext !== false)
     .slice(-limit);
+}
+
+export function ownerPrivateMessages(db) {
+  const ownerQq = db.settings.ownerQq;
+  return db.messages.filter((message) =>
+    message.inContext !== false && messageInConversation(message,{type:'private',userId:String(ownerQq)},messageAccount(db,{}))
+  );
+}
+
+export function limitMessagesByCharBudget(messages, budget) {
+  const maxChars = Math.max(4000, Number(budget || 24000));
+  const selected = [];
+  let used = 0;
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    const message = messages[index];
+    const cost = String(message.content || '').length + String(message.nickname || message.userId || '').length + 24;
+    if (selected.length >= 6 && used + cost > maxChars) break;
+    selected.unshift(message);
+    used += cost;
+  }
+  return selected;
 }
 
 export function lastAssistantMessage(db, groupId) {

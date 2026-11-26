@@ -26,23 +26,23 @@ async function load(t,saved,version=2){
   await manager.initialize();
   return manager.getDefinition('skillProfiler');
 }
-test('current default and legacy environment select v110',()=>{
-  assert.equal(definition().args.at(-1),'v110');
+test('current default and legacy environment select v041',()=>{
+  assert.equal(definition().args.at(-1),'v041-formal');
   process.env.SKILL_PROFILER_ALGORITHM='v040-formal';
-  try{assert.equal(definition().args.at(-1),'v110');}finally{delete process.env.SKILL_PROFILER_ALGORITHM;}
+  try{assert.equal(definition().args.at(-1),'v041-formal');}finally{delete process.env.SKILL_PROFILER_ALGORITHM;}
 });
 for(const version of [1,2]){
-  for(const value of ['v110','v042-future','custom-algorithm','v100']){
+  for(const value of ['v041-formal','v042-future','custom-algorithm','v100']){
     test(`v${version} preserves explicit selector ${value}`,async t=>{
       const args=['custom.py','--algorithm',value,'--port','9876'];
       const actual=await load(t,{cwd:path.join(projectRoot,'custom-profiler'),args},version);
       assert.deepEqual(actual.args,args);assert.equal(actual.cwd,path.join(projectRoot,'custom-profiler'));
     });
   }
-  for(const args of [['custom.py','--algorithm','v040-formal','--analysis-workers','6'],['custom.py','--algorithm=v040-formal','--no-open'],['custom.py','--algorithm','v041-formal']]){
+  for(const args of [['custom.py','--algorithm','v040-formal','--analysis-workers','6'],['custom.py','--algorithm=v040-formal','--no-open']]){
     test(`v${version} upgrades a retired formal selector: ${args[1]}`,async t=>{
       const actual=await load(t,{args},version);
-      assert.deepEqual(actual.args,args.map(arg=>arg.replace(/v04[01]-formal/, 'v110')));
+      assert.deepEqual(actual.args,args.map(arg=>arg.replace('v040-formal','v041-formal')));
     });
   }
 }

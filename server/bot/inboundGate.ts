@@ -1,4 +1,3 @@
-import { drainTasks } from '../backgroundTasks.js';
 // Global inbound admission boundary.
 //
 // Per-user reply FIFOs preserve ordering, but they do not stop different
@@ -100,8 +99,20 @@ export function stopInboundAdmission(): void {
   }
 }
 
-export function waitForInboundTasks(timeoutMs = 1_200) {
-  return drainTasks(activePromises, timeoutMs);
+export async function waitForInboundTasks(timeoutMs = 1_200) {
+  const deadline = Date.now() + Math.max(0, Number(timeoutMs) || 0);
+  while (activePromises.size > 0 && Date.now() < deadline) {
+    const pending = [...activePromises];
+    const remainingMs = Math.max(1, deadline - Date.now());
+    await Promise.race([
+      Promise.allSettled(pending),
+      new Promise((resolve) => {
+        const timer = setTimeout(resolve, remainingMs);
+        timer.unref?.();
+      }),
+    ]);
+  }
+  return { drained: activePromises.size === 0, active: activePromises.size };
 }
 
 export function getInboundAdmissionStats() {

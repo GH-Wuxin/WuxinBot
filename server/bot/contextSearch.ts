@@ -1,4 +1,3 @@
-import { boundedInteger } from '../boundedInteger.js';
 // Bounded, conversation-scoped group context. The model interprets meaning;
 // this module follows transport links and offers recent conversation evidence.
 import type { BotEvent, Db, MessageRecord } from '../types.js';
@@ -58,6 +57,10 @@ export function conversationBeforeTurn(db: Db, event: BotEvent): MessageRecord[]
     && (boundary >= 0 || !event.receivedAtMs || !(Date.parse(row.createdAt) > event.receivedAtMs)));
 }
 
+function numberSetting(value: unknown, fallback: number, min: number, max: number): number {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? Math.max(min, Math.min(max, Math.floor(parsed))) : fallback;
+}
 function rowCost(row: MessageRecord): number {
   return messageContextText(row).length + String(row.nickname || row.userId || '').length
     + String(row.sticker?.description || '').length + rowId(row).length + contextReplyId(row).length + 48;
@@ -79,7 +82,7 @@ function savingTail(rows: MessageRecord[]): MessageRecord[] {
 export function selectAdaptiveGroupContext(db: Db, event: GroupTurn): GroupContextSelection {
   const visible = conversationBeforeTurn(db, event);
   const saving = db.settings.tokenSavingMode === true;
-  const baseLimit = boundedInteger(db.settings.contextLimit, 30, 5, 80);
+  const baseLimit = numberSetting(db.settings.contextLimit, 30, 5, 80);
   const base = saving ? savingTail(visible) : visible.slice(-baseLimit);
   const enabled = !saving && db.settings.groupContextSearchEnabled !== false;
   const result = (extra: MessageRecord[] = [], searchedCount = 0, quoted = false): GroupContextSelection => ({
@@ -89,9 +92,9 @@ export function selectAdaptiveGroupContext(db: Db, event: GroupTurn): GroupConte
   });
   if (!enabled || visible.length <= base.length) return result();
 
-  const maxExtra = boundedInteger(db.settings.groupContextSearchMaxExtra, 24, 3, 80);
-  const poolSize = boundedInteger(db.settings.groupContextSearchPoolSize, 400, 50, 2000);
-  const budget = boundedInteger(db.settings.groupContextSearchCharBudget, 12000, 2000, 40000);
+  const maxExtra = numberSetting(db.settings.groupContextSearchMaxExtra, 24, 3, 80);
+  const poolSize = numberSetting(db.settings.groupContextSearchPoolSize, 400, 50, 2000);
+  const budget = numberSetting(db.settings.groupContextSearchCharBudget, 12000, 2000, 40000);
   const older = visible.slice(0, visible.length - base.length).slice(-poolSize);
   const baseIds = new Set(base.map(rowId));
   const byId = new Map([...older, ...base].map(row => [rowId(row), row]));

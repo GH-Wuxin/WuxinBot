@@ -10,21 +10,6 @@ const policyLabels = {
 const policyOptions = Object.entries(policyLabels);
 const levelPpLabel = (experience) => `${Math.floor(Number(experience?.xp || 0) / 100) * 100}pp`;
 
-function memberForm(selected) {
-  if (!selected) return null;
-  return {
-    groupId: selected.groupId,
-    userId: selected.userId,
-    nickname: selected.policy?.nickname || selected.nickname || '',
-    policy: selected.policy?.policy || 'normal',
-    attentionLevel: selected.policy?.attentionLevel || 3,
-    allowCommands: Boolean(selected.policy?.allowCommands),
-    commandRoleId: selected.policy?.commandRoleId || '',
-    note: selected.policy?.note || '',
-    customPrompt: selected.policy?.customPrompt || '',
-  };
-}
-
 export function MembersPage({ db, refreshState }) {
   const [search, setSearch] = useState('');
   const [selectedKey, setSelectedKey] = useState('');
@@ -99,12 +84,32 @@ export function MembersPage({ db, refreshState }) {
 
   useEffect(() => {
     setEditing(false);
-    setForm(memberForm(selected));
+    setForm(selected ? {
+      groupId: selected.groupId,
+      userId: selected.userId,
+      nickname: selected.policy?.nickname || selected.nickname || '',
+      policy: selected.policy?.policy || 'normal',
+      attentionLevel: selected.policy?.attentionLevel || 3,
+      allowCommands: Boolean(selected.policy?.allowCommands),
+      commandRoleId: selected.policy?.commandRoleId || '',
+      note: selected.policy?.note || '',
+      customPrompt: selected.policy?.customPrompt || '',
+    } : null);
   }, [selectedKey]);
 
   const startEdit = () => {
     if (!selected) return;
-    setForm(memberForm(selected));
+    setForm({
+      groupId: selected.groupId,
+      userId: selected.userId,
+      nickname: selected.policy?.nickname || selected.nickname || '',
+      policy: selected.policy?.policy || 'normal',
+      attentionLevel: selected.policy?.attentionLevel || 3,
+      allowCommands: Boolean(selected.policy?.allowCommands),
+      commandRoleId: selected.policy?.commandRoleId || '',
+      note: selected.policy?.note || '',
+      customPrompt: selected.policy?.customPrompt || '',
+    });
     setEditing(true);
   };
 

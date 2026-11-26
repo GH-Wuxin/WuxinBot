@@ -114,7 +114,7 @@ assert.match(render(SettingRow, { title: '接口供应商', control: React.creat
 assert.match(render(SettingRow, { title: '自动降级', control: React.createElement(Switch, { checked: true, onChange: noop }) }), /aria-label="自动降级"/);
 console.log('PASS real React page rendering, preserved model sections, empty logs and accessible controls');
 
-const shell = render(AppShell, { page: 'overview', db, oneBot: {}, onNavigate: noop, onPauseToggle: noop });
+const shell = render(AppShell, { page: 'overview', db, oneBot: {}, onNavigate: noop, onPauseToggle: noop, onStopAll: noop });
 assert.doesNotMatch(shell, /always in rhythm|CONTROL ROOM|made for the community|osu-shell-footer/);
 assert.match(shell, /id="pauseBtn"[^>]*>暂停<\/button>/);
 assert.match(render(AppShell, { page: 'overview', db: { ...db, settings: { ...db.settings, globalPaused: true } }, oneBot: {}, onNavigate: noop, onPauseToggle: noop }), /id="pauseBtn"[^>]*>恢复<\/button>/);

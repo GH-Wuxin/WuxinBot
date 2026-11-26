@@ -1,4 +1,3 @@
-import { boundedInteger } from '../../boundedInteger.js';
 import crypto from 'node:crypto';
 import { readDb, updateDb } from '../../store.js';
 import { pickForModel } from './index.js';
@@ -139,8 +138,14 @@ function envValue(name: string): string | undefined {
   return String(process.env[name] || '').trim();
 }
 
+function boundedNumber(value: unknown, fallback: number, min: number, max: number): number {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) return fallback;
+  return Math.max(min, Math.min(max, Math.floor(parsed)));
+}
+
 function boundedLimit(value: unknown, fallback: number, max: number): number {
-  return boundedInteger(value, fallback, 0, max);
+  return boundedNumber(value, fallback, 0, max);
 }
 
 function parseMode(value: unknown, fallback: StickerDeliveryMode): StickerDeliveryMode {
@@ -197,13 +202,13 @@ export function stickerDeliveryConfig(db: StickerDeliveryDbLike = readDb()): Sti
   const mode = parseMode(envValue('WUXIN_STICKER_DELIVERY_MODE') ?? saved.mode, DEFAULT_POLICY.mode);
   const allGroups = parseBoolean(envValue('WUXIN_STICKER_ALL_GROUPS') ?? saved.allGroups, DEFAULT_POLICY.allGroups);
   const groupIds = parseGroupIds(envValue('WUXIN_STICKER_LIVE_GROUP_IDS') ?? saved.groupIds);
-  const groupCooldownMs = boundedInteger(
+  const groupCooldownMs = boundedNumber(
     envValue('WUXIN_STICKER_COOLDOWN_MS') ?? (Number(saved.groupCooldownSec) * 1000),
     DEFAULT_POLICY.groupCooldownMs,
     0,
     24 * 60 * 60_000,
   );
-  const userCooldownMs = boundedInteger(
+  const userCooldownMs = boundedNumber(
     envValue('WUXIN_STICKER_USER_COOLDOWN_MS') ?? (Number(saved.userCooldownSec) * 1000),
     DEFAULT_POLICY.userCooldownMs,
     0,
@@ -224,7 +229,7 @@ export function stickerDeliveryConfig(db: StickerDeliveryDbLike = readDb()): Sti
     DEFAULT_POLICY.userDailyLimit,
     100_000,
   );
-  const duplicateStickerCooldownMs = boundedInteger(
+  const duplicateStickerCooldownMs = boundedNumber(
     envValue('WUXIN_STICKER_DUPLICATE_WINDOW_MS') ?? (Number(saved.duplicateStickerCooldownSec) * 1000),
     DEFAULT_POLICY.duplicateStickerCooldownMs,
     0,

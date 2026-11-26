@@ -190,6 +190,14 @@ export function buildBotToolSchemas(
     }
   }
 
+  // R3 dead-path cleanup: query_external_bot must NEVER be emitted as an LLM
+  // schema. Its executor backend remains in executor.ts and guard.ts keeps
+  // rejecting it (VISIBLE_BUT_UNCALLABLE has been removed by making it
+  // INVISIBLE_BUT_BACKEND_PRESENT). The QQ relay path is unchanged.
+  //
+  // The legacy query_bot / list_bots / get_recent_score tools are also
+  // deliberately not LLM-visible here; their executor implementations stay
+  // dormant until a future explicit exposure decision.
 
   return tools;
 }

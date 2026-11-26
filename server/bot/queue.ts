@@ -1,17 +1,21 @@
 // Reply queue + inbound dedupe. Type-checked module.
-import { conversationKey, messageAccount, messageInConversation } from '../messageFacts.js';
 import { socialCoordinator } from './social/coordinator.js';
 
 const INBOUND_EVENT_DEDUPE_TTL_MS = 10 * 60_000;
 const INBOUND_EVENT_DEDUPE_LIMIT = 5_000;
 const recentInboundEvents = new Map();
 
-export function claimInboundEvent(event, db) {
+export function claimInboundEvent(event) {
   const messageId = String(event?.messageId || '').trim();
   if (!messageId || event?.source === 'gui') return true;
 
   const now = Date.now();
-  const key = JSON.stringify([messageAccount(db, event), conversationKey(event), messageId]);
+  const key = [
+    String(event?.source || 'unknown'),
+    String(event?.type || 'unknown'),
+    String(event?.groupId || 'private'),
+    messageId
+  ].join(':');
   const seenAt = recentInboundEvents.get(key);
   if (Number.isFinite(seenAt) && now - seenAt < INBOUND_EVENT_DEDUPE_TTL_MS) {
     return false;
@@ -40,13 +44,13 @@ export const getReplyQueueStats = () => socialCoordinator.stats;
 export function persistedInboundDuplicate(draft, event) {
   const messageId = String(event?.messageId || '').trim();
   if (!messageId || event?.source === 'gui') return false;
-  const account = messageAccount(draft, event);
-  const messages = draft.messages || [];
-  const start = Math.max(0, messages.length - INBOUND_EVENT_DEDUPE_LIMIT);
-  for (let i = messages.length - 1; i >= start; i--) {
-    const message = messages[i];
-    if (message && (!message.role || message.role === 'user') && String(message.sourceMessageId || '') === messageId
-      && messageInConversation(message, event, account)) return true;
-  }
-  return false;
+  const type = String(event?.type || 'unknown');
+  const groupId = String(event?.groupId || 'private');
+  const recentMessages = (draft?.messages || []).slice(-INBOUND_EVENT_DEDUPE_LIMIT);
+  return recentMessages.some((message) =>
+    String(message?.sourceMessageId || '') === messageId &&
+    String(message?.type || 'unknown') === type &&
+    String(message?.groupId || 'private') === groupId
+  );
 }
+

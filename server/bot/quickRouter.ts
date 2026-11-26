@@ -28,13 +28,14 @@ import { runBackgroundTask } from '../backgroundTasks.js';
 import {
   EXCLAMATION_DEFS,
   SLASH_DEFS,
-  type QuickMatch,
+  HYDRANT_DEFS,
   finalizeQuickDef,
   canonicalQuickTrigger,
   canonicalQuickSyntax,
   type RawQuickCommandDef,
 } from './commands/quick.meta.js';
 import { yumuBpSyntax } from './commands/yumuBpArgs.js';
+import { normalizeAlias } from './commands/alias.js';
 import {
   parseScoreArgs,
   buildKanonScoreCommand,
@@ -49,7 +50,121 @@ import {
 } from '../perf/latencyTrace.js';
 
 export type { QuickCommandDef, RawQuickCommandDef } from './commands/quick.meta.js';
-export { matchQuickCommand, EXCLAMATION_DEFS, SLASH_DEFS, HYDRANT_DEFS, ALL_QUICK_DEFS, QUICK_DEFS } from './commands/quick.meta.js';
+export { EXCLAMATION_DEFS, SLASH_DEFS, HYDRANT_DEFS, ALL_QUICK_DEFS, QUICK_DEFS } from './commands/quick.meta.js';
+
+interface QuickMatch {
+  def: RawQuickCommandDef;
+  /** The full normalized command text without the prefix. */
+  cmdText: string;
+  /** The matched alias (normalized), used to rebuild injected commands. */
+  alias: string;
+  /** Raw arguments after the matched alias. */
+  args: string;
+  prefix: '!' | '/' | 'none';
+  atTargets: string[];
+  /** Hydrant mode suffix (e.g. `,mania` after `~` / `查`). */
+  extraMode?: string;
+}
+
+function matchAlias(defs: RawQuickCommandDef[], rest: string): { def: RawQuickCommandDef; alias: string } | null {
+  const normalized = normalizeAlias(rest);
+  let best: { def: RawQuickCommandDef; alias: string; length: number } | null = null;
+  for (const def of defs) {
+    for (const alias of def.aliases) {
+      const key = normalizeAlias(alias);
+      if (normalized === key || normalized.startsWith(key + ' ')) {
+        if (!best || key.length > best.length) {
+          best = { def, alias: key, length: key.length };
+        }
+      }
+    }
+  }
+  return best ? { def: best.def, alias: best.alias } : null;
+}
+
+/** Rebuild raw args after a matched alias, preserving original casing. */
+function argsAfterAlias(rawRest: string, alias: string): string {
+  const aliasTokens = alias.split(' ').filter(Boolean).length;
+  const tokens = String(rawRest || '').trim().split(/\s+/).filter(Boolean);
+  return tokens.slice(aliasTokens).join(' ');
+}
+
+function modeSuffix(value: string): { mode: string; rest: string } {
+  const match = /^(.*?)\s*[,，]\s*(\S*)\s*$/.exec(value);
+  if (match) return { mode: match[2], rest: match[1] };
+  return { mode: '', rest: value };
+}
+
+/**
+ * Match a message against the quick-command registry.
+ * Returns null when the message is not a quick command (LLM pipeline owns it).
+ */
+export function matchQuickCommand(event: { text: string; atTargets?: string[] }): QuickMatch | null {
+  const raw = String(event.text || '').trim();
+  if (!raw) return null;
+  const atTargets = Array.isArray(event.atTargets) ? event.atTargets.map(String) : [];
+
+  if (raw.startsWith('!') || raw.startsWith('！')) {
+    const rest = raw.slice(1).trim();
+    const normalizedRest = normalizeAlias(rest);
+    const matched = matchAlias(EXCLAMATION_DEFS, normalizedRest);
+    if (!matched) return null;
+    return {
+      def: matched.def,
+      cmdText: rest,
+      alias: matched.alias,
+      args: argsAfterAlias(rest, matched.alias),
+      prefix: '!',
+      atTargets,
+    };
+  }
+
+  if (raw.startsWith('/') && !/^\/w(?:uxin)?(?:\s|$)/i.test(raw)) {
+    const rest = raw.slice(1).trim();
+    const normalizedRest = normalizeAlias(rest);
+    const matched = matchAlias(SLASH_DEFS, normalizedRest);
+    if (!matched) return null;
+    return {
+      def: matched.def,
+      cmdText: rest,
+      alias: matched.alias,
+      args: argsAfterAlias(rest, matched.alias),
+      prefix: '/',
+      atTargets,
+    };
+  }
+
+  // Hydrant: prefix-free triggers.
+  const hydrant = normalizeAlias(raw);
+  if (/^~/.test(hydrant)) {
+    const { mode, rest } = modeSuffix(hydrant.slice(1).trim());
+    const def = HYDRANT_DEFS.find((d) => d.handler === 'self_profile')!;
+    return { def, cmdText: hydrant, alias: '~', args: rest, prefix: 'none', atTargets, extraMode: mode };
+  }
+  if (/^查/.test(raw)) {
+    const { mode, rest } = modeSuffix(raw.slice(1).trim());
+    if (atTargets.length > 0) {
+      const def = HYDRANT_DEFS.find((d) => d.handler === 'at_profile')!;
+      return { def, cmdText: raw, alias: '查', args: rest, prefix: 'none', atTargets, extraMode: mode };
+    }
+    return null;
+  }
+  const normalizedRaw = normalizeAlias(raw);
+  const prefixFree = matchAlias(HYDRANT_DEFS.filter((d) => d.handler !== 'self_profile' && d.handler !== 'at_profile'), normalizedRaw);
+  if (prefixFree) {
+    const def = prefixFree.def;
+    return {
+      def,
+      cmdText: raw,
+      alias: prefixFree.alias,
+      args: argsAfterAlias(raw, prefixFree.alias),
+      prefix: 'none',
+      atTargets,
+      extraMode: '',
+    };
+  }
+  return null;
+}
 
 // ── BP argument parsing ──
 
@@ -719,33 +834,6 @@ async function handleQuickCommandInner(
     return { handled: true, replied: true, reason: 'bind_hint' };
   }
 
-  async function queryHydrantProfile(username: string, operation: 'profile' | 'where') {
-    let result: Awaited<ReturnType<typeof executeInternalBotCommand>>;
-    try {
-      result = await executeInternalBotCommand('hydrant', 'profile', username, {
-        db, userId: String(event.userId), groupId: event.groupId,
-      }, undefined, def.bridge ? { fallback: fallbackContext() } : undefined);
-    } catch (error: any) {
-      if (sendMessage) await sendMessage(event, String(error?.message || error));
-      record(`查询失败：${String(error?.message || error)}`);
-      return { handled: true, replied: true, reason: operation + '_error' };
-    }
-    // Delivery failure after a successful command must not trigger a second,
-    // confusing error message (panel may already have been sent).
-    try {
-      if (sendMessage) await sendMessage(event, quickPayload(result));
-    } catch (deliveryError: any) {
-      console.error(`[quick] ${def.id} 发送失败（面板可能已发出）:`, deliveryError?.message || deliveryError);
-    }
-    log(operation, username || '(self)');
-    const memContent = typeof result === 'string'
-      ? result
-      : String(result.content || '');
-    const memImages = typeof result === 'string' ? [] : (result.images || []);
-    record(memContent || `查询了 ${username || '绑定玩家'} 的玩家信息`, memImages);
-    return { handled: true, replied: true, reason: operation };
-  }
-
   // ── Hydrant profile/PP+ handlers ──
   if (def.handler === 'self_profile' || def.handler === 'at_profile') {
     const modeNote = stdOnlyNote((match as any).extraMode || '');
@@ -754,7 +842,30 @@ async function handleQuickCommandInner(
       return { handled: true, replied: true, reason: '非 std 模式' };
     }
     const username = def.handler === 'at_profile' ? resolveAtBinding(db, atTargets) : '';
-    return queryHydrantProfile(username, 'profile');
+    let result: Awaited<ReturnType<typeof executeInternalBotCommand>>;
+    try {
+      result = await executeInternalBotCommand('hydrant', 'profile', username, {
+        db, userId: String(event.userId), groupId: event.groupId,
+      }, undefined, def.bridge ? { fallback: fallbackContext() } : undefined);
+    } catch (error: any) {
+      if (sendMessage) await sendMessage(event, String(error?.message || error));
+      record(`查询失败：${String(error?.message || error)}`);
+      return { handled: true, replied: true, reason: 'profile_error' };
+    }
+    // Delivery failure after a successful command must not trigger a second,
+    // confusing error message (panel may already have been sent).
+    try {
+      if (sendMessage) await sendMessage(event, quickPayload(result));
+    } catch (deliveryError: any) {
+      console.error(`[quick] ${def.id} 发送失败（面板可能已发出）:`, deliveryError?.message || deliveryError);
+    }
+    log('profile', username || '(self)');
+    const memContent = typeof result === 'string'
+      ? result
+      : String((result as any).content || '');
+    const memImages = typeof result === 'string' ? [] : ((result as any).images || []);
+    record(memContent || `查询了 ${username || '绑定玩家'} 的玩家信息`, memImages);
+    return { handled: true, replied: true, reason: 'profile' };
   }
   if (def.handler === 'where') {
     const query = String(args || '').trim();
@@ -773,7 +884,28 @@ async function handleQuickCommandInner(
       if (sendMessage) await sendMessage(event, '用法：where <osu用户名> 或 where qq=<QQ号>');
       return { handled: true, replied: true, reason: 'where 缺参数' };
     }
-    return queryHydrantProfile(query, 'where');
+    let result: Awaited<ReturnType<typeof executeInternalBotCommand>>;
+    try {
+      result = await executeInternalBotCommand('hydrant', 'profile', query, {
+        db, userId: String(event.userId), groupId: event.groupId,
+      }, undefined, def.bridge ? { fallback: fallbackContext() } : undefined);
+    } catch (error: any) {
+      if (sendMessage) await sendMessage(event, String(error?.message || error));
+      record(`查询失败：${String(error?.message || error)}`);
+      return { handled: true, replied: true, reason: 'where_error' };
+    }
+    try {
+      if (sendMessage) await sendMessage(event, quickPayload(result));
+    } catch (deliveryError: any) {
+      console.error(`[quick] ${def.id} 发送失败（面板可能已发出）:`, deliveryError?.message || deliveryError);
+    }
+    log('where', query);
+    const memContent = typeof result === 'string'
+      ? result
+      : String((result as any).content || '');
+    const memImages = typeof result === 'string' ? [] : ((result as any).images || []);
+    record(memContent || `查询了 ${query} 的玩家信息`, memImages);
+    return { handled: true, replied: true, reason: 'where' };
   }
   // ── Internal engine capabilities ──
   if (def.capability) {

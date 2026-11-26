@@ -26,9 +26,3 @@ export async function fetchBoundedBody(url: string, options: RequestInit = {}, t
     reader?.releaseLock();
   }
 }
-
-export function isRetryableFetchError(error: unknown): boolean {
-  const name = String((error as { name?: string } | undefined)?.name || '');
-  const message = String((error as { message?: string } | undefined)?.message || error || '');
-  return name === 'AbortError' || /aborted|fetch failed|network|socket|ECONNRESET|ETIMEDOUT/i.test(message);
-}

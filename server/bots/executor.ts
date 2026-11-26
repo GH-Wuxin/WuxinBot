@@ -15,7 +15,7 @@ import { runStickerDryRun } from '../bot/stickers/debug.js';
 import { collectMessageProducers, producerFacts, recordMessageProducer, sourceSender, sourceDetails, messageTrigger } from '../messageProvenance.js';
 import { getRenderServer } from './renderServer.js';
 import { scoreStarRating } from '../osu/scoreMetrics.js';
-import { enrichScoreStarRatings, scoreModAcronyms } from '../osu/starRating.js';
+import { enrichScoreStarRatings } from '../osu/starRating.js';
 import type { OsuScore, OsuUser } from '../osu/types.js';
 import type { WuxinFallbackContext } from './wuxinFallback.js';
 import { describeFilters, isEmptyFilters } from '../osu/recommendFilters.js';
@@ -554,6 +554,56 @@ async function executeToolCallInner(
       }
     }
 
+    case 'query_external_bot': {
+      const extBotId = String(args.bot || '').trim();
+      const extCommand = String(args.command || '').trim();
+      if (!extBotId || !extCommand) {
+        return { toolCallId: toolCall.id, ok: false, content: '需要指定 bot 和 command' };
+      }
+      const extRegistry = loadRegistry(db);
+      const extBot = findBot(extRegistry, extBotId);
+      if (!extBot) {
+        return { toolCallId: toolCall.id, ok: false, content: `未找到外部机器人 "${extBotId}"。`, metadata: { requestedBot: extBotId, actualExecutor: 'none', success: false } };
+      }
+      if (!extBot.qq || extBot.channel === 'internal') {
+        return { toolCallId: toolCall.id, ok: false, content: `"${extBot.name}" 当前未通过外部 QQ 通道接入 Harness。Wuxin 内部 osu! 工具可以提供类似数据。`, metadata: { requestedBot: extBot.id, actualExecutor: 'none', success: false } };
+      }
+      // QQ channel relay — same as legacy query_bot for external bots
+      if (!context.sendMessage || !context.event) {
+        return { toolCallId: toolCall.id, ok: false, content: `无法向 ${extBot.name} 发送消息：消息通道未就绪。` };
+      }
+      try {
+        const correlationId = `${extBot.id}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+        const drainPolicy = responsePolicy(db, extBot);
+        const responsePromise = registerPendingBotCall({
+          correlationId,
+          botId: extBot.id,
+          channel: extBot.channel,
+          groupId: extBot.channel === 'qq_group' ? String(extBot.groupId || context.groupId || '') : undefined,
+          drainPolicy: {
+            imageMs: drainPolicy.imageDrainMs,
+            textMs: drainPolicy.textDrainMs,
+            timeoutMs: drainPolicy.timeoutDrainMs,
+          },
+        });
+        const botEvent = { ...context.event, type: extBot.channel === 'qq_group' ? 'group' : 'private', userId: extBot.channel === 'qq_group' ? undefined : extBot.qq, groupId: extBot.channel === 'qq_group' ? String(extBot.groupId || context.groupId || '') : undefined, text: extCommand, messageId: `bot_cmd_${Date.now()}`, raw: context.event.raw || {} };
+        await context.sendMessage(botEvent, extCommand, {suppressReply:true,...sourceDetails({module:'external_bot_relay',operation:'query_external_bot',producer:extBot.id,outcome:'requested'},
+          {code:'relay_query',description:'为了完成原会话的查询，向已配置的外部 Bot 发送指令。',audience:'specified',addressedTo:[extBot.qq]},context.event)});
+        const response = await responsePromise;
+        if (response.ok) {
+          return {
+            toolCallId: toolCall.id, ok: true,
+            content: `已向 ${extBot.name} 发送指令 "${extCommand}"。\n${response.text || ''}`,
+            images: response.images,
+            metadata: { requestId: toolCall.id, requestedBot: extBot.id, actualExecutor: extBot.id, transport: extBot.channel, success: true }
+          };
+        }
+        return { toolCallId: toolCall.id, ok: false, content: `${extBot.name} 查询失败: ${response.error || '无响应'}`, metadata: { requestedBot: extBot.id, actualExecutor: extBot.id, success: false } };
+      } catch (err) {
+        return { toolCallId: toolCall.id, ok: false, content: routeFailureToolMessage(extBot.name, err), metadata: { requestedBot: extBot.id, success: false } };
+      }
+    }
+
     case 'query_bot': {
       const botId = String(args.bot || '').trim();
       const embeddedBpCommand = parseEmbeddedBpCommand(String(args.command || '').trim());
@@ -976,6 +1026,19 @@ export interface InternalBotCommandResult {
   final?: boolean;
 }
 
+function scoreModAcronyms(score: OsuScore): string[] {
+  const rawMods: unknown[] = Array.isArray((score as any).mods) ? (score as any).mods : [];
+  const acronyms = rawMods.map((mod): string => {
+    if (typeof mod === 'string') return mod;
+    if (mod && typeof mod === 'object' && 'acronym' in mod) {
+      return String((mod as { acronym?: unknown }).acronym || '');
+    }
+    return '';
+  }).map((mod) => mod.toUpperCase()).filter((mod) => mod && mod !== 'NM');
+  return [...new Set<string>(acronyms)];
+}
+
+/** Normalize an osu!/QQ name without deleting legal username characters. */
 /**
  * A bound leading community tag may be omitted by the requester, but two
  * explicitly tagged names are never collapsed together. osu! stores brackets
@@ -1323,21 +1386,6 @@ async function executeInternalBotCommandInner(
   traceId?: string | null,
 ): Promise<string | InternalBotCommandResult> {
   const { db, userId } = context;
-  function comparisonUsers(leftName: string, rightName: string, missing: string) {
-    const extra = {
-      nickname: String(context.event?.nickname || ''),
-      atTargets: context.event?.atTargets,
-      groupId: context.groupId,
-    };
-    const leftTarget = resolveInternalPlayerTarget(db, String(userId), leftName, extra);
-    const rightTarget = resolveInternalPlayerTarget(db, String(userId), rightName, extra);
-    if (!leftTarget || !rightTarget) throw new Error(missing);
-    return Promise.all([
-      loadInternalOsuUser(leftTarget),
-      loadInternalOsuUser(rightTarget),
-    ]);
-  }
-
   // Command-side alias normalization: quick.meta uses the legacy two-p alias
   // `pplus`; the canonical capability catalog and LLM enum use three-p
   // `ppplus`. Normalizing here keeps the two spellings behavior-identical.
@@ -1653,7 +1701,18 @@ async function executeInternalBotCommandInner(
       const leftName = String(toolArgs.left || '').trim();
       const rightName = String(toolArgs.right || '').trim();
       if (!leftName || !rightName) throw new Error('compare_skill 需要 left 和 right 两个玩家名。');
-      const [leftUser, rightUser] = await comparisonUsers(leftName, rightName, '无法解析要对比的两个玩家：' + leftName + ' / ' + rightName);
+      const extra = {
+        nickname: String(context.event?.nickname || ''),
+        atTargets: context.event?.atTargets,
+        groupId: context.groupId,
+      };
+      const leftTarget = resolveInternalPlayerTarget(db, String(userId), leftName, extra);
+      const rightTarget = resolveInternalPlayerTarget(db, String(userId), rightName, extra);
+      if (!leftTarget || !rightTarget) throw new Error('无法解析要对比的两个玩家：' + leftName + ' / ' + rightName);
+      const [leftUser, rightUser] = await Promise.all([
+        loadInternalOsuUser(leftTarget),
+        loadInternalOsuUser(rightTarget),
+      ]);
       if (leftUser.id === rightUser.id) throw new Error('请选择两个不同的玩家再对比。');
       return await runSkillCompareText(leftUser.id, rightUser.id);
     }
@@ -1783,7 +1842,15 @@ async function executeInternalBotCommandInner(
       const leftName = String(toolArgs.left || '').trim();
       const rightName = String(toolArgs.right || '').trim();
       if (!leftName || !rightName) throw new Error('对比图需要 left 和 right 两个玩家名');
-      const [leftUser, rightUser] = await comparisonUsers(leftName, rightName, '无法解析要对比的两个玩家');
+      const extra = {
+        nickname: String(context.event?.nickname || ''),
+        atTargets: context.event?.atTargets,
+        groupId: context.groupId,
+      };
+      const leftTarget = resolveInternalPlayerTarget(db, String(userId), leftName, extra);
+      const rightTarget = resolveInternalPlayerTarget(db, String(userId), rightName, extra);
+      if (!leftTarget || !rightTarget) throw new Error('无法解析要对比的两个玩家');
+      const [leftUser, rightUser] = await Promise.all([loadInternalOsuUser(leftTarget), loadInternalOsuUser(rightTarget)]);
       const { renderPlayerSkillComparison } = await import('./playerSkillProfile.js');
       const rendered = await renderPlayerSkillComparison(leftUser.id, rightUser.id, 50);
       if (!rendered) return { content: '对比图没画出来（渲染服务未连接）。', images: [] };

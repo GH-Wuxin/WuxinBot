@@ -74,4 +74,4 @@ python -m community_corpus.v1.review_sheet --input reports/manual-review-v1.json
 python -m unittest discover -s tests -v
 ```
 
-测试覆盖标识转换、解析、来源定位、窗口划分和隐私标记。批准后的表达样本可用于[知识库构建](../docs/KNOWLEDGE_BASE_V41.md)。
+测试覆盖标识转换、解析、来源定位、窗口划分和隐私标记。批准后的表达样本可用于[知识库构建](../docs/KNOWLEDGE_BASE_V41.md)；运行时的精选短语则由 [banterBank.ts](../server/bot/banterBank.ts)维护。
