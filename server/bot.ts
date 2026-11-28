@@ -1,5 +1,6 @@
 // @ts-nocheck -- legacy runtime module; new typed modules remain checked by tsc.
 import { tokenSaving } from './bot/tokenSaving.js';
+import { DRAW_TOOL_NAME, buildPippiDrawCapability, pippiDrawEnabled, reservePippiDraw, type DrawReservation } from './bot/pippiDraw.js';
 import { recordAssistantContext, messageAccount } from './messageFacts.js';
 import { buildIntrospectionTools, executeIntrospection, INTROSPECTION_TOOL_NAMES } from './bot/introspection.js';
 import { sourceSender, sourceDetails, messageTrigger, type SourceStep } from './messageProvenance.js';
@@ -400,7 +401,7 @@ async function processIncomingInner(event, sendMessage = undefined) {
     ? { shouldReply: false, reason: '等待同群协调与语义评估' }
     : { shouldReply: !boundary && event.socialDirect, reason: boundary || '明确请求', inContext: userPolicy.policy !== 'blocked' };
   decision.visualLimitation = !socialCandidate && event.type === 'group' && decision.shouldReply
-    && asksToInspectVisual(event.text) && !modelSupportsVision(db);
+    && asksToInspectVisual(event.text) && !modelSupportsVision(db) && !pippiDrawEnabled(db, event);
   traceEvent('GATE', 'reply_gate_decided', {
     status: decision.shouldReply ? 'reply' : 'silent',
     shouldReply: Boolean(decision.shouldReply),
@@ -584,7 +585,9 @@ async function processIncomingInner(event, sendMessage = undefined) {
     merged.socialContextIds ||= socialTurnTimeline(readDb(), merged).map(m => m.messageId);
     const output = await generateConversationReply(merged, sendMessage, { shouldReply: true, reason: !assessment && merged.socialAssessmentDiagnostic ? '继续明确请求' : reason,
       socialReady: socialCandidate, combinedSocial, visualLimitation: decision.visualLimitation });
-    if(reflection&&!isReplyProcessAborted())queueSocialReflection(reflection,{action:merged.socialAction||action,replied:Boolean(output.replied)});
+    if(reflection&&!isReplyProcessAborted()&&!('pippiDrawHandled' in output && output.pippiDrawHandled)) {
+      queueSocialReflection(reflection,{action:merged.socialAction||action,replied:Boolean(output.replied)});
+    }
     if (socialCandidate) recordSocialDecision(merged, { stage: 'delivery', action: output.replied ? merged.socialAction || action : 'pass',
       reason: output.replied ? '已发送' : output.error ? '生成或发送失败' : output.reason,
       evidenceIds: [], durationMs: 0, totalTokens: 0 });
@@ -624,6 +627,8 @@ async function generateConversationReply(event, sendMessage, decision) {
   let stagedReply = false;
   let modelStageStarted = false;
   let deliveryStarted = false;
+  let drawReservation: DrawReservation | undefined;
+  let drawToolReply: string | undefined;
   try {
     if (decision.visualLimitation) {
       const text = visualLimitationReply(event, readDb());
@@ -763,7 +768,15 @@ async function generateConversationReply(event, sendMessage, decision) {
       ? buildBotToolSchemas(registryForTurn, { surface: 'v2', phase: 'image' })
       : [];
     const osuSearchEnabled = !savingMode && isOsuSearchAvailable(liveDb);
+    // Only the active, ordinary chat turn gets this capability; explicit osu
+    // data routes retain their existing required-evidence/command behavior.
+    const draw = sendMessage && !osuDataIntent && !namedBotRequest ? buildPippiDrawCapability(liveDb, event) : null;
+    if (draw) {
+      responseOptions.maxTokens = Math.max(responseOptions.maxTokens || 0, 4096);
+      if (messages[0]?.role === 'system') messages[0].content += '\n\n' + draw.prompt;
+    }
     const toolsForTurn = [
+      ...(draw ? [draw.tool] : []),
       ...botTools,
       ...(osuSearchEnabled ? buildOsuSearchTools() : []),
       ...(!savingMode ? buildIntrospectionTools() : []),
@@ -933,6 +946,14 @@ async function generateConversationReply(event, sendMessage, decision) {
       let osuSearchCalls = 0;
       const executeConversationTool = async (toolCall, context) => {
         assertLlmTurnActive();
+        if (toolCall?.function?.name === DRAW_TOOL_NAME) {
+          const prepared = reservePippiDraw(readDb(), event, toolCall, Boolean(draw), originalSend);
+          if (draw) {
+            drawReservation = prepared.reservation;
+            drawToolReply = prepared.result.content;
+          }
+          return prepared.result;
+        }
         const progressTool = progress?.toolStarted(String(toolCall?.function?.name || ''));
         let succeeded = false;
         const finishTool = result => {
@@ -1040,7 +1061,7 @@ async function generateConversationReply(event, sendMessage, decision) {
       // model answered WITHOUT ever running the recommend tool, any map names
       // in the reply are improvising. Re-run the loop with the deterministic
       // tool forced so the final answer is data-backed.
-      const fallbackRecommendIntent = !requiredTool && hasFallbackRecommendIntent(event.text);
+      const fallbackRecommendIntent = drawToolReply === undefined && !requiredTool && hasFallbackRecommendIntent(event.text);
       if (
         fallbackRecommendIntent &&
         !toolResult.recommendToolCalled &&
@@ -1065,6 +1086,27 @@ async function generateConversationReply(event, sendMessage, decision) {
       toolImages = toolResult.images || [];
       toolDeliverImages = toolResult.deliverOnlyImages || [];
       toolDirectContent = String(toolResult.directContent || '').trim();
+      if (drawToolReply !== undefined) {
+        // The original chat model already made the decision and wrote the
+        // tool's prompt. Do not synthesize, style-rewrite or reassess a queue
+        // acknowledgement in a second chat-model call.
+        progress?.stop();
+        if (thinkingTimer) { clearTimeout(thinkingTimer); thinkingTimer = null; }
+        if (waitUpTimer) { clearTimeout(waitUpTimer); waitUpTimer = null; }
+        const guard = socialDeliveryGuard(readDb(), event);
+        if (isReplyProcessAborted() || guard) return { replied: false, reason: guard || '请求已取消' };
+        deliveryStarted = true;
+        await sendReadingReply?.(event, drawToolReply, {
+          replyToMessageId: /^-?\d{1,20}$/.test(String(event.messageId)) ? String(event.messageId) : undefined,
+          mentionSender: false, originModule: 'notice',
+          ...sourceDetails({ module: 'pippi_draw', operation: drawReservation ? 'queued' : 'rejected' },
+            { code: 'draw_requested', description: '回应本轮的生图工具请求。', audience: 'requester' }, event),
+        });
+        drawReservation?.start();
+        return { ...recordConversationSuccess({ event, settings: liveDb.settings, decision, ai, deliveredText: drawToolReply,
+          segments: [drawToolReply], toolImages: [], toolDeliverImages: [], deliveredMediaImages: [],
+          readingScope, readingRevision, readingSources, confirmedReceipts }), pippiDrawHandled: true };
+      }
     } else {
       // Phase 2 v1 context dependency: prior context is a precondition only;
       // HIGH is triggered solely by existing deterministic signals.
@@ -1643,6 +1685,7 @@ async function generateConversationReply(event, sendMessage, decision) {
       modelStageStarted,
     });
   } finally {
+    drawReservation?.cancel();
     progress?.stop();
     if (thinkingTimer) clearTimeout(thinkingTimer);
     if (waitUpTimer) clearTimeout(waitUpTimer);

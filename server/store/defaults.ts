@@ -276,6 +276,7 @@ export function normalizeDb(db) {
   // memory; the next group save persists the independent values.
   for (const group of db.groups) {
     if (!group || typeof group !== 'object') continue;
+    group.pippiDrawEnabled = group.pippiDrawEnabled === true;
     if (!Object.prototype.hasOwnProperty.call(group, 'randomImageEnabled')) {
       group.randomImageEnabled = group.mode === 'natural' || group.mode === 'light';
     }

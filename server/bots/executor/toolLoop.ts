@@ -285,7 +285,7 @@ export async function runToolLoop(
       status: 'running',
       toolCallId: toolCall?.id,
       toolName,
-      arguments: traceArguments,
+      arguments: toolName === 'Draw' ? '[生图输入不记录]' : traceArguments,
     });
     try {
       const result = await executeToolCallFn(toolCall, toolContext);
@@ -949,7 +949,7 @@ export async function runToolLoop(
       const candidates = toolCalls
         .slice(0, executableThisResponse)
         .filter((call) => {
-          if (batchDuplicateIds.has(call.id)) return false;
+          if (batchDuplicateIds.has(call.id) || call.function?.name === 'Draw') return false;
           const capability = String(osuCapabilityForToolCall(call) || '');
           // 发图工具必须串行：渲染服务是单客户端管道，并发只会互相排队。
           const isImageCapability = capability === 'score_image' || capability.endsWith('_image');

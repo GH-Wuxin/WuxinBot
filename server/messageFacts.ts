@@ -6,7 +6,7 @@ import { resolveMessageSource, legacyMessageSource, type MessageDeliveryFacts } 
 import { saveOwnArchive, readOwnArchiveById, readOwnArchive, finishOwnArchiveMigration, ownArchiveMigrationDone, forgottenOwnReceipt } from './messageArchiveStorage.js';
 import { runBackgroundTask } from './backgroundTasks.js';
 
-const ORIGINS = new Set(['reply', 'random_image', 'quick_command', 'notice', 'forward', 'self_event']);
+const ORIGINS = new Set(['reply', 'random_image', 'quick_command', 'notice', 'forward', 'self_event', 'pippi_draw']);
 const text = (value: unknown) => String(value ?? '');
 const archiveDiagnostics = {writeFailures: 0, missingSources: 0, importing: false};
 let archiveRecovery: ReturnType<typeof setInterval> | undefined;

@@ -250,20 +250,21 @@ export function listRequestTraces(limit = 80) {
   }
 }
 
-export function extractProviderResponseTrace(response: any) {
+export function extractProviderResponseTrace(response: any, drawEnabled = false) {
   const message = response?.choices?.[0]?.message || {};
   const reasoning = ['reasoning_content', 'reasoning', 'thinking']
     .map((key) => typeof message?.[key] === 'string' ? message[key] : '')
     .find(Boolean) || '';
   const usage = response?.usage || {};
+  const redactDraw = drawEnabled || (message?.tool_calls || []).some((call: any) => call?.function?.name === 'Draw');
   return redactTraceValue({
-    content: typeof message?.content === 'string' ? message.content : '',
-    reasoning,
+    content: !redactDraw && typeof message?.content === 'string' ? message.content : '',
+    reasoning: redactDraw ? '' : reasoning,
     reasoningExposed: Boolean(reasoning),
     toolCalls: (message?.tool_calls || []).map((call: any) => ({
       id: call?.id,
       name: call?.function?.name,
-      arguments: parseToolArguments(call?.function?.arguments),
+      arguments: call?.function?.name === 'Draw' ? '[生图输入不记录]' : parseToolArguments(call?.function?.arguments),
     })),
     finishReason: response?.choices?.[0]?.finish_reason || '',
     usage: {

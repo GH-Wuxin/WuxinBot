@@ -479,6 +479,7 @@ export async function completeChat(db, options = {}) {
     };
   }
   const promptModule = resolvePromptModule({ ...options, promptModule: options.promptStudioModuleId });
+  const drawEnabled = (options.tools || []).some(tool => tool?.function?.name === 'Draw');
   if (Number(options.completionBudget) > 0 && llmProvider(db) === 'codex-app-server') {
     throw new Error('当前 Codex 通道不支持本活动要求的单次输出上限，请使用已配置的 API 模型进行自主阅读');
   }
@@ -538,7 +539,7 @@ export async function completeChat(db, options = {}) {
       const result = await completeCodexAppServerChat(db, { ...options, messages: codexMessages, timeoutMs: reservation.remainingMs() });
       finishPromptCall(promptCallId, {
         status: 'ok', provider: result.provider, model: result.model,
-        response: extractProviderResponseTrace(result.raw), durationMs: Date.now() - started,
+        response: extractProviderResponseTrace(result.raw, drawEnabled), durationMs: Date.now() - started,
       });
       result.usage = recordLlmInvocation({ invocationId, provider: result.provider, model: result.model,
         purpose: options.tracePurpose || options.label || 'assistant', startedAt: started, usage: result.usage });
@@ -554,7 +555,7 @@ export async function completeChat(db, options = {}) {
         provider: 'codex-app-server',
         model: result.model,
         streaming: false,
-        response: extractProviderResponseTrace(result.raw),
+        response: extractProviderResponseTrace(result.raw, drawEnabled),
       });
       return {
         ...result,
@@ -740,7 +741,7 @@ export async function completeChat(db, options = {}) {
             attempt: providerAttempt,
             provider,
             model: nextParams.model,
-            response: latestProgress,
+            response: drawEnabled ? { reasoningExposed: latestProgress.reasoningExposed, toolCallsPending: latestProgress.toolCallsPending } : latestProgress,
             streaming: true,
           });
         };
@@ -774,7 +775,9 @@ export async function completeChat(db, options = {}) {
           attempt: providerAttempt,
           provider,
           model: nextParams.model,
-          response: latestProgress || {
+          response: (drawEnabled && latestProgress
+            ? { reasoningExposed: latestProgress.reasoningExposed, toolCallsPending: latestProgress.toolCallsPending }
+            : latestProgress) || {
             content: '', reasoning: '', reasoningExposed: false, toolCallsPending: 0,
           },
           streaming: true,
@@ -790,7 +793,7 @@ export async function completeChat(db, options = {}) {
           label
         );
       }
-      const responseTrace = extractProviderResponseTrace(response);
+      const responseTrace = extractProviderResponseTrace(response, drawEnabled);
       traceEvent('MODEL', 'model_call_completed', {
         status: 'ok',
         durationMs: Date.now() - invocationStarted,

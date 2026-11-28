@@ -761,9 +761,25 @@ app.post('/api/groups', (req, res) => {
       cooldownSec,
       randomImageEnabled: hasRandomImageEnabled ? Boolean(req.body?.randomImageEnabled) : Boolean(migratedEnabled),
       randomImageRate: hasRandomImageRate ? randomImageRate : migratedRate,
+      pippiDrawEnabled: existing?.pippiDrawEnabled === true,
     });
   });
   res.json(ok(compactDbResponse()));
+});
+
+app.patch('/api/groups/:groupId/draw', (req, res) => {
+  const groupId = identifier(req.params.groupId, '群号', res);
+  if (!groupId) return;
+  const enabled = req.body?.pippiDrawEnabled;
+  if (typeof enabled !== 'boolean') return res.status(400).json({ ok: false, error: 'Pippi 生图开关必须为布尔值' });
+  if (!readDb().groups.some(group => String(group.groupId) === groupId)) {
+    return res.status(404).json({ ok: false, error: '群不存在' });
+  }
+  const updatedDb = updateDb(db => {
+    const group = db.groups.find(group => String(group.groupId) === groupId);
+    if (group) group.pippiDrawEnabled = enabled;
+  });
+  res.json(ok(compactDbResponse(updatedDb)));
 });
 
 app.delete('/api/groups/:groupId', (req, res) => {

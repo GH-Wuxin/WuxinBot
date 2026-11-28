@@ -142,6 +142,24 @@ export function GroupsPage({ db, refreshState, saveSettings }) {
     await refreshState();
   });
 
+  const pippiDrawEnabled = selectedGroup?.pippiDrawEnabled === true;
+  const togglePippiDraw = async () => {
+    if (!selectedGroup || pending) return;
+    const { groupId } = selectedGroup;
+    try {
+      await runAction('pippi-draw', async () => {
+        await api('/api/groups/' + encodeURIComponent(groupId) + '/draw', {
+          method: 'PATCH',
+          body: { pippiDrawEnabled: !pippiDrawEnabled },
+          timeoutMs: 15000,
+        });
+        await refreshState();
+        setForm((current) => String(current.groupId) === String(groupId)
+          ? { ...current, pippiDrawEnabled: !pippiDrawEnabled } : current);
+      });
+    } catch { /* runAction shows the error and the verified state remains unchanged. */ }
+  };
+
   const toggleBot = async (botId, enabled) => {
     const groupId = selectedGroup.groupId;
     setBotToggles((current) => ({ ...current, [groupId]: { ...(current[groupId] || {}), [botId]: enabled } }));
@@ -263,6 +281,25 @@ export function GroupsPage({ db, refreshState, saveSettings }) {
                 <button type="button" className="btn btn-primary" style={{ flex: 1 }} onClick={() => setProfileEditing(true)}>查看群画像</button>
               </div>
             </>}
+          </div>
+
+          <div className="card">
+            <div className="card-head"><span className="card-title">Pippi</span></div>
+            <div className="row">
+              <div className="row-main">
+                <div className="row-title">Pippi 生图</div>
+                <div className="row-sub">开启后，Pippi 能听懂本群的画图和改图请求。</div>
+              </div>
+              <button
+                type="button"
+                role="switch"
+                aria-label="Pippi 生图"
+                aria-checked={pippiDrawEnabled}
+                className={'switch' + (pippiDrawEnabled ? ' is-on' : '')}
+                disabled={Boolean(pending)}
+                onClick={togglePippiDraw}
+              />
+            </div>
           </div>
 
           <div className="card">
